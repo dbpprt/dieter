@@ -238,3 +238,18 @@ private final class RecoveryProbe: Sendable {
     #expect(DieterStreamRecoveryPolicy.delay(consecutiveFailures: 2) == 0.25)
     #expect(DieterStreamRecoveryPolicy.delay(consecutiveFailures: 100) == 5)
 }
+
+@Test @MainActor func screenFeedbackContinuesWhileMainActorAndStatisticsAreBlocked() {
+    let frames = Mutex<[Dieter_V1_RemoteDesktopReceiverFeedback]>([])
+    let pump = RemoteDesktopFeedbackPump { value in frames.withLock { $0.append(value) } }
+    var initial = Dieter_V1_RemoteDesktopReceiverFeedback(); initial.protocolVersion = 2
+    pump.start(channel: nil, initial: initial)
+    pump.input(active: true)
+    // No statistics callback, lease renewal or main actor execution is needed.
+    Thread.sleep(forTimeInterval: 1.7)
+    pump.stop()
+    let sent = frames.withLock { $0 }
+    #expect(sent.count >= 3)
+    #expect(sent.enumerated().allSatisfy { $0.element.sequence == UInt64($0.offset + 1) })
+    #expect(sent.last?.inputActive == false)
+}

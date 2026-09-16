@@ -628,9 +628,10 @@
             store.screensModel.selectedSessionID = retainedScreen.id
             store.openScreens()
             try? await DieterTaskSleep.milliseconds(500)
-            let screenTabsVisible =
+            let screenTabsVisible = await waitUntil(timeout: 3) {
                 NativeUIAccessibility.find("screen.select.\(retainedScreen.id)", in: window) != nil
-                && NativeUIAccessibility.find("screens.new", in: window) != nil
+                    && NativeUIAccessibility.find("screens.new", in: window) != nil
+            }
             results["01a-screen-tabs"] =
                 store.section == .screens && screenTabsVisible && store.screensModel.connectedCount == 1
                 ? "passed" : "failed: machine-scoped screen tab did not open"
@@ -643,9 +644,10 @@
 
             store.openSettings()
             try? await DieterTaskSleep.milliseconds(700)
-            let earlyScreenTimeoutVisible =
+            let earlyScreenTimeoutVisible = await waitUntil(timeout: 3) {
                 NativeUIAccessibility.find("settings.screenShare.inactivityTimeoutEnabled", in: window) != nil
-                && NativeUIAccessibility.find("settings.screenShare.inactivityTimeoutMinutes", in: window) != nil
+                    && NativeUIAccessibility.find("settings.screenShare.inactivityTimeoutMinutes", in: window) != nil
+            }
             results["01b-screen-timeout-settings"] =
                 earlyScreenTimeoutVisible ? "passed" : "failed: screen-share inactivity controls were missing"
             capture(window, to: output.appending(path: "01b-screen-timeout-settings.png"))
@@ -822,9 +824,10 @@
             try? await DieterTaskSleep.milliseconds(700)
             results["09-settings-general"] =
                 store.section == .settings ? "passed" : "failed: settings did not open"
-            let screenTimeoutVisible =
+            let screenTimeoutVisible = await waitUntil(timeout: 3) {
                 NativeUIAccessibility.find("settings.screenShare.inactivityTimeoutEnabled", in: window) != nil
-                && NativeUIAccessibility.find("settings.screenShare.inactivityTimeoutMinutes", in: window) != nil
+                    && NativeUIAccessibility.find("settings.screenShare.inactivityTimeoutMinutes", in: window) != nil
+            }
             results["09a-settings-screen-timeout"] =
                 screenTimeoutVisible ? "passed" : "failed: screen-share inactivity controls were missing"
             await captureAppearances(window, named: "09-settings-general.png", in: output)

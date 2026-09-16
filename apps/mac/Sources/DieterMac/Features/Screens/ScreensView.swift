@@ -47,6 +47,7 @@ struct ScreensView: View {
                     .keyboardShortcut("s", modifiers: [.command, .shift])
                     .disabled(machines.isEmpty)
                     .accessibilityIdentifier("screens.new")
+                    .smokeTarget("screens.new")
                 }
             }
 
@@ -100,6 +101,17 @@ struct ScreensView: View {
     }
 
     @ViewBuilder private func screenOptions(_ controller: RemoteDesktopController) -> some View {
+        if controller.canTransferControl {
+            Button(controller.sessionState.controlActive ? "Release Control" : "Take Control") {
+                controller.transferControl(take: !controller.sessionState.controlActive)
+            }
+            .disabled(controller.controlTransferPending)
+            .accessibilityIdentifier("screens.control")
+            .smokeTarget("screens.control")
+            .help(
+                controller.controlTransferError.isEmpty
+                    ? "One client controls the machine at a time" : controller.controlTransferError)
+        }
         Menu {
             ForEach(controller.capabilities.displays, id: \.id) { display in
                 Button(display.name) { controller.configure(displayID: display.id) }
@@ -167,6 +179,15 @@ struct ScreensView: View {
                     Text(controller.controlUnavailableReason)
                 }
                 Text("·")
+                if controller.sessionState.connectedClients > 1 {
+                    Text("\(controller.sessionState.connectedClients) viewers")
+                    if !controller.sessionState.controlActive, !controller.sessionState.controllerName.isEmpty {
+                        Text("\(controller.sessionState.controllerName) controls")
+                    }
+                }
+                if !controller.controlTransferError.isEmpty {
+                    Text(controller.controlTransferError).foregroundStyle(.orange)
+                }
                 Text(controller.mediaRouteLabel)
                 if controller.sessionState.width > 0 {
                     Text(
@@ -313,6 +334,7 @@ private struct ScreenShareTab: View {
             .buttonStyle(.plain)
             .accessibilityLabel("Screen, \(session.machineName)")
             .accessibilityIdentifier("screen.select.\(session.id)")
+            .smokeTarget("screen.select.\(session.id)")
 
             Button(action: close) {
                 Image(systemName: "xmark")

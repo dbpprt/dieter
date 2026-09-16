@@ -141,6 +141,8 @@ service DieterService {
   rpc SendRemoteDesktopSignal(RemoteDesktopSignal)
       returns (google.protobuf.Empty);
   rpc GetRemoteDesktopSession(RemoteDesktopRef) returns (RemoteDesktopSessionState);
+  rpc ListRemoteDesktopSessions(google.protobuf.Empty) returns (RemoteDesktopSessions);
+  rpc SetRemoteDesktopControl(RemoteDesktopControlRequest) returns (RemoteDesktopSessionState);
   rpc UpdateRemoteDesktopSession(UpdateRemoteDesktopSessionRequest) returns (RemoteDesktopSessionState);
   rpc CloseRemoteDesktop(RemoteDesktopRef)
       returns (google.protobuf.Empty);
@@ -1663,6 +1665,9 @@ message RemoteDesktopCapabilities {
   string encoder = 21;
   string daemon_executable = 22;
   string capture_executable = 23;
+  uint32 max_clients = 24;
+  uint32 connected_clients = 25;
+  repeated uint32 supported_input_protocol_versions = 26;
 }
 
 message ProbeRemoteDesktopPermissionsRequest {
@@ -1731,6 +1736,30 @@ message StartRemoteDesktopRequest {
   int32 max_bitrate_kbps = 10;
   RemoteDesktopQuality quality = 11;
   bool embedded_cursor = 12;
+  // Zero selects legacy v2. V3 adds revocable, machine-wide input ownership.
+  uint32 input_protocol_version = 13;
+  string client_name = 14;
+}
+
+message RemoteDesktopSessions {
+  repeated RemoteDesktopSessionInfo sessions = 1;
+  uint32 max_clients = 2;
+  uint32 capture_streams = 3;
+  uint32 encoders = 4;
+}
+
+message RemoteDesktopSessionInfo {
+  string session_id = 1;
+  string client_name = 2;
+  string display_id = 3;
+  bool control_allowed = 4;
+  bool control_active = 5;
+  uint32 input_protocol_version = 6;
+}
+
+message RemoteDesktopControlRequest {
+  string session_id = 1;
+  bool take_control = 2;
 }
 
 // Configuration is a ceiling; the adaptive controller reports the applied values.
@@ -1831,6 +1860,8 @@ message RemoteDesktopInput {
   uint64 display_generation = 9;
   uint64 event_ordinal = 10;
   uint64 state_barrier = 11;
+  // V3 input is accepted only for the current machine-wide control grant.
+  uint64 control_generation = 13;
 }
 
 message RemoteDesktopSessionState {
@@ -1865,6 +1896,10 @@ message RemoteDesktopSessionState {
   double jitter_buffer_ms = 27;
   double render_ms = 28;
   uint32 pacing_bitrate_kbps = 29;
+  bool control_active = 30;
+  uint64 control_generation = 31;
+  string controller_name = 32;
+  uint32 connected_clients = 33;
 }
 
 // Encrypted on the authenticated session DataChannel; never persisted.

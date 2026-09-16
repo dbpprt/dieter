@@ -32,6 +32,7 @@ const (
 // raw-frame replacement and encoder reconfiguration. ReceivedAt is Go monotonic.
 type FrameMetadata struct {
 	ID, Generation           uint64
+	StreamID                 uint64
 	PTS                      time.Duration
 	EncodeTime, CaptureDelay time.Duration
 	Width, Height            int
@@ -78,6 +79,8 @@ type nativeInputPayload struct {
 }
 
 type nativeCommand struct {
+	StreamID      uint64               `json:"stream_id,omitempty"`
+	Profile       string               `json:"profile,omitempty"`
 	FrameID       uint64               `json:"frame_id,omitempty"`
 	Version       int                  `json:"version"`
 	ID            uint64               `json:"id"`
@@ -87,16 +90,19 @@ type nativeCommand struct {
 }
 
 type SourceEvent struct {
-	Cursor *dieterv1.RemoteDesktopCursor
-	State  *dieterv1.RemoteDesktopSessionState
+	StreamID uint64
+	Err      error
+	Cursor   *dieterv1.RemoteDesktopCursor
+	State    *dieterv1.RemoteDesktopSessionState
 }
 
 type nativeEvent struct {
-	Version int                                 `json:"version"`
-	Ack     uint64                              `json:"ack"`
-	Error   string                              `json:"error"`
-	Cursor  *dieterv1.RemoteDesktopCursor       `json:"cursor"`
-	State   *dieterv1.RemoteDesktopSessionState `json:"state"`
+	StreamID uint64                              `json:"stream_id"`
+	Version  int                                 `json:"version"`
+	Ack      uint64                              `json:"ack"`
+	Error    string                              `json:"error"`
+	Cursor   *dieterv1.RemoteDesktopCursor       `json:"cursor"`
+	State    *dieterv1.RemoteDesktopSessionState `json:"state"`
 }
 
 type nativeWrite struct {
@@ -109,6 +115,8 @@ type nativeHelperSource struct {
 	fps, bitrateKbps, maxWidth, maxHeight   int
 	logger                                  *slog.Logger
 	synthetic, embeddedCursor, inputAllowed bool
+	multiplex                               bool
+	ready                                   chan struct{}
 
 	mu            sync.Mutex
 	writes        chan nativeWrite
@@ -137,7 +145,11 @@ func (s *nativeHelperSource) SetEventHandler(f func(SourceEvent)) {
 }
 
 func (s *nativeHelperSource) send(ctx context.Context, command nativeCommand, acknowledge bool) error {
-	ctx, cancel := context.WithTimeout(ctx, nativeCommandTimeout)
+	timeout := nativeCommandTimeout
+	if command.Kind == "create" || command.Kind == "remove" {
+		timeout = nativeStartupTimeout
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	command.Version, command.ID = 2, s.sequence.Add(1)
 	job := nativeWrite{command: command, done: make(chan error, 1)}
@@ -260,6 +272,9 @@ func (s *nativeHelperSource) Stream(ctx context.Context, emit func(media.Sample)
 	config := s.currentConfigurationLocked()
 	s.mu.Unlock()
 	args := []string{"--frame-credits", "true", "--display-id", config.DisplayID, "--fps", strconv.Itoa(config.FPS), "--bitrate-kbps", strconv.Itoa(config.BitrateKbps), "--max-width", strconv.Itoa(config.MaxWidth), "--max-height", strconv.Itoa(config.MaxHeight), "--event-fd", "3", "--profile", s.profile, "--embedded-cursor", strconv.FormatBool(config.EmbeddedCursor), "--allow-input", strconv.FormatBool(s.inputAllowed)}
+	if s.multiplex {
+		args = append(args, "--multiplex", "true")
+	}
 	if s.synthetic {
 		args = append(args, "--synthetic", "true")
 	}
@@ -293,6 +308,9 @@ func (s *nativeHelperSource) Stream(ctx context.Context, emit func(media.Sample)
 	s.stopped = make(chan struct{})
 	s.pending = make(map[uint64]chan error)
 	writes, stopped := s.writes, s.stopped
+	if s.ready != nil {
+		close(s.ready)
+	}
 	s.mu.Unlock()
 	wait := make(chan error, 1)
 	go func() { wait <- command.Wait() }()
@@ -361,8 +379,12 @@ func (s *nativeHelperSource) Stream(ctx context.Context, emit func(media.Sample)
 				default:
 				}
 			}
-			if handler != nil && (event.State != nil || event.Cursor != nil) {
-				handler(SourceEvent{Cursor: event.Cursor, State: event.State})
+			if handler != nil && (event.State != nil || event.Cursor != nil || (event.Ack == 0 && event.Error != "")) {
+				value := SourceEvent{Cursor: event.Cursor, State: event.State, StreamID: event.StreamID}
+				if event.Ack == 0 && event.Error != "" {
+					value.Err = errors.New(event.Error)
+				}
+				handler(value)
 			}
 		}
 		cancel()
@@ -389,13 +411,23 @@ func (s *nativeHelperSource) Stream(ctx context.Context, emit func(media.Sample)
 	if _, err = io.ReadFull(stdout, magic); err != nil {
 		return nativeCaptureFailure(err, stderr.String())
 	}
-	if string(magic) != nativeCaptureMagic {
+	expectedMagic := nativeCaptureMagic
+	if s.multiplex {
+		expectedMagic = "DTH3"
+	}
+	if string(magic) != expectedMagic {
 		return fmt.Errorf("native helper protocol mismatch: %q", magic)
 	}
 	// Return the single encoder credit only after the whole access unit has
 	// passed transport pacing. The helper keeps the latest raw surface, so no
 	// encoded reference frame is replaced and congestion cannot trigger IDR storms.
 	for {
+		var streamID uint64
+		if s.multiplex {
+			if err = binary.Read(stdout, binary.BigEndian, &streamID); err != nil {
+				return nativeCaptureFailure(err, stderr.String())
+			}
+		}
 		sample, _, _, readErr := readNativeCaptureSample(stdout, s.fps)
 		if readErr != nil {
 			if ctx.Err() != nil {
@@ -404,8 +436,16 @@ func (s *nativeHelperSource) Stream(ctx context.Context, emit func(media.Sample)
 			return nativeCaptureFailure(readErr, stderr.String())
 		}
 		first.Stop()
+		if s.multiplex {
+			meta := sample.Metadata.(FrameMetadata)
+			meta.StreamID = streamID
+			sample.Metadata = meta
+		}
 		if err = emit(sample); err != nil {
 			return err
+		}
+		if s.multiplex {
+			continue
 		}
 		metadata := sample.Metadata.(FrameMetadata)
 		if err = s.send(processCtx, nativeCommand{Kind: "frame_consumed", FrameID: metadata.ID}, true); err != nil {

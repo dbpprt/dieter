@@ -1,8 +1,8 @@
 import AppKit
-import CryptoKit
-import CoreMedia
 import CoreGraphics
+import CoreMedia
 import CoreVideo
+import CryptoKit
 import Foundation
 import ScreenCaptureKit
 import VideoToolbox
@@ -22,6 +22,8 @@ struct CaptureOptions {
     var allowInput = false
     var synthetic = false
     var frameCredits = false
+    var multiplex = false
+    var streamID: UInt64 = 0
 
     static func parse() throws -> CaptureOptions {
         var value = CaptureOptions()
@@ -42,6 +44,7 @@ struct CaptureOptions {
             case "--allow-input": value.allowInput = raw == "true"
             case "--synthetic": value.synthetic = raw == "true"
             case "--frame-credits": value.frameCredits = raw == "true"
+            case "--multiplex": value.multiplex = raw == "true"
             default: throw CaptureError.invalidArgument(name)
             }
         }
@@ -73,31 +76,43 @@ enum CaptureError: LocalizedError {
 }
 
 private final class FrameContext {
+    let runner: CaptureRunner
     let capturedAtNanoseconds: Int64
     let encodeStartedAt: UInt64
     let generation: UInt64
-    init(capturedAtNanoseconds: Int64, encodeStartedAt: UInt64, generation: UInt64) {
+    init(
+        runner: CaptureRunner, capturedAtNanoseconds: Int64, encodeStartedAt: UInt64, generation: UInt64
+    ) {
+        self.runner = runner
         self.generation = generation
         self.capturedAtNanoseconds = capturedAtNanoseconds
         self.encodeStartedAt = encodeStartedAt
     }
 }
 
-private struct CapturedFrame {
+struct CapturedFrame {
     let sampleBuffer: CMSampleBuffer
     let capturedAtNanoseconds: Int64
 }
 
-private final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate, @unchecked Sendable {
+final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate, @unchecked Sendable {
     private let options: CaptureOptions
     private let stateQueue = DispatchQueue(
         label: "com.dbpprt.dieter.capture.state", qos: .userInteractive)
     private let outputQueue = DispatchQueue(
         label: "com.dbpprt.dieter.capture.output", qos: .userInteractive)
     private let stopSemaphore = DispatchSemaphore(value: 0)
+    private let stoppedGroup = DispatchGroup()
     private let stopLock = NSLock()
 
     private var stream: SCStream?
+    private var sharedDisplay: CGDirectDisplayID?
+    private let mailboxLock = NSLock()
+    private var mailbox: CapturedFrame?
+    private var mailboxScheduled = false
+    private var transfer: VTPixelTransferSession?
+    private var pixelPool: CVPixelBufferPool?
+    private var lastSharedCapture: Int64 = 0
     private var encoder: VTCompressionSession?
     private var encoding = false
     // One encoded frame may be in the pipe/transport. Capture keeps replacing
@@ -125,6 +140,7 @@ private final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate, @
     private var timers: [DispatchSourceTimer] = []
     private let configurationGate = ConfigurationGate()
     private var signals: [DispatchSourceSignal] = []
+    private var actualEmbeddedCursor = false
     private var forceEmbeddedCursor = false  // stateQueue
     private var cursorFallbackPending = false
     private var cursorUnavailableSamples = 0
@@ -139,33 +155,51 @@ private final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate, @
 
     init(options: CaptureOptions) {
         self.options = options
+        stoppedGroup.enter()
         self.configuration = StreamConfiguration(
             displayId: options.displayID, maxWidth: options.maxWidth, maxHeight: options.maxHeight, fps: options.fps,
             bitrateKbps: options.bitrateKbps, embeddedCursor: options.embeddedCursor)
-        self.events = EventWriter(fd: options.eventFD)
+        self.events = EventWriter(fd: options.eventFD, streamID: options.streamID)
     }
 
     func start() async throws {
+        try await configurationGate.acquire()
+        do {
+            try await startCapture()
+            await configurationGate.release()
+        } catch {
+            await configurationGate.release()
+            throw error
+        }
+    }
+
+    private func startCapture() async throws {
         signal(SIGPIPE, SIG_IGN)
         _ = fcntl(STDOUT_FILENO, F_SETFL, fcntl(STDOUT_FILENO, F_GETFL) | O_NONBLOCK)
-        guard writeMedia(streamMagic) else { throw CaptureError.invalidFrame }
+        if !options.multiplex {
+            guard MediaWriter.shared.write(streamMagic) else { throw CaptureError.invalidFrame }
+        }
         try await startStream()
         startControlReader()
-        let watchdog = DispatchSource.makeTimerSource(queue: inputQueue)
-        watchdog.schedule(deadline: .now() + .milliseconds(500), repeating: .milliseconds(500))
-        watchdog.setEventHandler { [weak self] in
-            guard let self else { return }
-            if DispatchTime.now().uptimeNanoseconds - self.lastHeartbeat > 3_000_000_000 {
-                self.inputInjector?.releaseAll()
-                self.stop()
+        if !options.multiplex {
+            let watchdog = DispatchSource.makeTimerSource(queue: inputQueue)
+            watchdog.schedule(deadline: .now() + .milliseconds(500), repeating: .milliseconds(500))
+            watchdog.setEventHandler { [weak self] in
+                guard let self else { return }
+                if DispatchTime.now().uptimeNanoseconds - self.lastHeartbeat > 3_000_000_000 {
+                    self.inputInjector?.releaseAll()
+                    self.stop()
+                }
             }
+            watchdog.resume()
+            registerTimer(watchdog)
         }
-        watchdog.resume(); registerTimer(watchdog)
         let cursor = DispatchSource.makeTimerSource(queue: .main)
         cursor.schedule(deadline: .now(), repeating: .milliseconds(33))
         cursor.setEventHandler { [weak self] in self?.sendCursor() }
-        cursor.resume(); registerTimer(cursor)
-        for value in [SIGTERM, SIGINT] {
+        cursor.resume()
+        registerTimer(cursor)
+        for value in options.multiplex ? [] : [SIGTERM, SIGINT] {
             signal(value, SIG_IGN)
             let source = DispatchSource.makeSignalSource(signal: value, queue: .global())
             source.setEventHandler { [weak self] in self?.stop() }
@@ -215,8 +249,39 @@ private final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate, @
             try createEncoder(width: size.width, height: size.height)
         }
         inputQueue.sync {
-            if inputInjector == nil { inputInjector = InputInjector(bounds: CGDisplayBounds(display.displayID)) }
-            inputInjector?.update(bounds: CGDisplayBounds(display.displayID), generation: generation)
+            if inputInjector == nil {
+                inputInjector = InputInjector(bounds: CGDisplayBounds(display.displayID))
+            }
+            if let inputInjector {
+                SharedInputAuthority.shared.update(
+                    inputInjector, bounds: CGDisplayBounds(display.displayID), generation: generation)
+            }
+        }
+        if options.multiplex {
+            sharedDisplay = display.displayID
+            try await SharedDisplayPool.shared.add(
+                display: display, id: options.streamID,
+                width: size.width, height: size.height, fps: config.fps, cursor: config.embeddedCursor,
+                receive: { [weak self] frame in self?.receiveShared(frame) },
+                cursorChanged: { [weak self] embedded in
+                    guard let self else { return }
+                    self.stateQueue.async {
+                        self.actualEmbeddedCursor = embedded
+                        DispatchQueue.global().async { self.emitState() }
+                    }
+                },
+                failed: { [weak self] error in
+                    guard let self else { return }
+                    _ = self.events.send(NativeEvent(error: error.localizedDescription))
+                    self.stop()
+                })
+            if isStopped {
+                await SharedDisplayPool.shared.remove(display: display.displayID, id: options.streamID)
+                throw CaptureError.invalidArgument("capture stopped")
+            }
+            stateQueue.sync { paused = false }
+            emitState()
+            return
         }
         let native = streamConfiguration(config, size.width, size.height)
         let stream = SCStream(
@@ -275,6 +340,10 @@ private final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate, @
                 paused = true; pendingFrame = nil; lastFrame = nil; return stream
             }
             try await oldStream?.stopCapture()
+            if let sharedDisplay {
+                await SharedDisplayPool.shared.remove(display: sharedDisplay, id: options.streamID)
+                self.sharedDisplay = nil
+            }
             stateQueue.sync {
                 if let encoder {
                     VTCompressionSessionCompleteFrames(encoder, untilPresentationTimeStamp: .invalid);
@@ -290,6 +359,11 @@ private final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate, @
             let values = stateQueue.sync { (stream, outputWidth, outputHeight) }
             if let stream = values.0, old.fps != config.fps || old.embeddedCursor != config.embeddedCursor {
                 try await stream.updateConfiguration(streamConfiguration(config, values.1, values.2))
+            }
+            if let sharedDisplay {
+                try await SharedDisplayPool.shared.update(
+                    display: sharedDisplay, id: options.streamID,
+                    width: values.1, height: values.2, fps: config.fps, cursor: config.embeddedCursor)
             }
             try stateQueue.sync {
                 configuration = config
@@ -316,12 +390,20 @@ private final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate, @
                 displayId: options.synthetic ? "synthetic" : String(selectedDisplayID), displayGeneration: generation,
                 encoder: options.profile == "high"
                     ? "VideoToolbox H.264 High / low latency" : "VideoToolbox H.264 Baseline / low latency",
-                embeddedCursor: configuration.embeddedCursor)
+                embeddedCursor: options.multiplex && !options.synthetic
+                    ? actualEmbeddedCursor : configuration.embeddedCursor)
         }
         if !events.send(NativeEvent(state: state)) { stop() }
     }
 
     func wait() { stopSemaphore.wait() }
+
+    func stopAndWait() async {
+        stop()
+        await withCheckedContinuation { continuation in
+            stoppedGroup.notify(queue: .global()) { continuation.resume() }
+        }
+    }
 
     private var isStopped: Bool {
         stopLock.lock(); defer { stopLock.unlock() }; return stopped
@@ -344,21 +426,35 @@ private final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate, @
         timers.removeAll()
         stopLock.unlock()
         for timer in stoppedTimers { timer.cancel() }
-        inputQueue.async { [weak self] in
-            guard let self else { return }
-            self.inputInjector?.releaseAll()
-            self.stateQueue.async { [weak self] in
-                guard let self else { return }
-                if let encoder = self.encoder {
-                    VTCompressionSessionInvalidate(encoder)
-                    self.encoder = nil
+        if options.multiplex { _ = events.send(NativeEvent(error: "native capture rendition stopped")) }
+        // Teardown owns the runner until callbacks and shared capture detach finish.
+        inputQueue.async { [self] in
+            if self.options.multiplex {
+                SharedInputAuthority.shared.remove(self.inputInjector)
+            } else {
+                self.inputInjector?.releaseAll()
+            }
+            Task {
+                await self.configurationGate.shutdown()
+                let stream = self.stateQueue.sync { () -> SCStream? in
+                    if let encoder = self.encoder {
+                        VTCompressionSessionCompleteFrames(encoder, untilPresentationTimeStamp: .invalid)
+                        VTCompressionSessionInvalidate(encoder)
+                        self.encoder = nil
+                    }
+                    if let transfer = self.transfer { VTPixelTransferSessionInvalidate(transfer) }
+                    self.transfer = nil
+                    self.pixelPool = nil
+                    let stream = self.stream
+                    self.stream = nil
+                    return stream
                 }
-                let stream = self.stream
-                self.stream = nil
-                Task {
-                    try? await stream?.stopCapture()
-                    self.stopSemaphore.signal()
+                try? await stream?.stopCapture()
+                if let sharedDisplay = self.sharedDisplay {
+                    await SharedDisplayPool.shared.remove(display: sharedDisplay, id: self.options.streamID)
                 }
+                self.stopSemaphore.signal()
+                self.stoppedGroup.leave()
             }
         }
     }
@@ -389,6 +485,31 @@ private final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate, @
             sampleBuffer: sampleBuffer,
             capturedAtNanoseconds: Int64(CMSampleBufferGetPresentationTimeStamp(sampleBuffer).seconds * 1_000_000_000))
         offer(frame)
+    }
+
+    // Coalesce before dispatching: a blocked encoder retains at most one raw surface.
+    private func receiveShared(_ frame: CapturedFrame) {
+        mailboxLock.lock()
+        mailbox = frame
+        if mailboxScheduled {
+            mailboxLock.unlock()
+            return
+        }
+        mailboxScheduled = true
+        mailboxLock.unlock()
+        stateQueue.async { [weak self] in
+            guard let self else { return }
+            self.mailboxLock.lock()
+            let next = self.mailbox
+            self.mailbox = nil
+            self.mailboxScheduled = false
+            self.mailboxLock.unlock()
+            guard !self.isStopped, !self.paused, let next else { return }
+            let interval = Int64(1_000_000_000 / max(1, self.configuration.fps))
+            guard next.capturedAtNanoseconds - self.lastSharedCapture >= interval * 9 / 10 else { return }
+            self.lastSharedCapture = next.capturedAtNanoseconds
+            self.offer(next)
+        }
     }
 
     private func offer(_ frame: CapturedFrame) {
@@ -441,19 +562,35 @@ private final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate, @
             encoderSpecification: specification,
             imageBufferAttributes: attributes,
             compressedDataAllocator: nil,
-            outputCallback: { refcon, sourceFrameRefcon, status, flags, sampleBuffer in
-                guard let refcon else { return }
-                let runner = Unmanaged<CaptureRunner>.fromOpaque(refcon).takeUnretainedValue()
-                let context = sourceFrameRefcon.map { Unmanaged<FrameContext>.fromOpaque($0).takeRetainedValue() }
+            outputCallback: { _, sourceFrameRefcon, status, flags, sampleBuffer in
+                guard let sourceFrameRefcon else { return }
+                // Each in-flight frame owns its runner. A session can disappear
+                // while VideoToolbox is finishing on its private callback queue.
+                let context = Unmanaged<FrameContext>.fromOpaque(sourceFrameRefcon).takeRetainedValue()
+                let runner = context.runner
                 runner.stateQueue.async {
                     runner.encoded(context: context, status: status, flags: flags, sampleBuffer: sampleBuffer)
                 }
             },
-            refcon: Unmanaged.passUnretained(self).toOpaque(),
+            refcon: nil,
             compressionSessionOut: &session
         )
         guard status == noErr, let session else { throw CaptureError.encoder(status) }
         encoder = session
+        if let transfer { VTPixelTransferSessionInvalidate(transfer) }
+        transfer = nil
+        pixelPool = nil
+        let transferStatus = VTPixelTransferSessionCreate(
+            allocator: nil, pixelTransferSessionOut: &transfer)
+        guard transferStatus == noErr else { throw CaptureError.encoder(transferStatus) }
+        let poolStatus = CVPixelBufferPoolCreate(
+            nil, nil,
+            [
+                kCVPixelBufferWidthKey as String: width, kCVPixelBufferHeightKey as String: height,
+                kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange,
+                kCVPixelBufferIOSurfacePropertiesKey as String: [:],
+            ] as CFDictionary, &pixelPool)
+        guard poolStatus == kCVReturnSuccess else { throw CaptureError.encoder(poolStatus) }
 
         try set(session, kVTCompressionPropertyKey_RealTime, kCFBooleanTrue)
         try set(session, kVTCompressionPropertyKey_AllowFrameReordering, kCFBooleanFalse)
@@ -483,9 +620,27 @@ private final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate, @
         guard !paused, let encoder, let imageBuffer = CMSampleBufferGetImageBuffer(frame.sampleBuffer) else {
             return
         }
+        var outputBuffer = imageBuffer
+        if CVPixelBufferGetWidth(imageBuffer) != outputWidth
+            || CVPixelBufferGetHeight(imageBuffer) != outputHeight
+        {
+            var scaled: CVPixelBuffer?
+            guard let pixelPool, let transfer,
+                CVPixelBufferPoolCreatePixelBufferWithAuxAttributes(
+                    nil, pixelPool,
+                    [kCVPixelBufferPoolAllocationThresholdKey as String: 3] as CFDictionary, &scaled)
+                    == kCVReturnSuccess,
+                let scaled,
+                VTPixelTransferSessionTransferImage(transfer, from: imageBuffer, to: scaled) == noErr
+            else {
+                dropped += 1
+                return
+            }
+            outputBuffer = scaled
+        }
         encoding = true
         let context = FrameContext(
-            capturedAtNanoseconds: frame.capturedAtNanoseconds,
+            runner: self, capturedAtNanoseconds: frame.capturedAtNanoseconds,
             encodeStartedAt: DispatchTime.now().uptimeNanoseconds, generation: generation
         )
         var properties: CFDictionary?
@@ -495,7 +650,7 @@ private final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate, @
         }
         let status = VTCompressionSessionEncodeFrame(
             encoder,
-            imageBuffer: imageBuffer,
+            imageBuffer: outputBuffer,
             presentationTimeStamp: CMTime(value: frame.capturedAtNanoseconds, timescale: 1_000_000_000),
             duration: CMTime(value: 1, timescale: CMTimeScale(configuration.fps)),
             frameProperties: properties,
@@ -515,7 +670,7 @@ private final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate, @
         flags: VTEncodeInfoFlags,
         sampleBuffer: CMSampleBuffer?
     ) {
-        guard let context, context.generation == generation else { return }
+        guard !isStopped, let context, context.generation == generation else { return }
         defer { encodingCompleted() }
         guard status == noErr, !flags.contains(.frameDropped), let sampleBuffer else {
             if status != noErr { writeDiagnostic("encode callback failed: \(status)") }
@@ -618,6 +773,7 @@ private final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate, @
     ) {
         frameID += 1
         var header = Data()
+        if options.multiplex { header.appendBigEndian(options.streamID) }
         header.appendBigEndian(UInt32(payload.count))
         header.appendBigEndian(UInt32(keyFrame ? 1 : 0))
         header.appendBigEndian(frameID)
@@ -633,29 +789,11 @@ private final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate, @
         outputBusy = true
         let data = header + payload
         outputQueue.async { [self] in
-            let success = writeMedia(data)
+            let success = MediaWriter.shared.write(data)
             stateQueue.async { [self] in
                 outputBusy = false
                 if success { admitPendingFrame() } else { stop() }
             }
-        }
-    }
-
-    private func writeMedia(_ data: Data) -> Bool {
-        data.withUnsafeBytes { bytes in
-            var offset = 0
-            let deadline = DispatchTime.now().uptimeNanoseconds + 750_000_000
-            while offset < bytes.count {
-                let count = Darwin.write(
-                    STDOUT_FILENO, bytes.baseAddress!.advanced(by: offset), bytes.count - offset)
-                if count > 0 { offset += count; continue }
-                guard errno == EINTR || errno == EAGAIN, DispatchTime.now().uptimeNanoseconds < deadline else {
-                    return false
-                }
-                var descriptor = pollfd(fd: STDOUT_FILENO, events: Int16(POLLOUT), revents: 0)
-                _ = poll(&descriptor, 1, 10)
-            }
-            return true
         }
     }
 
@@ -667,6 +805,7 @@ private final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate, @
             timer.setEventHandler { [weak self] in self?.syntheticFrame() }
             timer.resume(); registerTimer(timer)
         }
+        if options.multiplex { return }
         DispatchQueue.global(qos: .userInteractive).async { [weak self] in
             guard let self else { return }
             let decoder = JSONDecoder(); decoder.keyDecodingStrategy = .convertFromSnakeCase
@@ -687,29 +826,7 @@ private final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate, @
                     Task {
                         var failure: String?
                         do {
-                            switch command.kind {
-                            case "heartbeat":
-                                self.inputQueue.sync { self.lastHeartbeat = DispatchTime.now().uptimeNanoseconds }
-                            case "input":
-                                guard let input = command.input, self.options.allowInput || input.kind == "release_all"
-                                else { throw CaptureError.invalidArgument("control not granted") }
-                                try self.inputQueue.sync { try self.inputInjector?.handle(input) }
-                            case "configure":
-                                guard let config = command.configuration else {
-                                    throw CaptureError.invalidArgument("configuration")
-                                }
-                                try await self.reconfigure(config)
-                            case "frame_consumed":
-                                self.stateQueue.sync {
-                                    if let frameID = command.frameId, self.outstandingFrame == frameID {
-                                        self.outstandingFrame = nil
-                                        self.admitPendingFrame()
-                                    }
-                                }
-                            case "refresh": self.stateQueue.sync { self.refresh() }
-                            case "stop": self.inputQueue.sync { self.inputInjector?.releaseAll() }; self.stop()
-                            default: throw CaptureError.invalidArgument("command kind")
-                            }
+                            try await self.handle(command)
                         } catch { failure = error.localizedDescription }
                         if !self.events.send(NativeEvent(ack: command.id, error: failure)) { self.stop() }
                         done.signal()
@@ -720,6 +837,42 @@ private final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate, @
             }
             self.inputQueue.sync { self.inputInjector?.releaseAll() }
             self.stop()
+        }
+    }
+
+    func handle(_ command: NativeCommand) async throws {
+        switch command.kind {
+        case "heartbeat":
+            self.inputQueue.sync { self.lastHeartbeat = DispatchTime.now().uptimeNanoseconds }
+        case "input":
+            guard let input = command.input, self.options.allowInput || input.kind == "release_all"
+            else { throw CaptureError.invalidArgument("control not granted") }
+            try self.inputQueue.sync {
+                if let injector = self.inputInjector {
+                    if self.options.multiplex {
+                        try SharedInputAuthority.shared.handle(input, injector: injector)
+                    } else {
+                        try injector.handle(input)
+                    }
+                }
+            }
+        case "configure":
+            guard let config = command.configuration else {
+                throw CaptureError.invalidArgument("configuration")
+            }
+            try await self.reconfigure(config)
+        case "frame_consumed":
+            self.stateQueue.sync {
+                if let frameID = command.frameId, self.outstandingFrame == frameID {
+                    self.outstandingFrame = nil
+                    self.admitPendingFrame()
+                }
+            }
+        case "refresh": self.stateQueue.sync { self.refresh() }
+        case "stop":
+            self.inputQueue.sync { self.inputInjector?.releaseAll() }
+            self.stop()
+        default: throw CaptureError.invalidArgument("command kind")
         }
     }
 
@@ -801,7 +954,13 @@ private final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate, @
     }
 
     private func sendCursor() {
-        let config = stateQueue.sync { (configuration.embeddedCursor, generation, paused) }
+        let config = stateQueue.sync {
+            (
+                options.multiplex && !options.synthetic
+                    ? actualEmbeddedCursor : configuration.embeddedCursor,
+                generation, paused
+            )
+        }
         guard !config.0, !config.2 else { return }
         guard let cursor = NSCursor.currentSystem, let png = cursorPNG(cursor) else {
             cursorUnavailableSamples += 1
@@ -911,7 +1070,13 @@ func hardwareEncoderAvailable() -> Bool {
                     }
                     return
                 }
-                let runner = CaptureRunner(options: try CaptureOptions.parse())
+                let options = try CaptureOptions.parse()
+                if options.multiplex {
+                    let service = NativeCaptureService(options: options)
+                    try await service.run()
+                    return
+                }
+                let runner = CaptureRunner(options: options)
                 try await runner.start()
                 await Task.detached { runner.wait() }.value
             } catch {

@@ -95,7 +95,7 @@ func (s *Session) handleInput(label string, raw []byte) {
 		return
 	}
 	var input dieterv1.RemoteDesktopInput
-	if err := proto.Unmarshal(raw, &input); err != nil || validateInput(&input, s.inputEpoch) != nil {
+	if err := proto.Unmarshal(raw, &input); err != nil || (input.GetProtocolVersion() != s.protocol && s.protocol != 0) || validateInput(&input, s.inputEpoch) != nil {
 		return
 	}
 	var sequence *atomic.Uint64
@@ -181,6 +181,13 @@ func (s *Session) runInput() {
 }
 
 func (s *Session) deliverInput(sink InputSink, input *dieterv1.RemoteDesktopInput) {
+	if s.manager != nil {
+		s.manager.controlMu.Lock()
+		defer s.manager.controlMu.Unlock()
+		if s.manager.controller != s || (s.protocol >= 3 && input.GetControlGeneration() != s.manager.controlGeneration) {
+			return
+		}
+	}
 	s.inputMu.Lock()
 	defer s.inputMu.Unlock()
 	if s.inputStopped.Load() {
@@ -211,7 +218,7 @@ func (s *Session) deliverInput(sink InputSink, input *dieterv1.RemoteDesktopInpu
 }
 
 func validateInput(input *dieterv1.RemoteDesktopInput, epoch []byte) error {
-	if input == nil || input.GetProtocolVersion() != inputProtocolVersion || !bytes.Equal(input.GetInputEpoch(), epoch) || input.GetSequence() == 0 {
+	if input == nil || (input.GetProtocolVersion() != 2 && input.GetProtocolVersion() != 3) || !bytes.Equal(input.GetInputEpoch(), epoch) || input.GetSequence() == 0 {
 		return errors.New("invalid remote desktop input envelope")
 	}
 	coordinate := func(x, y int32) error {
@@ -252,6 +259,13 @@ func validateInput(input *dieterv1.RemoteDesktopInput, epoch []byte) error {
 }
 
 func (s *Session) releaseInput() {
+	if s.manager != nil {
+		s.manager.controlMu.Lock()
+		defer s.manager.controlMu.Unlock()
+		if s.manager.controller != s {
+			return
+		}
+	}
 	if !s.control {
 		return
 	}

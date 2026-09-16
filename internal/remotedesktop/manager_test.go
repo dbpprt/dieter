@@ -361,7 +361,7 @@ func TestManagerNegotiatesNativeH264Source(t *testing.T) {
 	}
 	defer subscription.Close()
 	manager.mu.Lock()
-	codec := manager.session.codec
+	codec := manager.sessions[subscription.SessionID].codec
 	manager.mu.Unlock()
 	if codec != VideoCodecH264 {
 		t.Fatalf("session codec=%q, want %q", codec, VideoCodecH264)
@@ -392,7 +392,7 @@ func TestManagerStopsCaptureWhenSignalingObserverDisconnects(t *testing.T) {
 		t.Fatal(err)
 	}
 	manager.mu.Lock()
-	session := manager.session
+	session := manager.sessions[subscription.SessionID]
 	manager.mu.Unlock()
 	session.startOnce.Do(func() { go session.streamSource(request) })
 	select {
@@ -427,7 +427,7 @@ func TestManagerStopsCaptureWhenWebRTCPeerDoesNotReconnect(t *testing.T) {
 	}
 	defer subscription.Close()
 	manager.mu.Lock()
-	session := manager.session
+	session := manager.sessions[subscription.SessionID]
 	manager.mu.Unlock()
 	session.startOnce.Do(func() { go session.streamSource(request) })
 	select {

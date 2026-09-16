@@ -62,7 +62,7 @@ enum RemoteDesktopSessionTrust {
         guard binding.clientNonce == clientNonce,
             binding.offerSha256 == offerHash,
             binding.helperDtlsFingerprint == fingerprint(in: answerSDP),
-            binding.inputProtocolVersion == 2,
+            [2, 3].contains(binding.inputProtocolVersion),
             binding.inputEpoch.count == 16,
             !sessionID.isEmpty
         else { throw Failure.invalidBinding }
@@ -105,7 +105,7 @@ enum RemoteDesktopSessionTrust {
             .replacingOccurrences(of: "=", with: "")
         return Data(
             [
-                "dieter-remote-desktop-v2", sessionID, nonce, fingerprint, expiresAt, encodedHash,
+                "dieter-remote-desktop-v\(inputProtocolVersion)", sessionID, nonce, fingerprint, expiresAt, encodedHash,
                 controlGranted ? "true" : "false", displayID, String(inputProtocolVersion),
                 inputEpoch.base64URLEncodedString(),
             ].joined(separator: "\n").utf8)
@@ -168,7 +168,7 @@ final class RemoteDesktopController {
     private var cursorCache: [String: NSCursor] = [:]
     private var hostChannel: RTCDataChannel?
     private var hostChannelDelegate: RemoteDesktopDataChannelDelegate?
-    private var feedbackSequence: UInt64 = 0
+    private let feedbackPump = RemoteDesktopFeedbackPump()
     private var eventOrdinal: UInt64 = 0
     private var previousStatistics: [String: Double] = [:]
     private var previousStatisticsTime = Date()
@@ -303,6 +303,7 @@ final class RemoteDesktopController {
         signalingTask?.cancel()
         leaseTask?.cancel()
         statisticsTask?.cancel()
+        feedbackPump.stop()
         viewportTask?.cancel(); viewportTask = nil
         configurationTask?.cancel(); configurationTask = nil
         configurationPending = false; refreshPending = false
@@ -327,7 +328,7 @@ final class RemoteDesktopController {
         pointerChannel?.close()
         stateChannel?.close()
         hostChannel?.close(); hostChannel = nil; hostChannelDelegate = nil
-        feedbackSequence = 0; eventOrdinal = 0; inputFocused = false
+        eventOrdinal = 0; inputFocused = false
         previousStatistics = [:]; cursorCache = [:]
         sessionState = .init(); remoteCursorState = .init(); remoteCursor = .arrow
         pointerChannel = nil
@@ -349,6 +350,7 @@ final class RemoteDesktopController {
         stateSequence = 0
         pendingPointer = nil
         controlActive = false
+        controlTransferPending = false; controlTransferError = ""
         routeLabel = ""
         if case .failed = phase {} else { phase = .idle }
     }
@@ -430,6 +432,8 @@ final class RemoteDesktopController {
 
         var request = Dieter_V1_StartRemoteDesktopRequest()
         request.clientNonce = UUID().uuidString.lowercased()
+        request.inputProtocolVersion = capabilities.supportedInputProtocolVersions.contains(3) ? 3 : 2
+        request.clientName = "Mac"
         request.rtcConfiguration = connection.rtcConfiguration
         request.displayID =
             capabilities.displays.first(where: \.primary)?.id ?? capabilities.displays.first?.id
@@ -562,7 +566,9 @@ final class RemoteDesktopController {
             offerSDP: request.offer.sdp, answerSDP: answerSDP,
             daemonCertificatePEM: connection.daemonCertificatePEM
         )
-        guard binding.controlGranted == request.control, binding.displayID == request.displayID else {
+        guard binding.controlGranted == request.control, binding.displayID == request.displayID,
+            binding.inputProtocolVersion == request.inputProtocolVersion
+        else {
             throw RemoteDesktopSessionTrust.Failure.invalidBinding
         }
         guard let peerConnection else { throw CancellationError() }
@@ -768,6 +774,7 @@ final class RemoteDesktopController {
         binding: Dieter_V1_RemoteDesktopSessionBinding, channel: RTCDataChannel
     ) {
         var input = Dieter_V1_RemoteDesktopInput()
+        input.controlGeneration = sessionState.controlGeneration
         input.protocolVersion = binding.inputProtocolVersion
         input.inputEpoch = binding.inputEpoch
         input.sequence = sequence
@@ -832,6 +839,11 @@ final class RemoteDesktopController {
             state.mediaGeneration = sessionState.mediaGeneration
             state.mediaTimestamp = sessionState.mediaTimestamp
         }
+        if state.controlGeneration < sessionState.controlGeneration {
+            state.controlGeneration = sessionState.controlGeneration
+            state.controlActive = sessionState.controlActive
+            state.controllerName = sessionState.controllerName
+        }
         sessionState = state
         if state.mediaGeneration > 0, state.mediaGeneration == state.displayGeneration {
             frameObserver.expect(
@@ -842,9 +854,33 @@ final class RemoteDesktopController {
 
     fileprivate func updateControlReadiness() {
         controlActive =
-            binding?.controlGranted == true && pointerChannel?.readyState == .open
+            binding?.controlGranted == true && (binding?.inputProtocolVersion != 3 || sessionState.controlActive)
+            && pointerChannel?.readyState == .open
             && stateChannel?.readyState == .open && hostChannel?.readyState == .open
             && sessionState.displayGeneration > 0 && presentedGeneration == sessionState.displayGeneration
+        feedbackPump.input(active: controlActive && inputFocused && NSApp.isActive)
+    }
+
+    var canTransferControl: Bool { binding?.inputProtocolVersion == 3 && binding?.controlGranted == true }
+    var controlTransferPending = false
+    var controlTransferError = ""
+
+    func transferControl(take: Bool) {
+        guard canTransferControl, !controlTransferPending, let connection else { return }
+        let token = generation
+        controlTransferPending = true; controlTransferError = ""
+        releaseAllInput()
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let state = try await connection.rpc.setRemoteDesktopControl(sessionID: self.sessionID, take: take)
+                guard self.owns(token) else { return }
+                self.applySessionState(state)
+            } catch {
+                if self.owns(token) { self.controlTransferError = error.localizedDescription }
+            }
+            if self.owns(token) { self.controlTransferPending = false }
+        }
     }
 
     func setViewport(_ size: CGSize, scale: CGFloat) {
@@ -905,6 +941,9 @@ final class RemoteDesktopController {
     private func startStatistics() {
         statisticsTask?.cancel()
         previousStatistics = [:]; previousStatisticsTime = Date()
+        var initial = Dieter_V1_RemoteDesktopReceiverFeedback()
+        initial.protocolVersion = 2; initial.inputEpoch = binding?.inputEpoch ?? Data()
+        feedbackPump.start(channel: hostChannel, initial: initial)
         let token = generation
         statisticsTask = Task { [weak self] in
             var emptyIntervals = 0
@@ -940,7 +979,6 @@ final class RemoteDesktopController {
                 let frames = delta("framesDecoded")
                 var feedback = Dieter_V1_RemoteDesktopReceiverFeedback()
                 feedback.protocolVersion = 2; feedback.inputEpoch = self.binding?.inputEpoch ?? Data()
-                self.feedbackSequence &+= 1; feedback.sequence = self.feedbackSequence
                 feedback.framesPerSecond = delta("framesPresented") / elapsed
                 feedback.decodeMs = frames > 0 ? delta("totalDecodeTime") * 1000 / frames : 0
                 let emitted = delta("jitterBufferEmittedCount"), presented = delta("timedPresentations")
@@ -949,13 +987,10 @@ final class RemoteDesktopController {
                 feedback.jitterMs = ((inbound["jitter"] as? NSNumber)?.doubleValue ?? 0) * 1000
                 feedback.rttMs = ((candidate["currentRoundTripTime"] as? NSNumber)?.doubleValue ?? 0) * 1000
                 feedback.lossFraction = delta("packetsLost") / max(1, delta("packetsLost") + delta("packetsReceived"))
-                feedback.inputActive = self.inputFocused && NSApp.isActive
+                feedback.inputActive = self.controlActive && self.inputFocused && NSApp.isActive
                 feedback.renderedFrames = UInt32(clamping: self.renderer.framesPresented)
-                if let channel = self.hostChannel, channel.readyState == .open, channel.bufferedAmount < 16_384,
-                    let raw = try? feedback.serializedData()
-                {
-                    _ = channel.sendData(RTCDataBuffer(data: raw, isBinary: true))
-                }
+                self.feedbackPump.update(feedback)
+                self.feedbackPump.input(active: self.controlActive && self.inputFocused && NSApp.isActive)
                 if let localID = candidate["localCandidateId"] as? String,
                     let remoteID = candidate["remoteCandidateId"] as? String
                 {

@@ -128,7 +128,11 @@ func run(helper, kind, ready string, authenticate bool) error {
 		}
 		// Test-only fault injection on the disposable, authenticated fixture.
 		if authenticate && r.Method == http.MethodPost && r.URL.Path == "/test/expire-screen" {
-			manager.CloseActive("session lease expired")
+			if id := r.URL.Query().Get("session"); id != "" {
+				_ = manager.Close(id, "session lease expired")
+			} else {
+				manager.CloseActive("session lease expired")
+			}
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}

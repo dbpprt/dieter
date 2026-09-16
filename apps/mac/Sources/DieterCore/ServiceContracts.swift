@@ -91,6 +91,7 @@ package protocol ScreenSignalingRPC: AnyObject, Sendable {
     func remoteDesktopSession(sessionID: String) async throws -> Dieter_V1_RemoteDesktopSessionState
     func updateRemoteDesktopSession(_ request: Dieter_V1_UpdateRemoteDesktopSessionRequest) async throws
         -> Dieter_V1_RemoteDesktopSessionState
+    func setRemoteDesktopControl(sessionID: String, take: Bool) async throws -> Dieter_V1_RemoteDesktopSessionState
     func closeRemoteDesktop(sessionID: String) async throws
     func shutdown()
 }

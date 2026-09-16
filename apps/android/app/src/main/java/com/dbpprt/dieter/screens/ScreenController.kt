@@ -22,6 +22,7 @@ data class ScreenState(
     val capabilities: RemoteDesktopCapabilities = RemoteDesktopCapabilities.getDefaultInstance(),
     val session: RemoteDesktopSessionState = RemoteDesktopSessionState.getDefaultInstance(),
     val cursor: RemoteDesktopCursor = RemoteDesktopCursor.getDefaultInstance(),
+    val canTransferControl: Boolean = false, val controlTransferPending: Boolean = false, val controlError: String = "",
     val signalingRoute: String = "", val mediaRoute: String = "", val receivedFps: Double = 0.0,
 )
 
@@ -64,7 +65,8 @@ class ScreenController(context: Context) : AutoCloseable {
     private var pointerSequence = 0L
     private var stateSequence = 0L
     private var ordinal = 0L
-    private var feedbackSequence = 0L
+    private val feedbackPump = ScreenFeedbackPump()
+    private var leaseRenewal: Job? = null
     private var presentedGeneration = 0L
     private var lastPresentedTimestamp: Long? = null
     private val framesPresented = AtomicLong()
@@ -137,6 +139,7 @@ class ScreenController(context: Context) : AutoCloseable {
                     ?: caps.displaysList.firstOrNull { it.primary } ?: caps.displaysList.first()
                 val start = StartRemoteDesktopRequest.newBuilder().setClientNonce(UUID.randomUUID().toString())
                     .setRtcConfiguration(route.rtc).setDisplayId(display.id)
+                    .setInputProtocolVersion(if (caps.supportedInputProtocolVersionsList.contains(3)) 3 else 2).setClientName("Android")
                     .setControl(settings.controlEnabled && caps.controlSupported && caps.controlPermission == "granted")
                     .setMaxWidth(1920).setMaxHeight(1080).setMaxFps(60).setMaxBitrateKbps(12000).setQuality(configuration.quality)
                     .setOffer(RemoteDesktopSessionDescription.newBuilder().setType("offer").setSdp(offer.description)).build()
@@ -202,8 +205,10 @@ class ScreenController(context: Context) : AutoCloseable {
         if (remoteApplied) return
         val b = binding ?: return; val sdp = answer ?: return; val req = request ?: return
         ScreenTrust.verify(b, sessionId, req.clientNonce, req.offer.sdp, sdp, requireNotNull(connection).certificate,
-            req.control, req.displayId)
+            req.control, req.displayId, req.inputProtocolVersion)
         authorized = true
+        mutable.value = mutable.value.copy(canTransferControl = b.inputProtocolVersion == 3 && b.controlGranted)
+        feedbackPump.start(host, RemoteDesktopReceiverFeedback.newBuilder().setProtocolVersion(2).setInputEpoch(b.inputEpoch).build())
         setDescription(requireNotNull(peer), SessionDescription(SessionDescription.Type.ANSWER, sdp), local = false)
         remoteApplied = true
         remoteCandidates.forEach { require(peer?.addIceCandidate(it) == true) }; remoteCandidates.clear()
@@ -283,6 +288,10 @@ class ScreenController(context: Context) : AutoCloseable {
         } else if (value.mediaGeneration < previous.mediaGeneration) {
             next = value.toBuilder().setMediaGeneration(previous.mediaGeneration).setMediaTimestamp(previous.mediaTimestamp).build()
         }
+        if (next.controlGeneration < previous.controlGeneration) {
+            next = next.toBuilder().setControlGeneration(previous.controlGeneration).setControlActive(previous.controlActive)
+                .setControllerName(previous.controllerName).build()
+        }
         mutable.value = mutable.value.copy(session = next)
         lastPresentedTimestamp?.let(::markPresented)
         readiness()
@@ -302,8 +311,10 @@ class ScreenController(context: Context) : AutoCloseable {
             && configuration.displayId == mutable.value.session.displayId
         if (ready) recovery.streaming(SystemClock.elapsedRealtime())
         val channels = listOf(pointer, input, host).all { it?.state() == DataChannel.State.OPEN }
-        mutable.value = mutable.value.copy(control = ready && peerConnected && channels && binding?.controlGranted == true && focused,
+        mutable.value = mutable.value.copy(control = ready && peerConnected && channels && binding?.controlGranted == true && focused
+            && (binding?.inputProtocolVersion != 3 || mutable.value.session.controlActive),
             phase = if (ready) "streaming" else mutable.value.phase)
+        feedbackPump.input(focused && mutable.value.control)
     }
 
     fun pointer(x: Float, y: Float) {
@@ -355,7 +366,7 @@ class ScreenController(context: Context) : AutoCloseable {
         if (reliable) { pendingPointer = null; stateSequence++ } else pointerSequence++
         ordinal++
         if (!reliable || builder.hasPointerButton()) lastPointerOrdinal = ordinal
-        val raw = builder.setProtocolVersion(2).setInputEpoch(binding!!.inputEpoch)
+        val raw = builder.setProtocolVersion(binding!!.inputProtocolVersion).setControlGeneration(mutable.value.session.controlGeneration).setInputEpoch(binding!!.inputEpoch)
             .setSequence(if (reliable) stateSequence else pointerSequence).setStateBarrier(stateSequence)
             .setEventOrdinal(ordinal).setDisplayGeneration(mutable.value.session.displayGeneration).build().toByteArray()
         if (raw.size > 4096 || !channel.send(DataChannel.Buffer(ByteBuffer.wrap(raw), true))) {
@@ -378,19 +389,46 @@ class ScreenController(context: Context) : AutoCloseable {
         }
     }
 
+    fun transferControl(take: Boolean) {
+        if (!mutable.value.canTransferControl || mutable.value.controlTransferPending) return
+        val current = token
+        val id = sessionId
+        releaseInput()
+        mutable.value = mutable.value.copy(controlTransferPending = true, controlError = "")
+        scope.launch {
+            try {
+                val result = rpc().setRemoteDesktopControl(RemoteDesktopControlRequest.newBuilder().setSessionId(id).setTakeControl(take).build())
+                if (current == token) applyState(result)
+            } catch (e: CancellationException) { throw e
+            } catch (e: Exception) {
+                if (current == token) mutable.value = mutable.value.copy(controlError = e.message ?: "Control handoff failed")
+            } finally {
+                if (current == token) mutable.value = mutable.value.copy(controlTransferPending = false)
+            }
+        }
+    }
+
     private fun monitor() {
         monitoring?.cancel()
         val current = token
+        leaseRenewal?.cancel()
+        leaseRenewal = scope.launch {
+            while (isActive && current == token) {
+                delay(5_000)
+                try {
+                    connection?.refreshAtMillis?.let { if (System.currentTimeMillis() >= it) refreshRoute(current) }
+                    rpc().sendRemoteDesktopSignal(RemoteDesktopSignal.newBuilder()
+                        .setSessionId(sessionId).setLeaseHeartbeat(Empty.getDefaultInstance()).build())
+                } catch (e: CancellationException) { throw e
+                } catch (e: Exception) { if (current == token) connectionFailure(e); return@launch }
+            }
+        }
         monitoring = scope.launch {
             var previous = emptyMap<String, Double>(); var previousTime = SystemClock.elapsedRealtime(); var ticks = 0
             while (isActive && current == token) {
                 delay(500)
                 try {
-                    connection?.refreshAtMillis?.let { refreshAt ->
-                        if (System.currentTimeMillis() >= refreshAt) refreshRoute(current)
-                    }
-                    if (++ticks % 10 == 0) rpc().sendRemoteDesktopSignal(RemoteDesktopSignal.newBuilder()
-                        .setSessionId(sessionId).setLeaseHeartbeat(Empty.getDefaultInstance()).build())
+                    ticks++
                     val pc = peer ?: continue
                     val stats = suspendCancellableCoroutine<RTCStatsReport> { continuation ->
                         pc.getStats { if (continuation.isActive) continuation.resume(it) }
@@ -404,7 +442,7 @@ class ScreenController(context: Context) : AutoCloseable {
                     val now = SystemClock.elapsedRealtime(); val elapsed = max(0.001, (now - previousTime) / 1000.0)
                     val fps = delta("presented") / elapsed
                     val feedback = RemoteDesktopReceiverFeedback.newBuilder().setProtocolVersion(2)
-                        .setInputEpoch(binding?.inputEpoch ?: com.google.protobuf.ByteString.EMPTY).setSequence(++feedbackSequence)
+                        .setInputEpoch(binding?.inputEpoch ?: com.google.protobuf.ByteString.EMPTY)
                         .setFramesPerSecond(fps).setRenderedFrames(framesPresented.get().coerceAtMost(Int.MAX_VALUE.toLong()).toInt())
                         .setDecodeMs(if (delta("framesDecoded") > 0) delta("totalDecodeTime") * 1000 / delta("framesDecoded") else 0.0)
                         .setRenderMs(delta("renderMs") / max(1.0, delta("presented")))
@@ -413,8 +451,7 @@ class ScreenController(context: Context) : AutoCloseable {
                         .setRttMs(((pair["currentRoundTripTime"] as? Number)?.toDouble() ?: 0.0) * 1000)
                         .setLossFraction(delta("packetsLost") / max(1.0, delta("packetsLost") + delta("packetsReceived")))
                         .setInputActive(focused && mutable.value.control).build()
-                    host?.takeIf { authorized && it.state() == DataChannel.State.OPEN && it.bufferedAmount() < 16384 }
-                        ?.send(DataChannel.Buffer(ByteBuffer.wrap(feedback.toByteArray()), true))
+                    feedbackPump.update(feedback)
                     val relayed = listOf("localCandidateId", "remoteCandidateId").any { key ->
                         stats.statsMap[pair[key]]?.members?.get("candidateType") == "relay"
                     }
@@ -459,6 +496,7 @@ class ScreenController(context: Context) : AutoCloseable {
         if (disconnecting) return
         disconnecting = true
         releaseInput(); token++; authorized = false
+        feedbackPump.stop(); leaseRenewal?.cancel(); leaseRenewal = null
         signaling?.cancel(); signaling = null; monitoring?.cancel(); monitoring = null; configuring?.cancel(); configuring = null
         val old = connection; val id = sessionId
         connection = null; sessionId = ""
@@ -471,9 +509,9 @@ class ScreenController(context: Context) : AutoCloseable {
         }
         binding = null; request = null; answer = null; remoteApplied = false
         localCandidates.clear(); remoteCandidates.clear(); presentedGeneration = 0; lastPresentedTimestamp = null
-        pointerSequence = 0; stateSequence = 0; ordinal = 0; feedbackSequence = 0; lastPointerOrdinal = 0; framesPresented.set(0); totalRenderMs = 0.0
+        pointerSequence = 0; stateSequence = 0; ordinal = 0; lastPointerOrdinal = 0; framesPresented.set(0); totalRenderMs = 0.0
         canvasModel.reset(); canvasModel.cursor(.5f, .5f)
-        mutable.value = mutable.value.copy(control = false)
+        mutable.value = mutable.value.copy(control = false, canTransferControl = false, controlTransferPending = false, controlError = "")
         disconnecting = false
     }
     private fun connectionFailure(error: Exception) {

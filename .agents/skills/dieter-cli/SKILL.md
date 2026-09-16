@@ -24,7 +24,6 @@ counts; it is the cheapest bounded directory overview for one machine.
 Use `dieter daemon status` when diagnosing this machine's process and gateway
 tunnel. Its `gatewayLastAcknowledgedAt` value is bidirectional liveness proof;
 a reconnect affects relay transports only and does not stop a running agent.
-
 For another enrolled machine, authenticate once and pass its exact ID or unique
 name as a global option before the command:
 
@@ -373,13 +372,30 @@ dieter prompt show
 dieter prompt preview --card <card-id>
 ```
 
+```sh
+dieter screen sessions
+dieter screen control take <session-id>
+dieter screen control release <session-id>
+```
+
+Screen sharing supports up to four clients per machine. Matching display,
+codec profile, and stream settings share a hardware encoder; different settings
+use independent renditions fed by one native capture stream per physical display.
+Each viewer adapts independently and can change displays or disconnect without
+closing another session. Only one client controls mouse and keyboard at a time.
+The first control-capable client receives control; other clients use Take Control
+(or `dieter screen control take SESSION`). Release Control leaves the video open.
+Handoff requires protocol 3; an older controlling client must disconnect first.
+`dieter screen sessions` reports connected clients and allocated capture resources.
+
 For an authorized screen session, use `dieter screen status SESSION` for active
 quality and timing, `dieter screen configure SESSION --quality auto|detail|motion`
 for live policy, and `dieter screen refresh SESSION` to refresh an idle screen.
 `configure` also accepts `--display ID`, `--width`, `--height`, `--fps`, `--bitrate`
 (kbps) and `--embedded-cursor=true|false`; omitted fields retain their values.
 Limits are adaptive ceilings up to 3840×2160/60 fps. Screen media uses native macOS
-capture and hardware H.264. Input protocol v2 requires matching client and daemon.
+capture and hardware H.264. Signed input protocol v3 supports control handoff;
+clients retain v2 compatibility with older daemons.
 Adaptation preserves idle-screen geometry, reduces cadence before resolution,
 and requires sustained pressure or recovery headroom before resizing. The daemon
 log records session IDs and quality changes with the measured cause.

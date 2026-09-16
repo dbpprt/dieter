@@ -16,6 +16,7 @@ import android.content.ContextWrapper
 import com.dbpprt.dieter.screens.ScreenSessionViewModel
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -125,6 +126,18 @@ internal fun ScreenWorkspace(
         if (machines.isEmpty()) Text("Connect an enrolled machine to view its screen.", modifier = Modifier.padding(16.dp))
         if (!active && screen.error.isBlank()) Text("Use this screen as a trackpad. Move the remote cursor with one finger; zoom and pan with two.",
             style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(16.dp))
+        if (screen.canTransferControl) {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
+                TextButton(enabled = !screen.controlTransferPending, onClick = { controller.transferControl(!screen.session.controlActive) },
+                    modifier = Modifier.testTag("screens.control")) {
+                    Text(if (screen.session.controlActive) "Release Control" else "Take Control")
+                }
+                Text("${screen.session.connectedClients} viewers" + if (!screen.session.controlActive && screen.session.controllerName.isNotBlank())
+                    " · ${screen.session.controllerName} controls" else "", style = MaterialTheme.typography.labelSmall)
+            }
+        }
+        if (screen.controlError.isNotBlank()) Text(screen.controlError, color = MaterialTheme.colorScheme.error,
+            modifier = Modifier.padding(horizontal = 12.dp), style = MaterialTheme.typography.labelSmall)
         AndroidView(factory = { ScreenCanvasView(it, controller).also { view -> canvas = view } },
             onRelease = { it.release(); if (canvas === it) canvas = null },
             modifier = Modifier.weight(1f).fillMaxWidth().testTag("screen-canvas"))

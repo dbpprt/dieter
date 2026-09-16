@@ -552,6 +552,7 @@ struct GeneralSettings: View {
                     )
                     .toggleStyle(.switch)
                     .accessibilityIdentifier("settings.screenShare.inactivityTimeoutEnabled")
+                    .smokeTarget("settings.screenShare.inactivityTimeoutEnabled")
                     if store.screensModel.inactivityTimeoutEnabled {
                         Divider().overlay(DieterTheme.border)
                         Stepper(
@@ -563,6 +564,7 @@ struct GeneralSettings: View {
                             in: 1...240
                         )
                         .accessibilityIdentifier("settings.screenShare.inactivityTimeoutMinutes")
+                        .smokeTarget("settings.screenShare.inactivityTimeoutMinutes")
                     }
                     Text(
                         store.screensModel.inactivityTimeoutEnabled

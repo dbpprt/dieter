@@ -27,6 +27,8 @@ Actions:
   update [options]             Enable/disable viewing and remote control
   start --request FILE         Start WebRTC signaling; stream daemon signals as JSON Lines
   signal --file FILE           Send one trickle ICE/heartbeat signal to a session
+  sessions                     List viewers, controller, and capture resources
+  control take|release SESSION  Transfer or release control
   status SESSION               Show current stream configuration and performance
   configure SESSION [options]  Change display, quality and stream ceilings live
   refresh SESSION              Request a fresh keyframe, including an idle screen
@@ -57,6 +59,10 @@ func (c *CLI) rpcScreen(args []string) error {
 		return c.rpcScreenStart(args[1:])
 	case "signal", "send":
 		return c.rpcScreenSignal(args[1:])
+	case "sessions":
+		return c.rpcScreenSessions(args[1:])
+	case "control":
+		return c.rpcScreenControl(args[1:])
 	case "status", "configure", "refresh":
 		return c.rpcScreenSession(args[0], args[1:])
 	case "close", "stop":
@@ -409,4 +415,59 @@ func (c *CLI) rpcScreenSession(action string, args []string) error {
 		return err
 	}
 	return protoJSONOut(c.Out, state)
+}
+
+func (c *CLI) rpcScreenSessions(args []string) error {
+	const usage = `Usage: dieter screen sessions
+
+List the connected viewers, active controller, four-client limit, shared capture
+streams, and hardware encoders as JSON. Supports --machine ID|NAME.
+`
+	if wantsHelp(args) {
+		fmt.Fprint(c.Out, usage)
+		return nil
+	}
+	if len(args) != 0 {
+		return errors.New(usage)
+	}
+	ctx, cancel := c.commandContext()
+	defer cancel()
+	client, rpcCtx, err := c.rpc(ctx)
+	if err != nil {
+		return err
+	}
+	value, err := client.ListRemoteDesktopSessions(rpcCtx, &emptypb.Empty{})
+	if err != nil {
+		return err
+	}
+	return protoJSONOut(c.Out, value)
+}
+
+func (c *CLI) rpcScreenControl(args []string) error {
+	const usage = `Usage: dieter screen control take|release SESSION
+
+Give a connected control-capable client exclusive keyboard/mouse control, or
+release its current grant. Taking control first releases the previous client's
+held input. Viewers keep streaming. Both clients must support protocol 3 for
+handoff; older controlling clients must disconnect first. Prints session state
+as JSON. Supports --machine ID|NAME.
+`
+	if groupHelp(args) || wantsHelp(args) {
+		fmt.Fprint(c.Out, usage)
+		return nil
+	}
+	if len(args) != 2 || (args[0] != "take" && args[0] != "release") || strings.TrimSpace(args[1]) == "" {
+		return errors.New(usage)
+	}
+	ctx, cancel := c.commandContext()
+	defer cancel()
+	client, rpcCtx, err := c.rpc(ctx)
+	if err != nil {
+		return err
+	}
+	value, err := client.SetRemoteDesktopControl(rpcCtx, &dieterv1.RemoteDesktopControlRequest{SessionId: args[1], TakeControl: args[0] == "take"})
+	if err != nil {
+		return err
+	}
+	return protoJSONOut(c.Out, value)
 }

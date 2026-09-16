@@ -814,6 +814,9 @@ The CLI works on local, verified direct TLS and authenticated relay routes:
 ```sh
 dieter screen capabilities
 dieter screen permissions
+dieter screen sessions
+dieter screen control take <session-id>
+dieter screen control release <session-id>
 dieter screen status SESSION
 dieter screen configure SESSION --quality detail --fps 30 --bitrate 8000
 dieter screen configure SESSION --display DISPLAY_ID
@@ -832,7 +835,8 @@ physical glass-to-glass measurement. The native fixture reports same-host captur
 to actual Metal presentation median/p95 and idle recovery using the shared host
 clock; measuring display scanout/photons still requires an external camera. `start`
 accepts a protobuf JSON WebRTC offer; media and input use the encrypted peer
-connection. Session input protocol v2 requires matching daemon and Mac client builds.
+connection. Clients negotiate signed input protocol v3 for control handoff and retain v2
+compatibility with older daemons.
 
 Native screen regression checks:
 
@@ -840,10 +844,21 @@ Native screen regression checks:
 just mac screens-native-test
 just mac screens-test
 DIETER_TEST_SCREEN_CAPTURE_REAL=1 just mac screens-test
+DIETER_SCREEN_TEST_MULTI=1 DIETER_SCREEN_TEST_SOURCE=screen just android screens-test
 ```
 
-The first two use generated pixels and dry-run input. The last requires Screen
-Recording and event-posting permission and sends events only to an owned native
+The first two use generated pixels and dry-run input. The last two require Screen
+Recording and event-posting permission and send events only to an owned native
 fixture window. All use random loopback listeners and disposable daemon data;
 the installed daemon is untouched. Viewer integration refuses to start while an
 operator Dieter app is running. Evidence paths are printed by the test.
+
+Screen sharing supports up to four clients per machine. Matching display,
+codec profile, and stream settings share a hardware encoder; different settings
+use independent renditions fed by one native capture stream per physical display.
+Each viewer adapts independently and can change displays or disconnect without
+closing another session. Only one client controls mouse and keyboard at a time.
+The first control-capable client receives control; other clients use Take Control
+(or `dieter screen control take SESSION`). Release Control leaves the video open.
+Handoff requires protocol 3; an older controlling client must disconnect first.
+`dieter screen sessions` reports connected clients and allocated capture resources.

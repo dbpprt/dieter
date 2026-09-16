@@ -91,6 +91,33 @@ func (api *grpcAPI) GetRemoteDesktopSession(_ context.Context, request *dieterv1
 	}
 	return state, nil
 }
+
+func (api *grpcAPI) ListRemoteDesktopSessions(context.Context, *emptypb.Empty) (*dieterv1.RemoteDesktopSessions, error) {
+	return api.server.remoteDesktop.Sessions(), nil
+}
+
+func (api *grpcAPI) SetRemoteDesktopControl(ctx context.Context, request *dieterv1.RemoteDesktopControlRequest) (*dieterv1.RemoteDesktopSessionState, error) {
+	settings, err := api.server.store.Settings()
+	if err != nil {
+		return nil, grpcFailure(err)
+	}
+	if request.GetTakeControl() && (!settings.RemoteDesktopEnabled || !settings.RemoteDesktopControlEnabled) {
+		return nil, remoteDesktopFailure(remotedesktop.ErrControlDisabled)
+	}
+	state, err := api.server.remoteDesktop.SetControl(ctx, request.GetSessionId(), request.GetTakeControl())
+	if err != nil {
+		return nil, remoteDesktopFailure(err)
+	}
+	return state, nil
+}
+
+func (api *connectAPI) ListRemoteDesktopSessions(ctx context.Context, request *connect.Request[emptypb.Empty]) (*connect.Response[dieterv1.RemoteDesktopSessions], error) {
+	return connectUnary(ctx, request, api.core.ListRemoteDesktopSessions)
+}
+
+func (api *connectAPI) SetRemoteDesktopControl(ctx context.Context, request *connect.Request[dieterv1.RemoteDesktopControlRequest]) (*connect.Response[dieterv1.RemoteDesktopSessionState], error) {
+	return connectUnary(ctx, request, api.core.SetRemoteDesktopControl)
+}
 func (api *grpcAPI) UpdateRemoteDesktopSession(ctx context.Context, request *dieterv1.UpdateRemoteDesktopSessionRequest) (*dieterv1.RemoteDesktopSessionState, error) {
 	state, err := api.server.remoteDesktop.UpdateSession(ctx, request)
 	if err != nil {
@@ -178,6 +205,8 @@ func remoteDesktopFailure(err error) error {
 		return status.Error(codes.FailedPrecondition, err.Error())
 	case errors.Is(err, remotedesktop.ErrBusy):
 		return status.Error(codes.ResourceExhausted, err.Error())
+	case errors.Is(err, remotedesktop.ErrCapacity), errors.Is(err, remotedesktop.ErrControlOwner):
+		return status.Error(codes.FailedPrecondition, err.Error())
 	case errors.Is(err, remotedesktop.ErrNotFound):
 		return status.Error(codes.NotFound, err.Error())
 	case errors.Is(err, remotedesktop.ErrInvalidSignal):

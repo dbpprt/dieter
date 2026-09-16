@@ -96,11 +96,11 @@ import UniformTypeIdentifiers
         fingerprint: "sha-256 AA:BB",
         expiresAt: "2026-08-25T08:00:00Z",
         offerHash: Data([0, 1, 2]), controlGranted: true, displayID: "primary",
-        inputProtocolVersion: 1, inputEpoch: Data(repeating: 7, count: 16)
+        inputProtocolVersion: 2, inputEpoch: Data(repeating: 7, count: 16)
     )
     #expect(
         String(data: message, encoding: .utf8)
-            == "dieter-remote-desktop-v2\nrd_one\nnonce\nsha-256 AA:BB\n2026-08-25T08:00:00Z\nAAEC\ntrue\nprimary\n1\nBwcHBwcHBwcHBwcHBwcHBw"
+            == "dieter-remote-desktop-v2\nrd_one\nnonce\nsha-256 AA:BB\n2026-08-25T08:00:00Z\nAAEC\ntrue\nprimary\n2\nBwcHBwcHBwcHBwcHBwcHBw"
     )
 }
 

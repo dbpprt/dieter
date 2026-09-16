@@ -140,3 +140,31 @@ final class InputInjector: @unchecked Sendable {
         return result
     }
 }
+
+// Encoders may split or merge while a controller is connected. Keep held input
+// machine-wide, and never let stopping a spectator's encoder release its keys.
+final class SharedInputAuthority: @unchecked Sendable {
+    static let shared = SharedInputAuthority()
+    private let lock = NSLock()
+    private var owner: InputInjector?
+    func handle(_ value: NativeInput, injector: InputInjector) throws {
+        try lock.withLock {
+            if value.kind == "release_all" { owner?.releaseAll(); owner = nil; return }
+            if owner !== injector { owner?.releaseAll(); owner = injector }
+            try injector.handle(value)
+        }
+    }
+    func update(_ injector: InputInjector, bounds: CGRect, generation: UInt64) {
+        lock.withLock { injector.update(bounds: bounds, generation: generation) }
+    }
+    func releaseAll() {
+        lock.withLock {
+            owner?.releaseAll(); owner = nil
+        }
+    }
+    func remove(_ injector: InputInjector?) {
+        lock.withLock {
+            if let injector, owner === injector { injector.releaseAll(); owner = nil }
+        }
+    }
+}

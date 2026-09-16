@@ -49,9 +49,7 @@ func nativeConfiguration(c *dieterv1.RemoteDesktopStreamConfiguration) StreamCon
 	return StreamConfiguration{DisplayID: c.DisplayId, MaxWidth: int(c.MaxWidth), MaxHeight: int(c.MaxHeight), FPS: int(c.MaxFps), BitrateKbps: int(c.MaxBitrateKbps), EmbeddedCursor: c.EmbeddedCursor}
 }
 func (m *Manager) SessionState(id string) (*dieterv1.RemoteDesktopSessionState, error) {
-	m.mu.Lock()
-	s := m.session
-	m.mu.Unlock()
+	s := m.sessionFor(id)
 	if s == nil || s.id != id {
 		return nil, ErrNotFound
 	}
@@ -63,9 +61,7 @@ func (m *Manager) SessionState(id string) (*dieterv1.RemoteDesktopSessionState, 
 	return proto.Clone(s.status).(*dieterv1.RemoteDesktopSessionState), nil
 }
 func (m *Manager) UpdateSession(ctx context.Context, r *dieterv1.UpdateRemoteDesktopSessionRequest) (*dieterv1.RemoteDesktopSessionState, error) {
-	m.mu.Lock()
-	s := m.session
-	m.mu.Unlock()
+	s := m.sessionFor(r.GetSessionId())
 	if s == nil || s.id != r.GetSessionId() {
 		return nil, ErrNotFound
 	}

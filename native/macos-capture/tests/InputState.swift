@@ -23,6 +23,17 @@ import Foundation
         precondition(input.heldKeys.isEmpty && input.heldButtons.isEmpty)
         input.update(bounds: CGRect(x: 0, y: 0, width: 1600, height: 900), generation: 2)
         do { try input.handle(value); preconditionFailure("stale display accepted") } catch {}
+        let first = InputInjector(bounds: CGRect(x: 0, y: 0, width: 100, height: 100), dryRun: true)
+        let second = InputInjector(bounds: CGRect(x: 0, y: 0, width: 100, height: 100), dryRun: true)
+        var held = NativeInput(); held.kind = "key"; held.physicalKey = 4; held.down = true; held.generation = 1
+        try SharedInputAuthority.shared.handle(held, injector: first)
+        SharedInputAuthority.shared.remove(second)
+        precondition(first.heldKeys == [0], "Spectator teardown released the controller")
+        try SharedInputAuthority.shared.handle(held, injector: second)
+        precondition(first.heldKeys.isEmpty && second.heldKeys == [0], "Encoder move left held keys behind")
+        held.kind = "release_all"
+        try SharedInputAuthority.shared.handle(held, injector: first)
+        precondition(second.heldKeys.isEmpty, "Handoff must release the machine's active injector")
         print(
             "Native input state: physical key zero, independent Shift sides, drag bounds, release and display generation passed"
         )

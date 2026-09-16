@@ -858,6 +858,18 @@ package final class DieterRPC: Sendable {
         try await service.updateRemoteDesktopSession(request: .init(message: request))
     }
 
+    package func remoteDesktopSessions() async throws -> Dieter_V1_RemoteDesktopSessions {
+        try await service.listRemoteDesktopSessions(request: .init(message: Google_Protobuf_Empty()))
+    }
+
+    package func setRemoteDesktopControl(sessionID: String, take: Bool) async throws
+        -> Dieter_V1_RemoteDesktopSessionState
+    {
+        var request = Dieter_V1_RemoteDesktopControlRequest()
+        request.sessionID = sessionID; request.takeControl = take
+        return try await service.setRemoteDesktopControl(request: .init(message: request))
+    }
+
     package func closeRemoteDesktop(sessionID: String) async throws {
         var request = Dieter_V1_RemoteDesktopRef()
         request.sessionID = sessionID

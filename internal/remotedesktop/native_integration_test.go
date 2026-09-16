@@ -236,3 +236,265 @@ func TestNativeHelperWatchdogExitsWithoutDaemonHeartbeat(t *testing.T) {
 		t.Fatalf("watchdog deadline: %s", elapsed)
 	}
 }
+
+func TestNativeMultiplexSharesEncoderAndIsolatesRenditions(t *testing.T) {
+	path := os.Getenv("DIETER_TEST_CAPTURE_HELPER")
+	if path == "" {
+		t.Skip("native helper not configured")
+	}
+	pool := newCapturePool(NewFrameSource)
+	defer pool.Close()
+	options := SourceOptions{Kind: "native-synthetic", HelperPath: path, Profile: "high", Control: true, FPS: 60, MaxWidth: 1280, MaxHeight: 720, Bitrate: 4000}
+	first, err := pool.Subscribe(options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := pool.Subscribe(options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	frames := make(chan FrameMetadata, 128)
+	slowFrames := make(chan FrameMetadata, 128)
+	failures := make(chan error, 2)
+	first.(AdaptiveFrameSource).SetEventHandler(func(SourceEvent) {})
+	second.(AdaptiveFrameSource).SetEventHandler(func(SourceEvent) {})
+	go func() {
+		failures <- first.Stream(ctx, func(s media.Sample) error {
+			select {
+			case frames <- s.Metadata.(FrameMetadata):
+			default:
+			}
+			return nil
+		})
+	}()
+	go func() {
+		failures <- second.Stream(ctx, func(s media.Sample) error {
+			select {
+			case slowFrames <- s.Metadata.(FrameMetadata):
+			default:
+			}
+			return nil
+		})
+	}()
+	waitFrame := func(ch <-chan FrameMetadata, width int) {
+		t.Helper()
+		for {
+			select {
+			case frame := <-ch:
+				if int(frame.Width) == width {
+					return
+				}
+			case err := <-failures:
+				if err != nil {
+					t.Fatalf("native stream: %v", err)
+				}
+			case <-ctx.Done():
+				t.Fatal("native multiplex frame timeout")
+			}
+		}
+	}
+	waitFrame(frames, 1280)
+	waitFrame(slowFrames, 1280)
+	if _, n := pool.Counts(); n != 1 {
+		t.Fatal("duplicate native encoder")
+	}
+	config := sourceConfiguration(options)
+	config.MaxWidth = 640
+	config.MaxHeight = 360
+	if err := second.(AdaptiveFrameSource).Configure(ctx, config); err != nil {
+		t.Fatal(err)
+	}
+	waitFrame(slowFrames, 640)
+	waitFrame(frames, 1280)
+	if _, n := pool.Counts(); n != 2 {
+		t.Fatal("rendition split missing")
+	}
+	if err := second.(AdaptiveFrameSource).Configure(ctx, sourceConfiguration(options)); err != nil {
+		t.Fatal(err)
+	}
+	waitFrame(slowFrames, 1280)
+	if _, n := pool.Counts(); n != 1 {
+		t.Fatal("native rendition not merged")
+	}
+	second.(*sharedSource).Close()
+	waitFrame(frames, 1280)
+	// Retire an encoder while its next callback may already be in flight.
+	// The primary lane must survive; this catches native refcon lifetime bugs.
+	for i := 0; i < 16; i++ {
+		options.MaxWidth = 640
+		options.MaxHeight = 360
+		other, e := pool.Subscribe(options)
+		if e != nil {
+			t.Fatal(e)
+		}
+		incoming := make(chan FrameMetadata, 1)
+		go func() {
+			_ = other.Stream(ctx, func(s media.Sample) error {
+				select {
+				case incoming <- s.Metadata.(FrameMetadata):
+				default:
+				}
+				return nil
+			})
+		}()
+		waitFrame(incoming, 640)
+		other.(*sharedSource).Close()
+		for j := 0; j < 4; j++ {
+			waitFrame(frames, 1280)
+		}
+	}
+}
+
+func TestNativeFourIndependentHardwareRenditions(t *testing.T) {
+	path := os.Getenv("DIETER_TEST_CAPTURE_HELPER")
+	if path == "" {
+		t.Skip("native helper not configured")
+	}
+	pool := newCapturePool(NewFrameSource)
+	defer pool.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	frames := make(chan int, 4)
+	failures := make(chan error, 4)
+	for i, width := range []int{640, 960, 1280, 1920} {
+		source, err := pool.Subscribe(SourceOptions{Kind: "native-synthetic", HelperPath: path, Profile: "high", FPS: 30, MaxWidth: width, MaxHeight: width * 9 / 16, Bitrate: 4000})
+		if err != nil {
+			t.Fatal(err)
+		}
+		go func() {
+			count := 0
+			failures <- source.Stream(ctx, func(sample media.Sample) error {
+				count++
+				if count == 5 {
+					frames <- i
+				}
+				return nil
+			})
+		}()
+	}
+	received := map[int]bool{}
+	for len(received) < 4 {
+		select {
+		case i := <-frames:
+			received[i] = true
+		case err := <-failures:
+			t.Fatalf("four native encoders: %v", err)
+		case <-ctx.Done():
+			t.Fatal("four native encoders timed out")
+		}
+	}
+	if _, encoders := pool.Counts(); encoders != 4 {
+		t.Fatalf("encoders=%d", encoders)
+	}
+	if _, err := pool.Subscribe(SourceOptions{Kind: "native-synthetic", HelperPath: path, Profile: "baseline", FPS: 30, MaxWidth: 640, MaxHeight: 360, Bitrate: 4000}); err == nil {
+		t.Fatal("unbounded fifth encoder")
+	}
+}
+
+func TestNativeCancelledLifecyclePreservesExistingViewer(t *testing.T) {
+	path := os.Getenv("DIETER_TEST_CAPTURE_HELPER")
+	if path == "" {
+		t.Skip("native helper not configured")
+	}
+	mux := newNativeMultiplexer()
+	defer mux.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	makeSource := func() *nativeRendition {
+		t.Helper()
+		source, err := mux.Source(&nativeHelperSource{path: path, synthetic: true, profile: "high", fps: 30, maxWidth: 640, maxHeight: 360, bitrateKbps: 2000})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return source.(*nativeRendition)
+	}
+	primary := makeSource()
+	defer primary.Close()
+	frames := make(chan struct{}, 1)
+	failure := make(chan error, 1)
+	go func() {
+		failure <- primary.Stream(ctx, func(media.Sample) error {
+			select {
+			case frames <- struct{}{}:
+			default:
+			}
+			return nil
+		})
+	}()
+	waitFrame := func() {
+		t.Helper()
+		select {
+		case <-frames:
+		case err := <-failure:
+			t.Fatalf("existing viewer stopped: %v", err)
+		case <-ctx.Done():
+			t.Fatal("existing viewer stalled")
+		}
+	}
+	waitFrame()
+	for iteration := range 32 {
+		source := makeSource()
+		finished := make(chan error, 1)
+		ready := make(chan struct{}, 1)
+		go func() {
+			finished <- source.Stream(ctx, func(media.Sample) error {
+				select {
+				case ready <- struct{}{}:
+				default:
+				}
+				return nil
+			})
+		}()
+		for {
+			mux.mu.Lock()
+			creating := source.createSent
+			mux.mu.Unlock()
+			if creating {
+				break
+			}
+			select {
+			case err := <-finished:
+				t.Fatalf("encoder failed before admission: %v", err)
+			case <-ctx.Done():
+				t.Fatal("encoder admission timed out")
+			case <-time.After(time.Millisecond):
+			}
+		}
+		var configured chan error
+		if iteration%2 == 1 {
+			select {
+			case <-ready:
+			case err := <-finished:
+				t.Fatalf("encoder startup failed: %v", err)
+			case <-ctx.Done():
+				t.Fatal("encoder produced no media")
+			}
+			configured = make(chan error, 1)
+			go func() {
+				configured <- source.Configure(ctx, StreamConfiguration{DisplayID: "primary", MaxWidth: 1920, MaxHeight: 1080, FPS: 30, BitrateKbps: 4000})
+			}()
+			time.Sleep(time.Millisecond)
+		}
+		// Alternate cancellation during creation and a hardware encoder reset.
+		// A replacement must wait for fully completed removal in both cases.
+		source.Close()
+		select {
+		case <-finished:
+		case <-ctx.Done():
+			t.Fatal("cancelled encoder did not finish")
+		}
+		if configured != nil {
+			select {
+			case <-configured:
+			case <-ctx.Done():
+				t.Fatal("cancelled configuration did not finish")
+			}
+		}
+		waitFrame()
+	}
+	// Demand fresh media after the final retirement, not a previously buffered frame.
+	waitFrame()
+	waitFrame()
+}

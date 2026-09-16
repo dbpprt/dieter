@@ -45,6 +45,8 @@ struct NativeCommand: Decodable {
     let input: NativeInput?
     let configuration: StreamConfiguration?
     let frameId: UInt64?
+    let streamId: UInt64?
+    let profile: String?
 }
 
 struct NativeCursor: Encodable {
@@ -74,6 +76,7 @@ struct NativeState: Encodable {
 
 struct NativeEvent: Encodable {
     var version = 2
+    var streamId: UInt64 = 0
     var ack: UInt64 = 0
     var error: String?
     var cursor: NativeCursor?
@@ -84,18 +87,22 @@ struct NativeEvent: Encodable {
 // acknowledgments. Every write has a deadline, including when the daemon dies.
 final class EventWriter: @unchecked Sendable {
     private let fd: Int32
-    private let lock = NSLock()
+    private static let sharedLock = NSLock()
     private let encoder = JSONEncoder()
-    init(fd: Int32) {
+    private let streamID: UInt64
+    init(fd: Int32, streamID: UInt64 = 0) {
         self.fd = fd
+        self.streamID = streamID
         encoder.keyEncodingStrategy = .convertToSnakeCase
         if fd >= 0 { _ = fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK) }
     }
     @discardableResult func send(_ event: NativeEvent) -> Bool {
         guard fd >= 0 else { return true }
-        lock.lock()
-        defer { lock.unlock() }
-        guard var data = try? encoder.encode(event), data.count <= 350000 else { return false }
+        Self.sharedLock.lock()
+        defer { Self.sharedLock.unlock() }
+        var tagged = event
+        tagged.streamId = streamID == 0 ? event.streamId : streamID
+        guard var data = try? encoder.encode(tagged), data.count <= 350000 else { return false }
         data.append(10)
         return data.withUnsafeBytes { bytes in
             var offset = 0
@@ -151,12 +158,34 @@ func nativeDisplays() -> [NativeDisplay] {
 actor ConfigurationGate {
     private var busy = false
     private var waiters: [CheckedContinuation<Void, Error>] = []
+    private var closed = false
+    private var shutdownWaiter: CheckedContinuation<Void, Never>?
     func acquire() async throws {
-        if !busy { busy = true; return }
+        guard !closed else { throw CaptureError.invalidArgument("capture stopped") }
+        if !busy {
+            busy = true
+            return
+        }
         guard waiters.count < 8 else { throw CaptureError.invalidArgument("too many capture updates") }
         try await withCheckedThrowingContinuation { waiters.append($0) }
     }
     func release() {
+        if let waiter = shutdownWaiter {
+            shutdownWaiter = nil
+            waiter.resume()
+            return
+        }
         if waiters.isEmpty { busy = false } else { waiters.removeFirst().resume() }
+    }
+    // Let the current configuration finish, reject queued/future updates, and
+    // give teardown exclusive ownership of the capture and hardware encoder.
+    func shutdown() async {
+        closed = true
+        let pending = waiters
+        waiters.removeAll()
+        pending.forEach { $0.resume(throwing: CaptureError.invalidArgument("capture stopped")) }
+        if busy {
+            await withCheckedContinuation { shutdownWaiter = $0 }
+        }
     }
 }

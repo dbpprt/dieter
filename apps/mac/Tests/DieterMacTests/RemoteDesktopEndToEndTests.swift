@@ -357,3 +357,74 @@ private final class ScreenFrameReadiness: @unchecked Sendable {
     observer.expect(token: 3, generation: 1, timestamp: 390)
     #expect(readiness.recorded.last == "3:1")
 }
+
+// Companion for the emulator fixture: it stays connected while Android changes
+// quality, transfers control, expires its own session, and reconnects repeatedly.
+@Test @MainActor func remoteDesktopAndroidCompanion() async throws {
+    let environment = ProcessInfo.processInfo.environment
+    guard let path = environment["DIETER_TEST_SCREEN_COMPANION"] else { return }
+    let root = URL(fileURLWithPath: path).deletingLastPathComponent()
+    let raw = try Data(contentsOf: URL(fileURLWithPath: path))
+    let fixture = try JSONDecoder().decode(ScreenFixtureConnection.self, from: raw)
+    let json = try #require(JSONSerialization.jsonObject(with: raw) as? [String: Any])
+    let endpoint = try #require(DieterEndpoint.parse(fixture.url))
+    let rpc = try DieterRPC(endpoint: endpoint, accessToken: json["token"] as? String)
+    let task = Task<Void, Never> { try? await rpc.run() }
+    let connection = RemoteDesktopSignalingConnection(
+        rpc: rpc, connectionTask: task,
+        rtcConfiguration: try .init(serializedBytes: fixture.rtc), daemonCertificatePEM: fixture.certificate,
+        routeLabel: "Isolated concurrent fixture")
+    let controller = RemoteDesktopController()
+    NSApplication.shared.setActivationPolicy(.regular)
+    let window = NSWindow(
+        contentRect: NSRect(x: 20, y: 40, width: 960, height: 540),
+        styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
+    window.title = "Dieter concurrent Mac viewer"
+    window.isReleasedWhenClosed = false
+    let surface = RemoteDesktopInputView(renderer: controller.renderer, controller: controller)
+    window.contentView = surface; window.makeKeyAndOrderFront(nil)
+    surface.layoutSubtreeIfNeeded(); surface.layout()
+    defer { controller.disconnect(); window.close() }
+    await controller.connect(machineName: "Concurrent fixture") { connection }.value
+    try await screenWait("companion video/control", timeout: 25) {
+        controller.controlActive || controller.errorMessage != nil
+    }
+    try #require(controller.errorMessage == nil, "\(controller.errorMessage ?? "")")
+    controller.transferControl(take: false)
+    try await screenWait("companion releases initial control", timeout: 5) {
+        !controller.sessionState.controlActive && !controller.controlTransferPending
+    }
+    let initial = try await rpc.remoteDesktopSessions()
+    let ownID = try #require(initial.sessions.first?.sessionID)
+    try Data(ownID.utf8).write(to: root.appending(path: "mac-ready"))
+    var handoffs = 0, observedPeers = false
+    let start = Date(), originalFrames = controller.renderer.framesPresented
+    while !FileManager.default.fileExists(atPath: root.appending(path: "mac-stop").path) {
+        try #require(Date().timeIntervalSince(start) < 360, "Android companion test timed out")
+        try #require(
+            controller.errorMessage == nil,
+            "Mac viewer failed during Android activity: \(controller.errorMessage ?? "")")
+        if controller.sessionState.connectedClients >= 2 { observedPeers = true }
+        if controller.sessionState.controlActive && !controller.controlTransferPending {
+            handoffs += 1
+            // Leave enough time for Android to observe revocation, then explicitly
+            // release from the Mac client. Never inject into an unowned desktop.
+            try await Task.sleep(for: .milliseconds(500))
+            controller.transferControl(take: false)
+        }
+        try await Task.sleep(for: .milliseconds(100))
+    }
+    let sessions = try await rpc.remoteDesktopSessions()
+    #expect(sessions.sessions.contains { $0.sessionID == ownID })
+    #expect(observedPeers)
+    #expect(handoffs >= 1)
+    #expect(controller.renderer.framesPresented > originalFrames + 60)
+    let evidence: [String: Any] = [
+        "session": ownID, "handoffs": handoffs, "observedPeers": observedPeers,
+        "presentedFrames": controller.renderer.framesPresented, "captureStreams": sessions.captureStreams,
+        "encoders": sessions.encoders, "width": controller.sessionState.width, "height": controller.sessionState.height,
+    ]
+    try JSONSerialization.data(withJSONObject: evidence, options: .prettyPrinted).write(
+        to: root.appending(path: "mac-stats.json"))
+    print("Concurrent Mac viewer evidence: \(root.path)")
+}

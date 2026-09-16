@@ -102,7 +102,10 @@ is removed on exit. It never changes saved Android credentials or the live servi
 Use `DIETER_SCREEN_TEST_SOURCE=screen just android screens-test` to additionally
 exercise real ScreenCaptureKit; the default exercises native synthetic video and
 hardware H.264 with dry-run input. The real-screen mode injects input only into
-the owned macOS input window.
+the owned macOS input window. Set `DIETER_SCREEN_TEST_MULTI=1` to keep a native Mac
+viewer connected to the same fixture throughout the Android journey, including
+control handoff, quality changes, session expiry, and reconnects. This requires
+no operator Dieter Mac app or other Swift test runner to be active.
 
 The install and connected-test recipes pass `ANDROID_SERIAL=emulator-5554` to
 Gradle. Keep that pin on every Gradle task which can select a device; otherwise

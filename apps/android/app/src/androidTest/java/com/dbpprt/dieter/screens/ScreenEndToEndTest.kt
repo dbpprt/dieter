@@ -100,6 +100,31 @@ class ScreenEndToEndTest {
             compose.waitUntil(15_000) { opened.get() >= 2 && controller.state.value.control }
             compose.waitUntil(10_000) { controller.state.value.receivedFps > 5 }
             assertTrue(controller.state.value.session.width >= 640)
+            if (fixture.optBoolean("multi")) {
+                compose.waitUntil(10_000) { controller.state.value.session.connectedClients >= 2 }
+                val route = kotlinx.coroutines.runBlocking { open() }
+                try {
+                    val peers = kotlinx.coroutines.runBlocking { route.rpc.listRemoteDesktopSessions(com.google.protobuf.Empty.getDefaultInstance()) }
+                    val mac = peers.sessionsList.first { it.clientName == "Mac" }
+                    assertEquals(1, peers.captureStreams)
+                    assertTrue(peers.encoders in 1..2)
+                    // Hold a key, then transfer via the same authenticated API the UI uses.
+                    // The owned target receives its release before the new grant.
+                    compose.runOnIdle { controller.key(4, true) }
+                    kotlinx.coroutines.runBlocking { route.rpc.setRemoteDesktopControl(com.dbpprt.dieter.v1.RemoteDesktopControlRequest.newBuilder()
+                        .setSessionId(mac.sessionId).setTakeControl(true).build()) }
+                    compose.waitUntil(10_000) { !controller.state.value.session.controlActive && !controller.state.value.control }
+                    compose.waitUntil(10_000) { controller.state.value.session.controllerName.isEmpty() }
+                    compose.onNodeWithTag("screens.control").performClick()
+                    compose.waitUntil(10_000) { controller.state.value.control }
+                    // Both controls in the Android toolbar exercise real daemon grants.
+                    compose.onNodeWithTag("screens.control").performClick()
+                    compose.waitUntil(10_000) { !controller.state.value.session.controlActive }
+                    compose.onNodeWithTag("screens.control").performClick()
+                    compose.waitUntil(10_000) { controller.state.value.control }
+                } finally { route.close() }
+            }
+
             // Capture the actual GPU output, not only a composable placeholder.
             val screenshot = InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot()
             assertNotNull(screenshot)
@@ -218,7 +243,7 @@ class ScreenEndToEndTest {
             // Also expire the actual daemon-side session. Its close signal and the peer
             // disconnect can race; only one replacement is allowed and input must resume.
             val expiredId = controller.id
-            val expiry = java.net.URL("http://127.0.0.1:${fixture.getInt("port")}/test/expire-screen").openConnection() as java.net.HttpURLConnection
+            val expiry = java.net.URL("http://127.0.0.1:${fixture.getInt("port")}/test/expire-screen?session=$expiredId").openConnection() as java.net.HttpURLConnection
             try {
                 expiry.requestMethod = "POST"
                 expiry.connectTimeout = 5_000; expiry.readTimeout = 5_000
