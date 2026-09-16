@@ -126,6 +126,12 @@ func run(helper, kind, ready string, authenticate bool) error {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
+		// Test-only fault injection on the disposable, authenticated fixture.
+		if authenticate && r.Method == http.MethodPost && r.URL.Path == "/test/expire-screen" {
+			manager.CloseActive("session lease expired")
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
 		r.Header.Set("x-dieter-operator-subject", "github:1")
 		handler.ServeHTTP(w, r)
 	}), &http2.Server{})}

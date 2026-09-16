@@ -22,6 +22,12 @@ import com.dbpprt.dieter.ui.theme.DieterTheme
 import com.dbpprt.dieter.v1.DieterServiceGrpcKt
 import com.dbpprt.dieter.v1.RemoteDesktopQuality
 import io.grpc.Metadata
+import io.grpc.CallOptions
+import io.grpc.Channel
+import io.grpc.ClientCall
+import io.grpc.ClientInterceptor
+import io.grpc.MethodDescriptor
+import io.grpc.Status
 import io.grpc.okhttp.OkHttpChannelBuilder
 import io.grpc.stub.MetadataUtils
 import org.json.JSONObject
@@ -31,6 +37,7 @@ import org.junit.Rule
 import org.junit.Test
 import java.io.File
 import java.util.Base64
+import java.util.concurrent.atomic.AtomicReference
 
 /** Runs only with scripts/test-android-screens.sh's disposable native service.
  * No production credential or endpoint is read or replaced by this test.
@@ -47,10 +54,24 @@ class ScreenEndToEndTest {
         lateinit var controller: ScreenController
         lateinit var canvas: ScreenCanvasView
         val opened = java.util.concurrent.atomic.AtomicInteger()
+        val nextConfigurationFailure = AtomicReference<Status?>()
+        val faults = object : ClientInterceptor {
+            override fun <ReqT : Any?, RespT : Any?> interceptCall(method: MethodDescriptor<ReqT, RespT>, options: CallOptions, next: Channel): ClientCall<ReqT, RespT> {
+                val failure = if (method.bareMethodName == "UpdateRemoteDesktopSession") nextConfigurationFailure.getAndSet(null) else null
+                if (failure == null) return next.newCall(method, options)
+                return object : ClientCall<ReqT, RespT>() {
+                    override fun start(listener: Listener<RespT>, headers: Metadata) { listener.onClose(failure, Metadata()) }
+                    override fun request(count: Int) = Unit
+                    override fun cancel(message: String?, cause: Throwable?) = Unit
+                    override fun halfClose() = Unit
+                    override fun sendMessage(message: ReqT) = Unit
+                }
+            }
+        }
         suspend fun open(): ScreenConnection {
             val channel = OkHttpChannelBuilder.forAddress("127.0.0.1", fixture.getInt("port")).usePlaintext().build()
             val headers = Metadata().apply { put(Metadata.Key.of("authorization", Metadata.ASCII_STRING_MARSHALLER), "Bearer ${fixture.getString("token")}") }
-            return ScreenConnection(DieterServiceGrpcKt.DieterServiceCoroutineStub(channel).withInterceptors(MetadataUtils.newAttachHeadersInterceptor(headers)),
+            return ScreenConnection(DieterServiceGrpcKt.DieterServiceCoroutineStub(channel).withInterceptors(MetadataUtils.newAttachHeadersInterceptor(headers), faults),
                 Base64.getDecoder().decode(fixture.getString("certificate")), RTCConfiguration.parseFrom(Base64.getDecoder().decode(fixture.getString("rtc"))), "Isolated native fixture", if (opened.incrementAndGet() == 1) System.currentTimeMillis() + 3000 else null) { channel.shutdownNow() }
         }
         compose.setContent {
@@ -177,6 +198,57 @@ class ScreenEndToEndTest {
             compose.waitUntil(30_000) { controller.state.value.phase == "streaming" || controller.state.value.phase == "failed" }
             assertEquals(controller.state.value.error, "streaming", controller.state.value.phase)
             compose.waitUntil(10000) { controller.state.value.control }
+
+            // NOT_FOUND and a broken route must create a new signed session/peer, not reuse
+            // the old offer or leave Retry pointing at an obsolete connection.
+            for (failure in listOf(Status.NOT_FOUND.withDescription("remote desktop session not found"), Status.UNAVAILABLE)) {
+                val oldId = controller.id
+                val oldRoutes = opened.get()
+                nextConfigurationFailure.set(failure)
+                compose.runOnIdle { controller.configure(quality = RemoteDesktopQuality.REMOTE_DESKTOP_QUALITY_MOTION, refresh = true) }
+                compose.waitUntil(30_000) { (controller.id != oldId && controller.state.value.control) || controller.state.value.phase == "failed" }
+                assertEquals(controller.state.value.error, "streaming", controller.state.value.phase)
+                assertNotEquals(oldId, controller.id)
+                assertTrue("Recovery must discover and authenticate a fresh route", opened.get() > oldRoutes)
+                assertEquals(RemoteDesktopQuality.REMOTE_DESKTOP_QUALITY_MOTION, controller.state.value.session.configuration.quality)
+                compose.runOnIdle { controller.key(41, true); controller.key(41, false) }
+                compose.waitUntil(5_000) { controller.state.value.session.lastInputOrdinal >= 2 }
+            }
+
+            // Also expire the actual daemon-side session. Its close signal and the peer
+            // disconnect can race; only one replacement is allowed and input must resume.
+            val expiredId = controller.id
+            val expiry = java.net.URL("http://127.0.0.1:${fixture.getInt("port")}/test/expire-screen").openConnection() as java.net.HttpURLConnection
+            try {
+                expiry.requestMethod = "POST"
+                expiry.connectTimeout = 5_000; expiry.readTimeout = 5_000
+                expiry.setRequestProperty("Authorization", "Bearer ${fixture.getString("token")}")
+                assertEquals(204, expiry.responseCode)
+            } finally { expiry.disconnect() }
+            compose.waitUntil(30_000) { (controller.id != expiredId && controller.state.value.control) || controller.state.value.phase == "failed" }
+            assertEquals(controller.state.value.error, "streaming", controller.state.value.phase)
+            assertNotEquals(expiredId, controller.id)
+
+            // A user disconnect during backoff cancels recovery, even after its timer fires.
+            compose.onNodeWithTag("screen-disconnect").performClick()
+            connect()
+            compose.waitUntil(30_000) { controller.state.value.control }
+            nextConfigurationFailure.set(Status.NOT_FOUND)
+            compose.runOnIdle { controller.configure(refresh = true) }
+            compose.waitUntil(5_000) { controller.state.value.phase == "reconnecting" }
+            compose.runOnIdle { controller.disconnect() }
+            val stoppedRoutes = opened.get()
+            SystemClock.sleep(4_500)
+            assertEquals("idle", controller.state.value.phase)
+            assertEquals(stoppedRoutes, opened.get())
+
+            // Repeated immediate disconnect/connect exercises completion of the old Close RPC.
+            repeat(3) {
+                connect()
+                compose.waitUntil(30_000) { controller.state.value.control || controller.state.value.phase == "failed" }
+                assertEquals(controller.state.value.error, "streaming", controller.state.value.phase)
+                if (it < 2) compose.onNodeWithTag("screen-disconnect").performClick()
+            }
         } catch (failure: Throwable) {
             throw AssertionError("Screen state: ${controller.state.value}; pointer ordinal=${controller.lastPointerOrdinal}; window focus=${canvas.hasWindowFocus()}", failure)
         } finally {

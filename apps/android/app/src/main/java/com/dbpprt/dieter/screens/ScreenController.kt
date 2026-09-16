@@ -55,6 +55,10 @@ class ScreenController(context: Context) : AutoCloseable {
     private var signaling: Job? = null
     private var monitoring: Job? = null
     private var configuring: Job? = null
+    private var recovering: Job? = null
+    private var closing: Job? = null
+    private var recovery = ScreenRecovery()
+    private var certificate: ByteArray? = null
     private var pointerFlush: Job? = null
     private var pendingPointer: Pair<Float, Float>? = null
     private var pointerSequence = 0L
@@ -76,15 +80,28 @@ class ScreenController(context: Context) : AutoCloseable {
     }
 
     fun connect(open: suspend () -> ScreenConnection) {
+        check(!closed) { "Screen controller is closed" }
         disconnect()
-        val current = token
         reopen = open
-        mutable.value = ScreenState(phase = "connecting")
+        recovery = ScreenRecovery()
+        certificate = null
+        configuration = RemoteDesktopStreamConfiguration.getDefaultInstance()
+        startConnection()
+    }
+
+    private fun startConnection() {
+        val open = reopen ?: return
+        val current = token
+        mutable.value = ScreenState(phase = if (recovering == null) "connecting" else "reconnecting")
         signaling = scope.launch {
             try {
-                val route = withContext(Dispatchers.IO) { open() }
+                // A rapid Retry must not race the previous session's asynchronous Close RPC.
+                closing?.join()
+                val route = openRoute(open)
                 if (current != token) { route.close(); return@launch }
                 connection = route
+                require(certificate?.contentEquals(route.certificate) != false) { "The enrolled machine identity changed. Reconnect to verify it." }
+                certificate = route.certificate.copyOf()
                 val caps = rpc().getRemoteDesktopCapabilities(Empty.getDefaultInstance())
                 mutable.value = mutable.value.copy(capabilities = caps, signalingRoute = route.route)
                 require(caps.enabled && caps.ready) { caps.unavailableReason.ifBlank { "Enable screen sharing on this machine first" } }
@@ -116,38 +133,34 @@ class ScreenController(context: Context) : AutoCloseable {
                 val offer = createOffer(pc)
                 setDescription(pc, offer, local = true)
                 if (current != token) return@launch
-                val display = caps.displaysList.firstOrNull { it.primary } ?: caps.displaysList.first()
+                val display = caps.displaysList.firstOrNull { it.id == configuration.displayId }
+                    ?: caps.displaysList.firstOrNull { it.primary } ?: caps.displaysList.first()
                 val start = StartRemoteDesktopRequest.newBuilder().setClientNonce(UUID.randomUUID().toString())
                     .setRtcConfiguration(route.rtc).setDisplayId(display.id)
                     .setControl(settings.controlEnabled && caps.controlSupported && caps.controlPermission == "granted")
-                    .setMaxWidth(1920).setMaxHeight(1080).setMaxFps(60).setMaxBitrateKbps(12000)
+                    .setMaxWidth(1920).setMaxHeight(1080).setMaxFps(60).setMaxBitrateKbps(12000).setQuality(configuration.quality)
                     .setOffer(RemoteDesktopSessionDescription.newBuilder().setType("offer").setSdp(offer.description)).build()
                 request = start
                 configuration = RemoteDesktopStreamConfiguration.newBuilder().setDisplayId(display.id)
-                    .setMaxWidth(start.maxWidth).setMaxHeight(start.maxHeight).setMaxFps(60).setMaxBitrateKbps(12000).build()
-                var attempts = 0
+                    .setMaxWidth(start.maxWidth).setMaxHeight(start.maxHeight).setMaxFps(60).setMaxBitrateKbps(12000).setQuality(start.quality).build()
                 while (isActive && current == token) {
                     val sourceRoute = requireNotNull(connection)
                     try {
                         sourceRoute.rpc.startRemoteDesktop(start).collect { signal ->
                             if (current != token) throw CancellationException()
                             receive(signal)
-                            attempts = 0
                         }
-                        error("Screen-sharing signaling ended")
+                        throw io.grpc.Status.UNAVAILABLE.withDescription("Screen-sharing signaling ended").asException()
                     } catch (e: CancellationException) { throw e
                     } catch (e: Exception) {
                         // A planned credential refresh must resubscribe immediately, without
                         // treating the retired route as a network failure or disabling input.
                         if (sourceRoute !== connection && current == token) continue
-                        if (++attempts > 2 || !authorized) throw e
-                        releaseInput()
-                        mutable.value = mutable.value.copy(phase = "reconnecting", control = false)
-                        delay(attempts * 1000L)
+                        throw e
                     }
                 }
             } catch (e: CancellationException) { throw e
-            } catch (e: Exception) { if (current == token) fail(e.message ?: "Screen connection failed") }
+            } catch (e: Exception) { if (current == token) connectionFailure(e) }
         }
     }
 
@@ -159,7 +172,11 @@ class ScreenController(context: Context) : AutoCloseable {
             localCandidates.toList().forEach(::sendCandidate); localCandidates.clear()
             monitor()
         }
-        require(signal.sessionId == sessionId) { "Screen session identity changed" }
+        if (signal.sessionId != sessionId) {
+            // The daemon may have expired the old session while a refreshed route was opening.
+            // Never apply a new answer to the old peer; authenticate a completely new offer.
+            throw io.grpc.Status.NOT_FOUND.withDescription("The previous screen session expired").asException()
+        }
         when (signal.payloadCase) {
             RemoteDesktopSignal.PayloadCase.BINDING -> {
                 require(binding == null || binding == signal.binding) { "Screen binding changed" }
@@ -177,7 +194,7 @@ class ScreenController(context: Context) : AutoCloseable {
                 else { require(remoteCandidates.size < 256); remoteCandidates.add(ice) }
             }
             RemoteDesktopSignal.PayloadCase.STATE -> applyState(signal.state)
-            RemoteDesktopSignal.PayloadCase.ERROR -> error(signal.error.message)
+            RemoteDesktopSignal.PayloadCase.ERROR -> if (signal.error.recoverable) recover(signal.error.message) else fail(signal.error.message)
             else -> Unit
         }
     }
@@ -201,9 +218,10 @@ class ScreenController(context: Context) : AutoCloseable {
         override fun onConnectionChange(value: PeerConnection.PeerConnectionState) { scope.launch {
             if (token != current) return@launch
             when (value) {
-                PeerConnection.PeerConnectionState.FAILED -> fail("The video connection failed. Reconnect to try again.")
+                PeerConnection.PeerConnectionState.FAILED -> recover("The video connection failed")
                 PeerConnection.PeerConnectionState.DISCONNECTED -> {
-                    releaseInput(); peerConnected = false; mutable.value = mutable.value.copy(phase = "reconnecting", control = false)
+                    releaseInput(); peerConnected = false; recovery.interrupted(SystemClock.elapsedRealtime())
+                    mutable.value = mutable.value.copy(phase = "reconnecting", control = false)
                 }
                 PeerConnection.PeerConnectionState.CONNECTED -> { peerConnected = true; readiness() }
                 else -> Unit
@@ -252,7 +270,11 @@ class ScreenController(context: Context) : AutoCloseable {
         }
     }
     private fun applyState(value: RemoteDesktopSessionState) {
-        if (value.phase == "closed") { fail(value.reason.ifBlank { "The screen session closed" }); return }
+        if (value.phase == "closed") {
+            if (ScreenRecovery.retryableClosure(value.reason)) recover(value.reason)
+            else fail(value.reason.ifBlank { "The screen session closed" })
+            return
+        }
         val previous = mutable.value.session
         if (value.displayGeneration < previous.displayGeneration) return
         var next = value
@@ -276,8 +298,9 @@ class ScreenController(context: Context) : AutoCloseable {
         }
     }
     private fun readiness() {
-        val ready = authorized && presentedGeneration > 0 && presentedGeneration == mutable.value.session.displayGeneration
+        val ready = authorized && peerConnected && presentedGeneration > 0 && presentedGeneration == mutable.value.session.displayGeneration
             && configuration.displayId == mutable.value.session.displayId
+        if (ready) recovery.streaming(SystemClock.elapsedRealtime())
         val channels = listOf(pointer, input, host).all { it?.state() == DataChannel.State.OPEN }
         mutable.value = mutable.value.copy(control = ready && peerConnected && channels && binding?.controlGranted == true && focused,
             phase = if (ready) "streaming" else mutable.value.phase)
@@ -326,7 +349,7 @@ class ScreenController(context: Context) : AutoCloseable {
         if (!mutable.value.control) return
         val channel = if (reliable) input else pointer
         if (channel?.state() != DataChannel.State.OPEN || channel.bufferedAmount() >= 65536) {
-            if (reliable) fail("Remote input stalled. Reconnect to resume control.")
+            if (reliable && !builder.hasReleaseAll()) recover("Remote input stalled")
             return
         }
         if (reliable) { pendingPointer = null; stateSequence++ } else pointerSequence++
@@ -336,7 +359,7 @@ class ScreenController(context: Context) : AutoCloseable {
             .setSequence(if (reliable) stateSequence else pointerSequence).setStateBarrier(stateSequence)
             .setEventOrdinal(ordinal).setDisplayGeneration(mutable.value.session.displayGeneration).build().toByteArray()
         if (raw.size > 4096 || !channel.send(DataChannel.Buffer(ByteBuffer.wrap(raw), true))) {
-            if (reliable) fail("Remote input could not be delivered")
+            if (reliable && !builder.hasReleaseAll()) recover("Remote input could not be delivered")
         }
     }
     fun configure(display: String? = null, quality: RemoteDesktopQuality? = null, refresh: Boolean = false) {
@@ -351,7 +374,7 @@ class ScreenController(context: Context) : AutoCloseable {
                     .setSessionId(sessionId).setConfiguration(configuration).setRefresh(refresh).build())
                 if (current == token) applyState(result)
             } catch (e: CancellationException) { throw e
-            } catch (e: Exception) { if (current == token) fail(e.message ?: "Screen configuration failed") }
+            } catch (e: Exception) { if (current == token) connectionFailure(e) }
         }
     }
 
@@ -400,14 +423,14 @@ class ScreenController(context: Context) : AutoCloseable {
                     if (framesPresented.get() == 0L && ticks == 6) configure(refresh = true)
                     if (framesPresented.get() == 0L && ticks >= 40) error("No screen frame was displayed")
                 } catch (e: CancellationException) { throw e
-                } catch (e: Exception) { fail(e.message ?: "Screen connection lost"); return@launch }
+                } catch (e: Exception) { if (current == token) connectionFailure(e); return@launch }
             }
         }
     }
     private suspend fun refreshRoute(current: Long) {
         val open = reopen ?: return
         val old = connection ?: return
-        val fresh = withContext(Dispatchers.IO) { open() }
+        val fresh = openRoute(open)
         if (current != token) { fresh.close(); return }
         if (!fresh.certificate.contentEquals(old.certificate)) {
             fresh.close(); error("The enrolled machine identity changed. Reconnect to verify it.")
@@ -417,17 +440,32 @@ class ScreenController(context: Context) : AutoCloseable {
         old.close() // The idempotent signaling loop resubscribes using the same nonce and offer.
     }
 
+    private suspend fun openRoute(open: suspend () -> ScreenConnection): ScreenConnection {
+        // withContext may discard a successful result when cancellation wins the dispatch
+        // back to Main. Retain ownership so leaving Screens cannot leak that channel.
+        var opened: ScreenConnection? = null
+        try { return withContext(Dispatchers.IO) { open().also { opened = it } } }
+        catch (error: Exception) { opened?.close(); throw error }
+    }
+
     fun disconnect() {
+        recovering?.cancel(); recovering = null
+        reopen = null
+        stopSession()
+        mutable.value = mutable.value.copy(phase = "idle", error = "", control = false)
+    }
+
+    private fun stopSession() {
         if (disconnecting) return
         disconnecting = true
         releaseInput(); token++; authorized = false
         signaling?.cancel(); signaling = null; monitoring?.cancel(); monitoring = null; configuring?.cancel(); configuring = null
         val old = connection; val id = sessionId
-        connection = null; reopen = null; sessionId = ""
+        connection = null; sessionId = ""
         listOfNotNull(pointer, input, host).forEach { it.unregisterObserver(); it.close(); it.dispose() }
         pointer = null; input = null; host = null
         peer?.close(); peer?.dispose(); peer = null; peerConnected = false; factory?.dispose(); factory = null
-        if (old != null) scope.launch(Dispatchers.IO) {
+        if (old != null) closing = scope.launch(Dispatchers.IO) {
             try { if (id.isNotBlank()) old.rpc.withDeadlineAfter(3, TimeUnit.SECONDS).closeRemoteDesktop(RemoteDesktopRef.newBuilder().setSessionId(id).build()) }
             catch (_: Exception) {} finally { old.close() }
         }
@@ -435,8 +473,25 @@ class ScreenController(context: Context) : AutoCloseable {
         localCandidates.clear(); remoteCandidates.clear(); presentedGeneration = 0; lastPresentedTimestamp = null
         pointerSequence = 0; stateSequence = 0; ordinal = 0; feedbackSequence = 0; lastPointerOrdinal = 0; framesPresented.set(0); totalRenderMs = 0.0
         canvasModel.reset(); canvasModel.cursor(.5f, .5f)
-        mutable.value = mutable.value.copy(phase = "idle", control = false)
+        mutable.value = mutable.value.copy(control = false)
         disconnecting = false
+    }
+    private fun connectionFailure(error: Exception) {
+        if (ScreenRecovery.retryable(error)) recover(error.message ?: "Screen connection lost")
+        else fail(error.message ?: "Screen connection failed")
+    }
+    private fun recover(message: String) {
+        if (closed || reopen == null) return
+        val delayMillis = recovery.nextDelay(SystemClock.elapsedRealtime())
+        if (delayMillis == null) { fail("Could not reconnect. Check the machine connection and tap Retry. ($message)"); return }
+        recovering?.cancel()
+        stopSession()
+        val current = token
+        mutable.value = ScreenState(phase = "reconnecting")
+        recovering = scope.launch {
+            delay(delayMillis)
+            if (current == token && !closed) startConnection()
+        }
     }
     private fun fail(message: String) { disconnect(); mutable.value = mutable.value.copy(phase = "failed", error = message) }
     override fun close() {
