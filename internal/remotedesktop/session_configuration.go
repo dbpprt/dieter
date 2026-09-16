@@ -128,6 +128,7 @@ func newMediaAPI(settings webrtc.SettingEngine, source FrameSource) (*webrtc.API
 	}
 	controller.OnNewPeerConnection(func(_ string, value cc.BandwidthEstimator) { estimator = value })
 	registry.Add(controller)
+	registry.Add(transportFeedbackFactory{pacer: pacer})
 	var refresh func()
 	if controlled, ok := source.(ControlledFrameSource); ok {
 		refresh = controlled.RequestKeyFrame
@@ -197,6 +198,8 @@ func (s *Session) adapt() {
 	defer ticker.Stop()
 	var controller *qualityController
 	var revision, previousDrops uint64
+	var minimumRTT float64
+	var rttWindow time.Time
 	evaluated := time.Now()
 	for {
 		select {
@@ -211,7 +214,7 @@ func (s *Session) adapt() {
 			return
 		}
 		state := proto.Clone(s.status).(*dieterv1.RemoteDesktopSessionState)
-		feedback, lastFeedback, current, currentRevision := s.receiver, s.lastFeedback, s.applied, s.configurationRevision
+		feedback, lastFeedback, measuredAt, current, currentRevision := s.receiver, s.lastFeedback, s.receiverMeasuredAt, s.applied, s.configurationRevision
 		s.mu.Unlock()
 		if s.pc.ConnectionState() != webrtc.PeerConnectionStateConnected {
 			continue
@@ -220,14 +223,25 @@ func (s *Session) adapt() {
 			s.close("receiver input heartbeat expired")
 			return
 		}
-		if s.estimator != nil {
-			stats := s.estimator.GetStats()
-			loss, _ := stats["averageLoss"].(float64)
-			healthy := feedback != nil && now.Sub(lastFeedback) < time.Second &&
-				feedback.LossFraction < 0.02 && feedback.RttMs < 100 &&
-				stats["usage"] == "normal" && loss < 0.02
-			s.pacer.ObserveNetwork(now, healthy)
+		fresh := feedback != nil && !measuredAt.IsZero() && now.Sub(measuredAt) < 2*time.Second
+		if fresh && feedback.RttMs > 0 {
+			// A route change must not leave a former LAN RTT as a permanent
+			// congestion baseline. Packet acknowledgments still bound recovery.
+			if minimumRTT == 0 || now.Sub(rttWindow) >= 30*time.Second {
+				minimumRTT, rttWindow = feedback.RttMs, now
+			} else {
+				minimumRTT = min(minimumRTT, feedback.RttMs)
+			}
 		}
+		rttPressure := fresh && minimumRTT > 0 && feedback.RttMs > minimumRTT+max(50, minimumRTT*.5)
+		s.pacer.mu.Lock()
+		transport := s.pacer.transport
+		s.pacer.probeCeiling = int(state.GetConfiguration().GetMaxBitrateKbps()) * 1000 * 100 / 85
+		s.pacer.mu.Unlock()
+		networkPressure := rttPressure || (transport.fresh(now) && transport.congested())
+		// GCC can retain an old delay-overuse classification through application
+		// idle. Fresh packet delivery and receiver measurements gate recovery.
+		s.pacer.ObserveNetwork(now, fresh && feedback.LossFraction < .02 && !networkPressure)
 		source, ok := s.source.(AdaptiveFrameSource)
 		if !ok || state.Configuration == nil {
 			continue
@@ -263,8 +277,9 @@ func (s *Session) adapt() {
 		}
 		previousDrops = state.FramesDropped
 		desired, reason := controller.next(now, current, state.Configuration, adaptationSample{
-			frames: frames, feedback: feedback, feedbackAt: lastFeedback, budget: budget,
+			frames: frames, feedback: feedback, feedbackAt: measuredAt, budget: budget,
 			width: int(state.Width), height: int(state.Height), drops: drops, elapsed: elapsed,
+			networkPressure: networkPressure,
 		})
 		if desired == current {
 			continue
@@ -283,11 +298,21 @@ func (s *Session) adapt() {
 				s.applied = desired
 				s.mu.Unlock()
 				if logger := s.manager.options.Logger; logger != nil {
+					var gccStats map[string]any
+					gccRate := 0
+					if s.estimator != nil {
+						gccStats, gccRate = s.estimator.GetStats(), s.estimator.GetTargetBitrate()
+					}
 					logger.Info("remote desktop quality", "session", s.id, "reason", reason,
 						"width", desired.MaxWidth, "height", desired.MaxHeight, "fps", desired.FPS,
 						"bitrate_kbps", desired.BitrateKbps, "estimate_kbps", estimate/1000,
 						"encode_ms", controller.encodeMS, "decode_ms", controller.decodeMS,
-						"write_ms", controller.writeMS, "loss", feedback.GetLossFraction())
+						"write_ms", controller.writeMS, "loss", feedback.GetLossFraction(),
+						"measurement_age_ms", now.Sub(measuredAt).Milliseconds(), "measurement_sequence", feedback.GetMeasurementSequence(),
+						"network_pressure", networkPressure, "transport_growth_ms", transport.growthMS,
+						"delivered_kbps", transport.deliveredRate/1000, "rtt_ms", feedback.GetRttMs(),
+						"gcc_kbps", gccRate/1000, "gcc_usage", gccStats["usage"],
+						"media_kbps", float64(frames.bytes*8)/elapsed.Seconds()/1000)
 				}
 			} else if logger := s.manager.options.Logger; logger != nil {
 				logger.Warn("remote desktop configuration failed", "session", s.id, "error", err)
@@ -375,6 +400,13 @@ func (s *Session) streamMedia(sample media.Sample) error {
 		s.measurements.writeMS += s.status.QueueMs
 	}
 	s.mu.Unlock()
+	for i := 0; i < 256 && s.pacer.needsProbePadding(time.Now()); i++ {
+		padding := s.packetizer.GeneratePadding(1)[0]
+		padding.Timestamp = timestamp
+		if err := s.rtpTrack.WriteRTP(padding); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 

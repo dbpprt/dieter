@@ -18,6 +18,8 @@ internal class ScreenFeedbackPump(
     private var feedback = RemoteDesktopReceiverFeedback.getDefaultInstance()
     private var sequence = 0L
     private var generation = 0L
+    private var measurementSequence = 1L
+    private var measuredAt = 0L
     private var inputActive = false
     private var inputUpdatedAt = 0L
 
@@ -27,6 +29,8 @@ internal class ScreenFeedbackPump(
         this.channel = channel
         feedback = initial
         sequence = 0L
+        measurementSequence = 1L
+        measuredAt = clock()
         job = scope.launch {
             while (isActive) {
                 delay(500)
@@ -34,6 +38,8 @@ internal class ScreenFeedbackPump(
                     val target = this@ScreenFeedbackPump.channel
                     if (current == generation && (sendFeedback != null || target != null && target.state() == DataChannel.State.OPEN && target.bufferedAmount() < 16384)) {
                         val value = feedback.toBuilder().setSequence(++sequence)
+                            .setMeasurementSequence(measurementSequence)
+                            .setMeasurementAgeMs((clock() - measuredAt).coerceIn(0, Int.MAX_VALUE.toLong()).toInt())
                             .setInputActive(inputActive && clock() - inputUpdatedAt < 1_000).build()
                         if (sendFeedback != null) sendFeedback.invoke(value)
                         else target?.send(DataChannel.Buffer(ByteBuffer.wrap(value.toByteArray()), true))
@@ -43,7 +49,11 @@ internal class ScreenFeedbackPump(
         }
     }
 
-    fun update(value: RemoteDesktopReceiverFeedback) = synchronized(lock) { feedback = value }
+    fun update(value: RemoteDesktopReceiverFeedback, measuredAt: Long = clock()) = synchronized(lock) {
+        feedback = value
+        measurementSequence++
+        this.measuredAt = measuredAt
+    }
     fun input(active: Boolean) = synchronized(lock) {
         inputActive = active
         inputUpdatedAt = clock()

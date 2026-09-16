@@ -56,55 +56,76 @@ func TestReceiverLatencyFeedbackIsValidatedAndExposed(t *testing.T) {
 	}
 }
 
-func TestIdleProbeIsBoundedAndCongestionCancelsIt(t *testing.T) {
-	p := newPacketPacer(4_000_000)
+func TestRecoveryProbeIsBoundedAndCongestionCancelsIt(t *testing.T) {
+	p := newPacketPacer(100000)
 	defer p.Close()
+	p.transportID = 3
 	now := time.Now()
-	p.EndFrame(now)
+	p.EndFrame(now.Add(-time.Minute))
 	p.ObserveNetwork(now, true)
-	p.SetTargetBitrate(100_000)
-	resume := now.Add(600 * time.Millisecond)
-	p.BeginFrame(resume)
-	if got := p.targetLocked(resume); got != 4_000_000 {
-		t.Fatalf("idle resume rate: %d", got)
+	p.BeginFrame(now)
+	if p.probeBytes == 0 || p.targetLocked(now) != 200000 {
+		t.Fatal("long idle did not permit a bounded recovery probe")
 	}
-	if got := p.targetLocked(resume.Add(251 * time.Millisecond)); got != 100_000 {
-		t.Fatalf("unbounded probe: %d", got)
+	if p.TargetBitrate() != 100000 {
+		t.Fatal("unacknowledged probe raised encoder budget")
 	}
-	// A slow send is not an application idle interval.
-	p.EndFrame(resume.Add(2 * time.Second))
-	p.BeginFrame(resume.Add(2*time.Second + time.Millisecond))
+	if got := p.targetLocked(now.Add(251 * time.Millisecond)); got != 100000 {
+		t.Fatalf("probe exceeded time budget: %d", got)
+	}
+	p.ObserveNetwork(now, false)
+	if p.confirmedRate != 0 || p.probeBytes != 0 {
+		t.Fatal("congestion did not cancel recovery")
+	}
+	p.BeginFrame(now.Add(time.Second))
 	if p.probeBytes != 0 {
-		t.Fatal("network backpressure re-armed idle probe")
-	}
-	// No route/address-based override: explicit congestion cancels any probe.
-	p.probeBytes, p.probeRate, p.probeUntil = 65536, 4_000_000, resume.Add(time.Second)
-	p.ObserveNetwork(resume, false)
-	if got := p.targetLocked(resume); got != 100_000 {
-		t.Fatalf("congestion ignored: %d", got)
+		t.Fatal("probe bypassed feedback/cooldown")
 	}
 }
 
-func TestIdleProbeByteBudgetAndStaleCapacity(t *testing.T) {
-	p := newPacketPacer(100_000)
+func TestRecoveryProbeByteBudget(t *testing.T) {
+	p := newPacketPacer(100000)
 	defer p.Close()
+	p.transportID = 3
 	now := time.Now()
-	p.recentRate, p.recentAt = 8_000_000, now
-	p.lastFrameEnd, p.healthyUntil = now.Add(-time.Second), now.Add(time.Second)
+	p.ObserveNetwork(now, true)
 	p.BeginFrame(now)
+	if p.probeBytes > 64<<10 {
+		t.Fatal("unbounded byte budget")
+	}
 	p.AddStream(1, interceptor.RTPWriterFunc(func(_ *rtp.Header, payload []byte, _ interceptor.Attributes) (int, error) { return len(payload), nil }))
-	for range 60 {
+	for range 4 {
 		if _, err := p.Write(&rtp.Header{Version: 2, SSRC: 1}, make([]byte, 1200), nil); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if p.probeBytes != 0 || p.TargetBitrate() != 100_000 {
-		t.Fatal("probe exceeded byte budget")
+	if p.probeBytes != 0 || p.TargetBitrate() != 100000 {
+		t.Fatal("probe exceeded budget or bypassed acknowledgment")
 	}
-	p.lastFrameEnd, p.lastProbe = now.Add(-time.Minute), time.Time{}
-	p.recentAt = now.Add(-time.Minute)
-	p.BeginFrame(now)
-	if p.probeBytes != 0 {
-		t.Fatal("stale capacity reused")
+}
+
+func TestReceiverMeasurementAgeIsIndependentOfHeartbeat(t *testing.T) {
+	s := &Session{inputEpoch: []byte("epoch"), status: &dieterv1.RemoteDesktopSessionState{}}
+	value := &dieterv1.RemoteDesktopReceiverFeedback{ProtocolVersion: inputProtocolVersion, InputEpoch: s.inputEpoch, Sequence: 1, MeasurementSequence: 2, MeasurementAgeMs: 1500, DecodeMs: 4}
+	raw, _ := proto.Marshal(value)
+	s.receiveFeedback(raw)
+	first := s.receiverMeasuredAt
+	if age := time.Since(first); age < 1500*time.Millisecond || age > 1600*time.Millisecond {
+		t.Fatalf("sample age not retained: %s", age)
+	}
+	value.Sequence = 2
+	value.MeasurementAgeMs = 2000
+	raw, _ = proto.Marshal(value)
+	s.receiveFeedback(raw)
+	if !s.receiverMeasuredAt.Equal(first) || s.lastFeedback.Before(first.Add(1500*time.Millisecond)) {
+		t.Fatal("heartbeat refreshed the statistics timestamp")
+	}
+	value.Sequence = 3
+	value.MeasurementSequence = 3
+	value.MeasurementAgeMs = 0
+	raw, _ = proto.Marshal(value)
+	s.receiveFeedback(raw)
+	if time.Since(s.receiverMeasuredAt) > 100*time.Millisecond {
+		t.Fatal("new measurement did not refresh statistics")
 	}
 }

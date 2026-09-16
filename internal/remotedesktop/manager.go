@@ -474,6 +474,8 @@ type Session struct {
 	inputChannels         map[string]bool
 	receiver              *dieterv1.RemoteDesktopReceiverFeedback
 	lastFeedback          time.Time
+	receiverMeasuredAt    time.Time
+	receiverMeasurement   uint64
 	applied               StreamConfiguration
 	configurationRevision uint64
 	measurements          frameMeasurements

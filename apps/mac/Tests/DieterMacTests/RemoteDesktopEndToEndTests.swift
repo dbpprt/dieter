@@ -19,6 +19,7 @@ private struct ScreenFixtureConnection: Decodable {
         let helper = environment["DIETER_TEST_CAPTURE_HELPER"]
     else { return }
     let real = environment["DIETER_TEST_SCREEN_CAPTURE_REAL"] == "1"
+    let stabilitySeconds = max(32, min(600, Int(environment["DIETER_TEST_SCREEN_QUALITY_SOAK_SECONDS"] ?? "32") ?? 32))
     let output = FileManager.default.temporaryDirectory.appending(path: "dieter-screen-viewer-\(UUID().uuidString)")
     try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
     let ready = output.appending(path: "ready.json")
@@ -31,6 +32,7 @@ private struct ScreenFixtureConnection: Decodable {
     if !real {
         var fixtureEnvironment = environment
         fixtureEnvironment["DIETER_TEST_CAPTURE_IDLE_CYCLE"] = "1"
+        if stabilitySeconds >= 180 { fixtureEnvironment["DIETER_TEST_CAPTURE_QUALITY_CYCLE"] = "1" }
         process.environment = fixtureEnvironment
     }
     try process.run()
@@ -119,16 +121,21 @@ private struct ScreenFixtureConnection: Decodable {
         let initialWidth = controller.sessionState.width
         var previousFPS = controller.sessionState.fps
         var cadenceChanges = 0
-        for _ in 0..<32 {
+        for second in 0..<stabilitySeconds {
             try await Task.sleep(for: .seconds(1))
             let state = controller.sessionState
             #expect(state.width >= initialWidth, "An uncongested local stream must preserve pixels")
             #expect(state.displayGeneration == firstGeneration, "LAN adaptation must not restart capture")
             #expect(controller.controlActive)
             if state.fps != previousFPS { cadenceChanges += 1; previousFPS = state.fps }
+            if second % 15 == 0 {
+                print(
+                    "Native quality second \(second): \(state.width)x\(state.height)@\(state.fps), \(state.bitrateKbps) kbps, received \(state.receiverFps) fps, send \(state.sendMs) ms"
+                )
+            }
         }
         #expect(cadenceChanges <= 2, "Steady local conditions must not oscillate cadence")
-        print("32-second LAN stability: \(initialWidth) pixels, \(cadenceChanges) cadence changes")
+        print("\(stabilitySeconds)-second LAN stability: \(initialWidth) pixels, \(cadenceChanges) cadence changes")
         let sortedAges = presentationAges.sorted()
         try #require(sortedAges.count > 120)
         let median = sortedAges[sortedAges.count / 2], p95 = sortedAges[sortedAges.count * 95 / 100]

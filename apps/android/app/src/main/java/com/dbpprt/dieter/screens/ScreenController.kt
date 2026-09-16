@@ -430,6 +430,7 @@ class ScreenController(context: Context) : AutoCloseable {
                 try {
                     ticks++
                     val pc = peer ?: continue
+                    val measurementStarted = SystemClock.elapsedRealtime()
                     val stats = suspendCancellableCoroutine<RTCStatsReport> { continuation ->
                         pc.getStats { if (continuation.isActive) continuation.resume(it) }
                     }
@@ -451,7 +452,7 @@ class ScreenController(context: Context) : AutoCloseable {
                         .setRttMs(((pair["currentRoundTripTime"] as? Number)?.toDouble() ?: 0.0) * 1000)
                         .setLossFraction(delta("packetsLost") / max(1.0, delta("packetsLost") + delta("packetsReceived")))
                         .setInputActive(focused && mutable.value.control).build()
-                    feedbackPump.update(feedback)
+                    feedbackPump.update(feedback, measuredAt = measurementStarted)
                     val relayed = listOf("localCandidateId", "remoteCandidateId").any { key ->
                         stats.statsMap[pair[key]]?.members?.get("candidateType") == "relay"
                     }

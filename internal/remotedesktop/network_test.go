@@ -152,8 +152,25 @@ func TestCongestionFeedbackOnLossyMediaKeepsControlResponsive(t *testing.T) {
 		payload := make([]byte, 20000)
 		payload[0] = 0x10
 		for ctx.Err() == nil {
+			pacer.BeginFrame(time.Now())
 			if track.WriteSample(media.Sample{Data: payload, Duration: time.Second / 60}) != nil {
 				return
+			}
+			pacer.EndFrame(time.Now())
+		}
+	}()
+	go func() {
+		ticker := time.NewTicker(100 * time.Millisecond)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case now := <-ticker.C:
+				pacer.mu.Lock()
+				health := pacer.transport
+				pacer.mu.Unlock()
+				pacer.ObserveNetwork(now, health.fresh(now) && !health.congested())
 			}
 		}
 	}()
@@ -161,11 +178,11 @@ func TestCongestionFeedbackOnLossyMediaKeepsControlResponsive(t *testing.T) {
 	initial := (*estimator).GetTargetBitrate()
 	bandwidth.Store(800000)
 	deadline = time.Now().Add(10 * time.Second)
-	for (*estimator).GetTargetBitrate() > 1_200_000 && time.Now().Before(deadline) {
+	for ((*estimator).GetTargetBitrate() > 1_200_000 || pacer.TargetBitrate() > 1_200_000) && time.Now().Before(deadline) {
 		time.Sleep(100 * time.Millisecond)
 	}
 	constrained := (*estimator).GetTargetBitrate()
-	if dropped.Load() == 0 || constrained > 1_200_000 {
+	if dropped.Load() == 0 || constrained > 1_200_000 || pacer.TargetBitrate() > 1_200_000 {
 		t.Fatalf("TWCC/GCC did not respond: initial=%d constrained=%d drops=%d", initial, constrained, dropped.Load())
 	}
 	start := time.Now()
@@ -178,6 +195,15 @@ func TestCongestionFeedbackOnLossyMediaKeepsControlResponsive(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("congested media blocked reliable control")
 	}
+	bandwidth.Store(20_000_000)
+	deadline = time.Now().Add(25 * time.Second)
+	for pacer.TargetBitrate() < 3_000_000 && time.Now().Before(deadline) {
+		time.Sleep(100 * time.Millisecond)
+	}
+	if rate := pacer.TargetBitrate(); rate < 3_000_000 {
+		t.Fatalf("media did not recover without reconnect: %d", rate)
+	}
+	t.Logf("same peer recovered to %d bps after capacity returned", pacer.TargetBitrate())
 	cancel()
 	pacer.Close()
 	select {

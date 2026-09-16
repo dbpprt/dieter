@@ -5999,6 +5999,13 @@ public nonisolated struct Dieter_V1_RemoteDesktopReceiverFeedback: Sendable {
   /// Mean decoded-frame arrival to actual Metal presentation in this interval.
   public var renderMs: Double = 0
 
+  /// Independent of the heartbeat sequence. Zero is a legacy sender; new senders
+  /// start at one (an empty sample) and advance only when statistics are collected.
+  public var measurementSequence: UInt64 = 0
+
+  /// Monotonic age of that sample at send time; repeated heartbeats do not refresh it.
+  public var measurementAgeMs: UInt32 = 0
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
@@ -18294,7 +18301,7 @@ nonisolated extension Dieter_V1_RemoteDesktopSessionState: SwiftProtobuf.Message
 
 nonisolated extension Dieter_V1_RemoteDesktopReceiverFeedback: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".RemoteDesktopReceiverFeedback"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}protocol_version\0\u{3}input_epoch\0\u{1}sequence\0\u{3}frames_per_second\0\u{3}decode_ms\0\u{3}jitter_ms\0\u{3}rtt_ms\0\u{3}loss_fraction\0\u{3}input_active\0\u{3}rendered_frames\0\u{3}jitter_buffer_ms\0\u{3}render_ms\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}protocol_version\0\u{3}input_epoch\0\u{1}sequence\0\u{3}frames_per_second\0\u{3}decode_ms\0\u{3}jitter_ms\0\u{3}rtt_ms\0\u{3}loss_fraction\0\u{3}input_active\0\u{3}rendered_frames\0\u{3}jitter_buffer_ms\0\u{3}render_ms\0\u{3}measurement_sequence\0\u{3}measurement_age_ms\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -18314,6 +18321,8 @@ nonisolated extension Dieter_V1_RemoteDesktopReceiverFeedback: SwiftProtobuf.Mes
       case 10: try { try decoder.decodeSingularUInt32Field(value: &self.renderedFrames) }()
       case 11: try { try decoder.decodeSingularDoubleField(value: &self.jitterBufferMs) }()
       case 12: try { try decoder.decodeSingularDoubleField(value: &self.renderMs) }()
+      case 13: try { try decoder.decodeSingularUInt64Field(value: &self.measurementSequence) }()
+      case 14: try { try decoder.decodeSingularUInt32Field(value: &self.measurementAgeMs) }()
       default: break
       }
     }
@@ -18356,6 +18365,12 @@ nonisolated extension Dieter_V1_RemoteDesktopReceiverFeedback: SwiftProtobuf.Mes
     if self.renderMs.bitPattern != 0 {
       try visitor.visitSingularDoubleField(value: self.renderMs, fieldNumber: 12)
     }
+    if self.measurementSequence != 0 {
+      try visitor.visitSingularUInt64Field(value: self.measurementSequence, fieldNumber: 13)
+    }
+    if self.measurementAgeMs != 0 {
+      try visitor.visitSingularUInt32Field(value: self.measurementAgeMs, fieldNumber: 14)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -18372,6 +18387,8 @@ nonisolated extension Dieter_V1_RemoteDesktopReceiverFeedback: SwiftProtobuf.Mes
     if lhs.renderedFrames != rhs.renderedFrames {return false}
     if lhs.jitterBufferMs != rhs.jitterBufferMs {return false}
     if lhs.renderMs != rhs.renderMs {return false}
+    if lhs.measurementSequence != rhs.measurementSequence {return false}
+    if lhs.measurementAgeMs != rhs.measurementAgeMs {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

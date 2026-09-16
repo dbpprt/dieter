@@ -152,6 +152,7 @@ final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
     private var syntheticCounter: UInt64 = 0
     private let syntheticStarted = DispatchTime.now().uptimeNanoseconds
     private let syntheticIdleCycle = ProcessInfo.processInfo.environment["DIETER_TEST_CAPTURE_IDLE_CYCLE"] == "1"
+    private let syntheticQualityCycle = ProcessInfo.processInfo.environment["DIETER_TEST_CAPTURE_QUALITY_CYCLE"] == "1"
 
     init(options: CaptureOptions) {
         self.options = options
@@ -890,7 +891,10 @@ final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
 
     private func syntheticFrame() {
         guard !paused else { return }
-        if syntheticIdleCycle {
+        if syntheticQualityCycle {
+            let elapsed = (DispatchTime.now().uptimeNanoseconds - syntheticStarted) / 1_000_000_000 % 180
+            if (8..<53).contains(elapsed) || ((53..<143).contains(elapsed) && elapsed % 2 == 0) { return }
+        } else if syntheticIdleCycle {
             let elapsed = (DispatchTime.now().uptimeNanoseconds - syntheticStarted) / 1_000_000_000
             if (8..<13).contains(elapsed % 18) { return }
         }

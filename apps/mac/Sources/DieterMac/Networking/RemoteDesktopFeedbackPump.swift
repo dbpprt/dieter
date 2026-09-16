@@ -12,6 +12,9 @@ final class RemoteDesktopFeedbackPump: @unchecked Sendable {
     private var feedback = Dieter_V1_RemoteDesktopReceiverFeedback()
     private var sequence: UInt64 = 0
     private var generation: UInt64 = 0
+    private var measurementSequence: UInt64 = 1
+    private var measuredAt: TimeInterval = 0
+    private let clock: @Sendable () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }
     private let sendFeedback: (@Sendable (Dieter_V1_RemoteDesktopReceiverFeedback) -> Void)?
 
     init(sendFeedback: (@Sendable (Dieter_V1_RemoteDesktopReceiverFeedback) -> Void)? = nil) {
@@ -28,6 +31,8 @@ final class RemoteDesktopFeedbackPump: @unchecked Sendable {
             self.channel = channel
             feedback = initial
             sequence = 0
+            measurementSequence = 1
+            measuredAt = clock()
             let timer = DispatchSource.makeTimerSource(queue: queue)
             timer.schedule(deadline: .now(), repeating: .milliseconds(500), leeway: .milliseconds(25))
             timer.setEventHandler { [weak self] in self?.send(generation: current) }
@@ -36,14 +41,18 @@ final class RemoteDesktopFeedbackPump: @unchecked Sendable {
         }
     }
 
-    func update(_ value: Dieter_V1_RemoteDesktopReceiverFeedback) {
-        lock.withLock { feedback = value }
+    func update(_ value: Dieter_V1_RemoteDesktopReceiverFeedback, measuredAt: TimeInterval? = nil) {
+        lock.withLock {
+            feedback = value
+            measurementSequence &+= 1
+            self.measuredAt = measuredAt ?? clock()
+        }
     }
 
     func input(active: Bool) {
         lock.withLock {
             inputActive = active
-            inputUpdatedAt = ProcessInfo.processInfo.systemUptime
+            inputUpdatedAt = clock()
         }
     }
 
@@ -62,7 +71,9 @@ final class RemoteDesktopFeedbackPump: @unchecked Sendable {
             sequence &+= 1
             var value = feedback
             value.sequence = sequence
-            value.inputActive = inputActive && ProcessInfo.processInfo.systemUptime - inputUpdatedAt < 1
+            value.measurementSequence = measurementSequence
+            value.measurementAgeMs = UInt32(min(Double(UInt32.max), max(0, (clock() - measuredAt) * 1000)))
+            value.inputActive = inputActive && clock() - inputUpdatedAt < 1
             if let sendFeedback { sendFeedback(value); return }
             guard let channel, let raw = try? value.serializedData() else { return }
             _ = channel.sendData(RTCDataBuffer(data: raw, isBinary: true))

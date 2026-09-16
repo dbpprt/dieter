@@ -15741,9 +15741,14 @@ type RemoteDesktopReceiverFeedback struct {
 	// Mean residence in WebRTC's jitter buffer, distinct from RTP jitter.
 	JitterBufferMs float64 `protobuf:"fixed64,11,opt,name=jitter_buffer_ms,json=jitterBufferMs,proto3" json:"jitter_buffer_ms,omitempty"`
 	// Mean decoded-frame arrival to actual Metal presentation in this interval.
-	RenderMs      float64 `protobuf:"fixed64,12,opt,name=render_ms,json=renderMs,proto3" json:"render_ms,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	RenderMs float64 `protobuf:"fixed64,12,opt,name=render_ms,json=renderMs,proto3" json:"render_ms,omitempty"`
+	// Independent of the heartbeat sequence. Zero is a legacy sender; new senders
+	// start at one (an empty sample) and advance only when statistics are collected.
+	MeasurementSequence uint64 `protobuf:"varint,13,opt,name=measurement_sequence,json=measurementSequence,proto3" json:"measurement_sequence,omitempty"`
+	// Monotonic age of that sample at send time; repeated heartbeats do not refresh it.
+	MeasurementAgeMs uint32 `protobuf:"varint,14,opt,name=measurement_age_ms,json=measurementAgeMs,proto3" json:"measurement_age_ms,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *RemoteDesktopReceiverFeedback) Reset() {
@@ -15856,6 +15861,20 @@ func (x *RemoteDesktopReceiverFeedback) GetJitterBufferMs() float64 {
 func (x *RemoteDesktopReceiverFeedback) GetRenderMs() float64 {
 	if x != nil {
 		return x.RenderMs
+	}
+	return 0
+}
+
+func (x *RemoteDesktopReceiverFeedback) GetMeasurementSequence() uint64 {
+	if x != nil {
+		return x.MeasurementSequence
+	}
+	return 0
+}
+
+func (x *RemoteDesktopReceiverFeedback) GetMeasurementAgeMs() uint32 {
+	if x != nil {
+		return x.MeasurementAgeMs
 	}
 	return 0
 }
@@ -19433,7 +19452,7 @@ const file_dieter_v1_dieter_proto_rawDesc = "" +
 	"\x0econtrol_active\x18\x1e \x01(\bR\rcontrolActive\x12-\n" +
 	"\x12control_generation\x18\x1f \x01(\x04R\x11controlGeneration\x12'\n" +
 	"\x0fcontroller_name\x18  \x01(\tR\x0econtrollerName\x12+\n" +
-	"\x11connected_clients\x18! \x01(\rR\x10connectedClients\"\xbc\x03\n" +
+	"\x11connected_clients\x18! \x01(\rR\x10connectedClients\"\x9d\x04\n" +
 	"\x1dRemoteDesktopReceiverFeedback\x12)\n" +
 	"\x10protocol_version\x18\x01 \x01(\rR\x0fprotocolVersion\x12\x1f\n" +
 	"\vinput_epoch\x18\x02 \x01(\fR\n" +
@@ -19448,7 +19467,9 @@ const file_dieter_v1_dieter_proto_rawDesc = "" +
 	"\x0frendered_frames\x18\n" +
 	" \x01(\rR\x0erenderedFrames\x12(\n" +
 	"\x10jitter_buffer_ms\x18\v \x01(\x01R\x0ejitterBufferMs\x12\x1b\n" +
-	"\trender_ms\x18\f \x01(\x01R\brenderMs\"\xe7\x02\n" +
+	"\trender_ms\x18\f \x01(\x01R\brenderMs\x121\n" +
+	"\x14measurement_sequence\x18\r \x01(\x04R\x13measurementSequence\x12,\n" +
+	"\x12measurement_age_ms\x18\x0e \x01(\rR\x10measurementAgeMs\"\xe7\x02\n" +
 	"\x13RemoteDesktopCursor\x12\x19\n" +
 	"\bshape_id\x18\x01 \x01(\tR\ashapeId\x12\x10\n" +
 	"\x03png\x18\x02 \x01(\fR\x03png\x12\x1b\n" +

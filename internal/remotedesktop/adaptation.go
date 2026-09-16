@@ -21,6 +21,7 @@ type adaptationSample struct {
 	budget, width, height int
 	drops                 uint64
 	elapsed               time.Duration
+	networkPressure       bool
 }
 
 type qualityController struct {
@@ -85,13 +86,32 @@ func fitVideo(width, height int, aspect float64) (int, int) {
 // rules cannot alternately raise and lower the frame rate.
 func (c *qualityController) next(now time.Time, current StreamConfiguration, limits *dieterv1.RemoteDesktopStreamConfiguration, sample adaptationSample) (StreamConfiguration, string) {
 	desired := current
-	freshFeedback := sample.feedback != nil && sample.feedback.Sequence > c.feedbackSequence && now.Sub(sample.feedbackAt) <= 2*time.Second
+	sequence := sample.feedback.GetMeasurementSequence()
+	if sequence == 0 {
+		sequence = sample.feedback.GetSequence()
+	}
+	freshFeedback := sample.feedback != nil && sequence > c.feedbackSequence && now.Sub(sample.feedbackAt) <= 2*time.Second
 	if freshFeedback {
-		c.feedbackSequence = sample.feedback.Sequence
+		c.feedbackSequence = sequence
+	}
+	// A quiet desktop is neither congestion nor proof of spare capacity. Pause
+	// recovery evidence instead of erasing it (or counting idle as healthy video).
+	pauseRecovery := func() {
+		if !c.upSince.IsZero() {
+			c.upSince = c.upSince.Add(sample.elapsed)
+		}
+		if !c.largerSince.IsZero() {
+			c.largerSince = c.largerSince.Add(sample.elapsed)
+		}
 	}
 	active := sample.frames.interFrames >= 2
 	if !active {
-		c.downSince, c.upSince, c.smallerSince, c.largerSince = time.Time{}, time.Time{}, time.Time{}, time.Time{}
+		c.downSince, c.smallerSince = time.Time{}, time.Time{}
+		if sample.networkPressure || (freshFeedback && sample.feedback.LossFraction >= .02) {
+			c.upSince, c.largerSince = time.Time{}, time.Time{}
+		} else {
+			pauseRecovery()
+		}
 		return desired, "idle or keyframe-only interval"
 	}
 	if !c.lastActive.IsZero() && now.Sub(c.lastActive) > 3*time.Second {
@@ -149,7 +169,9 @@ func (c *qualityController) next(now time.Time, current StreamConfiguration, lim
 	mediaKbps := float64(sample.frames.bytes*8) / max(.1, sample.elapsed.Seconds()) / 1000
 	// A low estimate alone is not evidence that a mostly static screen needs
 	// fewer pixels. Require actual traffic pressure or fresh receiver loss.
-	pressure := mediaKbps >= c.budget*.65 || sample.drops >= 3 || loss >= .03
+	// Saturating our own low bitrate cap is not evidence that the link is full.
+	// Require fresh transport queue growth/RTT or loss before removing pixels.
+	pressure := (sample.networkPressure && mediaKbps >= c.budget*.65) || loss >= .03
 	networkFPS := ceiling
 	if pressure {
 		networkFPS = max(minFPS, int(c.budget/max(.001, perFPS)))
@@ -173,7 +195,10 @@ func (c *qualityController) next(now time.Time, current StreamConfiguration, lim
 	next := nextFPS(current.FPS, ceiling)
 	receiverHealthy := freshFeedback && sample.feedback.FramesPerSecond > 0
 	canRaiseFPS := receiverHealthy && next > current.FPS && loss < .02 && (costMS == 0 || costMS*float64(next) <= 700) && (!pressure || c.budget >= perFPS*float64(next)*1.25)
-	if sustained(now, &c.upSince, canRaiseFPS, 10*time.Second) && now.Sub(c.lastFPS) >= 10*time.Second {
+	if !freshFeedback {
+		pauseRecovery()
+	}
+	if freshFeedback && sustained(now, &c.upSince, canRaiseFPS && !sample.networkPressure, 10*time.Second) && now.Sub(c.lastFPS) >= 10*time.Second {
 		desired.FPS = next
 		reason = "sustained frame-rate recovery"
 	}
@@ -196,7 +221,7 @@ func (c *qualityController) next(now time.Time, current StreamConfiguration, lim
 	nextH := min(fullH, int(float64(nextW)/c.aspect)&^1)
 	pixelGrowth := float64(nextW*nextH) / float64(w*h)
 	canRaiseSize := receiverHealthy && nextW > w && loss < .02 && costMS*pixelGrowth*float64(current.FPS) <= 700 && c.budget >= float64(nextW*nextH)*float64(current.FPS)*bitsPerPixel/1000*1.35
-	if sustained(now, &c.largerSince, canRaiseSize, 15*time.Second) && desired.FPS == current.FPS && now.Sub(c.lastSize) >= 15*time.Second && now.Sub(c.lastFPS) >= 4*time.Second {
+	if freshFeedback && sustained(now, &c.largerSince, canRaiseSize && !sample.networkPressure, 15*time.Second) && desired.FPS == current.FPS && now.Sub(c.lastSize) >= 15*time.Second && now.Sub(c.lastFPS) >= 4*time.Second {
 		desired.MaxWidth, desired.MaxHeight = nextW, nextH
 		reason = "sustained resolution recovery"
 	}

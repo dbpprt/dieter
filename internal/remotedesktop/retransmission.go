@@ -123,6 +123,7 @@ func (r *retransmissionInterceptor) run() {
 				packet = stream.packets[int(key.sequence)%retransmissionPackets]
 			}
 			valid := packet != nil && packet.header.SequenceNumber == key.sequence && time.Since(packet.stored) <= retransmissionAge && packet.attempts < 2
+			padding := packet != nil && packet.header.SequenceNumber == key.sequence && packet.header.Padding
 			var header rtp.Header
 			if valid {
 				packet.attempts++
@@ -131,7 +132,7 @@ func (r *retransmissionInterceptor) run() {
 			r.mu.Unlock()
 			if valid {
 				_, _ = stream.writer.Write(&header, packet.payload, nil)
-			} else if r.refresh != nil && time.Since(lastRefresh) > 200*time.Millisecond {
+			} else if !padding && r.refresh != nil && time.Since(lastRefresh) > 200*time.Millisecond {
 				lastRefresh = time.Now()
 				r.refresh()
 			}

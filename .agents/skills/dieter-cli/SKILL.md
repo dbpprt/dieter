@@ -396,9 +396,13 @@ for live policy, and `dieter screen refresh SESSION` to refresh an idle screen.
 Limits are adaptive ceilings up to 3840×2160/60 fps. Screen media uses native macOS
 capture and hardware H.264. Signed input protocol v3 supports control handoff;
 clients retain v2 compatibility with older daemons.
-Adaptation preserves idle-screen geometry, reduces cadence before resolution,
-and requires sustained pressure or recovery headroom before resizing. The daemon
-log records session IDs and quality changes with the measured cause.
+Adaptation preserves idle-screen geometry and recovery evidence across quiet
+intervals, reduces cadence before resolution, and requires fresh congestion
+evidence before shrinking pixels. Heartbeat and statistics freshness are separate.
+Recovery probes are bounded to a doubled rate, 64 KiB / 250 ms, every three seconds
+during active/resumed video; acknowledged delivery validates capacity and congestion
+revokes it. The daemon log records session IDs, quality changes, measurement age,
+delivered bandwidth, transport queue growth and GCC state.
 `status` separates socket work (`queueMs`), paced sending (`sendMs`), approximate
 capture-to-send age (`captureToSendMs`), jitter-buffer residence (`jitterBufferMs`),
 and decoded-frame-to-Metal presentation (`renderMs`). Receiver timing is available

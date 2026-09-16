@@ -186,3 +186,58 @@ func TestReceiverBudgetExpiresOldREMB(t *testing.T) {
 		t.Fatalf("fresh REMB ignored: %d", got)
 	}
 }
+
+func TestQualityLowEstimateWithoutCongestionCannotRemovePixels(t *testing.T) {
+	s := newQualitySimulation(t)
+	for range 120 {
+		s.step(100, 4, 4, 0, 10000, true)
+	}
+	if s.current.MaxWidth != 1920 || s.current.FPS != 60 {
+		t.Fatalf("a low estimate alone degraded healthy video: %+v", s.current)
+	}
+}
+
+func TestQualitySparseActivityRecoversWithoutCountingIdleAsEvidence(t *testing.T) {
+	s := newQualitySimulation(t)
+	for range 80 {
+		s.step(100, 4, 4, .08, 10000, true)
+	}
+	degraded := s.current
+	if degraded.MaxWidth != 640 {
+		t.Fatalf("fixture did not degrade: %+v", degraded)
+	}
+	for range 5 {
+		s.step(12000, 4, 4, 0, 10000, true)
+	}
+	beforeIdle := s.current
+	for range 120 {
+		s.step(12000, 4, 4, 0, 0, false)
+	}
+	if s.current != beforeIdle {
+		t.Fatal("idle invented recovery evidence")
+	}
+	for i := 0; i < 600; i++ {
+		s.step(12000, 4, 4, 0, 10000, i%2 == 0)
+	}
+	if s.current.MaxWidth != 1920 || s.current.MaxHeight != 1080 || s.current.FPS != 60 {
+		t.Fatalf("sparse desktop never recovered: %+v", s.current)
+	}
+}
+
+func TestQualityHeartbeatDoesNotRefreshAnOldMeasurement(t *testing.T) {
+	s := newQualitySimulation(t)
+	for range 20 {
+		s.step(12000, 4, 4, 0, 10000, true)
+	}
+	before := s.current
+	for i := uint64(21); i < 60; i++ {
+		s.now = s.now.Add(time.Second)
+		after, _ := s.controller.next(s.now, s.current, s.limits, adaptationSample{
+			frames: frameMeasurements{frames: 30, interFrames: 30, encodeMS: 120, bytes: 10000}, budget: 12000, width: 1920, height: 1080, elapsed: time.Second, feedbackAt: s.now,
+			feedback: &dieterv1.RemoteDesktopReceiverFeedback{Sequence: i, MeasurementSequence: 21, DecodeMs: 100, FramesPerSecond: 30},
+		})
+		if after != before {
+			t.Fatalf("heartbeats turned one sample into sustained overload: %+v", after)
+		}
+	}
+}

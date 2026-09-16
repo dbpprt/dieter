@@ -1918,6 +1918,11 @@ message RemoteDesktopReceiverFeedback {
   double jitter_buffer_ms = 11;
   // Mean decoded-frame arrival to actual Metal presentation in this interval.
   double render_ms = 12;
+  // Independent of the heartbeat sequence. Zero is a legacy sender; new senders
+  // start at one (an empty sample) and advance only when statistics are collected.
+  uint64 measurement_sequence = 13;
+  // Monotonic age of that sample at send time; repeated heartbeats do not refresh it.
+  uint32 measurement_age_ms = 14;
 }
 message RemoteDesktopCursor {
   string shape_id = 1;

@@ -950,6 +950,7 @@ final class RemoteDesktopController {
             while !Task.isCancelled {
                 try? await DieterTaskSleep.seconds(0.5)
                 guard !Task.isCancelled, let self, self.owns(token), let peer = self.peerConnection else { return }
+                let measurementStarted = ProcessInfo.processInfo.systemUptime
                 let report = await peer.statistics()
                 guard self.owns(token) else { return }
                 var inbound: [String: NSObject] = [:]
@@ -989,7 +990,7 @@ final class RemoteDesktopController {
                 feedback.lossFraction = delta("packetsLost") / max(1, delta("packetsLost") + delta("packetsReceived"))
                 feedback.inputActive = self.controlActive && self.inputFocused && NSApp.isActive
                 feedback.renderedFrames = UInt32(clamping: self.renderer.framesPresented)
-                self.feedbackPump.update(feedback)
+                self.feedbackPump.update(feedback, measuredAt: measurementStarted)
                 self.feedbackPump.input(active: self.controlActive && self.inputFocused && NSApp.isActive)
                 if let localID = candidate["localCandidateId"] as? String,
                     let remoteID = candidate["remoteCandidateId"] as? String

@@ -793,15 +793,21 @@ The viewer follows its window’s pixel size, up to 3840×2160 at 60 fps and 12 
 frame rate and resolution using transport-wide congestion feedback, encoder cost,
 and fresh receiver decode/loss measurements. It smooths estimates, lowers cadence
 before pixels, and requires sustained pressure before resizing (at least 12 seconds
-between reductions). Recovery requires sustained headroom. Idle screens preserve
-their established geometry; deliberate packet pacing is not counted as congestion.
+between reductions). Recovery preserves measured headroom across quiet intervals
+without counting idle time as capacity evidence. Low estimates alone do not remove
+pixels; reductions require fresh loss or transport/RTT pressure. Receiver heartbeats
+carry independent measurement identities and ages, so stalled statistics cannot
+replay an old overload sample. Deliberate packet pacing is not counted as congestion.
 Bitrate and cadence updates keep the native encoder session alive. Transport returns
 one frame credit after sending a complete H.264 access unit; while it waits, capture
 retains only the newest raw surface. Pipe writes run independently of capture and
-input. Compatible receivers negotiate immediate playout. After idle, a healthy
-recent route may probe its previous rate for at most 64 KiB / 250 ms, at most once
-per five seconds; congestion feedback cancels probing. The daemon log
-records each quality transition and its cause. Screen options select a display,
+input. Compatible receivers negotiate immediate playout. Healthy receivers permit
+bounded recovery probes during active or resumed video: at most double the current
+rate, 64 KiB / 250 ms, once per three seconds. Small RTP padding completes probes
+after sparse frames; an idle desktop sends no probe timer traffic. Only actual
+transport acknowledgments establish capacity; fresh congestion revokes it. The daemon
+log records quality changes, sample age, delivered rate, queue growth and GCC state.
+Screen options select a display,
 prefer sharp text or smooth motion, or request an idle-screen refresh. Cursor shape,
 hotspot and position travel separately from video, with embedded-cursor fallback.
 Physical USB HID keys, left/right modifiers, pointer dragging and precise scrolling
@@ -843,11 +849,13 @@ Native screen regression checks:
 ```sh
 just mac screens-native-test
 just mac screens-test
+DIETER_TEST_SCREEN_QUALITY_SOAK_SECONDS=180 just mac screens-test
 DIETER_TEST_SCREEN_CAPTURE_REAL=1 just mac screens-test
 DIETER_SCREEN_TEST_MULTI=1 DIETER_SCREEN_TEST_SOURCE=screen just android screens-test
 ```
 
-The first two use generated pixels and dry-run input. The last two require Screen
+The first three use generated pixels and dry-run input; the 180-second run includes
+45 seconds idle, intermittent updates and resumed motion. The last two require Screen
 Recording and event-posting permission and send events only to an owned native
 fixture window. All use random loopback listeners and disposable daemon data;
 the installed daemon is untouched. Viewer integration refuses to start while an

@@ -321,6 +321,10 @@ func (s *Session) receiveFeedback(raw []byte) {
 	wasActive := s.receiver.GetInputActive()
 	s.receiver = &value
 	s.lastFeedback = time.Now()
+	if value.MeasurementSequence == 0 || value.MeasurementSequence > s.receiverMeasurement {
+		s.receiverMeasurement = value.MeasurementSequence
+		s.receiverMeasuredAt = s.lastFeedback.Add(-time.Duration(value.MeasurementAgeMs) * time.Millisecond)
+	}
 	if s.status != nil {
 		s.status.ReceiverFps = value.FramesPerSecond
 		s.status.RttMs = value.RttMs
