@@ -208,6 +208,7 @@ struct MachineOutboxSummary: Equatable, Sendable {
     let failureMessage: String?
 
     var itemCount: Int { messageCount + changeCount }
+    var storageBlocked: Bool { DieterRPCFailure.isInsufficientStorage(failureMessage) }
 
     var queuedLabel: String {
         let noun: String
@@ -222,12 +223,18 @@ struct MachineOutboxSummary: Equatable, Sendable {
     }
 
     var deliveryLabel: String {
-        let suffix = failed ? "needs attention." : "delivers when it reconnects."
+        let suffix =
+            failed
+            ? "needs attention."
+            : storageBlocked
+                ? "free disk space on this machine; retries automatically every minute."
+                : "delivers when it reconnects."
         return "\(queuedLabel) — \(suffix)"
     }
 
     func toastPhase(machineOnline: Bool) -> MachineDeliveryToastPhase {
         if failed { return .failed }
+        if storageBlocked { return .waitingForStorage }
         if retrying { return .retrying }
         return machineOnline ? .sending : .waiting
     }
@@ -241,6 +248,8 @@ struct MachineOutboxSummary: Equatable, Sendable {
                     retrying: pending.contains { $0.state == .retrying },
                     failed: pending.contains { $0.state == .failed },
                     failureMessage: pending.reversed().first(where: { $0.state == .failed })?.lastError
+                        ?? pending.reversed().first(where: { DieterRPCFailure.isInsufficientStorage($0.lastError) })?
+                        .lastError
                 )
             }
     }
@@ -249,6 +258,7 @@ struct MachineOutboxSummary: Equatable, Sendable {
 enum MachineDeliveryToastPhase: Equatable, Sendable {
     case sending
     case waiting
+    case waitingForStorage
     case retrying
     case failed
 }

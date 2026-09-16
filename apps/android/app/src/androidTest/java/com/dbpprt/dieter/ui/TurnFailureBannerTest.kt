@@ -67,6 +67,29 @@ class TurnFailureBannerTest {
     }
 
     @Test
+    fun storageWarningNamesRemoteMachineAndRetryPreservesQueuedWork() {
+        var retries = 0
+        compose.setContent {
+            DieterTheme(darkTheme = true) {
+                Box(Modifier.fillMaxSize().background(DieterBackground).safeDrawingPadding()) {
+                    StorageDeliveryBanner(
+                        machineName = "mini-home",
+                        detail = "1 message queued — free disk space on this machine; retries automatically every minute.",
+                        onRetry = { retries += 1 },
+                    )
+                }
+            }
+        }
+        compose.onNodeWithText("Low disk space on mini-home").assertIsDisplayed()
+        compose.onNodeWithText("1 message queued", substring = true).assertIsDisplayed()
+        compose.onNodeWithText("retries automatically every minute", substring = true).assertIsDisplayed()
+        capture("storage-delivery-banner.png")
+        compose.onNodeWithTag("storage-delivery-retry").performClick()
+        compose.runOnIdle { assertEquals(1, retries) }
+        compose.onNodeWithTag("storage-delivery").assertIsDisplayed()
+    }
+
+    @Test
     fun failedCreationOffersRetryAndDiscardWithoutClaimingATurnFailed() {
         var retries = 0
         var discards = 0

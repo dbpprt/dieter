@@ -733,6 +733,7 @@ private fun DieterConnectionDialog(state: DieterUiState, model: DieterViewModel)
                         Text(
                             endpoint.detail + when {
                                 outboxSummary?.failed == true -> " · attention needed"
+                                outboxSummary?.storageBlocked == true -> " · low disk space"
                                 outboxSummary?.retrying == true -> " · retrying"
                                 outboxSummary != null -> " · queued"
                                 else -> ""
@@ -742,7 +743,13 @@ private fun DieterConnectionDialog(state: DieterUiState, model: DieterViewModel)
                         )
                     }
                 }
-                if (outboxSummary != null) {
+                if (outboxSummary?.storageBlocked == true && !outboxSummary.failed) {
+                    StorageDeliveryBanner(
+                        machineName = endpoint.label,
+                        detail = outboxSummary.deliveryLabel,
+                        onRetry = { model.retryOutboxForEndpoint(endpoint.id) },
+                    )
+                } else if (outboxSummary != null) {
                     Surface(
                         color = DieterAmber.copy(alpha = 0.08f),
                         shape = RoundedCornerShape(16.dp),

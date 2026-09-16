@@ -20,12 +20,18 @@ internal fun isServerConversationId(id: String): Boolean = !id.startsWith("local
 
 internal fun outboxFailureIsPermanent(error: Throwable): Boolean = when (Status.fromThrowable(error).code) {
     Status.Code.NOT_FOUND,
-    Status.Code.INVALID_ARGUMENT,
     Status.Code.PERMISSION_DENIED,
     Status.Code.FAILED_PRECONDITION,
     -> true
+    // Older daemons classified raw filesystem write failures as invalid input.
+    Status.Code.INVALID_ARGUMENT -> !outboxFailureIsInsufficientStorage(Status.fromThrowable(error).description)
     else -> false
 }
+
+/** Works with persisted errors and older daemons without confusing other resource limits with disk pressure. */
+internal fun outboxFailureIsInsufficientStorage(message: String?): Boolean = message != null &&
+    listOf("insufficient free disk space", "no space left on device", "disk quota exceeded", "disc quota exceeded")
+        .any { message.contains(it, ignoreCase = true) }
 
 /**
  * Returns whether a failed read can be retried on a replacement transport.
@@ -61,8 +67,10 @@ data class MachineOutboxSummary(
     val changeCount: Int,
     val retrying: Boolean,
     val failed: Boolean,
+    val failureMessage: String? = null,
 ) {
     val itemCount: Int get() = messageCount + changeCount
+    val storageBlocked: Boolean get() = outboxFailureIsInsufficientStorage(failureMessage)
 
     val deliveryLabel: String
         get() {
@@ -71,7 +79,11 @@ data class MachineOutboxSummary(
                 messageCount == 0 -> if (changeCount == 1) "change" else "changes"
                 else -> if (itemCount == 1) "item" else "items"
             }
-            val suffix = if (failed) "needs attention." else "delivers when it reconnects."
+            val suffix = when {
+                failed -> "needs attention."
+                storageBlocked -> "free disk space on this machine; retries automatically every minute."
+                else -> "delivers when it reconnects."
+            }
             return "$itemCount $noun queued — $suffix"
         }
 }
@@ -85,6 +97,8 @@ internal fun machineOutboxSummaries(entries: List<AndroidOutboxEntry>): Map<Stri
                 changeCount = pending.count { it.kind != OutboxKind.SEND_MESSAGE },
                 retrying = pending.any { it.state == OutboxState.RETRYING },
                 failed = pending.any { it.state == OutboxState.FAILED },
+                failureMessage = pending.lastOrNull { it.state == OutboxState.FAILED }?.lastError
+                    ?: pending.lastOrNull { outboxFailureIsInsufficientStorage(it.lastError) }?.lastError,
             )
         }
 
@@ -130,8 +144,9 @@ internal fun nextOutboxEndpoint(
         (it.nextAttemptAtMillis == null || it.nextAttemptAtMillis <= nowMillis)
 }?.endpointId
 
-internal fun outboxBackoffMillis(attempts: Int): Long =
-    (750L shl attempts.coerceAtMost(4)).coerceAtMost(15_000L)
+internal fun outboxBackoffMillis(attempts: Int, lastError: String? = null): Long =
+    if (outboxFailureIsInsufficientStorage(lastError)) 60_000L
+    else (750L shl attempts.coerceAtMost(4)).coerceAtMost(15_000L)
 
 internal fun retargetOutboxDependencies(
     entries: List<AndroidOutboxEntry>,

@@ -69,7 +69,17 @@ package enum DieterRPCFailure {
 
     package static func isPermanent(_ error: Error) -> Bool {
         guard let rpcError = error as? RPCError else { return false }
+        // Older daemons classified raw filesystem write failures as invalid input.
+        if rpcError.code == .invalidArgument, isInsufficientStorage(rpcError.message) { return false }
         return [.notFound, .invalidArgument, .permissionDenied, .failedPrecondition].contains(rpcError.code)
+    }
+
+    /// Recognize both admission checks and filesystem failures, including errors
+    /// restored from the durable outbox. Other resource limits are not disk pressure.
+    package static func isInsufficientStorage(_ message: String?) -> Bool {
+        guard let message = message?.lowercased() else { return false }
+        return ["insufficient free disk space", "no space left on device", "disk quota exceeded", "disc quota exceeded"]
+            .contains { message.contains($0) }
     }
 
     package static func message(for error: Error) -> String {
@@ -267,8 +277,9 @@ package enum DieterOutboxPolicy {
             .min()
     }
 
-    package static func backoff(after attempts: Int) -> TimeInterval {
-        min(30, Double(1 << min(attempts, 4)))
+    package static func backoff(after attempts: Int, lastError: String? = nil) -> TimeInterval {
+        if DieterRPCFailure.isInsufficientStorage(lastError) { return 60 }
+        return min(30, Double(1 << min(attempts, 4)))
     }
 
     /// A stable optimistic ID may already exist on the daemon before Create

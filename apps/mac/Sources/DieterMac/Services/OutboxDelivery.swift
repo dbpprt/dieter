@@ -101,7 +101,7 @@ extension DurableOutbox {
                     } else {
                         entry.state = .retrying
                         entry.nextAttemptAt = clock.now().addingTimeInterval(
-                            DieterOutboxPolicy.backoff(after: entry.attempts))
+                            DieterOutboxPolicy.backoff(after: entry.attempts, lastError: entry.lastError))
                     }
                     let failedEntry = entry
                     do {

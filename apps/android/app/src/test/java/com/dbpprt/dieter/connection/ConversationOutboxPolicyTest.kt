@@ -27,6 +27,45 @@ import java.io.IOException
 
 class ConversationOutboxPolicyTest {
     @Test
+    fun `storage failures retain sends with a minute retry and actionable machine summary`() {
+        for (error in listOf(
+            Status.RESOURCE_EXHAUSTED.withDescription("insufficient free disk space to start an agent turn: 122 MiB available; 2048 MiB required"),
+            Status.INVALID_ARGUMENT.withDescription("mkdir fixture/.write-lock: no space left on device"),
+            Status.RESOURCE_EXHAUSTED.withDescription("write fixture: disk quota exceeded"),
+            Status.INVALID_ARGUMENT.withDescription("write fixture: disc quota exceeded"),
+        )) {
+            val failure = error.asRuntimeException()
+            val detail = readableRpcError(failure)
+            assertFalse(outboxFailureIsPermanent(failure))
+            assertFalse(rpcReadFailureIsTransient(failure))
+            assertEquals(60_000L, outboxBackoffMillis(1, detail))
+            val request = SendMessageRequest.newBuilder().setCardId("card")
+                .setClientId("client").setCommandId("stable-command").setMessageId("stable-message").build()
+            val pending = outboxEntry(OutboxKind.SEND_MESSAGE, request.toByteArray(), "stable-message", null)
+                .copy(state = OutboxState.RETRYING, lastError = detail, nextAttemptAtMillis = 60_100L)
+            val summary = machineOutboxSummaries(listOf(pending)).getValue("endpoint")
+            assertTrue(summary.storageBlocked)
+            assertFalse(summary.failed)
+            assertTrue(summary.deliveryLabel.contains("free disk space on this machine"))
+            assertTrue(summary.deliveryLabel.contains("retries automatically every minute"))
+            assertNull(nextOutboxEntry(listOf(pending), "endpoint", nowMillis = 60_099L))
+            val ready = nextOutboxEntry(listOf(pending), "endpoint", nowMillis = 60_100L)!!
+            assertEquals(request, SendMessageRequest.parseFrom(ready.request))
+            assertTrue(machineOutboxSummaries(listOf(ready.copy(serverId = "stable-message"))).isEmpty())
+        }
+    }
+
+    @Test
+    fun `capacity and invalid input are not mislabeled as disk pressure`() {
+        for (detail in listOf("concurrent stream limit reached", "global capacity exceeded", "invalid model")) {
+            assertFalse(outboxFailureIsInsufficientStorage(detail))
+            assertEquals(1_500L, outboxBackoffMillis(1, detail))
+        }
+        assertTrue(outboxFailureIsPermanent(Status.INVALID_ARGUMENT.withDescription("invalid model").asRuntimeException()))
+        assertTrue(outboxFailureIsPermanent(Status.PERMISSION_DENIED.withDescription("no space left on device").asRuntimeException()))
+    }
+
+    @Test
     fun `conversation reads retry every transport-shaped failure but not caller cancellation`() {
         assertTrue(rpcReadFailureIsTransient(Status.UNAVAILABLE.asRuntimeException()))
         assertTrue(rpcReadFailureIsTransient(Status.DEADLINE_EXCEEDED.asRuntimeException()))

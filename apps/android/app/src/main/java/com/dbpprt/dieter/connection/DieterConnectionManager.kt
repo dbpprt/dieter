@@ -1904,14 +1904,15 @@ class DieterConnectionManager(
             } catch (error: Throwable) {
                 val attempts = entry.attempts + 1
                 val terminal = outboxFailureIsPermanent(error)
+                val failure = readableRpcError(error)
                 synchronized(outbox) {
                     val index = outbox.indexOfFirst { it.commandId == entry.commandId }
                     if (index >= 0) {
                         outbox[index] = entry.copy(
                             attempts = attempts,
-                            lastError = readableRpcError(error),
+                            lastError = failure,
                             state = if (terminal) OutboxState.FAILED else OutboxState.RETRYING,
-                            nextAttemptAtMillis = if (terminal) null else System.currentTimeMillis() + outboxBackoffMillis(attempts),
+                            nextAttemptAtMillis = if (terminal) null else System.currentTimeMillis() + outboxBackoffMillis(attempts, failure),
                         )
                     }
                     syncStore.saveOutbox(outbox)

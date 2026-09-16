@@ -31,7 +31,7 @@ private struct MachineDeliveryToast: View {
     private var tint: Color {
         switch phase {
         case .sending: DieterTheme.primary
-        case .waiting, .retrying: DieterTheme.amber
+        case .waiting, .waitingForStorage, .retrying: DieterTheme.amber
         case .failed: DieterTheme.coral
         }
     }
@@ -40,6 +40,7 @@ private struct MachineDeliveryToast: View {
         switch phase {
         case .sending: "Delivering to \(machine.name)"
         case .waiting: "Waiting for \(machine.name)"
+        case .waitingForStorage: "Low disk space on \(machine.name)"
         case .retrying: "Retrying delivery to \(machine.name)"
         case .failed: "Delivery to \(machine.name) failed"
         }
@@ -49,6 +50,8 @@ private struct MachineDeliveryToast: View {
         switch phase {
         case .sending: "\(summary.queuedLabel) · Sending now"
         case .waiting: "\(summary.queuedLabel) · Sends when it reconnects"
+        case .waitingForStorage:
+            "\(summary.queuedLabel). Free disk space on \(machine.name); retries automatically every minute."
         case .retrying: "\(summary.queuedLabel) · Trying again automatically"
         case .failed:
             summary.failureMessage ?? "\(summary.queuedLabel) · Try again when the machine is available"
@@ -59,6 +62,7 @@ private struct MachineDeliveryToast: View {
         switch phase {
         case .sending: "arrow.up"
         case .waiting: "wifi.exclamationmark"
+        case .waitingForStorage: "externaldrive.badge.exclamationmark"
         case .retrying: "arrow.clockwise"
         case .failed: "exclamationmark.triangle.fill"
         }
@@ -67,7 +71,7 @@ private struct MachineDeliveryToast: View {
     private var retryTitle: String {
         switch phase {
         case .failed, .retrying: "Try Again"
-        case .waiting: "Retry Now"
+        case .waiting, .waitingForStorage: "Retry Now"
         case .sending: ""
         }
     }
@@ -86,12 +90,14 @@ private struct MachineDeliveryToast: View {
                 Text(title)
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(DieterTheme.text)
-                    .lineLimit(1)
+                    .lineLimit(phase == .waitingForStorage ? nil : 1)
+                    .accessibilityIdentifier("machine.\(machine.daemonID ?? machine.id).queue-title")
+                    .smokeTarget("machine.\(machine.daemonID ?? machine.id).queue-title")
 
                 Text(detail)
                     .font(.system(size: 10.5))
                     .foregroundStyle(DieterTheme.tertiary)
-                    .lineLimit(2)
+                    .lineLimit(phase == .waitingForStorage ? nil : 2)
                     .fixedSize(horizontal: false, vertical: true)
 
                 HStack(spacing: 12) {
@@ -109,6 +115,7 @@ private struct MachineDeliveryToast: View {
                             .controlSize(.small)
                             .tint(tint)
                             .accessibilityIdentifier("machine.\(machine.daemonID ?? machine.id).retry")
+                            .smokeTarget("machine.\(machine.daemonID ?? machine.id).retry")
                     }
                 }
                 .padding(.top, 3)

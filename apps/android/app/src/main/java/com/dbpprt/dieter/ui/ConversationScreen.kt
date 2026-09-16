@@ -124,6 +124,8 @@ internal fun ConversationBody(state: DieterUiState, model: DieterViewModel, modi
     val conversation = state.conversation?.conversation
     val queuedMessages = conversation?.queueList.orEmpty()
     val card = state.conversation?.detail?.card ?: state.selectedCard
+    val host = card?.projectId?.let(state.projectHosts::get)
+    val storageQueue = host?.endpointId?.let(state.machineOutboxSummaries::get)?.takeIf { it.storageBlocked && !it.failed }
     val draft = state.composerDraft
     val text = draft.text
     val attachments = draft.attachments
@@ -382,6 +384,13 @@ internal fun ConversationBody(state: DieterUiState, model: DieterViewModel, modi
         }
     }
     Column(modifier) {
+        if (host != null && storageQueue != null) {
+            StorageDeliveryBanner(
+                machineName = host.hostname,
+                detail = storageQueue.deliveryLabel,
+                onRetry = { model.retryOutboxForEndpoint(host.endpointId) },
+            )
+        }
         creationFailure?.let { failure ->
             CreationFailureBanner(
                 failure = failure,
@@ -570,6 +579,24 @@ internal fun ConversationBody(state: DieterUiState, model: DieterViewModel, modi
     }
     presentedFailureLog?.let { log ->
         TurnFailureLogDialog(log = log, onDismiss = { presentedFailureLog = null })
+    }
+}
+
+@Composable
+internal fun StorageDeliveryBanner(machineName: String, detail: String, onRetry: () -> Unit) {
+    Surface(
+        color = DieterSurfaceHigh,
+        border = androidx.compose.foundation.BorderStroke(1.dp, DieterAmber.copy(alpha = 0.48f)),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)
+            .testTag("storage-delivery"),
+    ) {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Low disk space on $machineName", color = DieterAmber, fontWeight = FontWeight.SemiBold)
+            Text(detail, color = DieterMuted, fontSize = 12.sp)
+            OutlinedButton(onClick = onRetry, modifier = Modifier.testTag("storage-delivery-retry")) {
+                Text("Retry now")
+            }
+        }
     }
 }
 

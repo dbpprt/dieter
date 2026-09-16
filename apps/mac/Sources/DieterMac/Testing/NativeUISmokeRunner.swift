@@ -1361,6 +1361,28 @@
                         : "failed: queued=\(store.outboxSummary(for: machine)?.messageCount ?? 0), toast=\(toastVisible), draft=\(store.composerText)"
                     await captureAppearances(window, named: "17a-offline-message-queued.png", in: output)
 
+                    // Exercise the native presentation without exhausting the host disk.
+                    // The worker's failure/relaunch/retry path is covered by DurableOutboxTests.
+                    try await store.outbox.update { entries in
+                        for index in entries.indices where entries[index].serverID == nil {
+                            entries[index].state = .retrying
+                            entries[index].lastError = "insufficient free disk space to start an agent turn"
+                            entries[index].nextAttemptAt = Date().addingTimeInterval(60)
+                        }
+                    }
+                    store.rebuildOutboxOverlays()
+                    let storageWarning = await waitUntil(timeout: 5) {
+                        NativeUIAccessibility.find("machine.\(machine.daemonID ?? machine.id).queue-title", in: window)
+                            != nil
+                            && NativeUIAccessibility.find("machine.\(machine.daemonID ?? machine.id).retry", in: window)
+                                != nil
+                    }
+                    results["17a-storage-message-queued"] =
+                        storageWarning
+                            && store.outboxSummary(for: machine)?.toastPhase(machineOnline: true) == .waitingForStorage
+                        ? "passed" : "failed: storage warning or retry action missing"
+                    await captureAppearances(window, named: "17a-storage-message-queued.png", in: output)
+
                     let removed = await store.discardOutbox(for: machine)
                     let canceled = await waitUntil(timeout: 5) {
                         store.outboxSummary(for: machine) == nil

@@ -270,6 +270,86 @@ private actor ContendedOutboxDelivery: OutboxRPC {
     }
 }
 
+private actor StorageOutboxDelivery: OutboxRPC {
+    var requests: [Dieter_V1_SendMessageRequest] = []
+    let failure: RPCError
+    init(failure: RPCError) { self.failure = failure }
+    func createCard(_ request: Dieter_V1_CreateConversationRequest) async throws -> Dieter_V1_Card {
+        throw CancellationError()
+    }
+    func createChat(_ request: Dieter_V1_CreateConversationRequest) async throws -> Dieter_V1_Card {
+        throw CancellationError()
+    }
+    func sendMessage(_ request: Dieter_V1_SendMessageRequest) async throws -> Dieter_V1_SendMessageResponse {
+        requests.append(request)
+        if requests.count == 1 { throw failure }
+        return .with { $0.messageID = request.messageID }
+    }
+}
+
+@Test(arguments: [
+    RPCError(
+        code: .resourceExhausted,
+        message: "insufficient free disk space to start an agent turn: 122 MiB available; 2048 MiB required"),
+    RPCError(code: .invalidArgument, message: "mkdir fixture/.write-lock: no space left on device"),
+    RPCError(code: .resourceExhausted, message: "write fixture: disk quota exceeded"),
+    RPCError(code: .invalidArgument, message: "write fixture: disc quota exceeded"),
+]) @MainActor
+func storageBlockedMessageSurvivesRelaunchAndRetriesWithSameIdentity(failure: RPCError) async throws {
+    let root = outboxTestRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let now = Date(timeIntervalSince1970: 100)
+    let rpc = StorageOutboxDelivery(failure: failure)
+    let outbox = DurableOutbox(journal: journal(at: root))
+    var entry = command("storage-once")
+    let request = Dieter_V1_SendMessageRequest.with {
+        $0.cardID = "card"; $0.clientID = entry.clientID
+        $0.commandID = entry.commandID; $0.messageID = entry.optimisticID
+        $0.parts = [
+            .with {
+                $0.type = "text"; $0.text = "Keep this message"
+            }
+        ]
+    }
+    entry.request = try request.serializedData()
+    try await outbox.enqueue(entry)
+    outbox.start(
+        reachable: { ["machine"] }, acquire: { _ in OutboxTransport(rpc: rpc, release: {}) },
+        committed: { _ in Issue.record("Storage-blocked message was committed") },
+        failed: { _, _ in outbox.workerTask?.cancel() }, storageFailed: { Issue.record($0) },
+        clock: ClientClock(now: { now }, sleep: { _ in throw CancellationError() }))
+    await outbox.workerTask?.value
+    let saved = try #require(try await journal(at: root).load().entries.first)
+    #expect(saved.state == .retrying)
+    #expect(saved.nextAttemptAt == now.addingTimeInterval(60))
+    #expect(saved.request == entry.request)
+    #expect(!DieterRPCFailure.isTransient(failure))
+    #expect(
+        MachineOutboxSummary.summaries(for: [saved])["machine"]?.toastPhase(machineOnline: true) == .waitingForStorage)
+    #expect(DieterOutboxPolicy.nextIndex(in: [saved], endpointID: "machine", now: now.addingTimeInterval(59)) == nil)
+
+    let relaunched = DurableOutbox(journal: journal(at: root))
+    try await relaunched.restore()
+    relaunched.start(
+        reachable: { ["machine"] }, acquire: { _ in OutboxTransport(rpc: rpc, release: {}) },
+        committed: { _ in }, failed: { _, error in Issue.record(error) }, storageFailed: { Issue.record($0) },
+        clock: ClientClock(now: { now.addingTimeInterval(60) }, sleep: { _ in throw CancellationError() }))
+    await relaunched.workerTask?.value
+    #expect(await rpc.requests == [request, request])
+    #expect(relaunched.entries.isEmpty)
+    #expect(try await journal(at: root).load().entries.isEmpty)
+    #expect(MachineOutboxSummary.summaries(for: relaunched.entries).isEmpty)
+}
+
+@Test func unrelatedResourceLimitsAndInvalidInputAreNotDiskPressure() {
+    for message in ["concurrent stream limit reached", "global capacity exceeded", "invalid model"] {
+        #expect(!DieterRPCFailure.isInsufficientStorage(message))
+        #expect(DieterOutboxPolicy.backoff(after: 1, lastError: message) == 2)
+    }
+    #expect(DieterRPCFailure.isPermanent(RPCError(code: .invalidArgument, message: "invalid model")))
+    #expect(DieterRPCFailure.isPermanent(RPCError(code: .permissionDenied, message: "no space left on device")))
+}
+
 @Test @MainActor func admissionContentionKeepsSendMessageQueuedForRetry() async throws {
     let root = outboxTestRoot()
     defer { try? FileManager.default.removeItem(at: root) }

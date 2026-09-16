@@ -4,6 +4,8 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.dbpprt.dieter.v1.GlobalSnapshot
 import com.dbpprt.dieter.v1.SyncCursor
+import com.dbpprt.dieter.connection.machineOutboxSummaries
+import com.dbpprt.dieter.connection.nextOutboxEntry
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -15,6 +17,29 @@ import java.util.UUID
 
 @RunWith(AndroidJUnit4::class)
 class DieterSyncStoreTest {
+    @Test
+    fun storageRetrySurvivesRelaunchWithoutChangingCommandOrPayload() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val root = File(context.cacheDir, "storage-outbox-test-${UUID.randomUUID()}")
+        try {
+            val entry = AndroidOutboxEntry(
+                commandId = "stable-command", clientId = "stable-client", endpointId = "mini-home",
+                kind = OutboxKind.SEND_MESSAGE, request = byteArrayOf(1, 2, 3), optimisticId = "stable-message",
+                state = OutboxState.RETRYING, lastError = "gRPC RESOURCE_EXHAUSTED: no space left on device",
+                nextAttemptAtMillis = 60_100L, attempts = 1,
+            )
+            DieterSyncStore(context, root).saveOutbox(listOf(entry))
+            val recovered = DieterSyncStore(context, root).loadOutbox()
+            assertTrue(machineOutboxSummaries(recovered).getValue("mini-home").storageBlocked)
+            assertNull(nextOutboxEntry(recovered, "mini-home", nowMillis = 60_099L))
+            val retry = requireNotNull(nextOutboxEntry(recovered, "mini-home", nowMillis = 60_100L))
+            assertEquals(entry.commandId, retry.commandId)
+            assertEquals(entry.clientId, retry.clientId)
+            assertEquals(entry.optimisticId, retry.optimisticId)
+            assertArrayEquals(entry.request, retry.request)
+        } finally { root.deleteRecursively() }
+    }
+
     @Test
     fun cleanSyncClearsEveryProjectionAndPreservesOutbox() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext

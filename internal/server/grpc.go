@@ -14,6 +14,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 	"unicode/utf8"
 
@@ -1599,7 +1600,8 @@ func grpcFailure(err error) error {
 	if errors.Is(err, store.ErrNotFound) || errors.Is(err, fs.ErrNotExist) {
 		return status.Error(codes.NotFound, err.Error())
 	}
-	if errors.Is(err, store.ErrCapacity) || errors.Is(err, app.ErrInsufficientStorage) {
+	if errors.Is(err, store.ErrCapacity) || errors.Is(err, app.ErrInsufficientStorage) ||
+		errors.Is(err, syscall.ENOSPC) || errors.Is(err, syscall.EDQUOT) {
 		return status.Error(codes.ResourceExhausted, err.Error())
 	}
 	if errors.Is(err, app.ErrInvalidContentPresentation) {
