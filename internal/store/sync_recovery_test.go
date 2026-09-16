@@ -232,6 +232,10 @@ func TestRuntimeStatusReplaysEventsNewerThanDelayedCheckpoint(t *testing.T) {
 	if _, err := s.StartConversationTurn(card.ID, "turn", "user", "hello"); err != nil {
 		t.Fatal(err)
 	}
+	reader := New(s.Root)
+	if status, err := reader.conversationStatus(card.ID); err != nil || status != "running" {
+		t.Fatalf("initial status=%q, error=%v", status, err)
+	}
 	path := filepath.Join(s.conversationPath(card.ID), "snapshot.json")
 	older, err := os.ReadFile(path)
 	if err != nil {
@@ -244,9 +248,11 @@ func TestRuntimeStatusReplaysEventsNewerThanDelayedCheckpoint(t *testing.T) {
 	if err := atomicWrite(path, older); err != nil {
 		t.Fatal(err)
 	}
-	status, err := New(s.Root).conversationStatus(card.ID)
-	if err != nil || status != "idle" {
-		t.Fatalf("status=%q, error=%v; checkpoint time hid durable finish", status, err)
+	for name, view := range map[string]*Store{"cached reader": reader, "cold reader": New(s.Root)} {
+		status, err := view.conversationStatus(card.ID)
+		if err != nil || status != "idle" {
+			t.Fatalf("%s: status=%q, error=%v; checkpoint time hid durable finish", name, status, err)
+		}
 	}
 }
 

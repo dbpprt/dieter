@@ -476,6 +476,7 @@ type Session struct {
 	lastFeedback          time.Time
 	receiverMeasuredAt    time.Time
 	receiverMeasurement   uint64
+	receiverStatsRejected bool
 	applied               StreamConfiguration
 	configurationRevision uint64
 	measurements          frameMeasurements

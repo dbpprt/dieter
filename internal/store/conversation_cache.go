@@ -99,6 +99,7 @@ func cloneConversation(c model.Conversation) model.Conversation {
 }
 
 func (s *Store) cacheConversation(id string, c model.Conversation, snapshot, events os.FileInfo, offset int64) {
+	s.rememberConversationStatus(id, c.Status, snapshot, events)
 	// File bytes overestimate live projection size (including the retained journal)
 	// but provide a cheap conservative bound without encoding on the hot path.
 	size := int64(4096)

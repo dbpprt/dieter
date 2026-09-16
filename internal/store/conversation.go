@@ -144,14 +144,6 @@ func (s *Store) ConversationRevisionByID(cardID string) (string, error) {
 	return strings.Join(parts, "|"), nil
 }
 
-// The checkpoint timestamp cannot prove freshness: an older checkpoint may
-// finish writing after a newer journal append. The revision-validated cache
-// and journal replay are the same authority used by ordinary transcript reads.
-func (s *Store) conversationStatus(cardID string) (string, error) {
-	conversation, err := s.loadConversation(cardID)
-	return conversation.Status, err
-}
-
 func (s *Store) loadConversation(cardID string) (model.Conversation, error) {
 	snapshotPath := filepath.Join(s.conversationPath(cardID), "snapshot.json")
 	eventsPath := filepath.Join(s.conversationPath(cardID), "events.ndjson")

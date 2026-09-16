@@ -46,6 +46,8 @@ func TestReceiverLatencyFeedbackIsValidatedAndExposed(t *testing.T) {
 		t.Fatal("receiver latency not exposed")
 	}
 	for i, invalid := range []float64{math.NaN(), math.Inf(1), -1, 10001} {
+		before := s.lastFeedback
+		measuredAt := s.receiverMeasuredAt
 		feedback.Sequence = uint64(i + 2)
 		feedback.RenderMs = invalid
 		raw, _ = proto.Marshal(feedback)
@@ -53,6 +55,21 @@ func TestReceiverLatencyFeedbackIsValidatedAndExposed(t *testing.T) {
 		if s.status.RenderMs != 11 {
 			t.Fatal("invalid timing accepted")
 		}
+		if !s.lastFeedback.After(before) || s.feedbackSequence.Load() != feedback.Sequence {
+			t.Fatal("invalid optional statistics suppressed an authenticated heartbeat")
+		}
+		if !s.receiverMeasuredAt.Equal(measuredAt) {
+			t.Fatal("invalid statistics refreshed the measurement timestamp")
+		}
+	}
+	before := s.lastFeedback
+	feedback.InputEpoch = []byte("different-session")
+	feedback.Sequence++
+	feedback.RenderMs = 11
+	raw, _ = proto.Marshal(feedback)
+	s.receiveFeedback(raw)
+	if !s.lastFeedback.Equal(before) {
+		t.Fatal("wrong-epoch heartbeat was accepted")
 	}
 }
 

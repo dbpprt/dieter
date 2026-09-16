@@ -30,6 +30,7 @@ type Store struct {
 	Root string
 
 	conversations conversationCache
+	statuses      conversationStatusCache
 	checkpoints   conversationCheckpoints
 	syncJournal   syncJournalCache
 

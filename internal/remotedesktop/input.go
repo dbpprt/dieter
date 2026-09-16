@@ -310,28 +310,45 @@ func (s *Session) receiveFeedback(raw []byte) {
 	if proto.Unmarshal(raw, &value) != nil || value.ProtocolVersion != inputProtocolVersion || !bytes.Equal(value.InputEpoch, s.inputEpoch) || value.Sequence == 0 {
 		return
 	}
-	if !finiteBound(value.FramesPerSecond, 240) || !finiteBound(value.DecodeMs, 10000) || !finiteBound(value.JitterMs, 10000) || !finiteBound(value.RttMs, 60000) || !finiteBound(value.LossFraction, 1) || !finiteBound(value.JitterBufferMs, 10000) || !finiteBound(value.RenderMs, 10000) || value.JitterBufferMs < 0 || value.RenderMs < 0 {
-		return
-	}
+	validStatistics := finiteBound(value.FramesPerSecond, 240) && finiteBound(value.DecodeMs, 10000) && finiteBound(value.JitterMs, 10000) && finiteBound(value.RttMs, 60000) && finiteBound(value.LossFraction, 1) && finiteBound(value.JitterBufferMs, 10000) && finiteBound(value.RenderMs, 10000) && value.JitterBufferMs >= 0 && value.RenderMs >= 0
 	previous := s.feedbackSequence.Load()
 	if value.Sequence <= previous || !s.feedbackSequence.CompareAndSwap(previous, value.Sequence) {
 		return
 	}
 	s.mu.Lock()
 	wasActive := s.receiver.GetInputActive()
-	s.receiver = &value
 	s.lastFeedback = time.Now()
-	if value.MeasurementSequence == 0 || value.MeasurementSequence > s.receiverMeasurement {
-		s.receiverMeasurement = value.MeasurementSequence
-		s.receiverMeasuredAt = s.lastFeedback.Add(-time.Duration(value.MeasurementAgeMs) * time.Millisecond)
-	}
-	if s.status != nil {
-		s.status.ReceiverFps = value.FramesPerSecond
-		s.status.RttMs = value.RttMs
-		s.status.JitterBufferMs = value.JitterBufferMs
-		s.status.RenderMs = value.RenderMs
+	logRejectedStatistics := !validStatistics && !s.receiverStatsRejected
+	s.receiverStatsRejected = !validStatistics
+	if validStatistics {
+		s.receiver = &value
+		if value.MeasurementSequence == 0 || value.MeasurementSequence > s.receiverMeasurement {
+			s.receiverMeasurement = value.MeasurementSequence
+			s.receiverMeasuredAt = s.lastFeedback.Add(-time.Duration(value.MeasurementAgeMs) * time.Millisecond)
+		}
+		if s.status != nil {
+			s.status.ReceiverFps = value.FramesPerSecond
+			s.status.RttMs = value.RttMs
+			s.status.JitterBufferMs = value.JitterBufferMs
+			s.status.RenderMs = value.RenderMs
+		}
+	} else {
+		// The epoch and strictly increasing heartbeat sequence already prove
+		// receiver liveness. A bad getStats sample must not turn that evidence
+		// into a three-second input disconnect. Preserve the last valid sample
+		// and its age while accepting only the fresh control-activity evidence.
+		heartbeat := &dieterv1.RemoteDesktopReceiverFeedback{}
+		if s.receiver != nil {
+			heartbeat = proto.Clone(s.receiver).(*dieterv1.RemoteDesktopReceiverFeedback)
+		}
+		heartbeat.ProtocolVersion, heartbeat.InputEpoch = value.ProtocolVersion, value.InputEpoch
+		heartbeat.Sequence, heartbeat.InputActive = value.Sequence, value.InputActive
+		s.receiver = heartbeat
 	}
 	s.mu.Unlock()
+	if logRejectedStatistics && s.manager != nil && s.manager.options.Logger != nil {
+		s.manager.options.Logger.Warn("remote desktop ignored invalid receiver statistics; heartbeat accepted", "session", s.id, "measurementSequence", value.MeasurementSequence, "measurementAgeMs", value.MeasurementAgeMs)
+	}
 	if wasActive && !value.InputActive {
 		s.releaseInput()
 	}
