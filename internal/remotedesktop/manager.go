@@ -513,6 +513,10 @@ type Session struct {
 	stateInputSequence   atomic.Uint64
 	pointerInput         chan *dieterv1.RemoteDesktopInput
 	stateInput           chan *dieterv1.RemoteDesktopInput
+
+	receiverInputExpired   bool
+	expiredStateSequence   uint64
+	expiredPointerSequence uint64
 }
 
 func (s *Session) active() bool {
@@ -894,6 +898,7 @@ func (s *Session) monitor() {
 		case <-s.ctx.Done():
 			return
 		case <-ticker.C:
+			s.expireReceiverInput(time.Now())
 			now := s.manager.options.Now().UTC()
 			s.mu.Lock()
 			leaseExpired := !now.Before(s.leaseExpiresAt)

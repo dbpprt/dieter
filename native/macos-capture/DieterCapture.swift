@@ -139,6 +139,9 @@ final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
     private var lastHeartbeat = DispatchTime.now().uptimeNanoseconds
     private var timers: [DispatchSourceTimer] = []
     private let configurationGate = ConfigurationGate()
+    private let commands = NativeCommandQueue(capacity: 128)
+    private let inputs = NativeCommandQueue(capacity: 128)
+    private let configurations = NativeCommandQueue(capacity: 8)
     private var signals: [DispatchSourceSignal] = []
     private var actualEmbeddedCursor = false
     private var forceEmbeddedCursor = false  // stateQueue
@@ -361,7 +364,7 @@ final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
             if let stream = values.0, old.fps != config.fps || old.embeddedCursor != config.embeddedCursor {
                 try await stream.updateConfiguration(streamConfiguration(config, values.1, values.2))
             }
-            if let sharedDisplay {
+            if let sharedDisplay, old.fps != config.fps || old.embeddedCursor != config.embeddedCursor {
                 try await SharedDisplayPool.shared.update(
                     display: sharedDisplay, id: options.streamID,
                     width: values.1, height: values.2, fps: config.fps, cursor: config.embeddedCursor)
@@ -426,6 +429,7 @@ final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
         let stoppedTimers = timers
         timers.removeAll()
         stopLock.unlock()
+        commands.close(); inputs.close(); configurations.close()
         for timer in stoppedTimers { timer.cancel() }
         if options.multiplex { _ = events.send(NativeEvent(error: "native capture rendition stopped")) }
         // Teardown owns the runner until callbacks and shared capture detach finish.
@@ -823,16 +827,14 @@ final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
                     guard let command = try? decoder.decode(NativeCommand.self, from: data), command.version == 2 else {
                         self.stop(); return
                     }
-                    let done = DispatchSemaphore(value: 0)
-                    Task {
-                        var failure: String?
-                        do {
-                            try await self.handle(command)
-                        } catch { failure = error.localizedDescription }
-                        if !self.events.send(NativeEvent(ack: command.id, error: failure)) { self.stop() }
-                        done.signal()
+                    if command.kind == "heartbeat" {
+                        self.inputQueue.sync { self.lastHeartbeat = DispatchTime.now().uptimeNanoseconds }
+                        if !self.events.send(NativeEvent(ack: command.id)) { self.stop(); return }
+                    } else {
+                        self.enqueue(command) { error in
+                            if !self.events.send(NativeEvent(ack: command.id, error: error)) { self.stop() }
+                        }
                     }
-                    done.wait()
                 }
                 if pending.count > 16384 { break }
             }
@@ -841,7 +843,17 @@ final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
         }
     }
 
+    func enqueue(_ command: NativeCommand, reply: @escaping (String?) -> Void) {
+        let queue = command.kind == "configure" ? configurations : (command.kind == "input" ? inputs : commands)
+        if !queue.submit({
+            do { try await self.handle(command); reply(nil) } catch { reply(error.localizedDescription) }
+        }) {
+            reply("Native command queue is full or stopped")
+        }
+    }
+
     func handle(_ command: NativeCommand) async throws {
+        guard !isStopped else { throw CaptureError.invalidArgument("capture stopped") }
         switch command.kind {
         case "heartbeat":
             self.inputQueue.sync { self.lastHeartbeat = DispatchTime.now().uptimeNanoseconds }
@@ -858,11 +870,22 @@ final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
                 }
             }
         case "configure":
+            // Synthetic fault injection never delays a real desktop session.
+            if options.synthetic, let raw = ProcessInfo.processInfo.environment["DIETER_TEST_CAPTURE_CONFIG_DELAY_MS"],
+                let delay = UInt64(raw), delay <= 5000
+            {
+                try await Task.sleep(nanoseconds: delay * 1_000_000)
+            }
             guard let config = command.configuration else {
                 throw CaptureError.invalidArgument("configuration")
             }
             try await self.reconfigure(config)
         case "frame_consumed":
+            if options.synthetic, let raw = ProcessInfo.processInfo.environment["DIETER_TEST_CAPTURE_CREDIT_DELAY_MS"],
+                let delay = UInt64(raw), delay <= 5000
+            {
+                try await Task.sleep(nanoseconds: delay * 1_000_000)
+            }
             self.stateQueue.sync {
                 if let frameID = command.frameId, self.outstandingFrame == frameID {
                     self.outstandingFrame = nil
@@ -1007,7 +1030,7 @@ extension Data {
     }
 }
 
-private func writeDiagnostic(_ message: String) {
+func writeDiagnostic(_ message: String) {
     FileHandle.standardError.write(Data((message + "\n").utf8))
 }
 

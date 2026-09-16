@@ -2,7 +2,7 @@ import CoreGraphics
 import Foundation
 
 @main struct InputStateTest {
-    static func main() throws {
+    static func main() async throws {
         let input = InputInjector(bounds: CGRect(x: -1280, y: 0, width: 1280, height: 720), dryRun: true)
         var value = NativeInput(); value.kind = "key"; value.physicalKey = 4; value.generation = 1
         value.down = true; try input.handle(value)
@@ -34,8 +34,42 @@ import Foundation
         held.kind = "release_all"
         try SharedInputAuthority.shared.handle(held, injector: first)
         precondition(second.heldKeys.isEmpty, "Handoff must release the machine's active injector")
+        let queue = NativeCommandQueue(capacity: 2)
+        let gate = CommandTestGate()
+        precondition(queue.submit { await gate.wait() })
+        for _ in 0..<200 {
+            if await gate.entered { break }
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        let entered = await gate.entered
+        precondition(entered)
+        precondition(queue.submit { await gate.finish() })
+        precondition(!queue.submit { preconditionFailure("unbounded native command queue") })
+        await gate.release()
+        for _ in 0..<200 {
+            if await gate.finished { break }
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        let finished = await gate.finished
+        precondition(finished)
+        queue.close()
+        precondition(!queue.submit { preconditionFailure("stopped native command queue") })
         print(
             "Native input state: physical key zero, independent Shift sides, drag bounds, release and display generation passed"
         )
     }
+}
+
+private actor CommandTestGate {
+    var entered = false
+    var finished = false
+    private var continuation: CheckedContinuation<Void, Never>?
+    func wait() async {
+        await withCheckedContinuation { continuation in
+            self.continuation = continuation
+            entered = true
+        }
+    }
+    func release() { continuation?.resume(); continuation = nil }
+    func finish() { finished = true }
 }

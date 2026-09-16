@@ -55,7 +55,7 @@ final class NativeCaptureService: @unchecked Sendable {
         watchdog.setEventHandler { [weak self] in
             guard let self else { return }
             if self.lock.withLock({ DispatchTime.now().uptimeNanoseconds - self.heartbeat > 3_000_000_000 }) {
-                self.stop()
+                self.stop(reason: "native daemon heartbeat expired")
             }
         }
         watchdog.resume()
@@ -70,7 +70,7 @@ final class NativeCaptureService: @unchecked Sendable {
         watchdog.cancel(); signals.forEach { $0.cancel() }
     }
     private func wait() { done.wait() }
-    private func stop() {
+    private func stop(reason: String? = nil) {
         let active: [CaptureRunner]? = lock.withLock {
             if stopped { return nil }
             stopped = true
@@ -78,6 +78,7 @@ final class NativeCaptureService: @unchecked Sendable {
             return active
         }
         guard let active else { return }
+        if let reason { writeDiagnostic(reason) }
         SharedInputAuthority.shared.releaseAll()
         active.forEach { $0.stop() }
         done.signal()
@@ -93,7 +94,7 @@ final class NativeCaptureService: @unchecked Sendable {
                 let line = data.prefix(upTo: end)
                 guard line.count <= 16384, let command = try? decoder.decode(NativeCommand.self, from: line),
                     command.version == 2
-                else { stop(); return }
+                else { stop(reason: "native command decoding failed"); return }
                 data.removeSubrange(...end)
                 if command.kind == "create" {
                     let accepted = lock.withLock { () -> Bool in
@@ -108,12 +109,15 @@ final class NativeCaptureService: @unchecked Sendable {
                     Task { await self.create(command) }
                 } else if command.kind == "remove" {
                     Task { await self.remove(command) }
+                } else if command.kind == "heartbeat" {
+                    lock.withLock { heartbeat = DispatchTime.now().uptimeNanoseconds }
+                    reply(command, nil)
+                } else if command.kind == "stop" {
+                    reply(command, nil); stop()
+                } else if let id = command.streamId, let runner = lock.withLock({ runners[id] }) {
+                    runner.enqueue(command) { self.reply(command, $0) }
                 } else {
-                    let completed = DispatchSemaphore(value: 0)
-                    Task {
-                        await self.handle(command); completed.signal()
-                    }
-                    completed.wait()
+                    reply(command, "Unknown native stream")
                 }
             }
             if data.count > 16384 { break }
@@ -164,22 +168,9 @@ final class NativeCaptureService: @unchecked Sendable {
         reply(command, nil)
     }
 
-    private func handle(_ command: NativeCommand) async {
-        do {
-            if command.kind == "heartbeat" {
-                lock.withLock { heartbeat = DispatchTime.now().uptimeNanoseconds }
-            } else if command.kind == "stop" {
-                stop()
-            } else {
-                guard let id = command.streamId else { throw CaptureError.invalidArgument("stream ID") }
-                let runner = lock.withLock { runners[id] }
-                guard let runner else { throw CaptureError.invalidArgument("unknown stream") }
-                try await runner.handle(command)
-            }
-            reply(command, nil)
-        } catch { reply(command, error.localizedDescription) }
-    }
     private func reply(_ command: NativeCommand, _ error: String?) {
-        if !events.send(NativeEvent(streamId: command.streamId ?? 0, ack: command.id, error: error)) { stop() }
+        if !events.send(NativeEvent(streamId: command.streamId ?? 0, ack: command.id, error: error)) {
+            stop(reason: "native event pipe unavailable")
+        }
     }
 }

@@ -405,6 +405,9 @@ clients retain v2 compatibility with older daemons.
 Adaptation preserves idle-screen geometry and recovery evidence across quiet
 intervals, reduces cadence before resolution, and requires fresh congestion
 evidence before shrinking pixels. Heartbeat and statistics freshness are separate.
+A brief receiver heartbeat gap releases held input and pauses control without
+closing video. Fresh feedback resumes control and discards stale queued input;
+peer/signaling grace periods and session leases still bound disconnected sessions.
 Recovery probes are bounded to a doubled rate, 64 KiB / 250 ms, every three seconds
 during active/resumed video; acknowledged delivery validates capacity and congestion
 revokes it. The daemon log records session IDs, quality changes, measurement age,

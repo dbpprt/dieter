@@ -189,3 +189,41 @@ actor ConfigurationGate {
         }
     }
 }
+
+// One worker per bounded lane preserves command order without blocking the IPC
+// reader. Configuration may suspend in ScreenCaptureKit; input and frame credits
+// use independent lanes, and heartbeat replies never enter either lane.
+final class NativeCommandQueue: @unchecked Sendable {
+    private let lock = NSLock()
+    private let capacity: Int
+    private var pending: [() async -> Void] = []
+    private var running = false
+    private var closed = false
+    init(capacity: Int) { self.capacity = capacity }
+    func submit(_ operation: @escaping () async -> Void) -> Bool {
+        let accepted = lock.withLock { () -> Bool in
+            guard !closed, pending.count + (running ? 1 : 0) < capacity else { return false }
+            pending.append(operation)
+            if !running {
+                running = true
+                Task { await self.drain() }
+            }
+            return true
+        }
+        return accepted
+    }
+    private func drain() async {
+        while let operation = next() { await operation() }
+    }
+    private func next() -> (() async -> Void)? {
+        lock.withLock {
+            if pending.isEmpty { running = false; return nil }
+            return pending.removeFirst()
+        }
+    }
+    func close() {
+        lock.withLock {
+            closed = true; pending.removeAll()
+        }
+    }
+}
