@@ -1,11 +1,15 @@
 import DieterAPI
 import DieterCore
 import Foundation
+import GRPCCore
 import Testing
 @testable import DieterMac
 
 private actor TerminalRoutingFixture: TerminalsRPC {
     private(set) var createRequests: [Dieter_V1_CreateTerminalRequest] = []
+    private(set) var watchRequests: [UInt64] = []
+    private let expireWatch: Bool
+    init(expireWatch: Bool = false) { self.expireWatch = expireWatch }
 
     func terminals(projectID: String, cardID: String) async throws -> Dieter_V1_TerminalsResponse {
         var first = Dieter_V1_Terminal()
@@ -33,12 +37,39 @@ private actor TerminalRoutingFixture: TerminalsRPC {
     func watchTerminal(
         id: String, after: UInt64,
         receive: @escaping @Sendable (Dieter_V1_TerminalFrame) async -> Void
-    ) async throws {}
+    ) async throws {
+        guard expireWatch else { return }
+        watchRequests.append(after)
+        var frame = Dieter_V1_TerminalFrame()
+        frame.sequence = after + 1
+        frame.terminal.id = id
+        frame.terminal.name = id
+        frame.terminal.status = "running"
+        frame.data = Data("output".utf8)
+        await receive(frame)
+        if watchRequests.count == 1 { throw RPCError(code: .deadlineExceeded, message: "bearer expired") }
+        try await Task.sleep(for: .seconds(60))
+    }
 
     func writeTerminal(id: String, data: Data) async throws -> Dieter_V1_Terminal { .init() }
     func resizeTerminal(id: String, columns: Int, rows: Int) async throws -> Dieter_V1_Terminal { .init() }
     func renameTerminal(id: String, name: String) async throws -> Dieter_V1_Terminal { .init() }
     func closeTerminal(id: String) async throws {}
+}
+
+@Test @MainActor func terminalWatchResumesDeliveredSequenceAfterCredentialExpiry() async throws {
+    let rpc = TerminalRoutingFixture(expireWatch: true)
+    let model = TerminalsModel()
+    model.active = true
+    defer { model.active = false }
+    model.bind(target: WorkspaceTarget(endpointID: "fixture", projectID: ""), client: rpc)
+    await model.loadTerminals()
+    let deadline = Date().addingTimeInterval(3)
+    while await rpc.watchRequests.count < 2, Date() < deadline {
+        try await Task.sleep(for: .milliseconds(10))
+    }
+    #expect(await rpc.watchRequests == [0, 1])
+    #expect(model.terminalSequences["first"] == 2)
 }
 
 @MainActor

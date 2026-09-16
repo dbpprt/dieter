@@ -387,7 +387,7 @@ extension DieterStore {
 
     func selectDataPlane(
         gateway: DieterRPC, target: DieterEndpoint, gatewayAccessToken: String?,
-        directCandidateScope: DirectCandidateScope = .all, refreshDirectToken: Bool = true
+        directCandidateScope: DirectCandidateScope = .all, refreshDirectToken: Bool = false
     ) async throws -> DataPlaneConnection {
         try await connections.selectDataPlane(
             gateway: gateway, target: target, gatewayAccessToken: gatewayAccessToken,
@@ -428,12 +428,13 @@ extension DieterStore {
 
         let plane = try await connections.selectDataPlane(
             gateway: gateway, target: target, gatewayAccessToken: gatewayToken,
-            refreshDirectToken: false, route: route
+            refreshDirectToken: true, route: route
         )
         return RemoteDesktopSignalingConnection(
             rpc: plane.rpc, connectionTask: plane.task, rtcConfiguration: rtcConfiguration,
             daemonCertificatePEM: route.daemonCertificatePem,
-            routeLabel: plane.connection.route == .local ? "Direct" : "Gateway"
+            routeLabel: plane.connection.route == .local ? "Direct" : "Gateway",
+            credentialRefreshTask: plane.credentialRefreshTask
         )
     }
 
@@ -1271,7 +1272,7 @@ extension DieterStore {
             }
             return try await selectDataPlane(
                 gateway: gateway, target: machine, gatewayAccessToken: gatewayAccessToken,
-                directCandidateScope: .loopbackOnly, refreshDirectToken: false
+                directCandidateScope: .loopbackOnly, refreshDirectToken: true
             )
         }
     }

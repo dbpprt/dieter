@@ -3,10 +3,13 @@ package daemon
 import (
 	"context"
 	"errors"
+	"net"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/dbpprt/dieter/internal/gateway"
 	"github.com/dbpprt/dieter/internal/rpcraw"
 	"github.com/dbpprt/dieter/internal/trust"
 	"google.golang.org/grpc"
@@ -14,6 +17,128 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
+
+func TestDirectTLSExpiryReleasesStalledNetworkStreams(t *testing.T) {
+	for _, stallResponse := range []bool{false, true} {
+		t.Run(map[bool]string{false: "request", true: "response"}[stallResponse], func(t *testing.T) {
+			keys, err := gateway.LoadOrCreateKeys(t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			identity, err := LoadOrCreateEnrollmentIdentity(t.TempDir(), "security", "https://gateway.example")
+			if err != nil {
+				t.Fatal(err)
+			}
+			public, err := identity.PublicKeyDER()
+			if err != nil {
+				t.Fatal(err)
+			}
+			certificate, expires, err := keys.IssueDaemonCertificate("d_stall", public)
+			if err != nil {
+				t.Fatal(err)
+			}
+			signing, err := keys.SigningPublicPEM()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := identity.SaveCredential("d_stall", "security", certificate, keys.DaemonCAPEM, signing, expires.Format(time.RFC3339Nano), 1); err != nil {
+				t.Fatal(err)
+			}
+			localStopped := make(chan struct{})
+			var responses atomic.Int32
+			local := grpc.NewServer(grpc.ForceServerCodec(rpcraw.Codec{}), grpc.UnknownServiceHandler(func(_ any, stream grpc.ServerStream) error {
+				defer close(localStopped)
+				var request rpcraw.Message
+				if err := stream.RecvMsg(&request); err != nil {
+					return err
+				}
+				response := &rpcraw.Message{Data: make([]byte, 256<<10)}
+				for {
+					if err := stream.SendMsg(response); err != nil {
+						return err
+					}
+					responses.Add(1)
+				}
+			}))
+			listener, err := net.Listen("tcp", "127.0.0.1:0")
+			if err != nil {
+				t.Fatal(err)
+			}
+			go func() { _ = local.Serve(listener) }()
+			t.Cleanup(local.Stop)
+			direct, err := NewDirectServer(identity, listener.Addr().String())
+			if err != nil {
+				t.Fatal(err)
+			}
+			publicListener, err := net.Listen("tcp", "127.0.0.1:0")
+			if err != nil {
+				t.Fatal(err)
+			}
+			go func() { _ = direct.Serve(publicListener) }()
+			t.Cleanup(direct.Stop)
+			now := time.Now()
+			token, err := trust.SignCompact(keys.SigningPrivate, trust.DaemonTokenClaims{
+				Issuer: identity.GatewayURL, Subject: "github:123", Audience: "board-daemon:" + identity.ID, ID: "dt_stall", DaemonGeneration: 1,
+				IssuedAt: now.Add(-time.Minute).Unix(), NotBefore: now.Add(-time.Minute).Unix(), ExpiresAt: now.Add(-8 * time.Second).Unix(),
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+			defer cancel()
+			connection, err := DialDirect(ctx, publicListener.Addr().String(), identity.ID, identity.DaemonCAPEM, token)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = connection.Close() })
+			stream, err := connection.NewStream(ctx, &grpc.StreamDesc{ServerStreams: true}, "/dieter.v1.DieterService/WatchState", grpc.ForceCodec(rpcraw.Codec{}))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if stallResponse {
+				if err := stream.SendMsg(&rpcraw.Message{Data: []byte("request")}); err != nil {
+					t.Fatal(err)
+				}
+				if err := stream.CloseSend(); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := stream.Header(); err != nil {
+					t.Fatal(err)
+				}
+				// Never read the response: HTTP/2 flow control must stall the
+				// forwarder, while credential expiry still releases admission.
+				select {
+				case <-localStopped:
+				case <-time.After(3 * time.Second):
+					t.Fatal("stalled output retained the local RPC beyond token expiry")
+				}
+				if responses.Load() == 0 {
+					t.Fatal("response stream never started")
+				}
+			} else {
+				_, err := stream.Header()
+				if err == nil {
+					err = stream.RecvMsg(&rpcraw.Message{})
+				}
+				if status.Code(err) != codes.DeadlineExceeded {
+					t.Fatalf("stalled request: %v", err)
+				}
+				select {
+				case <-localStopped:
+					t.Fatal("incomplete request reached daemon")
+				default:
+				}
+			}
+			deadline := time.Now().Add(time.Second)
+			for direct.active.Load() != 0 && time.Now().Before(deadline) {
+				time.Sleep(time.Millisecond)
+			}
+			if direct.active.Load() != 0 {
+				t.Fatal("expired network stream retained direct admission")
+			}
+		})
+	}
+}
 
 type stalledDirectStream struct{ ctx context.Context }
 

@@ -12,6 +12,8 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -212,6 +214,65 @@ func TestNativeCodeRequiresPKCEAndCannotBeReplayed(t *testing.T) {
 	}
 	if response := exchange(verifier); response.Code != http.StatusBadRequest {
 		t.Fatal("native authorization code was replayable")
+	}
+}
+
+func TestEnrollmentConfirmationExpiresRechecksAccountAndIsSingleUse(t *testing.T) {
+	for _, mode := range []string{"concurrent approval", "expired confirmation", "expired enrollment", "removed account"} {
+		t.Run(mode, func(t *testing.T) {
+			auth := newSecurityTestAuth(t)
+			record := EnrollmentRecord{ID: "enrollment", SecretHash: "hash", UserCode: "ABCD", Name: "test", PublicKey: []byte("key"), ExpiresAt: time.Now().Add(time.Minute)}
+			if err := auth.store.CreateEnrollment(record); err != nil {
+				t.Fatal(err)
+			}
+			page := httptest.NewRecorder()
+			auth.confirmEnrollment(page, OAuthPending{EnrollmentID: record.ID, EnrollmentCode: record.UserCode}, 42, "owner")
+			cookies := page.Result().Cookies()
+			if len(cookies) != 1 {
+				t.Fatalf("confirmation cookies: %v", cookies)
+			}
+			cookie := cookies[0]
+			switch mode {
+			case "expired confirmation":
+				if err := auth.store.UpdateAuthState(func(state *AuthState) error { state.Approvals[0].ExpiresAt = time.Now().Add(-time.Second); return nil }); err != nil {
+					t.Fatal(err)
+				}
+			case "expired enrollment":
+				if _, err := auth.store.DB.Exec("UPDATE enrollments SET expires_at=? WHERE id=?", time.Now().Add(-time.Second).UTC().Format(time.RFC3339Nano), record.ID); err != nil {
+					t.Fatal(err)
+				}
+			case "removed account":
+				auth.config.AllowedUserID = 99
+			}
+			var accepted atomic.Int32
+			var group sync.WaitGroup
+			for range 8 {
+				group.Go(func() {
+					request := httptest.NewRequest(http.MethodPost, "/auth/enrollment/approve", strings.NewReader(url.Values{"token": {cookie.Value}}.Encode()))
+					request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+					request.AddCookie(cookie)
+					response := httptest.NewRecorder()
+					auth.approveEnrollment(response, request)
+					if response.Code == http.StatusOK {
+						accepted.Add(1)
+					} else if response.Code != http.StatusBadRequest {
+						t.Errorf("unexpected confirmation status: %d", response.Code)
+					}
+				})
+			}
+			group.Wait()
+			want := int32(0)
+			if mode == "concurrent approval" {
+				want = 1
+			}
+			if accepted.Load() != want {
+				t.Fatalf("accepted=%d want=%d", accepted.Load(), want)
+			}
+			stored, err := auth.store.Enrollment(record.ID)
+			if err != nil || stored.Approved != (want == 1) {
+				t.Fatalf("approved=%v err=%v", stored.Approved, err)
+			}
+		})
 	}
 }
 

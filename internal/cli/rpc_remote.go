@@ -37,6 +37,9 @@ Actions:
 
 SCOPE is exactly one of --project PROJECT or --card CARD. Use IDs rather than
 names in automation. A disconnected watch never cancels the remote process.
+Output subscriptions renew credentials and resume after transient failures, with
+five retries between delivered frames. Recovery never repeats process starts or
+stdin writes; revoked credentials stop recovery.
 Use exec --card CARD --detach to register a background process in that
 conversation's native Processes workspace tab. Its output remains available
 after the agent turn or tab closes; only explicit stop/timeout/daemon shutdown
@@ -420,6 +423,7 @@ func (c *CLI) rpcRemoteWatch(args []string, attach, propagateExit bool) error {
 	} else if propagateExit {
 		usage = "Usage: dieter remote wait [--after SEQUENCE] [--format content|jsonl] EXECUTION\n"
 	}
+	usage += readRecoveryHelp
 	set := flags("remote watch")
 	after := set.Uint64("after", 0, "last received sequence")
 	format := set.String("format", "content", "content or jsonl")

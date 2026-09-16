@@ -41,7 +41,12 @@ dieter --machine <machine-id> project list --format jsonl
 ```
 
 Remote commands prefer the daemon's authenticated direct TLS route and fall
-back to the bounded gateway relay. The gateway routes requests but does not
+back to the bounded gateway relay. State, sync, card, terminal, remote-execution,
+and Git-operation watches renew direct credentials and resume from the last
+delivered sequence or complete sync projection. Transient failures allow five
+retries between delivered frames; revocation and permanent errors stop recovery.
+Mutations, process starts, and stdin writes are never replayed by this recovery.
+The gateway routes requests but does not
 store projects, transcripts, files, schedules, or harness credentials. Use
 `dieter machine show <machine-id>` and `dieter machine route <machine-id>` to
 inspect presence and advertised routes. Directory output includes the daemon's

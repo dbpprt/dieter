@@ -43,7 +43,9 @@ relay, and removes the local gateway credential, without touching projects,
 conversations, schedules, or harness settings. Signing out or expiring a gateway
 session closes its existing gateway streams within approximately five seconds.
 Direct streams end when their five-minute bearer expires, allowing ten seconds
-of clock tolerance.
+of clock tolerance. Native clients renew credentials before expiry; CLI read
+subscriptions renew credentials and resume from their last delivered checkpoint.
+Revocation stops recovery, and retrying a read never restarts an agent or process.
 
 ## What the gateway can and cannot see
 
@@ -84,3 +86,9 @@ The macOS app stores its gateway session unencrypted in a user-only file under
 `~/Library/Application Support/com.dbpprt.dieter.mac` and never touches Keychain.
 Android encrypts the session with a device-bound Android Keystore key. Neither
 client retains a GitHub token or a harness credential.
+
+## Dependency checks
+
+`just gateway vulncheck` and `just daemon vulncheck` scan reachable code using the
+pinned Go release. CI requires these checks before publishing gateway images or
+daemon/gateway release packages.

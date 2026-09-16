@@ -95,7 +95,7 @@ private let connectionLogger = Logger(subsystem: "com.dbpprt.dieter.mac", catego
         target: DieterEndpoint,
         gatewayAccessToken: String?,
         directCandidateScope: DirectCandidateScope = .all,
-        refreshDirectToken: Bool = true,
+        refreshDirectToken: Bool = false,
         route suppliedRoute: Dieter_Gateway_V1_DaemonRoute? = nil,
         run: @escaping @MainActor (DieterRPC) -> Task<Void, Never> = ConnectionManager.run
     ) async throws -> DataPlaneConnection {
@@ -136,13 +136,31 @@ private let connectionLogger = Logger(subsystem: "com.dbpprt.dieter.mac", catego
                     do {
                         _ = try await direct.health(timeout: .seconds(2))
                         try Task.checkCancellation()
+                        var credentialRefreshTask: Task<Void, Never>?
+                        if refreshDirectToken, let credential = direct.directCredential {
+                            let clients = factory
+                            let origin = gateway.endpoint
+                            credentialRefreshTask = Task {
+                                await DirectCredentialRefreshLoop.run(credential: credential) {
+                                    let renewalGateway = try clients.client(
+                                        endpoint: origin, accessToken: gatewayAccessToken)
+                                    let renewalTask = Task { try? await renewalGateway.run() }
+                                    defer {
+                                        renewalTask.cancel()
+                                        renewalGateway.shutdown()
+                                    }
+                                    return try await renewalGateway.daemonAccessToken(daemonID: daemonID)
+                                }
+                            }
+                        }
                         return DataPlaneConnection(
                             rpc: direct,
                             task: directTask,
                             connection: .init(
                                 route: .local, latencyMilliseconds: Self.latencyMilliseconds(since: started)),
                             directTokenExpiresAt: token.expiresAt,
-                            directCredential: direct.directCredential
+                            directCredential: direct.directCredential,
+                            credentialRefreshTask: credentialRefreshTask
                         )
                     } catch {
                         connectionLogger.debug(

@@ -2,18 +2,29 @@ package gateway
 
 import (
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
 	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"io"
 	"net"
 	"net/http"
+	"net/http/cookiejar"
 	"net/http/httptest"
+	"net/http/httputil"
 	"net/url"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
+	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
 	"golang.org/x/net/http2"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/status"
 )
 
 type repeatedBody struct{ read int64 }
@@ -226,5 +237,163 @@ func TestGatewaySecurityHeaders(t *testing.T) {
 				t.Fatalf("HSTS=%q insecure=%v", got, insecure)
 			}
 		}
+	}
+}
+
+func securityTLSProxy(t *testing.T, config Config) (*Server, *httptest.Server) {
+	t.Helper()
+	store, err := OpenStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	origin, _ := url.Parse("https://gateway.example")
+	config.PublicURL, config.ProxyMode = origin, true
+	gateway, err := NewServer(config, store, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(gateway.APIGRPC.Stop)
+	t.Cleanup(gateway.RelayGRPC.Stop)
+	// Production proxy mode: TLS terminates at the front end, with HTTP/2
+	// prior knowledge over a loopback-only connection to the gateway.
+	backend, err := gateway.httpServer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() { _ = backend.Serve(listener) }()
+	t.Cleanup(func() { _ = backend.Close() })
+	backendURL, _ := url.Parse("http://" + listener.Addr().String())
+	proxy := httputil.NewSingleHostReverseProxy(backendURL)
+	transport := &http2.Transport{AllowHTTP: true, DialTLSContext: func(ctx context.Context, network, address string, _ *tls.Config) (net.Conn, error) {
+		return (&net.Dialer{}).DialContext(ctx, network, address)
+	}}
+	t.Cleanup(transport.CloseIdleConnections)
+	proxy.Transport = transport
+	frontend := httptest.NewUnstartedServer(proxy)
+	frontend.EnableHTTP2 = true
+	frontend.TLS = &tls.Config{MinVersion: tls.VersionTLS13}
+	frontend.StartTLS()
+	t.Cleanup(frontend.Close)
+	public, _ := url.Parse(frontend.URL)
+	gateway.Auth.config.PublicURL, gateway.Service.config.PublicURL = public, public
+	return gateway, frontend
+}
+
+func TestGatewayRejectsStalledUnauthenticatedBodyThroughTLSProxy(t *testing.T) {
+	_, frontend := securityTLSProxy(t, Config{})
+	client := frontend.Client()
+	client.Timeout = 2 * time.Second
+	reader, writer := io.Pipe()
+	defer reader.Close()
+	defer writer.Close()
+	request, err := http.NewRequest(http.MethodPost, frontend.URL+"/dieter.gateway.v1.GatewayService/GetAccount", reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("Content-Type", "application/grpc")
+	request.Header.Set("TE", "trailers")
+	// Send an incomplete gRPC body and leave it open. Authentication must
+	// reject before decoding, even through the proxy and real flow control.
+	go func() { _, _ = writer.Write([]byte{0}) }()
+	response, err := client.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	if response.ProtoMajor != 2 || response.TLS.Version != tls.VersionTLS13 || response.Header.Get("Grpc-Status") != "16" {
+		t.Fatalf("protocol=%s headers=%v", response.Proto, response.Header)
+	}
+	if response.Header.Get("Strict-Transport-Security") == "" || response.Header.Get("Cache-Control") != "no-store" {
+		t.Fatalf("missing security headers: %v", response.Header)
+	}
+}
+
+func TestEnrollmentThroughTLSProxyRequiresExplicitBrowserApproval(t *testing.T) {
+	github := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/login/oauth/authorize":
+			callback, _ := url.Parse(r.URL.Query().Get("redirect_uri"))
+			callback.RawQuery = url.Values{"state": {r.URL.Query().Get("state")}, "code": {"fixture-code"}}.Encode()
+			http.Redirect(w, r, callback.String(), http.StatusFound)
+		case "/login/oauth/access_token":
+			_, _ = io.WriteString(w, `{"access_token":"fixture-token"}`)
+		case "/user":
+			_, _ = io.WriteString(w, `{"id":42,"login":"owner"}`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer github.Close()
+	_, frontend := securityTLSProxy(t, Config{AllowedUserID: 42, AuthSecret: []byte("fixture-secret"), GitHubBaseURL: github.URL, GitHubAPIURL: github.URL})
+	client := frontend.Client()
+	client.Timeout = 5 * time.Second
+	client.Jar, _ = cookiejar.New(nil)
+	connection, err := grpc.NewClient(strings.TrimPrefix(frontend.URL, "https://"), grpc.WithTransportCredentials(credentials.NewTLS(client.Transport.(*http.Transport).TLSClientConfig.Clone())))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer connection.Close()
+	api := gatewayv1.NewGatewayServiceClient(connection)
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	public, _, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	publicDER, err := x509.MarshalPKIXPublicKey(public)
+	if err != nil {
+		t.Fatal(err)
+	}
+	enrollment, err := api.BeginDaemonEnrollment(ctx, &gatewayv1.BeginDaemonEnrollmentRequest{Name: "Browser-approved machine", PublicKey: publicDER})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := &gatewayv1.CompleteDaemonEnrollmentRequest{EnrollmentId: enrollment.GetEnrollmentId(), EnrollmentSecret: enrollment.GetEnrollmentSecret()}
+	response, err := client.Get(enrollment.GetVerificationUrl())
+	if err != nil {
+		t.Fatal(err)
+	}
+	page, err := io.ReadAll(response.Body)
+	response.Body.Close()
+	if err != nil || response.StatusCode != http.StatusOK || response.ProtoMajor != 2 || !strings.Contains(string(page), enrollment.GetUserCode()) {
+		t.Fatalf("confirmation status=%d err=%v", response.StatusCode, err)
+	}
+	if _, err := api.CompleteDaemonEnrollment(ctx, request); status.Code(err) != codes.FailedPrecondition {
+		t.Fatalf("OAuth alone approved enrollment: %v", err)
+	}
+	origin, _ := url.Parse(frontend.URL + "/auth/enrollment/approve")
+	var token string
+	for _, cookie := range client.Jar.Cookies(origin) {
+		if cookie.Name == enrollmentCookie {
+			token = cookie.Value
+		}
+	}
+	if token == "" || !strings.Contains(string(page), `value="`+token+`"`) {
+		t.Fatal("approval form is not bound to the browser cookie")
+	}
+	response, err = client.PostForm(origin.String(), url.Values{"token": {token}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("approval status=%d", response.StatusCode)
+	}
+	credential, err := api.CompleteDaemonEnrollment(ctx, request)
+	if err != nil || credential.GetDaemonId() == "" || len(credential.GetCertificatePem()) == 0 {
+		t.Fatalf("complete enrollment: %v", err)
+	}
+	response, err = client.PostForm(origin.String(), url.Values{"token": {token}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusBadRequest {
+		t.Fatal("browser approval was replayable")
 	}
 }

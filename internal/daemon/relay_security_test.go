@@ -11,6 +11,7 @@ import (
 	"io"
 	"log/slog"
 	"net"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -92,7 +93,7 @@ func invokeRelay(t *testing.T, c *GatewayClient, connection *grpc.ClientConn, fr
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	result := codes.Unknown
-	c.relayLocal(ctx, connection, frame, func(response *gatewayv1.DaemonLinkFrame, _ bool) bool {
+	c.relayLocal(ctx, connection, frame, func(_ context.Context, response *gatewayv1.DaemonLinkFrame, _ bool) bool {
 		if response.Kind == gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_RPC_ERROR || response.Kind == gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_RESPONSE_END {
 			result = codes.Code(response.StatusCode)
 		}
@@ -183,5 +184,125 @@ func TestDaemonRejectsCleartextGatewayBeforeDialOrEnrollment(t *testing.T) {
 	}
 	if _, err := LoadOrCreateEnrollmentIdentity(t.TempDir(), "security-test", identity.GatewayURL); err == nil {
 		t.Fatal("enrollment accepted a remote cleartext gateway")
+	}
+}
+
+func TestCanceledRelayEscapesSaturatedResponseQueue(t *testing.T) {
+	for _, priority := range []bool{false, true} {
+		t.Run(map[bool]string{false: "stream", true: "command"}[priority], func(t *testing.T) {
+			c, private, connection, calls := relaySecurityFixture(t)
+			frame := signedRelayFrame(t, c, private, func(frame *gatewayv1.DaemonLinkFrame, claims *trust.DelegationClaims) {
+				if !priority {
+					frame.Method = "/dieter.v1.DieterService/WatchState"
+					claims.Method = frame.Method
+				}
+			})
+			linkCtx, closeLink := context.WithCancel(t.Context())
+			defer closeLink()
+			callCtx, cancel := context.WithCancel(linkCtx)
+			defer cancel()
+			queue := make(chan *gatewayv1.DaemonLinkFrame, 1)
+			queue <- &gatewayv1.DaemonLinkFrame{}
+			entered, done := make(chan struct{}), make(chan struct{})
+			go func() {
+				defer close(done)
+				c.relayLocal(callCtx, connection, frame, func(ctx context.Context, response *gatewayv1.DaemonLinkFrame, _ bool) bool {
+					close(entered)
+					return enqueueRelayResponse(ctx, linkCtx, queue, response)
+				})
+			}()
+			select {
+			case <-entered:
+			case <-time.After(2 * time.Second):
+				t.Fatal("RPC did not reach response queue")
+			}
+			cancel()
+			select {
+			case <-done:
+			case <-time.After(time.Second):
+				t.Fatal("canceled relay retained its worker behind a full queue")
+			}
+			if linkCtx.Err() != nil || len(queue) != 1 || calls.Load() != 1 {
+				t.Fatal("cancel affected the link or dispatched another operation")
+			}
+			frame = signedRelayFrame(t, c, private, func(frame *gatewayv1.DaemonLinkFrame, claims *trust.DelegationClaims) {
+				frame.StreamId = 2
+				frame.RequestId = "next"
+				claims.RequestID = "next"
+				claims.ID = "next-proof"
+			})
+			if got := invokeRelay(t, c, connection, frame); got != codes.OK {
+				t.Fatalf("next independent relay failed: %v", got)
+			}
+		})
+	}
+}
+
+func TestRelayResponseAdmissionHonorsBothCancellationScopes(t *testing.T) {
+	for _, cancelRPC := range []bool{true, false} {
+		callCtx, cancelCall := context.WithCancel(t.Context())
+		linkCtx, cancelLink := context.WithCancel(t.Context())
+		queue := make(chan *gatewayv1.DaemonLinkFrame, 1)
+		if cancelRPC {
+			cancelCall()
+		} else {
+			cancelLink()
+		}
+		if enqueueRelayResponse(callCtx, linkCtx, queue, &gatewayv1.DaemonLinkFrame{}) || len(queue) != 0 {
+			t.Error("enqueued a response after cancellation")
+		}
+		cancelCall()
+		cancelLink()
+	}
+}
+
+type stalledControlGateway struct {
+	gatewayv1.UnimplementedDaemonLinkServiceServer
+	generation uint64
+}
+
+func (g *stalledControlGateway) Connect(stream grpc.BidiStreamingServer[gatewayv1.DaemonLinkFrame, gatewayv1.DaemonLinkFrame]) error {
+	hello, err := stream.Recv()
+	if err != nil {
+		return err
+	}
+	if err := stream.Send(&gatewayv1.DaemonLinkFrame{Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_PING, DaemonId: hello.GetDaemonId(), Payload: make([]byte, 32)}); err != nil {
+		return err
+	}
+	if _, err := stream.Recv(); err != nil {
+		return err
+	}
+	if err := stream.Send(&gatewayv1.DaemonLinkFrame{Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_HELLO_ACK, DaemonId: hello.GetDaemonId(), Generation: g.generation}); err != nil {
+		return err
+	}
+	// Stop reading after handshake. The daemon's output flow-control window
+	// fills, then control admission must close the link instead of blocking
+	// the receive loop behind RPC responses or waiting for caller shutdown.
+	for range 20_000 {
+		if err := stream.Send(&gatewayv1.DaemonLinkFrame{Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_OPEN_RPC}); err != nil {
+			return err
+		}
+	}
+	<-stream.Context().Done()
+	return stream.Context().Err()
+}
+
+func TestStalledGatewayControlQueueClosesLinkWithoutCallerCancellation(t *testing.T) {
+	c, private, local, _ := relaySecurityFixture(t)
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	gateway := grpc.NewServer(grpc.StaticStreamWindowSize(65535), grpc.StaticConnWindowSize(65535))
+	gatewayv1.RegisterDaemonLinkServiceServer(gateway, &stalledControlGateway{generation: c.Identity.Generation})
+	go func() { _ = gateway.Serve(listener) }()
+	t.Cleanup(gateway.Stop)
+	c.Identity.GatewayURL, c.Identity.PrivateKey = "http://"+listener.Addr().String(), private
+	c.LocalTarget = local.Target()
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	_, err = c.runOnce(ctx)
+	if ctx.Err() != nil || err == nil || !strings.Contains(err.Error(), "control queue is stalled") {
+		t.Fatalf("stalled tunnel: err=%v caller=%v", err, ctx.Err())
 	}
 }

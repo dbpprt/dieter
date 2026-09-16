@@ -212,6 +212,9 @@ Commands:
 Without --machine, operational commands use the running local daemon API. With
 --machine, the CLI authenticates to the gateway, prefers direct TLS, and falls
 back to the bounded gateway relay. It never reads a remote machine's storage.
+Read watches renew credentials and resume after transient failures, with five
+retries between delivered frames. Revocation stops recovery; mutations and
+process starts are never replayed by watch recovery.
 
 Run "dieter help <command> [action]" or append --help at any command depth.
 `)

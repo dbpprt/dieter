@@ -199,7 +199,7 @@ func (c *CLI) dialDieter(ctx context.Context) (*dieterTransport, error) {
 		if err != nil {
 			return nil, err
 		}
-		result := &dieterTransport{conn: connection, client: dieterv1.NewDieterServiceClient(connection), route: "local"}
+		result := &dieterTransport{conn: connection, client: dieterv1.NewDieterServiceClient(readResumingConn{connection}), route: "local"}
 		if _, err := result.client.Health(ctx, &emptypb.Empty{}); err != nil {
 			_ = connection.Close()
 			return nil, fmt.Errorf("connect to local Dieter daemon at %s: %w", statusValue.ListenAddress, err)
@@ -233,12 +233,15 @@ func (c *CLI) dialDieter(ctx context.Context) (*dieterTransport, error) {
 		if accessErr != nil {
 			return nil, fmt.Errorf("issue direct token for %s: %w", machine.GetName(), accessErr)
 		}
+		credential := &directCredential{access: access, timeout: c.connectionTimeout(), exchange: func(ctx context.Context) (*gatewayv1.DaemonAccessToken, error) {
+			return gateway.client.ExchangeDaemonToken(ctx, &gatewayv1.ExchangeDaemonTokenRequest{DaemonId: machine.GetId()})
+		}}
 		for _, candidate := range candidates {
 			address := net.JoinHostPort(candidate.GetHost(), strconv.Itoa(int(candidate.GetPort())))
 			probeCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
-			connection, dialErr := dieterdaemon.DialDirect(probeCtx, address, machine.GetId(), route.GetDaemonCaPem(), access.GetAccessToken())
+			connection, dialErr := dieterdaemon.DialDirectWithCredentials(probeCtx, address, machine.GetId(), route.GetDaemonCaPem(), credential)
 			if dialErr == nil {
-				client := dieterv1.NewDieterServiceClient(connection)
+				client := dieterv1.NewDieterServiceClient(readResumingConn{connection})
 				_, dialErr = client.Health(probeCtx, &emptypb.Empty{})
 				if dialErr == nil {
 					cancel()
@@ -255,7 +258,7 @@ func (c *CLI) dialDieter(ctx context.Context) (*dieterTransport, error) {
 		return nil, fmt.Errorf("Dieter machine %s has no reachable direct route and its relay is unavailable", machine.GetName())
 	}
 	result := &dieterTransport{
-		conn: gateway.conn, client: dieterv1.NewDieterServiceClient(gateway.conn),
+		conn: gateway.conn, client: dieterv1.NewDieterServiceClient(readResumingConn{gateway.conn}),
 		route: "relay", daemonID: machine.GetId(), relay: true,
 	}
 	c.transport = result

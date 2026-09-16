@@ -189,7 +189,7 @@ func (c *CLI) rpcTerminalCreate(args []string) error {
 }
 
 func (c *CLI) rpcTerminalWatch(args []string) error {
-	const usage = "Usage: dieter terminal watch [--after SEQUENCE] [--format content|jsonl] [--count N] TERMINAL\n"
+	const usage = "Usage: dieter terminal watch [--after SEQUENCE] [--format content|jsonl] [--count N] TERMINAL\n" + readRecoveryHelp
 	set := flags("terminal watch")
 	after := set.Uint64("after", 0, "last received sequence")
 	format := set.String("format", "content", "content or jsonl")

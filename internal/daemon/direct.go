@@ -135,6 +135,12 @@ func (s *DirectServer) forward(ctx context.Context, stream grpc.ServerStream, me
 }
 
 func DialDirect(ctx context.Context, address, daemonID string, daemonCA []byte, token string) (*grpc.ClientConn, error) {
+	return DialDirectWithCredentials(ctx, address, daemonID, daemonCA, daemonTokenCredential{token: token})
+}
+
+// DialDirectWithCredentials preserves the daemon certificate identity check
+// while allowing long-lived clients to renew their per-RPC bearer credentials.
+func DialDirectWithCredentials(ctx context.Context, address, daemonID string, daemonCA []byte, bearer credentials.PerRPCCredentials) (*grpc.ClientConn, error) {
 	roots := x509.NewCertPool()
 	if !roots.AppendCertsFromPEM(daemonCA) {
 		return nil, errors.New("daemon CA is invalid")
@@ -157,7 +163,7 @@ func DialDirect(ctx context.Context, address, daemonID string, daemonCA []byte, 
 			return errors.New("daemon certificate identity does not match the route")
 		},
 	}
-	connection, err := grpc.NewClient(address, grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)), grpc.WithPerRPCCredentials(daemonTokenCredential{token: token}))
+	connection, err := grpc.NewClient(address, grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)), grpc.WithPerRPCCredentials(bearer), grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(16<<20), grpc.MaxCallSendMsgSize(16<<20)))
 	if err != nil {
 		return nil, err
 	}
