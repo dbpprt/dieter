@@ -556,10 +556,11 @@
                     }
                     let firstAttachmentType = store.quickTaskForm.attachments.first?.type ?? "none"
                     let firstAttachmentMediaType = store.quickTaskForm.attachments.first?.mediaType ?? "none"
+                    let storyResponder = String(describing: popover.firstResponder.map { type(of: $0) })
                     results["quick-task-paste-screenshot"] =
                         storyFocused && attached
                         ? "passed"
-                        : "failed: focus=\(storyFocused), attachments=\(store.quickTaskForm.attachments.count), first type=\(firstAttachmentType), first media=\(firstAttachmentMediaType), rendered preview=\(attached), active=\(NSApp.isActive), key=\(popover.isKeyWindow)"
+                        : "failed: focus=\(storyFocused), responder=\(storyResponder), attachments=\(store.quickTaskForm.attachments.count), first type=\(firstAttachmentType), first media=\(firstAttachmentMediaType), rendered preview=\(attached), active=\(NSApp.isActive), key=\(popover.isKeyWindow)"
                     capture(popover, to: output.appending(path: "quick-task-pasted-screenshot.png"))
                     pasteboard.clearContents()
                     let items = saved.map { values in

@@ -759,6 +759,7 @@ struct QuickTaskPopover: View {
                 QuickTaskStoryEditor(
                     text: $story,
                     focus: $storyFocused,
+                    canPasteAttachment: { store.pasteboardAttachmentInput($0) != nil },
                     pasteAttachment: { pasteboard in
                         guard let input = store.pasteboardAttachmentInput(pasteboard) else { return false }
                         let generation = formDraft.intakeGeneration

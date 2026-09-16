@@ -7,6 +7,7 @@ import SwiftUI
 struct QuickTaskStoryEditor: NSViewRepresentable {
     @Binding var text: String
     let focus: FocusState<Bool>.Binding
+    let canPasteAttachment: (NSPasteboard) -> Bool
     let pasteAttachment: (NSPasteboard) -> Bool
 
     func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
@@ -14,6 +15,7 @@ struct QuickTaskStoryEditor: NSViewRepresentable {
     func makeNSView(context: Context) -> QuickTaskStoryEditorContainer {
         let view = QuickTaskStoryEditorContainer()
         view.textView.delegate = context.coordinator
+        view.textView.canPasteAttachment = canPasteAttachment
         view.textView.pasteAttachment = pasteAttachment
         context.coordinator.apply(text, to: view.textView)
         return view
@@ -21,6 +23,7 @@ struct QuickTaskStoryEditor: NSViewRepresentable {
 
     func updateNSView(_ view: QuickTaskStoryEditorContainer, context: Context) {
         context.coordinator.parent = self
+        view.textView.canPasteAttachment = canPasteAttachment
         view.textView.pasteAttachment = pasteAttachment
         if view.textView.string != text {
             context.coordinator.apply(text, to: view.textView)
@@ -41,6 +44,7 @@ struct QuickTaskStoryEditor: NSViewRepresentable {
 
     static func dismantleNSView(_ view: QuickTaskStoryEditorContainer, coordinator: Coordinator) {
         view.textView.delegate = nil
+        view.textView.canPasteAttachment = nil
         view.textView.pasteAttachment = nil
     }
 
@@ -149,7 +153,24 @@ final class QuickTaskStoryEditorContainer: NSScrollView {
 
 @MainActor
 final class QuickTaskStoryTextView: NSTextView {
+    var canPasteAttachment: ((NSPasteboard) -> Bool)?
     var pasteAttachment: ((NSPasteboard) -> Bool)?
+
+    override func keyDown(with event: NSEvent) {
+        if consumesAttachmentPasteShortcut(event) { return }
+        super.keyDown(with: event)
+    }
+
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        consumesAttachmentPasteShortcut(event) || super.performKeyEquivalent(with: event)
+    }
+
+    override func validateUserInterfaceItem(_ item: NSValidatedUserInterfaceItem) -> Bool {
+        if item.action == #selector(paste(_:)), canPasteAttachment?(.general) == true {
+            return true
+        }
+        return super.validateUserInterfaceItem(item)
+    }
 
     override func paste(_ sender: Any?) {
         if consumesAttachmentPaste(from: .general) { return }
@@ -158,6 +179,14 @@ final class QuickTaskStoryTextView: NSTextView {
 
     func consumesAttachmentPaste(from pasteboard: NSPasteboard) -> Bool {
         pasteAttachment?(pasteboard) == true
+    }
+
+    private func consumesAttachmentPasteShortcut(_ event: NSEvent) -> Bool {
+        guard event.type == .keyDown,
+            event.modifierFlags.intersection([.command, .shift, .option, .control]) == .command,
+            event.charactersIgnoringModifiers?.lowercased() == "v"
+        else { return false }
+        return consumesAttachmentPaste(from: .general)
     }
 
     func applyBaseAttributes() {
