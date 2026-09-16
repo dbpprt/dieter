@@ -171,7 +171,7 @@ final class AppSession {
 
     func machineIsAvailable(_ machine: DieterEndpoint) -> Bool {
         guard machine.online, machine.apiCompatibility != .incompatible else { return false }
-        return machine.id != endpoint.id || workspaceIsLive
+        return machine.id != endpoint.id || phase.isConnected
     }
 
     func projectIsAvailable(_ projectID: String) -> Bool {
@@ -213,6 +213,7 @@ final class AppSession {
     var machineDirectoryTask: Task<Void, Never>?
     var machinePresenceLeaseTask: Task<Void, Never>?
     var machineTelemetryTask: Task<Void, Never>?
+    var connectionMetadataTask: Task<Void, Never>?
     var machineInformationGeneration: UInt64 = 0
     var syncRestoreTask: Task<Void, Never>?
     var stateTask: Task<Void, Never>?
@@ -246,6 +247,12 @@ final class AppSession {
     }
     var activityTransitions = ActivityTransitions()
     @ObservationIgnored var lastSyncFrameAt: Date?
+    @ObservationIgnored var syncAttemptStartedAt: Date?
+    @ObservationIgnored var syncSubscriptionGeneration: UInt64 = 0
+    @ObservationIgnored var pendingSyncSnapshot: Dieter_V1_GlobalSnapshot?
+    @ObservationIgnored var syncLastActivity: ContinuousClock.Instant?
+    @ObservationIgnored var syncTransportTimeout: Duration = .seconds(45)
+    @ObservationIgnored var syncLastAppliedActivity: ContinuousClock.Instant?
     @ObservationIgnored var lastSyncPersistenceAt: [String: Date] = [:]
     var persistConnectionSelection = true
     let accessTokenOverride: String?

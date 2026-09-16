@@ -10,6 +10,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -33,20 +34,11 @@ import (
 
 type grpcAPI struct {
 	dieterv1.UnimplementedDieterServiceServer
-	server            *Server
-	conversationMu    sync.Mutex
-	conversationCache map[string]cachedConversation
-	conversationTick  uint64
-	snapshotMu        sync.Mutex
-	snapshotCache     map[string]snapshotHistory
-	snapshotTick      uint64
-	commandMu         sync.Mutex
-}
-
-type cachedConversation struct {
-	revision string
-	value    model.Conversation
-	accessed uint64
+	server        *Server
+	snapshotMu    sync.Mutex
+	snapshotCache map[string]snapshotHistory
+	snapshotTick  uint64
+	commandMu     sync.Mutex
 }
 
 const (
@@ -86,36 +78,17 @@ func (api *grpcAPI) RenameBoard(_ context.Context, request *dieterv1.RenameBoard
 
 func (api *grpcAPI) GetState(ctx context.Context, request *dieterv1.GetStateRequest) (*dieterv1.State, error) {
 	if request.GetAllProjects() {
-		for {
-			if err := api.server.store.WaitForWriter(ctx); err != nil {
-				return nil, grpcFailure(err)
-			}
-			cursor, _, err := api.server.store.SyncEvents(0, 1)
-			if err != nil {
-				return nil, grpcFailure(err)
-			}
-			protoCursor := protoSyncCursor(cursor)
-			if unchanged := request.GetIfNotModified(); unchanged != nil &&
-				unchanged.GetEpoch() == protoCursor.GetEpoch() &&
-				unchanged.GetSequence() == protoCursor.GetSequence() &&
-				unchanged.GetProjectionVersion() == protoCursor.GetProjectionVersion() {
-				return &dieterv1.State{Cursor: protoCursor, NotModified: true}, nil
-			}
-			value, err := api.server.store.GlobalState()
-			if err != nil {
-				return nil, grpcFailure(err)
-			}
-			after, _, err := api.server.store.SyncEvents(0, 1)
-			if err != nil {
-				return nil, grpcFailure(err)
-			}
-			if after != cursor {
-				continue
-			}
-			result := protoState(value)
-			result.Cursor = protoCursor
-			return result, nil
+		value, cursor, err := api.server.store.GlobalStateContext(ctx)
+		if err != nil {
+			return nil, grpcFailure(err)
 		}
+		protoCursor := protoSyncCursor(cursor)
+		if unchanged := request.GetIfNotModified(); unchanged != nil && unchanged.GetEpoch() == protoCursor.GetEpoch() && unchanged.GetSequence() == protoCursor.GetSequence() && unchanged.GetProjectionVersion() == protoCursor.GetProjectionVersion() {
+			return &dieterv1.State{Cursor: protoCursor, NotModified: true}, nil
+		}
+		result := protoState(value)
+		result.Cursor = protoCursor
+		return result, nil
 	}
 	value, err := api.server.store.State(request.GetProjectId(), store.CardFilter{
 		Board: request.GetBoardId(), Lane: request.GetLane(), Runtime: request.GetRuntime(),
@@ -699,39 +672,10 @@ func (api *grpcAPI) conversation(cardID string) (model.Conversation, error) {
 	return api.conversationAtRevision(cardID, revision)
 }
 
-func (api *grpcAPI) conversationAtRevision(cardID, revision string) (model.Conversation, error) {
-	api.conversationMu.Lock()
-	cached, ok := api.conversationCache[cardID]
-	if ok && cached.revision == revision {
-		api.conversationTick++
-		cached.accessed = api.conversationTick
-		api.conversationCache[cardID] = cached
-	}
-	api.conversationMu.Unlock()
-	if ok && cached.revision == revision {
-		return cached.value, nil
-	}
-	conversation, err := api.server.store.ConversationByID(cardID)
-	if err != nil {
-		return model.Conversation{}, err
-	}
-	api.conversationMu.Lock()
-	if api.conversationCache == nil {
-		api.conversationCache = make(map[string]cachedConversation)
-	}
-	api.conversationTick++
-	api.conversationCache[cardID] = cachedConversation{revision: revision, value: conversation, accessed: api.conversationTick}
-	if len(api.conversationCache) > maxCachedConversations {
-		oldestID, oldestTick := "", api.conversationTick
-		for id, item := range api.conversationCache {
-			if id != cardID && item.accessed <= oldestTick {
-				oldestID, oldestTick = id, item.accessed
-			}
-		}
-		delete(api.conversationCache, oldestID)
-	}
-	api.conversationMu.Unlock()
-	return conversation, nil
+func (api *grpcAPI) conversationAtRevision(cardID, _ string) (model.Conversation, error) {
+	// The Store owns the single byte-bounded, revision-validated cache. Keeping a
+	// second full-transcript cache here multiplies memory across client routes.
+	return api.server.store.ConversationByID(cardID)
 }
 
 func (api *grpcAPI) conversationSnapshot(cardID string, limit int, before *int32) (*dieterv1.ConversationSnapshot, error) {
@@ -746,10 +690,18 @@ func (api *grpcAPI) conversationSnapshot(cardID string, limit int, before *int32
 	if err != nil {
 		return nil, err
 	}
-	return api.conversationSnapshotFrom(detail, conversation, limit, before), nil
+	snapshot := api.conversationSnapshotFrom(detail, conversation, limit, before)
+	if proto.Size(snapshot) > 12<<20 {
+		return nil, status.Error(codes.ResourceExhausted, "one conversation message or its details exceed the 12 MiB response budget")
+	}
+	return snapshot, nil
 }
 
 func (api *grpcAPI) conversationSnapshotFrom(detail model.CardDetail, conversation model.Conversation, limit int, before *int32) *dieterv1.ConversationSnapshot {
+	return api.boundedConversationSnapshot(detail, conversation, limit, before, 12<<20, true)
+}
+
+func (api *grpcAPI) boundedConversationSnapshot(detail model.CardDetail, conversation model.Conversation, limit int, before *int32, budget int, remember bool) *dieterv1.ConversationSnapshot {
 	if limit < 1 {
 		limit = 30
 	}
@@ -785,7 +737,15 @@ func (api *grpcAPI) conversationSnapshotFrom(detail model.CardDetail, conversati
 			Start: int32(start), End: int32(end), Total: int32(total), HasMore: start > 0,
 		},
 	}
-	if before == nil {
+	for proto.Size(snapshot) > budget && len(snapshot.Conversation.Messages) > 1 {
+		removedID := snapshot.Conversation.Messages[0].GetId()
+		snapshot.Conversation.Messages = snapshot.Conversation.Messages[1:]
+		snapshot.Conversation.Subagents = slices.DeleteFunc(snapshot.Conversation.Subagents, func(item *dieterv1.Subagent) bool { return item.GetMessageId() == removedID })
+		snapshot.Conversation.TaskPlans = slices.DeleteFunc(snapshot.Conversation.TaskPlans, func(item *dieterv1.TaskPlan) bool { return item.GetMessageId() == removedID })
+		snapshot.Page.Start++
+		snapshot.Page.HasMore = true
+	}
+	if before == nil && remember {
 		api.rememberConversationSnapshot(detail.Card.ID, snapshot)
 	}
 	return snapshot
@@ -810,16 +770,36 @@ func (api *grpcAPI) rememberConversationSnapshot(cardID string, snapshot *dieter
 		}
 	}
 	api.snapshotCache[cardID] = history
-	if len(api.snapshotCache) <= maxCachedConversations {
-		return
-	}
-	oldestID, oldestTick := "", api.snapshotTick
-	for id, item := range api.snapshotCache {
-		if id != cardID && item.accessed <= oldestTick {
-			oldestID, oldestTick = id, item.accessed
+	// Bound retained snapshot memory as well as entry counts. A slow reader
+	// cannot pin twelve conversations times eight twelve-megabyte tails.
+	for {
+		bytes := 0
+		for _, item := range api.snapshotCache {
+			for _, value := range item.values {
+				bytes += proto.Size(value.snapshot)
+			}
 		}
+		if len(api.snapshotCache) <= maxCachedConversations && bytes <= 32<<20 {
+			return
+		}
+		oldestID, oldestTick := "", api.snapshotTick
+		for id, item := range api.snapshotCache {
+			if id != cardID && item.accessed <= oldestTick {
+				oldestID, oldestTick = id, item.accessed
+			}
+		}
+		if oldestID != "" {
+			delete(api.snapshotCache, oldestID)
+			continue
+		}
+		item := api.snapshotCache[cardID]
+		if len(item.values) <= 1 {
+			delete(api.snapshotCache, cardID)
+			return
+		}
+		item.values = item.values[1:]
+		api.snapshotCache[cardID] = item
 	}
-	delete(api.snapshotCache, oldestID)
 }
 
 func (api *grpcAPI) rememberedConversationSnapshot(cardID string, seq int64) *dieterv1.ConversationSnapshot {

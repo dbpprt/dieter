@@ -53,4 +53,29 @@ class DieterSyncStoreTest {
             root.deleteRecursively()
         }
     }
+    @Test
+    fun cursorAndSnapshotRecoverAsOneAtomicProjection() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val root = File(context.cacheDir, "sync-pair-${UUID.randomUUID()}")
+        try {
+            val store = DieterSyncStore(context, root)
+            val first = GlobalSnapshot.newBuilder().setState(com.dbpprt.dieter.v1.State.newBuilder().setStorePath("first")).build()
+            val second = GlobalSnapshot.newBuilder().setState(com.dbpprt.dieter.v1.State.newBuilder().setStorePath("second")).build()
+            val cursor = SyncCursor.newBuilder().setEpoch("fixture").setSequence(4).build()
+            store.saveProjection("machine", first, cursor)
+            val file = root.walkTopDown().single { it.name == "projection.pb" }
+            // AtomicFile keeps the prior complete pair until publication.
+            File(file.path + ".new").writeBytes(byteArrayOf(1, 2, 3))
+            val recovered = requireNotNull(DieterSyncStore(context, root).loadProjection("machine"))
+            assertEquals("first", recovered.snapshot.state.storePath)
+            assertEquals(4L, recovered.cursor.sequence)
+            store.saveProjection("machine", second, cursor.toBuilder().setSequence(5).build())
+            val updated = requireNotNull(DieterSyncStore(context, root).loadProjection("machine"))
+            assertEquals("second", updated.snapshot.state.storePath)
+            assertEquals(5L, updated.cursor.sequence)
+            store.saveProjection("machine", first, null)
+            assertNull(store.loadCursor("machine"))
+        } finally { root.deleteRecursively() }
+    }
+
 }

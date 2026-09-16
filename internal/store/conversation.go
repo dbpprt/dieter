@@ -6,9 +6,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/dbpprt/dieter/internal/model"
@@ -142,71 +144,66 @@ func (s *Store) ConversationRevisionByID(cardID string) (string, error) {
 	return strings.Join(parts, "|"), nil
 }
 
-// conversationStatus reads the early status field without decoding a
-// potentially very large transcript. If the append-only event source is newer
-// than its projection (the crash window), it falls back to a full replay.
+// The checkpoint timestamp cannot prove freshness: an older checkpoint may
+// finish writing after a newer journal append. The revision-validated cache
+// and journal replay are the same authority used by ordinary transcript reads.
 func (s *Store) conversationStatus(cardID string) (string, error) {
-	snapshotPath := filepath.Join(s.conversationPath(cardID), "snapshot.json")
-	snapshotInfo, err := os.Stat(snapshotPath)
-	if errors.Is(err, os.ErrNotExist) {
-		conversation, loadErr := s.loadConversation(cardID)
-		return conversation.Status, loadErr
-	}
-	if err != nil {
-		return "", err
-	}
-	if eventsInfo, statErr := os.Stat(filepath.Join(s.conversationPath(cardID), "events.ndjson")); statErr == nil && eventsInfo.ModTime().After(snapshotInfo.ModTime()) {
-		conversation, loadErr := s.loadConversation(cardID)
-		return conversation.Status, loadErr
-	} else if statErr != nil && !errors.Is(statErr, os.ErrNotExist) {
-		return "", statErr
-	}
-	file, err := os.Open(snapshotPath)
-	if err != nil {
-		return "", err
-	}
-	defer file.Close()
-	decoder := json.NewDecoder(file)
-	if _, err := decoder.Token(); err != nil {
-		return "", err
-	}
-	for decoder.More() {
-		key, err := decoder.Token()
-		if err != nil {
-			return "", err
-		}
-		if key == "status" {
-			var status string
-			if err := decoder.Decode(&status); err != nil {
-				return "", err
-			}
-			return status, nil
-		}
-		var ignored json.RawMessage
-		if err := decoder.Decode(&ignored); err != nil {
-			return "", err
-		}
-	}
-	return "idle", nil
+	conversation, err := s.loadConversation(cardID)
+	return conversation.Status, err
 }
 
 func (s *Store) loadConversation(cardID string) (model.Conversation, error) {
-	conversation := newConversation(cardID)
 	snapshotPath := filepath.Join(s.conversationPath(cardID), "snapshot.json")
-	if raw, err := os.ReadFile(snapshotPath); err == nil {
-		var snapshot model.Conversation
-		if err := json.Unmarshal(raw, &snapshot); err != nil {
-			return model.Conversation{}, fmt.Errorf("decode conversation snapshot: %w", err)
-		}
-		conversation = snapshot
-		normalizeAssistantMessageParts(&conversation)
-	} else if !errors.Is(err, os.ErrNotExist) {
+	eventsPath := filepath.Join(s.conversationPath(cardID), "events.ndjson")
+	snapshotInfo, err := os.Stat(snapshotPath)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return model.Conversation{}, err
 	}
-
-	// Reconcile events written immediately before a crash but not yet projected
-	// into snapshot.json. JSONL deliberately tolerates one partial final line.
-	eventsPath := filepath.Join(s.conversationPath(cardID), "events.ndjson")
+	eventsInfo, err := os.Stat(eventsPath)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return model.Conversation{}, err
+	}
+	conversation := newConversation(cardID)
+	offset := int64(0)
+	s.conversations.mu.Lock()
+	cached, ok := s.conversations.entries[cardID]
+	if ok && sameFileRevision(cached.snapshot, snapshotInfo) {
+		if sameFileRevision(cached.events, eventsInfo) {
+			s.conversations.clock++
+			cached.used = s.conversations.clock
+			s.conversations.entries[cardID] = cached
+			result := cloneConversation(cached.conversation)
+			s.conversations.mu.Unlock()
+			return result, nil
+		}
+		// Only an append to the same journal can extend a cached projection.
+		if cached.events != nil && eventsInfo != nil && os.SameFile(cached.events, eventsInfo) && eventsInfo.Size() > cached.events.Size() && cached.offset == cached.events.Size() {
+			conversation = cloneConversation(cached.conversation)
+			offset = cached.offset
+		}
+	}
+	s.conversations.mu.Unlock()
+	if offset == 0 {
+		if raw, err := os.ReadFile(snapshotPath); err == nil {
+			var checkpoint conversationCheckpointWire
+			if err := json.Unmarshal(raw, &checkpoint); err != nil {
+				return model.Conversation{}, fmt.Errorf("decode conversation snapshot: %w", err)
+			}
+			conversation = checkpoint.Conversation
+			normalizeAssistantMessageParts(&conversation)
+			if conversation.ProjectionVersion == conversationProjectionVersion && checkpoint.EventOffset > 0 && eventsInfo != nil && checkpoint.EventOffset <= eventsInfo.Size() {
+				boundary, err := conversationEventBoundary(eventsPath, checkpoint.EventOffset)
+				if err == nil && boundary != "" && boundary == checkpoint.EventBoundary {
+					offset = checkpoint.EventOffset
+				}
+			}
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return model.Conversation{}, err
+		}
+		if conversation.ProjectionVersion < conversationProjectionVersion {
+			conversation = newConversation(cardID)
+		}
+	}
 	file, err := os.Open(eventsPath)
 	if errors.Is(err, os.ErrNotExist) {
 		conversation.ProjectionVersion = conversationProjectionVersion
@@ -216,17 +213,33 @@ func (s *Store) loadConversation(cardID string) (model.Conversation, error) {
 		return model.Conversation{}, err
 	}
 	defer file.Close()
-	if conversation.ProjectionVersion < conversationProjectionVersion {
-		// Snapshots are disposable projections. Replaying the source events is
-		// the lossless migration path when reducer semantics change.
-		conversation = newConversation(cardID)
+	if eventsInfo == nil {
+		eventsInfo, err = file.Stat()
+		if err != nil {
+			return model.Conversation{}, err
+		}
 	}
-	scanner := bufio.NewScanner(file)
-	buffer := make([]byte, 64*1024)
-	scanner.Buffer(buffer, maxConversationEventBytes)
+	if _, err := file.Seek(offset, io.SeekStart); err != nil {
+		return model.Conversation{}, err
+	}
+	scanner := bufio.NewScanner(io.NewSectionReader(file, offset, eventsInfo.Size()-offset))
+	scanner.Buffer(make([]byte, 64*1024), maxConversationEventBytes)
 	for scanner.Scan() {
+		line := scanner.Bytes()
+		offset += int64(len(line) + 1)
+		if offset > eventsInfo.Size() {
+			// A complete JSON value without its newline is still a torn record.
+			// The next append repairs that suffix, so it must not enter the projection.
+			break
+		}
+		// Decode just the sequence before deciding whether to decode a large payload.
+		// New snapshots record a validated journal offset; old snapshots still replay.
+		sequence, valid := conversationEventSequence(line)
+		if !valid || sequence <= conversation.LastSeq {
+			continue
+		}
 		var event model.ConversationEvent
-		if json.Unmarshal(scanner.Bytes(), &event) != nil || event.Seq <= conversation.LastSeq {
+		if json.Unmarshal(line, &event) != nil {
 			continue
 		}
 		reduceConversation(&conversation, event)
@@ -235,6 +248,11 @@ func (s *Store) loadConversation(cardID string) (model.Conversation, error) {
 		return model.Conversation{}, err
 	}
 	conversation.ProjectionVersion = conversationProjectionVersion
+	afterEvents, _ := os.Stat(eventsPath)
+	afterSnapshot, _ := os.Stat(snapshotPath)
+	if sameFileRevision(eventsInfo, afterEvents) && sameFileRevision(snapshotInfo, afterSnapshot) && afterEvents != nil && offset == afterEvents.Size() {
+		s.cacheConversation(cardID, conversation, snapshotInfo, eventsInfo, offset)
+	}
 	return conversation, nil
 }
 
@@ -289,26 +307,33 @@ func (s *Store) appendConversationEvent(card model.Card, conversation model.Conv
 		return model.ConversationEvent{}, model.Conversation{}, err
 	}
 	line, _ := json.Marshal(event)
-	file, err := os.OpenFile(filepath.Join(dir, "events.ndjson"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
-	if err != nil {
+	if len(line)+1 >= maxConversationEventBytes {
+		return model.ConversationEvent{}, model.Conversation{}, fmt.Errorf("conversation event exceeds %d bytes", maxConversationEventBytes)
+	}
+	if err := appendJournalRecord(filepath.Join(dir, "events.ndjson"), line); err != nil {
 		return model.ConversationEvent{}, model.Conversation{}, err
-	}
-	_, writeErr := file.Write(append(line, '\n'))
-	if writeErr == nil {
-		writeErr = file.Sync()
-	}
-	closeErr := file.Close()
-	if writeErr != nil {
-		return model.ConversationEvent{}, model.Conversation{}, writeErr
-	}
-	if closeErr != nil {
-		return model.ConversationEvent{}, model.Conversation{}, closeErr
 	}
 	reduceConversation(&conversation, event)
-	snapshot, _ := json.MarshalIndent(conversation, "", "  ")
-	if err := atomicWrite(filepath.Join(dir, "snapshot.json"), append(snapshot, '\n')); err != nil {
-		return model.ConversationEvent{}, model.Conversation{}, err
+	// The fsynced journal is authoritative. Streaming deltas need no full
+	// transcript rewrite; checkpoints bound cold replay and retain every event.
+	checkpoint := event.Seq == 1 || event.Seq%128 == 0 || eventType != "ui-chunk"
+	if eventType == "ui-chunk" {
+		var chunk struct {
+			Type string `json:"type"`
+		}
+		_ = json.Unmarshal(raw, &chunk)
+		checkpoint = checkpoint || chunk.Type == "finish" || chunk.Type == "abort" || chunk.Type == "error"
 	}
+	if checkpoint {
+		s.queueConversationCheckpoint(card.ID, conversation)
+	}
+
+	snapshotInfo, _ := os.Stat(filepath.Join(dir, "snapshot.json"))
+	eventsInfo, _ := os.Stat(filepath.Join(dir, "events.ndjson"))
+	if eventsInfo != nil {
+		s.cacheConversation(card.ID, conversation, snapshotInfo, eventsInfo, eventsInfo.Size())
+	}
+	s.rememberTokenUsage(card.ID, conversation)
 	card.LastActivityAt = event.CreatedAt
 	card.UpdatedAt = event.CreatedAt
 	if err := s.writeCard(card); err != nil {
@@ -784,4 +809,19 @@ func canCoalesceAssistantPart(left, right model.UIMessagePart) bool {
 		return false
 	}
 	return left.State != "error" && right.State != "error"
+}
+
+func conversationEventSequence(line []byte) (int64, bool) {
+	if bytes.HasPrefix(line, []byte(`{"seq":`)) {
+		end := bytes.IndexByte(line, ',')
+		if end > 7 {
+			sequence, err := strconv.ParseInt(string(line[7:end]), 10, 64)
+			return sequence, err == nil
+		}
+	}
+	var header struct {
+		Seq int64 `json:"seq"`
+	}
+	err := json.Unmarshal(line, &header)
+	return header.Seq, err == nil
 }

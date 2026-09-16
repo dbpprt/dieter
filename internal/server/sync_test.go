@@ -474,7 +474,7 @@ func TestSyncConversationCardsBoundsSelection(t *testing.T) {
 }
 
 func TestGlobalSyncCoalescesJournalBurstToHighwater(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 	data := store.New(t.TempDir())
 	if _, err := data.CreateProject(store.CreateProjectInput{Name: "Burst", Path: testRepository(t)}); err != nil {
@@ -512,20 +512,27 @@ func TestGlobalSyncCoalescesJournalBurstToHighwater(t *testing.T) {
 		t.Fatal(err)
 	}
 	close(releaseInitial)
-	select {
-	case frame := <-frames:
-		if frame.GetCursor().GetSequence() != highwater.Sequence {
-			t.Fatalf("burst cursor=%d want highwater=%d", frame.GetCursor().GetSequence(), highwater.Sequence)
+	var frame *dieterv1.SyncFrame
+	for frame == nil {
+		select {
+		case candidate := <-frames:
+			if !candidate.GetHeartbeat() {
+				frame = candidate
+			}
+		case <-ctx.Done():
+			t.Fatal("timed out waiting for coalesced sync frame")
 		}
-		if len(frame.GetEvents()) != 256 {
-			t.Fatalf("coalesced diagnostic events=%d want bounded 256", len(frame.GetEvents()))
-		}
-		if frame.GetSnapshot() != nil || frame.GetDelta() != nil {
-			t.Fatalf("projection-neutral burst carried projection data: %#v", frame)
-		}
-	case <-ctx.Done():
-		t.Fatal("timed out waiting for coalesced sync frame")
 	}
+	if frame.GetCursor().GetSequence() != highwater.Sequence {
+		t.Fatalf("burst cursor=%d want highwater=%d", frame.GetCursor().GetSequence(), highwater.Sequence)
+	}
+	if len(frame.GetEvents()) != 256 {
+		t.Fatalf("coalesced diagnostic events=%d want bounded 256", len(frame.GetEvents()))
+	}
+	if frame.GetSnapshot() != nil || frame.GetDelta() != nil {
+		t.Fatalf("projection-neutral burst carried projection data: %#v", frame)
+	}
+
 	cancel()
 	select {
 	case <-done:

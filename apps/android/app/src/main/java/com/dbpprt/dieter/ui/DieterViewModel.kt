@@ -1255,13 +1255,12 @@ class DieterViewModel internal constructor(
                     }
                 }
             } else null
-            // First-frame watchdog: a stream that stays silent this long on an
-            // allegedly healthy connection is riding a dead transport; rebuild
-            // the channel instead of waiting for keepalive to notice.
+            // Retry only this conversation subscription. A slow projection
+            // does not prove the workspace or gateway channel is broken.
             val watchdog = if (plan.needsFreshFrame) {
                 launch {
                     delay(FIRST_FRAME_DEADLINE_MS)
-                    if (!delivered) repository.reconnect()
+                    if (!delivered && _state.value.selectedCardId == cardId) startConversationStream(cardId)
                 }
             } else null
             try {

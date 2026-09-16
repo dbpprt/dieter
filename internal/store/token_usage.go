@@ -115,3 +115,21 @@ func conversationTokenUsage(conversation model.Conversation) model.TokenUsage {
 	}
 	return result
 }
+
+// Appenders already hold the reduced projection. Refresh its small usage
+// summary without replaying history on the next directory read.
+func (s *Store) rememberTokenUsage(id string, conversation model.Conversation) {
+	revision := ""
+	for _, name := range []string{"snapshot.json", "events.ndjson"} {
+		if info, err := os.Stat(filepath.Join(s.conversationPath(id), name)); err == nil {
+			revision += fmt.Sprintf("%s:%d:%d;", name, info.Size(), info.ModTime().UnixNano())
+		}
+	}
+	usage := conversationTokenUsage(conversation)
+	s.usageMu.Lock()
+	defer s.usageMu.Unlock()
+	if s.usageCache == nil {
+		s.usageCache = make(map[string]cardUsageCacheEntry)
+	}
+	s.usageCache[id] = cardUsageCacheEntry{revision, usage}
+}

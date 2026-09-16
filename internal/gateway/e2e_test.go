@@ -332,13 +332,16 @@ func TestGatewayEnrollsDaemonAndRelaysDieterService(t *testing.T) {
 		t.Fatalf("close relayed terminal: %v", err)
 	}
 
-	syncStream, err := dieterClient.WatchSync(routed, &dieterv1.SyncRequest{ConversationLimit: 0, HeartbeatMs: 1_000})
+	syncStream, err := dieterClient.WatchSync(routed, &dieterv1.SyncRequest{ConversationLimit: 0, HeartbeatMs: 1_000, ProtocolVersion: 1})
 	if err != nil {
 		t.Fatalf("open relayed global sync: %v", err)
 	}
 	syncFrame, err := syncStream.Recv()
 	if err != nil || syncFrame.GetSnapshot() == nil || syncFrame.GetCursor().GetEpoch() == "" {
 		t.Fatalf("relayed global sync frame=%#v err=%v", syncFrame, err)
+	}
+	if syncFrame.GetCursor().GetProjectionId() == "" {
+		t.Fatal("relay dropped resumable projection identity")
 	}
 	syncSequence := syncFrame.GetCursor().GetSequence()
 	command := &dieterv1.CreateConversationRequest{

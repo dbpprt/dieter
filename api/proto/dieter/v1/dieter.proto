@@ -340,6 +340,9 @@ message SyncCursor {
   string epoch = 1;
   uint64 sequence = 2;
   int32 projection_version = 3;
+  // Opaque, bounded server projection cache identity. Missing/evicted identities
+  // explicitly reset; a sequence alone never proves a client has the same data.
+  string projection_id = 4;
 }
 
 message SyncRequest {
@@ -351,6 +354,9 @@ message SyncRequest {
   // the most recently active conversations up to this count, and conversation
   // changes ride the delta frames instead of full snapshots.
   int32 recent_conversation_limit = 4;
+  // Version 1 separates transport liveness from applied data, supports bounded
+  // metadata-first frames, and resumes an exact retained projection identity.
+  int32 protocol_version = 5;
 }
 
 message SyncEvent {
@@ -405,6 +411,10 @@ message SyncFrame {
   bool heartbeat = 5;
   repeated SyncEvent events = 6;
   GlobalDelta delta = 7;
+  // Observed durable highwater is diagnostic only; never persist as applied.
+  SyncCursor observed_cursor = 8;
+  bool transport_only = 9;
+  bool projection_pending = 10;
 }
 
 message ProjectsResponse {

@@ -24,6 +24,12 @@ counts; it is the cheapest bounded directory overview for one machine.
 Use `dieter daemon status` when diagnosing this machine's process and gateway
 tunnel. Its `gatewayLastAcknowledgedAt` value is bidirectional liveness proof;
 a reconnect affects relay transports only and does not stop a running agent.
+`dieter watch sync --count 3` emits metadata, deltas, and transport-only
+heartbeats. A heartbeat or `observedCursor` is reachability evidence, not applied
+workspace data. Persist a cursor only with its complete projection, never from a
+heartbeat or a frame with `projectionPending=true`. Native resume falls back to
+an explicit reset when the exact projection identity is no longer retained.
+
 For another enrolled machine, authenticate once and pass its exact ID or unique
 name as a global option before the command:
 

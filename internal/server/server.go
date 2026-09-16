@@ -33,6 +33,7 @@ import (
 )
 
 type Server struct {
+	syncProjections         syncProjectionCache
 	store                   *store.Store
 	app                     *app.Service
 	workspaces              *workspace.Manager

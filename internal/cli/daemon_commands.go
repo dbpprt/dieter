@@ -456,6 +456,9 @@ func (c *CLI) rpcWatch(args []string) error {
        dieter watch sync [--count N]
 
 Stream daemon state or durable sync frames as JSON Lines until interrupted.
+Sync sends workspace metadata, then deltas. Transport-only heartbeats prove
+reachability; observedCursor is diagnostic. Persist cursor only with a complete
+projection (projectionPending=false), never from a heartbeat.
 `
 	if groupHelp(args) {
 		fmt.Fprint(c.Out, usage)
@@ -495,7 +498,7 @@ Stream daemon state or durable sync frames as JSON Lines until interrupted.
 			}
 		}
 	case "sync":
-		stream, err := client.WatchSync(rpcCtx, &dieterv1.SyncRequest{HeartbeatMs: 15_000})
+		stream, err := client.WatchSync(rpcCtx, &dieterv1.SyncRequest{HeartbeatMs: 5_000, ProtocolVersion: 1})
 		if err != nil {
 			return err
 		}

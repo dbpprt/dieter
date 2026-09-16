@@ -260,10 +260,13 @@
             if store.terminalOverviewEntries.contains(where: { $0.id == overviewID }) {
                 await store.selectTerminalOverviewEntry(overviewID)
             }
-            let machineRestored =
+            let machineRestored = await waitUntil(timeout: 10) {
                 store.selectedTerminalOverviewID == overviewID
-                && store.terminalsModel.target.endpointID == machineID
-                && store.endpoint.id == create["active-machine-id"]
+                    && store.terminalsModel.target.endpointID == machineID
+                    && store.endpoint.id == create["active-machine-id"]
+            }
+            let routingDetail =
+                "selection=\(store.selectedTerminalOverviewID ?? "none") expected=\(overviewID), target=\(store.terminalsModel.target.endpointID) expected=\(machineID), active=\(store.endpoint.id) expected=\(create["active-machine-id"] ?? "none")"
             let listed = await waitUntil(
                 timeout: 20,
                 condition: {
@@ -303,7 +306,8 @@
                     "initial-output": create["initial-output"] ?? "failed: missing output result",
                     "listed-after-restart": listed ? "passed" : "failed: daemon-owned terminal was not listed",
                     "machine-restore": machineRestored
-                        ? "passed" : "failed: aggregate terminal routing was not restored independently",
+                        ? "passed"
+                        : "failed: aggregate terminal routing was not restored independently; \(routingDetail)",
                     "scrollback-replayed": replayed ? "passed" : "failed: pre-disconnect output was not replayed",
                     "input-after-restart": continued ? "passed" : "failed: resumed terminal did not accept input",
                     "rendered-after-restart": rendered

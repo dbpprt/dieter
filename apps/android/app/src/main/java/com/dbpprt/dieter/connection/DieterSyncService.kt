@@ -154,7 +154,10 @@ class DieterSyncService : Service() {
                 stopSelf()
                 return START_NOT_STICKY
             }
-            else -> manager.onServiceStarted()
+            else -> {
+                startInForeground(bootstrapConnectionNotification())
+                manager.onServiceStarted()
+            }
         }
         return if (manager.state.value.desiredConnected && manager.state.value.backgroundSyncMode.usesBackgroundService) {
             START_STICKY
@@ -267,12 +270,15 @@ class DieterSyncService : Service() {
         notificationBoardIds: Set<String>,
     ) {
         if (!state.desiredConnected || !state.backgroundSyncMode.usesBackgroundService) {
-            serviceScope.launch {
-                syncPolicyJob?.cancel()
-                manager.setPeriodicSyncWindowActive(false)
-                releaseWakeLock()
-                stopForeground(STOP_FOREGROUND_REMOVE)
-                stopSelf()
+            serviceScope.launch(Dispatchers.Main.immediate) {
+                val current = manager.state.value
+                if (!current.desiredConnected || !current.backgroundSyncMode.usesBackgroundService) {
+                    syncPolicyJob?.cancel()
+                    manager.setPeriodicSyncWindowActive(false)
+                    releaseWakeLock()
+                    stopForeground(STOP_FOREGROUND_REMOVE)
+                    stopSelf()
+                }
             }
             return
         }

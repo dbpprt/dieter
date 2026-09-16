@@ -128,6 +128,15 @@ acknowledged tunnel heartbeat. A healthy local API remains available while a
 failed gateway tunnel reconnects; reconnecting the transport does not stop a
 running agent turn.
 
+`dieter watch sync` (also with `--machine`) streams workspace metadata and deltas.
+A transport heartbeat proves reachability; it does not mean the workspace is
+current. `observedCursor` is the daemon's durable highwater, while `cursor`
+identifies applied data. Never persist a heartbeat cursor or a partial batch
+(`projectionPending=true`). Native clients request metadata first, then bounded
+recent/active transcript tails; the selected chat loads its own detailed history.
+Resume uses an exact retained projection identity, or an explicit reset if that
+projection is unavailable. Frames stay below 8 MiB; large directories use pages.
+
 The same `dieter` binary is a complete daemon client. Local commands use the
 running daemon on this machine. To control another enrolled machine, sign in
 once and select it globally; the CLI prefers verified direct TLS and falls back

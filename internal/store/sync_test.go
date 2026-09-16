@@ -85,7 +85,7 @@ func TestSyncEventsAtCurrentCursorDoesNotReadJournal(t *testing.T) {
 	}
 }
 
-func TestSyncEventPrecedesMutationAndWriterBarrier(t *testing.T) {
+func TestSyncEventPublishesAfterMutation(t *testing.T) {
 	data := New(t.TempDir())
 	if err := data.Ensure(); err != nil {
 		t.Fatal(err)
@@ -95,7 +95,7 @@ func TestSyncEventPrecedesMutationAndWriterBarrier(t *testing.T) {
 		t.Fatal(err)
 	}
 	cursor, events, err := data.SyncEvents(0, 10)
-	if err != nil || cursor.Sequence != 1 || len(events) != 1 {
+	if err != nil || cursor.Sequence != 0 || len(events) != 0 {
 		release()
 		t.Fatalf("prepared cursor=%#v events=%#v err=%v", cursor, events, err)
 	}

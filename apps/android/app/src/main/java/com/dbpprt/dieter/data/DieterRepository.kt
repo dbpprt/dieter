@@ -685,7 +685,8 @@ class GrpcDieterRepository(context: Context) : DieterRepository {
         val request = SyncRequest.newBuilder()
             .setConversationLimit(conversationLimit.coerceIn(0, 100))
             .setRecentConversationLimit(recentConversationLimit.coerceIn(0, 100))
-            .setHeartbeatMs(15_000)
+            .setHeartbeatMs(5_000)
+            .setProtocolVersion(1)
             .also { if (after != null) it.after = after }
             .build()
         streaming().watchSync(request).collect(::emit)

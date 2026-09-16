@@ -9,11 +9,7 @@ import UserNotifications
 
 private struct InitialConnectionState {
     let health: Dieter_V1_HealthResponse
-    let runtime: Dieter_V1_RuntimeStatus
     let state: Dieter_V1_State
-    let harnesses: Dieter_V1_HarnessCatalog
-    let settings: Dieter_V1_Settings
-    let options: Dieter_V1_SettingsOptions
 }
 
 extension DieterStore {
@@ -203,6 +199,7 @@ extension DieterStore {
             machineDirectoryTask?.cancel()
             machinePresenceLeaseTask?.cancel()
             machineTelemetryTask?.cancel()
+            connectionMetadataTask?.cancel()
             terminalStreamConnected = false
             rpc?.shutdown()
             rpc = prepared.plane.rpc
@@ -222,16 +219,16 @@ extension DieterStore {
                 scheduleDirectRefresh(expiresAt: expiresAt, target: prepared.target)
             }
             self.health = prepared.initial.health
-            self.runtime = prepared.initial.runtime
+            self.runtime = Dieter_V1_RuntimeStatus()
             acceptState(prepared.initial.state)
-            self.harnessCatalog = prepared.initial.harnesses
-            self.harnessCatalogsByEndpoint[prepared.target.id] = prepared.initial.harnesses
-            self.boardSettings = prepared.initial.settings
-            self.settingsOptions = prepared.initial.options
+            self.harnessCatalog = harnessCatalogsByEndpoint[prepared.target.id] ?? Dieter_V1_HarnessCatalog()
+            self.boardSettings = syncSnapshot?.settings ?? Dieter_V1_Settings()
+            self.settingsOptions = Dieter_V1_SettingsOptions()
             errorMessage = nil
             phase = .connected(version: prepared.initial.health.version)
             startGlobalSync()
             startSyncLivenessMonitor()
+            startConnectionMetadata(client: prepared.plane.rpc, endpointID: prepared.target.id)
             conversationModel.resumeSelectedConversation(client: prepared.plane.rpc)
             startOutboxWorker()
             // The selected machine is live as soon as WatchSync starts.
@@ -322,30 +319,43 @@ extension DieterStore {
         guard health.version == dieterExpectedAPIVersion else {
             throw DieterStoreConnectionError.incompatible(found: health.version)
         }
-        // Do not use `async let` in this throwing scope. Swift 6.1–6.3 can
-        // destroy failed child tasks out of allocation order (Swift #81771).
-        let runtimeTask = Task { try await self.loadInitialRead("runtime status") { try await rpc.runtimeStatus() } }
-        let stateTask = Task { try await self.loadInitialRead("state") { try await rpc.state() } }
-        let harnessesTask = Task { try await self.loadInitialRead("harness catalog") { try await rpc.harnesses() } }
-        let settingsTask = Task { try await self.loadInitialRead("settings") { try await rpc.settings() } }
-        let optionsTask = Task {
-            try await self.loadInitialRead("settings options") { try await rpc.settingsOptions() }
-        }
-        defer {
-            runtimeTask.cancel()
-            stateTask.cancel()
-            harnessesTask.cancel()
-            settingsTask.cancel()
-            optionsTask.cancel()
-        }
         return try await InitialConnectionState(
             health: health,
-            runtime: runtimeTask.value,
-            state: stateTask.value,
-            harnesses: harnessesTask.value,
-            settings: settingsTask.value,
-            options: optionsTask.value
+            state: loadInitialRead("state") { try await rpc.state() }
         )
+    }
+
+    private func startConnectionMetadata(client: DieterRPC, endpointID: String) {
+        connectionMetadataTask?.cancel()
+        connectionMetadataTask = Task { [weak self] in
+            while !Task.isCancelled, let self, self.rpc === client, self.endpoint.id == endpointID {
+                // Provider discovery is auxiliary: a slow or unavailable model
+                // catalog must never delay WatchSync or tear down its route.
+                // Explicit tasks preserve the existing Swift async-let workaround.
+                let runtimeTask = Task { try await client.runtimeStatus() }
+                let harnessesTask = Task { try await client.harnesses() }
+                let optionsTask = Task { try await client.settingsOptions() }
+                do {
+                    let values = try await withTaskCancellationHandler {
+                        try await (runtimeTask.value, harnessesTask.value, optionsTask.value)
+                    } onCancel: {
+                        runtimeTask.cancel(); harnessesTask.cancel(); optionsTask.cancel()
+                    }
+                    guard !Task.isCancelled, self.rpc === client, self.endpoint.id == endpointID else { return }
+                    self.runtime = values.0
+                    self.harnessCatalog = values.1
+                    self.harnessCatalogsByEndpoint[endpointID] = values.1
+                    self.settingsOptions = values.2
+                    return
+                } catch {
+                    runtimeTask.cancel(); harnessesTask.cancel(); optionsTask.cancel()
+                    guard !Task.isCancelled, self.rpc === client else { return }
+                    connectionLogger.warning(
+                        "Connection metadata unavailable on \(endpointID, privacy: .public); retrying independently")
+                    try? await DieterTaskSleep.seconds(5)
+                }
+            }
+        }
     }
 
     private func loadInitialRead<Value>(
@@ -674,6 +684,7 @@ extension DieterStore {
         machineDirectoryTask?.cancel()
         machinePresenceLeaseTask?.cancel()
         machineTelemetryTask?.cancel()
+        connectionMetadataTask?.cancel()
         reconnectTask?.cancel()
         reconnectTask = nil
         terminalStreamConnected = false
@@ -1068,14 +1079,19 @@ extension DieterStore {
     /// HTTP/2 connection can accept the new subscription without delivering a
     /// frame, leaving the app in "Syncing" forever. Rebuild the data plane after
     /// three missed heartbeats instead.
+    var syncTransportIsStale: Bool {
+        guard let activity = syncLastActivity else { return true }
+        return activity.duration(to: ContinuousClock.now) >= syncTransportTimeout
+    }
+
     func startSyncLivenessMonitor() {
         syncLivenessTask?.cancel()
         syncLivenessTask = Task { [weak self] in
             while !Task.isCancelled {
-                try? await DieterTaskSleep.seconds(15)
+                try? await DieterTaskSleep.seconds(5)
                 guard !Task.isCancelled, let self else { return }
                 guard self.phase.isConnected, let rpc = self.rpc else { continue }
-                guard SyncStreamLiveness.requiresConnectionRecovery(lastFrameAt: self.lastSyncFrameAt)
+                guard self.syncTransportIsStale
                 else { continue }
                 self.connectionStopped(
                     DieterStoreConnectionError.syncTimedOut,
@@ -1087,12 +1103,11 @@ extension DieterStore {
         }
     }
 
-    /// Waking or reopening the app is an explicit consistency boundary. A new
-    /// WatchSync subscription returns a fresh bounded snapshot immediately,
-    /// while retaining the durable cursor for subsequent deltas.
+    /// Keep a healthy stream across activation; only stale transport evidence
+    /// warrants reconnecting the shared data plane.
     func applicationDidBecomeActive() {
         guard phase.isConnected, let rpc else { return }
-        if SyncStreamLiveness.requiresConnectionRecovery(lastFrameAt: lastSyncFrameAt) {
+        if syncTransportIsStale {
             connectionStopped(
                 DieterStoreConnectionError.syncTimedOut,
                 client: rpc,
@@ -1100,7 +1115,7 @@ extension DieterStore {
             )
             return
         }
-        startGlobalSync()
+        if syncTask == nil { startGlobalSync() }
         conversationModel.resumeSelectedConversation(client: rpc)
     }
 

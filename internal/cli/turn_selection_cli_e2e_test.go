@@ -35,13 +35,14 @@ func assertConversationSelectionCLI(t *testing.T, client *CLI, output *bytes.Buf
 		if err != nil {
 			t.Fatal(err)
 		}
-		waitIdle := func() {
+		waitIdle := func(afterSequence int64) {
 			t.Helper()
 			deadline := time.Now().Add(10 * time.Second)
 			for time.Now().Before(deadline) {
 				stored, err := data.ResolveCard(card.ID)
 				leased, leaseErr := data.CardHasRuntimeLease(card.ID)
-				if err == nil && leaseErr == nil && stored.Runtime == "idle" && !leased {
+				conversation, conversationErr := data.Conversation(card.ID)
+				if err == nil && leaseErr == nil && conversationErr == nil && stored.Runtime == "idle" && !leased && conversation.LastSeq > afterSequence && conversation.Status == "idle" && conversation.ActiveTurn == nil && len(conversation.Queue) == 0 {
 					return
 				}
 				time.Sleep(10 * time.Millisecond)
@@ -49,13 +50,13 @@ func assertConversationSelectionCLI(t *testing.T, client *CLI, output *bytes.Buf
 			t.Fatal("isolated selection turn did not finish")
 		}
 		runDaemonCLI(t, client, output, scope, "send", "--message", "First", card.ID)
-		waitIdle()
+		waitIdle(0)
 		before, err := data.Conversation(card.ID)
 		if err != nil {
 			t.Fatal(err)
 		}
 		runDaemonCLI(t, client, output, scope, "send", "--message", "Next", "--model", "gpt-5.6-sol", "--effort", "high", "--provider-option", "fast_mode=true", card.ID)
-		waitIdle()
+		waitIdle(before.LastSeq)
 		stored, err := data.ResolveCard(card.ID)
 		if err != nil || stored.Provider != "codex" || stored.Model != "gpt-5.6-sol" || stored.Effort != "high" || stored.ProviderOptions["fast_mode"] != "true" {
 			t.Fatalf("selection=%#v err=%v", stored, err)

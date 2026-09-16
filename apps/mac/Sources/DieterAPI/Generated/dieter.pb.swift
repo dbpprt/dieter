@@ -885,6 +885,10 @@ public nonisolated struct Dieter_V1_SyncCursor: Sendable {
 
   public var projectionVersion: Int32 = 0
 
+  /// Opaque, bounded server projection cache identity. Missing/evicted identities
+  /// explicitly reset; a sequence alone never proves a client has the same data.
+  public var projectionID: String = String()
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
@@ -913,6 +917,10 @@ public nonisolated struct Dieter_V1_SyncRequest: Sendable {
   /// the most recently active conversations up to this count, and conversation
   /// changes ride the delta frames instead of full snapshots.
   public var recentConversationLimit: Int32 = 0
+
+  /// Version 1 separates transport liveness from applied data, supports bounded
+  /// metadata-first frames, and resumes an exact retained projection identity.
+  public var protocolVersion: Int32 = 0
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -1142,6 +1150,26 @@ public nonisolated struct Dieter_V1_SyncFrame: @unchecked Sendable {
   public var hasDelta: Bool {_storage._delta != nil}
   /// Clears the value of `delta`. Subsequent reads from it will return its default value.
   public mutating func clearDelta() {_uniqueStorage()._delta = nil}
+
+  /// Observed durable highwater is diagnostic only; never persist as applied.
+  public var observedCursor: Dieter_V1_SyncCursor {
+    get {_storage._observedCursor ?? Dieter_V1_SyncCursor()}
+    set {_uniqueStorage()._observedCursor = newValue}
+  }
+  /// Returns true if `observedCursor` has been explicitly set.
+  public var hasObservedCursor: Bool {_storage._observedCursor != nil}
+  /// Clears the value of `observedCursor`. Subsequent reads from it will return its default value.
+  public mutating func clearObservedCursor() {_uniqueStorage()._observedCursor = nil}
+
+  public var transportOnly: Bool {
+    get {_storage._transportOnly}
+    set {_uniqueStorage()._transportOnly = newValue}
+  }
+
+  public var projectionPending: Bool {
+    get {_storage._projectionPending}
+    set {_uniqueStorage()._projectionPending = newValue}
+  }
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -7762,7 +7790,7 @@ nonisolated extension Dieter_V1_State: SwiftProtobuf.Message, SwiftProtobuf._Mes
 
 nonisolated extension Dieter_V1_SyncCursor: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".SyncCursor"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}epoch\0\u{1}sequence\0\u{3}projection_version\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}epoch\0\u{1}sequence\0\u{3}projection_version\0\u{3}projection_id\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -7773,6 +7801,7 @@ nonisolated extension Dieter_V1_SyncCursor: SwiftProtobuf.Message, SwiftProtobuf
       case 1: try { try decoder.decodeSingularStringField(value: &self.epoch) }()
       case 2: try { try decoder.decodeSingularUInt64Field(value: &self.sequence) }()
       case 3: try { try decoder.decodeSingularInt32Field(value: &self.projectionVersion) }()
+      case 4: try { try decoder.decodeSingularStringField(value: &self.projectionID) }()
       default: break
       }
     }
@@ -7788,6 +7817,9 @@ nonisolated extension Dieter_V1_SyncCursor: SwiftProtobuf.Message, SwiftProtobuf
     if self.projectionVersion != 0 {
       try visitor.visitSingularInt32Field(value: self.projectionVersion, fieldNumber: 3)
     }
+    if !self.projectionID.isEmpty {
+      try visitor.visitSingularStringField(value: self.projectionID, fieldNumber: 4)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -7795,6 +7827,7 @@ nonisolated extension Dieter_V1_SyncCursor: SwiftProtobuf.Message, SwiftProtobuf
     if lhs.epoch != rhs.epoch {return false}
     if lhs.sequence != rhs.sequence {return false}
     if lhs.projectionVersion != rhs.projectionVersion {return false}
+    if lhs.projectionID != rhs.projectionID {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -7802,7 +7835,7 @@ nonisolated extension Dieter_V1_SyncCursor: SwiftProtobuf.Message, SwiftProtobuf
 
 nonisolated extension Dieter_V1_SyncRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".SyncRequest"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}after\0\u{3}conversation_limit\0\u{3}heartbeat_ms\0\u{3}recent_conversation_limit\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}after\0\u{3}conversation_limit\0\u{3}heartbeat_ms\0\u{3}recent_conversation_limit\0\u{3}protocol_version\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -7814,6 +7847,7 @@ nonisolated extension Dieter_V1_SyncRequest: SwiftProtobuf.Message, SwiftProtobu
       case 2: try { try decoder.decodeSingularInt32Field(value: &self.conversationLimit) }()
       case 3: try { try decoder.decodeSingularInt32Field(value: &self.heartbeatMs) }()
       case 4: try { try decoder.decodeSingularInt32Field(value: &self.recentConversationLimit) }()
+      case 5: try { try decoder.decodeSingularInt32Field(value: &self.protocolVersion) }()
       default: break
       }
     }
@@ -7836,6 +7870,9 @@ nonisolated extension Dieter_V1_SyncRequest: SwiftProtobuf.Message, SwiftProtobu
     if self.recentConversationLimit != 0 {
       try visitor.visitSingularInt32Field(value: self.recentConversationLimit, fieldNumber: 4)
     }
+    if self.protocolVersion != 0 {
+      try visitor.visitSingularInt32Field(value: self.protocolVersion, fieldNumber: 5)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -7844,6 +7881,7 @@ nonisolated extension Dieter_V1_SyncRequest: SwiftProtobuf.Message, SwiftProtobu
     if lhs.conversationLimit != rhs.conversationLimit {return false}
     if lhs.heartbeatMs != rhs.heartbeatMs {return false}
     if lhs.recentConversationLimit != rhs.recentConversationLimit {return false}
+    if lhs.protocolVersion != rhs.protocolVersion {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -8118,7 +8156,7 @@ nonisolated extension Dieter_V1_GlobalDelta: SwiftProtobuf.Message, SwiftProtobu
 
 nonisolated extension Dieter_V1_SyncFrame: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".SyncFrame"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}cursor\0\u{1}event\0\u{1}snapshot\0\u{1}reset\0\u{1}heartbeat\0\u{1}events\0\u{1}delta\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}cursor\0\u{1}event\0\u{1}snapshot\0\u{1}reset\0\u{1}heartbeat\0\u{1}events\0\u{1}delta\0\u{3}observed_cursor\0\u{3}transport_only\0\u{3}projection_pending\0")
 
   fileprivate class _StorageClass {
     var _cursor: Dieter_V1_SyncCursor? = nil
@@ -8128,6 +8166,9 @@ nonisolated extension Dieter_V1_SyncFrame: SwiftProtobuf.Message, SwiftProtobuf.
     var _heartbeat: Bool = false
     var _events: [Dieter_V1_SyncEvent] = []
     var _delta: Dieter_V1_GlobalDelta? = nil
+    var _observedCursor: Dieter_V1_SyncCursor? = nil
+    var _transportOnly: Bool = false
+    var _projectionPending: Bool = false
 
       // This property is used as the initial default value for new instances of the type.
       // The type itself is protecting the reference to its storage via CoW semantics.
@@ -8145,6 +8186,9 @@ nonisolated extension Dieter_V1_SyncFrame: SwiftProtobuf.Message, SwiftProtobuf.
       _heartbeat = source._heartbeat
       _events = source._events
       _delta = source._delta
+      _observedCursor = source._observedCursor
+      _transportOnly = source._transportOnly
+      _projectionPending = source._projectionPending
     }
   }
 
@@ -8170,6 +8214,9 @@ nonisolated extension Dieter_V1_SyncFrame: SwiftProtobuf.Message, SwiftProtobuf.
         case 5: try { try decoder.decodeSingularBoolField(value: &_storage._heartbeat) }()
         case 6: try { try decoder.decodeRepeatedMessageField(value: &_storage._events) }()
         case 7: try { try decoder.decodeSingularMessageField(value: &_storage._delta) }()
+        case 8: try { try decoder.decodeSingularMessageField(value: &_storage._observedCursor) }()
+        case 9: try { try decoder.decodeSingularBoolField(value: &_storage._transportOnly) }()
+        case 10: try { try decoder.decodeSingularBoolField(value: &_storage._projectionPending) }()
         default: break
         }
       }
@@ -8203,6 +8250,15 @@ nonisolated extension Dieter_V1_SyncFrame: SwiftProtobuf.Message, SwiftProtobuf.
       try { if let v = _storage._delta {
         try visitor.visitSingularMessageField(value: v, fieldNumber: 7)
       } }()
+      try { if let v = _storage._observedCursor {
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 8)
+      } }()
+      if _storage._transportOnly != false {
+        try visitor.visitSingularBoolField(value: _storage._transportOnly, fieldNumber: 9)
+      }
+      if _storage._projectionPending != false {
+        try visitor.visitSingularBoolField(value: _storage._projectionPending, fieldNumber: 10)
+      }
     }
     try unknownFields.traverse(visitor: &visitor)
   }
@@ -8219,6 +8275,9 @@ nonisolated extension Dieter_V1_SyncFrame: SwiftProtobuf.Message, SwiftProtobuf.
         if _storage._heartbeat != rhs_storage._heartbeat {return false}
         if _storage._events != rhs_storage._events {return false}
         if _storage._delta != rhs_storage._delta {return false}
+        if _storage._observedCursor != rhs_storage._observedCursor {return false}
+        if _storage._transportOnly != rhs_storage._transportOnly {return false}
+        if _storage._projectionPending != rhs_storage._projectionPending {return false}
         return true
       }
       if !storagesAreEqual {return false}

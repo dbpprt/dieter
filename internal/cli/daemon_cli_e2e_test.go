@@ -676,6 +676,7 @@ func TestDaemonCLIUsesDirectRouteThenRelayFallback(t *testing.T) {
 	localCLI.Out, localCLI.Err = &localCLIOutput, &localCLIOutput
 	assertScreenSessionCLI(t, localCLI, &localCLIOutput, localConfig)
 	localCLI.Close()
+	assertSyncCursorCLI(t, first, &firstOutput)
 	assertMachineHomeTerminalCLI(t, first, &firstOutput)
 	assertQueueRemovalCLI(t, first, &firstOutput, remoteStore, remoteProject.ID)
 	assertCardMergeCLI(t, first, &firstOutput, remoteStore, remoteProject.ID)
@@ -700,6 +701,7 @@ func TestDaemonCLIUsesDirectRouteThenRelayFallback(t *testing.T) {
 	if second.transport == nil || second.transport.route != "relay" {
 		t.Fatalf("route=%#v want relay", second.transport)
 	}
+	assertSyncCursorCLI(t, second, &secondOutput)
 	secondOutput.Reset()
 	if err := second.Run([]string{"machine", "info"}); err != nil || !strings.Contains(secondOutput.String(), `"daemonBuild"`) || !strings.Contains(secondOutput.String(), `"gpu"`) {
 		t.Fatalf("relay machine info output=%q err=%v", secondOutput.String(), err)
@@ -864,5 +866,17 @@ func assertProjectHostnameCLI(t *testing.T, client *CLI, output *bytes.Buffer, p
 	project.Reset()
 	if err := protojson.Unmarshal([]byte(result), &project); err != nil || len(project.Hostnames) != 0 {
 		t.Fatalf("clear=%s err=%v", result, err)
+	}
+}
+
+func assertSyncCursorCLI(t *testing.T, client *CLI, output *bytes.Buffer) {
+	t.Helper()
+	raw := runDaemonCLI(t, client, output, "watch", "sync", "--count", "1")
+	var frame dieterv1.SyncFrame
+	if err := protojson.Unmarshal([]byte(raw), &frame); err != nil {
+		t.Fatal(err)
+	}
+	if frame.Snapshot == nil || frame.Cursor.GetProjectionId() == "" || frame.Heartbeat || frame.ProjectionPending {
+		t.Fatalf("CLI did not negotiate complete resumable metadata: %+v", &frame)
 	}
 }

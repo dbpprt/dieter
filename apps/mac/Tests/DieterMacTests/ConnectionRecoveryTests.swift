@@ -239,6 +239,45 @@ private final class RecoveryProbe: Sendable {
     #expect(DieterStreamRecoveryPolicy.delay(consecutiveFailures: 100) == 5)
 }
 
+@Test @MainActor func transportHeartbeatNeverAdvancesAppliedProjection() async throws {
+    let store = recoveryStore(probe: RecoveryProbe())
+    defer { store.disconnect() }
+    store.phase = .connected(version: "fixture")
+    store.globalSyncing = true
+    var cursor = Dieter_V1_SyncCursor(); cursor.epoch = "fixture"; cursor.sequence = 4
+    store.syncProjection.cursor = try cursor.serializedData()
+    var frame = Dieter_V1_SyncFrame()
+    frame.heartbeat = true; frame.transportOnly = true; frame.projectionPending = true
+    frame.cursor = cursor; frame.cursor.sequence = 99
+    frame.observedCursor = frame.cursor
+    await store.applySyncFrame(frame, endpointID: store.endpoint.id)
+    let applied = try Dieter_V1_SyncCursor(serializedBytes: #require(store.syncProjection.cursor))
+    #expect(applied.sequence == 4)
+    #expect(store.globalSyncing)
+    #expect(store.lastSyncFrameAt != nil)
+    #expect(!store.syncTransportIsStale)
+    #expect(store.machineIsAvailable(store.endpoint))
+}
+
+@Test @MainActor func partialSyncBatchCannotResumeAndOldSubscriptionCannotApply() async throws {
+    let store = recoveryStore(probe: RecoveryProbe())
+    defer { store.disconnect() }
+    var frame = Dieter_V1_SyncFrame()
+    frame.projectionPending = true
+    frame.snapshot = Dieter_V1_GlobalSnapshot()
+    frame.cursor.epoch = "fixture"; frame.cursor.sequence = 7
+    store.syncProjection.cursor = try frame.cursor.serializedData()
+    await store.applySyncFrame(frame, endpointID: store.endpoint.id)
+    #expect(store.syncProjection.cursor == nil)
+    #expect(store.globalSyncing)
+    let last = store.lastSyncFrameAt
+    store.syncSubscriptionGeneration = 2
+    frame.projectionPending = false
+    await store.applySyncFrame(frame, endpointID: store.endpoint.id, subscription: 1)
+    #expect(store.syncProjection.cursor == nil)
+    #expect(store.lastSyncFrameAt == last)
+}
+
 @Test @MainActor func screenFeedbackContinuesWhileMainActorAndStatisticsAreBlocked() {
     let frames = Mutex<[Dieter_V1_RemoteDesktopReceiverFeedback]>([])
     let pump = RemoteDesktopFeedbackPump { value in frames.withLock { $0.append(value) } }
@@ -252,4 +291,41 @@ private final class RecoveryProbe: Sendable {
     #expect(sent.count >= 3)
     #expect(sent.enumerated().allSatisfy { $0.element.sequence == UInt64($0.offset + 1) })
     #expect(sent.last?.inputActive == false)
+}
+
+@Test @MainActor func multiFrameWorkspacePublishesOnlyAfterTheFinalPage() async throws {
+    let store = recoveryStore(probe: RecoveryProbe())
+    defer { store.disconnect() }
+    var existing = Dieter_V1_GlobalSnapshot(); existing.state.storePath = "visible"
+    store.syncSnapshot = existing
+    var first = Dieter_V1_SyncFrame()
+    first.projectionPending = true; first.snapshot.state.storePath = "replacement"
+    await store.applySyncFrame(first, endpointID: store.endpoint.id)
+    #expect(store.syncSnapshot?.state.storePath == "visible")
+    #expect(store.pendingSyncSnapshot?.state.storePath == "replacement")
+    var last = Dieter_V1_SyncFrame()
+    last.cursor.epoch = "fixture"; last.cursor.sequence = 9
+    await store.applySyncFrame(last, endpointID: store.endpoint.id)
+    #expect(store.syncSnapshot?.state.storePath == "replacement")
+    #expect(store.pendingSyncSnapshot == nil)
+    #expect(!store.globalSyncing)
+}
+
+@Test @MainActor func healthyActivationKeepsTheExistingSyncSubscription() throws {
+    let store = recoveryStore(probe: RecoveryProbe())
+    defer { store.disconnect() }
+    store.rpc = try DieterRPC(endpoint: store.endpoint)
+    store.phase = .connected(version: "fixture")
+    store.syncLastActivity = ContinuousClock.now
+    let task = Task { try? await Task.sleep(for: .seconds(60)) }
+    store.syncTask = Task { await task.value }
+    defer { task.cancel() }
+    let subscription = store.syncSubscriptionGeneration
+
+    store.applicationDidBecomeActive()
+    store.applicationDidBecomeActive()
+
+    #expect(store.syncSubscriptionGeneration == subscription)
+    #expect(store.syncTask?.isCancelled == false)
+    #expect(store.phase.isConnected)
 }

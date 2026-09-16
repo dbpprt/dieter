@@ -149,24 +149,38 @@ extension DieterStore {
 
     func startGlobalSync() {
         syncTask?.cancel()
+        syncSubscriptionGeneration &+= 1
+        let subscription = syncSubscriptionGeneration
+        pendingSyncSnapshot = nil
         syncRecoveryEscalationTask?.cancel()
         syncRecoveryEscalationTask = nil
         guard let rpc else { return }
         globalSyncing = true
-        lastSyncFrameAt = Date()
+        syncAttemptStartedAt = Date()
+        syncLastActivity = ContinuousClock.now
+        syncTransportTimeout = .seconds(45)  // Allow legacy daemons to finish their coupled bootstrap.
         let endpointID = endpoint.id
         syncTask = Task { [weak self] in
+            defer {
+                // A finished task must not suppress activation recovery, and an
+                // older subscription must never clear its replacement's task.
+                if let self, self.syncSubscriptionGeneration == subscription {
+                    self.syncTask = nil
+                }
+            }
             var consecutiveFailures = 0
             while !Task.isCancelled, let self,
                 self.rpc === rpc,
                 self.endpoint.id == endpointID
             {
+                self.pendingSyncSnapshot = nil
                 let request = self.syncRequestForCurrentCursor()
                 let attemptStartedAt = Date()
                 var failure: Error?
                 do {
                     try await rpc.watchSync(request) { [weak self] frame in
-                        await self?.applySyncFrame(frame, endpointID: endpointID, client: rpc)
+                        await self?.applySyncFrame(
+                            frame, endpointID: endpointID, client: rpc, subscription: subscription)
                     }
                     guard !Task.isCancelled else { return }
                 } catch {
@@ -219,7 +233,8 @@ extension DieterStore {
         var request = Dieter_V1_SyncRequest()
         request.conversationLimit = syncConversationMessageLimit
         request.recentConversationLimit = syncRecentConversationLimit
-        request.heartbeatMs = 15_000
+        request.heartbeatMs = 5_000
+        request.protocolVersion = 1
         if syncSnapshot != nil,
             let raw = syncProjection.cursor, let cursor = try? Dieter_V1_SyncCursor(serializedBytes: raw)
         {
@@ -228,10 +243,15 @@ extension DieterStore {
         return request
     }
 
-    func applySyncFrame(_ frame: Dieter_V1_SyncFrame, endpointID: String, client: DieterRPC? = nil)
+    func applySyncFrame(
+        _ incomingFrame: Dieter_V1_SyncFrame, endpointID: String, client: DieterRPC? = nil, subscription: UInt64? = nil
+    )
         async
     {
-        guard endpoint.id == endpointID, client == nil || rpc === client else { return }
+        guard endpoint.id == endpointID, client == nil || rpc === client,
+            subscription == nil || subscription == syncSubscriptionGeneration
+        else { return }
+        var frame = incomingFrame
         let generation = connectionGeneration
         os_signpost(.begin, log: syncPerformanceLog, name: "Apply sync frame")
         defer { os_signpost(.end, log: syncPerformanceLog, name: "Apply sync frame") }
@@ -239,8 +259,40 @@ extension DieterStore {
         syncRecoveryEscalationTask?.cancel()
         syncRecoveryEscalationTask = nil
         lastSyncFrameAt = receivedAt
+        syncLastActivity = ContinuousClock.now
+        if frame.transportOnly || frame.cursor.projectionVersion >= 5 { syncTransportTimeout = .seconds(15) }
+        if frame.transportOnly || frame.heartbeat {
+            if frame.projectionPending,
+                syncSnapshot == nil
+                    || syncLastAppliedActivity.map({ $0.duration(to: ContinuousClock.now) >= .seconds(10) }) != false
+            {
+                globalSyncing = true
+            }
+            return
+        }
+        if frame.projectionPending {
+            syncProjection.cursor = nil
+            globalSyncing = true
+            if frame.hasSnapshot {
+                pendingSyncSnapshot = frame.snapshot
+            } else if frame.hasDelta, let base = pendingSyncSnapshot ?? syncSnapshot {
+                pendingSyncSnapshot = GlobalProjectionReducer.applying(frame.delta, to: base)
+            }
+            return
+        }
+        if let pending = pendingSyncSnapshot {
+            let complete =
+                frame.hasSnapshot
+                ? frame.snapshot
+                : frame.hasDelta ? GlobalProjectionReducer.applying(frame.delta, to: pending) : pending
+            frame.clearDelta()
+            frame.snapshot = complete
+            pendingSyncSnapshot = nil
+        }
+        syncLastAppliedActivity = ContinuousClock.now
         lastSyncedAt = receivedAt
-        globalSyncing = false
+        globalSyncing = frame.projectionPending
+        if frame.projectionPending { syncProjection.cursor = nil }
         if let recoveryStartedAt = connectionRecoveryStartedAt {
             let duration = max(0, receivedAt.timeIntervalSince(recoveryStartedAt))
             connectionLogger.notice(
@@ -249,7 +301,7 @@ extension DieterStore {
             connectionRecoveryStartedAt = nil
             connectionRecoverySource = ""
         }
-        syncProjection.refreshedAt = receivedAt
+        if !frame.projectionPending { syncProjection.refreshedAt = receivedAt }
         refreshIslandActivityDateBoundaryIfNeeded(now: receivedAt)
         var projectionChanged = false
         var conversationDirectoryChanged = false
@@ -282,19 +334,23 @@ extension DieterStore {
                     frame.delta)
             }
         }
-        if frame.hasCursor {
+        if frame.hasCursor && !frame.heartbeat && !frame.projectionPending {
             syncProjection.cursor = try? frame.cursor.serializedData()
         }
         if projectionChanged { syncStateDirty = true }
         if conversationDirectoryChanged {
             await reconcileOutboxWithProjection()
         }
-        guard endpoint.id == endpointID, generation == connectionGeneration else { return }
-        if SyncCursorPersistencePolicy.shouldPersist(
-            projectionChanged: projectionChanged,
-            lastPersistedAt: lastSyncPersistenceAt[endpointID],
-            now: receivedAt
-        ) {
+        guard endpoint.id == endpointID, generation == connectionGeneration,
+            subscription == nil || subscription == syncSubscriptionGeneration
+        else { return }
+        if !frame.projectionPending
+            && SyncCursorPersistencePolicy.shouldPersist(
+                projectionChanged: projectionChanged,
+                lastPersistedAt: lastSyncPersistenceAt[endpointID],
+                now: receivedAt
+            )
+        {
             await scheduleSyncPersistence()
             lastSyncPersistenceAt[endpointID] = receivedAt
         }
