@@ -68,10 +68,17 @@
                             && store.projects.contains { !store.boards(for: $0.id).isEmpty }
                     })
             else {
+                let phaseDetail: String
+                if case .failed(let message) = store.phase {
+                    phaseDetail = message
+                } else {
+                    phaseDetail = store.phase.label
+                }
                 writeReport(
                     [
                         "connection": "failed: fixture workspace did not become ready",
                         "phase": store.phase.label,
+                        "phase-detail": phaseDetail,
                         "projects": "\(store.projects.count)",
                     ], to: output)
                 return
@@ -617,11 +624,37 @@
                 NSApp.terminate(nil)
                 return
             }
+            let retainedScreen = ScreenShareSession(
+                id: "screen-smoke", machineID: store.endpoint.id,
+                machineName: store.endpoint.name, monitorsInactivity: false)
+            retainedScreen.controller.phase = .streaming
+            store.screensModel.sessions = [retainedScreen]
+            store.screensModel.selectedSessionID = retainedScreen.id
             store.openScreens()
             try? await DieterTaskSleep.milliseconds(500)
-            results["01a-experimental-screens"] =
-                store.section == .screens ? "passed" : "failed: screens did not open"
-            await captureAppearances(window, named: "01a-experimental-screens.png", in: output)
+            let screenTabsVisible = await waitUntil(timeout: 3) {
+                NativeUIAccessibility.find("screen.select.\(retainedScreen.id)", in: window) != nil
+                    && NativeUIAccessibility.find("screens.new", in: window) != nil
+            }
+            results["01a-screen-tabs"] =
+                store.section == .screens && screenTabsVisible && store.screensModel.connectedCount == 1
+                ? "passed" : "failed: machine-scoped screen tab did not open"
+            await captureAppearances(window, named: "01a-screen-tabs.png", in: output)
+            await store.openBoard(board.id, projectID: project.id)
+            try? await DieterTaskSleep.milliseconds(500)
+            results["01b-screen-navigation-retention"] =
+                retainedScreen.controller.phase == .streaming && store.screensModel.connectedCount == 1
+                ? "passed" : "failed: navigation disconnected the retained screen tab"
+
+            store.openSettings()
+            try? await DieterTaskSleep.milliseconds(700)
+            let earlyScreenTimeoutVisible = await waitUntil(timeout: 3) {
+                NativeUIAccessibility.find("settings.screenShare.inactivityTimeoutEnabled", in: window) != nil
+                    && NativeUIAccessibility.find("settings.screenShare.inactivityTimeoutMinutes", in: window) != nil
+            }
+            results["01b-screen-timeout-settings"] =
+                earlyScreenTimeoutVisible ? "passed" : "failed: screen-share inactivity controls were missing"
+            capture(window, to: output.appending(path: "01b-screen-timeout-settings.png"))
             await store.openBoard(board.id, projectID: project.id)
             try? await DieterTaskSleep.milliseconds(500)
 
@@ -795,6 +828,12 @@
             try? await DieterTaskSleep.milliseconds(700)
             results["09-settings-general"] =
                 store.section == .settings ? "passed" : "failed: settings did not open"
+            let screenTimeoutVisible = await waitUntil(timeout: 3) {
+                NativeUIAccessibility.find("settings.screenShare.inactivityTimeoutEnabled", in: window) != nil
+                    && NativeUIAccessibility.find("settings.screenShare.inactivityTimeoutMinutes", in: window) != nil
+            }
+            results["09a-settings-screen-timeout"] =
+                screenTimeoutVisible ? "passed" : "failed: screen-share inactivity controls were missing"
             await captureAppearances(window, named: "09-settings-general.png", in: output)
 
             let lightPressed = await NativeUIAccessibility.pressWhenSettled("settings.appearance.light", in: window)
@@ -835,6 +874,37 @@
                 monochromePressed && monochromeApplied
                 ? "passed"
                 : "failed: pressed=\(monochromePressed), live=\(store.themeSelection.palette.rawValue)"
+
+            results.merge(await transparencySettingsSmoke(store: store, window: window, output: output)) {
+                _, latest in latest
+            }
+
+            let workspacePanelDefaultedOff = !store.conversationWorkspacePanelEnabled
+            let experimentalPressed = await NativeUIAccessibility.pressWhenSettled(
+                "settings.experimental", in: window)
+            let experimentalVisible = await waitUntil(timeout: 5) {
+                NativeUIAccessibility.find(
+                    "settings.experimental.conversationWorkspacePanel", in: window) != nil
+            }
+            let workspacePanelEnabled = await NativeUIAccessibility.pressWhenSettled(
+                "settings.experimental.conversationWorkspacePanel", in: window)
+            let workspacePanelStoredOn = await waitUntil(timeout: 5) {
+                store.conversationWorkspacePanelEnabled
+                    && ConversationWorkspacePanelPreferences.isEnabled(in: appearanceDefaults)
+            }
+            await captureAppearances(window, named: "09h-settings-experimental.png", in: output)
+            let workspacePanelDisabled = await NativeUIAccessibility.pressWhenSettled(
+                "settings.experimental.conversationWorkspacePanel", in: window)
+            let workspacePanelStoredOff = await waitUntil(timeout: 5) {
+                !store.conversationWorkspacePanelEnabled
+                    && !ConversationWorkspacePanelPreferences.isEnabled(in: appearanceDefaults)
+            }
+            results["09h-settings-experimental-workspace-panel"] =
+                workspacePanelDefaultedOff && experimentalPressed && experimentalVisible
+                    && workspacePanelEnabled && workspacePanelStoredOn
+                    && workspacePanelDisabled && workspacePanelStoredOff
+                ? "passed"
+                : "failed: defaultOff=\(workspacePanelDefaultedOff), navigation=\(experimentalPressed), visible=\(experimentalVisible), enable=\(workspacePanelEnabled), storedOn=\(workspacePanelStoredOn), disable=\(workspacePanelDisabled), storedOff=\(workspacePanelStoredOff)"
 
             click(window: window, x: 320, distanceFromTop: 151)
             try? await DieterTaskSleep.milliseconds(700)
@@ -1083,6 +1153,12 @@
             // A repository can be registered on several enrolled machines. Render
             // the real new-chat surface with a duplicate project name and require
             // its selected destination to retain the owning machine identity.
+            // The extra machine exists only in this renderer fixture. Pause the
+            // gateway directory poll so its authoritative response cannot remove
+            // the injected endpoint while the view settles or screenshots render.
+            let resumeMachineDirectoryRefresh = store.machineDirectoryTask != nil
+            store.machineDirectoryTask?.cancel()
+            store.machineDirectoryTask = nil
             let duplicateMachine = DieterEndpoint(
                 name: "Smoke remote Mac",
                 host: store.endpoint.host,
@@ -1120,6 +1196,18 @@
             store.endpoints.removeAll { $0.id == duplicateMachine.id }
             store.newChatProjectID = project.id
             store.selectedProjectID = project.id
+            if resumeMachineDirectoryRefresh {
+                // Screenshot rendering can outlast a presence lease on CI.
+                // Restore authoritative presence after pausing its poll; do
+                // not start live operations with the renderer fixture's stale
+                // directory while waiting another 15 seconds for the poll.
+                await store.refreshDaemonPresence()
+                store.startMachineDirectoryRefresh()
+                results["13h-machine-presence-restored"] =
+                    store.machine(forProjectID: project.id)?.online == true
+                    ? "passed"
+                    : "failed: live fixture machine presence was not restored"
+            }
             try? await DieterTaskSleep.milliseconds(350)
 
             store.createProjectPresented = true
@@ -1259,16 +1347,22 @@
                 }
                 let canceledOfflineMessage =
                     "Canceled offline outbox smoke \(UUID().uuidString.lowercased())"
+                let offlineDeliveryMessage =
+                    "Offline delivery smoke \(UUID().uuidString.lowercased())"
                 if let liveCard, let machine = store.machine(forProjectID: liveCard.projectID) {
                     store.composerText = canceledOfflineMessage
                     await store.sendComposer()
                     let queued = await waitUntil(timeout: 5) {
                         store.outboxSummary(for: machine)?.messageCount == 1
                     }
+                    let toastVisible = await waitUntil(timeout: 5) {
+                        NativeUIAccessibility.find(
+                            "machine.\(machine.daemonID ?? machine.id).queue", in: window) != nil
+                    }
                     results["17a-offline-message-queued"] =
-                        queued && store.composerText.isEmpty
+                        queued && toastVisible && store.composerText.isEmpty
                         ? "passed"
-                        : "failed: queued=\(store.outboxSummary(for: machine)?.messageCount ?? 0), draft=\(store.composerText)"
+                        : "failed: queued=\(store.outboxSummary(for: machine)?.messageCount ?? 0), toast=\(toastVisible), draft=\(store.composerText)"
                     await captureAppearances(window, named: "17a-offline-message-queued.png", in: output)
 
                     let removed = await store.discardOutbox(for: machine)
@@ -1284,7 +1378,7 @@
                         : "failed: removed=\(removed), queued=\(store.outboxSummary(for: machine)?.messageCount ?? 0)"
                     await captureAppearances(window, named: "17b-offline-message-canceled.png", in: output)
 
-                    store.composerText = "Offline delivery smoke \(UUID().uuidString.lowercased())"
+                    store.composerText = offlineDeliveryMessage
                     await store.sendComposer()
                     _ = await waitUntil(timeout: 5) {
                         store.outboxSummary(for: machine)?.messageCount == 1
@@ -1292,6 +1386,44 @@
                 } else {
                     results["17a-offline-message-queued"] = "failed: live card or owning machine missing"
                     results["17b-offline-message-canceled"] = "failed: live card or owning machine missing"
+                }
+
+                if let trigger = offlineTrigger(), let liveCard {
+                    try? FileManager.default.removeItem(at: trigger)
+                    let reconnected = await waitUntil(timeout: 25) { store.phase.isConnected }
+                    let delivered = await waitUntil(timeout: 15) {
+                        guard let machine = store.machine(forProjectID: liveCard.projectID) else {
+                            return false
+                        }
+                        return store.outboxSummary(for: machine) == nil
+                    }
+                    let visible = await waitUntil(timeout: 10) {
+                        store.conversationMessages.contains { message in
+                            message.parts.contains {
+                                $0.type == "text" && $0.text == offlineDeliveryMessage
+                            }
+                        }
+                    }
+                    let selectionResumed =
+                        store.selectedCardID == liveCard.id && store.conversationError == nil
+                    let canceledStayedAbsent = !store.conversationMessages.contains { message in
+                        message.parts.contains { $0.type == "text" && $0.text == canceledOfflineMessage }
+                    }
+                    results["17c-reconnected-message-delivered"] =
+                        reconnected && delivered && visible && selectionResumed && canceledStayedAbsent
+                        ? "passed"
+                        : "failed: reconnected=\(reconnected), delivered=\(delivered), visible=\(visible), selected=\(store.selectedCardID ?? "none"), conversationError=\(store.conversationError ?? "none"), canceledAbsent=\(canceledStayedAbsent)"
+                    await captureAppearances(
+                        window, named: "17c-reconnected-message-delivered.png", in: output)
+                } else {
+                    results["17c-reconnected-message-delivered"] =
+                        "failed: reconnect trigger or live card missing"
+                }
+
+                if let trigger = offlineTrigger() {
+                    _ = FileManager.default.createFile(atPath: trigger.path, contents: Data())
+                    _ = await waitUntil(timeout: 10) { !store.phase.isConnected }
+                    try? await DieterTaskSleep.seconds(1)
                 }
                 await store.openBoard(cachedBoard.id, projectID: project.id)
                 try? await DieterTaskSleep.milliseconds(700)
@@ -1309,38 +1441,9 @@
                     : "failed: section=\(store.section.rawValue), board=\(store.selectedBoard?.id ?? "none"), phase=\(store.phase.label), freshness=\(offlineLabel), error=\(store.errorMessage ?? "none")"
                 await captureAppearances(
                     window, named: "17-offline-cached-board-navigation.png", in: output)
-
-                if let trigger = offlineTrigger(), let liveCard {
+                if let trigger = offlineTrigger() {
                     try? FileManager.default.removeItem(at: trigger)
-                    let reconnected = await waitUntil(timeout: 25) { store.phase.isConnected }
-                    let delivered = await waitUntil(timeout: 15) {
-                        guard let machine = store.machine(forProjectID: liveCard.projectID) else {
-                            return false
-                        }
-                        return store.outboxSummary(for: machine) == nil
-                    }
-                    if reconnected && delivered {
-                        await store.openConversation(cardID: liveCard.id)
-                    }
-                    let visible = await waitUntil(timeout: 10) {
-                        store.conversationMessages.contains { message in
-                            message.parts.contains {
-                                $0.type == "text" && $0.text.hasPrefix("Offline delivery smoke ")
-                            }
-                        }
-                    }
-                    let canceledStayedAbsent = !store.conversationMessages.contains { message in
-                        message.parts.contains { $0.type == "text" && $0.text == canceledOfflineMessage }
-                    }
-                    results["17c-reconnected-message-delivered"] =
-                        reconnected && delivered && visible && canceledStayedAbsent
-                        ? "passed"
-                        : "failed: reconnected=\(reconnected), delivered=\(delivered), visible=\(visible), canceledAbsent=\(canceledStayedAbsent)"
-                    await captureAppearances(
-                        window, named: "17c-reconnected-message-delivered.png", in: output)
-                } else {
-                    results["17c-reconnected-message-delivered"] =
-                        "failed: reconnect trigger or live card missing"
+                    _ = await waitUntil(timeout: 25) { store.phase.isConnected }
                 }
             } catch {
                 results["17-offline-cached-board-navigation"] =
@@ -2185,6 +2288,61 @@
                     if let event { NSApp.postEvent(event, atStart: false) }
                 }
             }
+        }
+
+        private static func transparencySettingsSmoke(
+            store: DieterStore, window: NSWindow, output: URL
+        ) async -> [String: String] {
+            let defaults = DieterAppearance.applicationDefaults()
+            let originalStoredValue = defaults.object(forKey: DieterTransparency.storageKey)
+            let originalChoice = store.themeSelection.transparencyEnabled
+            let originalContent = window.contentView
+            var results: [String: String] = [:]
+
+            // Start from glass so both transitions exercise the actual setting.
+            if !store.themeSelection.transparencyEnabled {
+                _ = await NativeUIAccessibility.pressWhenSettled("settings.windowTransparency", in: window)
+                _ = await waitUntil(timeout: 5) { store.themeSelection.transparencyEnabled }
+            }
+            for enabled in [false, true] {
+                let name = enabled ? "09f-settings-glass" : "09e-settings-solid"
+                let pressed = await NativeUIAccessibility.pressWhenSettled("settings.windowTransparency", in: window)
+                let applied = await waitUntil(timeout: 5) {
+                    DieterTransparency.load(from: defaults) == enabled
+                        && store.themeSelection.transparencyEnabled == enabled
+                        && transparencyWindowMatches(window, enabled: enabled)
+                        && window.contentView === originalContent
+                }
+                results[name] =
+                    pressed && applied
+                    ? "passed"
+                    : "failed: pressed=\(pressed), stored=\(DieterTransparency.load(from: defaults)), live=\(store.themeSelection.transparencyEnabled), effective=\(DieterTheme.usesTransparency), opaque=\(window.isOpaque), backgroundAlpha=\(window.backgroundColor.alphaComponent)"
+                await captureAppearances(window, named: "\(name).png", in: output)
+            }
+
+            store.themeSelection.transparencyEnabled = originalChoice
+            if let originalStoredValue {
+                defaults.set(originalStoredValue, forKey: DieterTransparency.storageKey)
+            } else {
+                defaults.removeObject(forKey: DieterTransparency.storageKey)
+            }
+            let restored = await waitUntil(timeout: 5) {
+                DieterTransparency.load(from: defaults) == originalChoice
+                    && store.themeSelection.transparencyEnabled == originalChoice
+                    && transparencyWindowMatches(window, enabled: originalChoice)
+            }
+            results["09g-settings-transparency-restored"] =
+                restored ? "passed" : "failed: the original transparency choice was not restored"
+            return results
+        }
+
+        private static func transparencyWindowMatches(_ window: NSWindow, enabled: Bool) -> Bool {
+            let effective = enabled && !NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency
+            guard DieterTheme.usesTransparency == effective, window.isOpaque == !effective else { return false }
+            if effective {
+                return window.backgroundColor.alphaComponent == 0 && window.titlebarAppearsTransparent
+            }
+            return window.backgroundColor.alphaComponent == 1
         }
 
         private static func captureAppearances(_ window: NSWindow, named name: String, in output: URL)

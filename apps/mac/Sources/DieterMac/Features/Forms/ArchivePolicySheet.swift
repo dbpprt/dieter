@@ -90,11 +90,11 @@ struct ArchivePolicySheet: View {
             }
             HStack {
                 Spacer()
-                Button("Cancel") { dismiss() }.buttonStyle(.glass).disabled(saving)
+                Button("Cancel") { dismiss() }.buttonStyle(DieterGlassButtonStyle()).disabled(saving)
                     .keyboardShortcut(.cancelAction)
                     .smokeTarget("board.settings.cancel")
                 Button(saving ? "Saving…" : "Save changes") { Task { await save() } }
-                    .buttonStyle(.glassProminent)
+                    .buttonStyle(DieterGlassButtonStyle(prominent: true))
                     .keyboardShortcut(.defaultAction)
                     .disabled(
                         saving || boardName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)

@@ -128,6 +128,10 @@ service DieterService {
 
   rpc GetRemoteDesktopCapabilities(google.protobuf.Empty)
       returns (RemoteDesktopCapabilities);
+  // Explicit, bounded permission test performed by the running daemon.
+  // Discards one encoded frame and never injects input or changes settings.
+  rpc ProbeRemoteDesktopPermissions(ProbeRemoteDesktopPermissionsRequest)
+      returns (RemoteDesktopPermissionProbe);
   rpc GetRemoteDesktopSettings(google.protobuf.Empty)
       returns (RemoteDesktopSettings);
   rpc UpdateRemoteDesktopSettings(UpdateRemoteDesktopSettingsRequest)
@@ -136,6 +140,10 @@ service DieterService {
       returns (stream RemoteDesktopSignal);
   rpc SendRemoteDesktopSignal(RemoteDesktopSignal)
       returns (google.protobuf.Empty);
+  rpc GetRemoteDesktopSession(RemoteDesktopRef) returns (RemoteDesktopSessionState);
+  rpc ListRemoteDesktopSessions(google.protobuf.Empty) returns (RemoteDesktopSessions);
+  rpc SetRemoteDesktopControl(RemoteDesktopControlRequest) returns (RemoteDesktopSessionState);
+  rpc UpdateRemoteDesktopSession(UpdateRemoteDesktopSessionRequest) returns (RemoteDesktopSessionState);
   rpc CloseRemoteDesktop(RemoteDesktopRef)
       returns (google.protobuf.Empty);
 
@@ -1488,6 +1496,9 @@ message CreateTerminalRequest {
   int32 columns = 5;
   int32 rows = 6;
   string card_id = 7;
+  // machine_home creates a host-scoped shell rooted in the daemon user's home
+  // directory. It is mutually exclusive with project_id and card_id.
+  bool machine_home = 8;
 }
 
 message WatchTerminalRequest {
@@ -1647,6 +1658,31 @@ message RemoteDesktopCapabilities {
   bool audio_supported = 14;
   bool file_transfer_supported = 15;
   bool active_session = 16;
+  bool adaptive_supported = 17;
+  bool cursor_supported = 18;
+  uint32 input_protocol_version = 19;
+  int32 max_fps = 20;
+  string encoder = 21;
+  string daemon_executable = 22;
+  string capture_executable = 23;
+  uint32 max_clients = 24;
+  uint32 connected_clients = 25;
+  repeated uint32 supported_input_protocol_versions = 26;
+}
+
+message ProbeRemoteDesktopPermissionsRequest {
+  // Only explicit interactive onboarding may request an OS permission prompt.
+  bool request_control = 1;
+}
+
+message RemoteDesktopPermissionProbe {
+  string platform = 1;
+  string daemon_executable = 2;
+  string capture_executable = 3;
+  bool capture_verified = 4;
+  bool control_verified = 5;
+  string capture_error = 6;
+  string control_error = 7;
 }
 
 message RemoteDesktopDisplay {
@@ -1659,6 +1695,9 @@ message RemoteDesktopDisplay {
   double scale = 7;
   int32 rotation = 8;
   bool primary = 9;
+  int32 origin_x = 10;
+  int32 origin_y = 11;
+  double refresh_rate = 12;
 }
 
 message RemoteDesktopSettings {
@@ -1695,6 +1734,53 @@ message StartRemoteDesktopRequest {
   int32 max_height = 8;
   int32 max_fps = 9;
   int32 max_bitrate_kbps = 10;
+  RemoteDesktopQuality quality = 11;
+  bool embedded_cursor = 12;
+  // Zero selects legacy v2. V3 adds revocable, machine-wide input ownership.
+  uint32 input_protocol_version = 13;
+  string client_name = 14;
+}
+
+message RemoteDesktopSessions {
+  repeated RemoteDesktopSessionInfo sessions = 1;
+  uint32 max_clients = 2;
+  uint32 capture_streams = 3;
+  uint32 encoders = 4;
+}
+
+message RemoteDesktopSessionInfo {
+  string session_id = 1;
+  string client_name = 2;
+  string display_id = 3;
+  bool control_allowed = 4;
+  bool control_active = 5;
+  uint32 input_protocol_version = 6;
+}
+
+message RemoteDesktopControlRequest {
+  string session_id = 1;
+  bool take_control = 2;
+}
+
+// Configuration is a ceiling; the adaptive controller reports the applied values.
+enum RemoteDesktopQuality {
+  REMOTE_DESKTOP_QUALITY_AUTO = 0;
+  REMOTE_DESKTOP_QUALITY_DETAIL = 1;
+  REMOTE_DESKTOP_QUALITY_MOTION = 2;
+}
+message RemoteDesktopStreamConfiguration {
+  string display_id = 1;
+  int32 max_width = 2;
+  int32 max_height = 3;
+  int32 max_fps = 4;
+  int32 max_bitrate_kbps = 5;
+  RemoteDesktopQuality quality = 6;
+  bool embedded_cursor = 7;
+}
+message UpdateRemoteDesktopSessionRequest {
+  string session_id = 1;
+  RemoteDesktopStreamConfiguration configuration = 2;
+  bool refresh = 3;
 }
 
 message RemoteDesktopRef {
@@ -1740,6 +1826,10 @@ message RemoteDesktopScroll {
   int32 delta_y = 2;
   bool precise = 3;
   uint32 modifiers = 4;
+  double precise_delta_x = 5;
+  double precise_delta_y = 6;
+  uint32 phase = 7;
+  uint32 momentum_phase = 8;
 }
 
 message RemoteDesktopKey {
@@ -1747,7 +1837,11 @@ message RemoteDesktopKey {
   bool down = 2;
   bool repeat = 3;
   uint32 modifiers = 4;
+  // USB HID keyboard/keypad usage (page 0x07); zero uses legacy macOS key_code.
+  uint32 physical_key = 5;
 }
+
+message RemoteDesktopText { string text = 1; }
 
 message RemoteDesktopReleaseAll {}
 
@@ -1761,7 +1855,13 @@ message RemoteDesktopInput {
     RemoteDesktopScroll scroll = 6;
     RemoteDesktopKey key = 7;
     RemoteDesktopReleaseAll release_all = 8;
+    RemoteDesktopText text = 12;
   }
+  uint64 display_generation = 9;
+  uint64 event_ordinal = 10;
+  uint64 state_barrier = 11;
+  // V3 input is accepted only for the current machine-wide control grant.
+  uint64 control_generation = 13;
 }
 
 message RemoteDesktopSessionState {
@@ -1773,6 +1873,71 @@ message RemoteDesktopSessionState {
   int32 height = 6;
   int32 fps = 7;
   int32 bitrate_kbps = 8;
+  string display_id = 9;
+  uint64 display_generation = 10;
+  RemoteDesktopStreamConfiguration configuration = 11;
+  double encode_ms = 12;
+  double capture_delay_ms = 13;
+  double queue_ms = 14;
+  uint64 frames_sent = 15;
+  uint64 frames_dropped = 16;
+  uint64 last_frame_id = 17;
+  uint64 last_input_ordinal = 18;
+  string encoder = 19;
+  bool embedded_cursor = 20;
+  double receiver_fps = 21;
+  double rtt_ms = 22;
+  // First transmitted keyframe of the active display generation (90 kHz RTP).
+  uint64 media_generation = 23;
+  uint32 media_timestamp = 24;
+  // Sender stages include intentional packet pacing; queue_ms is socket work only.
+  double send_ms = 25;
+  double capture_to_send_ms = 26;
+  double jitter_buffer_ms = 27;
+  double render_ms = 28;
+  uint32 pacing_bitrate_kbps = 29;
+  bool control_active = 30;
+  uint64 control_generation = 31;
+  string controller_name = 32;
+  uint32 connected_clients = 33;
+}
+
+// Encrypted on the authenticated session DataChannel; never persisted.
+message RemoteDesktopReceiverFeedback {
+  uint32 protocol_version = 1;
+  bytes input_epoch = 2;
+  uint64 sequence = 3;
+  double frames_per_second = 4;
+  double decode_ms = 5;
+  double jitter_ms = 6;
+  double rtt_ms = 7;
+  double loss_fraction = 8;
+  bool input_active = 9;
+  uint32 rendered_frames = 10;
+  // Mean residence in WebRTC's jitter buffer, distinct from RTP jitter.
+  double jitter_buffer_ms = 11;
+  // Mean decoded-frame arrival to actual Metal presentation in this interval.
+  double render_ms = 12;
+}
+message RemoteDesktopCursor {
+  string shape_id = 1;
+  bytes png = 2;
+  double hotspot_x = 3;
+  double hotspot_y = 4;
+  double width = 5;
+  double height = 6;
+  int32 normalized_x = 7;
+  int32 normalized_y = 8;
+  bool visible = 9;
+  uint64 display_generation = 10;
+  uint64 last_input_ordinal = 11;
+}
+message RemoteDesktopHostEvent {
+  oneof payload {
+    RemoteDesktopCursor cursor = 1;
+    RemoteDesktopSessionState state = 2;
+    uint64 input_ack = 3;
+  }
 }
 
 message RemoteDesktopSessionError {

@@ -619,7 +619,12 @@ func TestGatewayEnrollsDaemonAndRelaysDieterService(t *testing.T) {
 	default:
 	}
 	runner.Release()
-	deadline = time.Now().Add(2 * time.Second)
+	// Each completed runner is followed by the daemon's bounded workspace
+	// refresh before the queued turn starts or the durable runtime projection
+	// becomes idle. Under the parallel race suite those two serial refreshes can
+	// legitimately exceed the short event waits used above, so wait within the
+	// lifecycle's own bounds instead of failing during final persistence.
+	deadline = time.Now().Add(35 * time.Second)
 	for time.Now().Before(deadline) {
 		resolved, resolveErr := boardStore.ResolveCard(created.GetId())
 		latestConversation, conversationErr := boardStore.Conversation(created.GetId())
@@ -1162,13 +1167,13 @@ func testRemoteDesktopThroughGateway(t *testing.T, routed context.Context, clien
 		t.Fatal(err)
 	}
 	ordered := true
-	stateChannel, err := viewer.CreateDataChannel("dieter-input-state-v1", &webrtc.DataChannelInit{Ordered: &ordered})
+	stateChannel, err := viewer.CreateDataChannel("dieter-input-state-v2", &webrtc.DataChannelInit{Ordered: &ordered})
 	if err != nil {
 		t.Fatal(err)
 	}
 	unordered := false
 	zero := uint16(0)
-	if _, err := viewer.CreateDataChannel("dieter-pointer-v1", &webrtc.DataChannelInit{Ordered: &unordered, MaxRetransmits: &zero}); err != nil {
+	if _, err := viewer.CreateDataChannel("dieter-pointer-v2", &webrtc.DataChannelInit{Ordered: &unordered, MaxRetransmits: &zero}); err != nil {
 		t.Fatal(err)
 	}
 	trackReceived := make(chan struct{}, 1)

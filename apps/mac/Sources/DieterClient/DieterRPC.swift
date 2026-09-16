@@ -7,6 +7,7 @@ import GRPCNIOTransportHTTP2
 import GRPCProtobuf
 import Security
 import SwiftProtobuf
+import X509
 
 /// One long-lived native HTTP/2 gRPC channel to the loopback Dieter server.
 package final class DieterRPC: Sendable {
@@ -21,6 +22,7 @@ package final class DieterRPC: Sendable {
     package let core: GRPCClient<Transport>
     package let service: Service
     package let gatewayService: GatewayService
+    package let directCredential: DirectAccessCredential?
 
     package static func attachmentCallOptions(bounded: Bool = false) -> CallOptions {
         var options = CallOptions.defaults
@@ -43,18 +45,30 @@ package final class DieterRPC: Sendable {
     }
 
     package struct DirectRoute: Sendable {
-        package init(host: String, port: Int, daemonID: String, daemonCAPEM: Data, accessToken: String) {
+        package init(
+            host: String,
+            port: Int,
+            daemonID: String,
+            daemonCAPEM: Data,
+            accessToken: String,
+            expiresAt: String = "",
+            daemonGeneration: UInt64 = 0
+        ) {
             self.host = host
             self.port = port
             self.daemonID = daemonID
             self.daemonCAPEM = daemonCAPEM
             self.accessToken = accessToken
+            self.expiresAt = expiresAt
+            self.daemonGeneration = daemonGeneration
         }
         let host: String
         let port: Int
         let daemonID: String
         let daemonCAPEM: Data
         let accessToken: String
+        let expiresAt: String
+        let daemonGeneration: UInt64
     }
 
     package enum Route: Equatable, Sendable {
@@ -105,10 +119,24 @@ package final class DieterRPC: Sendable {
             target: DieterTransportTarget.make(host: host, port: port),
             transportSecurity: security
         )
-        let token = direct?.accessToken ?? accessToken
+        let directCredential = direct.map {
+            DirectAccessCredential(
+                token: $0.accessToken,
+                expiresAt: $0.expiresAt,
+                daemonGeneration: $0.daemonGeneration
+            )
+        }
+        self.directCredential = directCredential
         let daemonID = direct == nil ? route.daemonID : nil
-        let interceptors: [any ClientInterceptor] =
-            token.map { [BearerInterceptor(token: $0, daemonID: daemonID)] } ?? []
+        let bearer: BearerInterceptor?
+        if let directCredential {
+            bearer = BearerInterceptor(source: .renewable(directCredential), daemonID: daemonID)
+        } else if let accessToken {
+            bearer = BearerInterceptor(source: .fixed(accessToken), daemonID: daemonID)
+        } else {
+            bearer = nil
+        }
+        let interceptors: [any ClientInterceptor] = bearer.map { [$0] } ?? []
         let core = GRPCClient(transport: transport, interceptors: interceptors)
         self.core = core
         self.service = Service(wrapping: core)
@@ -135,7 +163,7 @@ package final class DieterRPC: Sendable {
         daemonID: String
     ) -> Bool {
         guard let leafData = derChain.first,
-            let leaf = SecCertificateCreateWithData(nil, leafData as CFData),
+            SecCertificateCreateWithData(nil, leafData as CFData) != nil,
             let caDER = pemCertificateDER(daemonCAPEM),
             let ca = SecCertificateCreateWithData(nil, caDER as CFData)
         else { return false }
@@ -150,12 +178,22 @@ package final class DieterRPC: Sendable {
             SecTrustSetAnchorCertificatesOnly(trust, true) == errSecSuccess,
             SecTrustEvaluateWithError(trust, nil)
         else { return false }
-        guard
-            let values = SecCertificateCopyValues(leaf, [kSecOIDSubjectAltName] as CFArray, nil)
-                as? [CFString: Any],
-            let subjectAlternativeName = values[kSecOIDSubjectAltName]
+        return certificateHasDaemonIdentity(leafData, daemonID: daemonID)
+    }
+
+    /// Match only a URI subject-alternative-name, never a common name, DNS SAN,
+    /// substring, or another extension containing the same bytes. X509's DER
+    /// parser is available on both iOS and macOS; SecCertificateCopyValues is not.
+    package static func certificateHasDaemonIdentity(_ der: Data, daemonID: String) -> Bool {
+        guard !daemonID.isEmpty,
+            let certificate = try? Certificate(derEncoded: Array(der)),
+            let names = try? certificate.extensions.subjectAlternativeNames
         else { return false }
-        return containsCertificateValue("spiffe://board/daemon/\(daemonID)", in: subjectAlternativeName)
+        let expected = "spiffe://board/daemon/\(daemonID)"
+        return names.contains { name in
+            guard case .uniformResourceIdentifier(let value) = name else { return false }
+            return value == expected
+        }
     }
 
     private static func pemCertificateDER(_ pem: Data) -> Data? {
@@ -167,22 +205,6 @@ package final class DieterRPC: Sendable {
             .components(separatedBy: .whitespacesAndNewlines)
             .joined()
         return Data(base64Encoded: body)
-    }
-
-    private static func containsCertificateValue(_ expected: String, in value: Any) -> Bool {
-        if let text = value as? String { return text == expected }
-        if let url = value as? URL { return url.absoluteString == expected }
-        if let url = value as? NSURL { return url.absoluteString == expected }
-        if let values = value as? [Any] {
-            return values.contains { containsCertificateValue(expected, in: $0) }
-        }
-        if let values = value as? [CFString: Any] {
-            return values.values.contains { containsCertificateValue(expected, in: $0) }
-        }
-        if let values = value as? [String: Any] {
-            return values.values.contains { containsCertificateValue(expected, in: $0) }
-        }
-        return false
     }
 
     package func run() async throws {
@@ -826,6 +848,28 @@ package final class DieterRPC: Sendable {
             ) as Google_Protobuf_Empty
     }
 
+    package func remoteDesktopSession(sessionID: String) async throws -> Dieter_V1_RemoteDesktopSessionState {
+        var request = Dieter_V1_RemoteDesktopRef(); request.sessionID = sessionID
+        return try await service.getRemoteDesktopSession(request: .init(message: request))
+    }
+    package func updateRemoteDesktopSession(_ request: Dieter_V1_UpdateRemoteDesktopSessionRequest) async throws
+        -> Dieter_V1_RemoteDesktopSessionState
+    {
+        try await service.updateRemoteDesktopSession(request: .init(message: request))
+    }
+
+    package func remoteDesktopSessions() async throws -> Dieter_V1_RemoteDesktopSessions {
+        try await service.listRemoteDesktopSessions(request: .init(message: Google_Protobuf_Empty()))
+    }
+
+    package func setRemoteDesktopControl(sessionID: String, take: Bool) async throws
+        -> Dieter_V1_RemoteDesktopSessionState
+    {
+        var request = Dieter_V1_RemoteDesktopControlRequest()
+        request.sessionID = sessionID; request.takeControl = take
+        return try await service.setRemoteDesktopControl(request: .init(message: request))
+    }
+
     package func closeRemoteDesktop(sessionID: String) async throws {
         var request = Dieter_V1_RemoteDesktopRef()
         request.sessionID = sessionID
@@ -938,9 +982,21 @@ package enum DieterTransportTarget {
     }
 }
 
+private enum BearerSource: Sendable {
+    case fixed(String)
+    case renewable(DirectAccessCredential)
+
+    var token: String {
+        switch self {
+        case .fixed(let token): token
+        case .renewable(let credential): credential.snapshot().token
+        }
+    }
+}
+
 private struct BearerInterceptor: ClientInterceptor {
-    package let token: String
-    package let daemonID: String?
+    let source: BearerSource
+    let daemonID: String?
     package func intercept<Input: Sendable, Output: Sendable>(
         request: StreamingClientRequest<Input>, context: ClientContext,
         next: (StreamingClientRequest<Input>, ClientContext) async throws -> StreamingClientResponse<
@@ -948,7 +1004,7 @@ private struct BearerInterceptor: ClientInterceptor {
         >
     ) async throws -> StreamingClientResponse<Output> {
         var request = request
-        request.metadata.addString("Bearer \(token)", forKey: "authorization")
+        request.metadata.addString("Bearer \(source.token)", forKey: "authorization")
         if let daemonID { request.metadata.addString(daemonID, forKey: "x-dieter-daemon-id") }
         return try await next(request, context)
     }

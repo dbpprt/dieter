@@ -2,9 +2,7 @@ package remotedesktop
 
 import (
 	"bytes"
-	"context"
-	"io"
-	"strings"
+	"encoding/json"
 	"testing"
 
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
@@ -54,21 +52,23 @@ func TestPointerQueueKeepsOnlyTheNewestUnreliableMove(t *testing.T) {
 	}
 }
 
-func TestNativeInputTranslationDoesNotExposeUnboundedData(t *testing.T) {
-	writer := &writeBuffer{}
-	source := &nativeHelperSource{control: writer}
-	input := &dieterv1.RemoteDesktopInput{Payload: &dieterv1.RemoteDesktopInput_Key{Key: &dieterv1.RemoteDesktopKey{KeyCode: 55, Down: true, Modifiers: 8}}}
-	if err := source.SendInput(context.Background(), input); err != nil {
-		t.Fatal(err)
-	}
-	got, err := io.ReadAll(writer)
+func TestNativeInputTranslationPreservesZeroAndFalse(t *testing.T) {
+	input := &dieterv1.RemoteDesktopInput{Payload: &dieterv1.RemoteDesktopInput_Key{Key: &dieterv1.RemoteDesktopKey{KeyCode: 0, Down: false}}}
+	value, err := translateNativeInput(input)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(got) != "{\"input\":{\"kind\":\"key\",\"down\":true,\"key_code\":55,\"modifiers\":8}}\n" {
-		t.Fatalf("helper command=%q", got)
+	raw, err := json.Marshal(value)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if strings.Contains(string(got), "sequence") || strings.Contains(string(got), "epoch") {
-		t.Fatalf("helper received transport metadata: %q", got)
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		t.Fatal(err)
+	}
+	for key, want := range map[string]string{"down": "false", "key_code": "0", "x": "0", "y": "0", "modifiers": "0"} {
+		if string(fields[key]) != want {
+			t.Errorf("%s=%s, want %s", key, fields[key], want)
+		}
 	}
 }

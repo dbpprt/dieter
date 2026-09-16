@@ -63,9 +63,39 @@ brew install dbpprt/tap/dieter
 dieter setup ~/Development/my-project
 ```
 
-`dieter setup` enrolls the machine, registers the project, verifies optional
-screen-sharing permissions, and starts the daemon as a Homebrew service. Add
+`dieter setup` enrolls the machine, registers the project, starts the daemon as
+a Homebrew service, and verifies optional screen-sharing permissions through
+that running service. Add
 `--skip-screen-sharing` on hosts that should never capture their display.
+
+The Homebrew service runs signed, regular executable files at
+`$(brew --prefix)/var/dieter/service/bin/{dieter,dieter-capture}`. The CLI remains
+in the Cellar; all user data stays in `DIETER_HOME` (default `~/.dieter`).
+`brew upgrade dieter` verifies and stages a release without modifying the running
+pair. `brew services restart dieter` activates it at the same real paths, before
+workers or capture start. An activation that fails before the API listener binds
+is rolled back on the next service start. The installation lock and service
+lifetime lock prevent partial-pair activation and concurrent service ownership.
+
+When upgrading from the old Cellar service, restart it once to update its launch
+definition, then run `dieter daemon permissions`. Grant the fixed **daemon** path
+Screen & System Audio Recording and Accessibility access. Existing grants for
+versioned Cellar paths do not transfer. Signing requirements remain compatible
+across releases; grant retention must be verified with the signed upgrade
+acceptance procedure in [the runtime guide](docs/homebrew-service-runtime.md).
+
+`dieter daemon permissions --check` and `dieter screen permissions` always query
+the running daemon (also with global `--machine ID|NAME`). They discard a captured
+frame and check input permission without injecting input or changing settings.
+They fail when the daemon is unreachable; the caller's own permissions never
+substitute for the service's. Onboarding does not automatically restart a daemon.
+If macOS asks for a restart after granting access, restart the service explicitly
+and repeat the check. Keychain access is separate from these screen permissions.
+
+Stop the service before uninstalling with Homebrew. Homebrew preserves `var`, so
+the fixed runtime remains after uninstall alongside the separately preserved
+user data. Remove `$(brew --prefix)/var/dieter/service` only after stopping the
+service and deciding that this installation is no longer needed.
 
 Install the native Mac app separately:
 
@@ -78,6 +108,11 @@ Sign in to the configured gateway. Projects from every enrolled machine appear
 in one workspace; Dieter selects the correct daemon automatically. See the
 [macOS](apps/mac/README.md) and [Android](apps/android/README.md) guides for
 source builds and platform-specific details.
+
+The Mac workspace uses native blurred glass. For solid surfaces, turn off
+**Window transparency** under **Settings → General → Appearance**. The setting
+works with every design and light/dark mode; macOS **Reduce Transparency** also
+disables translucency while preserving your preference.
 
 Useful daemon commands:
 
@@ -108,6 +143,7 @@ dieter --machine <machine-id> machine info
 dieter --machine <machine-id> project list --format jsonl
 dieter --machine <machine-id> remote exec --project <project-id> -- uname -a
 dieter --machine <machine-id> terminal list --format jsonl
+dieter --machine <machine-id> terminal create --home --name shell --format id
 ```
 
 `machine list`, `machine show`, and `machine watch` expose both the Dieter
@@ -373,6 +409,12 @@ pin a release. Installing the CLI does not start, stop, or replace a running
 daemon; service lifecycle remains explicit through `dieter setup` or
 `dieter daemon start`.
 
+Apple Developer ID releases additionally include a notarized, stapled
+`dieter-darwin-arm64.pkg`. It installs a versioned daemon and capture helper
+without changing a running service or a Homebrew installation. See
+[Apple release signing](docs/apple-release-signing.md) for installation paths,
+dedicated signing credentials, and GitHub release access.
+
 ### Daemon
 
 For a manual installation, register a project and start the local daemon:
@@ -541,6 +583,7 @@ just daemon
 just gateway
 just harness
 just mac
+just ios
 just android
 just site
 just release
@@ -550,6 +593,13 @@ GitHub Actions keeps orchestration, permissions, caches, secrets, and artifact
 transfer in YAML. Every executable repository step enters through one of these
 Just modules, so the same build and packaging commands can be exercised
 locally without copying workflow shell blocks.
+
+Apple signing uses credentials dedicated to Dieter, configured through
+`just release configure-apple-signing --platform macos|ios|all`. See
+[Apple release signing](docs/apple-release-signing.md) for Mac notarization,
+iOS distribution credentials, and the manual TestFlight workflow. The default
+setup platform remains `macos`. `just release test` validates the release tools
+without using real signing credentials or installing a daemon.
 
 Android builds use Android Studio's bundled JBR. If needed, set:
 
@@ -720,3 +770,95 @@ The default replaces the full list; `--append` adds atomically and deduplicates.
 CLI inputs use the host or host-and-port format above. Board settings also accepts
 HTTP(S) URLs and stores their hostname plus an explicit port when present. The
 same normalization, matching rules, and 64-entry limit apply.
+
+## iPhone and iPad client
+
+The native iOS 18+ SwiftUI client connects to enrolled remote nodes through the authenticated gateway and verified direct TLS routes. Open `apps/ios/DieterIOS.xcodeproj`, or use `just ios build` and `just ios smoke`. See [iOS setup and remote workflows](apps/ios/README.md).
+
+### Native screen sharing
+
+Mac screen sharing uses ScreenCaptureKit, NV12 pixel buffers, hardware VideoToolbox
+H.264, and the Mac client's native WebRTC/Metal renderer. No FFmpeg executable or
+library is used. Capture, input injection and display enumeration live in the
+platform backend; the bounded media/session protocol can accommodate a Linux
+backend later. Linux capture is currently reported as unsupported.
+
+Each Mac viewer session is a machine-scoped Screens tab. It remains connected when
+the user navigates to another Dieter workspace, and the Screens sidebar count shows
+currently live tabs. General settings provides an inactivity timeout, enabled at 30
+minutes by default and switchable off; mouse, keyboard, tab-selection, and screen
+option activity reset it. A timed-out connection can be reconnected from its tab.
+
+The viewer follows its window’s pixel size, up to 3840×2160 at 60 fps and 12 Mbps. The host adapts bitrate,
+frame rate and resolution using transport-wide congestion feedback, encoder cost,
+and fresh receiver decode/loss measurements. It smooths estimates, lowers cadence
+before pixels, and requires sustained pressure before resizing (at least 12 seconds
+between reductions). Recovery requires sustained headroom. Idle screens preserve
+their established geometry; deliberate packet pacing is not counted as congestion.
+Bitrate and cadence updates keep the native encoder session alive. Transport returns
+one frame credit after sending a complete H.264 access unit; while it waits, capture
+retains only the newest raw surface. Pipe writes run independently of capture and
+input. Compatible receivers negotiate immediate playout. After idle, a healthy
+recent route may probe its previous rate for at most 64 KiB / 250 ms, at most once
+per five seconds; congestion feedback cancels probing. The daemon log
+records each quality transition and its cause. Screen options select a display,
+prefer sharp text or smooth motion, or request an idle-screen refresh. Cursor shape,
+hotspot and position travel separately from video, with embedded-cursor fallback.
+Physical USB HID keys, left/right modifiers, pointer dragging and precise scrolling
+are supported. Enable local text composition in Screen options for IME input.
+Focus loss releases held input; ⌘⇧Esc releases input locally. macOS-reserved shortcuts
+may be intercepted by the viewer OS before the app receives them.
+
+The CLI works on local, verified direct TLS and authenticated relay routes:
+
+```sh
+dieter screen capabilities
+dieter screen permissions
+dieter screen sessions
+dieter screen control take <session-id>
+dieter screen control release <session-id>
+dieter screen status SESSION
+dieter screen configure SESSION --quality detail --fps 30 --bitrate 8000
+dieter screen configure SESSION --display DISPLAY_ID
+dieter screen refresh SESSION
+```
+
+Configuration flags preserve unspecified values. Width, height, FPS and bitrate
+are ceilings, not promises. `status` reports active dimensions, frame rate, bitrate,
+encoder time, frame drops, display generation and input acknowledgments. Timing
+fields separate socket work (`queueMs`), total paced send (`sendMs`), approximate
+capture-to-send age (`captureToSendMs`, including encoder/pipe delivery), receiver
+jitter-buffer residence (`jitterBufferMs`), and decoded-frame-to-Metal presentation
+(`renderMs`). `pacingBitrateKbps` includes packet pacing headroom. Receiver timings require an updated Mac client and use interval means;
+zero may mean no new timed frame. These overlapping stages must not be summed as a
+physical glass-to-glass measurement. The native fixture reports same-host capture
+to actual Metal presentation median/p95 and idle recovery using the shared host
+clock; measuring display scanout/photons still requires an external camera. `start`
+accepts a protobuf JSON WebRTC offer; media and input use the encrypted peer
+connection. Clients negotiate signed input protocol v3 for control handoff and retain v2
+compatibility with older daemons.
+
+Native screen regression checks:
+
+```sh
+just mac screens-native-test
+just mac screens-test
+DIETER_TEST_SCREEN_CAPTURE_REAL=1 just mac screens-test
+DIETER_SCREEN_TEST_MULTI=1 DIETER_SCREEN_TEST_SOURCE=screen just android screens-test
+```
+
+The first two use generated pixels and dry-run input. The last two require Screen
+Recording and event-posting permission and send events only to an owned native
+fixture window. All use random loopback listeners and disposable daemon data;
+the installed daemon is untouched. Viewer integration refuses to start while an
+operator Dieter app is running. Evidence paths are printed by the test.
+
+Screen sharing supports up to four clients per machine. Matching display,
+codec profile, and stream settings share a hardware encoder; different settings
+use independent renditions fed by one native capture stream per physical display.
+Each viewer adapts independently and can change displays or disconnect without
+closing another session. Only one client controls mouse and keyboard at a time.
+The first control-capable client receives control; other clients use Take Control
+(or `dieter screen control take SESSION`). Release Control leaves the video open.
+Handoff requires protocol 3; an older controlling client must disconnect first.
+`dieter screen sessions` reports connected clients and allocated capture resources.

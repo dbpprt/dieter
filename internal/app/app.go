@@ -160,6 +160,52 @@ func (s *Service) ReconcileOrphanedTurns() ([]string, error) {
 	return uniqueStrings(recovered), errors.Join(recoveryErrors...)
 }
 
+// CleanupInactiveProviderBridges removes detached provider bridges left by a
+// previous worker failure. It runs once during daemon startup, after resumable
+// turns have been reacquired into s.active, so clean restart continuations are
+// preserved while idle, failed, interrupted, and archived conversations cannot
+// retain an unowned SDK thread writer.
+func (s *Service) CleanupInactiveProviderBridges() ([]string, error) {
+	cleaner, ok := s.Runner.(harness.Cleaner)
+	if !ok {
+		return nil, nil
+	}
+	projects, err := s.Store.ListProjects()
+	if err != nil {
+		return nil, err
+	}
+	cleaned := make([]string, 0)
+	var cleanupErrors []error
+	for _, project := range projects {
+		cards, listErr := s.Store.ListCards(store.CardFilter{Project: project.ID, IncludeArchived: true})
+		if listErr != nil {
+			cleanupErrors = append(cleanupErrors, fmt.Errorf("list provider bridges for project %s: %w", project.ID, listErr))
+			continue
+		}
+		for _, card := range cards {
+			s.mu.Lock()
+			active := s.active[card.ID] != nil
+			s.mu.Unlock()
+			if active {
+				continue
+			}
+			stateDir := filepath.Join(s.Store.RuntimeDir(), "sessions", project.ID, ".agent-runs", card.ID, "bridge")
+			if _, statErr := os.Stat(filepath.Join(stateDir, "bridge-meta.json")); errors.Is(statErr, os.ErrNotExist) {
+				continue
+			} else if statErr != nil {
+				cleanupErrors = append(cleanupErrors, fmt.Errorf("inspect provider bridge %s: %w", card.ID, statErr))
+				continue
+			}
+			if cleanupErr := cleaner.Cleanup(card.ID, filepath.Join(s.Store.RuntimeDir(), "sessions", project.ID)); cleanupErr != nil {
+				cleanupErrors = append(cleanupErrors, fmt.Errorf("clean inactive provider bridge %s: %w", card.ID, cleanupErr))
+				continue
+			}
+			cleaned = append(cleaned, card.ID)
+		}
+	}
+	return cleaned, errors.Join(cleanupErrors...)
+}
+
 func uniqueStrings(values []string) []string {
 	seen := make(map[string]struct{}, len(values))
 	unique := make([]string, 0, len(values))
@@ -376,6 +422,11 @@ func (s *Service) SuspendActiveTurns(ctx context.Context) error {
 					results <- suspendResult{turn: turn}
 					return
 				}
+				s.mu.Lock()
+				if current := s.active[turn.cardID]; current == turn {
+					current.suspend = false
+				}
+				s.mu.Unlock()
 				turn.cancel()
 				results <- suspendResult{turn: turn, err: detailErr}
 				return
@@ -402,6 +453,14 @@ func (s *Service) SuspendActiveTurns(ctx context.Context) error {
 				suspensionErrors = append(suspensionErrors, err)
 			} else if !hasTurnContinuation(conversation.Session) {
 				suspensionErrors = append(suspensionErrors, fmt.Errorf("suspend %s: %w", result.turn.cardID, errNoTurnContinuation))
+				if cleaner, ok := s.Runner.(harness.Cleaner); ok {
+					detail, detailErr := s.Store.CardDetail(result.turn.cardID)
+					if detailErr != nil {
+						suspensionErrors = append(suspensionErrors, detailErr)
+					} else if cleanupErr := cleaner.Cleanup(result.turn.cardID, filepath.Join(s.Store.RuntimeDir(), "sessions", detail.Project.ID)); cleanupErr != nil {
+						suspensionErrors = append(suspensionErrors, fmt.Errorf("clean failed suspension %s: %w", result.turn.cardID, cleanupErr))
+					}
+				}
 			}
 		case <-ctx.Done():
 			return errors.Join(append(suspensionErrors, ctx.Err())...)
@@ -1130,6 +1189,18 @@ func (s *Service) runTurn(ctx context.Context, detail model.CardDetail, turnID s
 	if err == nil && reportedFailure != nil {
 		err = reportedFailure
 	}
+	suspending := s.turnIsSuspending(detail.Card.ID, turnID)
+	if !suspending {
+		if cleaner, ok := s.Runner.(harness.Cleaner); ok {
+			if cleanupErr := cleaner.Cleanup(detail.Card.ID, request.RuntimeRoot); cleanupErr != nil {
+				if err == nil {
+					err = fmt.Errorf("clean provider bridge: %w", cleanupErr)
+				} else {
+					err = errors.Join(err, fmt.Errorf("clean provider bridge: %w", cleanupErr))
+				}
+			}
+		}
+	}
 	if recoveryErr := s.turnRecoveryFailure(detail.Card.ID, turnID); recoveryErr != nil {
 		chunk, _ := json.Marshal(map[string]any{"type": "error", "errorText": recoveryErr.Error()})
 		if _, _, appendErr := s.Store.AppendUIChunk(detail.Card.ID, turnID, chunk); appendErr != nil {
@@ -1144,7 +1215,7 @@ func (s *Service) runTurn(ctx context.Context, detail model.CardDetail, turnID s
 		}
 		return
 	}
-	if s.turnIsSuspending(detail.Card.ID, turnID) {
+	if suspending {
 		conversation, conversationErr := s.Store.Conversation(detail.Card.ID)
 		if conversationErr == nil && hasTurnContinuation(conversation.Session) {
 			conversation, _ = s.Store.SetConversationStatus(detail.Card.ID, turnID, "running")

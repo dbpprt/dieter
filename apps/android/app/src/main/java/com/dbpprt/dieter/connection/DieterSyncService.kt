@@ -45,9 +45,16 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 private data class NotificationInputs(
     val state: DieterConnectionState,
@@ -63,7 +70,7 @@ class DieterSyncService : Service() {
     private lateinit var notifications: NotificationManagerCompat
     private val transitions = NotificationTransitionTracker()
     private var collectionJob: Job? = null
-    private var wakeLockJob: Job? = null
+    private var syncPolicyJob: Job? = null
     private var wakeLock: PowerManager.WakeLock? = null
     private var postedRunningChatIds: Set<String> = emptySet()
     private var postedTerminalChatIds: Set<String> = emptySet()
@@ -71,7 +78,6 @@ class DieterSyncService : Service() {
     private var summarizedResultNotificationIds: Set<Int> = emptySet()
     private var resultsSummaryReconciled = false
     private var currentPalette = DieterPalette.DEFAULT
-    private var lastRecoveryPhase: ConnectionPhase? = null
     private var lastConnectionFingerprint: Int? = null
     private val runningChatFingerprints = mutableMapOf<String, Int>()
     private var cachedConnectionBadge: Pair<Pair<Boolean, String>, android.graphics.drawable.Icon>? = null
@@ -90,6 +96,23 @@ class DieterSyncService : Service() {
         // fully rendered version is produced on the notification dispatcher below.
         startInForeground(bootstrapConnectionNotification())
         manager.onServiceStarted()
+        syncPolicyJob = serviceScope.launch {
+            manager.state
+                .map { it.desiredConnected to it.backgroundSyncMode }
+                .distinctUntilChanged()
+                .collectLatest { (desiredConnected, mode) ->
+                    if (!desiredConnected || !mode.usesBackgroundService) {
+                        manager.setPeriodicSyncWindowActive(false)
+                        releaseWakeLock()
+                        return@collectLatest
+                    }
+                    when (mode) {
+                        BackgroundSyncMode.LIVE -> runLivePolicy()
+                        BackgroundSyncMode.PERIODIC -> runPeriodicPolicy()
+                        BackgroundSyncMode.APP_ONLY -> Unit
+                    }
+                }
+        }
         collectionJob = notificationScope.launch {
             manager.state
                 .combine(appPreferences.notificationSettings) { state, settings ->
@@ -117,14 +140,15 @@ class DieterSyncService : Service() {
         when (intent?.action) {
             ACTION_DISCONNECT -> {
                 manager.disconnect(stopService = false)
-                wakeLockJob?.cancel()
+                syncPolicyJob?.cancel()
                 releaseWakeLock()
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
                 return START_NOT_STICKY
             }
             ACTION_STOP_BACKGROUND -> {
-                wakeLockJob?.cancel()
+                syncPolicyJob?.cancel()
+                manager.setPeriodicSyncWindowActive(false)
                 releaseWakeLock()
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
@@ -132,12 +156,17 @@ class DieterSyncService : Service() {
             }
             else -> manager.onServiceStarted()
         }
-        return if (manager.state.value.desiredConnected && manager.state.value.backgroundSyncEnabled) START_STICKY else START_NOT_STICKY
+        return if (manager.state.value.desiredConnected && manager.state.value.backgroundSyncMode.usesBackgroundService) {
+            START_STICKY
+        } else {
+            START_NOT_STICKY
+        }
     }
 
     override fun onDestroy() {
         collectionJob?.cancel()
-        wakeLockJob?.cancel()
+        syncPolicyJob?.cancel()
+        manager.setPeriodicSyncWindowActive(false)
         releaseWakeLock()
         serviceScope.cancel()
         notificationScope.cancel()
@@ -165,31 +194,66 @@ class DieterSyncService : Service() {
         lock.acquire(WAKE_LOCK_TIMEOUT_MS)
     }
 
-    private fun updateRecoveryWakeLock(phase: ConnectionPhase) {
-        serviceScope.launch {
-            val recovering = phase in setOf(
-                ConnectionPhase.CONNECTING,
-                ConnectionPhase.SYNCING,
-                ConnectionPhase.RECONNECTING,
-            )
-            if (!recovering) {
-                wakeLockJob?.cancel()
-                wakeLockJob = null
-                releaseWakeLock()
-                return@launch
-            }
-            if (wakeLockJob?.isActive == true) return@launch
-            acquireWakeLock()
-            wakeLockJob = launch {
-                while (true) {
-                    kotlinx.coroutines.delay(WAKE_LOCK_RENEW_MS)
-                    val current = manager.state.value
-                    if (!current.desiredConnected || !current.backgroundSyncEnabled ||
-                        current.phase !in setOf(ConnectionPhase.CONNECTING, ConnectionPhase.SYNCING, ConnectionPhase.RECONNECTING)
-                    ) return@launch
-                    acquireWakeLock()
+    private suspend fun runLivePolicy() {
+        manager.setPeriodicSyncWindowActive(false)
+        whileWakeLockHeld {
+            kotlinx.coroutines.awaitCancellation()
+        }
+    }
+
+    private suspend fun runPeriodicPolicy() {
+        while (true) {
+            val cycleStartedAt = System.currentTimeMillis()
+            val previousFrameAt = manager.state.value.lastConnectedAtMs ?: 0L
+            whileWakeLockHeld {
+                manager.setPeriodicSyncWindowActive(true)
+                try {
+                    val connected = withTimeoutOrNull(BACKGROUND_SYNC_WINDOW_TIMEOUT_MS) {
+                        manager.state.first { state ->
+                            state.backgroundSyncMode != BackgroundSyncMode.PERIODIC ||
+                                !state.desiredConnected ||
+                                state.phase == ConnectionPhase.CONNECTED &&
+                                (state.lastConnectedAtMs ?: 0L) > previousFrameAt
+                        }
+                    }
+                    val state = manager.state.value
+                    if (state.backgroundSyncMode != BackgroundSyncMode.PERIODIC || !state.desiredConnected) {
+                        return@whileWakeLockHeld
+                    }
+                    android.util.Log.i(
+                        DieterConnectionManager.SYNC_LOG_TAG,
+                        "periodicCycleMs=${System.currentTimeMillis() - cycleStartedAt} connected=${connected != null}",
+                    )
+                    if (connected != null && hasActiveBackgroundWork(state)) {
+                        // Running agents and queued delivery temporarily receive
+                        // live behaviour; return to sleeping as soon as idle.
+                        manager.state.first { latest ->
+                            latest.backgroundSyncMode != BackgroundSyncMode.PERIODIC ||
+                                !latest.desiredConnected ||
+                                !hasActiveBackgroundWork(latest)
+                        }
+                    }
+                } finally {
+                    manager.setPeriodicSyncWindowActive(false)
                 }
             }
+            delay(BACKGROUND_POLL_INTERVAL_MS)
+        }
+    }
+
+    private suspend fun whileWakeLockHeld(block: suspend () -> Unit) = coroutineScope {
+        acquireWakeLock()
+        val renewal = launch {
+            while (true) {
+                delay(WAKE_LOCK_RENEW_MS)
+                acquireWakeLock()
+            }
+        }
+        try {
+            block()
+        } finally {
+            renewal.cancel()
+            releaseWakeLock()
         }
     }
 
@@ -202,18 +266,15 @@ class DieterSyncService : Service() {
         settings: DieterNotificationSettings,
         notificationBoardIds: Set<String>,
     ) {
-        if (!state.desiredConnected || !state.backgroundSyncEnabled) {
+        if (!state.desiredConnected || !state.backgroundSyncMode.usesBackgroundService) {
             serviceScope.launch {
-                wakeLockJob?.cancel()
+                syncPolicyJob?.cancel()
+                manager.setPeriodicSyncWindowActive(false)
                 releaseWakeLock()
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
             }
             return
-        }
-        if (state.phase != lastRecoveryPhase) {
-            lastRecoveryPhase = state.phase
-            updateRecoveryWakeLock(state.phase)
         }
         val fingerprint = connectionNotificationFingerprint(state, settings, currentPalette.slug)
         if (fingerprint != lastConnectionFingerprint) {
@@ -393,6 +454,9 @@ class DieterSyncService : Service() {
         settings: DieterNotificationSettings,
     ): Notification {
         val connected = state.phase == ConnectionPhase.CONNECTED
+        val periodicSleeping = state.backgroundSyncMode == BackgroundSyncMode.PERIODIC &&
+            !state.periodicSyncWindowActive && state.phase == ConnectionPhase.STOPPED
+        val available = connected || periodicSleeping
         val endpoint = state.endpoint
         val activityPreview = modelActivityPreview(
             activeCardsById = (state.cards + state.chats)
@@ -415,11 +479,17 @@ class DieterSyncService : Service() {
             ConnectionPhase.AUTH_REQUIRED -> "Sign in to Dieter"
             ConnectionPhase.INCOMPATIBLE -> "Incompatible Dieter server"
             ConnectionPhase.UNAVAILABLE -> "Dieter is unavailable"
-            else -> "Connecting to Dieter"
+            else -> if (periodicSleeping) "Dieter Smart sync" else "Connecting to Dieter"
         }
         val endpointText = endpoint?.let { "${it.label} · ${it.address.substringBefore(':')}" }
             ?: "Trying configured addresses"
-        val summary = if (connected) "$endpointText · polling in background" else state.error ?: endpointText
+        val summary = when {
+            periodicSleeping -> "Sleeping between checks · opens with an immediate refresh"
+            connected && state.backgroundSyncMode == BackgroundSyncMode.LIVE -> "$endpointText · live in background"
+            connected && hasActiveBackgroundWork(state) -> "$endpointText · live while work is active"
+            connected -> "$endpointText · periodic background check"
+            else -> state.error ?: endpointText
+        }
         val builder = Notification.Builder(this, CONNECTION_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(title)
@@ -431,15 +501,15 @@ class DieterSyncService : Service() {
                     else -> null
                 },
             )
-            .setLargeIcon(connectionBadge(connected))
+            .setLargeIcon(connectionBadge(available))
             .setColor(notificationAccent)
             .setCategory(Notification.CATEGORY_SERVICE)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setShowWhen(false)
-            .setContentIntent(openIntent(showConnection = !connected))
+            .setContentIntent(openIntent(showConnection = !available))
             .addAction(Notification.Action.Builder(null, "Disconnect", serviceIntent(ACTION_DISCONNECT, 11)).build())
-            .addAction(Notification.Action.Builder(null, "Open", openIntent(showConnection = !connected)).build())
+            .addAction(Notification.Action.Builder(null, "Open", openIntent(showConnection = !available)).build())
         if (Build.VERSION.SDK_INT >= 36 && connected) {
             // Surface live agent work as an Android 16 promoted Live Update chip.
             if (Build.VERSION.SDK_INT_FULL >= Build.VERSION_CODES_FULL.BAKLAVA_1) {
@@ -799,6 +869,8 @@ class DieterSyncService : Service() {
         private const val CONNECTION_CHANNEL_ID = "dieter_connection"
         private const val WAKE_LOCK_TIMEOUT_MS = 15 * 60 * 1_000L
         private const val WAKE_LOCK_RENEW_MS = 10 * 60 * 1_000L
+        internal const val BACKGROUND_POLL_INTERVAL_MS = 60_000L
+        internal const val BACKGROUND_SYNC_WINDOW_TIMEOUT_MS = 30_000L
         private const val RESULTS_GROUP = "dieter_agent_results"
         private const val RESULTS_SUMMARY_NOTIFICATION_ID = 1002
         const val RUNNING_CHAT_CHANNEL_ID = "dieter_agent_running"

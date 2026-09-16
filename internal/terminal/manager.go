@@ -65,14 +65,31 @@ type backend interface {
 	Shutdown(context.Context)
 }
 
+type durableBackend interface {
+	Durable() bool
+}
+
 // Manager owns terminal processes independently from RPC and client lifetimes.
 // Canceling WatchTerminal only removes that observer; a shell exits only when
-// it exits itself, Close is called, or the daemon shuts down.
+// it exits itself or Close is called. Persistent managers detach from their
+// shells during daemon shutdown and reattach when the daemon starts again.
 type Manager struct {
 	backend backend
 }
 
 func New() *Manager { return &Manager{backend: newBackend()} }
+
+// NewPersistent uses a durable host terminal backend when one is available and
+// falls back to the in-process PTY backend otherwise. All metadata remains
+// inside root.
+func NewPersistent(root string) *Manager {
+	return &Manager{backend: newPersistentBackend(root)}
+}
+
+func (m *Manager) Durable() bool {
+	value, ok := m.backend.(durableBackend)
+	return ok && value.Durable()
+}
 
 func (m *Manager) List(projectID string) []Session { return m.backend.List(projectID) }
 func (m *Manager) ListScoped(projectID, cardID string) []Session {

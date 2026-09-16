@@ -23,6 +23,7 @@ type fakeRunner struct {
 	mu       sync.Mutex
 	requests []harness.Request
 	err      error
+	release  chan struct{}
 }
 
 type streamErrorRunner struct{}
@@ -144,10 +145,55 @@ type interruptQueueRunner struct {
 type restartRunner struct {
 	mu          sync.Mutex
 	requests    []harness.Request
+	cleanups    int
 	started     chan struct{}
 	resumed     chan error
 	suspend     chan struct{}
 	suspendOnce sync.Once
+}
+
+type failedSuspendCleanerRunner struct {
+	started chan struct{}
+	cleaned chan struct{}
+	once    sync.Once
+}
+
+type recordingCleanerRunner struct {
+	fakeRunner
+	mu       sync.Mutex
+	cleaned  []string
+	metadata map[string]string
+}
+
+func (runner *recordingCleanerRunner) Cleanup(sessionID, runtimeRoot string) error {
+	runner.mu.Lock()
+	defer runner.mu.Unlock()
+	runner.cleaned = append(runner.cleaned, sessionID)
+	if path := runner.metadata[sessionID]; path != "" {
+		_ = os.Remove(path)
+	}
+	return nil
+}
+
+func (runner *recordingCleanerRunner) cleanedCards() []string {
+	runner.mu.Lock()
+	defer runner.mu.Unlock()
+	return append([]string(nil), runner.cleaned...)
+}
+
+func (runner *failedSuspendCleanerRunner) Run(ctx context.Context, _ harness.Request, _ func(harness.Output) error) error {
+	close(runner.started)
+	<-ctx.Done()
+	return ctx.Err()
+}
+
+func (*failedSuspendCleanerRunner) Suspend(_, _ string) error {
+	return errors.New("provider did not produce a continuation")
+}
+
+func (runner *failedSuspendCleanerRunner) Cleanup(_, _ string) error {
+	runner.once.Do(func() { close(runner.cleaned) })
+	return nil
 }
 
 func (runner *restartRunner) Run(ctx context.Context, request harness.Request, emit func(harness.Output) error) (runErr error) {
@@ -195,6 +241,19 @@ func (runner *restartRunner) Run(ctx context.Context, request harness.Request, e
 func (runner *restartRunner) Suspend(_, _ string) error {
 	runner.suspendOnce.Do(func() { close(runner.suspend) })
 	return nil
+}
+
+func (runner *restartRunner) Cleanup(_, _ string) error {
+	runner.mu.Lock()
+	runner.cleanups++
+	runner.mu.Unlock()
+	return nil
+}
+
+func (runner *restartRunner) cleanupCount() int {
+	runner.mu.Lock()
+	defer runner.mu.Unlock()
+	return runner.cleanups
 }
 
 func (runner *restartRunner) snapshotRequests() []harness.Request {
@@ -293,10 +352,17 @@ func (runner *parallelRunner) Run(ctx context.Context, request harness.Request, 
 	return nil
 }
 
-func (f *fakeRunner) Run(_ context.Context, request harness.Request, emit func(harness.Output) error) error {
+func (f *fakeRunner) Run(ctx context.Context, request harness.Request, emit func(harness.Output) error) error {
 	f.mu.Lock()
 	f.requests = append(f.requests, request)
 	f.mu.Unlock()
+	if f.release != nil {
+		select {
+		case <-f.release:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
 	if f.err != nil {
 		return f.err
 	}
@@ -366,7 +432,7 @@ func TestHarnessTurnRunsInsideConversationWorktree(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(repository, "README.md"), []byte("base\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	for _, args := range [][]string{{"add", "README.md"}, {"commit", "-m", "base"}} {
+	for _, args := range [][]string{{"add", "README.md"}, {"-c", "commit.gpgsign=false", "commit", "-m", "base"}} {
 		command = exec.Command("git", args...)
 		command.Dir = repository
 		if output, err := command.CombinedOutput(); err != nil {
@@ -551,6 +617,77 @@ func hasActiveTurn(service *Service, projectID string) bool {
 	return false
 }
 
+func gateFakeTurn(t *testing.T, service *Service, fake *fakeRunner) {
+	t.Helper()
+	fake.release = make(chan struct{})
+	t.Cleanup(func() {
+		select {
+		case <-fake.release:
+			return // completedFakeTurn registered cleanup for the exact worker.
+		default:
+		}
+		// Creation can fail after admitting a worker. While the gate is closed,
+		// capture and cancel it even if the completion helper was never reached.
+		service.mu.Lock()
+		turns := make([]*activeTurn, 0, len(service.active))
+		for _, turn := range service.active {
+			turns = append(turns, turn)
+		}
+		service.mu.Unlock()
+		for _, turn := range turns {
+			turn.cancel()
+		}
+		for _, turn := range turns {
+			select {
+			case <-turn.done:
+			case <-time.After(10 * time.Second):
+				t.Errorf("gated turn %s did not stop before temporary-store cleanup", turn.cardID)
+			}
+		}
+	})
+}
+
+func completedFakeTurn(t *testing.T, service *Service, fake *fakeRunner, cardID string) model.Card {
+	t.Helper()
+	// The fake emits durable chunks and session state. Join the worker rather
+	// than treating its fsynced teardown as a two-second polling benchmark.
+	// Hold it at the runner boundary until its exact completion signal and
+	// cleanup are captured; active-map removal alone precedes final teardown.
+	const timeout = 10 * time.Second
+	service.mu.Lock()
+	turn := service.active[cardID]
+	service.mu.Unlock()
+	if turn == nil || fake.release == nil {
+		t.Fatalf("turn %s must be gated before waiting for completion", cardID)
+	}
+	t.Cleanup(func() {
+		turn.cancel()
+		select {
+		case <-turn.done:
+		case <-time.After(timeout):
+			t.Errorf("turn %s did not stop before temporary-store cleanup", cardID)
+		}
+	})
+	close(fake.release)
+	select {
+	case <-turn.done:
+	case <-time.After(timeout):
+		t.Fatalf("turn %s did not finish; runner requests=%d", cardID, fake.count())
+	}
+	stored, err := service.Store.ResolveCard(cardID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	conversation, err := service.Store.Conversation(cardID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fake.count() != 1 || stored.Runtime != "idle" || conversation.Status != "idle" || len(conversation.Session) == 0 || hasActiveTurn(service, stored.ProjectID) {
+		t.Fatalf("turn %s did not complete successfully: requests=%d card runtime=%q conversation status=%q session=%t", cardID, fake.count(), stored.Runtime, conversation.Status, len(conversation.Session) > 0)
+	}
+	return stored
+}
+
 func TestRegisterProjectCreatesNewGitWorkingTree(t *testing.T) {
 	target := filepath.Join(t.TempDir(), "new-project")
 	service := New(store.New(t.TempDir()), &fakeRunner{})
@@ -592,6 +729,7 @@ func TestCreateRunningCardStartsHarnessWithBoardInstructions(t *testing.T) {
 
 func TestNewConversationUsesConfiguredModelEffortByDefault(t *testing.T) {
 	service, fake, project, board := appSetup(t)
+	gateFakeTurn(t, service, fake)
 	card, err := service.CreateCard(context.Background(), CardInput{
 		Project: project.ID, Board: board.ID, Lane: model.LaneRunning,
 		Title: "Think deeply", Prompt: "Solve it", Provider: "codex", Model: "gpt-5.6-sol",
@@ -599,11 +737,7 @@ func TestNewConversationUsesConfiguredModelEffortByDefault(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	waitFor(t, func() bool { return fake.count() == 1 && !hasActiveTurn(service, project.ID) })
-	stored, err := service.Store.ResolveCard(card.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
+	stored := completedFakeTurn(t, service, fake, card.ID)
 	if stored.Effort != "xhigh" || fake.request(0).Effort != "xhigh" {
 		t.Fatalf("stored effort=%q request effort=%q", stored.Effort, fake.request(0).Effort)
 	}
@@ -611,6 +745,7 @@ func TestNewConversationUsesConfiguredModelEffortByDefault(t *testing.T) {
 
 func TestNewConversationCanExplicitlyUseProviderDefaultEffort(t *testing.T) {
 	service, fake, project, board := appSetup(t)
+	gateFakeTurn(t, service, fake)
 	card, err := service.CreateCard(context.Background(), CardInput{
 		Project: project.ID, Board: board.ID, Lane: model.LaneRunning,
 		Title: "Use provider default", Prompt: "Solve it", Provider: "codex", Model: "gpt-5.6-sol", Effort: "default",
@@ -618,11 +753,7 @@ func TestNewConversationCanExplicitlyUseProviderDefaultEffort(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	waitFor(t, func() bool { return fake.count() == 1 && !hasActiveTurn(service, project.ID) })
-	stored, err := service.Store.ResolveCard(card.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
+	stored := completedFakeTurn(t, service, fake, card.ID)
 	if stored.Effort != "" || fake.request(0).Effort != "" {
 		t.Fatalf("stored effort=%q request effort=%q", stored.Effort, fake.request(0).Effort)
 	}
@@ -1664,6 +1795,9 @@ func TestGracefulRestartContinuesActiveTurnForEveryProvider(t *testing.T) {
 			if err := service.SuspendActiveTurns(shutdownCtx); err != nil {
 				t.Fatal(err)
 			}
+			if runner.cleanupCount() != 0 {
+				t.Fatal("clean suspension terminated its resumable provider bridge")
+			}
 			parked, err := service.Store.Conversation(card.ID)
 			if err != nil || parked.Status != "running" || parked.ActiveTurn == nil || !hasTurnContinuation(parked.Session) {
 				t.Fatalf("parked conversation=%#v err=%v", parked, err)
@@ -1704,6 +1838,9 @@ func TestGracefulRestartContinuesActiveTurnForEveryProvider(t *testing.T) {
 					t.Fatal("continued turn did not complete its durable lifecycle")
 				}
 			}
+			if runner.cleanupCount() != 1 {
+				t.Fatalf("completed continuation cleanup count=%d, want 1", runner.cleanupCount())
+			}
 			conversation, err := service.Store.Conversation(card.ID)
 			if err != nil || conversation.Status != "idle" || conversation.ActiveTurn != nil || len(conversation.Messages) != 2 || conversation.Messages[1].ID != responseMessageID || conversation.Messages[1].Parts[0].Text != "before restart after restart" {
 				t.Fatalf("continued conversation=%#v err=%v", conversation, err)
@@ -1726,6 +1863,95 @@ func TestGracefulRestartContinuesActiveTurnForEveryProvider(t *testing.T) {
 				t.Fatalf("instruction snapshot changed across restart: first=%q resumed=%q", requests[0].Instructions, requests[1].Instructions)
 			}
 		})
+	}
+}
+
+func TestFailedRestartSuspensionCleansProviderBridge(t *testing.T) {
+	service, _, project, board := appSetup(t)
+	runner := &failedSuspendCleanerRunner{started: make(chan struct{}), cleaned: make(chan struct{})}
+	service.Runner = runner
+	card, err := service.CreateCard(context.Background(), CardInput{
+		Project: project.ID, Board: board.ID, Lane: model.LaneRunning,
+		Title: "Restart", Prompt: "Keep working", Provider: "codex", DeferStart: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	updates, err := service.StartCard(card.ID, "", card.Provider, card.Model, card.Effort)
+	if err != nil {
+		t.Fatal(err)
+	}
+	go drainTurnUpdates(updates)
+	select {
+	case <-runner.started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("turn did not start")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := service.SuspendActiveTurns(ctx); err == nil || !strings.Contains(err.Error(), "provider did not produce a continuation") {
+		t.Fatalf("suspension error=%v", err)
+	}
+	select {
+	case <-runner.cleaned:
+	case <-time.After(2 * time.Second):
+		t.Fatal("failed suspension did not clean its provider bridge")
+	}
+	conversation, err := service.Store.Conversation(card.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if conversation.Status == "running" || conversation.ActiveTurn != nil {
+		t.Fatalf("failed suspension remained active: %#v", conversation)
+	}
+}
+
+func TestStartupCleansOnlyInactiveProviderBridges(t *testing.T) {
+	service, _, project, board := appSetup(t)
+	idle, err := service.CreateCard(context.Background(), CardInput{
+		Project: project.ID, Board: board.ID, Lane: model.LaneTodo,
+		Title: "Idle", Prompt: "Later", Provider: "codex", DeferStart: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	active, err := service.CreateCard(context.Background(), CardInput{
+		Project: project.ID, Board: board.ID, Lane: model.LaneTodo,
+		Title: "Active", Prompt: "Now", Provider: "codex", DeferStart: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtimeRoot := filepath.Join(service.Store.RuntimeDir(), "sessions", project.ID)
+	metadata := map[string]string{}
+	for _, cardID := range []string{idle.ID, active.ID} {
+		path := filepath.Join(runtimeRoot, ".agent-runs", cardID, "bridge", "bridge-meta.json")
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(`{"pid":999999}`), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		metadata[cardID] = path
+	}
+	runner := &recordingCleanerRunner{metadata: metadata}
+	service.Runner = runner
+	service.mu.Lock()
+	service.active[active.ID] = &activeTurn{cardID: active.ID}
+	service.mu.Unlock()
+
+	cleaned, err := service.CleanupInactiveProviderBridges()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cleaned) != 1 || cleaned[0] != idle.ID {
+		t.Fatalf("cleaned=%v, want only %s", cleaned, idle.ID)
+	}
+	if got := runner.cleanedCards(); len(got) != 1 || got[0] != idle.ID {
+		t.Fatalf("cleanup calls=%v", got)
+	}
+	if _, err := os.Stat(metadata[active.ID]); err != nil {
+		t.Fatalf("active bridge metadata was removed: %v", err)
 	}
 }
 

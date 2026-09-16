@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asAndroidBitmap
@@ -29,6 +30,34 @@ import org.junit.Test
 class WorkspaceFreshnessIndicatorTest {
     @get:Rule
     val composeRule = createComposeRule()
+
+    @Test
+    fun routineSyncKeepsCachedWorkspaceUncovered() {
+        val treatment = workspaceSurfaceTreatment(
+            showsSynchronizedWorkspace = true,
+            hasCachedWorkspace = true,
+            phase = ConnectionPhase.SYNCING,
+        )
+        composeRule.setContent {
+            DieterTheme {
+                Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                    Column {
+                        if (treatment.showsNotice) {
+                            ConnectionStatusIndicator(
+                                phase = ConnectionPhase.SYNCING,
+                                lastConnectedAtMillis = System.currentTimeMillis(),
+                                showingCachedData = true,
+                            )
+                        }
+                        Text("Cached conversation")
+                    }
+                }
+            }
+        }
+
+        composeRule.onNodeWithTag("workspace-connection-status").assertDoesNotExist()
+        composeRule.onNodeWithText("Cached conversation").assertIsDisplayed()
+    }
 
     @Test
     fun reconnectingCachedWorkspaceIsExplicitAndScreenshotable() {

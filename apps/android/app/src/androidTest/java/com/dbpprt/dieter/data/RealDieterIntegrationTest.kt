@@ -9,6 +9,7 @@ import com.dbpprt.dieter.v1.MessagePart
 import com.google.protobuf.ByteString
 import com.dbpprt.dieter.DieterApplication
 import com.dbpprt.dieter.connection.DieterSyncService
+import com.dbpprt.dieter.connection.BackgroundSyncMode
 import com.dbpprt.dieter.connection.ConnectionPhase
 import com.dbpprt.dieter.connection.DieterConnectionManager
 import com.dbpprt.dieter.settings.AppPreferences
@@ -170,11 +171,12 @@ class RealDieterIntegrationTest {
     }
 
     @Test
-    fun foregroundConnectionKeepsRealWorkspaceSynchronizedInBackground() = runBlocking {
+    fun liveModeKeepsRealWorkspaceSynchronizedInBackground() = runBlocking {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext
         val application = context.applicationContext as DieterApplication
         val manager = application.container.connectionManager
+        val originalMode = manager.state.value.backgroundSyncMode
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 instrumentation.uiAutomation.grantRuntimePermission(
@@ -182,7 +184,7 @@ class RealDieterIntegrationTest {
                     Manifest.permission.POST_NOTIFICATIONS,
                 )
             }
-            manager.setBackgroundSyncEnabled(true)
+            manager.setBackgroundSyncMode(BackgroundSyncMode.LIVE)
             manager.connect()
             DieterSyncService.start(context)
             manager.onAppBackgrounded()
@@ -197,6 +199,7 @@ class RealDieterIntegrationTest {
                 }.first()
             }
             assertTrue(connected.endpointConnections.any { it.daemonId != null && it.online })
+            assertEquals(BackgroundSyncMode.LIVE, connected.backgroundSyncMode)
             assertTrue(connected.projects.all { project ->
                 connected.projectHosts[project.id]?.daemonId?.isNotBlank() == true
             })
@@ -217,7 +220,7 @@ class RealDieterIntegrationTest {
             assertEquals(NotificationManager.IMPORTANCE_DEFAULT, agentResultsChannel.importance)
         } finally {
             manager.connect()
-            manager.setBackgroundSyncEnabled(true)
+            manager.setBackgroundSyncMode(originalMode)
         }
     }
 

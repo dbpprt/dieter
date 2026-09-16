@@ -9,6 +9,7 @@ import (
 	"encoding/base64"
 	"encoding/pem"
 	"errors"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -296,11 +297,18 @@ func TestManagerReattachesSameOperatorWithoutReusingGatewayAdmission(t *testing.
 func TestManagerCapabilityRequiresRealCaptureProbe(t *testing.T) {
 	t.Setenv("DISPLAY", ":99")
 	manager, _, _ := testManagerAndRequest(t, "github:7")
-	manager.options.Source = SourceOptions{Kind: "screen", HelperPath: "/usr/bin/true", FFmpegPath: "/usr/bin/true"}
+	manager.options.CapabilityProbe = nil
+	manager.options.Source = SourceOptions{Kind: "screen", HelperPath: "/usr/bin/true"}
 	manager.options.CaptureProbe = func(context.Context, SourceOptions) error {
 		return errors.New("macOS Screen Recording permission is not granted to Dieter's capture helper")
 	}
 	capabilities := manager.Capabilities(true, false)
+	if runtime.GOOS != "darwin" {
+		if capabilities.GetReady() || capabilities.GetCapturePermission() != "unknown" || !strings.Contains(capabilities.GetUnavailableReason(), "macOS only") {
+			t.Fatalf("unsupported native backend: %#v", capabilities)
+		}
+		return
+	}
 	if capabilities.GetReady() || capabilities.GetCapturePermission() != "denied" {
 		t.Fatalf("capabilities=%#v", capabilities)
 	}
@@ -332,7 +340,7 @@ func TestH264CodecCapabilityUsesWebRTCRealtimeProfile(t *testing.T) {
 	if codec.MimeType != webrtc.MimeTypeH264 || codec.ClockRate != 90_000 {
 		t.Fatalf("codec=%#v", codec)
 	}
-	if !strings.Contains(codec.SDPFmtpLine, "packetization-mode=1") || !strings.Contains(codec.SDPFmtpLine, "profile-level-id=42e01f") {
+	if !strings.Contains(codec.SDPFmtpLine, "packetization-mode=1") || !strings.Contains(codec.SDPFmtpLine, "profile-level-id=42e034") {
 		t.Fatalf("H264 fmtp=%q", codec.SDPFmtpLine)
 	}
 }
@@ -353,7 +361,7 @@ func TestManagerNegotiatesNativeH264Source(t *testing.T) {
 	}
 	defer subscription.Close()
 	manager.mu.Lock()
-	codec := manager.session.codec
+	codec := manager.sessions[subscription.SessionID].codec
 	manager.mu.Unlock()
 	if codec != VideoCodecH264 {
 		t.Fatalf("session codec=%q, want %q", codec, VideoCodecH264)
@@ -384,7 +392,7 @@ func TestManagerStopsCaptureWhenSignalingObserverDisconnects(t *testing.T) {
 		t.Fatal(err)
 	}
 	manager.mu.Lock()
-	session := manager.session
+	session := manager.sessions[subscription.SessionID]
 	manager.mu.Unlock()
 	session.startOnce.Do(func() { go session.streamSource(request) })
 	select {
@@ -419,7 +427,7 @@ func TestManagerStopsCaptureWhenWebRTCPeerDoesNotReconnect(t *testing.T) {
 	}
 	defer subscription.Close()
 	manager.mu.Lock()
-	session := manager.session
+	session := manager.sessions[subscription.SessionID]
 	manager.mu.Unlock()
 	session.startOnce.Do(func() { go session.streamSource(request) })
 	select {
@@ -572,4 +580,23 @@ func testControlViewer(t *testing.T, request *dieterv1.StartRemoteDesktopRequest
 	}
 	request.Offer = &dieterv1.RemoteDesktopSessionDescription{Type: "offer", Sdp: client.LocalDescription().SDP}
 	return client, stateChannel
+}
+
+func TestInputHeartbeatDoesNotExpireWhilePeerIsNegotiating(t *testing.T) {
+	manager, request, _ := testManagerAndRequest(t, "github:7")
+	request.Control = true
+	viewer, _ := testControlViewer(t, request)
+	defer viewer.Close()
+	subscription, err := manager.Start(request, true, true, "github:7")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer subscription.Close()
+	defer manager.CloseActive("test complete")
+	// Withhold the answer/candidates from the viewer longer than the active
+	// input heartbeat deadline. Signaling/ICE has its own bounded lifecycle.
+	time.Sleep(3500 * time.Millisecond)
+	if _, err := manager.SessionState(subscription.SessionID); err != nil {
+		t.Fatalf("input watchdog expired before negotiation completed: %v", err)
+	}
 }

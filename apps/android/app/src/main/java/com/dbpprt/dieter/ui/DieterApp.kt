@@ -31,6 +31,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.outlined.DesktopWindows
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.outlined.CalendarMonth
@@ -56,7 +57,6 @@ import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -107,15 +107,16 @@ import com.dbpprt.dieter.ui.theme.DieterCoral
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.font.FontFamily
 
-private data class NavItem(
+internal data class NavItem(
     val destination: Destination,
     val label: String,
     val icon: ImageVector,
 )
 
-private val navigationItems = listOf(
+internal val navigationItems = listOf(
     NavItem(Destination.CHATS, "Chats", Icons.Outlined.ChatBubbleOutline),
     NavItem(Destination.BOARD, "Boards", Icons.Outlined.ViewKanban),
+    NavItem(Destination.SCREENS, "Screens", Icons.Outlined.DesktopWindows),
     NavItem(Destination.TERMINALS, "Terminal", Icons.Outlined.Terminal),
     NavItem(Destination.FILES, "Files", Icons.Outlined.FolderOpen),
     NavItem(Destination.SCHEDULES, "Schedules", Icons.Outlined.CalendarMonth),
@@ -125,14 +126,13 @@ private fun Destination.isOfflineSensitiveProjectSurface(): Boolean =
     this == Destination.FILES || this == Destination.SCHEDULES
 
 private fun Destination.usesSynchronizedWorkspace(): Boolean =
-    this != Destination.TERMINALS
+    this != Destination.TERMINALS && this != Destination.SCREENS
 
 private fun Destination.supportsOfflineOutbox(): Boolean =
     this == Destination.CHATS || this == Destination.BOARD
 
 internal enum class WorkspaceSurfaceTreatment {
     CURRENT,
-    REFRESHING,
     UNAVAILABLE;
 
     val showsNotice: Boolean get() = this != CURRENT
@@ -146,8 +146,14 @@ internal fun workspaceSurfaceTreatment(
 ): WorkspaceSurfaceTreatment {
     if (!showsSynchronizedWorkspace || !hasCachedWorkspace) return WorkspaceSurfaceTreatment.CURRENT
     return when (phase) {
-        ConnectionPhase.CONNECTED -> WorkspaceSurfaceTreatment.CURRENT
-        ConnectionPhase.CONNECTING, ConnectionPhase.SYNCING -> WorkspaceSurfaceTreatment.REFRESHING
+        // A route handoff can remain in CONNECTING/SYNCING until the next
+        // workspace heartbeat. Cached surfaces and conversation-level refresh
+        // state are already usable, so do not turn that routine handoff into a
+        // persistent global banner.
+        ConnectionPhase.CONNECTED,
+        ConnectionPhase.CONNECTING,
+        ConnectionPhase.SYNCING,
+        -> WorkspaceSurfaceTreatment.CURRENT
         ConnectionPhase.RECONNECTING,
         ConnectionPhase.AUTH_REQUIRED,
         ConnectionPhase.INCOMPATIBLE,
@@ -182,7 +188,11 @@ internal fun usesTabletLayout(availableWidthDp: Float): Boolean =
 @Composable
 fun DieterApp(container: DieterContainer) {
     val model: DieterViewModel = viewModel(
-        factory = DieterViewModel.Factory(container.connectionManager, container.appPreferences),
+        factory = DieterViewModel.Factory(
+            container.connectionManager,
+            container.appPreferences,
+            container.conversationDrafts,
+        ),
     )
     val state by model.state.collectAsStateWithLifecycle()
     val openRequest by container.openRequest.collectAsStateWithLifecycle()
@@ -208,7 +218,7 @@ fun DieterApp(container: DieterContainer) {
         if (request.cardId.isNotBlank()) model.openNotificationCard(request.cardId)
         container.consumeOpenRequest(request)
     }
-    LaunchedEffect(state.backgroundSyncEnabled, state.desiredConnected) {
+    LaunchedEffect(state.backgroundSyncMode, state.desiredConnected) {
         if (
             Build.VERSION.SDK_INT >= 33 &&
             state.backgroundSyncEnabled &&
@@ -291,6 +301,7 @@ fun DieterApp(container: DieterContainer) {
                                 Destination.BOARD -> model.openSurface(
                                     if (state.boardOverviewVisible) AppSurface.NEW_PROJECT else AppSurface.NEW_CARD,
                                 )
+                                Destination.SCREENS -> Unit
                                 Destination.TERMINALS -> model.showTerminalCreate()
                                 Destination.FILES -> fileCreateVisible = true
                                 Destination.SCHEDULES -> model.openSurface(AppSurface.SCHEDULE_EDITOR)
@@ -767,13 +778,7 @@ private fun DieterConnectionDialog(state: DieterUiState, model: DieterViewModel)
             if (!connectionError.isNullOrBlank() && !connected) {
                 Text(connectionError, color = MaterialTheme.colorScheme.error, fontSize = 11.sp)
             }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text("Stay connected in background", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-                    Text("Persistent notification · polls chats & subagents", color = DieterMuted, fontSize = 11.sp)
-                }
-                Switch(checked = state.backgroundSyncEnabled, onCheckedChange = model::setBackgroundSyncEnabled)
-            }
+            BackgroundSyncModeSelector(state.backgroundSyncMode, model::setBackgroundSyncMode)
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 if (state.desiredConnected) {
                     OutlinedButton(
@@ -863,6 +868,7 @@ private fun DestinationContent(
                 when (destination) {
                     Destination.CHATS -> ChatsScreen(state, model, expanded, destinationPadding)
                     Destination.BOARD -> BoardScreen(state, model, expanded, destinationPadding)
+                    Destination.SCREENS -> ScreensScreen(state, model, destinationPadding)
                     Destination.TERMINALS -> TerminalsScreen(state, model, expanded, destinationPadding)
                     Destination.FILES -> FilesScreen(state, model, expanded, destinationPadding)
                     Destination.SCHEDULES -> SchedulesScreen(state, model, destinationPadding)

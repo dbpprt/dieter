@@ -91,6 +91,26 @@ class AppPreferencesTest {
     }
 
     @Test
+    fun splitPaneWidthsPersistIndependentlyAcrossInstances() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val preferences = AppPreferences(context)
+        val originalChatsFraction = preferences.chatsPaneLeadingFraction.value
+        val originalBoardFraction = preferences.boardPaneLeadingFraction.value
+
+        try {
+            preferences.setChatsPaneLeadingFraction(0.31f)
+            preferences.setBoardPaneLeadingFraction(0.57f)
+
+            val restored = AppPreferences(context)
+            assertEquals(0.31f, restored.chatsPaneLeadingFraction.value, 0.0001f)
+            assertEquals(0.57f, restored.boardPaneLeadingFraction.value, 0.0001f)
+        } finally {
+            preferences.setChatsPaneLeadingFraction(originalChatsFraction)
+            preferences.setBoardPaneLeadingFraction(originalBoardFraction)
+        }
+    }
+
+    @Test
     fun boardNotificationPreferencePersistsPerBoard() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val enabledBoardId = "notification-test-${System.nanoTime()}"

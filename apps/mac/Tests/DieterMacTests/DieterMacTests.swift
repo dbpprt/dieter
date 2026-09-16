@@ -96,11 +96,11 @@ import UniformTypeIdentifiers
         fingerprint: "sha-256 AA:BB",
         expiresAt: "2026-08-25T08:00:00Z",
         offerHash: Data([0, 1, 2]), controlGranted: true, displayID: "primary",
-        inputProtocolVersion: 1, inputEpoch: Data(repeating: 7, count: 16)
+        inputProtocolVersion: 2, inputEpoch: Data(repeating: 7, count: 16)
     )
     #expect(
         String(data: message, encoding: .utf8)
-            == "dieter-remote-desktop-v2\nrd_one\nnonce\nsha-256 AA:BB\n2026-08-25T08:00:00Z\nAAEC\ntrue\nprimary\n1\nBwcHBwcHBwcHBwcHBwcHBw"
+            == "dieter-remote-desktop-v2\nrd_one\nnonce\nsha-256 AA:BB\n2026-08-25T08:00:00Z\nAAEC\ntrue\nprimary\n2\nBwcHBwcHBwcHBwcHBwcHBw"
     )
 }
 
@@ -369,7 +369,7 @@ private actor CardStartRPCStub: DieterCardStartRPC {
     binding.helperDtlsFingerprint = "sha-256 AA:BB"
     binding.expiresAt = "2099-08-25T08:00:00Z"
     binding.offerSha256 = Data(SHA256.hash(data: Data(offer.utf8)))
-    binding.inputProtocolVersion = 1
+    binding.inputProtocolVersion = 2
     binding.inputEpoch = Data(repeating: 1, count: 16)
     binding.daemonSignature = try #require(
         Data(base64Encoded: "ctCMwB2SL9Wk9JqpQzgtM+NQxXqUXGGKSSpQ1X2lNX3G3uS8UR7uKe5J8fjZheT1WxX3U5s37saWnSk7dqIADQ=="))
@@ -409,7 +409,7 @@ private actor CardStartRPCStub: DieterCardStartRPC {
     binding.helperDtlsFingerprint = "sha-256 AA:BB"
     binding.expiresAt = "2026-08-25T07:00:00Z"
     binding.offerSha256 = Data(SHA256.hash(data: Data(offer.utf8)))
-    binding.inputProtocolVersion = 1
+    binding.inputProtocolVersion = 2
     binding.inputEpoch = Data(repeating: 1, count: 16)
     do {
         try RemoteDesktopSessionTrust.verify(
@@ -1306,6 +1306,131 @@ private func historyTextMessage(_ id: String, role: String = "assistant") -> Die
     #expect(view.bounds.intersects(view.caretFrame))
 }
 
+@Test @MainActor func remoteTerminalViewSupportsNativeSelectionCopyPasteAndFocus() async throws {
+    let pasteboard = NSPasteboard.general
+    let savedPasteboard =
+        pasteboard.pasteboardItems?.map { source in
+            source.types.compactMap { type in
+                source.data(forType: type).map { (type.rawValue, $0) }
+            }
+        } ?? []
+    defer {
+        pasteboard.clearContents()
+        let restoredItems = savedPasteboard.map { contents in
+            let item = NSPasteboardItem()
+            for (type, data) in contents {
+                item.setData(data, forType: NSPasteboard.PasteboardType(type))
+            }
+            return item
+        }
+        if !restoredItems.isEmpty { pasteboard.writeObjects(restoredItems) }
+    }
+
+    let view = RemoteTerminalView(
+        frame: NSRect(x: 0, y: 0, width: 640, height: 320),
+        font: .monospacedSystemFont(ofSize: 13, weight: .regular)
+    )
+    let window = NSWindow(contentRect: view.frame, styleMask: [.titled], backing: .buffered, defer: false)
+    window.contentView = view
+    view.prepareForReplay(columns: 80, rows: 24)
+    view.feed(text: "selectable terminal text")
+    try await Task.sleep(for: .milliseconds(50))
+
+    _ = window.makeFirstResponder(nil)
+    let cell = view.caretFrame.size
+    let rowY = view.bounds.height - (cell.height / 2)
+    view.mouseDown(with: terminalMouseEvent(.leftMouseDown, at: NSPoint(x: cell.width / 2, y: rowY), in: view))
+    view.mouseDragged(
+        with: terminalMouseEvent(.leftMouseDragged, at: NSPoint(x: cell.width * 10.5, y: rowY), in: view))
+    view.mouseUp(with: terminalMouseEvent(.leftMouseUp, at: NSPoint(x: cell.width * 10.5, y: rowY), in: view))
+
+    #expect(window.firstResponder === view)
+    #expect(view.selectedRange().location != NSNotFound)
+    #expect(view.selectedRange().length > 0)
+    NSApp.sendEvent(terminalKeyEvent("c", modifiers: .command, in: window))
+    #expect(pasteboard.string(forType: .string)?.contains("selectable") == true)
+
+    var sent = Data()
+    let coordinator = RemoteTerminalSurface.Coordinator(
+        terminalID: "clipboard-shell", send: { sent.append($0) }, resize: { _, _ in })
+    view.terminalDelegate = coordinator
+    pasteboard.clearContents()
+    pasteboard.setString("pasted through terminal", forType: .string)
+    NSApp.sendEvent(terminalKeyEvent("v", modifiers: .command, in: window))
+    #expect(String(decoding: sent, as: UTF8.self) == "pasted through terminal")
+
+    let menu = view.menu(for: terminalMouseEvent(.rightMouseDown, at: .zero, in: view))
+    #expect(menu?.items.map(\.title).filter { !$0.isEmpty } == ["Copy", "Paste", "Select All"])
+}
+
+@Test @MainActor func remoteTerminalViewUsesShiftDragToSelectWhenApplicationTracksTheMouse() async throws {
+    let view = RemoteTerminalView(
+        frame: NSRect(x: 0, y: 0, width: 640, height: 320),
+        font: .monospacedSystemFont(ofSize: 13, weight: .regular)
+    )
+    let window = NSWindow(contentRect: view.frame, styleMask: [.titled], backing: .buffered, defer: false)
+    window.contentView = view
+    view.prepareForReplay(columns: 80, rows: 24)
+    view.feed(text: "mouse-aware output\u{001B}[?1000h")
+    try await Task.sleep(for: .milliseconds(50))
+
+    let cell = view.caretFrame.size
+    let rowY = view.bounds.height - (cell.height / 2)
+    let modifiers: NSEvent.ModifierFlags = .shift
+    view.mouseDown(
+        with: terminalMouseEvent(
+            .leftMouseDown, at: NSPoint(x: cell.width / 2, y: rowY), modifiers: modifiers, in: view))
+    view.mouseDragged(
+        with: terminalMouseEvent(
+            .leftMouseDragged, at: NSPoint(x: cell.width * 8.5, y: rowY), modifiers: modifiers, in: view))
+    view.mouseUp(
+        with: terminalMouseEvent(
+            .leftMouseUp, at: NSPoint(x: cell.width * 8.5, y: rowY), modifiers: modifiers, in: view))
+
+    #expect(view.selectedRange().location != NSNotFound)
+    #expect(view.selectedRange().length > 0)
+}
+
+@MainActor
+private func terminalMouseEvent(
+    _ type: NSEvent.EventType,
+    at point: NSPoint,
+    modifiers: NSEvent.ModifierFlags = [],
+    in view: NSView
+) -> NSEvent {
+    NSEvent.mouseEvent(
+        with: type,
+        location: view.convert(point, to: nil),
+        modifierFlags: modifiers,
+        timestamp: 0,
+        windowNumber: view.window?.windowNumber ?? 0,
+        context: nil,
+        eventNumber: 1,
+        clickCount: 1,
+        pressure: 1
+    )!
+}
+
+@MainActor
+private func terminalKeyEvent(
+    _ characters: String,
+    modifiers: NSEvent.ModifierFlags,
+    in window: NSWindow
+) -> NSEvent {
+    NSEvent.keyEvent(
+        with: .keyDown,
+        location: .zero,
+        modifierFlags: modifiers,
+        timestamp: 0,
+        windowNumber: window.windowNumber,
+        context: nil,
+        characters: characters,
+        charactersIgnoringModifiers: characters,
+        isARepeat: false,
+        keyCode: 0
+    )!
+}
+
 @Test func chatActivityTextUsesCompactUnits() throws {
     let now = try #require(ISO8601DateFormatter().date(from: "2026-08-19T12:00:00Z"))
     #expect(ChatActivityText.compact("2026-08-19T11:59:35Z", relativeTo: now) == "now")
@@ -1644,8 +1769,22 @@ private func historyTextMessage(_ id: String, role: String = "assistant") -> Die
     #expect(AppSection.allCases.contains(.settings))
     #expect(
         DieterSettingsSection.allCases.map(\.rawValue) == [
-            "General", "Connection", "Prompts", "Notifications", "Island", "Agents",
+            "General", "Connection", "Prompts", "Notifications", "Island", "Agents", "Experimental",
         ])
+}
+
+@Test func conversationWorkspacePanelPreferenceDefaultsOffAndPersistsBothStates() throws {
+    let suite = "dieter-conversation-workspace-panel-tests-\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+
+    #expect(!ConversationWorkspacePanelPreferences.isEnabled(in: defaults))
+
+    ConversationWorkspacePanelPreferences.setEnabled(true, in: defaults)
+    #expect(ConversationWorkspacePanelPreferences.isEnabled(in: defaults))
+
+    ConversationWorkspacePanelPreferences.setEnabled(false, in: defaults)
+    #expect(!ConversationWorkspacePanelPreferences.isEnabled(in: defaults))
 }
 
 @Test func machineInformationUsesAPopupInsteadOfANavigationDestination() {
@@ -1854,7 +1993,7 @@ private func historyTextMessage(_ id: String, role: String = "assistant") -> Die
     var iterator = changes.makeAsyncIterator()
     #expect(await iterator.next() != nil)
     continuation.finish()
-    #expect(store.themeSelection.identity == "dark:coral-signal")
+    #expect(store.themeSelection.identity == "dark:coral-signal:glass")
     #expect(defaults.string(forKey: DieterAppearance.storageKey) == "dark")
     #expect(defaults.string(forKey: DieterPalette.storageKey) == "coral-signal")
     #expect(DieterThemeSelection.load(from: defaults) == store.themeSelection)
@@ -2312,7 +2451,29 @@ private func historyTextMessage(_ id: String, role: String = "assistant") -> Die
     #expect(summary?.messageCount == 1)
     #expect(summary?.changeCount == 1)
     #expect(summary?.retrying == true)
+    #expect(summary?.queuedLabel == "2 items queued")
     #expect(summary?.deliveryLabel == "2 items queued — delivers when it reconnects.")
+    #expect(summary?.toastPhase(machineOnline: true) == .retrying)
+    #expect(summary?.toastPhase(machineOnline: false) == .retrying)
+}
+
+@Test func machineOutboxToastShowsFailureUntilTheEntryIsHandled() {
+    let endpointID = "gateway#offline"
+    var failed = DieterOutboxEntry(
+        commandID: "failed", clientID: "mac", endpointID: endpointID, kind: .createCard,
+        request: Data(), optimisticID: "local_card", attempts: 3, state: .failed,
+        createdAt: Date(timeIntervalSince1970: 1)
+    )
+    failed.lastError = "The machine rejected the request."
+
+    let summary = MachineOutboxSummary.summaries(for: [failed])[endpointID]
+
+    #expect(summary?.toastPhase(machineOnline: true) == .failed)
+    #expect(summary?.failureMessage == "The machine rejected the request.")
+
+    var accepted = failed
+    accepted.serverID = "c_server"
+    #expect(MachineOutboxSummary.summaries(for: [accepted])[endpointID] == nil)
 }
 
 @Test func reachableMachineOutboxSelectionPrefersEndpointOrder() {
@@ -2508,19 +2669,19 @@ private func historyTextMessage(_ id: String, role: String = "assistant") -> Die
         DieterConversationOpenFailurePolicy.disposition(
             for: cancelled,
             selectionMatches: true,
-            cancellationRetries: 0
+            recoveryAttempts: 0
         ) == .retry)
     #expect(
         DieterConversationOpenFailurePolicy.disposition(
             for: cancelled,
             selectionMatches: true,
-            cancellationRetries: 1
+            recoveryAttempts: DieterConversationOpenFailurePolicy.maximumRecoveryAttempts
         ) == .report)
     #expect(
         DieterConversationOpenFailurePolicy.disposition(
             for: RPCError(code: .notFound, message: "missing"),
             selectionMatches: false,
-            cancellationRetries: 0
+            recoveryAttempts: 0
         ) == .ignore)
 }
 

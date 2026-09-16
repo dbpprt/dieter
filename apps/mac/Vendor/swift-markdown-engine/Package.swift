@@ -24,7 +24,10 @@ let package = Package(
         .library(name: "MarkdownEngineLatex", targets: ["MarkdownEngineLatex"]),
     ],
     dependencies: [
-        .package(url: "https://github.com/smittytone/HighlighterSwift", from: "3.0.0"),
+        // Dieter packages SwiftPM resource bundles inside Contents/Resources.
+        // The local fork exposes a bundle-injecting initializer so the signed
+        // app can load Highlighter without Bundle.module's app-root assertion.
+        .package(path: "../HighlighterSwift"),
         .package(url: "https://github.com/mgriebling/SwiftMath", from: "1.7.0"),
     ],
     targets: [

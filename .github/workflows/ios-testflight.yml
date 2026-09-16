@@ -1,0 +1,67 @@
+name: iOS TestFlight
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Marketing version for the iOS build (for example 0.1.0)
+        required: true
+        default: "0.1.0"
+        type: string
+      upload:
+        description: Upload to App Store Connect for TestFlight processing
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-testflight
+  cancel-in-progress: false
+
+jobs:
+  ios:
+    name: Sign iOS archive and optionally upload
+    runs-on: macos-26
+    timeout-minutes: 60
+    env:
+      IOS_VERSION: ${{ inputs.version }}
+      IOS_BUILD_NUMBER: ${{ github.run_number }}.${{ github.run_attempt }}
+      IOS_UPLOAD: ${{ inputs.upload }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: extractions/setup-just@v3
+        with:
+          just-version: "1.58.0"
+      - name: Select Xcode 26.5
+        run: just release select-xcode
+      - name: Test release setup and packaging
+        run: just release test
+      - name: Restore iOS build cache
+        uses: actions/cache@v4
+        with:
+          path: apps/ios/.build/DerivedData
+          key: ${{ runner.os }}-${{ runner.arch }}-xcode-26.5-ios-release-v1-${{ hashFiles('apps/mac/Package.swift', 'apps/ios/**/Package.resolved', 'apps/mac/Vendor/**/Package.swift') }}
+      - name: Sign and export; upload only when requested
+        env:
+          IOS_DISTRIBUTION_CERTIFICATE_BASE64: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_BASE64 }}
+          IOS_DISTRIBUTION_CERTIFICATE_PASSWORD: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_PASSWORD }}
+          IOS_PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}
+          IOS_APP_STORE_CONNECT_KEY_BASE64: ${{ secrets.IOS_APP_STORE_CONNECT_KEY_BASE64 }}
+          IOS_APP_STORE_CONNECT_KEY_ID: ${{ secrets.IOS_APP_STORE_CONNECT_KEY_ID }}
+          IOS_APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.IOS_APP_STORE_CONNECT_ISSUER_ID }}
+          IOS_TEAM_ID: ${{ secrets.IOS_TEAM_ID }}
+          IOS_BUNDLE_ID: ${{ secrets.IOS_BUNDLE_ID }}
+        run: just --yes ios testflight-ci
+      - name: Retain signed archive and IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: Dieter-iOS-${{ github.run_number }}-${{ github.run_attempt }}
+          path: |
+            apps/ios/.build/release/*/Dieter.xcarchive
+            apps/ios/.build/release/*/Export/*.ipa
+          if-no-files-found: error
+          retention-days: 14

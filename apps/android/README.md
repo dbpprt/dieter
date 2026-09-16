@@ -20,16 +20,28 @@ chat automatically routes to its owning daemon before starting streams or
 mutations. This project-to-host directory lives only in the Android process;
 the gateway remains a machine and presence directory.
 
+Workspace settings can add a project on any online, API-compatible enrolled
+machine without interrupting the currently open project. The creation form
+browses directories on the selected host and configures the first board,
+workspace base remote and branch, publishing policy, project instructions, and
+exact-argv validation commands. Existing project settings expose the same
+workspace defaults plus a project-wide list of provisioned worktrees, including
+clean-up and recovery-backed discard operations.
+
 Additional gateways can be added with an `https://` address. The resulting
 Dieter session is encrypted with a device-bound Android Keystore key. GitHub
 credentials, GitHub access tokens, daemon certificates, and harness credentials
 are never persisted by the app.
 
-The connection is process-wide rather than screen-scoped. While **Stay
-connected in background** is enabled, a `remoteMessaging` foreground service
-keeps the automatically routed workspace stream and cross-project chat/card polling alive,
-and exposes a permanent connection notification with **Disconnect** and
-**Open** actions. Running standalone chats receive separate dismissible
+The connection is process-wide rather than screen-scoped. Background sync has
+three modes: **Live** keeps the stream and a partial wake lock active for
+immediate updates; **Smart** stays live while work is running, then performs
+best-effort checks about once a minute while Android permits background work;
+and **App only** sleeps until Dieter is opened. Existing enabled background-sync
+preferences migrate to Live so upgrades preserve their behavior. Android may
+defer Smart's idle checks during Doze. Live and Smart use a `remoteMessaging`
+foreground service and expose a permanent connection notification with
+**Disconnect** and **Open** actions. Running standalone chats receive separate dismissible
 notifications; dismissing one suppresses only that running session, and its
 terminal transition posts a fresh completion, failure, stopped, or needs-you
 notification. Running notifications are silent; terminal and board-card review
@@ -39,7 +51,7 @@ board's overflow menu. Expanding either the connection notification or a
 running-chat notification shows a compact live preview of the main model and
 active subagents without exposing raw tool input.
 
-The classic five-destination Material navigation remains the default. Its
+The classic six-destination Material navigation remains the default. Its
 native Terminal workspace lists daemon-owned PTYs across projects, renders ANSI
 and VT sequences with the reusable Apache-2.0 Termux emulator/renderer modules,
 and forwards IME, hardware keys, clipboard paste, accessory keys, and live
@@ -50,6 +62,31 @@ confirmation ends the daemon session. The bundled Termux local-process JNI
 bridge is deliberately excluded because Dieter never starts a process on the
 phone.
 
+**Screens** connects to an enrolled machine through an independent authenticated
+route and verifies the daemon-signed WebRTC session before accepting video or
+input. H.264 uses Android MediaCodec and a shared EGL texture canvas; hardware
+decoding is preferred, with the platform decoder available on emulators. No
+FFmpeg process or bitmap video conversion is used. Receiver feedback drives the
+same adaptive sender as the Mac viewer. The bottom bar provides keyboard,
+modifier and special keys, right click, Fit screen, and refresh. Display and
+quality choices are in the header.
+
+- One finger moves the remote cursor relatively; tapping clicks at that cursor.
+- Double tap double-clicks; hold then move drags.
+- Two fingers zoom and pan the local canvas (1–6×).
+- Three fingers scroll the remote screen.
+
+IME composition stays local until committed, including Unicode input. Physical
+keyboards and mice also work. Held input is released on focus loss; leaving
+Screens or backgrounding the app closes its session. Screen capture and control
+must first be enabled on the host through its permission setup.
+
+Run `just android screens-test` on the visible emulator for the isolated native
+video/input check. Set `DIETER_SCREEN_TEST_SOURCE=screen` to exercise real display
+capture. The test creates a temporary authenticated loopback service and native
+input window, removes its ADB port mapping on exit, and preserves app credentials
+and the running operator daemon.
+
 App
 Settings opens from Board actions or the server-status sheet and follows the
 native Connections and Display tab references. Display also offers the
@@ -59,11 +96,24 @@ dedicated settings and command-center actions, swipe-up gesture, and expanded
 searchable command center. The preference is local to the Android device and
 survives process restarts.
 
-Chats open at the latest loaded message, retain a bounded local conversation
-cache, and expose an explicit **Force refresh** action in the conversation
-overflow menu. Project chat sections show the five most recent entries until
-expanded. Model reasoning traces are hidden by default and can be enabled
-globally under App Settings > Chat display.
+Chats render their cached tail immediately. A tail already covered by the
+healthy Live projection is current on open and resumes from its sequence
+without waiting for a duplicate frame. Smart, App-only, and uncached opens
+request the newest 30 messages first, without waiting for the complete
+workspace projection, and load older history only when the user scrolls
+upward. They retain a bounded local conversation cache and expose an explicit
+**Force refresh** action in the conversation overflow menu. Project chat
+sections show the five most recent entries until expanded. Model reasoning
+traces are hidden by default and can be enabled globally under App Settings >
+Chat display.
+
+Each conversation also owns a bounded in-memory composer draft, including
+attachments and model/provider selection, so switching conversations or
+recreating the Activity does not move or erase unfinished input. Messages
+admitted while an agent is running appear in the queue with **Edit** and
+**Remove** actions. Edit atomically removes that queued message on the daemon
+and restores its text, attachments, and immutable harness selection into the
+same conversation's composer.
 
 The app checks the latest public `dbpprt/dieter` GitHub release when it
 starts. When a newer semantic version includes `Dieter-Android.apk`, Dieter
@@ -128,7 +178,8 @@ authenticated route or the gateway relay as documented in the root README.
 
 `just android emulator-start` launches `Pixel_9_API_37_1` in a detached owner
 session while keeping its emulator window visible. It refuses to launch when
-host memory would force software rendering, and it accepts the AVD only after
+host memory would force software rendering, resolves AVD data located on either
+the internal disk or a mounted external volume, and accepts the AVD only after
 renderer, snapshot, focus, accessibility, and screenshot health checks pass.
 Run a real enrolled daemon, install the app, and exercise it through the
 gateway. There is intentionally no mock server or coordinate-driven shell
@@ -136,9 +187,11 @@ smoke test.
 
 The conversation and terminal replay reducers are covered by Kotlin unit tests.
 Real-process instrumentation verifies health, runtime, state streaming,
-harnesses, project files, schedule preview, and a terminal that stays alive
-across a complete Android gRPC channel teardown and cursor-based reconnect,
-all through the configured gateway and automatically routed real daemon:
+harnesses, machine-scoped project creation, validation settings, queued-message
+recall, project workspace cleanup/discard, project files, schedule preview, and
+a terminal that stays alive across a complete Android gRPC channel teardown and
+cursor-based reconnect, all through the configured gateway and automatically
+routed real daemon:
 
 ```sh
 just android connected-test

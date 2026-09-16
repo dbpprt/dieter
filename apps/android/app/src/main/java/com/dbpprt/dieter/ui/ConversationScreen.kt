@@ -57,7 +57,6 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -115,18 +114,21 @@ internal fun ConversationBody(state: DieterUiState, model: DieterViewModel, modi
     var historyKeepLatest by remember(state.selectedCardId) { mutableStateOf(false) }
     var historyStartAtRequest by remember(state.selectedCardId) { mutableStateOf(0) }
     var historyObservedLoading by remember(state.selectedCardId) { mutableStateOf(false) }
-    var text by remember { mutableStateOf("") }
-    var composerError by remember { mutableStateOf<String?>(null) }
+    var composerError by remember(state.selectedCardId) { mutableStateOf<String?>(null) }
     var awaitingAgent by remember(state.selectedCardId) { mutableStateOf(false) }
     var assistantCountAtSend by remember(state.selectedCardId) { mutableStateOf(0) }
     var observedActiveTurn by remember(state.selectedCardId) { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
-    val attachments = remember(state.selectedCardId) { mutableStateListOf<MessagePart>() }
     var attachmentPickerVisible by remember(state.selectedCardId) { mutableStateOf(false) }
     val conversation = state.conversation?.conversation
     val queuedMessages = conversation?.queueList.orEmpty()
     val card = state.conversation?.detail?.card ?: state.selectedCard
+    val draft = state.composerDraft
+    val text = draft.text
+    val attachments = draft.attachments
+    val composerSelection = draft.selection
+        ?: ConversationComposerSelection.initial(card, state.harnesses)
     val creationFailure = card?.id
         ?.takeIf(state.failedOutboxIds::contains)
         ?.let(model::conversationCreationFailure)
@@ -220,7 +222,7 @@ internal fun ConversationBody(state: DieterUiState, model: DieterViewModel, modi
             }
             val incoming = results.mapNotNull(Result<MessagePart>::getOrNull)
             val limitError = attachmentLimitError(attachments, incoming)
-            if (limitError == null) attachments += incoming
+            if (limitError == null) model.addComposerAttachments(incoming)
             composerError = limitError ?: results.firstNotNullOfOrNull { result ->
                 result.exceptionOrNull()?.message
             }
@@ -464,6 +466,9 @@ internal fun ConversationBody(state: DieterUiState, model: DieterViewModel, modi
                             queued = queued,
                             showInterrupt = queued.id == queuedMessages.firstOrNull()?.id && activeTurn,
                             interrupting = interrupting,
+                            pending = queued.id in draft.pendingQueueMessageIds,
+                            onEdit = { model.removeQueuedMessage(queued, edit = true) },
+                            onRemove = { model.removeQueuedMessage(queued, edit = false) },
                             onInterrupt = model::cancelSelected,
                         )
                     }
@@ -530,10 +535,12 @@ internal fun ConversationBody(state: DieterUiState, model: DieterViewModel, modi
             card = state.selectedCard,
             contextUsage = contextUsage,
             attachments = attachments,
+            selection = composerSelection,
             error = composerError,
-            onValueChange = { text = it },
+            onValueChange = model::updateComposerText,
+            onSelectionChange = model::updateComposerSelection,
             onAttach = { attachmentPickerVisible = true },
-            onRemoveAttachment = { attachments.removeAt(it) },
+            onRemoveAttachment = model::removeComposerAttachment,
             onSend = { provider, selectedModel, effort, providerOptions ->
                 val message = text.trim()
                 if (message.isNotBlank() || attachments.isNotEmpty()) {
@@ -542,8 +549,7 @@ internal fun ConversationBody(state: DieterUiState, model: DieterViewModel, modi
                     awaitingAgent = true
                     val parts = attachments.toList()
                     model.sendMessage(message, parts, provider, selectedModel, effort, providerOptions) {
-                        if (text.trim() == message) text = ""
-                        if (attachments.toList() == parts) attachments.clear()
+                        model.acceptComposerSend(message, parts)
                     }
                 }
             },
@@ -711,6 +717,9 @@ internal fun QueuedMessageBlock(
     queued: QueuedMessage,
     showInterrupt: Boolean,
     interrupting: Boolean,
+    pending: Boolean,
+    onEdit: () -> Unit,
+    onRemove: () -> Unit,
     onInterrupt: () -> Unit,
 ) {
     val parts = queued.partsList.ifEmpty {
@@ -756,11 +765,25 @@ internal fun QueuedMessageBlock(
                         fontWeight = FontWeight.Bold,
                         letterSpacing = 0.7.sp,
                     )
+                    Spacer(Modifier.weight(1f))
+                    if (pending) {
+                        CircularProgressIndicator(Modifier.size(15.dp), strokeWidth = 2.dp, color = DieterAmber)
+                    } else {
+                        TextButton(
+                            onClick = onEdit,
+                            modifier = Modifier.heightIn(min = 28.dp).testTag("edit-queued-message-${queued.id}"),
+                            contentPadding = PaddingValues(horizontal = 7.dp),
+                        ) { Text("Edit", fontSize = 11.sp) }
+                        TextButton(
+                            onClick = onRemove,
+                            modifier = Modifier.heightIn(min = 28.dp).testTag("remove-queued-message-${queued.id}"),
+                            contentPadding = PaddingValues(horizontal = 7.dp),
+                        ) { Text("Remove", fontSize = 11.sp, color = MaterialTheme.colorScheme.error) }
+                    }
                     if (showInterrupt) {
-                        Spacer(Modifier.weight(1f))
                         Surface(
                             onClick = onInterrupt,
-                            enabled = !interrupting,
+                            enabled = !interrupting && !pending,
                             modifier = Modifier
                                 .heightIn(min = 28.dp)
                                 .testTag("interrupt-queued-message")

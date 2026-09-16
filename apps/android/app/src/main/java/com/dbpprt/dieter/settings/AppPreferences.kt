@@ -15,6 +15,8 @@ import java.util.concurrent.atomic.AtomicLong
 
 enum class NavigationStyle { CLASSIC, GLASS }
 
+const val DEFAULT_PANE_LEADING_FRACTION = 0.43f
+
 data class ConversationCreationPreferences(
     val provider: String = "",
     val model: String = "",
@@ -53,6 +55,14 @@ class AppPreferences(
     val expandedChatProjectIds: StateFlow<Set<String>> = _expandedChatProjectIds.asStateFlow()
     private val _pinnedChatOrder = MutableStateFlow(if (loadAsync) emptyList() else readPinnedChatOrder())
     val pinnedChatOrder: StateFlow<List<String>> = _pinnedChatOrder.asStateFlow()
+    private val _chatsPaneLeadingFraction = MutableStateFlow(
+        if (loadAsync) DEFAULT_PANE_LEADING_FRACTION else readPaneLeadingFraction(KEY_CHATS_PANE_LEADING_FRACTION),
+    )
+    val chatsPaneLeadingFraction: StateFlow<Float> = _chatsPaneLeadingFraction.asStateFlow()
+    private val _boardPaneLeadingFraction = MutableStateFlow(
+        if (loadAsync) DEFAULT_PANE_LEADING_FRACTION else readPaneLeadingFraction(KEY_BOARD_PANE_LEADING_FRACTION),
+    )
+    val boardPaneLeadingFraction: StateFlow<Float> = _boardPaneLeadingFraction.asStateFlow()
     private val _conversationCreation = MutableStateFlow(
         if (loadAsync) ConversationCreationPreferences() else readConversationCreationPreferences(),
     )
@@ -77,6 +87,8 @@ class AppPreferences(
         val collapsedChatProjectIds = readCollapsedChatProjectIds()
         val expandedChatProjectIds = readExpandedChatProjectIds()
         val pinnedChatOrder = readPinnedChatOrder()
+        val chatsPaneLeadingFraction = readPaneLeadingFraction(KEY_CHATS_PANE_LEADING_FRACTION)
+        val boardPaneLeadingFraction = readPaneLeadingFraction(KEY_BOARD_PANE_LEADING_FRACTION)
         val conversationCreation = readConversationCreationPreferences()
         if (mutationVersion.get() != expectedVersion) return
         _navigationStyle.value = navigationStyle
@@ -88,6 +100,8 @@ class AppPreferences(
         _collapsedChatProjectIds.value = collapsedChatProjectIds
         _expandedChatProjectIds.value = expandedChatProjectIds
         _pinnedChatOrder.value = pinnedChatOrder
+        _chatsPaneLeadingFraction.value = chatsPaneLeadingFraction
+        _boardPaneLeadingFraction.value = boardPaneLeadingFraction
         _conversationCreation.value = conversationCreation
         DieterLauncherIcon.apply(appContext, _palette.value)
     }
@@ -190,6 +204,22 @@ class AppPreferences(
         _pinnedChatOrder.value = updated
     }
 
+    fun setChatsPaneLeadingFraction(fraction: Float) {
+        setPaneLeadingFraction(KEY_CHATS_PANE_LEADING_FRACTION, fraction, _chatsPaneLeadingFraction)
+    }
+
+    fun setBoardPaneLeadingFraction(fraction: Float) {
+        setPaneLeadingFraction(KEY_BOARD_PANE_LEADING_FRACTION, fraction, _boardPaneLeadingFraction)
+    }
+
+    private fun setPaneLeadingFraction(key: String, fraction: Float, state: MutableStateFlow<Float>) {
+        if (!fraction.isFinite()) return
+        val persistedFraction = fraction.coerceIn(0f, 1f)
+        markMutation()
+        preferences.edit().putFloat(key, persistedFraction).apply()
+        state.value = persistedFraction
+    }
+
     fun setConversationCreationPreferences(value: ConversationCreationPreferences) {
         markMutation()
         preferences.edit()
@@ -259,6 +289,12 @@ class AppPreferences(
         }.distinct()
     }.getOrDefault(emptyList())
 
+    private fun readPaneLeadingFraction(key: String): Float =
+        preferences.getFloat(key, DEFAULT_PANE_LEADING_FRACTION)
+            .takeIf(Float::isFinite)
+            ?.coerceIn(0f, 1f)
+            ?: DEFAULT_PANE_LEADING_FRACTION
+
     private fun readConversationCreationPreferences() = ConversationCreationPreferences(
         provider = preferences.getString(KEY_CONVERSATION_CREATION_PROVIDER, "").orEmpty(),
         model = preferences.getString(KEY_CONVERSATION_CREATION_MODEL, "").orEmpty(),
@@ -285,6 +321,8 @@ class AppPreferences(
         private const val KEY_COLLAPSED_CHAT_PROJECT_IDS = "collapsed_chat_project_ids"
         private const val KEY_EXPANDED_CHAT_PROJECT_IDS = "expanded_chat_project_ids"
         private const val KEY_PINNED_CHAT_ORDER = "pinned_chat_order"
+        private const val KEY_CHATS_PANE_LEADING_FRACTION = "chats_pane_leading_fraction"
+        private const val KEY_BOARD_PANE_LEADING_FRACTION = "board_pane_leading_fraction"
         private const val KEY_CONVERSATION_CREATION_PROVIDER = "conversation_creation_provider"
         private const val KEY_CONVERSATION_CREATION_MODEL = "conversation_creation_model"
         private const val KEY_CONVERSATION_CREATION_EFFORT = "conversation_creation_effort"

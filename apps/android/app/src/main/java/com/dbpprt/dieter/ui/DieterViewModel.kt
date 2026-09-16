@@ -1,11 +1,13 @@
 package com.dbpprt.dieter.ui
 
+import android.util.Log
 import androidx.compose.runtime.Immutable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.dbpprt.dieter.connection.DieterConnectionManager
 import com.dbpprt.dieter.connection.DieterConnectionState
+import com.dbpprt.dieter.connection.BackgroundSyncMode
 import com.dbpprt.dieter.connection.ConnectionPhase
 import com.dbpprt.dieter.connection.EndpointConnection
 import com.dbpprt.dieter.connection.EndpointPhase
@@ -13,12 +15,14 @@ import com.dbpprt.dieter.connection.MachineOutboxSummary
 import com.dbpprt.dieter.connection.ProjectHost
 import com.dbpprt.dieter.connection.isServerConversationId
 import com.dbpprt.dieter.connection.resolveConversationId
+import com.dbpprt.dieter.connection.rpcReadFailureIsTransient
 import com.dbpprt.dieter.data.DIETER_ENDPOINTS
 import com.dbpprt.dieter.data.DIETER_LOCAL_ENDPOINT
 import com.dbpprt.dieter.data.DieterEndpoint
 import com.dbpprt.dieter.data.DieterRepository
 import com.dbpprt.dieter.settings.AppPreferences
 import com.dbpprt.dieter.settings.ConversationCreationPreferences
+import com.dbpprt.dieter.settings.DEFAULT_PANE_LEADING_FRACTION
 import com.dbpprt.dieter.settings.DieterPalette
 import com.dbpprt.dieter.settings.DieterNotificationSettings
 import com.dbpprt.dieter.settings.NavigationStyle
@@ -39,6 +43,7 @@ import com.dbpprt.dieter.v1.GetStateRequest
 import com.dbpprt.dieter.v1.Harness
 import com.dbpprt.dieter.v1.MessagePart
 import com.dbpprt.dieter.v1.Project
+import com.dbpprt.dieter.v1.QueuedMessage
 import com.dbpprt.dieter.v1.RuntimeStatus
 import com.dbpprt.dieter.v1.SaveScheduleRequest
 import com.dbpprt.dieter.v1.Schedule
@@ -54,6 +59,9 @@ import com.dbpprt.dieter.v1.UpdateProjectRequest
 import com.dbpprt.dieter.v1.ToolOutput
 import com.dbpprt.dieter.v1.Terminal
 import com.dbpprt.dieter.v1.TerminalFrame
+import com.dbpprt.dieter.v1.UpdateProjectWorkspaceSettingsRequest
+import com.dbpprt.dieter.v1.ValidationCommand
+import com.dbpprt.dieter.v1.Workspace
 import io.grpc.Status
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -129,7 +137,7 @@ internal fun DieterUiState.preserveConnectionPresentation(previous: DieterUiStat
     connectionError = previous.connectionError,
 )
 
-enum class Destination { CHATS, BOARD, TERMINALS, FILES, SCHEDULES }
+enum class Destination { CHATS, BOARD, TERMINALS, SCREENS, FILES, SCHEDULES }
 
 enum class AppSurface { NEW_CHAT, NEW_CARD, NEW_BOARD, SCHEDULE_EDITOR, WORKSPACE, NEW_PROJECT, APP_SETTINGS }
 
@@ -146,7 +154,7 @@ data class DieterUiState(
     val connectionDialogVisible: Boolean = false,
     val connectionError: String? = null,
     val desiredConnected: Boolean = true,
-    val backgroundSyncEnabled: Boolean = true,
+    val backgroundSyncMode: BackgroundSyncMode = BackgroundSyncMode.LIVE,
     val navigationStyle: NavigationStyle = NavigationStyle.CLASSIC,
     val palette: DieterPalette = DieterPalette.DEFAULT,
     val showReasoningTraces: Boolean = false,
@@ -170,6 +178,8 @@ data class DieterUiState(
     val collapsedChatProjectIds: Set<String> = emptySet(),
     val expandedChatProjectIds: Set<String> = emptySet(),
     val pinnedChatOrder: List<String> = emptyList(),
+    val chatsPaneLeadingFraction: Float = DEFAULT_PANE_LEADING_FRACTION,
+    val boardPaneLeadingFraction: Float = DEFAULT_PANE_LEADING_FRACTION,
     val projectHosts: Map<String, ProjectHost> = emptyMap(),
     val boards: List<Board> = emptyList(),
     val cards: List<Card> = emptyList(),
@@ -224,6 +234,13 @@ data class DieterUiState(
     val archivedProjects: List<Project> = emptyList(),
     val archivedCards: List<Card> = emptyList(),
     val directoryListing: DirectoryListing? = null,
+    val directoryListingEndpointId: String = "",
+    val directoryListingLoading: Boolean = false,
+    val composerDraft: ConversationComposerDraft = ConversationComposerDraft(),
+    val projectWorkspaces: List<Workspace> = emptyList(),
+    val projectWorkspacesLoading: Boolean = false,
+    val projectWorkspaceOperations: Set<String> = emptySet(),
+    val projectWorkspaceErrors: Map<String, String> = emptyMap(),
     val pendingCardIds: Set<String> = emptySet(),
     val pendingMessageIds: Set<String> = emptySet(),
     val acceptedOutboxIds: Set<String> = emptySet(),
@@ -234,6 +251,7 @@ data class DieterUiState(
     val workspaceReview: WorkspaceReviewState = WorkspaceReviewState(),
 ) {
     val connected: Boolean get() = connectionPhase == ConnectionPhase.CONNECTED
+    val backgroundSyncEnabled: Boolean get() = backgroundSyncMode.usesBackgroundService
     val hasCachedWorkspace: Boolean
         get() = projects.isNotEmpty() || boards.isNotEmpty() || cards.isNotEmpty() || chats.isNotEmpty()
     val presentedProjectHosts: Map<String, ProjectHost>
@@ -325,12 +343,36 @@ internal fun DieterUiState.applyingScheduleRunPage(response: ScheduleRunsRespons
     )
 }
 
-internal fun conversationStreamNeedsRestart(activeCardId: String?, selectedCardId: String?): Boolean =
-    selectedCardId != null && activeCardId != selectedCardId
+internal fun conversationStreamNeedsRestart(
+    activeCardId: String?,
+    selectedCardId: String?,
+    streamActive: Boolean = true,
+): Boolean = selectedCardId != null && (activeCardId != selectedCardId || !streamActive)
 
-class DieterViewModel(
+internal data class ConversationOpenSyncPlan(
+    val cacheIsCurrent: Boolean,
+    val afterSeq: Long,
+) {
+    val needsFreshFrame: Boolean get() = !cacheIsCurrent
+}
+
+internal fun conversationOpenSyncPlan(
+    cachedLastSeq: Long?,
+    coveredByHealthyLiveSync: Boolean,
+): ConversationOpenSyncPlan {
+    val cacheIsCurrent = cachedLastSeq != null && coveredByHealthyLiveSync
+    return ConversationOpenSyncPlan(
+        cacheIsCurrent = cacheIsCurrent,
+        // Cold, Smart, and App-only opens ask the server for its bounded latest
+        // tail immediately. History remains paged backwards on demand.
+        afterSeq = if (cacheIsCurrent) requireNotNull(cachedLastSeq) else 0L,
+    )
+}
+
+class DieterViewModel internal constructor(
     private val connectionManager: DieterConnectionManager,
     private val appPreferences: AppPreferences,
+    private val conversationDrafts: ConversationDraftStore = ConversationDraftStore(),
 ) : ViewModel() {
     private val repository: DieterRepository = connectionManager.repository
     private val _state = MutableStateFlow(DieterUiState())
@@ -372,6 +414,8 @@ class DieterViewModel(
     private var connectionDialogDismissedInterruptionKey: Long? = null
     private var lastRemoteState: State? = null
     private val conversationCache = ConversationUiCache()
+    private val projectWorkspaceJobs = mutableMapOf<String, Job>()
+    private var directoryListingGeneration = 0L
 
     init {
         viewModelScope.launch {
@@ -422,6 +466,16 @@ class DieterViewModel(
         viewModelScope.launch {
             appPreferences.pinnedChatOrder.collectLatest { pinnedChatOrder ->
                 _state.update { it.copy(pinnedChatOrder = pinnedChatOrder) }
+            }
+        }
+        viewModelScope.launch {
+            appPreferences.chatsPaneLeadingFraction.collectLatest { fraction ->
+                _state.update { it.copy(chatsPaneLeadingFraction = fraction) }
+            }
+        }
+        viewModelScope.launch {
+            appPreferences.boardPaneLeadingFraction.collectLatest { fraction ->
+                _state.update { it.copy(boardPaneLeadingFraction = fraction) }
             }
         }
     }
@@ -489,8 +543,8 @@ class DieterViewModel(
         }
     }
 
-    fun setBackgroundSyncEnabled(enabled: Boolean) {
-        connectionManager.setBackgroundSyncEnabled(enabled)
+    fun setBackgroundSyncMode(mode: BackgroundSyncMode) {
+        connectionManager.setBackgroundSyncMode(mode)
     }
 
     fun setNavigationStyle(style: NavigationStyle) {
@@ -629,6 +683,10 @@ class DieterViewModel(
         val remote = connection.selectedState
         _state.update { current ->
             val selectedCardId = resolveConversationId(current.selectedCardId, connection.resolvedConversationIds)
+            conversationDrafts.retarget(current.selectedCardId, selectedCardId)
+            val liveConversation = selectedCardId?.takeIf { cardId ->
+                connection.activeConversations.containsKey(cardId) && connectionManager.liveSyncCoversConversation(cardId)
+            }
             current.copy(
                 endpoint = connection.endpoint?.address
                     ?: connection.configuredConnections.firstOrNull { it.id == connection.activeGatewayId }?.address
@@ -647,7 +705,7 @@ class DieterViewModel(
                 },
                 connectionError = connection.error,
                 desiredConnected = connection.desiredConnected,
-                backgroundSyncEnabled = connection.backgroundSyncEnabled,
+                backgroundSyncMode = connection.backgroundSyncMode,
                 configuredConnections = connection.configuredConnections,
                 activeGatewayId = connection.activeGatewayId,
                 endpointConnections = connection.endpointConnections,
@@ -665,10 +723,17 @@ class DieterViewModel(
                     operations = current.cardOperations,
                 ),
                 selectedCardId = selectedCardId,
+                composerDraft = conversationDrafts.draft(selectedCardId),
                 conversation = selectedCardId?.let(connection.activeConversations::get) ?: current.conversation,
-                conversationLastRefreshedAtMillis = selectedCardId
-                    ?.let(connection.conversationRefreshedAtMillis::get)
-                    ?: current.conversationLastRefreshedAtMillis,
+                conversationLastRefreshedAtMillis = if (liveConversation != null) {
+                    connection.lastConnectedAtMs
+                        ?: connection.conversationRefreshedAtMillis[liveConversation]
+                        ?: current.conversationLastRefreshedAtMillis
+                } else {
+                    selectedCardId?.let(connection.conversationRefreshedAtMillis::get)
+                        ?: current.conversationLastRefreshedAtMillis
+                },
+                conversationSyncing = if (liveConversation != null) false else current.conversationSyncing,
                 pendingCardIds = connection.pendingCardIds,
                 pendingMessageIds = connection.pendingMessageIds,
                 acceptedOutboxIds = connection.acceptedOutboxIds,
@@ -677,7 +742,12 @@ class DieterViewModel(
             )
         }
         val resolvedSelectedCardId = _state.value.selectedCardId
-        if (foreground && conversationStreamNeedsRestart(conversationStreamCardId, resolvedSelectedCardId)) {
+        if (foreground && conversationStreamNeedsRestart(
+                conversationStreamCardId,
+                resolvedSelectedCardId,
+                conversationJob?.isActive == true,
+            )
+        ) {
             startConversationStream(requireNotNull(resolvedSelectedCardId))
         }
         resolvedSelectedCardId?.let(::ensureConversationRecovery)
@@ -749,14 +819,15 @@ class DieterViewModel(
     }
 
     private suspend fun retryStream(cause: Throwable, attempt: Long, label: String): Boolean {
-        val code = Status.fromThrowable(cause).code
-        val transient = foreground && (code == Status.Code.UNAVAILABLE || code == Status.Code.DEADLINE_EXCEEDED)
+        val transient = foreground && rpcReadFailureIsTransient(cause)
         if (!transient) return false
         _state.update {
+            val selectedCardId = it.selectedCardId
             it.copy(
                 connectionPhase = ConnectionPhase.RECONNECTING,
                 loading = false,
-                conversationSyncing = it.selectedCardId != null,
+                conversationSyncing = selectedCardId != null &&
+                    !connectionManager.liveSyncCoversConversation(selectedCardId),
                 connectionError = "$label connection interrupted; reconnecting…",
             )
         }
@@ -798,6 +869,8 @@ class DieterViewModel(
         }
     }
 
+    suspend fun openScreenConnection(endpointId: String) = repository.openScreenConnection(endpointId)
+
     fun navigate(destination: Destination) {
         rememberConversation()
         if (destination != Destination.TERMINALS) stopTerminalWatch()
@@ -808,6 +881,7 @@ class DieterViewModel(
                 appSurface = null,
                 editingScheduleId = null,
                 selectedCardId = null,
+                composerDraft = ConversationComposerDraft(),
                 conversation = null,
                 olderMessages = emptyList(),
                 fileDocument = null,
@@ -820,6 +894,7 @@ class DieterViewModel(
             Destination.CHATS -> viewModelScope.launch { loadChats() }
             Destination.FILES -> viewModelScope.launch { loadFiles() }
             Destination.SCHEDULES -> viewModelScope.launch { loadSchedules() }
+            Destination.SCREENS -> Unit
             Destination.TERMINALS -> loadTerminals()
             Destination.BOARD -> refreshSpaces()
         }
@@ -886,6 +961,14 @@ class DieterViewModel(
         if (persist) appPreferences.setPinnedChatOrder(initialOrder)
     }
 
+    fun setChatsPaneLeadingFraction(fraction: Float) {
+        appPreferences.setChatsPaneLeadingFraction(fraction)
+    }
+
+    fun setBoardPaneLeadingFraction(fraction: Float) {
+        appPreferences.setBoardPaneLeadingFraction(fraction)
+    }
+
     fun selectProject(id: String) {
         rememberConversation()
         cancelConversationStream()
@@ -897,12 +980,17 @@ class DieterViewModel(
                 selectedBoardId = "",
                 selectedLane = "",
                 selectedCardId = null,
+                composerDraft = ConversationComposerDraft(),
                 conversation = null,
                 olderMessages = emptyList(),
                 filePath = "",
                 fileDocument = null,
                 projectFilesMode = "browse",
                 projectChanges = ProjectChangesState(projectId = id),
+                projectWorkspaces = emptyList(),
+                projectWorkspacesLoading = false,
+                projectWorkspaceOperations = emptySet(),
+                projectWorkspaceErrors = emptyMap(),
                 schedules = emptyList(),
                 schedulesTotalCount = 0,
                 schedulesNextPageToken = "",
@@ -927,6 +1015,7 @@ class DieterViewModel(
                 selectedBoardId = id,
                 selectedLane = board?.lanesList?.firstOrNull()?.id.orEmpty(),
                 selectedCardId = null,
+                composerDraft = ConversationComposerDraft(),
                 conversation = null,
                 olderMessages = emptyList(),
                 historyStart = 0,
@@ -952,6 +1041,7 @@ class DieterViewModel(
                 selectedBoardId = boardId,
                 selectedLane = board?.lanesList?.firstOrNull()?.id.orEmpty(),
                 selectedCardId = null,
+                composerDraft = ConversationComposerDraft(),
                 conversation = null,
                 olderMessages = emptyList(),
                 historyStart = 0,
@@ -981,6 +1071,7 @@ class DieterViewModel(
                 destination = Destination.BOARD,
                 boardOverviewVisible = true,
                 selectedCardId = null,
+                composerDraft = ConversationComposerDraft(),
                 conversation = null,
                 olderMessages = emptyList(),
             )
@@ -1073,6 +1164,11 @@ class DieterViewModel(
                 connection.conversationRefreshedAtMillis[cardId],
             )
         } ?: conversationCache[cardId]
+        val liveCache = cached != null && connectionManager.liveSyncCoversConversation(cardId)
+        Log.i(
+            DieterConnectionManager.SYNC_LOG_TAG,
+            "chatOpen cache=${cached != null} liveCache=$liveCache frameAgeMs=${connection.conversationRefreshedAtMillis[cardId]?.let { System.currentTimeMillis() - it } ?: -1}",
+        )
         val projectId = resolvedCard.projectId.ifBlank { _state.value.selectedProjectId }
         if (_state.value.workspaceReview.cardId != cardId) resetWorkspaceReview(cardId)
         _state.update {
@@ -1080,6 +1176,7 @@ class DieterViewModel(
                 destination = destination,
                 boardOverviewVisible = if (destination == Destination.BOARD) false else it.boardOverviewVisible,
                 selectedCardId = cardId,
+                composerDraft = conversationDrafts.draft(cardId),
                 selectedProjectId = projectId,
                 conversation = cached?.snapshot,
                 olderMessages = cached?.olderMessages.orEmpty(),
@@ -1088,8 +1185,12 @@ class DieterViewModel(
                 historyHasMore = cached?.historyHasMore ?: false,
                 historyLoading = false,
                 conversationRefreshing = false,
-                conversationSyncing = isServerConversationId(cardId),
-                conversationLastRefreshedAtMillis = cached?.refreshedAtMillis,
+                conversationSyncing = isServerConversationId(cardId) && !liveCache,
+                conversationLastRefreshedAtMillis = if (liveCache) {
+                    connection.lastConnectedAtMs ?: cached.refreshedAtMillis
+                } else {
+                    cached?.refreshedAtMillis
+                },
                 conversationScrollRequest = it.conversationScrollRequest + 1,
                 detailTab = 0,
                 error = connectionManager.outboxFailure(cardId),
@@ -1126,39 +1227,66 @@ class DieterViewModel(
                 }
                 return@launch
             }
-            var delivered = false
-            // Hedged unary fetch: on a healthy link the stream answers first;
-            // on a dead-after-idle link this bounds time-to-fresh to seconds.
-            val hedge = launch {
-                val snapshot = runCatching {
-                    withTimeout(HEDGE_FETCH_TIMEOUT_MS) { repository.conversation(cardId, limit = CONVERSATION_PAGE_SIZE) }
-                }.getOrNull() ?: return@launch
-                if (!delivered) applyLiveConversation(cardId, snapshot)
+            val openedAt = System.currentTimeMillis()
+            val initial = _state.value.conversation?.takeIf { it.detail.card.id == cardId }
+            val plan = conversationOpenSyncPlan(
+                cachedLastSeq = initial?.conversation?.lastSeq,
+                coveredByHealthyLiveSync = connectionManager.liveSyncCoversConversation(cardId),
+            )
+            var delivered = plan.cacheIsCurrent
+            if (_state.value.selectedCardId == cardId) {
+                _state.update { it.copy(conversationSyncing = plan.needsFreshFrame) }
             }
+            if (plan.cacheIsCurrent) {
+                Log.i(DieterConnectionManager.SYNC_LOG_TAG, "chatReady source=live-cache elapsedMs=${System.currentTimeMillis() - openedAt}")
+            }
+            // Cold, Smart, and App-only opens hedge the fresh stream with a
+            // unary fetch. A Live-projected tail is already authoritative and
+            // must not be mistaken for a dead stream when its resume is quiet.
+            val hedge = if (plan.needsFreshFrame) {
+                launch {
+                    val snapshot = runCatching {
+                        withTimeout(HEDGE_FETCH_TIMEOUT_MS) { repository.conversation(cardId, limit = CONVERSATION_PAGE_SIZE) }
+                    }.getOrNull() ?: return@launch
+                    if (!delivered) {
+                        delivered = true
+                        Log.i(DieterConnectionManager.SYNC_LOG_TAG, "chatFirstFrame source=unary elapsedMs=${System.currentTimeMillis() - openedAt}")
+                        applyLiveConversation(cardId, snapshot)
+                    }
+                }
+            } else null
             // First-frame watchdog: a stream that stays silent this long on an
             // allegedly healthy connection is riding a dead transport; rebuild
             // the channel instead of waiting for keepalive to notice.
-            val watchdog = launch {
-                delay(FIRST_FRAME_DEADLINE_MS)
-                if (!delivered) repository.reconnect()
-            }
+            val watchdog = if (plan.needsFreshFrame) {
+                launch {
+                    delay(FIRST_FRAME_DEADLINE_MS)
+                    if (!delivered) repository.reconnect()
+                }
+            } else null
             try {
-                repository.watchConversation(cardId, CONVERSATION_PAGE_SIZE)
+                repository.watchConversation(
+                    cardId,
+                    CONVERSATION_PAGE_SIZE,
+                    initial = initial,
+                    afterSeq = plan.afterSeq,
+                )
                     .retryWhen { cause, attempt -> retryStream(cause, attempt, "Conversation") }
                     .collectLatest { snapshot ->
                         if (_state.value.selectedCardId != cardId) return@collectLatest
                         if (!delivered) {
                             delivered = true
-                            hedge.cancel()
-                            watchdog.cancel()
+                            hedge?.cancel()
+                            watchdog?.cancel()
+                            Log.i(DieterConnectionManager.SYNC_LOG_TAG, "chatFirstFrame source=stream elapsedMs=${System.currentTimeMillis() - openedAt}")
                         }
                         applyLiveConversation(cardId, snapshot)
                     }
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Throwable) {
-                hedge.cancel()
-                watchdog.cancel()
+                hedge?.cancel()
+                watchdog?.cancel()
                 if (_state.value.selectedCardId == cardId) {
                     _state.update { it.copy(conversationSyncing = false, error = readableError(error)) }
                 }
@@ -1290,6 +1418,7 @@ class DieterViewModel(
         _state.update {
             it.copy(
                 selectedCardId = null,
+                composerDraft = ConversationComposerDraft(),
                 conversation = null,
                 olderMessages = emptyList(),
                 conversationLastRefreshedAtMillis = null,
@@ -1468,6 +1597,69 @@ class DieterViewModel(
         connectionManager.enqueueMessage(id, parts, provider, model, effort, providerOptions)
         onSent()
         ensureConversationRecovery(id)
+    }
+
+    fun updateComposerText(value: String) = updateSelectedComposerDraft { it.copy(text = value) }
+
+    fun updateComposerSelection(value: ConversationComposerSelection) =
+        updateSelectedComposerDraft { it.copy(selection = value) }
+
+    fun addComposerAttachments(values: List<MessagePart>) {
+        if (values.isEmpty()) return
+        updateSelectedComposerDraft { it.copy(attachments = it.attachments + values) }
+    }
+
+    fun removeComposerAttachment(index: Int) = updateSelectedComposerDraft { draft ->
+        if (index !in draft.attachments.indices) draft
+        else draft.copy(attachments = draft.attachments.filterIndexed { itemIndex, _ -> itemIndex != index })
+    }
+
+    fun acceptComposerSend(expectedText: String, expectedAttachments: List<MessagePart>) {
+        val cardId = _state.value.selectedCardId ?: return
+        publishComposerDraft(cardId, conversationDrafts.acceptSend(cardId, expectedText, expectedAttachments))
+    }
+
+    fun removeQueuedMessage(message: QueuedMessage, edit: Boolean) {
+        val cardId = _state.value.selectedCardId ?: return
+        val pending = conversationDrafts.beginQueueMutation(cardId, message.id) ?: return
+        publishComposerDraft(cardId, pending)
+        viewModelScope.launch {
+            try {
+                connectionManager.ensureProjectRoute(conversationProjectId(cardId))
+                val removed = repository.removeQueuedMessage(cardId, message.id)
+                publishComposerDraft(
+                    cardId,
+                    conversationDrafts.finishQueueMutation(cardId, message.id, removed, edit),
+                )
+                val refreshed = repository.conversation(cardId, limit = CONVERSATION_PAGE_SIZE)
+                applyLiveConversation(cardId, refreshed)
+            } catch (cancelled: CancellationException) {
+                publishComposerDraft(
+                    cardId,
+                    conversationDrafts.finishQueueMutation(cardId, message.id, null, false),
+                )
+                throw cancelled
+            } catch (error: Throwable) {
+                publishComposerDraft(
+                    cardId,
+                    conversationDrafts.finishQueueMutation(cardId, message.id, null, false),
+                )
+                _state.update { it.copy(error = readableError(error)) }
+            }
+        }
+    }
+
+    private fun updateSelectedComposerDraft(
+        transform: (ConversationComposerDraft) -> ConversationComposerDraft,
+    ) {
+        val cardId = _state.value.selectedCardId ?: return
+        publishComposerDraft(cardId, conversationDrafts.update(cardId, transform))
+    }
+
+    private fun publishComposerDraft(cardId: String, draft: ConversationComposerDraft) {
+        _state.update { current ->
+            if (current.selectedCardId == cardId) current.copy(composerDraft = draft) else current
+        }
     }
 
     fun retryFailedTurn(parts: List<MessagePart>) = action(ensureProjectRoute = false) {
@@ -2822,48 +3014,187 @@ class DieterViewModel(
         }
     }
 
-    fun listDirectories(path: String = "") {
+    fun clearDirectoryListing() {
+        directoryListingGeneration += 1
+        _state.update {
+            it.copy(directoryListing = null, directoryListingEndpointId = "", directoryListingLoading = false)
+        }
+    }
+
+    fun listDirectories(endpointId: String, path: String = "") {
+        val generation = ++directoryListingGeneration
+        if (endpointId.isBlank()) {
+            _state.update { it.copy(error = "Choose an online project host first.") }
+            return
+        }
+        _state.update {
+            it.copy(directoryListingEndpointId = endpointId, directoryListingLoading = true, error = null)
+        }
         viewModelScope.launch {
             try {
-                connectionManager.ensureProjectRoute(_state.value.selectedProjectId)
-                _state.update { it.copy(directoryListing = repository.listDirectories(path)) }
+                val listing = repository.listDirectoriesOn(endpointId, path)
+                if (directoryListingGeneration == generation) {
+                    _state.update {
+                        it.copy(
+                            directoryListing = listing,
+                            directoryListingEndpointId = endpointId,
+                            directoryListingLoading = false,
+                        )
+                    }
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (error: Throwable) {
-                _state.update { it.copy(error = readableError(error)) }
+                if (directoryListingGeneration == generation) {
+                    _state.update { it.copy(directoryListingLoading = false, error = readableError(error)) }
+                }
             }
         }
     }
 
-    fun createProject(mode: String, path: String, name: String, summary: String, prompt: String, boardName: String, workflow: String) = action {
-        val created = repository.createProject(
+    fun createProject(
+        endpointId: String,
+        mode: String,
+        path: String,
+        name: String,
+        summary: String,
+        prompt: String,
+        boardName: String,
+        workflow: String,
+        baseRemote: String,
+        baseBranch: String,
+        validationCommands: List<ValidationCommand>,
+        remotePublishMode: String,
+    ) = action(ensureProjectRoute = false) {
+        check(endpointId.isNotBlank()) { "Choose an online project host first." }
+        check(baseBranch.isNotBlank()) { "Enter a workspace base branch." }
+        val created = repository.createProjectOn(
+            endpointId,
             CreateProjectRequest.newBuilder()
                 .setMode(mode)
-                .setPath(path)
-                .setName(name)
-                .setSummary(summary)
-                .setPrompt(prompt)
-                .setBoardName(boardName)
+                .setPath(path.trim())
+                .setName(name.trim())
+                .setSummary(summary.trim())
+                .setPrompt(prompt.trim())
+                .setBoardName(boardName.trim())
                 .setWorkflow(workflow)
+                .setBaseRemote(baseRemote.trim())
+                .setBaseBranch(baseBranch.trim())
+                .addAllValidationCommands(validationCommands)
+                .setRemotePublishMode(remotePublishMode)
                 .build(),
         )
+        connectionManager.registerProjectHost(created.project, endpointId, created.board)
         _state.update {
             it.copy(
+                projects = (it.projects.filterNot { project -> project.id == created.project.id } + created.project)
+                    .sortedBy { project -> project.name.lowercase() },
+                boards = listOf(created.board),
+                spaceBoards = (it.spaceBoards.filterNot { board -> board.id == created.board.id } + created.board),
                 selectedProjectId = created.project.id,
                 selectedBoardId = created.board.id,
                 boardOverviewVisible = false,
                 appSurface = null,
                 editingScheduleId = null,
+                directoryListing = null,
+                directoryListingEndpointId = "",
             )
         }
+        connectionManager.selectProject(created.project.id)
         startStateStream()
     }
 
-    fun updateProject(name: String?, summary: String?, prompt: String?) = action {
-        val builder = UpdateProjectRequest.newBuilder().setProjectId(_state.value.selectedProjectId)
-        if (name != null) builder.name = name
-        if (summary != null) builder.summary = summary
-        if (prompt != null) builder.prompt = prompt
-        repository.updateProject(builder.build())
+    fun updateProject(
+        name: String,
+        summary: String,
+        prompt: String,
+        baseRemote: String,
+        baseBranch: String,
+        validationCommands: List<ValidationCommand>,
+    ) = action {
+        val projectId = _state.value.selectedProjectId
+        check(projectId.isNotBlank()) { "Select a project first." }
+        check(name.isNotBlank()) { "Enter a project name." }
+        check(baseBranch.isNotBlank()) { "Enter a workspace base branch." }
+        repository.updateProjectWorkspaceSettings(
+            UpdateProjectWorkspaceSettingsRequest.newBuilder()
+                .setProjectId(projectId)
+                .setBaseRemote(baseRemote.trim())
+                .setBaseBranch(baseBranch.trim())
+                .addAllValidationCommands(validationCommands)
+                .build(),
+        )
+        repository.updateProject(
+            UpdateProjectRequest.newBuilder()
+                .setProjectId(projectId)
+                .setName(name.trim())
+                .setSummary(summary.trim())
+                .setPrompt(prompt.trim())
+                .build(),
+        )
         refreshStateOnce()
+    }
+
+    fun loadProjectWorkspaces() {
+        val projectId = _state.value.selectedProjectId
+        if (projectId.isBlank()) return
+        _state.update { it.copy(projectWorkspacesLoading = true) }
+        viewModelScope.launch {
+            try {
+                connectionManager.ensureProjectRoute(projectId)
+                val workspaces = repository.projectWorkspaces(projectId).workspacesList
+                _state.update { current ->
+                    if (current.selectedProjectId != projectId) current
+                    else current.copy(projectWorkspaces = workspaces, projectWorkspacesLoading = false)
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Throwable) {
+                _state.update { current ->
+                    if (current.selectedProjectId != projectId) current
+                    else current.copy(projectWorkspacesLoading = false, error = readableError(error))
+                }
+            }
+        }
+    }
+
+    fun runProjectWorkspaceOperation(workspace: Workspace, kind: String) {
+        if (kind !in setOf(GitOperationKinds.CLEANUP, GitOperationKinds.DISCARD)) return
+        if (workspace.cardId in _state.value.projectWorkspaceOperations) return
+        projectWorkspaceJobs[workspace.cardId]?.cancel()
+        _state.update {
+            it.copy(
+                projectWorkspaceOperations = it.projectWorkspaceOperations + workspace.cardId,
+                projectWorkspaceErrors = it.projectWorkspaceErrors - workspace.cardId,
+            )
+        }
+        projectWorkspaceJobs[workspace.cardId] = viewModelScope.launch {
+            try {
+                connectionManager.ensureProjectRoute(workspace.projectId)
+                var operation = repository.startGitOperation(workspace.cardId, kind, workspace.revision)
+                while (GitOperationStatuses.active(operation.status)) {
+                    delay(500)
+                    operation = repository.gitOperation(operation.id)
+                }
+                if (operation.status != "succeeded") error(operation.error.ifBlank { "Workspace operation ${operation.status}." })
+                val refreshed = repository.projectWorkspaces(workspace.projectId).workspacesList
+                _state.update { current ->
+                    if (current.selectedProjectId != workspace.projectId) current
+                    else current.copy(projectWorkspaces = refreshed)
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Throwable) {
+                _state.update {
+                    it.copy(projectWorkspaceErrors = it.projectWorkspaceErrors + (workspace.cardId to readableError(error)))
+                }
+            } finally {
+                projectWorkspaceJobs.remove(workspace.cardId)
+                _state.update {
+                    it.copy(projectWorkspaceOperations = it.projectWorkspaceOperations - workspace.cardId)
+                }
+            }
+        }
     }
 
     fun archiveCurrentProject() = action {
@@ -3030,12 +3361,14 @@ class DieterViewModel(
             ?: "Dieter could not complete the request"
     }
 
-    class Factory(
+    internal class Factory(
         private val connectionManager: DieterConnectionManager,
         private val appPreferences: AppPreferences,
+        private val conversationDrafts: ConversationDraftStore = ConversationDraftStore(),
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
-        override fun <T : ViewModel> create(modelClass: Class<T>): T = DieterViewModel(connectionManager, appPreferences) as T
+        override fun <T : ViewModel> create(modelClass: Class<T>): T =
+            DieterViewModel(connectionManager, appPreferences, conversationDrafts) as T
     }
 
     companion object {

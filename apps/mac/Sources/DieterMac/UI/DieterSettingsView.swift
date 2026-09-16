@@ -8,6 +8,7 @@ enum DieterSettingsSection: String, CaseIterable, Identifiable, Hashable {
     case notifications = "Notifications"
     case island = "Island"
     case agents = "Agents"
+    case experimental = "Experimental"
 
     var id: String { rawValue }
 
@@ -19,6 +20,7 @@ enum DieterSettingsSection: String, CaseIterable, Identifiable, Hashable {
         case .notifications: "bell"
         case .island: "capsule.tophalf.filled"
         case .agents: "person.2"
+        case .experimental: "flask"
         }
     }
 
@@ -30,6 +32,7 @@ enum DieterSettingsSection: String, CaseIterable, Identifiable, Hashable {
         case .notifications: "macOS alerts for agent activity"
         case .island: "Live activity around the notch"
         case .agents: "Parallel limits and harness capabilities"
+        case .experimental: "Preview features that are still being refined"
         }
     }
 }
@@ -58,6 +61,7 @@ struct DieterSettingsView: View {
                         }
                         .buttonStyle(.plain)
                         .accessibilityIdentifier("settings.\(section.rawValue.lowercased())")
+                        .smokeTarget("settings.\(section.rawValue.lowercased())")
                     }
                 }
                 .padding(9)
@@ -96,6 +100,7 @@ struct DieterSettingsView: View {
                     case .notifications: NotificationSettings()
                     case .island: IslandSettings()
                     case .agents: AgentSettings()
+                    case .experimental: ExperimentalSettings()
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -481,6 +486,24 @@ struct GeneralSettings: View {
                             }
                         }
                     }
+                    Divider().overlay(DieterTheme.border)
+                    Toggle(
+                        "Window transparency",
+                        isOn: Binding(
+                            get: { store.themeSelection.transparencyEnabled },
+                            set: { store.themeSelection.transparencyEnabled = $0 }
+                        )
+                    )
+                    .accessibilityIdentifier("settings.windowTransparency")
+                    .smokeTarget("settings.windowTransparency")
+                    Text("Let the desktop show through blurred workspace surfaces.")
+                        .font(.caption)
+                        .foregroundStyle(DieterTheme.tertiary)
+                    if DieterTransparencyAccessibility.shared.reduceTransparency {
+                        Text("macOS Reduce Transparency is on. Dieter uses solid surfaces and keeps your preference.")
+                            .font(.caption)
+                            .foregroundStyle(DieterTheme.subtle)
+                    }
                 }
                 SettingsPanel(
                     title: "Design",
@@ -515,6 +538,42 @@ struct GeneralSettings: View {
                     )
                     .font(.caption)
                     .foregroundStyle(DieterTheme.tertiary)
+                }
+                SettingsPanel(
+                    title: "Screen sharing",
+                    subtitle: "Limit how long an unattended remote desktop connection stays open."
+                ) {
+                    Toggle(
+                        "Disconnect inactive screen shares",
+                        isOn: Binding(
+                            get: { store.screensModel.inactivityTimeoutEnabled },
+                            set: { store.screensModel.inactivityTimeoutEnabled = $0 }
+                        )
+                    )
+                    .toggleStyle(.switch)
+                    .accessibilityIdentifier("settings.screenShare.inactivityTimeoutEnabled")
+                    .smokeTarget("settings.screenShare.inactivityTimeoutEnabled")
+                    if store.screensModel.inactivityTimeoutEnabled {
+                        Divider().overlay(DieterTheme.border)
+                        Stepper(
+                            "Disconnect after \(store.screensModel.inactivityTimeoutMinutes) \(store.screensModel.inactivityTimeoutMinutes == 1 ? "minute" : "minutes")",
+                            value: Binding(
+                                get: { store.screensModel.inactivityTimeoutMinutes },
+                                set: { store.screensModel.inactivityTimeoutMinutes = $0 }
+                            ),
+                            in: 1...240
+                        )
+                        .accessibilityIdentifier("settings.screenShare.inactivityTimeoutMinutes")
+                        .smokeTarget("settings.screenShare.inactivityTimeoutMinutes")
+                    }
+                    Text(
+                        store.screensModel.inactivityTimeoutEnabled
+                            ? "Mouse, keyboard, tab, and screen-option activity reset the timer. Open shares continue when you navigate elsewhere in Dieter."
+                            : "Automatic disconnection is off. Screen shares stay open until you disconnect or close their tab."
+                    )
+                    .font(.caption)
+                    .foregroundStyle(DieterTheme.tertiary)
+                    .fixedSize(horizontal: false, vertical: true)
                 }
                 SettingsPanel(
                     title: "Current project route", subtitle: "Dieter routes each project to the machine that owns it."
@@ -952,6 +1011,45 @@ struct IslandSettings: View {
                 SettingsPanel(title: "Activity source") {
                     Text(
                         "The Island uses the same bounded synchronized card stream as Dieter's board and menu bar. It does not start another connection or duplicate notifications."
+                    )
+                    .font(.caption)
+                    .foregroundStyle(DieterTheme.tertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+    }
+}
+
+struct ExperimentalSettings: View {
+    @Environment(DieterStore.self) private var store
+
+    var body: some View {
+        SettingsPage {
+            VStack(spacing: 14) {
+                SettingsPanel(
+                    title: "Conversation workspace",
+                    subtitle: "Work with files, web pages, terminals, changes, and processes beside a conversation."
+                ) {
+                    HStack {
+                        Text("Show the workspace side panel")
+                            .font(.system(size: 12, weight: .semibold))
+                        Spacer()
+                        Toggle(
+                            "Show the workspace side panel",
+                            isOn: Binding(
+                                get: { store.conversationWorkspacePanelEnabled },
+                                set: { store.conversationWorkspacePanelEnabled = $0 }
+                            )
+                        )
+                        .labelsHidden()
+                        .toggleStyle(.switch)
+                        .accessibilityLabel("Show the workspace side panel")
+                        .accessibilityIdentifier("settings.experimental.conversationWorkspacePanel")
+                        .smokeTarget("settings.experimental.conversationWorkspacePanel")
+                    }
+                    Text(
+                        "This experimental panel is off by default. When enabled, workspace links and agent-presented files open alongside chats and card conversations."
                     )
                     .font(.caption)
                     .foregroundStyle(DieterTheme.tertiary)

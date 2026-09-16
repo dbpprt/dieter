@@ -12,6 +12,8 @@ struct DieterMacApp: App {
     private var appearanceValue = DieterAppearance.defaultValue.rawValue
     @AppStorage(DieterPalette.storageKey, store: DieterAppearance.applicationDefaults())
     private var paletteValue = DieterPalette.defaultValue.rawValue
+    @AppStorage(DieterTransparency.storageKey, store: DieterAppearance.applicationDefaults())
+    private var transparencyEnabled = DieterTransparency.defaultEnabled
     @AppStorage(DieterIslandPreferences.enabledKey, store: DieterAppearance.applicationDefaults())
     private var islandEnabled = DieterIslandPreferences.defaultEnabled
 
@@ -36,7 +38,8 @@ struct DieterMacApp: App {
                     store.reopenWorkspaceWindow = { openWindow(id: "workspace") }
                     store.themeSelection = DieterThemeSelection(
                         appearance: DieterAppearance.resolve(appearanceValue),
-                        palette: DieterPalette.resolve(paletteValue)
+                        palette: DieterPalette.resolve(paletteValue),
+                        transparencyEnabled: transparencyEnabled
                     )
                     let selected = DieterPalette.resolve(paletteValue)
                     if paletteValue != selected.rawValue { paletteValue = selected.rawValue }
@@ -48,6 +51,9 @@ struct DieterMacApp: App {
                 }
                 .onChange(of: paletteValue) { _, value in
                     store.themeSelection.palette = DieterPalette.resolve(value)
+                }
+                .onChange(of: transparencyEnabled) { _, enabled in
+                    store.themeSelection.transparencyEnabled = enabled
                 }
                 .onChange(of: store.themeSelection.palette) { _, palette in
                     DieterAppIcon.apply(palette)

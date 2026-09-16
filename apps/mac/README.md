@@ -10,12 +10,14 @@ through either verified direct TLS or the bounded relay.
   label filtering and assignment, retention,
   project context, and archives
 - A board-independent global Chats workspace, with pinned and archived
-  standalone conversations grouped by project, plus live server streams
+  standalone conversations grouped by project, plus live server streams. The
+  chat list stays available while files, browsers, or terminals are open alongside
+  the conversation.
 - Daemon-owned terminal tabs with a real VT renderer, reconnectable scrollback,
   working-directory and shell selection, resize forwarding, and explicit close
-- A machine-oriented Screens workspace with explicit host enablement, signed
-  WebRTC admission, Metal-rendered H.264 video with signed control grants, and reconnectable
-  signaling over direct TLS or the gateway
+- A machine-oriented Screens workspace with persistent tabs, explicit host
+  enablement, signed WebRTC admission, Metal-rendered H.264 video with signed
+  control grants, and reconnectable signaling over direct TLS or the gateway
 - Message parts, reasoning, lazy full tool output, plans, subagents, and comments
 - Project file browsing/editing and file mutations
 - Schedule editing, previewing, enabling, manual runs, and occurrence history
@@ -27,11 +29,15 @@ The 41 view-level design references are indexed in
 extracted from the source design PDF by `design/extract_reference_images.py`;
 the source PDF itself is not checked in.
 
-The navigation sidebar, All Chats actions, board actions, Quick Task popovers,
-and Island use the native macOS 26 Liquid Glass appearance. The nested All Chats
-browser and conversation pane share one continuous solid canvas; cards and
-transcripts also keep solid content surfaces for readability. Native materials
-follow system accessibility settings.
+The workspace uses native macOS 26 glass, with blurred desktop colors showing
+through the sidebar, boards, conversations, and file panes. Cards and controls
+use subtle tinted surfaces to keep content readable. In **Settings → General →
+Appearance**, turn off **Window transparency** for solid surfaces. This choice
+is saved on this Mac and applies immediately in light, dark, and system
+appearance across all designs. macOS **Reduce Transparency** also makes
+surfaces solid without changing the saved preference.
+Terminal canvases and document pages retain their own backgrounds for readable
+content; their surrounding workspace controls follow the transparency setting.
 
 ## Develop
 
@@ -100,19 +106,26 @@ file, or create a directory and initialize a new Git repository there. Its
 directory browser reads the daemon's filesystem through `ListDirectories`; it
 never substitutes a local macOS file panel for a remote project path.
 
-Terminals are listed across every enrolled machine and owned by the daemon for
-their project, not by a Mac window or RPC. Closing or disconnecting the app cancels only its output
-observer; the PTY and commands keep running until the shell exits, the user
-explicitly closes the terminal, or the daemon shuts down. Reopening the app
-lists the same session and resumes its sequenced output cursor. Both the daemon
-and client retain a bounded 2 MiB replay buffer. Input and resize use separate
+The Terminals header switches explicitly between enrolled machines and retains
+the selected tab for each destination. A new shell can start inside a registered
+project or directly in the selected daemon user's home, so machines without a
+project remain usable. Sessions are owned by the host, not by a Mac window or
+RPC. Closing or disconnecting the app cancels only its output observer. When
+`tmux` is available on the host, daemon replacement also detaches and reattaches
+the same shell; otherwise persistence remains limited to client reconnects.
+Reopening the app resumes the sequenced output cursor. Both the daemon and
+client retain a bounded 2 MiB replay baseline. Input and resize use separate
 priority unary calls so output backpressure cannot make typing wait behind the
-long-lived stream. A terminal may only start inside its registered project
-tree, after symlink resolution.
+long-lived stream. Project shells stay inside their registered tree and
+machine-home shells stay inside the user's home after symlink resolution.
 
 Screens are intentionally independent of the project RPC connection. The app
-selects a machine, prefers its verified direct route, falls back to the gateway
-for signaling, and then establishes peer-to-peer WebRTC media. It verifies the
+opens each machine share in its own tab, prefers its verified direct route, falls
+back to the gateway for signaling, and then establishes peer-to-peer WebRTC media.
+Tabs and their connections survive navigation to another Dieter workspace; closing
+a tab or choosing Disconnect tears down that client-owned session. General settings
+has a persisted, switchable inactivity timeout (30 minutes by default) that closes
+unattended media without removing its tab. The app verifies the
 daemon's Ed25519 signature over the client offer, DTLS fingerprint, nonce,
 session ID, and lease before accepting the answer. The client selects H.264
 video and supports keyboard, pointer, and scroll input through a signed control

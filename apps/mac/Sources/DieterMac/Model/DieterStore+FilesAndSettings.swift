@@ -170,11 +170,15 @@ extension DieterStore {
     func show(_ error: Error) {
         guard !Self.isExpectedCancellation(error) else { return }
         if DieterRPCFailure.isTransient(error) {
-            // One stream usually notices a dropped connection first and starts
-            // reconnecting. Other in-flight calls may then fail after `rpc` has
-            // already been released; those failures are the same connectivity
-            // event and must not fall through to the global alert.
-            if let rpc { connectionStopped(error, client: rpc) }
+            guard phase.isConnected, rpc != nil else { return }
+            // A single failed operation is not proof that the shared data plane
+            // is dead. Stream supervisors and the transport runner own recovery;
+            // this caller only reports its own unsuccessful operation. Ignore a
+            // stale result after that data plane has already been released.
+            connectionLogger.info(
+                "Operation failed transiently without replacing the data plane: \(DieterRPCFailure.message(for: error), privacy: .public)"
+            )
+            errorMessage = DieterRPCFailure.message(for: error)
             return
         }
         errorMessage = DieterRPCFailure.message(for: error)

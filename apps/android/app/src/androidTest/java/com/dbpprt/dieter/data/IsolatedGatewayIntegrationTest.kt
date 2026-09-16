@@ -3,8 +3,14 @@ package com.dbpprt.dieter.data
 import com.dbpprt.dieter.DieterApplication
 import com.dbpprt.dieter.connection.ConnectionPhase
 import com.dbpprt.dieter.v1.CreateConversationRequest
+import com.dbpprt.dieter.v1.CreateProjectRequest
+import com.dbpprt.dieter.v1.MessagePart
+import com.dbpprt.dieter.v1.SendMessageRequest
 import com.dbpprt.dieter.v1.StartCardRequest
 import com.dbpprt.dieter.v1.SyncFrame
+import com.dbpprt.dieter.v1.UpdateProjectWorkspaceSettingsRequest
+import com.dbpprt.dieter.v1.ValidationCommand
+import com.google.protobuf.ByteString
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import kotlinx.coroutines.channels.Channel
@@ -29,6 +35,205 @@ import kotlin.system.measureTimeMillis
  */
 @RunWith(AndroidJUnit4::class)
 class IsolatedGatewayIntegrationTest {
+    @Test
+    fun machineScopedProjectCreationAndWorkspaceAdministrationRoundTrip() = runBlocking {
+        val origin = isolatedOrigin()
+        val token = argument("isolatedGatewayToken")
+        assumeTrue("Pass isolatedGatewayToken to run the isolated gateway test", token.isNotBlank())
+
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val repository = GrpcDieterRepository(context)
+        var projectId: String? = null
+        var cardId: String? = null
+        try {
+            val endpoint = connect(repository, origin, token)
+            repository.prepareDaemon()
+            val activeBefore = repository.activeEndpoint
+            val legacyDaemon = repository.daemons().daemonsList.first { it.apiVersion != DIETER_API_VERSION }
+            val legacyEndpoint = origin.copy(
+                id = "${origin.credentialId}#${legacyDaemon.id}",
+                label = legacyDaemon.name,
+                daemonId = legacyDaemon.id,
+                apiVersion = legacyDaemon.apiVersion,
+            )
+            repository.replaceEndpoints(listOf(endpoint, legacyEndpoint))
+            val incompatible = runCatching { repository.listDirectoriesOn(legacyEndpoint.id) }.exceptionOrNull()
+            assertTrue(incompatible?.message.orEmpty().contains("incompatible", ignoreCase = true))
+            val root = repository.listDirectoriesOn(endpoint.id)
+            assertEquals(activeBefore, repository.activeEndpoint)
+            assertTrue(root.path.isNotBlank() || root.locationsCount > 0 || root.entriesCount > 0)
+            val fixtureState = repository.state()
+            val fixtureBoard = fixtureState.boardsList.first { board ->
+                board.lanesList.any { lane -> lane.id == "todo" }
+            }
+            val fixtureProject = fixtureState.projectsList.first { it.id == fixtureBoard.projectId }
+
+            val nonce = UUID.randomUUID().toString().take(8)
+            val validation = ValidationCommand.newBuilder()
+                .setName("Read-only check")
+                .setExecutable("git")
+                .addArguments("status")
+                .addArguments("--short")
+                .setTimeoutSeconds(30)
+                .build()
+            val created = repository.createProjectOn(
+                endpoint.id,
+                CreateProjectRequest.newBuilder()
+                    .setMode("create")
+                    .setPath("/tmp/dieter-android-project-$nonce")
+                    .setName("Android project E2E $nonce")
+                    .setBoardName("Main")
+                    .setWorkflow("review")
+                    .setBaseRemote("origin")
+                    .setBaseBranch("main")
+                    .addValidationCommands(validation)
+                    .setRemotePublishMode("manual")
+                    .build(),
+            )
+            projectId = created.project.id
+            assertEquals(activeBefore, repository.activeEndpoint)
+            assertEquals("main", created.project.baseBranch)
+            assertEquals(listOf(validation), created.project.validationCommandsList)
+
+            val updated = repository.updateProjectWorkspaceSettings(
+                UpdateProjectWorkspaceSettingsRequest.newBuilder()
+                    .setProjectId(created.project.id)
+                    .setBaseRemote("upstream")
+                    .setBaseBranch("main")
+                    .addValidationCommands(validation.toBuilder().setTimeoutSeconds(45))
+                    .build(),
+            )
+            assertEquals("upstream", updated.baseRemote)
+            assertEquals("main", updated.baseBranch)
+            assertEquals(45, updated.validationCommandsList.single().timeoutSeconds)
+
+            val harness = repository.harnesses().harnessesList.first { it.id == "mock" }
+            val card = repository.createConversation(
+                CreateConversationRequest.newBuilder()
+                    .setProjectId(fixtureProject.id)
+                    .setBoardId(fixtureBoard.id)
+                    .setLane("todo")
+                    .setTitle("Android workspace admin E2E")
+                    .setPrompt("Deferred workspace lifecycle fixture")
+                    .setProvider(harness.id)
+                    .setModel(harness.defaultModel)
+                    .setDeferStart(true)
+                    .setWorkspaceMode("worktree")
+                    .setWorkspaceBaseBranch("main")
+                    .build(),
+                chat = false,
+            )
+            cardId = card.id
+            val workspace = repository.workspace(card.id)
+            assertEquals(card.id, workspace.cardId)
+            assertTrue(repository.projectWorkspaces(fixtureProject.id).workspacesList.any { it.cardId == card.id })
+
+            var operation = repository.startGitOperation(card.id, "discard", workspace.revision)
+            operation = withTimeout(30_000) {
+                while (operation.status in setOf("queued", "running", "waiting_for_resolution")) {
+                    delay(250)
+                    operation = repository.gitOperation(operation.id)
+                }
+                operation
+            }
+            assertEquals(operation.error, "succeeded", operation.status)
+            assertFalse(repository.projectWorkspaces(fixtureProject.id).workspacesList.any { it.cardId == card.id })
+        } finally {
+            cardId?.let { runCatching { repository.archiveCard(it, true) } }
+            projectId?.let { runCatching { repository.archiveProject(it, true) } }
+            repository.close()
+        }
+    }
+
+    @Test
+    fun queuedMessageRemovalReturnsAnEditableDraftEndToEnd() = runBlocking {
+        val origin = isolatedOrigin()
+        val token = argument("isolatedGatewayToken")
+        assumeTrue("Pass isolatedGatewayToken to run the isolated gateway test", token.isNotBlank())
+
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val repository = GrpcDieterRepository(context)
+        var cardId: String? = null
+        try {
+            connect(repository, origin, token)
+            repository.prepareDaemon()
+            val state = repository.state()
+            val board = state.boardsList.first { it.lanesList.any { lane -> lane.id == "todo" } }
+            val harness = repository.harnesses().harnessesList.first { it.id == "mock" }
+            val card = repository.createConversation(
+                CreateConversationRequest.newBuilder()
+                    .setProjectId(board.projectId)
+                    .setBoardId(board.id)
+                    .setLane("todo")
+                    .setTitle("Android queue edit E2E")
+                    .setPrompt("mock-queue-hold")
+                    .setProvider(harness.id)
+                    .setModel(harness.defaultModel)
+                    .setDeferStart(true)
+                    .setWorkspaceMode("project")
+                    .build(),
+                chat = false,
+            )
+            cardId = card.id
+            repository.startCard(
+                StartCardRequest.newBuilder()
+                    .setCardId(card.id)
+                    .setClientId("android-queue-e2e")
+                    .setCommandId(UUID.randomUUID().toString())
+                    .build(),
+            )
+            withTimeout(15_000) {
+                repository.watchConversation(card.id, 8).first { snapshot ->
+                    snapshot.conversation.status == "running" || snapshot.detail.card.runtime == "running"
+                }
+            }
+
+            val attachment = MessagePart.newBuilder()
+                .setType("file")
+                .setFilename("queued.txt")
+                .setMediaType("text/plain")
+                .setData(ByteString.copyFromUtf8("queued attachment"))
+                .build()
+            val messageId = "msg_android_queue_${UUID.randomUUID().toString().replace("-", "").take(12)}"
+            val response = repository.sendMessage(
+                SendMessageRequest.newBuilder()
+                    .setCardId(card.id)
+                    .addAllParts(
+                        listOf(
+                    MessagePart.newBuilder().setType("text").setText("Edit this queued follow-up").build(),
+                    attachment,
+                        ),
+                    )
+                    .setProvider(harness.id)
+                    .setModel(harness.defaultModel)
+                    .setEffort(card.effort)
+                    .putAllProviderOptions(card.providerOptionsMap)
+                    .setClientId("android-queue-e2e")
+                    .setCommandId(UUID.randomUUID().toString())
+                    .setMessageId(messageId)
+                    .build(),
+            )
+            assertTrue("The follow-up must be admitted to the running turn's queue", response.queued)
+            assertEquals(messageId, response.messageId)
+            val queued = withTimeout(10_000) {
+                repository.watchConversation(card.id, 8).first { snapshot ->
+                    snapshot.conversation.queueList.any { it.id == response.messageId }
+                }.conversation.queueList.first { it.id == response.messageId }
+            }
+            val removed = repository.removeQueuedMessage(card.id, queued.id)
+            assertEquals("Edit this queued follow-up", removed.partsList.first { it.type == "text" }.text)
+            assertEquals("queued.txt", removed.partsList.first { it.type == "file" }.filename)
+            assertEquals(harness.defaultModel, removed.selection.model)
+            assertTrue(repository.conversation(card.id).conversation.queueList.none { it.id == queued.id })
+        } finally {
+            cardId?.let { id ->
+                runCatching { repository.cancelCard(id) }
+                runCatching { repository.archiveCard(id, true) }
+            }
+            repository.close()
+        }
+    }
+
     @Test
     fun disconnectedCardStartPersistsAndDrainsThroughTheRealGateway() = runBlocking {
         val origin = isolatedOrigin()
@@ -275,6 +480,7 @@ class IsolatedGatewayIntegrationTest {
             id = "${origin.credentialId}#${daemon.id}",
             label = daemon.name.ifBlank { daemon.id },
             daemonId = daemon.id,
+            apiVersion = daemon.apiVersion,
         )
         repository.replaceEndpoints(listOf(endpoint))
         repository.selectEndpoint(endpoint)

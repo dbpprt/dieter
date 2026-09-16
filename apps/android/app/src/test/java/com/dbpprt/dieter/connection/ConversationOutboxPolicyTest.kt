@@ -22,8 +22,21 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import io.grpc.Status
+import kotlinx.coroutines.CancellationException
+import java.io.IOException
 
 class ConversationOutboxPolicyTest {
+    @Test
+    fun `conversation reads retry every transport-shaped failure but not caller cancellation`() {
+        assertTrue(rpcReadFailureIsTransient(Status.UNAVAILABLE.asRuntimeException()))
+        assertTrue(rpcReadFailureIsTransient(Status.DEADLINE_EXCEEDED.asRuntimeException()))
+        assertTrue(rpcReadFailureIsTransient(Status.CANCELLED.asRuntimeException()))
+        assertTrue(rpcReadFailureIsTransient(Status.UNKNOWN.withDescription("broken pipe").asRuntimeException()))
+        assertTrue(rpcReadFailureIsTransient(IOException("Broken pipe")))
+        assertFalse(rpcReadFailureIsTransient(Status.PERMISSION_DENIED.asRuntimeException()))
+        assertFalse(rpcReadFailureIsTransient(CancellationException("screen closed")))
+    }
+
     @Test
     fun pendingEntriesRetargetFromGatewayFallbackToKnownProjectMachine() {
         val message = outboxEntry(OutboxKind.SEND_MESSAGE, byteArrayOf(), "message", null).copy(

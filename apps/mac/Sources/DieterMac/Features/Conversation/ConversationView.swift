@@ -59,7 +59,10 @@ struct ConversationView: View {
     var body: some View {
         let id = conversationID
         let endpointID = context.content.currentEndpointID(id)
-        ConversationContentSplit(presented: context.content.isPresented(for: conversationID)) {
+        ConversationContentSplit(
+            presented: context.conversationWorkspacePanelEnabled
+                && context.content.isPresented(for: conversationID)
+        ) {
             conversationBody
         } content: {
             ConversationContentPane(model: context.content)
@@ -75,11 +78,7 @@ struct ConversationView: View {
         )
         .environment(
             \.conversationLinkHandler,
-            { url in
-                guard !id.isEmpty, context.content.currentEndpointID(id) == endpointID else { return false }
-                context.content.requestOpen(url, conversationID: id)
-                return true
-            }
+            conversationLinkHandler(conversationID: id, endpointID: endpointID)
         )
         .onChange(of: conversationID) { _, id in
             if context.content.conversationID != id { context.content.suspend() } else { context.content.resume() }
@@ -88,6 +87,17 @@ struct ConversationView: View {
             if context.content.isPresented(for: conversationID) { context.content.resume() }
         }
         .onDisappear { context.content.suspend() }
+    }
+
+    private func conversationLinkHandler(conversationID id: String, endpointID: String?)
+        -> ConversationLinkHandler?
+    {
+        guard context.conversationWorkspacePanelEnabled else { return nil }
+        return { url in
+            guard !id.isEmpty, context.content.currentEndpointID(id) == endpointID else { return false }
+            context.content.requestOpen(url, conversationID: id)
+            return true
+        }
     }
 
     private var conversationBody: some View {

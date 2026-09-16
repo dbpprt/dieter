@@ -62,8 +62,11 @@ import com.dbpprt.dieter.v1.MoveCardRequest
 import com.dbpprt.dieter.v1.MoveFileRequest
 import com.dbpprt.dieter.v1.MoveFileResponse
 import com.dbpprt.dieter.v1.ProjectRef
+import com.dbpprt.dieter.v1.QueuedMessage
+import com.dbpprt.dieter.v1.RemoveQueuedMessageRequest
 import com.dbpprt.dieter.v1.SCMCapabilities
 import com.dbpprt.dieter.v1.StartGitOperationRequest
+import com.dbpprt.dieter.v1.UpdateProjectWorkspaceSettingsRequest
 import com.dbpprt.dieter.v1.UpdateConversationWorkspaceRequest
 import com.dbpprt.dieter.v1.UpdateBoardGitSettingsRequest
 import com.dbpprt.dieter.v1.WatchGitOperationRequest
@@ -148,6 +151,7 @@ data class DieterEndpoint(
     val online: Boolean = true,
     val lastSeenAt: String = "",
     val version: String = "",
+    val apiVersion: String = "",
 ) {
     val address: String get() = "${if (secure) "https" else "http"}://$host:$port"
     val credentialId: String get() = address
@@ -202,6 +206,8 @@ interface DieterRepository {
     fun watchDaemons(): Flow<DaemonPresenceUpdate>
     suspend fun relayState(endpoint: DieterEndpoint, filter: GetStateRequest = GetStateRequest.getDefaultInstance()): State
     suspend fun relayChats(endpoint: DieterEndpoint, includeArchived: Boolean = false): ChatsResponse
+    suspend fun openScreenConnection(endpointId: String): com.dbpprt.dieter.screens.ScreenConnection =
+        error("Screen sharing is unavailable")
     suspend fun prepareDaemon(): String
     fun directRefreshAtMillis(): Long?
     fun dataRoute(): String = "unknown"
@@ -216,8 +222,11 @@ interface DieterRepository {
     suspend fun updateSettings(settings: Settings): Settings
 
     suspend fun listDirectories(path: String = ""): DirectoryListing
+    suspend fun listDirectoriesOn(endpointId: String, path: String = ""): DirectoryListing
     suspend fun createProject(request: CreateProjectRequest): CreateProjectResponse
+    suspend fun createProjectOn(endpointId: String, request: CreateProjectRequest): CreateProjectResponse
     suspend fun updateProject(request: UpdateProjectRequest): Project
+    suspend fun updateProjectWorkspaceSettings(request: UpdateProjectWorkspaceSettingsRequest): Project
     suspend fun archiveProject(projectId: String, archived: Boolean): Project
     suspend fun archivedProjects(): ProjectsResponse
     suspend fun createBoard(request: CreateBoardRequest): Board
@@ -232,7 +241,12 @@ interface DieterRepository {
     suspend fun chats(includeArchived: Boolean = true): ChatsResponse
     suspend fun card(cardId: String): CardDetail
     suspend fun conversation(cardId: String, limit: Int = 30, before: Int? = null): ConversationSnapshot
-    fun watchConversation(cardId: String, limit: Int = 30): Flow<ConversationSnapshot>
+    fun watchConversation(
+        cardId: String,
+        limit: Int = 30,
+        initial: ConversationSnapshot? = null,
+        afterSeq: Long = initial?.conversation?.lastSeq ?: 0,
+    ): Flow<ConversationSnapshot>
     suspend fun toolOutput(cardId: String, messageId: String, toolCallId: String, revision: String = ""): ToolOutput
     suspend fun sendMessage(
         cardId: String,
@@ -243,6 +257,7 @@ interface DieterRepository {
         providerOptions: Map<String, String> = emptyMap(),
     ): SendMessageResponse
     suspend fun sendMessage(request: SendMessageRequest): SendMessageResponse
+    suspend fun removeQueuedMessage(cardId: String, messageId: String): QueuedMessage
     suspend fun addComment(cardId: String, text: String, name: String = "You"): Comment
     suspend fun moveCard(cardId: String, lane: String, position: Long? = null): Card
     suspend fun startCard(request: StartCardRequest): StartCardResponse
@@ -445,6 +460,130 @@ class GrpcDieterRepository(context: Context) : DieterRepository {
         }
     }
 
+    /**
+     * Opens a one-shot data-plane connection without changing [activeEndpoint]
+     * or tearing down its foreground sync stream. Direct TLS is preferred and
+     * the authenticated bounded relay is retained as the fallback.
+     */
+    private suspend fun <T> withMachine(
+        endpointId: String,
+        deadlineSeconds: Long = 15,
+        operation: suspend DieterServiceGrpcKt.DieterServiceCoroutineStub.() -> T,
+    ): T {
+        val endpoint = endpoints.firstOrNull { it.id == endpointId }
+            ?: error("The selected Dieter machine is no longer available")
+        require(endpoint.online) { "${endpoint.label} is offline. Start Dieter on that machine to continue." }
+        if (endpoint.apiVersion.isNotBlank()) {
+            require(endpoint.apiVersion == DIETER_API_VERSION) {
+                "Dieter API ${endpoint.apiVersion} is incompatible; Android requires $DIETER_API_VERSION."
+            }
+        }
+        val scoped = openScopedMachine(endpoint, deadlineSeconds)
+        return try {
+            scoped.stub.operation()
+        } finally {
+            scoped.channel.shutdownNow()
+        }
+    }
+
+    private data class ScopedMachineConnection(
+        val channel: ManagedChannel,
+        val stub: DieterServiceGrpcKt.DieterServiceCoroutineStub,
+        val certificate: ByteArray,
+        val route: String,
+        val refreshAtMillis: Long? = null,
+    )
+
+    private suspend fun openScopedMachine(endpoint: DieterEndpoint, deadlineSeconds: Long): ScopedMachineConnection {
+        val daemonId = endpoint.daemonId ?: error("No routed Dieter machine is available")
+        val gateway = newGatewayChannel(endpoint)
+        try {
+            val gatewayRPC = authenticatedGatewayStub(gateway, endpoint)
+            val route = gatewayRPC.resolveDaemonRoute(DaemonRef.newBuilder().setDaemonId(daemonId).build())
+            if (route.directCandidatesCount > 0) {
+                val access = gatewayRPC.exchangeDaemonToken(
+                    ExchangeDaemonTokenRequest.newBuilder().setDaemonId(daemonId).build(),
+                )
+                require(access.tokenType == "Bearer") { "Gateway returned an unsupported daemon token" }
+                val reachable = coroutineScope {
+                    route.directCandidatesList.map { candidate ->
+                        async {
+                            val direct = runCatching {
+                                directChannel(candidate.host, candidate.port, daemonId, route.daemonCaPem.toByteArray())
+                            }.getOrNull() ?: return@async null
+                            val probe = DieterServiceGrpcKt.DieterServiceCoroutineStub(direct)
+                                .withInterceptors(MetadataUtils.newAttachHeadersInterceptor(metadata(access.accessToken)))
+                                .withDeadlineAfter(2, TimeUnit.SECONDS)
+                            val healthy = runCatching { probe.health(Empty.getDefaultInstance()).status == "ok" }
+                                .getOrDefault(false)
+                            if (healthy) candidate to direct else null.also { direct.shutdownNow() }
+                        }
+                    }.awaitAll()
+                }.filterNotNull()
+                val chosen = reachable.maxByOrNull { (candidate, _) -> candidate.priority }
+                reachable.forEach { entry -> if (entry != chosen) entry.second.shutdownNow() }
+                if (chosen != null) {
+                    gateway.shutdownNow()
+                    val directStub = DieterServiceGrpcKt.DieterServiceCoroutineStub(chosen.second)
+                        .withInterceptors(MetadataUtils.newAttachHeadersInterceptor(metadata(access.accessToken)))
+                        .withDeadlineAfter(deadlineSeconds, TimeUnit.SECONDS)
+                    return ScopedMachineConnection(chosen.second, directStub, route.daemonCertificatePem.toByteArray(), "Direct",
+                        Instant.parse(access.expiresAt).toEpochMilli() - 30_000)
+                }
+            }
+            if (!route.relayAvailable) {
+                throw Status.UNAVAILABLE.withDescription("Dieter daemon is offline").asRuntimeException()
+            }
+            var relayStub = DieterServiceGrpcKt.DieterServiceCoroutineStub(gateway)
+                .withDeadlineAfter(deadlineSeconds, TimeUnit.SECONDS)
+            credentials.get(endpoint.credentialId)?.let { token ->
+                relayStub = relayStub.withInterceptors(
+                    MetadataUtils.newAttachHeadersInterceptor(metadata(token, daemonId)),
+                )
+            }
+            return ScopedMachineConnection(gateway, relayStub, route.daemonCertificatePem.toByteArray(), "Relay")
+        } catch (error: Throwable) {
+            gateway.shutdownNow()
+            throw error
+        }
+    }
+
+    private fun newGatewayChannel(endpoint: DieterEndpoint): ManagedChannel {
+        val builder = AndroidChannelBuilder.forAddress(endpoint.host, endpoint.port)
+            .context(appContext)
+            .maxInboundMessageSize(16 * 1024 * 1024)
+        if (!endpoint.secure) builder.usePlaintext()
+        return builder.build()
+    }
+
+    private fun authenticatedGatewayStub(
+        channel: ManagedChannel,
+        endpoint: DieterEndpoint,
+    ): GatewayServiceGrpcKt.GatewayServiceCoroutineStub {
+        var stub = GatewayServiceGrpcKt.GatewayServiceCoroutineStub(channel).withDeadlineAfter(15, TimeUnit.SECONDS)
+        credentials.get(endpoint.credentialId)?.let { token ->
+            stub = stub.withInterceptors(MetadataUtils.newAttachHeadersInterceptor(metadata(token)))
+        }
+        return stub
+    }
+
+    override suspend fun openScreenConnection(endpointId: String): com.dbpprt.dieter.screens.ScreenConnection {
+        val endpoint = endpoints.firstOrNull { it.id == endpointId }
+            ?: error("The selected machine is no longer available")
+        require(endpoint.online) { "${endpoint.label} is offline" }
+        val daemonId = requireNotNull(endpoint.daemonId) { "Select an enrolled machine" }
+        val gateway = newGatewayChannel(endpoint)
+        val rtc = try {
+            authenticatedGatewayStub(gateway, endpoint).getRTCConfiguration(
+                DaemonRef.newBuilder().setDaemonId(daemonId).build(),
+            )
+        } finally { gateway.shutdownNow() }
+        val scoped = openScopedMachine(endpoint, 15)
+        return com.dbpprt.dieter.screens.ScreenConnection(
+            scoped.stub.withDeadline(null), scoped.certificate, rtc, scoped.route, scoped.refreshAtMillis,
+        ) { scoped.channel.shutdownNow() }
+    }
+
     override suspend fun prepareDaemon(): String {
         val endpoint = activeEndpoint
         val daemonId = endpoint.daemonId ?: error("No routed Dieter machine is available")
@@ -566,9 +705,20 @@ class GrpcDieterRepository(context: Context) : DieterRepository {
         ListDirectoriesRequest.newBuilder().setPath(path).build(),
     )
 
+    override suspend fun listDirectoriesOn(endpointId: String, path: String): DirectoryListing =
+        withMachine(endpointId) {
+            listDirectories(ListDirectoriesRequest.newBuilder().setPath(path).build())
+        }
+
     override suspend fun createProject(request: CreateProjectRequest): CreateProjectResponse = unary().createProject(request)
 
+    override suspend fun createProjectOn(endpointId: String, request: CreateProjectRequest): CreateProjectResponse =
+        withMachine(endpointId, deadlineSeconds = 60) { createProject(request) }
+
     override suspend fun updateProject(request: UpdateProjectRequest): Project = unary().updateProject(request)
+
+    override suspend fun updateProjectWorkspaceSettings(request: UpdateProjectWorkspaceSettingsRequest): Project =
+        unary().updateProjectWorkspaceSettings(request)
 
     override suspend fun archiveProject(projectId: String, archived: Boolean): Project = unary().archiveProject(
         ArchiveProjectRequest.newBuilder().setProjectId(projectId).setArchived(archived).build(),
@@ -618,13 +768,19 @@ class GrpcDieterRepository(context: Context) : DieterRepository {
         return unary().getConversation(request.build())
     }
 
-    override fun watchConversation(cardId: String, limit: Int): Flow<ConversationSnapshot> = flow {
-        var snapshot: ConversationSnapshot? = null
+    override fun watchConversation(
+        cardId: String,
+        limit: Int,
+        initial: ConversationSnapshot?,
+        afterSeq: Long,
+    ): Flow<ConversationSnapshot> = flow {
+        var snapshot: ConversationSnapshot? = initial
         streaming().watchConversation(
             WatchConversationRequest.newBuilder()
                 .setCardId(cardId)
                 .setLimit(limit)
                 .setIntervalMs(250)
+                .setAfterSeq(afterSeq.coerceAtLeast(0L))
                 .build(),
         ).collect { update ->
             snapshot = ConversationReducer.apply(snapshot, update)
@@ -662,6 +818,11 @@ class GrpcDieterRepository(context: Context) : DieterRepository {
 
     override suspend fun sendMessage(request: SendMessageRequest): SendMessageResponse =
         unary(deadlineSeconds = 60).sendMessage(request)
+
+    override suspend fun removeQueuedMessage(cardId: String, messageId: String): QueuedMessage =
+        unary().removeQueuedMessage(
+            RemoveQueuedMessageRequest.newBuilder().setCardId(cardId).setMessageId(messageId).build(),
+        )
 
     override suspend fun addComment(cardId: String, text: String, name: String): Comment = unary().addComment(
         AddCommentRequest.newBuilder().setCardId(cardId).setMessage(text).setName(name).build(),

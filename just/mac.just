@@ -182,8 +182,14 @@ sign-notarize-release:
     certificate_path="$RUNNER_TEMP/developer-id.p12"
     notary_key_path="$RUNNER_TEMP/notary-key.p8"
     submission_path="$RUNNER_TEMP/Dieter-notarization.zip"
-    cleanup() { security delete-keychain "$signing_keychain" >/dev/null 2>&1 || true; }
+    original_keychains="$(security list-keychains -d user)"
+    cleanup() {
+        python3 -c 'import shlex, subprocess, sys; subprocess.run(["security", "list-keychains", "-d", "user", "-s", *shlex.split(sys.argv[1])], check=True)' "$original_keychains" || true
+        security delete-keychain "$signing_keychain" >/dev/null 2>&1 || true
+        rm -f "$certificate_path" "$notary_key_path" "$submission_path"
+    }
     trap cleanup EXIT
+    umask 077
     printf '%s' "$CERTIFICATE_BASE64" | base64 -D >"$certificate_path"
     printf '%s' "$NOTARY_KEY_BASE64" | base64 -D >"$notary_key_path"
     security create-keychain -p "$keychain_password" "$signing_keychain"
@@ -193,16 +199,17 @@ sign-notarize-release:
         -P "$CERTIFICATE_PASSWORD" -T /usr/bin/codesign
     security set-key-partition-list -S apple-tool:,apple:,codesign: -s \
         -k "$keychain_password" "$signing_keychain"
+    python3 -c 'import shlex, subprocess, sys; subprocess.run(["security", "list-keychains", "-d", "user", "-s", sys.argv[2], *shlex.split(sys.argv[1])], check=True)' "$original_keychains" "$signing_keychain"
     identity="$(security find-identity -v -p codesigning "$signing_keychain" | \
         awk '/Developer ID Application/ {print $2; exit}')"
     test -n "$identity"
-    codesign --force --options runtime --timestamp --sign "$identity" \
+    codesign --force --options runtime --timestamp --keychain "$signing_keychain" --sign "$identity" \
         "{{ app_bundle }}/Contents/Frameworks/WebRTC.framework"
-    codesign --force --options runtime --timestamp --sign "$identity" "{{ app_bundle }}"
+    codesign --force --options runtime --timestamp --keychain "$signing_keychain" --sign "$identity" "{{ app_bundle }}"
     codesign --verify --deep --strict --verbose=2 "{{ app_bundle }}"
     ditto -c -k --sequesterRsrc --keepParent "{{ app_bundle }}" "$submission_path"
-    xcrun notarytool submit "$submission_path" --key "$notary_key_path" \
-        --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER_ID" --wait
+    python3 scripts/macos_notary_submit.py "$submission_path" --key "$notary_key_path" \
+        --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER_ID"
     xcrun stapler staple "{{ app_bundle }}"
     xcrun stapler validate "{{ app_bundle }}"
     spctl --assess --type execute --verbose=4 "{{ app_bundle }}"
@@ -326,3 +333,12 @@ clean-smoke:
         "{{ app_root }}/.build/ui-smoke" \
         "{{ app_root }}/.build/workspace-ui-smoke"
     find "{{ app_root }}/.build" -maxdepth 1 -type d -name 'sidebar-ui-smoke.*' -exec rm -rf -- {} +
+
+# Exercise native hardware capture, input state and bounded backpressure.
+screens-native-test:
+    native/macos-capture/test.sh
+
+# Exercise the complete gRPC/native WebRTC viewer with isolated synthetic pixels.
+# Set DIETER_TEST_SCREEN_CAPTURE_REAL=1 for actual capture and owned-window input.
+screens-test:
+    native/macos-capture/test-viewer.sh

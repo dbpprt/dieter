@@ -32,6 +32,7 @@ import (
 	"github.com/dbpprt/dieter/internal/remotedesktop"
 	"github.com/dbpprt/dieter/internal/scheduler"
 	"github.com/dbpprt/dieter/internal/server"
+	"github.com/dbpprt/dieter/internal/serviceruntime"
 	"github.com/dbpprt/dieter/internal/store"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -59,6 +60,13 @@ func New(data *store.Store) *CLI {
 func (c *CLI) service() *app.Service { return app.New(c.Store, c.Runner) }
 
 func Main(args []string) int {
+	if len(args) > 0 && args[0] == "__service-stage" {
+		if err := stageServiceRuntime(args[1:], os.Stderr); err != nil {
+			fmt.Fprintln(os.Stderr, "error:", err)
+			return 1
+		}
+		return 0
+	}
 	if len(args) > 0 && args[0] == "__daemon-update-worker" {
 		if err := machine.RunDaemonUpdateWorker(args[1:], os.Stderr); err != nil {
 			fmt.Fprintln(os.Stderr, "error:", err)
@@ -190,7 +198,7 @@ Commands:
   file         Browse and edit project/workspace files with revision checks
   terminal     Create, attach, control, and close daemon-host PTYs
   remote       Run resumable commands and native shells on a daemon host
-  screen       Inspect policy and drive authenticated WebRTC signaling
+  screen       List screen viewers, transfer control, tune quality, and signal WebRTC
   schedule     Create, preview, dispatch, pause, and inspect schedules
   settings     Inspect and update parallel-session admission limits
   prompt       Inspect, update, scope, and preview prompt templates
@@ -349,7 +357,7 @@ Actions:
   unenroll     Revoke this machine and remove its local gateway credential
   status       Show service, local API, enrollment, and gateway health
   logs         Show or follow the daemon service log
-  permissions  Guide and verify host screen-capture permissions
+  permissions  Verify screen/input permissions through the running daemon
 `)
 		return nil
 	}
@@ -372,12 +380,14 @@ Actions:
 }
 
 func (c *CLI) daemonStart(args []string) error {
-	const usage = `Usage: dieter daemon start [--addr ADDRESS] [--direct-addr ADDRESS --direct-host HOST] [--env-file PATH] [--service] [--verbose]
+	const usage = `Usage: dieter daemon start [--addr ADDRESS] [--direct-addr ADDRESS --direct-host HOST] [--env-file PATH] [--service [--runtime PATH]] [--verbose]
 
 Run the machine-local Dieter data plane and, when enrolled, its persistent
 outbound gateway tunnel. The local API is always loopback-only. An enrolled
 daemon automatically advertises an authenticated loopback route; direct flags
 add an optional LAN, Tailscale, or public route.
+Homebrew supplies --runtime with its fixed executable directory. Service startup
+activates a staged signed release there before workers or capture begin.
 `
 	set := flags("daemon start")
 	addr := set.String("addr", "127.0.0.1:4242", "listen address")
@@ -386,10 +396,35 @@ add an optional LAN, Tailscale, or public route.
 	directNetwork := set.String("direct-network", "lan", "direct route kind: loopback, lan, tailscale, or public")
 	envFile := set.String("env-file", "", "environment file (default DIETER_HOME/.env)")
 	serviceMode := set.Bool("service", false, "run as a managed service with bounded file logs")
+	runtimePath := set.String("runtime", "", "Homebrew fixed service runtime; requires --service")
 	verbose := set.Bool("verbose", false, "verbose logs")
 	help, err := parse(set, args, usage, c.Out)
 	if help || err != nil {
 		return err
+	}
+	var serviceRuntime *serviceruntime.Service
+	if *runtimePath != "" {
+		if !*serviceMode {
+			return errors.New("--runtime requires --service")
+		}
+		executable, err := os.Executable()
+		if err != nil {
+			return err
+		}
+		if executable != filepath.Join(*runtimePath, "bin", "dieter") {
+			return errors.New("--runtime must be started directly from its fixed bin/dieter executable")
+		}
+		startupCtx, cancel := context.WithTimeout(context.Background(), time.Minute)
+		var reexec bool
+		serviceRuntime, reexec, err = (serviceruntime.Runtime{Root: *runtimePath}).Start(startupCtx)
+		cancel()
+		if err != nil {
+			return fmt.Errorf("start fixed service runtime: %w", err)
+		}
+		defer serviceRuntime.Close()
+		if reexec {
+			return serviceRuntime.Exec(os.Args)
+		}
 	}
 	if err := server.LoadEnvFile(c.Store.Root, *envFile); err != nil {
 		return err
@@ -488,7 +523,7 @@ add an optional LAN, Tailscale, or public route.
 	if err := statusWriter.Update(func(value *dieterdaemon.RuntimeStatus) { value.State = "running" }); err != nil {
 		return err
 	}
-	err = server.ListenDaemon(ctx, *addr, c.Store, c.Runner, logger, remoteDesktop)
+	err = server.ListenDaemonReady(ctx, *addr, c.Store, c.Runner, logger, remoteDesktop, serviceRuntime.Ready)
 	if errors.Is(err, http.ErrServerClosed) {
 		return nil
 	}
@@ -498,7 +533,6 @@ add an optional LAN, Tailscale, or public route.
 func remoteDesktopSourceOptions(logger *slog.Logger) remotedesktop.SourceOptions {
 	return remotedesktop.SourceOptions{
 		Kind:       strings.TrimSpace(os.Getenv("DIETER_REMOTE_DESKTOP_SOURCE")),
-		FFmpegPath: strings.TrimSpace(os.Getenv("DIETER_REMOTE_DESKTOP_FFMPEG")),
 		HelperPath: strings.TrimSpace(os.Getenv("DIETER_REMOTE_DESKTOP_HELPER")),
 		Display:    strings.TrimSpace(os.Getenv("DIETER_REMOTE_DESKTOP_DISPLAY")),
 		Logger:     logger,
