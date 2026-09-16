@@ -25,6 +25,7 @@ const (
 	nativeCaptureHeaderSize = 64
 	maxEncodedFrameBytes    = 16 << 20
 	nativeCommandTimeout    = 750 * time.Millisecond
+	nativeLivenessTimeout   = 3 * time.Second
 	nativeStartupTimeout    = 10 * time.Second
 )
 
@@ -121,6 +122,7 @@ type nativeHelperSource struct {
 	mu            sync.Mutex
 	writes        chan nativeWrite
 	stopped       chan struct{}
+	stoppedErr    error
 	pending       map[uint64]chan error
 	configuration *StreamConfiguration
 	onEvent       func(SourceEvent)
@@ -146,8 +148,12 @@ func (s *nativeHelperSource) SetEventHandler(f func(SourceEvent)) {
 
 func (s *nativeHelperSource) send(ctx context.Context, command nativeCommand, acknowledge bool) error {
 	timeout := nativeCommandTimeout
-	if command.Kind == "create" || command.Kind == "remove" {
+	if command.Kind == "create" || command.Kind == "remove" || command.Kind == "configure" || command.Kind == "frame_consumed" {
 		timeout = nativeStartupTimeout
+	} else if command.Kind == "heartbeat" {
+		// A scheduling stall must not have a shorter lifetime than the native
+		// watchdog. Interactive input keeps its independent, short deadline.
+		timeout = nativeLivenessTimeout
 	}
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
@@ -173,9 +179,9 @@ func (s *nativeHelperSource) send(ctx context.Context, command nativeCommand, ac
 	select {
 	case writes <- job:
 	case <-stopped:
-		return errors.New("native helper stopped")
+		return s.stopError()
 	case <-ctx.Done():
-		return ctx.Err()
+		return fmt.Errorf("native helper %s enqueue: %w", command.Kind, ctx.Err())
 	}
 	if !acknowledge {
 		return nil
@@ -184,10 +190,19 @@ func (s *nativeHelperSource) send(ctx context.Context, command nativeCommand, ac
 	case err := <-job.done:
 		return err
 	case <-stopped:
-		return errors.New("native helper stopped before acknowledgment")
+		return s.stopError()
 	case <-ctx.Done():
-		return ctx.Err()
+		return fmt.Errorf("native helper %s acknowledgment: %w", command.Kind, ctx.Err())
 	}
+}
+
+func (s *nativeHelperSource) stopError() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.stoppedErr != nil {
+		return s.stoppedErr
+	}
+	return errors.New("native helper stopped")
 }
 
 func (s *nativeHelperSource) RequestKeyFrame() {
@@ -267,7 +282,7 @@ func translateNativeInput(value *dieterv1.RemoteDesktopInput) (*nativeInputPaylo
 	return p, nil
 }
 
-func (s *nativeHelperSource) Stream(ctx context.Context, emit func(media.Sample) error) error {
+func (s *nativeHelperSource) Stream(ctx context.Context, emit func(media.Sample) error) (result error) {
 	s.mu.Lock()
 	config := s.currentConfigurationLocked()
 	s.mu.Unlock()
@@ -278,7 +293,8 @@ func (s *nativeHelperSource) Stream(ctx context.Context, emit func(media.Sample)
 	if s.synthetic {
 		args = append(args, "--synthetic", "true")
 	}
-	processCtx, cancel := context.WithCancel(ctx)
+	processCtx, cancelCause := context.WithCancelCause(ctx)
+	cancel := func() { cancelCause(context.Canceled) }
 	defer cancel()
 	command := exec.CommandContext(processCtx, s.path, args...)
 	configureCaptureCommand(command)
@@ -306,6 +322,7 @@ func (s *nativeHelperSource) Stream(ctx context.Context, emit func(media.Sample)
 	s.mu.Lock()
 	s.writes = make(chan nativeWrite, 128)
 	s.stopped = make(chan struct{})
+	s.stoppedErr = nil
 	s.pending = make(map[uint64]chan error)
 	writes, stopped := s.writes, s.stopped
 	if s.ready != nil {
@@ -317,9 +334,18 @@ func (s *nativeHelperSource) Stream(ctx context.Context, emit func(media.Sample)
 	// Closing stdin requests a graceful release/stop; CommandContext escalation is
 	// bounded and only owns this child. Pipe closure also interrupts a blocked write.
 	defer func() {
+		if ctx.Err() == nil {
+			if cause := context.Cause(processCtx); cause != nil && !errors.Is(cause, context.Canceled) {
+				result = cause
+			}
+			if result != nil && s.logger != nil {
+				s.logger.Warn("native capture helper stopped", "pid", command.Process.Pid, "error", result)
+			}
+		}
 		_ = stdin.Close()
 		cancel()
 		s.mu.Lock()
+		s.stoppedErr = result
 		s.writes = nil
 		close(stopped)
 		s.pending = nil
@@ -350,24 +376,32 @@ func (s *nativeHelperSource) Stream(ctx context.Context, emit func(media.Sample)
 					case job.done <- e:
 					default:
 					}
-					cancel()
+					cancelCause(fmt.Errorf("native helper %s write: %w", job.command.Kind, e))
 					return
 				}
 			}
 		}
 	}()
+	mailbox := newNativeEventMailbox()
+	go mailbox.run(processCtx, func(event SourceEvent) {
+		s.mu.Lock()
+		handler := s.onEvent
+		s.mu.Unlock()
+		if handler != nil {
+			handler(event)
+		}
+	})
 	go func() {
 		scanner := bufio.NewScanner(events)
 		scanner.Buffer(make([]byte, 4096), 384<<10)
 		for scanner.Scan() {
 			var event nativeEvent
 			if json.Unmarshal(scanner.Bytes(), &event) != nil || event.Version != 2 {
-				cancel()
+				cancelCause(errors.New("invalid native helper event"))
 				return
 			}
 			s.mu.Lock()
 			done := s.pending[event.Ack]
-			handler := s.onEvent
 			s.mu.Unlock()
 			if done != nil {
 				var e error
@@ -379,15 +413,22 @@ func (s *nativeHelperSource) Stream(ctx context.Context, emit func(media.Sample)
 				default:
 				}
 			}
-			if handler != nil && (event.State != nil || event.Cursor != nil || (event.Ack == 0 && event.Error != "")) {
+			if event.State != nil || event.Cursor != nil || (event.Ack == 0 && event.Error != "") {
 				value := SourceEvent{Cursor: event.Cursor, State: event.State, StreamID: event.StreamID}
 				if event.Ack == 0 && event.Error != "" {
 					value.Err = errors.New(event.Error)
 				}
-				handler(value)
+				if !mailbox.push(value) {
+					cancelCause(errors.New("native helper event stream limit exceeded"))
+					return
+				}
 			}
 		}
-		cancel()
+		if err := scanner.Err(); err != nil {
+			cancelCause(fmt.Errorf("native helper event reader: %w", err))
+		} else {
+			cancelCause(nativeCaptureFailure(errors.New("native helper event pipe closed"), stderr.String()))
+		}
 	}()
 	go func() {
 		timer := time.NewTicker(500 * time.Millisecond)
@@ -397,15 +438,15 @@ func (s *nativeHelperSource) Stream(ctx context.Context, emit func(media.Sample)
 			case <-processCtx.Done():
 				return
 			case <-timer.C:
-				if s.send(processCtx, nativeCommand{Kind: "heartbeat"}, true) != nil {
-					cancel()
+				if err := s.send(processCtx, nativeCommand{Kind: "heartbeat"}, true); err != nil {
+					cancelCause(fmt.Errorf("native helper heartbeat acknowledgment: %w", err))
 					return
 				}
 			}
 		}
 	}()
 	// Deadline includes the first full access unit, not merely the magic bytes.
-	first := time.AfterFunc(nativeStartupTimeout, cancel)
+	first := time.AfterFunc(nativeStartupTimeout, func() { cancelCause(errors.New("native helper first frame timed out")) })
 	defer first.Stop()
 	magic := make([]byte, 4)
 	if _, err = io.ReadFull(stdout, magic); err != nil {

@@ -803,6 +803,12 @@ The native iOS 18+ SwiftUI client connects to enrolled remote nodes through the 
 
 ### Native screen sharing
 
+Native command acknowledgments and heartbeats are independent of encoder
+configuration and downstream cursor/state delivery. A brief receiver heartbeat
+gap releases held input and pauses control without closing video; fresh feedback
+resumes control in the same session. Peer/signaling grace periods and the session
+lease still bound disconnected sessions.
+
 Mac screen sharing uses ScreenCaptureKit, NV12 pixel buffers, hardware VideoToolbox
 H.264, and the Mac client's native WebRTC/Metal renderer. No FFmpeg executable or
 library is used. Capture, input injection and display enumeration live in the

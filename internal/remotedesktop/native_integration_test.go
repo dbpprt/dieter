@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -497,4 +498,104 @@ func TestNativeCancelledLifecyclePreservesExistingViewer(t *testing.T) {
 	// Demand fresh media after the final retirement, not a previously buffered frame.
 	waitFrame()
 	waitFrame()
+}
+
+// Delayed native configuration and event consumers must not starve IPC liveness.
+func TestNativeConfigurationAndSlowEventsPreserveHeartbeat(t *testing.T) {
+	path := os.Getenv("DIETER_TEST_CAPTURE_HELPER")
+	if path == "" {
+		t.Skip("native helper not configured")
+	}
+	for _, scenario := range []string{"configuration", "event consumer", "frame credit"} {
+		t.Run(scenario, func(t *testing.T) {
+			if scenario == "configuration" {
+				t.Setenv("DIETER_TEST_CAPTURE_CONFIG_DELAY_MS", "1800")
+			}
+			if scenario == "frame credit" {
+				t.Setenv("DIETER_TEST_CAPTURE_CREDIT_DELAY_MS", "1800")
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
+			defer cancel()
+			mux := newNativeMultiplexer()
+			defer mux.Close()
+			source, err := mux.Source(&nativeHelperSource{path: path, synthetic: true, profile: "high", fps: 30, maxWidth: 640, maxHeight: 360, bitrateKbps: 2000, inputAllowed: true})
+			if err != nil {
+				t.Fatal(err)
+			}
+			runner := source.(*nativeRendition)
+			defer runner.Close()
+			var slow atomic.Bool
+			blocked := make(chan struct{}, 1)
+			runner.SetEventHandler(func(event SourceEvent) {
+				if event.State != nil && slow.CompareAndSwap(true, false) {
+					blocked <- struct{}{}
+					time.Sleep(1800 * time.Millisecond)
+				}
+			})
+			frames := make(chan struct{}, 1)
+			finished := make(chan error, 1)
+			go func() {
+				finished <- runner.Stream(ctx, func(media.Sample) error {
+					select {
+					case frames <- struct{}{}:
+					default:
+					}
+					return nil
+				})
+			}()
+			select {
+			case <-frames:
+			case err := <-finished:
+				t.Fatal(err)
+			case <-ctx.Done():
+				t.Fatal(ctx.Err())
+			}
+			if scenario == "event consumer" {
+				slow.Store(true)
+			}
+			configured := make(chan error, 1)
+			go func() {
+				configured <- runner.Configure(ctx, StreamConfiguration{DisplayID: "primary", MaxWidth: 640, MaxHeight: 360, FPS: 30, BitrateKbps: 3500})
+			}()
+			if scenario == "event consumer" {
+				select {
+				case <-blocked:
+				case <-ctx.Done():
+					t.Fatal("no delayed state event")
+				}
+			}
+			start := time.Now()
+			// Input uses dry-run injection. Exercise acknowledgments during the stall.
+			for time.Since(start) < 2200*time.Millisecond {
+				if err := runner.SendInput(ctx, &dieterv1.RemoteDesktopInput{Payload: &dieterv1.RemoteDesktopInput_ReleaseAll{ReleaseAll: &dieterv1.RemoteDesktopReleaseAll{}}}); err != nil {
+					t.Fatalf("input during delayed %s: %v", scenario, err)
+				}
+				select {
+				case err := <-finished:
+					t.Fatalf("helper stopped: %v", err)
+				case <-time.After(100 * time.Millisecond):
+				}
+			}
+			if err := <-configured; err != nil {
+				t.Fatalf("configuration: %v", err)
+			}
+			select {
+			case <-frames:
+			default:
+			}
+			select {
+			case <-frames:
+			case err := <-finished:
+				t.Fatalf("session lost: %v", err)
+			case <-ctx.Done():
+				t.Fatal("no resumed video")
+			}
+			cancel()
+			select {
+			case <-finished:
+			case <-time.After(4 * time.Second):
+				t.Fatal("helper did not stop")
+			}
+		})
+	}
 }

@@ -195,7 +195,15 @@ func (s *Session) deliverInput(sink InputSink, input *dieterv1.RemoteDesktopInpu
 	}
 	s.mu.Lock()
 	generation := s.status.GetDisplayGeneration()
+	expired := s.receiverInputExpired
+	floor := s.expiredStateSequence
+	if input.GetPointerMove() != nil {
+		floor = s.expiredPointerSequence
+	}
 	s.mu.Unlock()
+	if (expired || (floor > 0 && input.Sequence <= floor)) && input.GetReleaseAll() == nil {
+		return
+	}
 	if input.GetReleaseAll() == nil && generation != 0 && input.GetDisplayGeneration() != 0 && generation != input.GetDisplayGeneration() {
 		return
 	}
@@ -318,6 +326,13 @@ func (s *Session) receiveFeedback(raw []byte) {
 	s.mu.Lock()
 	wasActive := s.receiver.GetInputActive()
 	s.lastFeedback = time.Now()
+	if s.receiverInputExpired {
+		// Discard input queued before/during the interruption, even if its
+		// worker runs only after the new heartbeat has resumed control.
+		s.expiredStateSequence = s.stateInputSequence.Load()
+		s.expiredPointerSequence = s.pointerInputSequence.Load()
+	}
+	s.receiverInputExpired = false
 	logRejectedStatistics := !validStatistics && !s.receiverStatsRejected
 	s.receiverStatsRejected = !validStatistics
 	if validStatistics {
@@ -353,6 +368,26 @@ func (s *Session) receiveFeedback(raw []byte) {
 		s.releaseInput()
 	}
 }
+
+// Input safety and video liveness are separate. A short receiver scheduling or
+// network gap releases held keys once and suppresses input until a fresh signed
+// heartbeat; peer/signaling grace and the session lease still bound video life.
+func (s *Session) expireReceiverInput(now time.Time) {
+	s.mu.Lock()
+	expired := s.control && !s.closed && !s.receiverInputExpired && !s.lastFeedback.IsZero() && now.Sub(s.lastFeedback) > 3*time.Second
+	if expired {
+		s.receiverInputExpired = true
+	}
+	s.mu.Unlock()
+	if !expired {
+		return
+	}
+	s.releaseInput()
+	if s.manager != nil && s.manager.options.Logger != nil {
+		s.manager.options.Logger.Info("remote desktop input paused; awaiting receiver heartbeat", "session", s.id)
+	}
+}
+
 func (s *Session) sendHost(value *dieterv1.RemoteDesktopHostEvent) {
 	s.hostSendMu.Lock()
 	defer s.hostSendMu.Unlock()

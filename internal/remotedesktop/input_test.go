@@ -2,8 +2,10 @@ package remotedesktop
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"testing"
+	"time"
 
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
 	"google.golang.org/protobuf/proto"
@@ -70,5 +72,36 @@ func TestNativeInputTranslationPreservesZeroAndFalse(t *testing.T) {
 		if string(fields[key]) != want {
 			t.Errorf("%s=%s, want %s", key, fields[key], want)
 		}
+	}
+}
+
+func TestReceiverHeartbeatGapReleasesInputWithoutClosingVideo(t *testing.T) {
+	sink := &inputFrameSource{inputs: make(chan *dieterv1.RemoteDesktopInput, 4), released: make(chan struct{}, 4)}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	now := time.Now()
+	session := &Session{ctx: ctx, source: sink, control: true, lastFeedback: now.Add(-4 * time.Second), inputEpoch: bytes.Repeat([]byte{8}, 16), status: &dieterv1.RemoteDesktopSessionState{Phase: "streaming"}}
+	session.expireReceiverInput(now)
+	session.expireReceiverInput(now.Add(time.Second))
+	if len(sink.released) != 1 || session.closed || ctx.Err() != nil || !session.receiverInputExpired {
+		t.Fatal("input timeout must release once and preserve the video session")
+	}
+	input := &dieterv1.RemoteDesktopInput{Payload: &dieterv1.RemoteDesktopInput_Key{Key: &dieterv1.RemoteDesktopKey{Down: true}}}
+	session.deliverInput(sink, input)
+	if len(sink.inputs) != 0 {
+		t.Fatal("input accepted without heartbeat")
+	}
+	session.stateInputSequence.Store(5)
+	raw, _ := proto.Marshal(&dieterv1.RemoteDesktopReceiverFeedback{ProtocolVersion: inputProtocolVersion, InputEpoch: session.inputEpoch, Sequence: 1, InputActive: true})
+	session.receiveFeedback(raw)
+	input.Sequence = 5
+	session.deliverInput(sink, input)
+	if len(sink.inputs) != 0 {
+		t.Fatal("stale queued input replayed after recovery")
+	}
+	input.Sequence = 6
+	session.deliverInput(sink, input)
+	if session.receiverInputExpired || len(sink.inputs) != 1 || session.closed {
+		t.Fatal("same session did not resume control")
 	}
 }

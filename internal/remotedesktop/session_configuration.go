@@ -214,14 +214,10 @@ func (s *Session) adapt() {
 			return
 		}
 		state := proto.Clone(s.status).(*dieterv1.RemoteDesktopSessionState)
-		feedback, lastFeedback, measuredAt, current, currentRevision := s.receiver, s.lastFeedback, s.receiverMeasuredAt, s.applied, s.configurationRevision
+		feedback, measuredAt, current, currentRevision := s.receiver, s.receiverMeasuredAt, s.applied, s.configurationRevision
 		s.mu.Unlock()
 		if s.pc.ConnectionState() != webrtc.PeerConnectionStateConnected {
 			continue
-		}
-		if s.control && !lastFeedback.IsZero() && now.Sub(lastFeedback) > 3*time.Second {
-			s.close("receiver input heartbeat expired")
-			return
 		}
 		fresh := feedback != nil && !measuredAt.IsZero() && now.Sub(measuredAt) < 2*time.Second
 		if fresh && feedback.RttMs > 0 {
@@ -289,7 +285,7 @@ func (s *Session) adapt() {
 		unchanged := s.configurationRevision == currentRevision && !s.closed
 		s.mu.Unlock()
 		if unchanged {
-			ctx, cancel := context.WithTimeout(s.ctx, 2*time.Second)
+			ctx, cancel := context.WithTimeout(s.ctx, nativeStartupTimeout)
 			err := source.Configure(ctx, desired)
 			cancel()
 			if err == nil {
