@@ -447,7 +447,7 @@ func (c *CLI) rpcCardTranscript(args []string) error {
 }
 
 func (c *CLI) rpcCardWatch(args []string) error {
-	const usage = "Usage: dieter card watch [--last N] [--after-seq N] [--count N] CARD\n"
+	const usage = "Usage: dieter card watch [--last N] [--after-seq N] [--count N] CARD\n" + readRecoveryHelp
 	set := flags("card watch")
 	last := set.Int("last", 30, "message count")
 	after := set.Int64("after-seq", 0, "resume sequence")

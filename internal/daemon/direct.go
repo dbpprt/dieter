@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/dbpprt/dieter/internal/rpcraw"
@@ -24,7 +25,10 @@ type DirectServer struct {
 	identity *Identity
 	local    *grpc.ClientConn
 	server   *grpc.Server
+	active   atomic.Int32
 }
+
+const maxActiveDirectRPCs = 64
 
 func NewDirectServer(identity *Identity, localTarget string) (*DirectServer, error) {
 	if identity == nil || !identity.Enrolled() {
@@ -73,12 +77,34 @@ func (s *DirectServer) handle(_ any, stream grpc.ServerStream) error {
 	if err != nil {
 		return status.Error(codes.Unauthenticated, "daemon access token is invalid")
 	}
+	if s.active.Add(1) > maxActiveDirectRPCs {
+		s.active.Add(-1)
+		return status.Error(codes.ResourceExhausted, "daemon direct concurrency is exhausted")
+	}
+	defer s.active.Add(-1)
+	// A bearer authorizes the entire direct RPC only for its accepted lifetime.
+	// The extra ten seconds matches the verifier's clock-skew allowance. Return
+	// from the handler on expiry even if a peer stalls RecvMsg or SendMsg; gRPC
+	// then cancels the transport and releases the forwarding goroutine.
+	ctx, cancel := context.WithDeadline(ctx, time.Unix(claims.ExpiresAt, 0).Add(10*time.Second))
+	defer cancel()
+	completed := make(chan error, 1)
+	go func() { completed <- s.forward(ctx, stream, method, claims.Subject) }()
+	select {
+	case err := <-completed:
+		return err
+	case <-ctx.Done():
+		return status.FromContextError(ctx.Err()).Err()
+	}
+}
+
+func (s *DirectServer) forward(ctx context.Context, stream grpc.ServerStream, method, operatorSubject string) error {
 	var request rpcraw.Message
 	if err := stream.RecvMsg(&request); err != nil {
 		return err
 	}
 	description := &grpc.StreamDesc{ServerStreams: true, ClientStreams: false}
-	localContext := metadata.NewOutgoingContext(ctx, metadata.Pairs("x-dieter-operator-subject", claims.Subject))
+	localContext := metadata.NewOutgoingContext(ctx, metadata.Pairs("x-dieter-operator-subject", operatorSubject))
 	call, err := s.local.NewStream(localContext, description, method, grpc.ForceCodec(rpcraw.Codec{}))
 	if err != nil {
 		return err
@@ -109,6 +135,12 @@ func (s *DirectServer) handle(_ any, stream grpc.ServerStream) error {
 }
 
 func DialDirect(ctx context.Context, address, daemonID string, daemonCA []byte, token string) (*grpc.ClientConn, error) {
+	return DialDirectWithCredentials(ctx, address, daemonID, daemonCA, daemonTokenCredential{token: token})
+}
+
+// DialDirectWithCredentials preserves the daemon certificate identity check
+// while allowing long-lived clients to renew their per-RPC bearer credentials.
+func DialDirectWithCredentials(ctx context.Context, address, daemonID string, daemonCA []byte, bearer credentials.PerRPCCredentials) (*grpc.ClientConn, error) {
 	roots := x509.NewCertPool()
 	if !roots.AppendCertsFromPEM(daemonCA) {
 		return nil, errors.New("daemon CA is invalid")
@@ -131,7 +163,7 @@ func DialDirect(ctx context.Context, address, daemonID string, daemonCA []byte, 
 			return errors.New("daemon certificate identity does not match the route")
 		},
 	}
-	connection, err := grpc.NewClient(address, grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)), grpc.WithPerRPCCredentials(daemonTokenCredential{token: token}))
+	connection, err := grpc.NewClient(address, grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)), grpc.WithPerRPCCredentials(bearer), grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(16<<20), grpc.MaxCallSendMsgSize(16<<20)))
 	if err != nil {
 		return nil, err
 	}

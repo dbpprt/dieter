@@ -44,10 +44,16 @@ func ConfigFromEnv(root string) (Config, error) {
 		DevInsecure: os.Getenv("DIETER_GATEWAY_DEV_INSECURE") == "1", ProxyMode: os.Getenv("DIETER_GATEWAY_PROXY_MODE") == "1", NativeRedirects: map[string]struct{}{}, RTCTTL: 5 * time.Minute,
 	}
 	publicURL, err := url.Parse(strings.TrimSpace(os.Getenv("DIETER_PUBLIC_URL")))
-	if err != nil || publicURL.Host == "" || publicURL.Path != "" || publicURL.RawQuery != "" || publicURL.Fragment != "" || (!config.DevInsecure && publicURL.Scheme != "https") || (config.DevInsecure && publicURL.Scheme != "http" && publicURL.Scheme != "https") {
+	if err != nil || publicURL.Host == "" || publicURL.User != nil || publicURL.Path != "" || publicURL.RawQuery != "" || publicURL.Fragment != "" || (!config.DevInsecure && publicURL.Scheme != "https") || (config.DevInsecure && publicURL.Scheme != "http" && publicURL.Scheme != "https") {
 		return config, errors.New("DIETER_PUBLIC_URL must be an HTTPS origin without a path, query, or fragment")
 	}
 	config.PublicURL = publicURL
+	for name, value := range map[string]string{"DIETER_GITHUB_BASE_URL": config.GitHubBaseURL, "DIETER_GITHUB_API_URL": config.GitHubAPIURL} {
+		parsed, parseErr := url.Parse(value)
+		if parseErr != nil || parsed.Host == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" || parsed.Scheme != "https" && !(config.DevInsecure && parsed.Scheme == "http" && isLoopbackHost(parsed.Hostname())) {
+			return config, fmt.Errorf("%s must be an HTTPS URL (HTTP is allowed only for development loopback servers)", name)
+		}
+	}
 	config.GitHubClientID = strings.TrimSpace(os.Getenv("DIETER_GITHUB_CLIENT_ID"))
 	config.GitHubSecret = strings.TrimSpace(os.Getenv("DIETER_GITHUB_CLIENT_SECRET"))
 	if config.GitHubClientID == "" || config.GitHubSecret == "" {
@@ -120,9 +126,10 @@ func ConfigFromEnv(root string) (Config, error) {
 		if !config.DevInsecure && !config.ProxyMode {
 			return config, errors.New("DIETER_GATEWAY_TLS_CERT and DIETER_GATEWAY_TLS_KEY are required")
 		}
+	}
+	if config.DevInsecure || config.ProxyMode {
 		host, _, splitErr := net.SplitHostPort(config.Address)
-		ip := net.ParseIP(host)
-		if splitErr != nil || host != "localhost" && (ip == nil || !ip.IsLoopback()) {
+		if splitErr != nil || !isLoopbackHost(host) {
 			return config, errors.New("plaintext gateway modes are allowed only on a loopback address")
 		}
 	}
@@ -130,6 +137,11 @@ func ConfigFromEnv(root string) (Config, error) {
 		return config, errors.New("DIETER_GATEWAY_PROXY_MODE and DIETER_GATEWAY_DEV_INSECURE are mutually exclusive")
 	}
 	return config, nil
+}
+
+func isLoopbackHost(host string) bool {
+	ip := net.ParseIP(host)
+	return host == "localhost" || ip != nil && ip.IsLoopback()
 }
 
 func addAllowedUserID(allowed map[int64]struct{}, value string) (int64, error) {

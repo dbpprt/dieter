@@ -40,6 +40,9 @@ type GatewayClient struct {
 	OnAcknowledged        func(time.Time)
 	RemoteDesktopPresence func() *gatewayv1.RemoteDesktopPresence
 	Timing                GatewayTiming
+
+	replayMu    sync.Mutex
+	relayProofs map[string]int64
 }
 
 func (c *GatewayClient) remoteDesktopPresence() *gatewayv1.RemoteDesktopPresence {
@@ -58,6 +61,8 @@ const (
 	gatewayReconnectMaximumBackoff  = 30 * time.Second
 	gatewayReconnectStableAfter     = 30 * time.Second
 	gatewayHeartbeatAckCapability   = "heartbeat_ack_v1"
+	maxActiveGatewayRelays          = 16
+	maxGatewayRelayProofs           = 16384
 )
 
 // GatewayTiming exposes bounded timing overrides for isolated integration
@@ -256,8 +261,9 @@ func (c *GatewayClient) runOnce(ctx context.Context) (time.Duration, error) {
 	// creates fresh streams explicitly.
 	prioritySend := make(chan *gatewayv1.DaemonLinkFrame, 16)
 	streamSend := make(chan *gatewayv1.DaemonLinkFrame, 8)
+	controlSend := make(chan *gatewayv1.DaemonLinkFrame, 2*maxActiveGatewayRelays)
 	var relayActive atomic.Bool
-	enqueue := func(frame *gatewayv1.DaemonLinkFrame, priority bool) bool {
+	enqueue := func(callCtx context.Context, frame *gatewayv1.DaemonLinkFrame, priority bool) bool {
 		if frame.GetKind() != gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_HEARTBEAT {
 			relayActive.Store(true)
 		}
@@ -265,18 +271,13 @@ func (c *GatewayClient) runOnce(ctx context.Context) (time.Duration, error) {
 		if priority {
 			queue = prioritySend
 		}
-		select {
-		case <-linkCtx.Done():
-			return false
-		case queue <- frame:
-			return true
-		}
+		return enqueueRelayResponse(callCtx, linkCtx, queue, frame)
 	}
-	tryEnqueuePriority := func(frame *gatewayv1.DaemonLinkFrame) bool {
+	tryEnqueueControl := func(frame *gatewayv1.DaemonLinkFrame) bool {
 		select {
 		case <-linkCtx.Done():
 			return false
-		case prioritySend <- frame:
+		case controlSend <- frame:
 			return true
 		default:
 			return false
@@ -285,6 +286,19 @@ func (c *GatewayClient) runOnce(ctx context.Context) (time.Duration, error) {
 	sendErr := make(chan error, 1)
 	go func() {
 		for {
+			// Control traffic has separate capacity from RPC responses. Nothing
+			// on the receive loop waits for a blocked transport writer.
+			select {
+			case <-linkCtx.Done():
+				return
+			case frame := <-controlSend:
+				if err := stream.Send(frame); err != nil {
+					sendErr <- err
+					return
+				}
+				continue
+			default:
+			}
 			// Always drain command responses, terminal frames, and control
 			// traffic before another streaming data frame. This keeps a busy
 			// WatchSync/WatchConversation call from hiding a unary admission ack.
@@ -292,6 +306,12 @@ func (c *GatewayClient) runOnce(ctx context.Context) (time.Duration, error) {
 			case <-linkCtx.Done():
 				sendErr <- linkCtx.Err()
 				return
+			case frame := <-controlSend:
+				if err := stream.Send(frame); err != nil {
+					sendErr <- err
+					return
+				}
+				continue
 			case frame := <-prioritySend:
 				if err := stream.Send(frame); err != nil {
 					sendErr <- err
@@ -304,6 +324,11 @@ func (c *GatewayClient) runOnce(ctx context.Context) (time.Duration, error) {
 			case <-linkCtx.Done():
 				sendErr <- linkCtx.Err()
 				return
+			case frame := <-controlSend:
+				if err := stream.Send(frame); err != nil {
+					sendErr <- err
+					return
+				}
 			case frame := <-prioritySend:
 				if err := stream.Send(frame); err != nil {
 					sendErr <- err
@@ -318,6 +343,7 @@ func (c *GatewayClient) runOnce(ctx context.Context) (time.Duration, error) {
 		}
 	}()
 	var calls sync.Map
+	activeRelays := make(chan struct{}, maxActiveGatewayRelays)
 	heartbeatInterval := timing.HeartbeatActiveInterval
 	heartbeat := time.NewTimer(heartbeatInterval)
 	defer heartbeat.Stop()
@@ -359,14 +385,14 @@ func (c *GatewayClient) runOnce(ctx context.Context) (time.Duration, error) {
 		case <-heartbeat.C:
 			frame := &gatewayv1.DaemonLinkFrame{Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_HEARTBEAT, DaemonId: c.Identity.ID, Version: c.Version, ApiVersion: c.APIVersion, DirectCandidates: c.Routes, RemoteDesktop: c.remoteDesktopPresence()}
 			if !heartbeatAcknowledged {
-				if !enqueue(frame, true) {
-					return finish(linkCtx.Err())
+				if !tryEnqueueControl(frame) {
+					return finish(errors.New("gateway heartbeat control queue is stalled"))
 				}
 			} else if outstandingHeartbeat == "" {
 				heartbeatSequence++
 				outstandingHeartbeat = fmt.Sprintf("hb_%d", heartbeatSequence)
 				frame.RequestId = outstandingHeartbeat
-				if !tryEnqueuePriority(frame) {
+				if !tryEnqueueControl(frame) {
 					return finish(errors.New("gateway heartbeat control queue is stalled"))
 				}
 			}
@@ -381,18 +407,41 @@ func (c *GatewayClient) runOnce(ctx context.Context) (time.Duration, error) {
 			}
 			switch frame.GetKind() {
 			case gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_OPEN_RPC:
+				if frame.GetStreamId() == 0 {
+					if !tryEnqueueControl(relayError(frame.GetStreamId(), codes.InvalidArgument, "relay stream ID is required")) {
+						return finish(errors.New("gateway relay control queue is stalled"))
+					}
+					continue
+				}
 				callCtx, cancel := context.WithCancel(linkCtx)
-				calls.Store(frame.GetStreamId(), cancel)
+				if _, loaded := calls.LoadOrStore(frame.GetStreamId(), cancel); loaded {
+					cancel()
+					return finish(errors.New("gateway reused an active relay stream ID"))
+				}
+				select {
+				case activeRelays <- struct{}{}:
+				default:
+					calls.Delete(frame.GetStreamId())
+					cancel()
+					if !tryEnqueueControl(relayError(frame.GetStreamId(), codes.ResourceExhausted, "daemon relay concurrency is exhausted")) {
+						return finish(errors.New("gateway relay control queue is stalled"))
+					}
+					continue
+				}
 				go func(frame *gatewayv1.DaemonLinkFrame) {
+					defer cancel()
 					defer calls.Delete(frame.GetStreamId())
+					defer func() { <-activeRelays }()
 					c.relayLocal(callCtx, local, frame, enqueue)
 				}(frame)
 			case gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_CANCEL_RPC:
-				if value, ok := calls.LoadAndDelete(frame.GetStreamId()); ok {
+				if value, ok := calls.Load(frame.GetStreamId()); ok {
 					value.(context.CancelFunc)()
 				}
 			case gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_PING:
-				enqueue(&gatewayv1.DaemonLinkFrame{Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_PONG, DaemonId: c.Identity.ID, RequestId: frame.GetRequestId()}, true)
+				if !tryEnqueueControl(&gatewayv1.DaemonLinkFrame{Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_PONG, DaemonId: c.Identity.ID, RequestId: frame.GetRequestId()}) {
+					return finish(errors.New("gateway relay control queue is stalled"))
+				}
 			case gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_PONG:
 				if heartbeatAcknowledged && matchesGatewayHeartbeatAck(frame, c.Identity.ID, outstandingHeartbeat) {
 					outstandingHeartbeat = ""
@@ -413,22 +462,46 @@ func (c *GatewayClient) runOnce(ctx context.Context) (time.Duration, error) {
 	}
 }
 
-func (c *GatewayClient) relayLocal(ctx context.Context, local *grpc.ClientConn, frame *gatewayv1.DaemonLinkFrame, send func(*gatewayv1.DaemonLinkFrame, bool) bool) {
+// Response admission must end with its RPC, even while the tunnel remains
+// healthy. Otherwise a canceled call can hold a relay slot behind a full queue.
+func enqueueRelayResponse(ctx, linkCtx context.Context, queue chan<- *gatewayv1.DaemonLinkFrame, frame *gatewayv1.DaemonLinkFrame) bool {
+	if ctx.Err() != nil || linkCtx.Err() != nil {
+		return false
+	}
+	select {
+	case <-ctx.Done():
+		return false
+	case <-linkCtx.Done():
+		return false
+	case queue <- frame:
+		return true
+	}
+}
+
+func (c *GatewayClient) relayLocal(ctx context.Context, local *grpc.ClientConn, frame *gatewayv1.DaemonLinkFrame, send func(context.Context, *gatewayv1.DaemonLinkFrame, bool) bool) {
 	started := time.Now()
 	priority := relayMethodPriority(frame.GetMethod())
 	defer func() {
 		c.Log.Debug("relayed Dieter RPC", "method", frame.GetMethod(), "stream_id", frame.GetStreamId(), "priority", priority, "elapsed", time.Since(started))
 	}()
-	emit := func(value *gatewayv1.DaemonLinkFrame) bool { return send(value, priority) }
+	emit := func(value *gatewayv1.DaemonLinkFrame) bool { return send(ctx, value, priority) }
+	if frame.GetDaemonId() != c.Identity.ID || frame.GetGeneration() != c.Identity.Generation || !strings.HasPrefix(frame.GetMethod(), "/dieter.v1.DieterService/") {
+		emit(relayError(frame.GetStreamId(), codes.Unauthenticated, "relay assertion target is invalid"))
+		return
+	}
 	public, err := trust.PublicKeyFromPEM(c.Identity.GatewaySigningPublicKey)
 	var operatorSubject string
+	var claims trust.DelegationClaims
 	if err == nil {
-		var claims trust.DelegationClaims
-		claims, err = trust.ParseAndVerifyDelegation(public, frame.GetDelegationAssertion(), c.Identity.GatewayURL, c.Identity.ID, frame.GetRequestId(), frame.GetMethod(), frame.GetPayload(), frame.GetGeneration(), time.Now().UTC())
+		claims, err = trust.ParseAndVerifyDelegation(public, frame.GetDelegationAssertion(), c.Identity.GatewayURL, c.Identity.ID, frame.GetRequestId(), frame.GetMethod(), frame.GetPayload(), c.Identity.Generation, time.Now().UTC())
 		operatorSubject = claims.Subject
 	}
 	if err != nil {
 		emit(relayError(frame.GetStreamId(), codes.Unauthenticated, "relay assertion is invalid"))
+		return
+	}
+	if err := c.consumeRelayProof(claims, time.Now()); err != nil {
+		emit(relayStatusError(frame.GetStreamId(), err))
 		return
 	}
 	if deadline := frame.GetDeadlineUnixMillis(); deadline > 0 {
@@ -479,6 +552,31 @@ func (c *GatewayClient) relayLocal(ctx context.Context, local *grpc.ClientConn, 
 	}
 }
 
+// Keep consumed proofs across reconnects for their entire accepted lifetime.
+// Admission is bounded and fails closed rather than evicting a live proof that
+// could then be replayed to dispatch a mutation a second time.
+func (c *GatewayClient) consumeRelayProof(claims trust.DelegationClaims, now time.Time) error {
+	c.replayMu.Lock()
+	defer c.replayMu.Unlock()
+	if c.relayProofs == nil {
+		c.relayProofs = make(map[string]int64)
+	}
+	unix := now.Unix()
+	for id, expires := range c.relayProofs {
+		if expires <= unix-10 {
+			delete(c.relayProofs, id)
+		}
+	}
+	if _, used := c.relayProofs[claims.ID]; used {
+		return status.Error(codes.Unauthenticated, "relay assertion was already used")
+	}
+	if len(c.relayProofs) >= maxGatewayRelayProofs {
+		return status.Error(codes.ResourceExhausted, "daemon relay assertion capacity is exhausted")
+	}
+	c.relayProofs[claims.ID] = claims.ExpiresAt
+	return nil
+}
+
 func relayMethodPriority(method string) bool {
 	return !strings.HasSuffix(method, "/WatchSync") &&
 		!strings.HasSuffix(method, "/WatchConversation") &&
@@ -509,10 +607,11 @@ func firstMetadata(values metadata.MD) map[string]string {
 }
 
 func dialGateway(ctx context.Context, identity *Identity, withCertificate bool) (*grpc.ClientConn, error) {
-	parsed, err := url.Parse(identity.GatewayURL)
-	if err != nil || parsed.Host == "" {
-		return nil, errors.New("gateway URL is invalid")
+	origin, err := trust.GatewayOrigin(identity.GatewayURL)
+	if err != nil {
+		return nil, err
 	}
+	parsed, _ := url.Parse(origin)
 	var transport credentials.TransportCredentials
 	if parsed.Scheme == "http" {
 		transport = insecure.NewCredentials()

@@ -40,7 +40,12 @@ Revoking a daemon closes its relay immediately and invalidates direct access as
 its five-minute bearers expire. Unenrolling from the machine itself signs the
 request with the enrolled identity, revokes the gateway record, closes the
 relay, and removes the local gateway credential, without touching projects,
-conversations, schedules, or harness settings.
+conversations, schedules, or harness settings. Signing out or expiring a gateway
+session closes its existing gateway streams within approximately five seconds.
+Direct streams end when their five-minute bearer expires, allowing ten seconds
+of clock tolerance. Native clients renew credentials before expiry; CLI read
+subscriptions renew credentials and resume from their last delivered checkpoint.
+Revocation stops recovery, and retrying a read never restarts an agent or process.
 
 ## What the gateway can and cannot see
 
@@ -58,6 +63,8 @@ relay calls. **All other paths, including `/`, return 404.**
 ## Transport hardening
 
 - TLS 1.3 is enforced on every external hop.
+- A reverse proxy must configure TLS 1.3 explicitly; the gateway cannot control
+  the proxy's public TLS policy.
 - Relay messages are capped at 16 MiB; queues, buffers, and concurrent streams
   are bounded.
 - A canceled relay RPC cancels only that transport RPC and never implicitly
@@ -79,3 +86,9 @@ The macOS app stores its gateway session unencrypted in a user-only file under
 `~/Library/Application Support/com.dbpprt.dieter.mac` and never touches Keychain.
 Android encrypts the session with a device-bound Android Keystore key. Neither
 client retains a GitHub token or a harness credential.
+
+## Dependency checks
+
+`just gateway vulncheck` and `just daemon vulncheck` scan reachable code using the
+pinned Go release. CI requires these checks before publishing gateway images or
+daemon/gateway release packages.

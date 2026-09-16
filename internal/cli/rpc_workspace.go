@@ -300,7 +300,7 @@ func (c *CLI) rpcWorkspaceOperation(args []string) error {
 }
 
 func (c *CLI) rpcWorkspaceWatch(args []string) error {
-	const usage = "Usage: dieter workspace watch [--after SEQUENCE] [--count N] OPERATION\n"
+	const usage = "Usage: dieter workspace watch [--after SEQUENCE] [--count N] OPERATION\n" + readRecoveryHelp
 	set := flags("workspace watch")
 	after := set.Uint64("after", 0, "last received log sequence")
 	count := set.Int("count", 0, "stop after N frames; zero streams until completion")

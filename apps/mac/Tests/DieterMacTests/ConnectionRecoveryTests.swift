@@ -1,4 +1,6 @@
 import DieterAPI
+import DieterClient
+import DieterCore
 import Foundation
 import GRPCCore
 import Synchronization
@@ -6,6 +8,65 @@ import Testing
 @testable import DieterMac
 
 private struct RecoveryFixtureError: Error {}
+
+private final class CredentialRolloverProbe: Sendable {
+    let state = Mutex((now: Date(timeIntervalSince1970: 1_000), exchanges: 0, sleeps: [Double]()))
+    var clock: ClientClock {
+        ClientClock(
+            now: { self.state.withLock { $0.now } },
+            sleep: { duration in
+                let seconds =
+                    Double(duration.components.seconds)
+                    + Double(duration.components.attoseconds) / 1e18
+                self.state.withLock {
+                    $0.now += seconds; $0.sleeps.append(seconds)
+                }
+            })
+    }
+}
+
+@Test func screenCredentialSurvivesRepeatedRolloverThenStopsOnRevocation() async {
+    let probe = CredentialRolloverProbe()
+    let credential = DirectAccessCredential(
+        token: "first", expiresAt: Date(timeIntervalSince1970: 1_300).ISO8601Format(), daemonGeneration: 7)
+    await DirectCredentialRefreshLoop.run(credential: credential, clock: probe.clock) {
+        let attempt = probe.state.withLock {
+            $0.exchanges += 1; return $0.exchanges
+        }
+        if attempt == 1 { throw RPCError(code: .unavailable, message: "temporary gateway failure") }
+        if attempt == 4 { throw RPCError(code: .unauthenticated, message: "session revoked") }
+        var token = Dieter_Gateway_V1_DaemonAccessToken()
+        token.tokenType = "Bearer"
+        token.accessToken = "renewed-\(attempt)"
+        token.expiresAt = probe.clock.now().addingTimeInterval(300).ISO8601Format()
+        token.daemonGeneration = 7
+        return token
+    }
+    #expect(credential.snapshot().token == "renewed-3")
+    #expect(probe.state.withLock { $0.exchanges } == 4)
+    #expect(probe.state.withLock { $0.sleeps } == [270, 1, 270, 270])
+}
+
+@Test func screenCredentialRejectsChangedEnrollmentAndCanceledRefresh() async {
+    for cancel in [false, true] {
+        let probe = CredentialRolloverProbe()
+        let credential = DirectAccessCredential(
+            token: "first", expiresAt: Date(timeIntervalSince1970: 1_300).ISO8601Format(), daemonGeneration: 7)
+        await Task {
+            await DirectCredentialRefreshLoop.run(credential: credential, clock: probe.clock) {
+                probe.state.withLock { $0.exchanges += 1 }
+                if cancel { withUnsafeCurrentTask { $0?.cancel() } }
+                var token = Dieter_Gateway_V1_DaemonAccessToken()
+                token.tokenType = "Bearer"; token.accessToken = "replacement"
+                token.expiresAt = probe.clock.now().addingTimeInterval(300).ISO8601Format()
+                token.daemonGeneration = cancel ? 7 : 8
+                return token
+            }
+        }.value
+        #expect(credential.snapshot().token == "first")
+        #expect(probe.state.withLock { $0.exchanges } == 1)
+    }
+}
 
 private final class RecoveryProbe: Sendable {
     let attempts = Mutex(0)
@@ -61,12 +122,14 @@ private final class RecoveryProbe: Sendable {
     let endpoint = DieterEndpoint(name: "Fixture", host: "127.0.0.1", port: 1)
     let client = try DieterRPC(endpoint: endpoint)
     let runner = Task<Void, Never> {}
+    let renewal = Task<Void, Never> {}
     let plane = DataPlaneConnection(
         rpc: client, task: runner, connection: .init(route: .local, latencyMilliseconds: 0),
-        directTokenExpiresAt: nil)
+        directTokenExpiresAt: nil, credentialRefreshTask: renewal)
     let lease = try await manager.temporaryLease(target: endpoint, accessToken: nil) { plane }
     lease.release(reusable: false)
     #expect(runner.isCancelled)
+    #expect(renewal.isCancelled)
     // Releasing twice must not return the discarded client to the pool.
     lease.release()
     var openedFreshRoute = false

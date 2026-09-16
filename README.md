@@ -140,7 +140,11 @@ projection is unavailable. Frames stay below 8 MiB; large directories use pages.
 The same `dieter` binary is a complete daemon client. Local commands use the
 running daemon on this machine. To control another enrolled machine, sign in
 once and select it globally; the CLI prefers verified direct TLS and falls back
-to the gateway relay:
+to the gateway relay. State, sync, conversation, terminal, execution, and
+Git-operation watches renew direct credentials and resume after transient
+failures. Recovery uses the last delivered sequence or complete sync projection,
+with up to five retries between frames. Revoked credentials and permanent errors
+stop recovery. Mutations, process starts, and stdin writes are never replayed:
 
 ```sh
 dieter auth login
@@ -377,7 +381,7 @@ uses a light appearance and paginated A4 pages; HTML is a standalone document.
 
 ### Requirements
 
-- Go 1.26.5 or newer
+- Go 1.26.8 or newer
 - Node.js 22.19 or newer on daemon hosts
 - [just](https://just.systems/) 1.58 or newer for development commands
 - Git working trees for registered projects
@@ -463,6 +467,11 @@ dieter daemon enroll \
   --name "Studio Mac"
 ```
 
+After GitHub sign-in, check the machine name and enrollment code on the
+gateway's confirmation page, then approve that machine. The page also displays
+its public-key fingerprint. Opening a verification link alone does not approve
+enrollment.
+
 The raw data plane remains on `127.0.0.1:4242`. To add a trusted LAN or
 tailnet route, expose a separate authenticated TLS listener—never raw port
 4242:
@@ -491,6 +500,14 @@ itself. Proxy mode requires a loopback listener and an HTTPS
 `DIETER_PUBLIC_URL`; direct TLS requires `DIETER_GATEWAY_TLS_CERT` and
 `DIETER_GATEWAY_TLS_KEY`. All unspecified public routes, including `/`, return
 404 by design.
+
+Daemon enrollment and CLI gateway connections require HTTPS. HTTP is accepted
+only for literal loopback addresses such as `http://127.0.0.1:8080` in isolated
+local setups; hostnames and other IP addresses require TLS.
+
+Run `just gateway vulncheck` and `just daemon vulncheck` to scan both binaries
+with the pinned release Go toolchain. CI gates gateway images and downloadable
+daemon/gateway releases on the corresponding vulnerability scan.
 
 ### Harnesses
 

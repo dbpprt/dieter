@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -48,9 +49,19 @@ type NativeCode struct {
 }
 
 type AuthState struct {
-	Sessions []Session      `json:"sessions,omitempty"`
-	Pending  []OAuthPending `json:"pending,omitempty"`
-	Codes    []NativeCode   `json:"codes,omitempty"`
+	Sessions  []Session            `json:"sessions,omitempty"`
+	Pending   []OAuthPending       `json:"pending,omitempty"`
+	Codes     []NativeCode         `json:"codes,omitempty"`
+	Approvals []EnrollmentApproval `json:"approvals,omitempty"`
+}
+
+type EnrollmentApproval struct {
+	TokenHash    string    `json:"tokenHash"`
+	EnrollmentID string    `json:"enrollmentId"`
+	UserCode     string    `json:"userCode"`
+	GitHubID     int64     `json:"githubId"`
+	Login        string    `json:"login"`
+	ExpiresAt    time.Time `json:"expiresAt"`
 }
 
 type EnrollmentRecord struct {
@@ -109,7 +120,11 @@ func OpenStore(root string) (*Store, error) {
 	if err := os.Chmod(absolute, 0o700); err != nil {
 		return nil, err
 	}
-	db, err := sql.Open("sqlite", filepath.Join(absolute, "gateway.db"))
+	databaseURL := url.URL{Scheme: "file", Path: filepath.Join(absolute, "gateway.db")}
+	// Reserve the SQLite writer before any read-modify-write operation. The
+	// database lock protects sessions across processes, including sign-out.
+	databaseURL.RawQuery = url.Values{"_txlock": {"immediate"}, "_busy_timeout": {"5000"}}.Encode()
+	db, err := sql.Open("sqlite", databaseURL.String())
 	if err != nil {
 		return nil, err
 	}
@@ -215,8 +230,12 @@ func (s *Store) AuthState() (AuthState, error) {
 }
 
 func (s *Store) authStateLocked() (AuthState, error) {
+	return readAuthState(s.DB.QueryRow)
+}
+
+func readAuthState(queryRow func(string, ...any) *sql.Row) (AuthState, error) {
 	var raw []byte
-	err := s.DB.QueryRow(`SELECT value FROM gateway_state WHERE key = 'auth'`).Scan(&raw)
+	err := queryRow(`SELECT value FROM gateway_state WHERE key = 'auth'`).Scan(&raw)
 	if errors.Is(err, sql.ErrNoRows) {
 		return AuthState{}, nil
 	}
@@ -233,7 +252,12 @@ func (s *Store) authStateLocked() (AuthState, error) {
 func (s *Store) UpdateAuthState(update func(*AuthState) error) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	state, err := s.authStateLocked()
+	tx, err := s.DB.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	state, err := readAuthState(tx.QueryRow)
 	if err != nil {
 		return err
 	}
@@ -244,8 +268,10 @@ func (s *Store) UpdateAuthState(update func(*AuthState) error) error {
 	if err != nil {
 		return err
 	}
-	_, err = s.DB.Exec(`INSERT INTO gateway_state(key, value) VALUES('auth', ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, raw)
-	return err
+	if _, err := tx.Exec(`INSERT INTO gateway_state(key, value) VALUES('auth', ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, raw); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (s *Store) CreateEnrollment(record EnrollmentRecord) error {

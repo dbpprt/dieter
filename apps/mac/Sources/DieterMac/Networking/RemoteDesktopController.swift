@@ -470,6 +470,7 @@ final class RemoteDesktopController {
         signalingTask = Task { [weak self] in
             var attempt = 0
             while !Task.isCancelled {
+                let started = Date()
                 do {
                     guard self?.owns(token) == true else { return }
                     self?.signalingReceiveFailure = nil
@@ -493,6 +494,9 @@ final class RemoteDesktopController {
                 } catch {
                     guard self?.owns(token) == true else { return }
                     let failureMessage = self?.signalingReceiveFailure ?? DieterRPCFailure.message(for: error)
+                    // Normal bearer expiry must not exhaust a lifetime retry
+                    // budget after three otherwise healthy five-minute streams.
+                    if Date().timeIntervalSince(started) >= 10 { attempt = 0 }
                     attempt += 1
                     guard attempt <= 2, self?.peerConnection != nil else {
                         self?.fail(message: failureMessage)

@@ -1,6 +1,6 @@
 module github.com/dbpprt/dieter
 
-go 1.26.5
+go 1.26.8
 
 require (
 	connectrpc.com/connect v1.20.0
@@ -16,7 +16,7 @@ require (
 	github.com/shirou/gopsutil/v4 v4.26.7
 	golang.org/x/net v0.58.0
 	golang.org/x/sys v0.47.0
-	google.golang.org/grpc v1.83.0
+	google.golang.org/grpc v1.83.2
 	google.golang.org/protobuf v1.36.12
 	gopkg.in/yaml.v3 v3.0.1
 	modernc.org/sqlite v1.56.0

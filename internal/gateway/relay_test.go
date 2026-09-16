@@ -213,6 +213,7 @@ func TestRelayFailureDrainsWhileReceiverIsActive(t *testing.T) {
 		case <-time.After(5 * time.Second):
 			t.Fatal("failure drain blocked against the active receiver")
 		}
+		<-link.control
 		select {
 		case err := <-consumed:
 			if err != io.EOF {
@@ -232,7 +233,8 @@ func newTestRelayHub(t *testing.T) (*Hub, *daemonLink) {
 	hub := NewHub(nil, Config{})
 	link := &daemonLink{
 		id: "isolated-test-daemon", send: make(chan *gatewayv1.DaemonLinkFrame, 8),
-		done: make(chan struct{}), streams: map[uint64]*relayFrameQueue{},
+		control: make(chan *gatewayv1.DaemonLinkFrame, 32),
+		done:    make(chan struct{}), streams: map[uint64]*relayFrameQueue{},
 	}
 	link.markSeen(time.Now())
 	hub.register(link)

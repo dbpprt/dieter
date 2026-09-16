@@ -71,6 +71,10 @@ jobs:
       - uses: extractions/setup-just@v3
         with:
           just-version: "1.58.0"
+      - name: Check component vulnerabilities before packaging
+        env:
+          COMPONENT: ${{ matrix.component }}
+        run: just "${COMPONENT}" vulncheck
       - name: Build and package
         env:
           GOOS: ${{ matrix.goos }}
@@ -107,6 +111,8 @@ jobs:
         env:
           RELEASE_VERSION: ${{ needs.version.outputs.tag }}
         run: just daemon package-macos
+      - name: Check daemon vulnerabilities before signing
+        run: just daemon vulncheck
       - name: Check signing configuration
         id: signing
         env:

@@ -4,11 +4,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/dbpprt/dieter/internal/trust"
 )
 
 type clientSession struct {
@@ -25,15 +26,7 @@ type clientConfig struct {
 func clientConfigPath(root string) string { return filepath.Join(root, "auth", "client.json") }
 
 func normalizeGatewayURL(value string) (string, error) {
-	value = strings.TrimRight(strings.TrimSpace(value), "/")
-	if value == "" {
-		return "", errors.New("gateway URL is required")
-	}
-	parsed, err := url.Parse(value)
-	if err != nil || parsed.Host == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" || (parsed.Path != "" && parsed.Path != "/") || (parsed.Scheme != "https" && parsed.Scheme != "http") {
-		return "", errors.New("gateway URL must use https or http")
-	}
-	return parsed.Scheme + "://" + parsed.Host, nil
+	return trust.GatewayOrigin(value)
 }
 
 func loadClientConfig(root string) (clientConfig, error) {

@@ -178,7 +178,7 @@ Usage:
 
 Global options:
   --store PATH             DIETER_HOME (default ~/.dieter)
-  --gateway URL            Gateway origin for account and remote commands
+  --gateway URL            HTTPS gateway origin (HTTP only on literal loopback)
   --machine ID|NAME        Target an enrolled daemon; omit for the local daemon
   --timeout DURATION       Unary command and connection timeout (default 15s)
   --harness-config PATH    Local daemon harness registry YAML
@@ -212,6 +212,9 @@ Commands:
 Without --machine, operational commands use the running local daemon API. With
 --machine, the CLI authenticates to the gateway, prefers direct TLS, and falls
 back to the bounded gateway relay. It never reads a remote machine's storage.
+Read watches renew credentials and resume after transient failures, with five
+retries between delivered frames. Revocation stops recovery; mutations and
+process starts are never replayed by watch recovery.
 
 Run "dieter help <command> [action]" or append --help at any command depth.
 `)
@@ -601,6 +604,7 @@ func (c *CLI) daemonEnroll(args []string) error {
 	const usage = `Usage: dieter daemon enroll [--gateway URL] [--name NAME] [--no-open]
 
 Enroll this machine with the GitHub account configured by the Dieter gateway.
+Gateway URLs require HTTPS; HTTP is allowed only on literal loopback addresses.
 `
 	set := flags("daemon enroll")
 	gatewayURL := set.String("gateway", "https://board.dbpprt.com", "gateway origin")

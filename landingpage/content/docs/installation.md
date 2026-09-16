@@ -12,7 +12,7 @@ separate packages.
 
 ## Requirements
 
-- Go 1.26.5 or newer *(source builds)*
+- Go 1.26.8 or newer *(source builds)*
 - Node.js 22.19 or newer on each daemon host
 - Git working trees for registered projects
 - One configured harness login or API key

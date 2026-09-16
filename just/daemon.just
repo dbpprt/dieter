@@ -39,6 +39,13 @@ test:
     )
     go test "${packages[@]}"
 
+# Scan daemon/CLI dependencies with the release's pinned Go toolchain.
+vulncheck:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    daemon_toolchain="$(sed -n 's/^go /go/p' go.mod)"
+    GOTOOLCHAIN="$daemon_toolchain" go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./cmd/dieter
+
 # Start a source daemon in the foreground without managing any existing service.
 run:
     #!/usr/bin/env bash

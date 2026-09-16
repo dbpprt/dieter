@@ -21,6 +21,7 @@ import (
 
 const (
 	maxRelayPayload               = 16 << 20
+	maxDaemonPresenceBytes        = 64 << 10
 	defaultRelayFrameBuffer       = 64
 	remoteDesktopRelayFrameBuffer = 128
 	// WatchExecution can replay all 4096 events retained by remoteexec before
@@ -37,12 +38,16 @@ const (
 	// do not disconnect every native client at once.
 	daemonHeartbeatLease      = 60 * time.Second
 	daemonHeartbeatLeaseCheck = time.Second
+	daemonHandshakeTimeout    = 10 * time.Second
+	maxDaemonHandshakes       = 64
+	maxDaemonRelayStreams     = 16
 )
 
 type Hub struct {
 	gatewayv1.UnimplementedDaemonLinkServiceServer
-	store  *Store
-	config Config
+	store      *Store
+	config     Config
+	handshakes chan struct{}
 
 	mu       sync.RWMutex
 	links    map[string]*daemonLink
@@ -68,6 +73,7 @@ type relayStream struct {
 	id    uint64
 	queue *relayFrameQueue
 	once  sync.Once
+	done  chan struct{}
 }
 
 type queuedRelayFrame struct {
@@ -98,50 +104,96 @@ func (q *relayFrameQueue) push(frame *gatewayv1.DaemonLinkFrame) bool {
 }
 
 func NewHub(store *Store, config Config) *Hub {
-	return &Hub{store: store, config: config, links: map[string]*daemonLink{}, changed: make(chan struct{}, 1)}
+	return &Hub{store: store, config: config, links: map[string]*daemonLink{}, changed: make(chan struct{}, 1), handshakes: make(chan struct{}, maxDaemonHandshakes)}
 }
 
 func (h *Hub) Connect(stream grpc.BidiStreamingServer[gatewayv1.DaemonLinkFrame, gatewayv1.DaemonLinkFrame]) error {
+	return h.connect(stream, daemonHandshakeTimeout)
+}
+
+type daemonHandshake struct {
+	hello  *gatewayv1.DaemonLinkFrame
+	record DaemonRecord
+	err    error
+}
+
+func (h *Hub) handshake(stream grpc.BidiStreamingServer[gatewayv1.DaemonLinkFrame, gatewayv1.DaemonLinkFrame]) daemonHandshake {
 	hello, err := stream.Recv()
 	if err != nil {
-		return err
+		return daemonHandshake{err: err}
 	}
 	identity := hello.GetDaemonId()
 	if hello.GetKind() != gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_HELLO || identity == "" {
-		return status.Error(codes.Unauthenticated, "daemon hello is required")
+		return daemonHandshake{err: status.Error(codes.Unauthenticated, "daemon hello is required")}
+	}
+	if proto.Size(hello) > maxDaemonPresenceBytes {
+		return daemonHandshake{err: status.Error(codes.ResourceExhausted, "daemon presence exceeds 64 KiB")}
 	}
 	record, err := h.store.Daemon(identity)
-	if err != nil || record.Revoked {
-		return status.Error(codes.Unauthenticated, "daemon is not enrolled")
+	if err != nil || record.Revoked || !h.config.AllowsGitHubUser(record.GitHubID) {
+		return daemonHandshake{err: status.Error(codes.Unauthenticated, "daemon is not enrolled")}
 	}
 	challenge := make([]byte, 32)
 	if _, err := rand.Read(challenge); err != nil {
-		return status.Error(codes.Internal, "create daemon challenge")
+		return daemonHandshake{err: status.Error(codes.Internal, "create daemon challenge")}
 	}
 	challengeID := randomID("link_")
 	if err := stream.Send(&gatewayv1.DaemonLinkFrame{Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_PING, DaemonId: identity, RequestId: challengeID, Payload: challenge}); err != nil {
-		return err
+		return daemonHandshake{err: err}
 	}
 	proof, err := stream.Recv()
 	if err != nil || proof.GetKind() != gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_PONG || proof.GetDaemonId() != identity || proof.GetRequestId() != challengeID {
-		return status.Error(codes.Unauthenticated, "daemon challenge response is invalid")
+		return daemonHandshake{err: status.Error(codes.Unauthenticated, "daemon challenge response is invalid")}
 	}
 	if err := linkauth.VerifyCertificate(record.Certificate, h.config.PublicURL.String(), identity, challenge, proof.GetPayload()); err != nil {
-		return status.Error(codes.Unauthenticated, "daemon challenge response is invalid")
+		return daemonHandshake{err: status.Error(codes.Unauthenticated, "daemon challenge response is invalid")}
 	}
-	routes, _ := json.Marshal(hello.GetDirectCandidates())
-	remoteDesktop, _ := json.Marshal(hello.GetRemoteDesktop())
-	if err := h.store.MarkDaemonSeen(identity, hello.GetVersion(), hello.GetApiVersion(), routes, remoteDesktop); err != nil {
-		return status.Error(codes.Unauthenticated, "daemon is revoked")
+	return daemonHandshake{hello: hello, record: record}
+}
+
+func (h *Hub) authenticateLink(stream grpc.BidiStreamingServer[gatewayv1.DaemonLinkFrame, gatewayv1.DaemonLinkFrame], timeout time.Duration) daemonHandshake {
+	select {
+	case h.handshakes <- struct{}{}:
+		defer func() { <-h.handshakes }()
+	default:
+		return daemonHandshake{err: status.Error(codes.ResourceExhausted, "daemon handshake concurrency is exhausted")}
 	}
+	ctx, cancel := context.WithTimeout(stream.Context(), timeout)
+	defer cancel()
+	result := make(chan daemonHandshake, 1)
+	// Returning the RPC on timeout cancels the underlying gRPC transport and
+	// releases any blocked Send/Recv. A derived context alone does not do so.
+	go func() { result <- h.handshake(stream) }()
+	select {
+	case <-ctx.Done():
+		return daemonHandshake{err: status.FromContextError(ctx.Err()).Err()}
+	case authenticated := <-result:
+		return authenticated
+	}
+}
+
+func (h *Hub) connect(stream grpc.BidiStreamingServer[gatewayv1.DaemonLinkFrame, gatewayv1.DaemonLinkFrame], timeout time.Duration) error {
+	authenticated := h.authenticateLink(stream, timeout)
+	if authenticated.err != nil {
+		return authenticated.err
+	}
+	hello, record := authenticated.hello, authenticated.record
+	identity := record.ID
 	link := &daemonLink{
 		id: identity, generation: record.Generation,
-		send: make(chan *gatewayv1.DaemonLinkFrame, 8), control: make(chan *gatewayv1.DaemonLinkFrame, 4),
+		send: make(chan *gatewayv1.DaemonLinkFrame, 8), control: make(chan *gatewayv1.DaemonLinkFrame, 2*maxDaemonRelayStreams),
 		done: make(chan struct{}), streams: map[uint64]*relayFrameQueue{},
 	}
 	link.markSeen(time.Now())
 	h.register(link)
 	defer h.unregister(link)
+	// Register before the atomic revoked check: a concurrent revocation must
+	// either reject this write or find this link and close it.
+	routes, _ := json.Marshal(hello.GetDirectCandidates())
+	remoteDesktop, _ := json.Marshal(hello.GetRemoteDesktop())
+	if err := h.store.MarkDaemonSeen(identity, hello.GetVersion(), hello.GetApiVersion(), routes, remoteDesktop); err != nil {
+		return status.Error(codes.Unauthenticated, "daemon is revoked")
+	}
 
 	sendErr := make(chan error, 1)
 	go func() {
@@ -168,6 +220,11 @@ func (h *Hub) Connect(stream grpc.BidiStreamingServer[gatewayv1.DaemonLinkFrame,
 					return
 				}
 			case frame := <-link.send:
+				// A prioritized cancellation may precede an unsent OPEN. Never
+				// dispatch that canceled request after its cancellation.
+				if !link.hasStream(frame.GetStreamId()) {
+					continue
+				}
 				if err := stream.Send(frame); err != nil {
 					sendErr <- err
 					return
@@ -196,6 +253,10 @@ func (h *Hub) Connect(stream grpc.BidiStreamingServer[gatewayv1.DaemonLinkFrame,
 			link.markSeen(time.Now())
 			switch frame.GetKind() {
 			case gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_HEARTBEAT:
+				if proto.Size(frame) > maxDaemonPresenceBytes {
+					recvErr <- status.Error(codes.ResourceExhausted, "daemon presence exceeds 64 KiB")
+					return
+				}
 				routes, _ := json.Marshal(frame.GetDirectCandidates())
 				remoteDesktop, _ := json.Marshal(frame.GetRemoteDesktop())
 				if err := h.store.MarkDaemonSeen(identity, frame.GetVersion(), frame.GetApiVersion(), routes, remoteDesktop); err != nil {
@@ -213,7 +274,10 @@ func (h *Hub) Connect(stream grpc.BidiStreamingServer[gatewayv1.DaemonLinkFrame,
 					}
 				}
 			case gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_PING:
-				link.sendControlFrame(&gatewayv1.DaemonLinkFrame{Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_PONG, DaemonId: identity, RequestId: frame.GetRequestId()})
+				if err := link.sendControlFrame(&gatewayv1.DaemonLinkFrame{Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_PONG, DaemonId: identity, RequestId: frame.GetRequestId()}); err != nil {
+					recvErr <- err
+					return
+				}
 			default:
 				link.dispatch(frame)
 			}
@@ -223,6 +287,8 @@ func (h *Hub) Connect(stream grpc.BidiStreamingServer[gatewayv1.DaemonLinkFrame,
 	defer lease.Stop()
 	for {
 		select {
+		case <-link.done:
+			return status.Error(codes.Unavailable, "daemon link is closed")
 		case err := <-sendErr:
 			return err
 		case err := <-recvErr:
@@ -289,6 +355,9 @@ func (h *Hub) CloseDaemon(id string) {
 }
 
 func (h *Hub) Open(ctx context.Context, daemonID string, frame *gatewayv1.DaemonLinkFrame) (*relayStream, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, status.FromContextError(err).Err()
+	}
 	h.mu.RLock()
 	link := h.links[daemonID]
 	h.mu.RUnlock()
@@ -306,7 +375,7 @@ func (h *Hub) Open(ctx context.Context, daemonID string, frame *gatewayv1.Daemon
 		return nil, status.Error(14, "daemon disconnected")
 	default:
 	}
-	if len(link.streams) >= 16 {
+	if len(link.streams) >= maxDaemonRelayStreams {
 		link.mu.Unlock()
 		return nil, status.Error(codes.ResourceExhausted, "daemon relay concurrency is exhausted")
 	}
@@ -318,17 +387,17 @@ func (h *Hub) Open(ctx context.Context, daemonID string, frame *gatewayv1.Daemon
 	link.streams[id] = queue
 	link.mu.Unlock()
 	frame.StreamId, frame.DaemonId = id, daemonID
-	if err := link.sendFrame(frame); err != nil {
+	if err := link.sendFrame(ctx, frame); err != nil {
 		link.removeStream(id)
-		return nil, status.Error(14, "daemon disconnected")
+		return nil, err
 	}
-	result := &relayStream{link: link, id: id, queue: queue}
+	result := &relayStream{link: link, id: id, queue: queue, done: make(chan struct{})}
 	go func() {
 		select {
 		case <-ctx.Done():
-			_ = link.sendFrame(&gatewayv1.DaemonLinkFrame{Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_CANCEL_RPC, StreamId: id})
 			result.Close()
 		case <-link.done:
+		case <-result.done:
 		}
 	}()
 	return result, nil
@@ -349,6 +418,11 @@ func (l *daemonLink) markSeen(now time.Time) {
 }
 
 func (l *daemonLink) isAlive(now time.Time) bool {
+	select {
+	case <-l.done:
+		return false
+	default:
+	}
 	lastSeenAt := l.lastSeenAt.Load()
 	return lastSeenAt > 0 && now.Sub(time.Unix(0, lastSeenAt)) < daemonHeartbeatLease
 }
@@ -367,13 +441,20 @@ func (s *relayStream) Recv() (*gatewayv1.DaemonLinkFrame, error) {
 }
 
 func (s *relayStream) Close() {
-	s.once.Do(func() { s.link.removeStream(s.id) })
+	s.once.Do(func() {
+		close(s.done)
+		if s.link.removeStream(s.id) {
+			s.link.cancelStream(s.id)
+		}
+	})
 }
 
-func (l *daemonLink) sendFrame(frame *gatewayv1.DaemonLinkFrame) error {
+func (l *daemonLink) sendFrame(ctx context.Context, frame *gatewayv1.DaemonLinkFrame) error {
 	select {
+	case <-ctx.Done():
+		return status.FromContextError(ctx.Err()).Err()
 	case <-l.done:
-		return errors.New("daemon link is closed")
+		return status.Error(codes.Unavailable, "daemon link is closed")
 	case l.send <- frame:
 		return nil
 	}
@@ -385,6 +466,22 @@ func (l *daemonLink) sendControlFrame(frame *gatewayv1.DaemonLinkFrame) error {
 		return errors.New("daemon link is closed")
 	case l.control <- frame:
 		return nil
+	default:
+		return status.Error(codes.ResourceExhausted, "daemon control queue is stalled")
+	}
+}
+
+func (l *daemonLink) hasStream(id uint64) bool {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	return l.streams[id] != nil
+}
+
+func (l *daemonLink) cancelStream(id uint64) {
+	if err := l.sendControlFrame(&gatewayv1.DaemonLinkFrame{Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_CANCEL_RPC, StreamId: id}); err != nil {
+		// A peer that cannot consume its bounded control queue cannot honor
+		// cancellation. Tear down that stalled transport rather than leak RPCs.
+		l.close()
 	}
 }
 
@@ -425,9 +522,12 @@ func (l *daemonLink) failStream(id uint64, err error) {
 		close(stream.frames)
 	}
 	l.mu.Unlock()
+	if stream != nil {
+		l.cancelStream(id)
+	}
 }
 
-func (l *daemonLink) removeStream(id uint64) {
+func (l *daemonLink) removeStream(id uint64) bool {
 	l.mu.Lock()
 	stream := l.streams[id]
 	delete(l.streams, id)
@@ -435,6 +535,7 @@ func (l *daemonLink) removeStream(id uint64) {
 	if stream != nil {
 		close(stream.frames)
 	}
+	return stream != nil
 }
 
 func (l *daemonLink) close() {

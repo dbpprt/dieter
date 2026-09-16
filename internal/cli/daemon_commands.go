@@ -459,7 +459,7 @@ Stream daemon state or durable sync frames as JSON Lines until interrupted.
 Sync sends workspace metadata, then deltas. Transport-only heartbeats prove
 reachability; observedCursor is diagnostic. Persist cursor only with a complete
 projection (projectionPending=false), never from a heartbeat.
-`
+` + readRecoveryHelp
 	if groupHelp(args) {
 		fmt.Fprint(c.Out, usage)
 		return nil
