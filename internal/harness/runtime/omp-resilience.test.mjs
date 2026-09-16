@@ -1,18 +1,20 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { VERSION as acpPackageVersion, createACP } from '@ai-sdk/harness-acp';
 import {
   acpImplementationIdentity,
+  createOMPLaunchCandidates,
   createOMPSessionWithCompatibility,
   isACPImplementationMismatch,
+  prepareOMPConfig,
   prepareOMPHookPaths,
-  prioritizeOMPHookPaths,
+  prioritizeOMPLaunchCandidates,
 } from './omp-resilience.mjs';
 
-const ompSettings = hookPath => ({
+const ompSettings = (hookPath, configPath) => ({
   harnessId: 'omp',
   source: {
     type: 'npm-simple',
@@ -20,7 +22,7 @@ const ompSettings = hookPath => ({
     packageVersion: '18.1.10',
   },
   executable: 'omp',
-  args: ['acp', '--hook', hookPath, '--thinking=max'],
+  args: ['acp', ...(configPath ? ['--config', configPath] : []), '--hook', hookPath, '--thinking=max'],
   modelMapping: { type: 'session-config-option', path: 'model' },
   forwardEnv: ['HOME', 'PI_CODING_AGENT_DIR', 'OMP_PROFILE', 'DIETER_OMP_CAPABILITY_FILE'],
 });
@@ -81,28 +83,38 @@ test('retries an ACP implementation mismatch with a legacy OMP hook path', async
   const attempts = [];
   const fallbacks = [];
   const expectedSession = { id: 'resumed' };
+  const candidates = [
+    { hookPath: '/stable/hook.mjs', configPath: '/runtime/omp.yml' },
+    { hookPath: '/legacy/hook.mjs', configPath: undefined },
+  ];
   const result = await createOMPSessionWithCompatibility({
-    hookPaths: ['/stable/hook.mjs', '/legacy/hook.mjs'],
-    createAgent: hookPath => ({
+    candidates,
+    createAgent: candidate => ({
       async createSession(options) {
-        attempts.push({ hookPath, options });
-        if (hookPath.startsWith('/stable')) {
+        attempts.push({ candidate, options });
+        if (candidate.hookPath.startsWith('/stable')) {
           throw new Error('ACP lifecycle state is incompatible with the configured implementation.');
         }
         return expectedSession;
       },
     }),
     sessionOptions: { sessionId: 'card' },
-    onFallback: hookPath => fallbacks.push(hookPath),
+    onFallback: candidate => fallbacks.push(candidate),
   });
   assert.equal(result.session, expectedSession);
-  assert.equal(result.hookPath, '/legacy/hook.mjs');
-  assert.deepEqual(attempts.map(attempt => attempt.hookPath), ['/stable/hook.mjs', '/legacy/hook.mjs']);
-  assert.deepEqual(fallbacks, ['/legacy/hook.mjs']);
+  assert.deepEqual(result.candidate, candidates[1]);
+  assert.deepEqual(attempts.map(attempt => attempt.candidate), candidates);
+  assert.deepEqual(fallbacks, [candidates[1]]);
 });
 
-test('preselects the legacy path matching the persisted ACP implementation identity', async () => {
+test('preselects the legacy launch matching the persisted ACP implementation identity', async () => {
   const legacyHookPath = '/runtime/harness/old/omp-capabilities-hook.mjs';
+  const configPath = '/runtime/config/omp.yml';
+  const settingsForCandidate = candidate => ompSettings(candidate.hookPath, candidate.configPath);
+  const candidates = createOMPLaunchCandidates({
+    hookPaths: ['/runtime/stable/omp-capabilities-new.mjs', legacyHookPath],
+    configPath,
+  });
   const lifecycleState = {
     data: {
       implementationIdentity: acpImplementationIdentity({
@@ -111,12 +123,24 @@ test('preselects the legacy path matching the persisted ACP implementation ident
       }),
     },
   };
-  assert.deepEqual(prioritizeOMPHookPaths({
-    hookPaths: ['/runtime/stable/omp-capabilities-new.mjs', '/runtime/current/omp-capabilities-hook.mjs', legacyHookPath],
+  const prioritized = prioritizeOMPLaunchCandidates({
+    candidates,
     lifecycleState,
-    settingsForHook: ompSettings,
+    settingsForCandidate,
     acpPackageVersion,
-  }), [legacyHookPath, '/runtime/stable/omp-capabilities-new.mjs', '/runtime/current/omp-capabilities-hook.mjs']);
+  });
+  assert.deepEqual(prioritized[0], { hookPath: legacyHookPath, configPath: undefined });
+  assert.deepEqual(prioritized.slice(1), candidates.filter(candidate => candidate !== prioritized[0]));
+});
+
+test('stages the Dieter OMP overlay atomically with private permissions', async t => {
+  const runtimeRoot = await mkdtemp(join(tmpdir(), 'dieter-omp-config-'));
+  t.after(() => rm(runtimeRoot, { recursive: true, force: true }));
+  const content = 'providers:\n  streamIdleTimeoutSeconds: 1800\n';
+  const configPath = await prepareOMPConfig({ runtimeRoot, content });
+  assert.equal(configPath, join(runtimeRoot, 'harness-config', 'omp.yml'));
+  assert.equal(await readFile(configPath, 'utf8'), content);
+  assert.equal((await stat(configPath)).mode & 0o777, 0o600);
 });
 
 test('matches the implementation identity contract of the pinned ACP runtime', async () => {
@@ -156,7 +180,7 @@ test('matches the implementation identity contract of the pinned ACP runtime', a
 test('does not mask or retry unrelated session creation failures', async () => {
   let attempts = 0;
   await assert.rejects(() => createOMPSessionWithCompatibility({
-    hookPaths: ['/stable/hook.mjs', '/legacy/hook.mjs'],
+    candidates: [{ hookPath: '/stable/hook.mjs', configPath: '/runtime/omp.yml' }],
     createAgent: () => ({
       async createSession() {
         attempts += 1;

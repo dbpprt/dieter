@@ -189,14 +189,25 @@ func (s *Service) CleanupInactiveProviderBridges() ([]string, error) {
 			if active {
 				continue
 			}
-			stateDir := filepath.Join(s.Store.RuntimeDir(), "sessions", project.ID, ".agent-runs", card.ID, "bridge")
-			if _, statErr := os.Stat(filepath.Join(stateDir, "bridge-meta.json")); errors.Is(statErr, os.ErrNotExist) {
-				continue
-			} else if statErr != nil {
-				cleanupErrors = append(cleanupErrors, fmt.Errorf("inspect provider bridge %s: %w", card.ID, statErr))
+			runtimeRoot := filepath.Join(s.Store.RuntimeDir(), "sessions", project.ID)
+			stateDirs, stateErr := harness.ProviderBridgeStateDirs(card.ID, runtimeRoot)
+			if stateErr != nil {
+				cleanupErrors = append(cleanupErrors, fmt.Errorf("inspect provider bridge %s: %w", card.ID, stateErr))
 				continue
 			}
-			if cleanupErr := cleaner.Cleanup(card.ID, filepath.Join(s.Store.RuntimeDir(), "sessions", project.ID)); cleanupErr != nil {
+			found := false
+			for _, stateDir := range stateDirs {
+				if _, statErr := os.Stat(filepath.Join(stateDir, "bridge-meta.json")); statErr == nil {
+					found = true
+					break
+				} else if !errors.Is(statErr, os.ErrNotExist) {
+					cleanupErrors = append(cleanupErrors, fmt.Errorf("inspect provider bridge %s: %w", card.ID, statErr))
+				}
+			}
+			if !found {
+				continue
+			}
+			if cleanupErr := cleaner.Cleanup(card.ID, runtimeRoot); cleanupErr != nil {
 				cleanupErrors = append(cleanupErrors, fmt.Errorf("clean inactive provider bridge %s: %w", card.ID, cleanupErr))
 				continue
 			}

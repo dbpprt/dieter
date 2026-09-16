@@ -514,6 +514,11 @@ daemon that owns the selected project and never reuse another machine's model
 list. A daemon retains its last successfully discovered catalog across
 transient refresh failures and performs one bounded provider refresh when a
 create or resume request names a model that is not in its current catalog.
+For OMP turns, Dieter supplies a private runtime overlay that allows 30 minutes
+for the first model event and 30 minutes between model stream events. This
+overrides OMP model defaults that can otherwise stop long-running delegated
+work after 10 silent minutes; it does not impose a total turn duration limit or
+modify the user's OMP configuration.
 See the [DSH integration proposal and operational notes](docs/deepseek-dsh-harness.md).
 An optional model `defaultEffort` is Dieter's default for new conversations and
 overrides the provider-discovered default when that model supports the selected

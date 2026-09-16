@@ -6,6 +6,8 @@ import {
   dshPackageVersion,
   ompACPArgs,
   ompACPModelMapping,
+  ompRuntimeConfig,
+  ompStreamTimeoutSeconds,
 } from './provider-options.mjs';
 test('maps the mutable Codex Fast mode option to an explicit service tier', () => {
   assert.deepEqual(codexConfig({ options: { fast_mode: 'true' } }), {
@@ -29,8 +31,13 @@ test('maps the selected Dieter model to the OMP ACP model option', () => {
   });
 });
 test('adds the OMP advisor flag only when the provider option is enabled', () => {
-  assert.deepEqual(ompACPArgs({ effort: 'high', options: { advisor: 'true' } }, '/hook.mjs'), ['acp', '--hook', '/hook.mjs', '--thinking=high', '--advisor']);
+  assert.deepEqual(ompACPArgs({ effort: 'high', options: { advisor: 'true' } }, '/hook.mjs', '/config.yml'), ['acp', '--config', '/config.yml', '--hook', '/hook.mjs', '--thinking=high', '--advisor']);
   assert.deepEqual(ompACPArgs({ options: { advisor: 'false' } }, '/hook.mjs'), ['acp', '--hook', '/hook.mjs']);
+});
+
+test('gives Dieter OMP turns a thirty-minute first-event and idle watchdog', () => {
+  assert.equal(ompStreamTimeoutSeconds, 1800);
+  assert.equal(ompRuntimeConfig(), 'providers:\n  streamFirstEventTimeoutSeconds: 1800\n  streamIdleTimeoutSeconds: 1800\n');
 });
 
 test('builds a pinned DSH ACP launch without overriding DSH configuration', () => {

@@ -49,14 +49,21 @@ export function acpImplementationIdentity({ settings, acpPackageVersion }) {
   return createHash('sha256').update(JSON.stringify(sortIdentityValue(payload))).digest('hex');
 }
 
-export function prioritizeOMPHookPaths({ hookPaths, lifecycleState, settingsForHook, acpPackageVersion }) {
+export function createOMPLaunchCandidates({ hookPaths, configPath }) {
+  return [
+    ...hookPaths.map(hookPath => ({ hookPath, configPath })),
+    ...hookPaths.map(hookPath => ({ hookPath, configPath: undefined })),
+  ];
+}
+
+export function prioritizeOMPLaunchCandidates({ candidates, lifecycleState, settingsForCandidate, acpPackageVersion }) {
   const expected = lifecycleState?.data?.implementationIdentity;
-  if (typeof expected !== 'string' || !expected) return hookPaths;
-  const match = hookPaths.find(hookPath => acpImplementationIdentity({
-    settings: settingsForHook(hookPath),
+  if (typeof expected !== 'string' || !expected) return candidates;
+  const match = candidates.find(candidate => acpImplementationIdentity({
+    settings: settingsForCandidate(candidate),
     acpPackageVersion,
   }) === expected);
-  return match ? [match, ...hookPaths.filter(hookPath => hookPath !== match)] : hookPaths;
+  return match ? [match, ...candidates.filter(candidate => candidate !== match)] : candidates;
 }
 
 export function isACPImplementationMismatch(error) {
@@ -98,6 +105,22 @@ async function validStableHook(path, name) {
  * shared harness package-lock. Older staged paths remain candidates so
  * lifecycle state written before this scheme can still attach to its bridge.
  */
+export async function prepareOMPConfig({ runtimeRoot, content }) {
+  const configRoot = join(runtimeRoot, 'harness-config');
+  const configPath = join(configRoot, 'omp.yml');
+  await mkdir(configRoot, { recursive: true, mode: 0o700 });
+  await chmod(configRoot, 0o700);
+  let current;
+  try {
+    current = await readFile(configPath, 'utf8');
+  } catch (error) {
+    if (error?.code !== 'ENOENT') throw error;
+  }
+  if (current !== content) await atomicWrite(configPath, content);
+  await chmod(configPath, 0o600);
+  return configPath;
+}
+
 export async function prepareOMPHookPaths({ runtimeRoot, currentHookPath }) {
   const content = await readFile(currentHookPath);
   const digest = createHash('sha256').update(content).digest('hex');
@@ -133,17 +156,17 @@ export async function prepareOMPHookPaths({ runtimeRoot, currentHookPath }) {
 }
 
 /** Retry only the one compatibility failure caused before an ACP bridge starts. */
-export async function createOMPSessionWithCompatibility({ hookPaths, createAgent, sessionOptions, onFallback }) {
-  if (!Array.isArray(hookPaths) || hookPaths.length === 0) throw new Error('OMP hook candidates are missing');
-  for (let index = 0; index < hookPaths.length; index += 1) {
-    const hookPath = hookPaths[index];
-    const agent = createAgent(hookPath);
+export async function createOMPSessionWithCompatibility({ candidates, createAgent, sessionOptions, onFallback }) {
+  if (!Array.isArray(candidates) || candidates.length === 0) throw new Error('OMP launch candidates are missing');
+  for (let index = 0; index < candidates.length; index += 1) {
+    const candidate = candidates[index];
+    const agent = createAgent(candidate);
     try {
       const session = await agent.createSession(sessionOptions);
-      if (index > 0) onFallback?.(hookPath);
-      return { agent, session, hookPath };
+      if (index > 0) onFallback?.(candidate);
+      return { agent, session, candidate };
     } catch (error) {
-      if (!isACPImplementationMismatch(error) || index === hookPaths.length - 1) throw error;
+      if (!isACPImplementationMismatch(error) || index === candidates.length - 1) throw error;
     }
   }
   throw new Error('OMP hook compatibility search exhausted unexpectedly');

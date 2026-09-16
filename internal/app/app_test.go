@@ -1907,6 +1907,7 @@ func TestFailedRestartSuspensionCleansProviderBridge(t *testing.T) {
 }
 
 func TestStartupCleansOnlyInactiveProviderBridges(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
 	service, _, project, board := appSetup(t)
 	idle, err := service.CreateCard(context.Background(), CardInput{
 		Project: project.ID, Board: board.ID, Lane: model.LaneTodo,
@@ -1925,7 +1926,11 @@ func TestStartupCleansOnlyInactiveProviderBridges(t *testing.T) {
 	runtimeRoot := filepath.Join(service.Store.RuntimeDir(), "sessions", project.ID)
 	metadata := map[string]string{}
 	for _, cardID := range []string{idle.ID, active.ID} {
-		path := filepath.Join(runtimeRoot, ".agent-runs", cardID, "bridge", "bridge-meta.json")
+		stateDirs, stateErr := harness.ProviderBridgeStateDirs(cardID, runtimeRoot)
+		if stateErr != nil {
+			t.Fatal(stateErr)
+		}
+		path := filepath.Join(stateDirs[1], "bridge-meta.json")
 		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 			t.Fatal(err)
 		}

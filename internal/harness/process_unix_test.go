@@ -48,6 +48,47 @@ func TestCleanupTerminatesVerifiedDetachedProviderBridge(t *testing.T) {
 	}
 }
 
+func TestCleanupTerminatesACPBridgeInSandboxHome(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	runtimeRoot := t.TempDir()
+	sessionID := "card-acp-provider-cleanup"
+	stateDirs, err := ProviderBridgeStateDirs(sessionID, runtimeRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stateDir := stateDirs[1]
+	if err := os.MkdirAll(stateDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	script := filepath.Join(t.TempDir(), "bridge.mjs")
+	if err := os.WriteFile(script, []byte("process.on('SIGTERM', () => {}); setInterval(() => {}, 1000);\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	command := exec.Command("node", script, "--bridge-state-dir", stateDir)
+	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	if err := command.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = syscall.Kill(-command.Process.Pid, syscall.SIGKILL)
+		_, _ = command.Process.Wait()
+	})
+	waitForProviderBridge(t, command.Process.Pid, stateDir)
+	writeProviderBridgeRecord(t, stateDir, command.Process.Pid)
+
+	runner := NewSubprocessRunner(t.TempDir())
+	if err := runner.Cleanup(sessionID, runtimeRoot); err != nil {
+		t.Fatal(err)
+	}
+	if providerBridgeProcessMatches(command.Process.Pid, stateDir) {
+		t.Fatal("verified ACP provider bridge survived cleanup")
+	}
+	if _, err := os.Stat(filepath.Join(stateDir, "bridge-meta.json")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("ACP bridge metadata still exists: %v", err)
+	}
+}
+
 func TestCleanupDoesNotSignalUnrelatedProcessFromStaleBridgeRecord(t *testing.T) {
 	runtimeRoot := t.TempDir()
 	sessionID := "card-stale-provider"

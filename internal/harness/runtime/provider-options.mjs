@@ -2,6 +2,13 @@ export const ompACPModelMapping = Object.freeze({
   type: 'session-config-option',
   path: 'model',
 });
+
+export const ompStreamTimeoutSeconds = 30 * 60;
+
+export function ompRuntimeConfig() {
+  return `providers:\n  streamFirstEventTimeoutSeconds: ${ompStreamTimeoutSeconds}\n  streamIdleTimeoutSeconds: ${ompStreamTimeoutSeconds}\n`;
+}
+
 export function codexConfig(request) {
   const fastMode = request.options?.fast_mode === 'true';
   return {
@@ -10,9 +17,10 @@ export function codexConfig(request) {
   };
 }
 
-export function ompACPArgs(request, hookPath) {
+export function ompACPArgs(request, hookPath, configPath) {
   return [
     'acp',
+    ...(configPath ? ['--config', configPath] : []),
     '--hook', hookPath,
     ...(request.effort ? [`--thinking=${request.effort}`] : []),
     ...(request.options?.advisor === 'true' ? ['--advisor'] : []),

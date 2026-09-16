@@ -12,7 +12,7 @@ import { z } from 'zod';
 import { createLocalSandboxProvider } from './local-sandbox.mjs';
 import { createLocalCodex } from './codex-runtime.mjs';
 import { createNDJSONTailer, createSubagentCapabilityCollector, observeHarnessCapabilities } from './capabilities.mjs';
-import { codexConfig, dshACPArgs, dshPackageVersion, ompACPArgs, ompACPModelMapping } from './provider-options.mjs';
+import { codexConfig, dshACPArgs, dshPackageVersion, ompACPArgs, ompACPModelMapping, ompRuntimeConfig } from './provider-options.mjs';
 import { promptWithLocalAttachments } from './local-attachments.mjs';
 import { createContentPresentationTool, contentPresentationInstructions } from './content-presentation.mjs';
 import { createProcessHostBridge, createBackgroundProcessTools, backgroundProcessInstructions } from './background-processes.mjs';
@@ -24,9 +24,11 @@ import {
   retryEmptyClaudeResume,
 } from './claude-resilience.mjs';
 import {
+  createOMPLaunchCandidates,
   createOMPSessionWithCompatibility,
+  prepareOMPConfig,
   prepareOMPHookPaths,
-  prioritizeOMPHookPaths,
+  prioritizeOMPLaunchCandidates,
 } from './omp-resilience.mjs';
 
 // Stdout is the worker protocol. Some harness bootstraps log package-manager
@@ -150,6 +152,7 @@ let harness;
 let createOMPHarness;
 let ompSettingsForHook;
 let ompHookPaths;
+let ompConfigPath;
 switch (adapter) {
   case 'codex':
     harness = createLocalCodex({
@@ -177,7 +180,7 @@ switch (adapter) {
     await writeFile(capabilityFile, '', { mode: 0o600 });
     capabilityTailer = createNDJSONTailer(capabilityFile, event => capabilityCollector.consumeOMPEnvelope(event));
     process.env.DIETER_OMP_CAPABILITY_FILE = capabilityFile;
-    ompSettingsForHook = hookPath => ({
+    ompSettingsForHook = (hookPath, configPath = ompConfigPath) => ({
       harnessId: 'omp',
       source: {
         type: 'npm-simple',
@@ -185,7 +188,7 @@ switch (adapter) {
         packageVersion: '18.1.10',
       },
       executable: 'omp',
-      args: ompACPArgs(request, hookPath),
+      args: ompACPArgs(request, hookPath, configPath),
       modelMapping: ompACPModelMapping,
       forwardEnv: ['HOME', 'PI_CODING_AGENT_DIR', 'OMP_PROFILE', 'DIETER_OMP_CAPABILITY_FILE', ...extraHarnessEnv],
     });
@@ -194,6 +197,7 @@ switch (adapter) {
       runtimeRoot: request.runtimeRoot,
       currentHookPath: fileURLToPath(new URL('./omp-capabilities-hook.mjs', import.meta.url)),
     });
+    ompConfigPath = await prepareOMPConfig({ runtimeRoot: request.runtimeRoot, content: ompRuntimeConfig() });
     harness = createOMPHarness(ompHookPaths[0]);
     break;
   }
@@ -325,19 +329,19 @@ try {
   }
   if (adapter === 'omp-acp' && (sessionOptions.resumeFrom || sessionOptions.continueFrom)) {
     const lifecycleState = sessionOptions.continueFrom ?? sessionOptions.resumeFrom?.continueFrom ?? sessionOptions.resumeFrom;
-    const compatibleHookPaths = prioritizeOMPHookPaths({
-      hookPaths: ompHookPaths,
+    const candidates = prioritizeOMPLaunchCandidates({
+      candidates: createOMPLaunchCandidates({ hookPaths: ompHookPaths, configPath: ompConfigPath }),
       lifecycleState,
-      settingsForHook: ompSettingsForHook,
+      settingsForCandidate: candidate => ompSettingsForHook(candidate.hookPath, candidate.configPath),
       acpPackageVersion,
     });
     const resumed = await createOMPSessionWithCompatibility({
-      hookPaths: compatibleHookPaths,
-      createAgent: hookPath => createAgent(createOMPHarness(hookPath)),
+      candidates,
+      createAgent: candidate => createAgent(createACP(ompSettingsForHook(candidate.hookPath, candidate.configPath))),
       sessionOptions,
     });
-    if (resumed.hookPath !== ompHookPaths[0]) {
-      console.error(`resumed OMP lifecycle with compatible staged hook ${resumed.hookPath}`);
+    if (resumed.candidate.hookPath !== ompHookPaths[0] || resumed.candidate.configPath == null) {
+      console.error(`resumed OMP lifecycle with compatible launch ${resumed.candidate.hookPath}`);
     }
     agent = resumed.agent;
     session = resumed.session;
