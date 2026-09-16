@@ -5,6 +5,8 @@ import com.dbpprt.dieter.connection.DieterConnectionManager
 import com.dbpprt.dieter.data.DieterRepository
 import com.dbpprt.dieter.data.GrpcDieterRepository
 import com.dbpprt.dieter.settings.AppPreferences
+import com.dbpprt.dieter.ui.ConversationDraftStore
+import com.dbpprt.dieter.ui.SharedPreferencesConversationDraftPersistence
 import com.dbpprt.dieter.update.AppUpdateManager
 import com.dbpprt.dieter.widget.DieterActivityWidgetProvider
 import kotlinx.coroutines.CoroutineScope
@@ -24,6 +26,9 @@ class DieterContainer(context: Context) {
     val repository: DieterRepository = GrpcDieterRepository(context)
     val connectionManager = DieterConnectionManager(context, repository)
     val appPreferences = AppPreferences(context, loadAsync = true)
+    internal val conversationDrafts = ConversationDraftStore(
+        persistence = SharedPreferencesConversationDraftPersistence(context),
+    )
     val appUpdateManager = AppUpdateManager(context)
     private val widgetScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 

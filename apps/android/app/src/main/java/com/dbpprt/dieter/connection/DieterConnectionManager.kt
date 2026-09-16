@@ -3,6 +3,7 @@ package com.dbpprt.dieter.connection
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.SystemClock
 import android.util.Base64
 import android.util.Log
 import com.dbpprt.dieter.BuildConfig
@@ -70,10 +71,10 @@ enum class ConnectionPhase { STOPPED, CONNECTING, SYNCING, CONNECTED, RECONNECTI
 
 enum class EndpointPhase { PENDING, TRYING, CONNECTED, FAILED }
 
-// WatchSync emits every 15 seconds. Rebuild the transport only after three
+// WatchSync requests a frame every five seconds. Rebuild the transport only after three
 // missed frames so ordinary Android scheduling jitter or one slow projection
 // cannot turn a healthy connection into a reconnect loop.
-internal const val SYNC_STALE_AFTER_MS = 45_000L
+internal const val SYNC_STALE_AFTER_MS = 15_000L
 
 internal fun syncStreamIsStale(
     lastFrameAtMs: Long,
@@ -90,6 +91,18 @@ internal fun foregroundConnectionPhase(
 } else {
     current
 }
+
+internal fun liveSyncCoversConversation(
+    mode: BackgroundSyncMode,
+    phase: ConnectionPhase,
+    lastFrameAtMs: Long,
+    nowMs: Long,
+    includedInProjection: Boolean,
+): Boolean = mode == BackgroundSyncMode.LIVE &&
+    phase == ConnectionPhase.CONNECTED &&
+    lastFrameAtMs > 0L &&
+    !syncStreamIsStale(lastFrameAtMs, nowMs) &&
+    includedInProjection
 
 @Suppress("DEPRECATION")
 private fun GlobalSnapshot.withoutScheduleProjection(): GlobalSnapshot =
@@ -118,7 +131,8 @@ data class ProjectHost(
 
 data class DieterConnectionState(
     val desiredConnected: Boolean,
-    val backgroundSyncEnabled: Boolean,
+    val backgroundSyncMode: BackgroundSyncMode,
+    val periodicSyncWindowActive: Boolean = false,
     val phase: ConnectionPhase = ConnectionPhase.STOPPED,
     val connectionInterruptedAtMs: Long? = null,
     val lastConnectedAtMs: Long? = null,
@@ -138,6 +152,7 @@ data class DieterConnectionState(
     val cards: List<Card> = emptyList(),
     val chats: List<Card> = emptyList(),
     val activeConversations: Map<String, ConversationSnapshot> = emptyMap(),
+    val liveSyncedConversationIds: Set<String> = emptySet(),
     val conversationRefreshedAtMillis: Map<String, Long> = emptyMap(),
     val pendingCardIds: Set<String> = emptySet(),
     val pendingMessageIds: Set<String> = emptySet(),
@@ -146,7 +161,10 @@ data class DieterConnectionState(
     val machineOutboxSummaries: Map<String, MachineOutboxSummary> = emptyMap(),
     val resolvedConversationIds: Map<String, String> = emptyMap(),
     val error: String? = null,
-)
+) {
+    val backgroundSyncEnabled: Boolean
+        get() = backgroundSyncMode.usesBackgroundService
+}
 
 /**
  * Process-wide owner of the Dieter connection. The Activity observes this
@@ -168,9 +186,9 @@ class DieterConnectionManager(
     private var cachedDirectory: CachedMachineDirectory? = null
     private var preferredEndpointId: String? = null
     private var activeProjectionKey = preferredEndpointId.orEmpty()
-    private var globalSnapshot = activeProjectionKey.takeIf(String::isNotBlank)
-        ?.let(syncStore::loadSnapshot)?.withoutScheduleProjection()
-    private var syncCursor = activeProjectionKey.takeIf(String::isNotBlank)?.let(syncStore::loadCursor).takeIf { globalSnapshot != null }
+    private var globalSnapshot: GlobalSnapshot? = null
+    private var syncCursor: SyncCursor? = null
+    private var pendingSyncSnapshot: GlobalSnapshot? = null
     private var activeProjectionRefreshedAtMillis = activeProjectionKey.takeIf(String::isNotBlank)
         ?.let(syncStore::projectionRefreshedAtMillis)
     private var lastProjectionPersistedAtMillis = activeProjectionKey.takeIf(String::isNotBlank)
@@ -186,16 +204,20 @@ class DieterConnectionManager(
 
     @Volatile
     private var lastSyncFrameAtMs = 0L
+    private var lastSyncActivityElapsedMs = 0L
+    private var syncTransportStaleAfterMs = 45_000L
+    private var lastAppliedSyncElapsedMs = 0L
     private var selectedProjectId = ""
     private var appForeground = false
     private var serviceActive = false
+    private var periodicSyncWindowActive = false
     @Volatile
     private var discoveredEndpoints: List<DieterEndpoint> = emptyList()
 
     private val _state = MutableStateFlow(
         DieterConnectionState(
             desiredConnected = true,
-            backgroundSyncEnabled = true,
+            backgroundSyncMode = BackgroundSyncMode.LIVE,
             activeGatewayId = activeGatewayId,
             configuredConnections = configuredEndpointRows(),
             endpointConnections = configuredEndpointRows(),
@@ -217,7 +239,11 @@ class DieterConnectionManager(
             ?: preferences.getString(KEY_PREFERRED_DAEMON, null)
             ?: ""
         val desiredConnected = preferences.getBoolean(KEY_DESIRED_CONNECTED, true)
-        val backgroundSyncEnabled = preferences.getBoolean(KEY_BACKGROUND_SYNC, true)
+        val legacyBackgroundSyncEnabled = preferences.getBoolean(KEY_BACKGROUND_SYNC, true)
+        val backgroundSyncMode = BackgroundSyncMode.resolve(
+            preferences.getString(KEY_BACKGROUND_SYNC_MODE, null),
+            legacyBackgroundSyncEnabled,
+        )
         val lastConnectedAtMs = DieterWidgetPrefs.lastSyncAtMs(appContext).takeIf { it > 0L }
         val configurationApplied = synchronized(lock) {
             if (configurationGeneration != expectedConfigurationGeneration) return@synchronized false
@@ -232,7 +258,7 @@ class DieterConnectionManager(
             _state.update { current ->
                 current.copy(
                     desiredConnected = desiredConnected,
-                    backgroundSyncEnabled = backgroundSyncEnabled,
+                    backgroundSyncMode = backgroundSyncMode,
                     activeGatewayId = gatewayId,
                     configuredConnections = configuredEndpointRows(),
                     endpointConnections = configuredEndpointRows(),
@@ -241,9 +267,9 @@ class DieterConnectionManager(
             }
         }
         val directory = syncStore.loadMachineDirectory(gatewayId)
-        val snapshot = projectionKey.takeIf(String::isNotBlank)?.let(syncStore::loadSnapshot)
-        val cursor = projectionKey.takeIf(String::isNotBlank)?.let(syncStore::loadCursor)
-            .takeIf { snapshot != null }
+        val persisted = projectionKey.takeIf(String::isNotBlank)?.let(syncStore::loadProjection)
+        val snapshot = persisted?.takeIf { it.hasSnapshot() }?.snapshot
+        val cursor = persisted?.takeIf { it.hasSnapshot() && it.hasCursor() }?.cursor
         val refreshedAt = projectionKey.takeIf(String::isNotBlank)
             ?.let(syncStore::projectionRefreshedAtMillis)
         val persistedAt = projectionKey.takeIf(String::isNotBlank)
@@ -302,7 +328,8 @@ class DieterConnectionManager(
         }
         if (becameForeground) {
             val foregroundedAt = System.currentTimeMillis()
-            val streamStale = syncStreamIsStale(lastSyncFrameAtMs, foregroundedAt)
+            val streamStale = syncStreamIsStale(lastSyncActivityElapsedMs, SystemClock.elapsedRealtime(), syncTransportStaleAfterMs)
+            Log.i(SYNC_LOG_TAG, "foreground frameAgeMs=${(foregroundedAt - lastSyncFrameAtMs).coerceAtLeast(0L)} stale=$streamStale")
             _state.update { current ->
                 val phase = foregroundConnectionPhase(
                     current = current.phase,
@@ -315,7 +342,7 @@ class DieterConnectionManager(
                 )
             }
         }
-        if (_state.value.desiredConnected && _state.value.backgroundSyncEnabled) DieterSyncService.start(appContext)
+        if (_state.value.desiredConnected && _state.value.backgroundSyncMode.usesBackgroundService) DieterSyncService.start(appContext)
         reconcile()
         recoverStaleConnection()
     }
@@ -329,7 +356,7 @@ class DieterConnectionManager(
      */
     private fun recoverStaleConnection() {
         if (_state.value.phase in setOf(ConnectionPhase.SYNCING, ConnectionPhase.CONNECTED) &&
-            syncStreamIsStale(lastSyncFrameAtMs)
+            syncStreamIsStale(lastSyncActivityElapsedMs, SystemClock.elapsedRealtime(), syncTransportStaleAfterMs)
         ) {
             restart()
         }
@@ -346,7 +373,24 @@ class DieterConnectionManager(
     }
 
     fun onServiceStopped() {
-        synchronized(lock) { serviceActive = false }
+        synchronized(lock) {
+            serviceActive = false
+            periodicSyncWindowActive = false
+        }
+        _state.update { it.copy(periodicSyncWindowActive = false) }
+        reconcile()
+    }
+
+    fun setPeriodicSyncWindowActive(active: Boolean) {
+        val changed = synchronized(lock) {
+            if (periodicSyncWindowActive == active) false else {
+                periodicSyncWindowActive = active
+                true
+            }
+        }
+        if (!changed) return
+        _state.update { it.copy(periodicSyncWindowActive = active) }
+        Log.i(SYNC_LOG_TAG, "periodicWindow active=$active")
         reconcile()
     }
 
@@ -375,9 +419,23 @@ class DieterConnectionManager(
         selectProject(projectId)
         withTimeout(20_000) {
             state.first { connection ->
-                connection.phase == ConnectionPhase.CONNECTED && connection.endpoint?.id == target.endpointId
+                projectRouteIsReady(target.endpointId, connection.endpoint?.id, connection.phase)
             }
         }
+    }
+
+    /** A conversation carried by a healthy Live projection is already current.
+     * Opening it should resume after its sequence instead of waiting for a
+     * redundant bootstrap response. */
+    fun liveSyncCoversConversation(cardId: String, nowMs: Long = System.currentTimeMillis()): Boolean {
+        val current = _state.value
+        return liveSyncCoversConversation(
+            mode = current.backgroundSyncMode,
+            phase = current.phase,
+            lastFrameAtMs = lastSyncFrameAtMs,
+            nowMs = nowMs,
+            includedInProjection = cardId in current.liveSyncedConversationIds,
+        )
     }
 
     /** Makes a newly created remote project routable before its daemon's next
@@ -411,7 +469,7 @@ class DieterConnectionManager(
     fun connect() {
         preferences.edit().putBoolean(KEY_DESIRED_CONNECTED, true).apply()
         _state.update { it.copy(desiredConnected = true, error = null) }
-        if (_state.value.backgroundSyncEnabled) DieterSyncService.start(appContext)
+        if (_state.value.backgroundSyncMode.usesBackgroundService) DieterSyncService.start(appContext)
         reconcile()
     }
 
@@ -464,6 +522,7 @@ class DieterConnectionManager(
                     cards = emptyList(),
                     chats = emptyList(),
                     activeConversations = emptyMap(),
+                    liveSyncedConversationIds = emptySet(),
                     conversationRefreshedAtMillis = emptyMap(),
                     error = null,
                 )
@@ -567,6 +626,7 @@ class DieterConnectionManager(
                 cards = if (gatewayChanged) emptyList() else it.cards,
                 chats = if (gatewayChanged) emptyList() else it.chats,
                 activeConversations = if (gatewayChanged) emptyMap() else it.activeConversations,
+                liveSyncedConversationIds = if (gatewayChanged) emptySet() else it.liveSyncedConversationIds,
                 conversationRefreshedAtMillis = if (gatewayChanged) emptyMap() else it.conversationRefreshedAtMillis,
                 error = null,
             )
@@ -612,6 +672,7 @@ class DieterConnectionManager(
                 cards = emptyList(),
                 chats = emptyList(),
                 activeConversations = emptyMap(),
+                liveSyncedConversationIds = emptySet(),
                 conversationRefreshedAtMillis = emptyMap(),
                 error = null,
             )
@@ -659,16 +720,19 @@ class DieterConnectionManager(
             generation++
             connectionJob?.cancel()
             connectionJob = null
+            periodicSyncWindowActive = false
         }
         repository.reconnect()
         _state.update {
             it.copy(
                 desiredConnected = false,
+                periodicSyncWindowActive = false,
                 phase = ConnectionPhase.STOPPED,
                 connectionInterruptedAtMs = null,
                 endpoint = null,
                 endpointConnections = configuredEndpointRows(),
                 activeConversations = emptyMap(),
+                liveSyncedConversationIds = emptySet(),
                 conversationRefreshedAtMillis = emptyMap(),
                 error = null,
             )
@@ -676,20 +740,45 @@ class DieterConnectionManager(
         if (stopService) DieterSyncService.stop(appContext)
     }
 
-    fun setBackgroundSyncEnabled(enabled: Boolean) {
-        preferences.edit().putBoolean(KEY_BACKGROUND_SYNC, enabled).apply()
-        _state.update { it.copy(backgroundSyncEnabled = enabled) }
-        if (enabled && _state.value.desiredConnected) DieterSyncService.start(appContext)
-        if (!enabled) DieterSyncService.stop(appContext)
+    fun setBackgroundSyncMode(mode: BackgroundSyncMode) {
+        preferences.edit()
+            .putString(KEY_BACKGROUND_SYNC_MODE, mode.wireValue)
+            // Keep the legacy value during the migration window so an older
+            // installed build still interprets APP_ONLY safely.
+            .putBoolean(KEY_BACKGROUND_SYNC, mode.usesBackgroundService)
+            .apply()
+        synchronized(lock) {
+            if (mode != BackgroundSyncMode.PERIODIC) periodicSyncWindowActive = false
+        }
+        _state.update {
+            it.copy(
+                backgroundSyncMode = mode,
+                periodicSyncWindowActive = if (mode == BackgroundSyncMode.PERIODIC) it.periodicSyncWindowActive else false,
+            )
+        }
+        Log.i(SYNC_LOG_TAG, "mode=${mode.wireValue}")
+        if (mode.usesBackgroundService && _state.value.desiredConnected) DieterSyncService.start(appContext)
+        if (!mode.usesBackgroundService) DieterSyncService.stop(appContext)
         reconcile()
     }
+
+    /** Compatibility bridge for existing instrumentation and callers. */
+    fun setBackgroundSyncEnabled(enabled: Boolean) = setBackgroundSyncMode(
+        if (enabled) BackgroundSyncMode.LIVE else BackgroundSyncMode.APP_ONLY,
+    )
 
     private fun reconcile() {
         if (shouldRun()) ensureStarted() else pause()
     }
 
     private fun shouldRun(): Boolean = synchronized(lock) {
-        _state.value.desiredConnected && (appForeground || serviceActive)
+        backgroundConnectionShouldRun(
+            desiredConnected = _state.value.desiredConnected,
+            appForeground = appForeground,
+            serviceActive = serviceActive,
+            mode = _state.value.backgroundSyncMode,
+            periodicWindowActive = periodicSyncWindowActive,
+        )
     }
 
     private fun ensureStarted() {
@@ -710,6 +799,7 @@ class DieterConnectionManager(
             connectionJob = null
         }
         repository.reconnect()
+        Log.i(SYNC_LOG_TAG, "transport restart")
         _state.update {
             it.copy(
                 phase = ConnectionPhase.CONNECTING,
@@ -752,7 +842,9 @@ class DieterConnectionManager(
                         error = null,
                     )
                 }
+                val attemptStartedAt = System.currentTimeMillis()
                 val health = connectToGateway(currentGeneration)
+                Log.i(SYNC_LOG_TAG, "routeReadyMs=${System.currentTimeMillis() - attemptStartedAt} route=${repository.dataRoute()}")
                 if (health.status != "ok" || health.version != DIETER_API_VERSION) {
                     _state.update {
                         it.copy(
@@ -762,24 +854,36 @@ class DieterConnectionManager(
                     }
                     return
                 }
-                val (runtime, catalog) = coroutineScope {
-                    val runtime = async { repository.runtimeStatus() }
-                    val catalog = async { repository.harnesses() }
-                    runtime.await() to catalog.await()
-                }
-                _state.update {
-                    it.copy(
-                        phase = ConnectionPhase.SYNCING,
-                        runtimeStatus = runtime,
-                        harnesses = catalog.harnessesList,
-                        harnessesEndpointId = repository.activeEndpoint.id,
-                        error = null,
-                    )
-                }
                 retryAttempt = 0
                 coroutineScope {
                     launch { collectGlobalSync(currentGeneration) }
                     launch { monitorGlobalSync(currentGeneration) }
+                    // Model discovery may invoke a slow local provider process.
+                    // It cannot gate workspace data, liveness, or route health.
+                    launch {
+                        while (isActive) {
+                            try {
+                                val (runtime, catalog) = coroutineScope {
+                                    val runtime = async { repository.runtimeStatus() }
+                                    val catalog = async { repository.harnesses() }
+                                    runtime.await() to catalog.await()
+                                }
+                                if (currentGeneration == synchronized(lock) { generation }) {
+                                    _state.update { it.copy(
+                                        runtimeStatus = runtime,
+                                        harnesses = catalog.harnessesList,
+                                        harnessesEndpointId = repository.activeEndpoint.id,
+                                    ) }
+                                }
+                                break
+                            } catch (cancelled: CancellationException) {
+                                throw cancelled
+                            } catch (error: Throwable) {
+                                Log.w(SYNC_LOG_TAG, "Connection metadata unavailable; retrying independently", error)
+                                delay(5_000)
+                            }
+                        }
+                    }
                     launch { drainOutbox(currentGeneration) }
                     launch { watchDaemonPresence(currentGeneration) }
                     // Cross-machine discovery must not delay the selected
@@ -812,11 +916,7 @@ class DieterConnectionManager(
                     _state.update { it.copy(phase = ConnectionPhase.AUTH_REQUIRED, error = "Sign in with GitHub to use ${repository.activeEndpoint.label}.") }
                     return
                 }
-                val transient = Status.fromThrowable(error).code in setOf(
-                    Status.Code.UNAVAILABLE,
-                    Status.Code.DEADLINE_EXCEEDED,
-                    Status.Code.UNKNOWN,
-                )
+                val transient = rpcReadFailureIsTransient(error)
                 _state.update {
                     it.copy(
                         phase = if (transient) ConnectionPhase.RECONNECTING else ConnectionPhase.UNAVAILABLE,
@@ -901,17 +1001,52 @@ class DieterConnectionManager(
     }
 
     private suspend fun collectGlobalSync(currentGeneration: Long) {
-        // Give each newly opened stream one complete heartbeat window to
-        // deliver its bootstrap frame before the liveness monitor intervenes.
-        lastSyncFrameAtMs = System.currentTimeMillis()
+        lastSyncActivityElapsedMs = SystemClock.elapsedRealtime()
+        syncTransportStaleAfterMs = 45_000L // Old daemons can block heartbeats while bootstrapping.
+        pendingSyncSnapshot = null
+        while (currentCoroutineContext().isActive && currentGeneration == synchronized(lock) { generation }) {
+        val streamStartedAt = SystemClock.elapsedRealtime()
+        var firstFrame = true
         repository.watchSync(
             syncCursor,
             conversationLimit = SYNC_CONVERSATION_MESSAGES,
             recentConversationLimit = SYNC_RECENT_CONVERSATIONS,
-        ).collect { frame ->
+        ).collect { incomingFrame ->
+            var frame = incomingFrame
             if (currentGeneration != synchronized(lock) { generation }) return@collect
             val receivedAtMillis = System.currentTimeMillis()
+            if (firstFrame) {
+                firstFrame = false
+                Log.i(SYNC_LOG_TAG, "globalFirstFrameMs=${SystemClock.elapsedRealtime() - streamStartedAt} reset=${frame.reset}")
+            }
             lastSyncFrameAtMs = receivedAtMillis
+            lastSyncActivityElapsedMs = SystemClock.elapsedRealtime()
+            if (frame.transportOnly || frame.cursor.projectionVersion >= 5) syncTransportStaleAfterMs = SYNC_STALE_AFTER_MS
+            if (frame.transportOnly || frame.heartbeat) {
+                // A transport heartbeat never advances the applied cursor or
+                // declares a pending workspace projection fresh.
+                if (frame.projectionPending && (globalSnapshot == null || SystemClock.elapsedRealtime() - lastAppliedSyncElapsedMs >= 10_000)) {
+                    _state.update { it.copy(phase = ConnectionPhase.SYNCING) }
+                }
+                return@collect
+            }
+            if (frame.projectionPending) {
+                syncCursor = null
+                pendingSyncSnapshot = when {
+                    frame.hasSnapshot() -> frame.snapshot
+                    frame.hasDelta() -> (pendingSyncSnapshot ?: globalSnapshot)?.let { applyGlobalDelta(it, frame.delta) }
+                    else -> pendingSyncSnapshot
+                }
+                _state.update { it.copy(phase = ConnectionPhase.SYNCING) }
+                return@collect
+            }
+            pendingSyncSnapshot?.let { pending ->
+                val complete = if (frame.hasSnapshot()) frame.snapshot
+                    else if (frame.hasDelta()) applyGlobalDelta(pending, frame.delta) else pending
+                frame = frame.toBuilder().clearDelta().setSnapshot(complete).build()
+                pendingSyncSnapshot = null
+            }
+            lastAppliedSyncElapsedMs = SystemClock.elapsedRealtime()
             DieterWidgetPrefs.recordSyncFrame(appContext, receivedAtMillis)
             val refreshedConversationIds = when {
                 frame.hasSnapshot() -> frame.snapshot.conversationsList.mapTo(hashSetOf()) { it.detail.card.id }
@@ -933,7 +1068,8 @@ class DieterConnectionManager(
                     projectionChanged = true
                 }
             }
-            if (frame.hasCursor()) {
+            if (frame.projectionPending) syncCursor = null
+            if (frame.hasCursor() && !frame.heartbeat && !frame.projectionPending) {
                 syncCursor = frame.cursor
             }
             if (refreshedConversationIds.isNotEmpty()) {
@@ -941,14 +1077,14 @@ class DieterConnectionManager(
             }
             projectionSnapshotDirty = projectionSnapshotDirty || projectionChanged || refreshedConversationIds.isNotEmpty()
             projectionCursorDirty = projectionCursorDirty || frame.hasCursor() && !frame.heartbeat
-            if (activeProjectionKey.isNotBlank() &&
+            if (!frame.projectionPending && activeProjectionKey.isNotBlank() &&
                 (projectionSnapshotDirty || projectionCursorDirty) &&
                 syncProjectionShouldPersist(lastProjectionPersistedAtMillis, receivedAtMillis)
             ) {
                 syncStore.saveProjection(
                     activeProjectionKey,
-                    globalSnapshot.takeIf { projectionSnapshotDirty },
-                    syncCursor.takeIf { projectionCursorDirty },
+                    globalSnapshot,
+                    syncCursor,
                 )
                 lastProjectionPersistedAtMillis = receivedAtMillis
                 projectionSnapshotDirty = false
@@ -962,19 +1098,25 @@ class DieterConnectionManager(
             }
             _state.update {
                 it.copy(
-                    phase = ConnectionPhase.CONNECTED,
+                    phase = if (frame.projectionPending) ConnectionPhase.SYNCING else ConnectionPhase.CONNECTED,
                     connectionInterruptedAtMs = null,
                     lastConnectedAtMs = receivedAtMillis,
                     error = null,
                 )
             }
         }
+        // Normal server completion is still a lost subscription. Resubscribe
+        // on this channel; the independent liveness deadline bounds silence.
+        pendingSyncSnapshot = null
+        Log.i(SYNC_LOG_TAG, "WatchSync completed; resubscribing")
+        delay(250)
+        }
     }
 
     private suspend fun monitorGlobalSync(currentGeneration: Long) {
         while (currentCoroutineContext().isActive && currentGeneration == synchronized(lock) { generation }) {
             delay(SYNC_LIVENESS_CHECK_MS)
-            if (syncStreamIsStale(lastSyncFrameAtMs)) throw StaleSyncStream()
+            if (syncStreamIsStale(lastSyncActivityElapsedMs, SystemClock.elapsedRealtime(), syncTransportStaleAfterMs)) throw StaleSyncStream()
         }
     }
 
@@ -1010,11 +1152,12 @@ class DieterConnectionManager(
             activeProjectionKey = endpoint.id
             preferredEndpointId = endpoint.id
             preferences.edit().putString(KEY_PREFERRED_ENDPOINT, endpoint.id).apply()
-            val currentSnapshot = syncStore.loadSnapshot(endpoint.id)?.withoutScheduleProjection()
+            val persisted = syncStore.loadProjection(endpoint.id)
+            val currentSnapshot = persisted?.takeIf { it.hasSnapshot() }?.snapshot?.withoutScheduleProjection()
             val legacyScope = endpoint.daemonId.takeIf { currentSnapshot == null }
-            globalSnapshot = currentSnapshot ?: legacyScope?.let(syncStore::loadSnapshot)?.withoutScheduleProjection()
-            syncCursor = (syncStore.loadCursor(endpoint.id)
-                ?: endpoint.daemonId?.let(syncStore::loadCursor)).takeIf { globalSnapshot != null }
+            val chosen = persisted ?: legacyScope?.let(syncStore::loadProjection)
+            globalSnapshot = chosen?.takeIf { it.hasSnapshot() }?.snapshot?.withoutScheduleProjection()
+            syncCursor = chosen?.takeIf { it.hasSnapshot() && it.hasCursor() }?.cursor
             activeProjectionRefreshedAtMillis = if (currentSnapshot != null) {
                 syncStore.projectionRefreshedAtMillis(endpoint.id)
             } else {
@@ -1085,7 +1228,8 @@ class DieterConnectionManager(
     suspend fun refreshMachineDirectory(includeArchivedChats: Boolean = false) {
         val activeEndpointId = repository.activeEndpoint.id
         val machines = discoveredEndpoints.filter { machine ->
-            machine.online && (includeArchivedChats || machine.id != activeEndpointId)
+            machine.online && machine.apiVersion == DIETER_API_VERSION &&
+                (includeArchivedChats || machine.id != activeEndpointId)
         }
         if (machines.isEmpty()) return
         // Relay calls use independent channels, so fetch machines and their
@@ -1352,6 +1496,7 @@ class DieterConnectionManager(
                 cards = cards,
                 chats = chats.sortedByDescending { it.lastActivityAt.ifBlank { it.updatedAt } },
                 activeConversations = conversations,
+                liveSyncedConversationIds = snapshot.conversationsList.mapTo(hashSetOf()) { it.detail.card.id },
                 conversationRefreshedAtMillis = conversationRefreshes,
                 pendingCardIds = pendingCardIds(entries),
                 pendingMessageIds = pendingMessageIds(entries),
@@ -1557,6 +1702,11 @@ class DieterConnectionManager(
                 cards = update(current.cards, !isChat),
                 chats = update(current.chats, isChat),
                 activeConversations = activeConversations,
+                liveSyncedConversationIds = if (card.archived) {
+                    current.liveSyncedConversationIds - card.id
+                } else {
+                    current.liveSyncedConversationIds
+                },
             )
             combined.copy(selectedState = selectedState(combined))
         }
@@ -2033,6 +2183,7 @@ class DieterConnectionManager(
         private const val PREFERENCES = "dieter_connection"
         private const val KEY_DESIRED_CONNECTED = "desired_connected"
         private const val KEY_BACKGROUND_SYNC = "background_sync"
+        private const val KEY_BACKGROUND_SYNC_MODE = "background_sync_mode"
         private const val KEY_ENDPOINTS = "endpoints"
         private const val KEY_AUTH_VERIFIER = "auth_verifier"
         private const val KEY_AUTH_ENDPOINT = "auth_endpoint"
@@ -2049,6 +2200,7 @@ class DieterConnectionManager(
         /** Recently active conversations kept warm beyond the running ones. */
         private const val SYNC_RECENT_CONVERSATIONS = 8
         private const val SYNC_LIVENESS_CHECK_MS = 5_000L
+        internal const val SYNC_LOG_TAG = "DieterSync"
     }
 }
 

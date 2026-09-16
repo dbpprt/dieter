@@ -211,15 +211,16 @@ func runtimeLeasePath(dir, cardID string) (string, error) {
 }
 
 // OrphanedTurnCards returns durable turns that claim to be active but have no
-// lease owned by a live Dieter process. It also prunes dead-process leases via
-// activeRuntimeLeases while holding the central mutation lock.
+// lease owned by a live Dieter process. Cold directory/status reads happen
+// outside writer admission; only lease pruning and final candidate validation
+// hold the central lock. An idle maintenance sweep must not block all messages.
 func (s *Store) OrphanedTurnCards() ([]model.Card, error) {
 	release, err := s.beginWriteLock()
 	if err != nil {
 		return nil, err
 	}
-	defer release()
 	leases, err := activeRuntimeLeases(filepath.Join(s.runtimeDir(), "leases"))
+	release()
 	if err != nil {
 		return nil, err
 	}
@@ -244,7 +245,44 @@ func (s *Store) OrphanedTurnCards() ([]model.Card, error) {
 			orphaned = append(orphaned, card)
 		}
 	}
-	return orphaned, nil
+	if len(orphaned) == 0 {
+		return orphaned, nil
+	}
+	// A turn may have acquired a lease while the directory was being scanned.
+	release, err = s.beginWriteLock()
+	if err != nil {
+		return nil, err
+	}
+	defer release()
+	leases, err = activeRuntimeLeases(filepath.Join(s.runtimeDir(), "leases"))
+	if err != nil {
+		return nil, err
+	}
+	active = make(map[string]bool, len(leases))
+	for _, lease := range leases {
+		active[lease.CardID] = true
+	}
+	verified := orphaned[:0]
+	for _, card := range orphaned {
+		if active[card.ID] {
+			continue
+		}
+		current, err := s.ResolveCard(card.ID)
+		if errors.Is(err, ErrNotFound) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		status, err := s.conversationStatus(card.ID)
+		if err != nil {
+			return nil, err
+		}
+		if current.Runtime == "running" || current.Runtime == "starting" || status == "running" || status == "starting" {
+			verified = append(verified, current)
+		}
+	}
+	return verified, nil
 }
 
 func (s *Store) ReleaseRuntimeLease(lease RuntimeLease) error {

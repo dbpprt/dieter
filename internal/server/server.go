@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -32,6 +33,7 @@ import (
 )
 
 type Server struct {
+	syncProjections         syncProjectionCache
 	store                   *store.Store
 	app                     *app.Service
 	workspaces              *workspace.Manager
@@ -105,7 +107,7 @@ func newWithAuth(data *store.Store, logger *slog.Logger, runner harness.Runner, 
 	service := app.New(data, runner)
 	s := &Server{
 		store: data, app: service, workspaces: service.Workspaces, schedules: scheduler.New(data, service), log: logger,
-		mux: http.NewServeMux(), auth: manager, terminals: terminal.New(), executions: remoteexec.New(),
+		mux: http.NewServeMux(), auth: manager, terminals: terminal.NewPersistent(data.Root), executions: remoteexec.New(),
 		remoteDesktop: remotedesktop.New(remotedesktop.Options{Logger: logger}),
 		machine:       machine.NewCollector(data.Root),
 		machineAction: func(ctx context.Context, operation machine.Operation) error {
@@ -196,6 +198,23 @@ func (s *Server) Handler() http.Handler {
 	return h2c.NewHandler(securityHeaders(s.auth.config.Enabled, s.requestLog(s.auth.middleware(s.mux))), &http2.Server{})
 }
 
+// CloseTerminalSessionsForTesting explicitly destroys every terminal owned by
+// an isolated fixture. Production shutdown must use Shutdown so durable shells
+// detach and survive daemon replacement.
+func (s *Server) CloseTerminalSessionsForTesting(ctx context.Context) {
+	for _, session := range s.terminals.List("") {
+		_ = s.terminals.Close(session.ID)
+	}
+	s.terminals.Shutdown(ctx)
+}
+
+// ShutdownTerminalSessions detaches durable terminal observers while leaving
+// their host shells alive for a replacement Server to restore. It mirrors the
+// terminal portion of production daemon shutdown for isolated restart tests.
+func (s *Server) ShutdownTerminalSessions(ctx context.Context) {
+	s.terminals.Shutdown(ctx)
+}
+
 const (
 	maxMessageAttachments     = attachments.MaxCount
 	maxMessageAttachmentBytes = attachments.MaxFileBytes
@@ -262,18 +281,38 @@ func Listen(addr string, data *store.Store, runner harness.Runner, logger *slog.
 // Authentication for remote clients is enforced by the gateway or the
 // daemon's direct TLS listener, never by this loopback-only endpoint.
 func ListenDaemon(ctx context.Context, addr string, data *store.Store, runner harness.Runner, logger *slog.Logger, remoteDesktop ...*remotedesktop.Manager) error {
+	var desktop *remotedesktop.Manager
+	if len(remoteDesktop) > 0 {
+		desktop = remoteDesktop[0]
+	}
+	return ListenDaemonReady(ctx, addr, data, runner, logger, desktop, nil)
+}
+
+// ListenDaemonReady acknowledges a runtime activation only after initialization
+// and successful listener binding, before any scheduled work is dispatched.
+func ListenDaemonReady(ctx context.Context, addr string, data *store.Store, runner harness.Runner, logger *slog.Logger, remoteDesktop *remotedesktop.Manager, ready func() error) error {
 	manager, err := newAuthManager(authConfig{}, data)
 	if err != nil {
 		return err
 	}
 	application := newWithAuth(data, logger, runner, manager)
-	if len(remoteDesktop) > 0 && remoteDesktop[0] != nil {
-		application.remoteDesktop = remoteDesktop[0]
+	if remoteDesktop != nil {
+		application.remoteDesktop = remoteDesktop
 	}
-	return run(ctx, addr, data, application, logger)
+	return run(ctx, addr, data, application, logger, ready)
 }
 
-func run(ctx context.Context, addr string, data *store.Store, application *Server, logger *slog.Logger) error {
+func run(ctx context.Context, addr string, data *store.Store, application *Server, logger *slog.Logger, ready ...func() error) error {
+	listener, err := net.Listen("tcp", addr)
+	if err != nil {
+		return err
+	}
+	defer listener.Close()
+	if len(ready) > 0 && ready[0] != nil {
+		if err := ready[0](); err != nil {
+			return fmt.Errorf("commit service runtime activation: %w", err)
+		}
+	}
 	reconcile := func() {
 		recovered, recoveryErr := application.app.ReconcileOrphanedTurns()
 		if recoveryErr != nil {
@@ -284,6 +323,11 @@ func run(ctx context.Context, addr string, data *store.Store, application *Serve
 		}
 	}
 	reconcile()
+	if cleaned, err := application.app.CleanupInactiveProviderBridges(); err != nil {
+		logger.Warn("could not clean inactive provider bridges", "error", err)
+	} else if len(cleaned) > 0 {
+		logger.Info("cleaned inactive provider bridges", "cards", cleaned)
+	}
 	// During a launchd/systemd replacement the previous owner PID can remain
 	// alive for a fraction of a second after the new process starts. Recheck
 	// once after handoff so that transiently-valid leases cannot strand a turn.
@@ -319,7 +363,7 @@ func run(ctx context.Context, addr string, data *store.Store, application *Serve
 	httpServer := &http.Server{Addr: addr, Handler: application.Handler(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second, IdleTimeout: 90 * time.Second, MaxHeaderBytes: 1 << 20}
 	logger.Info("Dieter daemon is ready", "url", fmt.Sprintf("http://%s", addr), "store", data.Root)
 	serveErr := make(chan error, 1)
-	go func() { serveErr <- httpServer.ListenAndServe() }()
+	go func() { serveErr <- httpServer.Serve(listener) }()
 	select {
 	case err := <-serveErr:
 		return err

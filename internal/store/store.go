@@ -1,16 +1,20 @@
 package store
 
 import (
+	"context"
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	md "github.com/dbpprt/dieter/internal/markdown"
@@ -19,20 +23,26 @@ import (
 
 var (
 	ErrNotFound = errors.New("not found")
-	writeMu     sync.Mutex
+	writeMu     contextMutex
 )
 
 type Store struct {
 	Root string
 
+	conversations conversationCache
+	statuses      conversationStatusCache
+	checkpoints   conversationCheckpoints
+	syncJournal   syncJournalCache
+
 	usageMu    sync.Mutex
 	usageCache map[string]cardUsageCacheEntry
 
-	scheduleDBMu        sync.Mutex
-	scheduleDB          *sql.DB
-	globalStateMu       sync.Mutex
-	globalStateCursor   SyncCursor
-	globalStateSnapshot *model.State
+	scheduleDBMu           sync.Mutex
+	scheduleDB             *sql.DB
+	globalStateMu          contextMutex
+	globalStateCursor      SyncCursor
+	globalStateSnapshot    *model.State
+	globalStateMetadataKey string
 }
 
 func DefaultRoot() string {
@@ -79,10 +89,19 @@ func (s *Store) Ensure() error {
 // beginWriteLock serializes access both within the process and across CLI/server
 // processes without publishing a sync mutation. Conditional writers use it to
 // revalidate that a domain change is still necessary before advancing the sync
-// journal. Directory creation is the portable atomic primitive; a stale lock is
-// reclaimed after 30 seconds so a killed process cannot wedge the store.
+// journal. Directory creation also coordinates older daemons; a stale lock is
+// reclaimed only after its recorded process has died.
 func (s *Store) beginWriteLock() (func(), error) {
-	writeMu.Lock()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	return s.beginWriteLockContext(ctx)
+}
+
+func (s *Store) beginWriteLockContext(ctx context.Context) (func(), error) {
+	requestedAt := time.Now()
+	if err := writeMu.LockContext(ctx); err != nil {
+		return nil, err
+	}
 	releaseProcess := true
 	defer func() {
 		if releaseProcess {
@@ -92,28 +111,48 @@ func (s *Store) beginWriteLock() (func(), error) {
 	if err := os.MkdirAll(s.Root, 0o755); err != nil {
 		return nil, err
 	}
+	unlockAdmission, err := s.writerAdmission(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if releaseProcess {
+			unlockAdmission()
+		}
+	}()
 	lockPath := filepath.Join(s.Root, ".write-lock")
-	deadline := time.Now().Add(10 * time.Second)
 	for {
 		err := os.Mkdir(lockPath, 0o700)
 		if err == nil {
+			if err := os.WriteFile(filepath.Join(lockPath, "owner"), []byte(strconv.Itoa(os.Getpid())), 0o600); err != nil {
+				_ = os.Remove(lockPath)
+				return nil, err
+			}
+			acquiredAt := time.Now()
 			releaseProcess = false
 			return func() {
+				held := time.Since(acquiredAt)
+				if held > 100*time.Millisecond || acquiredAt.Sub(requestedAt) > 100*time.Millisecond {
+					slog.Debug("store writer lock", "waitMs", acquiredAt.Sub(requestedAt).Milliseconds(), "heldMs", held.Milliseconds())
+				}
+				_ = os.Remove(filepath.Join(lockPath, "owner"))
 				_ = os.Remove(lockPath)
+				unlockAdmission()
 				writeMu.Unlock()
 			}, nil
 		}
 		if !errors.Is(err, os.ErrExist) {
 			return nil, err
 		}
-		if info, statErr := os.Stat(lockPath); statErr == nil && time.Since(info.ModTime()) > 30*time.Second {
-			_ = os.Remove(lockPath)
+		if reclaimDeadWriter(lockPath) {
 			continue
 		}
-		if time.Now().After(deadline) {
-			return nil, errors.New("timed out waiting for another Dieter writer")
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(5 * time.Millisecond):
 		}
-		time.Sleep(20 * time.Millisecond)
+
 	}
 }
 
@@ -128,11 +167,20 @@ func (s *Store) beginWriteKind(kind string) (func(), error) {
 	if err != nil {
 		return nil, err
 	}
-	if _, err := s.prepareSyncMutation(kind); err != nil {
+	event, err := s.prepareSyncMutation(kind)
+	if err != nil {
 		release()
 		return nil, err
 	}
-	return release, nil
+	return func() {
+		// A failed publication leaves the durable pending marker for reader/next
+		// writer recovery. Domain data is already durable; never hide a partial write.
+		if err := s.commitSyncMutation(event); err != nil {
+			slog.Error("sync commit deferred to recovery", "error", err)
+		}
+		release()
+		s.flushConversationCheckpoints()
+	}, nil
 }
 
 func (s *Store) projectDir() string           { return filepath.Join(s.Root, "projects") }
@@ -275,4 +323,33 @@ func matchRef(ref, id, name string) bool {
 
 func containsFold(value, query string) bool {
 	return strings.Contains(strings.ToLower(value), strings.ToLower(query))
+}
+
+// Age is not proof that a writer died: large writes or a suspended daemon may
+// hold the lock for longer than thirty seconds. Only reclaim a known dead PID.
+func reclaimDeadWriter(path string) bool {
+	raw, err := os.ReadFile(filepath.Join(path, "owner"))
+	if err != nil {
+		return false
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(string(raw)))
+	if err != nil || pid <= 0 {
+		return false
+	}
+	process, err := os.FindProcess(pid)
+	if err != nil {
+		return false
+	}
+	signalErr := process.Signal(syscall.Signal(0))
+	if !errors.Is(signalErr, os.ErrProcessDone) && !errors.Is(signalErr, syscall.ESRCH) {
+		return false
+	}
+	// Rename claims this exact abandoned directory; competing reclaimers cannot
+	// delete a new owner's lock.
+	abandoned := path + ".abandoned-" + newID("")
+	if err := os.Rename(path, abandoned); err != nil {
+		return false
+	}
+	_ = os.RemoveAll(abandoned)
+	return true
 }

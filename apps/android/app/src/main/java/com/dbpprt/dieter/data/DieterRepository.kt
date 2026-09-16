@@ -206,6 +206,8 @@ interface DieterRepository {
     fun watchDaemons(): Flow<DaemonPresenceUpdate>
     suspend fun relayState(endpoint: DieterEndpoint, filter: GetStateRequest = GetStateRequest.getDefaultInstance()): State
     suspend fun relayChats(endpoint: DieterEndpoint, includeArchived: Boolean = false): ChatsResponse
+    suspend fun openScreenConnection(endpointId: String): com.dbpprt.dieter.screens.ScreenConnection =
+        error("Screen sharing is unavailable")
     suspend fun prepareDaemon(): String
     fun directRefreshAtMillis(): Long?
     fun dataRoute(): String = "unknown"
@@ -239,7 +241,12 @@ interface DieterRepository {
     suspend fun chats(includeArchived: Boolean = true): ChatsResponse
     suspend fun card(cardId: String): CardDetail
     suspend fun conversation(cardId: String, limit: Int = 30, before: Int? = null): ConversationSnapshot
-    fun watchConversation(cardId: String, limit: Int = 30): Flow<ConversationSnapshot>
+    fun watchConversation(
+        cardId: String,
+        limit: Int = 30,
+        initial: ConversationSnapshot? = null,
+        afterSeq: Long = initial?.conversation?.lastSeq ?: 0,
+    ): Flow<ConversationSnapshot>
     suspend fun toolOutput(cardId: String, messageId: String, toolCallId: String, revision: String = ""): ToolOutput
     suspend fun sendMessage(
         cardId: String,
@@ -482,6 +489,9 @@ class GrpcDieterRepository(context: Context) : DieterRepository {
     private data class ScopedMachineConnection(
         val channel: ManagedChannel,
         val stub: DieterServiceGrpcKt.DieterServiceCoroutineStub,
+        val certificate: ByteArray,
+        val route: String,
+        val refreshAtMillis: Long? = null,
     )
 
     private suspend fun openScopedMachine(endpoint: DieterEndpoint, deadlineSeconds: Long): ScopedMachineConnection {
@@ -517,7 +527,8 @@ class GrpcDieterRepository(context: Context) : DieterRepository {
                     val directStub = DieterServiceGrpcKt.DieterServiceCoroutineStub(chosen.second)
                         .withInterceptors(MetadataUtils.newAttachHeadersInterceptor(metadata(access.accessToken)))
                         .withDeadlineAfter(deadlineSeconds, TimeUnit.SECONDS)
-                    return ScopedMachineConnection(chosen.second, directStub)
+                    return ScopedMachineConnection(chosen.second, directStub, route.daemonCertificatePem.toByteArray(), "Direct",
+                        Instant.parse(access.expiresAt).toEpochMilli() - 30_000)
                 }
             }
             if (!route.relayAvailable) {
@@ -530,7 +541,7 @@ class GrpcDieterRepository(context: Context) : DieterRepository {
                     MetadataUtils.newAttachHeadersInterceptor(metadata(token, daemonId)),
                 )
             }
-            return ScopedMachineConnection(gateway, relayStub)
+            return ScopedMachineConnection(gateway, relayStub, route.daemonCertificatePem.toByteArray(), "Relay")
         } catch (error: Throwable) {
             gateway.shutdownNow()
             throw error
@@ -554,6 +565,23 @@ class GrpcDieterRepository(context: Context) : DieterRepository {
             stub = stub.withInterceptors(MetadataUtils.newAttachHeadersInterceptor(metadata(token)))
         }
         return stub
+    }
+
+    override suspend fun openScreenConnection(endpointId: String): com.dbpprt.dieter.screens.ScreenConnection {
+        val endpoint = endpoints.firstOrNull { it.id == endpointId }
+            ?: error("The selected machine is no longer available")
+        require(endpoint.online) { "${endpoint.label} is offline" }
+        val daemonId = requireNotNull(endpoint.daemonId) { "Select an enrolled machine" }
+        val gateway = newGatewayChannel(endpoint)
+        val rtc = try {
+            authenticatedGatewayStub(gateway, endpoint).getRTCConfiguration(
+                DaemonRef.newBuilder().setDaemonId(daemonId).build(),
+            )
+        } finally { gateway.shutdownNow() }
+        val scoped = openScopedMachine(endpoint, 15)
+        return com.dbpprt.dieter.screens.ScreenConnection(
+            scoped.stub.withDeadline(null), scoped.certificate, rtc, scoped.route, scoped.refreshAtMillis,
+        ) { scoped.channel.shutdownNow() }
     }
 
     override suspend fun prepareDaemon(): String {
@@ -657,7 +685,8 @@ class GrpcDieterRepository(context: Context) : DieterRepository {
         val request = SyncRequest.newBuilder()
             .setConversationLimit(conversationLimit.coerceIn(0, 100))
             .setRecentConversationLimit(recentConversationLimit.coerceIn(0, 100))
-            .setHeartbeatMs(15_000)
+            .setHeartbeatMs(5_000)
+            .setProtocolVersion(1)
             .also { if (after != null) it.after = after }
             .build()
         streaming().watchSync(request).collect(::emit)
@@ -740,13 +769,19 @@ class GrpcDieterRepository(context: Context) : DieterRepository {
         return unary().getConversation(request.build())
     }
 
-    override fun watchConversation(cardId: String, limit: Int): Flow<ConversationSnapshot> = flow {
-        var snapshot: ConversationSnapshot? = null
+    override fun watchConversation(
+        cardId: String,
+        limit: Int,
+        initial: ConversationSnapshot?,
+        afterSeq: Long,
+    ): Flow<ConversationSnapshot> = flow {
+        var snapshot: ConversationSnapshot? = initial
         streaming().watchConversation(
             WatchConversationRequest.newBuilder()
                 .setCardId(cardId)
                 .setLimit(limit)
                 .setIntervalMs(250)
+                .setAfterSeq(afterSeq.coerceAtLeast(0L))
                 .build(),
         ).collect { update ->
             snapshot = ConversationReducer.apply(snapshot, update)

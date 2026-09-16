@@ -1,7 +1,9 @@
 package com.dbpprt.dieter.ui
 
+import android.content.Context
 import com.dbpprt.dieter.v1.MessagePart
 import com.dbpprt.dieter.v1.QueuedMessage
+import org.json.JSONObject
 
 data class ConversationComposerDraft(
     val text: String = "",
@@ -35,16 +37,60 @@ internal fun editableQueuedMessage(message: QueuedMessage): EditableQueuedMessag
     )
 }
 
+internal interface ConversationDraftPersistence {
+    fun loadTextDrafts(): Map<String, String>
+    fun saveTextDrafts(drafts: Map<String, String>)
+}
+
+internal class SharedPreferencesConversationDraftPersistence(context: Context) : ConversationDraftPersistence {
+    private val preferences = context.applicationContext.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+
+    override fun loadTextDrafts(): Map<String, String> = runCatching {
+        val encoded = preferences.getString(KEY_DRAFTS, null) ?: return@runCatching emptyMap()
+        val objectValue = JSONObject(encoded)
+        buildMap {
+            for (cardId in objectValue.keys()) {
+                val text = objectValue.optString(cardId)
+                if (cardId.isNotBlank() && text.isNotEmpty()) put(cardId, text)
+            }
+        }
+    }.getOrDefault(emptyMap())
+
+    override fun saveTextDrafts(drafts: Map<String, String>) {
+        val editor = preferences.edit()
+        if (drafts.isEmpty()) {
+            editor.remove(KEY_DRAFTS)
+        } else {
+            editor.putString(KEY_DRAFTS, JSONObject(drafts).toString())
+        }
+        editor.apply()
+    }
+
+    private companion object {
+        const val PREFERENCES = "dieter_conversation_drafts"
+        const val KEY_DRAFTS = "text_drafts_v1"
+    }
+}
+
 /**
- * Bounded, process-lifetime composer ownership. Drafts follow conversations
- * across navigation and configuration changes without putting attachment
- * bytes into Android saved-instance-state bundles.
+ * Bounded composer ownership. Drafts follow conversations across navigation
+ * and configuration changes, while their text is also checkpointed outside
+ * Android saved-instance-state bundles for process relaunch recovery.
  */
-internal class ConversationDraftStore(private val maximumDrafts: Int = 64) {
+internal class ConversationDraftStore(
+    private val maximumDrafts: Int = 64,
+    private val persistence: ConversationDraftPersistence? = null,
+) {
     private val drafts = LinkedHashMap<String, ConversationComposerDraft>(16, 0.75f, true)
 
     init {
         require(maximumDrafts > 0)
+        persistence?.loadTextDrafts()?.forEach { (cardId, text) ->
+            if (cardId.isNotBlank() && text.isNotEmpty()) {
+                drafts[cardId] = ConversationComposerDraft(text = text)
+            }
+        }
+        trimToBound()
     }
 
     fun draft(cardId: String?): ConversationComposerDraft =
@@ -58,6 +104,7 @@ internal class ConversationDraftStore(private val maximumDrafts: Int = 64) {
         val next = transform(drafts[cardId] ?: ConversationComposerDraft())
         if (next == ConversationComposerDraft()) drafts.remove(cardId) else drafts[cardId] = next
         trimToBound()
+        persist()
         return next
     }
 
@@ -108,6 +155,7 @@ internal class ConversationDraftStore(private val maximumDrafts: Int = 64) {
             pendingQueueMessageIds = old.pendingQueueMessageIds + existing.pendingQueueMessageIds,
         )
         trimToBound()
+        persist()
     }
 
     private fun trimToBound() {
@@ -116,5 +164,13 @@ internal class ConversationDraftStore(private val maximumDrafts: Int = 64) {
                 ?: drafts.entries.first()
             drafts.remove(removable.key)
         }
+    }
+
+    private fun persist() {
+        persistence?.saveTextDrafts(
+            drafts.mapNotNull { (cardId, draft) ->
+                draft.text.takeIf(String::isNotEmpty)?.let { cardId to it }
+            }.toMap(),
+        )
     }
 }

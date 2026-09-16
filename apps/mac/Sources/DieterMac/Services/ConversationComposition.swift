@@ -87,7 +87,7 @@ extension DieterStore {
         context.content.onReviewCard = { [weak self] card in self?.acceptWorkspaceCard(card) }
         context.content.onReviewTransportFailure = { [weak self] error, client in
             guard let rpc = client as? DieterRPC else { return }
-            self?.connectionStopped(error, client: rpc)
+            self?.connectionStopped(error, client: rpc, source: "workspace-operation-auth")
         }
         context.content.onReviewOperationFinished = { [weak self] target in
             guard let self, self.endpoint.id == target.endpointID else { return }

@@ -18,6 +18,13 @@ private final class ScreenFixture: ScreenSignalingRPC {
         receive: @escaping @Sendable (Dieter_V1_RemoteDesktopSignal) async throws -> Void
     ) async throws {}
     func sendRemoteDesktopSignal(_ signal: Dieter_V1_RemoteDesktopSignal) async throws {}
+    func remoteDesktopSession(sessionID: String) async throws -> Dieter_V1_RemoteDesktopSessionState { .init() }
+    func updateRemoteDesktopSession(_ request: Dieter_V1_UpdateRemoteDesktopSessionRequest) async throws
+        -> Dieter_V1_RemoteDesktopSessionState
+    { .init() }
+    func setRemoteDesktopControl(sessionID: String, take: Bool) async throws -> Dieter_V1_RemoteDesktopSessionState {
+        .init()
+    }
     func closeRemoteDesktop(sessionID: String) async throws {}
     func connection(_ label: String) -> RemoteDesktopSignalingConnection {
         .init(

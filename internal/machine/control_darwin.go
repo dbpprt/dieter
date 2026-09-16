@@ -13,6 +13,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/dbpprt/dieter/internal/serviceruntime"
 )
 
 func operationCapabilities(ctx context.Context, root string) []OperationCapability {
@@ -82,8 +84,14 @@ func homebrewUpdateCapability(ctx context.Context, root string) OperationCapabil
 	}
 	relative, err := filepath.Rel(prefix, executable)
 	if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
-		result.UnavailableReason = "the running daemon is not the Homebrew-installed Dieter binary"
-		return result
+		// A fixed runtime is deliberately outside the versioned formula prefix.
+		// Derive the global prefix from brew itself, then require the exact real
+		// executable path; a similarly named executable elsewhere is insufficient.
+		rawHome, prefixErr := exec.CommandContext(prefixCtx, brew, "--prefix").Output()
+		if prefixErr != nil || executable != filepath.Join(serviceruntime.HomebrewRoot(strings.TrimSpace(string(rawHome))), "bin", "dieter") {
+			result.UnavailableReason = "the running daemon is not the Homebrew-installed Dieter binary"
+			return result
+		}
 	}
 	result.Supported, result.Authorized, result.UnavailableReason = true, true, ""
 	return result

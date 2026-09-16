@@ -540,6 +540,42 @@ struct GeneralSettings: View {
                     .foregroundStyle(DieterTheme.tertiary)
                 }
                 SettingsPanel(
+                    title: "Screen sharing",
+                    subtitle: "Limit how long an unattended remote desktop connection stays open."
+                ) {
+                    Toggle(
+                        "Disconnect inactive screen shares",
+                        isOn: Binding(
+                            get: { store.screensModel.inactivityTimeoutEnabled },
+                            set: { store.screensModel.inactivityTimeoutEnabled = $0 }
+                        )
+                    )
+                    .toggleStyle(.switch)
+                    .accessibilityIdentifier("settings.screenShare.inactivityTimeoutEnabled")
+                    .smokeTarget("settings.screenShare.inactivityTimeoutEnabled")
+                    if store.screensModel.inactivityTimeoutEnabled {
+                        Divider().overlay(DieterTheme.border)
+                        Stepper(
+                            "Disconnect after \(store.screensModel.inactivityTimeoutMinutes) \(store.screensModel.inactivityTimeoutMinutes == 1 ? "minute" : "minutes")",
+                            value: Binding(
+                                get: { store.screensModel.inactivityTimeoutMinutes },
+                                set: { store.screensModel.inactivityTimeoutMinutes = $0 }
+                            ),
+                            in: 1...240
+                        )
+                        .accessibilityIdentifier("settings.screenShare.inactivityTimeoutMinutes")
+                        .smokeTarget("settings.screenShare.inactivityTimeoutMinutes")
+                    }
+                    Text(
+                        store.screensModel.inactivityTimeoutEnabled
+                            ? "Mouse, keyboard, tab, and screen-option activity reset the timer. Open shares continue when you navigate elsewhere in Dieter."
+                            : "Automatic disconnection is off. Screen shares stay open until you disconnect or close their tab."
+                    )
+                    .font(.caption)
+                    .foregroundStyle(DieterTheme.tertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+                }
+                SettingsPanel(
                     title: "Current project route", subtitle: "Dieter routes each project to the machine that owns it."
                 ) {
                     SettingsValueRow(title: "Store", value: store.health.storePath)

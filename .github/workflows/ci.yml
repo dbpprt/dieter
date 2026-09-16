@@ -106,6 +106,88 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
 
+  ios-device:
+    name: iOS client (${{ matrix.platform }})
+    runs-on: macos-26
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: iphone
+            device: iPhone 17 Pro
+          - platform: ipad
+            device: iPad Pro 11-inch (M5)
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: extractions/setup-just@v3
+        with:
+          just-version: "1.58.0"
+      - name: Select Xcode 26.5
+        run: just release select-xcode
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: internal/harness/runtime/package-lock.json
+      - name: Restore iOS build cache
+        uses: actions/cache@v4
+        with:
+          path: apps/ios/.build/DerivedData
+          key: ${{ runner.os }}-${{ runner.arch }}-xcode-26.5-ios-ci-v1-${{ hashFiles('apps/mac/Package.swift', 'apps/ios/**/Package.resolved', 'apps/mac/Vendor/**/Package.swift') }}
+      - name: Install isolated fixture runtime
+        run: just harness install
+      - name: Build signed Simulator app
+        id: build_ios
+        run: just ios build
+      - name: Verify remote workflows
+        env:
+          IOS_SMOKE_DEVICE: ${{ matrix.device }}
+        run: just ios smoke-built "$IOS_SMOKE_DEVICE"
+      - name: Retain native results and screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-${{ matrix.platform }}-evidence
+          path: |
+            apps/ios/.build/smoke/**/test-summary.json
+            apps/ios/.build/smoke/**/passed.json
+            apps/ios/.build/smoke/**/stage.log
+            apps/ios/.build/smoke/**/cleanup.log
+            apps/ios/.build/smoke/**/boot.log
+            apps/ios/.build/smoke/**/gateway.log
+            apps/ios/.build/smoke/**/tests.log
+            apps/ios/.build/smoke/**/failure-console.log
+            apps/ios/.build/smoke/**/attachments/*
+          if-no-files-found: ignore
+          retention-days: 14
+      - name: Verify unsigned device archive
+        if: ${{ !cancelled() && steps.build_ios.conclusion == 'success' && matrix.platform == 'iphone' }}
+        run: just ios archive-unsigned 0.1.0 1
+
+  ios:
+    name: iPhone and iPad client
+    needs: ios-device
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: extractions/setup-just@v3
+        with:
+          just-version: "1.58.0"
+      - name: Require both device journeys
+        env:
+          IOS_DEVICE_RESULT: ${{ needs.ios-device.result }}
+        run: just ios ci-smoke-result
+
   android:
     name: Android client
     runs-on: ubuntu-latest
@@ -118,7 +200,11 @@ jobs:
           distribution: temurin
           java-version: "21"
           cache: gradle
-      - uses: android-actions/setup-android@v3
+      - uses: android-actions/setup-android@v4
+        with:
+          # Dieter installs its exact SDK packages in the next step. The
+          # action's default still includes the retired `tools` package.
+          packages: ""
       - uses: extractions/setup-just@v3
         with:
           just-version: "1.58.0"

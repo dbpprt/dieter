@@ -8,13 +8,15 @@ xcrun swiftc \
   -parse-as-library \
   -O \
   -target arm64-apple-macos15.0 \
+  -framework AppKit \
   -framework CoreGraphics \
   -framework CoreMedia \
   -framework CoreVideo \
   -framework Foundation \
   -framework ScreenCaptureKit \
   -framework VideoToolbox \
-  "$SCRIPT_DIR/DieterCapture.swift" \
+  "$SCRIPT_DIR"/*.swift \
+  "$SCRIPT_DIR/../../apps/mac/Sources/DieterCore/RemoteDesktopKeyMap.swift" \
   -o "$OUTPUT"
 codesign --force --sign - "$OUTPUT"
 echo "$OUTPUT"

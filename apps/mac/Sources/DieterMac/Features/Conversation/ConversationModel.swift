@@ -1,6 +1,13 @@
 import DieterAPI
+import DieterCore
 import Foundation
 import Observation
+import OSLog
+
+private let conversationConnectionLogger = Logger(
+    subsystem: "com.dbpprt.dieter.mac",
+    category: "ConversationConnection"
+)
 
 /// Owns one conversation read/watch/history lifecycle. Navigation and cache
 /// persistence are effects supplied by the app composition boundary.
@@ -71,7 +78,7 @@ final class ConversationModel {
         cardID: String,
         chat: Bool,
         rpc: any ConversationRPC,
-        cancellationRetries: Int = 0
+        recoveryAttempts: Int = 0
     ) async {
         let selectionGeneration = conversationSelectionGeneration
         do {
@@ -85,38 +92,27 @@ final class ConversationModel {
             guard self.rpc === rpc, selectionGeneration == conversationSelectionGeneration,
                 (selectedCardID ?? selectedChatID) == cardID
             else { return }
-            let after = snapshot.conversation.lastSeq
-            conversationTask = Task { [weak self] in
-                do {
-                    try await rpc.watchConversation(cardID: cardID, after: after) { [weak self] update in
-                        await self?.applyConversationUpdate(
-                            update, cardID: cardID, client: rpc, selectionGeneration: selectionGeneration)
-                    }
-                } catch  where Self.isExpectedCancellation(error) {} catch {
-                    guard let self, self.rpc === rpc, selectionGeneration == self.conversationSelectionGeneration,
-                        (self.selectedCardID ?? self.selectedChatID) == cardID
-                    else { return }
-                    self.conversationSyncing = false
-                    if DieterRPCFailure.isTransient(error) {
-                        self.onTransportFailure(error, rpc)
-                    } else {
-                        self.conversationError = "Conversation updates paused: \(DieterRPCFailure.message(for: error))"
-                    }
-                }
-            }
+            startConversationWatch(
+                cardID: cardID,
+                rpc: rpc,
+                selectionGeneration: selectionGeneration,
+                initialSequence: snapshot.conversation.lastSeq
+            )
         } catch {
             switch DieterConversationOpenFailurePolicy.disposition(
                 for: error,
                 selectionMatches: selectionGeneration == conversationSelectionGeneration && self.rpc === rpc
                     && (selectedCardID ?? selectedChatID) == cardID,
-                cancellationRetries: cancellationRetries
+                recoveryAttempts: recoveryAttempts
             ) {
             case .ignore:
                 return
             case .retry:
                 retryTask?.cancel()
                 retryTask = Task { @MainActor [weak self] in
-                    await Task.yield()
+                    let delay = DieterStreamRecoveryPolicy.delay(
+                        consecutiveFailures: recoveryAttempts + 1)
+                    try? await DieterTaskSleep.seconds(delay)
                     guard let self, selectionGeneration == self.conversationSelectionGeneration,
                         (self.selectedCardID ?? self.selectedChatID) == cardID
                     else { return }
@@ -129,19 +125,97 @@ final class ConversationModel {
                         cardID: cardID,
                         chat: chat,
                         rpc: currentRPC,
-                        cancellationRetries: cancellationRetries + 1
+                        recoveryAttempts: recoveryAttempts + 1
                     )
                 }
             case .report:
                 conversationError = DieterRPCFailure.message(for: error)
                 conversationLoading = false
                 conversationSyncing = false
-                if DieterRPCFailure.isTransient(error) {
+                if DieterRPCFailure.isAuthenticationFailure(error) {
                     onTransportFailure(error, rpc)
                 } else {
                     conversationError = "Could not open this conversation: \(DieterRPCFailure.message(for: error))"
                 }
             }
+        }
+    }
+
+    private func startConversationWatch(
+        cardID: String,
+        rpc: any ConversationRPC,
+        selectionGeneration: UInt64,
+        initialSequence: Int64
+    ) {
+        conversationTask?.cancel()
+        conversationTask = Task { [weak self] in
+            var consecutiveFailures = 0
+            while !Task.isCancelled, let self,
+                self.rpc === rpc,
+                selectionGeneration == self.conversationSelectionGeneration,
+                (self.selectedCardID ?? self.selectedChatID) == cardID
+            {
+                let after = self.conversation?.conversation.lastSeq ?? initialSequence
+                let attemptStartedAt = Date()
+                var failure: Error?
+                do {
+                    try await rpc.watchConversation(cardID: cardID, after: after) { [weak self] update in
+                        await self?.applyConversationUpdate(
+                            update,
+                            cardID: cardID,
+                            client: rpc,
+                            selectionGeneration: selectionGeneration
+                        )
+                    }
+                    guard !Task.isCancelled else { return }
+                } catch {
+                    guard !Task.isCancelled else { return }
+                    failure = error
+                }
+                guard self.rpc === rpc,
+                    selectionGeneration == self.conversationSelectionGeneration,
+                    (self.selectedCardID ?? self.selectedChatID) == cardID
+                else { return }
+                if let failure, !DieterRPCFailure.canRetryRead(failure) {
+                    self.conversationSyncing = false
+                    if DieterRPCFailure.isAuthenticationFailure(failure) {
+                        self.onTransportFailure(failure, rpc)
+                    } else {
+                        self.conversationError =
+                            "Conversation updates paused: \(DieterRPCFailure.message(for: failure))"
+                    }
+                    return
+                }
+                let receivedUpdate = self.conversationLastRefreshedAt.map { $0 >= attemptStartedAt } ?? false
+                consecutiveFailures = receivedUpdate ? 1 : consecutiveFailures + 1
+                let delay = DieterStreamRecoveryPolicy.delay(consecutiveFailures: consecutiveFailures)
+                self.conversationSyncing = true
+                conversationConnectionLogger.info(
+                    "Conversation stream for \(cardID, privacy: .public) ended; resubscribing after \(delay, privacy: .public)s on the existing data plane"
+                )
+                try? await DieterTaskSleep.seconds(delay)
+            }
+        }
+    }
+
+    /// Rebuild the selected conversation read and stream after the store has
+    /// committed a replacement data-plane client. WatchSync only carries a
+    /// bounded set of recent conversations, so it cannot restore this stream.
+    func resumeSelectedConversation(client: any ConversationRPC) {
+        guard rpc === client, let cardID = selectedCardID ?? selectedChatID,
+            DieterConversationID.isServerBacked(cardID)
+        else { return }
+        conversationTask?.cancel()
+        conversationSyncing = true
+        conversationTask = Task { @MainActor [weak self] in
+            guard let self, self.rpc === client,
+                (self.selectedCardID ?? self.selectedChatID) == cardID
+            else { return }
+            await self.fetchConversation(
+                cardID: cardID,
+                chat: self.selectedChatID == cardID,
+                rpc: client
+            )
         }
     }
 
@@ -210,11 +284,7 @@ final class ConversationModel {
             guard self.rpc === rpc, conversationHistoryRequestID == requestID,
                 (selectedCardID ?? selectedChatID) == cardID
             else { return false }
-            if DieterRPCFailure.isTransient(error) {
-                onTransportFailure(error, rpc)
-            } else {
-                conversationError = "Could not load earlier messages: \(error.localizedDescription)"
-            }
+            conversationError = "Could not load earlier messages: \(DieterRPCFailure.message(for: error))"
             return false
         }
     }
@@ -276,11 +346,7 @@ final class ConversationModel {
             guard self.rpc === rpc, conversationHistoryRequestID == requestID,
                 (selectedCardID ?? selectedChatID) == cardID
             else { return false }
-            if DieterRPCFailure.isTransient(error) {
-                onTransportFailure(error, rpc)
-            } else {
-                conversationError = "Could not load later messages: \(error.localizedDescription)"
-            }
+            conversationError = "Could not load later messages: \(DieterRPCFailure.message(for: error))"
             return false
         }
     }
@@ -304,6 +370,7 @@ final class ConversationModel {
         guard (selectedCardID ?? selectedChatID) == cardID else { return }
         apply(update)
         conversationSyncing = false
+        conversationLastRefreshedAt = Date()
         if let conversation {
             await onSnapshot(conversation, endpointID, Date())
         }

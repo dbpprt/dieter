@@ -333,3 +333,12 @@ clean-smoke:
         "{{ app_root }}/.build/ui-smoke" \
         "{{ app_root }}/.build/workspace-ui-smoke"
     find "{{ app_root }}/.build" -maxdepth 1 -type d -name 'sidebar-ui-smoke.*' -exec rm -rf -- {} +
+
+# Exercise native hardware capture, input state and bounded backpressure.
+screens-native-test:
+    native/macos-capture/test.sh
+
+# Exercise the complete gRPC/native WebRTC viewer with isolated synthetic pixels.
+# Set DIETER_TEST_SCREEN_CAPTURE_REAL=1 for actual capture and owned-window input.
+screens-test:
+    native/macos-capture/test-viewer.sh

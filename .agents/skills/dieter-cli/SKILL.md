@@ -24,6 +24,11 @@ counts; it is the cheapest bounded directory overview for one machine.
 Use `dieter daemon status` when diagnosing this machine's process and gateway
 tunnel. Its `gatewayLastAcknowledgedAt` value is bidirectional liveness proof;
 a reconnect affects relay transports only and does not stop a running agent.
+`dieter watch sync --count 3` emits metadata, deltas, and transport-only
+heartbeats. A heartbeat or `observedCursor` is reachability evidence, not applied
+workspace data. Persist a cursor only with its complete projection, never from a
+heartbeat or a frame with `projectionPending=true`. Native resume falls back to
+an explicit reset when the exact projection identity is no longer retained.
 
 For another enrolled machine, authenticate once and pass its exact ID or unique
 name as a global option before the command:
@@ -66,6 +71,13 @@ dieter --machine <machine-id> machine update --confirm UPDATE
 The update is detached, non-interactive, and logged on the target under
 `DIETER_HOME/logs/update.log`; a transport disconnect does not imply failure
 because the daemon service intentionally restarts and reconnects.
+
+Homebrew stages signed daemon/helper releases under
+`$(brew --prefix)/var/dieter/service`; the service runs real files at its fixed
+`bin` path. `brew upgrade` preserves the running pair. `brew services restart`
+activates the staged release; startup failure before listener readiness rolls
+back on the next service start. User data remains under `DIETER_HOME`. Never
+invoke the internal `__service-stage` packaging command during normal operation.
 
 The initial task should supply an exact card ID. Never guess one. Resolve names
 only for interactive discovery, then retain returned IDs for mutation.
@@ -333,11 +345,13 @@ durable PTY interface and is often better for human interaction.
 
 ## Terminals, schedules, and policy
 
-Daemon-owned PTYs survive client disconnects and can be reattached:
+Daemon-owned PTYs survive client disconnects and, when the host has `tmux`,
+daemon restarts. Machine-home terminals do not require a registered project:
 
 ```sh
 dieter terminal list --card <card-id> --format jsonl
 dieter terminal create --card <card-id> --name validation --format id
+dieter --machine <machine-id> terminal create --home --name shell --format id
 dieter terminal attach <terminal-id>
 dieter terminal close <terminal-id>
 ```
@@ -369,10 +383,61 @@ dieter prompt show
 dieter prompt preview --card <card-id>
 ```
 
+```sh
+dieter screen sessions
+dieter screen control take <session-id>
+dieter screen control release <session-id>
+```
+
+Screen sharing supports up to four clients per machine. Matching display,
+codec profile, and stream settings share a hardware encoder; different settings
+use independent renditions fed by one native capture stream per physical display.
+Each viewer adapts independently and can change displays or disconnect without
+closing another session. Only one client controls mouse and keyboard at a time.
+The first control-capable client receives control; other clients use Take Control
+(or `dieter screen control take SESSION`). Release Control leaves the video open.
+Handoff requires protocol 3; an older controlling client must disconnect first.
+`dieter screen sessions` reports connected clients and allocated capture resources.
+
+For an authorized screen session, use `dieter screen status SESSION` for active
+quality and timing, `dieter screen configure SESSION --quality auto|detail|motion`
+for live policy, and `dieter screen refresh SESSION` to refresh an idle screen.
+`configure` also accepts `--display ID`, `--width`, `--height`, `--fps`, `--bitrate`
+(kbps) and `--embedded-cursor=true|false`; omitted fields retain their values.
+Limits are adaptive ceilings up to 3840×2160/60 fps. Screen media uses native macOS
+capture and hardware H.264. Signed input protocol v3 supports control handoff;
+clients retain v2 compatibility with older daemons.
+Adaptation preserves idle-screen geometry and recovery evidence across quiet
+intervals, reduces cadence before resolution, and requires fresh congestion
+evidence before shrinking pixels. Heartbeat and statistics freshness are separate.
+Recovery probes are bounded to a doubled rate, 64 KiB / 250 ms, every three seconds
+during active/resumed video; acknowledged delivery validates capacity and congestion
+revokes it. The daemon log records session IDs, quality changes, measurement age,
+delivered bandwidth, transport queue growth and GCC state.
+`status` separates socket work (`queueMs`), paced sending (`sendMs`), approximate
+capture-to-send age (`captureToSendMs`), jitter-buffer residence (`jitterBufferMs`),
+and decoded-frame-to-Metal presentation (`renderMs`). Receiver timing is available
+with updated Mac viewers; zero can mean no fresh sample. These stages overlap and
+are not a physical glass-to-glass total. Capture admits one encoded frame at a time
+and replaces pending raw surfaces; compatible peers request immediate playout.
+All screen commands support global `--machine ID|NAME` with verified direct TLS
+and authenticated relay fallback.
+
 Screen sharing uses explicit daemon policy plus WebRTC signaling. Check
 `dieter screen capabilities` and `dieter screen settings`; do not enable capture
 or control, start a session, restart/shut down a machine, revoke enrollment, or
 delete data without explicit authorization.
+
+For authorized permission diagnostics, `dieter screen permissions` returns JSON
+with the actual daemon/helper paths, capture verification, and input permission.
+It discards one encoded frame and never injects input. Exit is nonzero if either
+check fails. `--request-control` explicitly allows an Accessibility prompt on the
+daemon host. `dieter daemon permissions --check` provides the same service-side
+check as text. Both support global `--machine ID|NAME` and never fall back to a
+helper launched by the CLI. Interactive `dieter daemon permissions` guides the
+user and enables viewing/control via RPC only after verification. It does not
+restart the service. Old Cellar grants require a one-time grant to the new fixed
+daemon path; follow an OS-requested restart with another service-side check.
 
 ## Command discipline
 

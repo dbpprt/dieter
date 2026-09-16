@@ -3,7 +3,6 @@ package server
 import (
 	"context"
 	"sort"
-	"sync"
 	"time"
 
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
@@ -65,51 +64,63 @@ type syncProjection struct {
 	snapshot              *dieterv1.GlobalSnapshot
 	state                 model.State
 	conversationRevisions map[string]string
+	cursor                store.SyncCursor
+	hydrated              bool
 }
 
 func (api *grpcAPI) globalSnapshot(limit, recent int, previous *syncProjection) (*syncProjection, error) {
-	return api.globalSnapshotReusingMetadata(limit, recent, previous, false)
+	return api.globalSnapshotContext(context.Background(), limit, recent, previous, false)
 }
 
 func (api *grpcAPI) globalSnapshotReusingMetadata(limit, recent int, previous *syncProjection, reuseMetadata bool) (*syncProjection, error) {
+	return api.globalSnapshotContext(context.Background(), limit, recent, previous, reuseMetadata)
+}
+
+func (api *grpcAPI) globalSnapshotContext(ctx context.Context, limit, recent int, previous *syncProjection, reuseMetadata bool) (*syncProjection, error) {
+	began := time.Now()
+	defer func() {
+		if elapsed := time.Since(began); elapsed > 250*time.Millisecond {
+			api.server.log.Debug("sync projection build", "durationMs", elapsed.Milliseconds(), "conversationLimit", limit, "recentLimit", recent)
+		}
+	}()
 	if limit > 100 {
 		limit = 100
 	}
 
 	var state model.State
+	var cursor store.SyncCursor
 	var snapshot *dieterv1.GlobalSnapshot
 	if reuseMetadata && previous != nil {
 		state = previous.state
+		cursor = previous.cursor
 		snapshot = proto.Clone(previous.snapshot).(*dieterv1.GlobalSnapshot)
 		snapshot.Conversations = nil
 	} else {
-		// The independent roots are loaded concurrently. GlobalState itself
-		// scans each workspace directory once, instead of once per project.
-		var settings model.Settings
-		errs := make([]error, 2)
-		var roots sync.WaitGroup
-		roots.Add(2)
-		go func() { defer roots.Done(); state, errs[0] = api.server.store.GlobalState() }()
-		go func() { defer roots.Done(); settings, errs[1] = api.server.store.Settings() }()
-		roots.Wait()
-		for _, err := range errs {
-			if err != nil {
-				return nil, err
-			}
+		var err error
+		state, cursor, err = api.server.store.GlobalStateContext(ctx)
+		if err != nil {
+			return nil, err
+		}
+		settings, err := api.server.store.Settings()
+		if err != nil {
+			return nil, err
 		}
 
 		snapshot = &dieterv1.GlobalSnapshot{State: protoState(state), Settings: protoSettings(settings)}
 	}
 
 	protoState := snapshot.GetState()
-	projection := &syncProjection{snapshot: snapshot, state: state, conversationRevisions: make(map[string]string)}
+	projection := &syncProjection{snapshot: snapshot, state: state, cursor: cursor, hydrated: limit > 0, conversationRevisions: make(map[string]string)}
 	if limit <= 0 {
 		return projection, nil
 	}
 
 	conversationCards := append(append([]*dieterv1.Card(nil), protoState.Cards...), protoState.Chats...)
 	if recent > 0 {
-		conversationCards = syncConversationCards(conversationCards, recent)
+		conversationCards = syncConversationCards(conversationCards, min(recent, 16))
+	}
+	if len(conversationCards) > 32 {
+		conversationCards = conversationCards[:32]
 	}
 	snapshot.Conversations = make([]*dieterv1.ConversationSnapshot, len(conversationCards))
 	projectsByID := make(map[string]model.Project, len(state.Projects))
@@ -136,71 +147,42 @@ func (api *grpcAPI) globalSnapshotReusingMetadata(limit, recent int, previous *s
 		}
 	}
 
-	// Conversation tails are independent and can contain large tool payloads.
-	// Build at most eight in parallel, and reuse unchanged serialized snapshots
-	// by checking their constant-time durable revision first.
-	var conversations sync.WaitGroup
-	var resultMu sync.Mutex
-	var firstErr error
-	revisions := make([]string, len(conversationCards))
-	workers := make(chan struct{}, 8)
-	for index, card := range conversationCards {
-		workers <- struct{}{}
-		conversations.Add(1)
-		go func(index int, card *dieterv1.Card) {
-			defer conversations.Done()
-			defer func() { <-workers }()
-			cardID := card.GetId()
-			revision, err := api.server.store.ConversationRevisionByID(cardID)
-			if err != nil {
-				resultMu.Lock()
-				if firstErr == nil {
-					firstErr = err
-				}
-				resultMu.Unlock()
-				return
-			}
-			comments, err := api.server.store.ListComments(cardID, 0)
-			if err != nil {
-				resultMu.Lock()
-				if firstErr == nil {
-					firstErr = err
-				}
-				resultMu.Unlock()
-				return
-			}
-			modelCard := cardsByID[cardID]
-			detail := model.CardDetail{
-				Card: modelCard, Project: projectsByID[modelCard.ProjectID],
-				Board: boardsByID[modelCard.BoardID], Comments: comments,
-			}
-			protoDetail := protoCardDetail(detail)
-			if cached := previousConversations[cardID]; cached != nil &&
-				previousRevisions[cardID] == revision && proto.Equal(cached.GetDetail(), protoDetail) {
-				snapshot.Conversations[index] = cached
-				revisions[index] = revision
-				return
-			}
+	// Optional hydration is bounded and independently fallible. A damaged or
+	// oversized transcript cannot prevent the workspace directory from arriving.
+	snapshot.Conversations = nil
+	used := proto.Size(snapshot)
+	for _, card := range conversationCards {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		cardID := card.GetId()
+		revision, err := api.server.store.ConversationRevisionByID(cardID)
+		if err != nil {
+			continue
+		}
+		modelCard := cardsByID[cardID]
+		detail := model.CardDetail{Card: modelCard, Project: projectsByID[modelCard.ProjectID], Board: boardsByID[modelCard.BoardID]}
+		// Comment bodies belong to the selected conversation RPC, not workspace sync.
+		var tail *dieterv1.ConversationSnapshot
+		if cached := previousConversations[cardID]; cached != nil && previousRevisions[cardID] == revision && proto.Equal(cached.GetDetail(), protoCardDetail(detail)) {
+			tail = cached
+		} else {
 			conversation, err := api.conversationAtRevision(cardID, revision)
 			if err != nil {
-				resultMu.Lock()
-				if firstErr == nil {
-					firstErr = err
-				}
-				resultMu.Unlock()
-				return
+				api.server.log.Warn("sync conversation hydration failed", "cardID", cardID, "error", err)
+				continue
 			}
-			snapshot.Conversations[index] = api.conversationSnapshotFrom(detail, conversation, limit, nil)
-			revisions[index] = revision
-		}(index, card)
+			tail = api.boundedConversationSnapshot(detail, conversation, limit, nil, maxSyncConversationBytes, false)
+		}
+		size := proto.Size(tail)
+		if size > maxSyncConversationBytes || used+size > maxSyncFrameBytes-65536 {
+			continue
+		}
+		used += size
+		snapshot.Conversations = append(snapshot.Conversations, tail)
+		projection.conversationRevisions[cardID] = revision
 	}
-	conversations.Wait()
-	if firstErr != nil {
-		return nil, firstErr
-	}
-	for index, card := range conversationCards {
-		projection.conversationRevisions[card.GetId()] = revisions[index]
-	}
+
 	return projection, nil
 }
 
@@ -335,140 +317,169 @@ func globalDeltaEmpty(delta *dieterv1.GlobalDelta) bool {
 	return delta == nil || proto.Equal(delta, &dieterv1.GlobalDelta{})
 }
 
-func (api *grpcAPI) watchSync(ctx context.Context, request *dieterv1.SyncRequest, send func(*dieterv1.SyncFrame) error) error {
-	heartbeat := boundedInterval(request.GetHeartbeatMs(), 15*time.Second)
-	if heartbeat < time.Second {
-		heartbeat = time.Second
+// watchSync has one sender and one bounded projection worker. Slow projection
+// work cannot suppress liveness, and canceled senders cancel their worker.
+func (api *grpcAPI) watchSync(parent context.Context, request *dieterv1.SyncRequest, send func(*dieterv1.SyncFrame) error) error {
+	ctx, cancel := context.WithCancel(parent)
+	defer cancel()
+	heartbeat := time.Duration(request.GetHeartbeatMs()) * time.Millisecond
+	if heartbeat <= 0 {
+		heartbeat = 15 * time.Second
 	}
-	poll := time.NewTicker(200 * time.Millisecond)
-	defer poll.Stop()
-	heartbeats := time.NewTicker(heartbeat)
-	defer heartbeats.Stop()
-
-	cursor, _, err := api.server.store.SyncEvents(0, 1)
-	if err != nil {
-		return err
+	heartbeat = max(time.Second, heartbeat)
+	type delivery struct {
+		frame *dieterv1.SyncFrame
+		sent  chan struct{}
 	}
-	after := request.GetAfter()
-	sequence := uint64(0)
-	reset := after == nil || after.GetEpoch() == "" || after.GetEpoch() != cursor.Epoch || after.GetProjectionVersion() != store.SyncProjectionVersion || after.GetSequence() > cursor.Sequence
-	if !reset {
-		sequence = after.GetSequence()
-	}
-	// Delta framing applies to metadata-only clients and to bounded
-	// conversation subscribers; only the legacy full-snapshot mode is exempt.
-	deltaMode := request.GetConversationLimit() == 0 || request.GetRecentConversationLimit() > 0
-	var projection *syncProjection
-	if deltaMode || reset || sequence == 0 {
-		if waitErr := api.server.store.WaitForWriter(ctx); waitErr != nil {
-			return waitErr
-		}
-		snapshot, snapshotErr := api.globalSnapshot(int(request.GetConversationLimit()), int(request.GetRecentConversationLimit()), nil)
-		if snapshotErr != nil {
-			return snapshotErr
-		}
-		if err := send(&dieterv1.SyncFrame{Cursor: protoSyncCursor(cursor), Snapshot: snapshot.snapshot, Reset_: reset}); err != nil {
-			return err
-		}
-		sequence = cursor.Sequence
-		projection = snapshot
-	}
-	if projection == nil {
-		var projectionErr error
-		projection, projectionErr = api.globalSnapshot(int(request.GetConversationLimit()), int(request.GetRecentConversationLimit()), nil)
-		if projectionErr != nil {
-			return projectionErr
-		}
-	}
-
-	sendEvents := func() error {
-		current, events, readErr := api.server.store.SyncEvents(sequence, 256)
-		if readErr != nil {
-			return readErr
-		}
-		if current.Epoch != cursor.Epoch || current.Sequence < sequence {
-			if waitErr := api.server.store.WaitForWriter(ctx); waitErr != nil {
-				return waitErr
+	frames := make(chan delivery)
+	done := make(chan error, 1)
+	go func() {
+		done <- api.buildSyncFrames(ctx, request, func(frame *dieterv1.SyncFrame) error {
+			ack := make(chan struct{})
+			select {
+			case frames <- delivery{frame, ack}:
+				select {
+				case <-ack:
+					return nil
+				case <-ctx.Done():
+					return ctx.Err()
+				}
+			case <-ctx.Done():
+				return ctx.Err()
 			}
-			snapshot, snapshotErr := api.globalSnapshot(int(request.GetConversationLimit()), int(request.GetRecentConversationLimit()), nil)
-			if snapshotErr != nil {
-				return snapshotErr
-			}
-			cursor, sequence = current, current.Sequence
-			projection = snapshot
-			return send(&dieterv1.SyncFrame{Cursor: protoSyncCursor(current), Snapshot: snapshot.snapshot, Reset_: true})
-		}
-		if len(events) == 0 {
-			return nil
-		}
-		if waitErr := api.server.store.WaitForWriter(ctx); waitErr != nil {
-			return waitErr
-		}
-		reuseMetadata := projection != nil
-		for _, event := range events {
-			if event.Kind != "conversation_changed" {
-				reuseMetadata = false
-				break
-			}
-		}
-		snapshot, snapshotErr := api.globalSnapshotReusingMetadata(
-			int(request.GetConversationLimit()),
-			int(request.GetRecentConversationLimit()),
-			projection,
-			reuseMetadata,
-		)
-		if snapshotErr != nil {
-			return snapshotErr
-		}
-		last := events[len(events)-1]
-		frame := &dieterv1.SyncFrame{
-			Cursor: protoSyncCursor(current),
-			Event:  protoSyncEvent(last),
-		}
-		if deltaMode {
-			if delta := globalDelta(projection.snapshot, snapshot.snapshot); !globalDeltaEmpty(delta) {
-				frame.Delta = delta
-			}
-		} else {
-			frame.Snapshot = snapshot.snapshot
-		}
-		for _, event := range events {
-			frame.Events = append(frame.Events, protoSyncEvent(event))
-		}
-		if err := send(frame); err != nil {
-			return err
-		}
-		// The projection was materialized after every mutation through current.
-		// Advance directly to that high-water mark even when the durable journal
-		// batch contains more than 256 rows, so a burst becomes one delta build.
-		sequence = current.Sequence
-		cursor = current
-		projection = snapshot
-		return nil
-	}
-
-	if err := sendEvents(); err != nil {
-		return err
-	}
+		})
+	}()
+	ticks := time.NewTicker(heartbeat)
+	defer ticks.Stop()
+	var applied *dieterv1.SyncCursor
 	for {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-poll.C:
-			if err := sendEvents(); err != nil {
+		case err := <-done:
+			return err
+		case delivery := <-frames:
+			frame := delivery.frame
+			if err := sendBoundedSyncFrame(frame, request.GetProtocolVersion() > 0, send); err != nil {
 				return err
 			}
-		case <-heartbeats.C:
-			current, _, readErr := api.server.store.SyncEvents(sequence, 1)
-			if readErr != nil {
-				return readErr
+			applied = frame.Cursor
+			close(delivery.sent)
+		case <-ticks.C:
+			if request.GetProtocolVersion() == 0 && applied == nil {
+				continue
 			}
-			if err := send(&dieterv1.SyncFrame{Cursor: protoSyncCursor(current), Heartbeat: true}); err != nil {
+			observed, _, err := api.server.store.SyncEvents(^uint64(0), 1)
+			if err != nil {
+				return err
+			}
+			frame := &dieterv1.SyncFrame{Cursor: applied, ObservedCursor: protoSyncCursor(observed), Heartbeat: true, TransportOnly: request.GetProtocolVersion() > 0}
+			frame.ProjectionPending = applied == nil || applied.GetEpoch() != observed.Epoch || applied.GetSequence() < observed.Sequence
+			if err := send(frame); err != nil {
 				return err
 			}
 		}
 	}
 }
+
+func (api *grpcAPI) buildSyncFrames(ctx context.Context, request *dieterv1.SyncRequest, send func(*dieterv1.SyncFrame) error) error {
+	limit, recent := int(request.GetConversationLimit()), int(request.GetRecentConversationLimit())
+	modern := request.GetProtocolVersion() > 0
+	cursor, _, err := api.server.store.SyncEvents(^uint64(0), 1)
+	if err != nil {
+		return err
+	}
+	projection := api.server.resumedSyncProjection(request, cursor)
+	reset := projection == nil
+	publish := func(next *syncProjection, events []store.SyncEvent, full bool) error {
+		frame := &dieterv1.SyncFrame{Cursor: protoSyncCursor(next.cursor)}
+		if modern {
+			frame.Cursor.ProjectionId = api.server.retainSyncProjection(next, limit, recent)
+		}
+		if full || (!modern && limit > 0 && recent == 0) {
+			frame.Snapshot = next.snapshot
+			frame.Reset_ = reset
+		} else if delta := globalDelta(projection.snapshot, next.snapshot); !globalDeltaEmpty(delta) {
+			frame.Delta = delta
+		}
+		for _, event := range events {
+			frame.Events = append(frame.Events, protoSyncEvent(event))
+		}
+		if len(events) > 0 {
+			frame.Event = protoSyncEvent(events[len(events)-1])
+		}
+		if err := send(frame); err != nil {
+			return err
+		}
+		projection = next
+		reset = false
+		return nil
+	}
+	if projection == nil {
+		initialLimit := limit
+		if modern {
+			initialLimit = 0
+		}
+		initial, err := api.globalSnapshotContext(ctx, initialLimit, recent, nil, false)
+		if err != nil {
+			return err
+		}
+		if err := publish(initial, nil, true); err != nil {
+			return err
+		}
+	} else {
+		next := projection
+		if cursor != projection.cursor {
+			next, err = api.globalSnapshotContext(ctx, limit, recent, projection, false)
+			if err != nil {
+				return err
+			}
+		}
+		if err := publish(next, nil, false); err != nil {
+			return err
+		}
+	}
+	if modern && limit > 0 && !projection.hydrated {
+		hydrated, err := api.globalSnapshotContext(ctx, limit, recent, projection, false)
+		if err != nil {
+			return err
+		}
+		if err := publish(hydrated, nil, false); err != nil {
+			return err
+		}
+	}
+	poll := time.NewTicker(200 * time.Millisecond)
+	defer poll.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-poll.C:
+		}
+		current, events, err := api.server.store.SyncEvents(projection.cursor.Sequence, 256)
+		if err != nil {
+			return err
+		}
+		full := current.Epoch != projection.cursor.Epoch || current.Sequence < projection.cursor.Sequence
+		if !full && current.Sequence == projection.cursor.Sequence && !api.server.store.SyncMutationPending() {
+			continue
+		}
+		// Always capture committed metadata. The Store reuses it for text-only
+		// commits; an incomplete diagnostic journal batch never decides correctness.
+		next, err := api.globalSnapshotContext(ctx, limit, recent, projection, false)
+		if err != nil {
+			return err
+		}
+		full = full || next.cursor.Epoch != projection.cursor.Epoch || next.cursor.Sequence < projection.cursor.Sequence
+		reset = full
+		if err := publish(next, events, full); err != nil {
+			return err
+		}
+	}
+}
+
+const maxSyncFrameBytes = 8 << 20
+const maxSyncConversationBytes = 512 << 10
 
 func (api *grpcAPI) WatchSync(request *dieterv1.SyncRequest, stream dieterv1.DieterService_WatchSyncServer) error {
 	return api.watchSync(stream.Context(), request, stream.Send)

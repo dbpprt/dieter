@@ -68,10 +68,17 @@
                             && store.projects.contains { !store.boards(for: $0.id).isEmpty }
                     })
             else {
+                let phaseDetail: String
+                if case .failed(let message) = store.phase {
+                    phaseDetail = message
+                } else {
+                    phaseDetail = store.phase.label
+                }
                 writeReport(
                     [
                         "connection": "failed: fixture workspace did not become ready",
                         "phase": store.phase.label,
+                        "phase-detail": phaseDetail,
                         "projects": "\(store.projects.count)",
                     ], to: output)
                 return
@@ -613,11 +620,37 @@
                 NSApp.terminate(nil)
                 return
             }
+            let retainedScreen = ScreenShareSession(
+                id: "screen-smoke", machineID: store.endpoint.id,
+                machineName: store.endpoint.name, monitorsInactivity: false)
+            retainedScreen.controller.phase = .streaming
+            store.screensModel.sessions = [retainedScreen]
+            store.screensModel.selectedSessionID = retainedScreen.id
             store.openScreens()
             try? await DieterTaskSleep.milliseconds(500)
-            results["01a-experimental-screens"] =
-                store.section == .screens ? "passed" : "failed: screens did not open"
-            await captureAppearances(window, named: "01a-experimental-screens.png", in: output)
+            let screenTabsVisible = await waitUntil(timeout: 3) {
+                NativeUIAccessibility.find("screen.select.\(retainedScreen.id)", in: window) != nil
+                    && NativeUIAccessibility.find("screens.new", in: window) != nil
+            }
+            results["01a-screen-tabs"] =
+                store.section == .screens && screenTabsVisible && store.screensModel.connectedCount == 1
+                ? "passed" : "failed: machine-scoped screen tab did not open"
+            await captureAppearances(window, named: "01a-screen-tabs.png", in: output)
+            await store.openBoard(board.id, projectID: project.id)
+            try? await DieterTaskSleep.milliseconds(500)
+            results["01b-screen-navigation-retention"] =
+                retainedScreen.controller.phase == .streaming && store.screensModel.connectedCount == 1
+                ? "passed" : "failed: navigation disconnected the retained screen tab"
+
+            store.openSettings()
+            try? await DieterTaskSleep.milliseconds(700)
+            let earlyScreenTimeoutVisible = await waitUntil(timeout: 3) {
+                NativeUIAccessibility.find("settings.screenShare.inactivityTimeoutEnabled", in: window) != nil
+                    && NativeUIAccessibility.find("settings.screenShare.inactivityTimeoutMinutes", in: window) != nil
+            }
+            results["01b-screen-timeout-settings"] =
+                earlyScreenTimeoutVisible ? "passed" : "failed: screen-share inactivity controls were missing"
+            capture(window, to: output.appending(path: "01b-screen-timeout-settings.png"))
             await store.openBoard(board.id, projectID: project.id)
             try? await DieterTaskSleep.milliseconds(500)
 
@@ -791,6 +824,12 @@
             try? await DieterTaskSleep.milliseconds(700)
             results["09-settings-general"] =
                 store.section == .settings ? "passed" : "failed: settings did not open"
+            let screenTimeoutVisible = await waitUntil(timeout: 3) {
+                NativeUIAccessibility.find("settings.screenShare.inactivityTimeoutEnabled", in: window) != nil
+                    && NativeUIAccessibility.find("settings.screenShare.inactivityTimeoutMinutes", in: window) != nil
+            }
+            results["09a-settings-screen-timeout"] =
+                screenTimeoutVisible ? "passed" : "failed: screen-share inactivity controls were missing"
             await captureAppearances(window, named: "09-settings-general.png", in: output)
 
             let lightPressed = await NativeUIAccessibility.pressWhenSettled("settings.appearance.light", in: window)
@@ -1110,6 +1149,12 @@
             // A repository can be registered on several enrolled machines. Render
             // the real new-chat surface with a duplicate project name and require
             // its selected destination to retain the owning machine identity.
+            // The extra machine exists only in this renderer fixture. Pause the
+            // gateway directory poll so its authoritative response cannot remove
+            // the injected endpoint while the view settles or screenshots render.
+            let resumeMachineDirectoryRefresh = store.machineDirectoryTask != nil
+            store.machineDirectoryTask?.cancel()
+            store.machineDirectoryTask = nil
             let duplicateMachine = DieterEndpoint(
                 name: "Smoke remote Mac",
                 host: store.endpoint.host,
@@ -1147,6 +1192,18 @@
             store.endpoints.removeAll { $0.id == duplicateMachine.id }
             store.newChatProjectID = project.id
             store.selectedProjectID = project.id
+            if resumeMachineDirectoryRefresh {
+                // Screenshot rendering can outlast a presence lease on CI.
+                // Restore authoritative presence after pausing its poll; do
+                // not start live operations with the renderer fixture's stale
+                // directory while waiting another 15 seconds for the poll.
+                await store.refreshDaemonPresence()
+                store.startMachineDirectoryRefresh()
+                results["13h-machine-presence-restored"] =
+                    store.machine(forProjectID: project.id)?.online == true
+                    ? "passed"
+                    : "failed: live fixture machine presence was not restored"
+            }
             try? await DieterTaskSleep.milliseconds(350)
 
             store.createProjectPresented = true
@@ -1286,6 +1343,8 @@
                 }
                 let canceledOfflineMessage =
                     "Canceled offline outbox smoke \(UUID().uuidString.lowercased())"
+                let offlineDeliveryMessage =
+                    "Offline delivery smoke \(UUID().uuidString.lowercased())"
                 if let liveCard, let machine = store.machine(forProjectID: liveCard.projectID) {
                     store.composerText = canceledOfflineMessage
                     await store.sendComposer()
@@ -1315,7 +1374,7 @@
                         : "failed: removed=\(removed), queued=\(store.outboxSummary(for: machine)?.messageCount ?? 0)"
                     await captureAppearances(window, named: "17b-offline-message-canceled.png", in: output)
 
-                    store.composerText = "Offline delivery smoke \(UUID().uuidString.lowercased())"
+                    store.composerText = offlineDeliveryMessage
                     await store.sendComposer()
                     _ = await waitUntil(timeout: 5) {
                         store.outboxSummary(for: machine)?.messageCount == 1
@@ -1323,6 +1382,44 @@
                 } else {
                     results["17a-offline-message-queued"] = "failed: live card or owning machine missing"
                     results["17b-offline-message-canceled"] = "failed: live card or owning machine missing"
+                }
+
+                if let trigger = offlineTrigger(), let liveCard {
+                    try? FileManager.default.removeItem(at: trigger)
+                    let reconnected = await waitUntil(timeout: 25) { store.phase.isConnected }
+                    let delivered = await waitUntil(timeout: 15) {
+                        guard let machine = store.machine(forProjectID: liveCard.projectID) else {
+                            return false
+                        }
+                        return store.outboxSummary(for: machine) == nil
+                    }
+                    let visible = await waitUntil(timeout: 10) {
+                        store.conversationMessages.contains { message in
+                            message.parts.contains {
+                                $0.type == "text" && $0.text == offlineDeliveryMessage
+                            }
+                        }
+                    }
+                    let selectionResumed =
+                        store.selectedCardID == liveCard.id && store.conversationError == nil
+                    let canceledStayedAbsent = !store.conversationMessages.contains { message in
+                        message.parts.contains { $0.type == "text" && $0.text == canceledOfflineMessage }
+                    }
+                    results["17c-reconnected-message-delivered"] =
+                        reconnected && delivered && visible && selectionResumed && canceledStayedAbsent
+                        ? "passed"
+                        : "failed: reconnected=\(reconnected), delivered=\(delivered), visible=\(visible), selected=\(store.selectedCardID ?? "none"), conversationError=\(store.conversationError ?? "none"), canceledAbsent=\(canceledStayedAbsent)"
+                    await captureAppearances(
+                        window, named: "17c-reconnected-message-delivered.png", in: output)
+                } else {
+                    results["17c-reconnected-message-delivered"] =
+                        "failed: reconnect trigger or live card missing"
+                }
+
+                if let trigger = offlineTrigger() {
+                    _ = FileManager.default.createFile(atPath: trigger.path, contents: Data())
+                    _ = await waitUntil(timeout: 10) { !store.phase.isConnected }
+                    try? await DieterTaskSleep.seconds(1)
                 }
                 await store.openBoard(cachedBoard.id, projectID: project.id)
                 try? await DieterTaskSleep.milliseconds(700)
@@ -1340,38 +1437,9 @@
                     : "failed: section=\(store.section.rawValue), board=\(store.selectedBoard?.id ?? "none"), phase=\(store.phase.label), freshness=\(offlineLabel), error=\(store.errorMessage ?? "none")"
                 await captureAppearances(
                     window, named: "17-offline-cached-board-navigation.png", in: output)
-
-                if let trigger = offlineTrigger(), let liveCard {
+                if let trigger = offlineTrigger() {
                     try? FileManager.default.removeItem(at: trigger)
-                    let reconnected = await waitUntil(timeout: 25) { store.phase.isConnected }
-                    let delivered = await waitUntil(timeout: 15) {
-                        guard let machine = store.machine(forProjectID: liveCard.projectID) else {
-                            return false
-                        }
-                        return store.outboxSummary(for: machine) == nil
-                    }
-                    if reconnected && delivered {
-                        await store.openConversation(cardID: liveCard.id)
-                    }
-                    let visible = await waitUntil(timeout: 10) {
-                        store.conversationMessages.contains { message in
-                            message.parts.contains {
-                                $0.type == "text" && $0.text.hasPrefix("Offline delivery smoke ")
-                            }
-                        }
-                    }
-                    let canceledStayedAbsent = !store.conversationMessages.contains { message in
-                        message.parts.contains { $0.type == "text" && $0.text == canceledOfflineMessage }
-                    }
-                    results["17c-reconnected-message-delivered"] =
-                        reconnected && delivered && visible && canceledStayedAbsent
-                        ? "passed"
-                        : "failed: reconnected=\(reconnected), delivered=\(delivered), visible=\(visible), canceledAbsent=\(canceledStayedAbsent)"
-                    await captureAppearances(
-                        window, named: "17c-reconnected-message-delivered.png", in: output)
-                } else {
-                    results["17c-reconnected-message-delivered"] =
-                        "failed: reconnect trigger or live card missing"
+                    _ = await waitUntil(timeout: 25) { store.phase.isConnected }
                 }
             } catch {
                 results["17-offline-cached-board-navigation"] =

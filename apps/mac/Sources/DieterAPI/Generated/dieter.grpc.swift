@@ -1178,6 +1178,19 @@ public enum Dieter_V1_DieterService: Sendable {
                 type: .unary
             )
         }
+        /// Namespace for "ProbeRemoteDesktopPermissions" metadata.
+        public enum ProbeRemoteDesktopPermissions: Sendable {
+            /// Request type for "ProbeRemoteDesktopPermissions".
+            public typealias Input = Dieter_V1_ProbeRemoteDesktopPermissionsRequest
+            /// Response type for "ProbeRemoteDesktopPermissions".
+            public typealias Output = Dieter_V1_RemoteDesktopPermissionProbe
+            /// Descriptor for "ProbeRemoteDesktopPermissions".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.DieterService"),
+                method: "ProbeRemoteDesktopPermissions",
+                type: .unary
+            )
+        }
         /// Namespace for "GetRemoteDesktopSettings" metadata.
         public enum GetRemoteDesktopSettings: Sendable {
             /// Request type for "GetRemoteDesktopSettings".
@@ -1227,6 +1240,58 @@ public enum Dieter_V1_DieterService: Sendable {
             public static let descriptor = GRPCCore.MethodDescriptor(
                 service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.DieterService"),
                 method: "SendRemoteDesktopSignal",
+                type: .unary
+            )
+        }
+        /// Namespace for "GetRemoteDesktopSession" metadata.
+        public enum GetRemoteDesktopSession: Sendable {
+            /// Request type for "GetRemoteDesktopSession".
+            public typealias Input = Dieter_V1_RemoteDesktopRef
+            /// Response type for "GetRemoteDesktopSession".
+            public typealias Output = Dieter_V1_RemoteDesktopSessionState
+            /// Descriptor for "GetRemoteDesktopSession".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.DieterService"),
+                method: "GetRemoteDesktopSession",
+                type: .unary
+            )
+        }
+        /// Namespace for "ListRemoteDesktopSessions" metadata.
+        public enum ListRemoteDesktopSessions: Sendable {
+            /// Request type for "ListRemoteDesktopSessions".
+            public typealias Input = SwiftProtobuf.Google_Protobuf_Empty
+            /// Response type for "ListRemoteDesktopSessions".
+            public typealias Output = Dieter_V1_RemoteDesktopSessions
+            /// Descriptor for "ListRemoteDesktopSessions".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.DieterService"),
+                method: "ListRemoteDesktopSessions",
+                type: .unary
+            )
+        }
+        /// Namespace for "SetRemoteDesktopControl" metadata.
+        public enum SetRemoteDesktopControl: Sendable {
+            /// Request type for "SetRemoteDesktopControl".
+            public typealias Input = Dieter_V1_RemoteDesktopControlRequest
+            /// Response type for "SetRemoteDesktopControl".
+            public typealias Output = Dieter_V1_RemoteDesktopSessionState
+            /// Descriptor for "SetRemoteDesktopControl".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.DieterService"),
+                method: "SetRemoteDesktopControl",
+                type: .unary
+            )
+        }
+        /// Namespace for "UpdateRemoteDesktopSession" metadata.
+        public enum UpdateRemoteDesktopSession: Sendable {
+            /// Request type for "UpdateRemoteDesktopSession".
+            public typealias Input = Dieter_V1_UpdateRemoteDesktopSessionRequest
+            /// Response type for "UpdateRemoteDesktopSession".
+            public typealias Output = Dieter_V1_RemoteDesktopSessionState
+            /// Descriptor for "UpdateRemoteDesktopSession".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.DieterService"),
+                method: "UpdateRemoteDesktopSession",
                 type: .unary
             )
         }
@@ -1438,10 +1503,15 @@ public enum Dieter_V1_DieterService: Sendable {
             CancelExecution.descriptor,
             CloseExecution.descriptor,
             GetRemoteDesktopCapabilities.descriptor,
+            ProbeRemoteDesktopPermissions.descriptor,
             GetRemoteDesktopSettings.descriptor,
             UpdateRemoteDesktopSettings.descriptor,
             StartRemoteDesktop.descriptor,
             SendRemoteDesktopSignal.descriptor,
+            GetRemoteDesktopSession.descriptor,
+            ListRemoteDesktopSessions.descriptor,
+            SetRemoteDesktopControl.descriptor,
+            UpdateRemoteDesktopSession.descriptor,
             CloseRemoteDesktop.descriptor,
             ListSchedules.descriptor,
             PreviewSchedule.descriptor,
@@ -3205,6 +3275,30 @@ extension Dieter_V1_DieterService {
             onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_RemoteDesktopCapabilities>) async throws -> Result
         ) async throws -> Result where Result: Sendable
 
+        /// Call the "ProbeRemoteDesktopPermissions" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Explicit, bounded permission test performed by the running daemon.
+        /// > Discards one encoded frame and never injects input or changes settings.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_ProbeRemoteDesktopPermissionsRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_ProbeRemoteDesktopPermissionsRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_RemoteDesktopPermissionProbe` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func probeRemoteDesktopPermissions<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_ProbeRemoteDesktopPermissionsRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_ProbeRemoteDesktopPermissionsRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_RemoteDesktopPermissionProbe>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_RemoteDesktopPermissionProbe>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
         /// Call the "GetRemoteDesktopSettings" method.
         ///
         /// - Parameters:
@@ -3279,6 +3373,82 @@ extension Dieter_V1_DieterService {
             deserializer: some GRPCCore.MessageDeserializer<SwiftProtobuf.Google_Protobuf_Empty>,
             options: GRPCCore.CallOptions,
             onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<SwiftProtobuf.Google_Protobuf_Empty>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "GetRemoteDesktopSession" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_RemoteDesktopRef` message.
+        ///   - serializer: A serializer for `Dieter_V1_RemoteDesktopRef` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_RemoteDesktopSessionState` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func getRemoteDesktopSession<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_RemoteDesktopRef>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_RemoteDesktopRef>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_RemoteDesktopSessionState>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_RemoteDesktopSessionState>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "ListRemoteDesktopSessions" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `SwiftProtobuf.Google_Protobuf_Empty` message.
+        ///   - serializer: A serializer for `SwiftProtobuf.Google_Protobuf_Empty` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_RemoteDesktopSessions` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func listRemoteDesktopSessions<Result>(
+            request: GRPCCore.ClientRequest<SwiftProtobuf.Google_Protobuf_Empty>,
+            serializer: some GRPCCore.MessageSerializer<SwiftProtobuf.Google_Protobuf_Empty>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_RemoteDesktopSessions>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_RemoteDesktopSessions>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "SetRemoteDesktopControl" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_RemoteDesktopControlRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_RemoteDesktopControlRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_RemoteDesktopSessionState` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func setRemoteDesktopControl<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_RemoteDesktopControlRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_RemoteDesktopControlRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_RemoteDesktopSessionState>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_RemoteDesktopSessionState>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "UpdateRemoteDesktopSession" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_UpdateRemoteDesktopSessionRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_UpdateRemoteDesktopSessionRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_RemoteDesktopSessionState` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func updateRemoteDesktopSession<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_UpdateRemoteDesktopSessionRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_UpdateRemoteDesktopSessionRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_RemoteDesktopSessionState>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_RemoteDesktopSessionState>) async throws -> Result
         ) async throws -> Result where Result: Sendable
 
         /// Call the "CloseRemoteDesktop" method.
@@ -6171,6 +6341,41 @@ extension Dieter_V1_DieterService {
             )
         }
 
+        /// Call the "ProbeRemoteDesktopPermissions" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Explicit, bounded permission test performed by the running daemon.
+        /// > Discards one encoded frame and never injects input or changes settings.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_ProbeRemoteDesktopPermissionsRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_ProbeRemoteDesktopPermissionsRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_RemoteDesktopPermissionProbe` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func probeRemoteDesktopPermissions<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_ProbeRemoteDesktopPermissionsRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_ProbeRemoteDesktopPermissionsRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_RemoteDesktopPermissionProbe>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_RemoteDesktopPermissionProbe>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Dieter_V1_DieterService.Method.ProbeRemoteDesktopPermissions.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
         /// Call the "GetRemoteDesktopSettings" method.
         ///
         /// - Parameters:
@@ -6282,6 +6487,126 @@ extension Dieter_V1_DieterService {
             try await self.client.unary(
                 request: request,
                 descriptor: Dieter_V1_DieterService.Method.SendRemoteDesktopSignal.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "GetRemoteDesktopSession" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_RemoteDesktopRef` message.
+        ///   - serializer: A serializer for `Dieter_V1_RemoteDesktopRef` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_RemoteDesktopSessionState` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func getRemoteDesktopSession<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_RemoteDesktopRef>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_RemoteDesktopRef>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_RemoteDesktopSessionState>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_RemoteDesktopSessionState>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Dieter_V1_DieterService.Method.GetRemoteDesktopSession.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "ListRemoteDesktopSessions" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `SwiftProtobuf.Google_Protobuf_Empty` message.
+        ///   - serializer: A serializer for `SwiftProtobuf.Google_Protobuf_Empty` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_RemoteDesktopSessions` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func listRemoteDesktopSessions<Result>(
+            request: GRPCCore.ClientRequest<SwiftProtobuf.Google_Protobuf_Empty>,
+            serializer: some GRPCCore.MessageSerializer<SwiftProtobuf.Google_Protobuf_Empty>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_RemoteDesktopSessions>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_RemoteDesktopSessions>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Dieter_V1_DieterService.Method.ListRemoteDesktopSessions.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "SetRemoteDesktopControl" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_RemoteDesktopControlRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_RemoteDesktopControlRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_RemoteDesktopSessionState` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func setRemoteDesktopControl<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_RemoteDesktopControlRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_RemoteDesktopControlRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_RemoteDesktopSessionState>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_RemoteDesktopSessionState>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Dieter_V1_DieterService.Method.SetRemoteDesktopControl.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "UpdateRemoteDesktopSession" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_UpdateRemoteDesktopSessionRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_UpdateRemoteDesktopSessionRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_RemoteDesktopSessionState` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func updateRemoteDesktopSession<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_UpdateRemoteDesktopSessionRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_UpdateRemoteDesktopSessionRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_RemoteDesktopSessionState>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_RemoteDesktopSessionState>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Dieter_V1_DieterService.Method.UpdateRemoteDesktopSession.descriptor,
                 serializer: serializer,
                 deserializer: deserializer,
                 options: options,
@@ -8821,6 +9146,36 @@ extension Dieter_V1_DieterService.ClientProtocol {
         )
     }
 
+    /// Call the "ProbeRemoteDesktopPermissions" method.
+    ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > Explicit, bounded permission test performed by the running daemon.
+    /// > Discards one encoded frame and never injects input or changes settings.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Dieter_V1_ProbeRemoteDesktopPermissionsRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func probeRemoteDesktopPermissions<Result>(
+        request: GRPCCore.ClientRequest<Dieter_V1_ProbeRemoteDesktopPermissionsRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_RemoteDesktopPermissionProbe>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.probeRemoteDesktopPermissions(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_V1_ProbeRemoteDesktopPermissionsRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_V1_RemoteDesktopPermissionProbe>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
     /// Call the "GetRemoteDesktopSettings" method.
     ///
     /// - Parameters:
@@ -8914,6 +9269,106 @@ extension Dieter_V1_DieterService.ClientProtocol {
             request: request,
             serializer: GRPCProtobuf.ProtobufSerializer<Dieter_V1_RemoteDesktopSignal>(),
             deserializer: GRPCProtobuf.ProtobufDeserializer<SwiftProtobuf.Google_Protobuf_Empty>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "GetRemoteDesktopSession" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Dieter_V1_RemoteDesktopRef` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func getRemoteDesktopSession<Result>(
+        request: GRPCCore.ClientRequest<Dieter_V1_RemoteDesktopRef>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_RemoteDesktopSessionState>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.getRemoteDesktopSession(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_V1_RemoteDesktopRef>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_V1_RemoteDesktopSessionState>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "ListRemoteDesktopSessions" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `SwiftProtobuf.Google_Protobuf_Empty` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func listRemoteDesktopSessions<Result>(
+        request: GRPCCore.ClientRequest<SwiftProtobuf.Google_Protobuf_Empty>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_RemoteDesktopSessions>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.listRemoteDesktopSessions(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<SwiftProtobuf.Google_Protobuf_Empty>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_V1_RemoteDesktopSessions>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "SetRemoteDesktopControl" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Dieter_V1_RemoteDesktopControlRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func setRemoteDesktopControl<Result>(
+        request: GRPCCore.ClientRequest<Dieter_V1_RemoteDesktopControlRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_RemoteDesktopSessionState>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.setRemoteDesktopControl(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_V1_RemoteDesktopControlRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_V1_RemoteDesktopSessionState>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "UpdateRemoteDesktopSession" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Dieter_V1_UpdateRemoteDesktopSessionRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func updateRemoteDesktopSession<Result>(
+        request: GRPCCore.ClientRequest<Dieter_V1_UpdateRemoteDesktopSessionRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_RemoteDesktopSessionState>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.updateRemoteDesktopSession(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_V1_UpdateRemoteDesktopSessionRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_V1_RemoteDesktopSessionState>(),
             options: options,
             onResponse: handleResponse
         )
@@ -11761,6 +12216,40 @@ extension Dieter_V1_DieterService.ClientProtocol {
         )
     }
 
+    /// Call the "ProbeRemoteDesktopPermissions" method.
+    ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > Explicit, bounded permission test performed by the running daemon.
+    /// > Discards one encoded frame and never injects input or changes settings.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func probeRemoteDesktopPermissions<Result>(
+        _ message: Dieter_V1_ProbeRemoteDesktopPermissionsRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_RemoteDesktopPermissionProbe>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Dieter_V1_ProbeRemoteDesktopPermissionsRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.probeRemoteDesktopPermissions(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
     /// Call the "GetRemoteDesktopSettings" method.
     ///
     /// - Parameters:
@@ -11869,6 +12358,122 @@ extension Dieter_V1_DieterService.ClientProtocol {
             metadata: metadata
         )
         return try await self.sendRemoteDesktopSignal(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "GetRemoteDesktopSession" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func getRemoteDesktopSession<Result>(
+        _ message: Dieter_V1_RemoteDesktopRef,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_RemoteDesktopSessionState>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Dieter_V1_RemoteDesktopRef>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.getRemoteDesktopSession(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "ListRemoteDesktopSessions" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func listRemoteDesktopSessions<Result>(
+        _ message: SwiftProtobuf.Google_Protobuf_Empty,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_RemoteDesktopSessions>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<SwiftProtobuf.Google_Protobuf_Empty>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.listRemoteDesktopSessions(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "SetRemoteDesktopControl" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func setRemoteDesktopControl<Result>(
+        _ message: Dieter_V1_RemoteDesktopControlRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_RemoteDesktopSessionState>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Dieter_V1_RemoteDesktopControlRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.setRemoteDesktopControl(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "UpdateRemoteDesktopSession" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func updateRemoteDesktopSession<Result>(
+        _ message: Dieter_V1_UpdateRemoteDesktopSessionRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_RemoteDesktopSessionState>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Dieter_V1_UpdateRemoteDesktopSessionRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.updateRemoteDesktopSession(
             request: request,
             options: options,
             onResponse: handleResponse

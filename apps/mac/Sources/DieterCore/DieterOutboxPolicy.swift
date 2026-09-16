@@ -15,7 +15,13 @@ package enum DieterRPCFailure {
     package static func canRetryRead(_ error: Error) -> Bool {
         guard !Task.isCancelled else { return false }
         return error is CancellationError || isTransient(error)
+            || isEmptyUnaryResponse(error)
             || (error as? RuntimeError)?.code == .clientIsStopped
+    }
+
+    private static func isEmptyUnaryResponse(_ error: Error) -> Bool {
+        guard let rpcError = error as? RPCError, rpcError.code == .unimplemented else { return false }
+        return rpcError.message == "No messages received, exactly one was expected."
     }
 
     package static func isCancellation(_ error: Error) -> Bool {
@@ -23,12 +29,42 @@ package enum DieterRPCFailure {
     }
 
     package static func isTransient(_ error: Error) -> Bool {
-        guard let rpcError = error as? RPCError else { return false }
-        return [
-            .cancelled,
-            .deadlineExceeded,
-            .unavailable,
-        ].contains(rpcError.code)
+        if let rpcError = error as? RPCError {
+            if [.cancelled, .deadlineExceeded, .unavailable].contains(rpcError.code) {
+                return true
+            }
+            if isPermanent(rpcError) { return false }
+            return rpcError.cause.map(isTransient) ?? false
+        }
+        if let runtimeError = error as? RuntimeError {
+            if runtimeError.code == .clientIsStopped || runtimeError.code == .transportError {
+                return true
+            }
+            return runtimeError.cause.map(isTransient) ?? false
+        }
+        let nsError = error as NSError
+        if nsError.domain == NSPOSIXErrorDomain {
+            return [
+                POSIXErrorCode.EPIPE,
+                .ECONNABORTED,
+                .ECONNRESET,
+                .ENOTCONN,
+                .ETIMEDOUT,
+                .ENETDOWN,
+                .ENETUNREACH,
+                .EHOSTDOWN,
+                .EHOSTUNREACH,
+                .ECONNREFUSED,
+            ].contains { Int($0.rawValue) == nsError.code }
+        }
+        if let underlying = nsError.userInfo[NSUnderlyingErrorKey] as? Error {
+            return isTransient(underlying)
+        }
+        return false
+    }
+
+    package static func isAuthenticationFailure(_ error: Error) -> Bool {
+        (error as? RPCError)?.code == .unauthenticated
     }
 
     package static func isPermanent(_ error: Error) -> Bool {
@@ -62,15 +98,31 @@ package enum DieterConversationOpenFailureDisposition: Equatable {
 }
 
 package enum DieterConversationOpenFailurePolicy {
+    package static let maximumRecoveryAttempts = 5
+
     package static func disposition(
         for error: Error,
         selectionMatches: Bool,
-        cancellationRetries: Int
+        recoveryAttempts: Int
     ) -> DieterConversationOpenFailureDisposition {
         guard selectionMatches else { return .ignore }
-        let cancelled = error is CancellationError || (error as? RPCError)?.code == .cancelled
-        if cancelled && cancellationRetries == 0 { return .retry }
+        guard !Task.isCancelled else { return .ignore }
+        if DieterRPCFailure.canRetryRead(error), recoveryAttempts < maximumRecoveryAttempts {
+            return .retry
+        }
         return .report
+    }
+}
+
+package enum DieterStreamRecoveryPolicy {
+    package static let resubscriptionTimeout: TimeInterval = 2
+
+    /// The first resubscription is immediate: the channel may already have a
+    /// usable connection. Repeated failures back off locally without forcing
+    /// unrelated streams and cached surfaces through a global reconnect.
+    package static func delay(consecutiveFailures: Int) -> TimeInterval {
+        guard consecutiveFailures > 1 else { return 0 }
+        return min(5, 0.25 * pow(1.8, Double(consecutiveFailures - 2)))
     }
 }
 

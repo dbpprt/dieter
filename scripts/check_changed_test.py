@@ -17,6 +17,12 @@ class CheckChangedTests(unittest.TestCase):
     def plan(self, *paths):
         return plan_checks(self.root, paths, packages=[])
 
+    def test_android_screen_changes_run_native_emulator_integration(self):
+        for path in ("apps/android/app/src/main/java/com/dbpprt/dieter/screens/ScreenController.kt",
+                     "apps/android/app/src/main/java/com/dbpprt/dieter/ui/ScreensScreen.kt",
+                     "scripts/test-android-screens.sh", "scripts/screens-fixture/main.go"):
+            self.assertIn(["just", "android", "screens-test"], self.plan(path))
+
     def test_no_changes_or_docs_need_no_checks(self):
         self.assertEqual(self.plan(), [])
         self.assertEqual(self.plan("README.md", "apps/mac/README.md", "AGENTS.md"), [])
@@ -25,12 +31,17 @@ class CheckChangedTests(unittest.TestCase):
         for path in ("scripts/macos_daemon_installer.py", "scripts/macos_daemon_installer_test.py",
                      "scripts/macos_notary_submit.py", "scripts/macos_notary_submit_test.py",
                      "scripts/configure_apple_signing.py", "scripts/configure_apple_signing_test.py",
-                     "scripts/release_signing_test.py"):
+                     "scripts/release_signing_test.py", "scripts/ios_release.py", "scripts/ios_release_test.py"):
             with self.subTest(path=path):
                 self.assertEqual(self.plan(path), [["just", "release", "test"]])
         for path in ("just/release.just", "just/daemon.just"):
             with self.subTest(path=path):
                 self.assertIn(["just", "release", "test"], self.plan(path))
+
+    def test_ios_release_recipe_and_workflow_run_release_regressions(self):
+        for path in ("just/ios.just", ".github/workflows/ios-testflight.yml"):
+            self.assertIn(["just", "release", "test"], self.plan(path))
+        self.assertIn(["just", "justfile-check"], self.plan("just/ios.just"))
 
     def test_markdown_renderer_runs_library_regressions_and_asset_check(self):
         for path in ["apps/mac/MarkdownPreview/src/chart-sizing.js",
@@ -38,6 +49,16 @@ class CheckChangedTests(unittest.TestCase):
             plan = self.plan(path)
             self.assertEqual(plan[0], ["just", "mac", "markdown-check"])
             self.assertIn(["just", "mac", "test"], plan)
+
+    def test_ios_changes_run_phone_and_tablet_without_mac_ui(self):
+        for path in ["apps/ios/DieterIOSApp/DieterIOSApp.swift", "apps/mac/Sources/DieterIOS/UI/Root.swift"]:
+            self.assertEqual(self.plan(path), [["just", "ios", "build"], ["just", "ios", "smoke"], ["just", "ios", "smoke-ipad"]])
+
+    def test_shared_swift_client_also_validates_ios(self):
+        plan = self.plan("apps/mac/Sources/DieterClient/DieterRPC.swift")
+        self.assertIn(["just", "mac", "test"], plan)
+        self.assertIn(["just", "ios", "smoke"], plan)
+        self.assertIn(["just", "ios", "smoke-ipad"], plan)
 
     def test_mac_change_runs_only_mac_unit_and_integration_tests(self):
         self.assertEqual(self.plan("apps/mac/Sources/DieterMac/Features/Conversation/ConversationView.swift"),
@@ -172,7 +193,7 @@ class CheckChangedTests(unittest.TestCase):
             root = Path(directory)
 
             def git(*args):
-                return subprocess.check_output(["git", *args], cwd=root, stderr=subprocess.DEVNULL)
+                return subprocess.check_output(["git", "-c", "commit.gpgsign=false", *args], cwd=root, stderr=subprocess.DEVNULL)
 
             git("init")
             git("config", "user.email", "test@example.invalid")
@@ -200,7 +221,7 @@ class CheckChangedTests(unittest.TestCase):
             root = Path(directory)
 
             def git(*args):
-                return subprocess.check_output(["git", *args], cwd=root, stderr=subprocess.DEVNULL)
+                return subprocess.check_output(["git", "-c", "commit.gpgsign=false", *args], cwd=root, stderr=subprocess.DEVNULL)
 
             git("init")
             git("config", "user.email", "test@example.invalid")

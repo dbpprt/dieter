@@ -164,7 +164,7 @@ extension DieterStore {
         }
         conversationModel.onTransportFailure = { [weak self] error, client in
             guard let rpc = client as? DieterRPC else { return }
-            self?.connectionStopped(error, client: rpc)
+            self?.connectionStopped(error, client: rpc, source: "conversation-auth")
         }
         conversationModel.onContentPresentation = { [weak self] presentation, cardID in
             guard let self, self.conversationWorkspacePanelEnabled,
@@ -175,12 +175,12 @@ extension DieterStore {
         }
     }
 
-    func fetchConversation(cardID: String, chat: Bool, rpc: DieterRPC, cancellationRetries: Int = 0)
+    func fetchConversation(cardID: String, chat: Bool, rpc: DieterRPC, recoveryAttempts: Int = 0)
         async
     {
         bindConversation()
         await conversationModel.fetchConversation(
-            cardID: cardID, chat: chat, rpc: rpc, cancellationRetries: cancellationRetries)
+            cardID: cardID, chat: chat, rpc: rpc, recoveryAttempts: recoveryAttempts)
     }
     func acceptConversation(
         _ snapshot: Dieter_V1_ConversationSnapshot, chat: Bool, refreshedAt: Date? = Date(),

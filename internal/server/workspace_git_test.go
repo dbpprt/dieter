@@ -16,6 +16,39 @@ import (
 	"github.com/dbpprt/dieter/internal/store"
 )
 
+func TestGitWatchPublishesTerminalStatusAfterLogCursorAlreadyAdvanced(t *testing.T) {
+	data, api, card := syncRecoveryFixture(t)
+	operation, err := data.CreateGitOperation(card.ID, "commit", "fixture")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sequence, err := data.AppendGitOperationLog(operation.ID, "commit complete")
+	if err != nil {
+		t.Fatal(err)
+	}
+	operation.Sequence = sequence
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	var frames []*dieterv1.GitOperationFrame
+	err = api.watchGitOperation(ctx, &dieterv1.WatchGitOperationRequest{OperationId: operation.ID, HeartbeatMs: 1000}, func(frame *dieterv1.GitOperationFrame) error {
+		frames = append(frames, frame)
+		if len(frames) == 1 {
+			// Status publication can follow the last log without a newer sequence.
+			operation.Status = model.GitOperationSucceeded
+			_, err := data.SaveGitOperation(operation)
+			return err
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	last := frames[len(frames)-1]
+	if last.Heartbeat || last.GetOperation().GetStatus() != model.GitOperationSucceeded {
+		t.Fatalf("EOF without final applied status: %+v", last)
+	}
+}
+
 func TestConversationWorkspaceConnectEndToEndForCardAndChat(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()

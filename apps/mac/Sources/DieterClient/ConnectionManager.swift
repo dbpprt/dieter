@@ -126,7 +126,9 @@ private let connectionLogger = Logger(subsystem: "com.dbpprt.dieter.mac", catego
                             port: Int(candidate.port),
                             daemonID: daemonID,
                             daemonCAPEM: route.daemonCaPem,
-                            accessToken: token.accessToken
+                            accessToken: token.accessToken,
+                            expiresAt: token.expiresAt,
+                            daemonGeneration: token.daemonGeneration
                         )
                     )
                     let directTask = run(direct)
@@ -139,7 +141,8 @@ private let connectionLogger = Logger(subsystem: "com.dbpprt.dieter.mac", catego
                             task: directTask,
                             connection: .init(
                                 route: .local, latencyMilliseconds: Self.latencyMilliseconds(since: started)),
-                            directTokenExpiresAt: token.expiresAt
+                            directTokenExpiresAt: token.expiresAt,
+                            directCredential: direct.directCredential
                         )
                     } catch {
                         connectionLogger.debug(
@@ -173,7 +176,8 @@ private let connectionLogger = Logger(subsystem: "com.dbpprt.dieter.mac", catego
                 rpc: relay,
                 task: relayTask,
                 connection: .init(route: .gateway, latencyMilliseconds: Self.latencyMilliseconds(since: started)),
-                directTokenExpiresAt: nil
+                directTokenExpiresAt: nil,
+                directCredential: nil
             )
         } catch {
             relayTask.cancel()

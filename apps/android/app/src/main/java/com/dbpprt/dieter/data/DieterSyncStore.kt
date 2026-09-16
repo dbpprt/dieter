@@ -6,6 +6,7 @@ import android.util.Base64
 import com.dbpprt.dieter.v1.GlobalSnapshot
 import com.dbpprt.dieter.v1.State
 import com.dbpprt.dieter.v1.SyncCursor
+import com.dbpprt.dieter.v1.SyncFrame
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -70,30 +71,38 @@ class DieterSyncStore(
             }
     }
 
+    // Snapshot and cursor are one AtomicFile transaction. Legacy split files
+    // are only used as an unverified snapshot: force a reset before resuming.
     @Synchronized
-    fun loadSnapshot(scope: String): GlobalSnapshot? = read(projectionFile(scope, "snapshot.pb"))
-        ?.let { runCatching { GlobalSnapshot.parseFrom(it) }.getOrNull() }
+    fun loadSnapshot(scope: String): GlobalSnapshot? = loadProjection(scope)?.takeIf { it.hasSnapshot() }?.snapshot
+        ?: read(projectionFile(scope, "snapshot.pb"))?.let { runCatching { GlobalSnapshot.parseFrom(it) }.getOrNull() }
 
     @Synchronized
-    fun loadCursor(scope: String): SyncCursor? = read(projectionFile(scope, "cursor.pb"))
-        ?.let { runCatching { SyncCursor.parseFrom(it) }.getOrNull() }
+    fun loadCursor(scope: String): SyncCursor? = loadProjection(scope)?.takeIf { it.hasSnapshot() && it.hasCursor() }?.cursor
 
-    /** Wall-clock time of the last authoritative snapshot stored for this endpoint. */
+    @Synchronized
+    fun loadProjection(scope: String): SyncFrame? = read(projectionFile(scope, "projection.pb"))
+        ?.let { runCatching { SyncFrame.parseFrom(it) }.getOrNull() }
+        ?: read(projectionFile(scope, "snapshot.pb"))?.let { bytes ->
+            runCatching { SyncFrame.newBuilder().setSnapshot(GlobalSnapshot.parseFrom(bytes)).build() }.getOrNull()
+        }
+
     @Synchronized
     fun projectionRefreshedAtMillis(scope: String): Long? =
-        projectionFile(scope, "snapshot.pb").baseFile.lastModified().takeIf { it > 0L }
+        maxOf(projectionFile(scope, "projection.pb").baseFile.lastModified(),
+            projectionFile(scope, "snapshot.pb").baseFile.lastModified()).takeIf { it > 0L }
 
     @Synchronized
-    fun projectionPersistedAtMillis(scope: String): Long? =
-        maxOf(
-            projectionFile(scope, "snapshot.pb").baseFile.lastModified(),
-            projectionFile(scope, "cursor.pb").baseFile.lastModified(),
-        ).takeIf { it > 0L }
+    fun projectionPersistedAtMillis(scope: String): Long? = projectionRefreshedAtMillis(scope)
 
     @Synchronized
     fun saveProjection(scope: String, snapshot: GlobalSnapshot?, cursor: SyncCursor?) {
-        if (snapshot != null) write(projectionFile(scope, "snapshot.pb"), snapshot.toByteArray())
-        if (cursor != null) write(projectionFile(scope, "cursor.pb"), cursor.toByteArray())
+        val previous = loadProjection(scope)
+        val nextSnapshot = snapshot ?: previous?.takeIf { it.hasSnapshot() }?.snapshot ?: return
+        val nextCursor = cursor ?: previous?.takeIf { snapshot == null && it.hasCursor() }?.cursor
+        val projection = SyncFrame.newBuilder().setSnapshot(nextSnapshot)
+            .also { if (nextCursor != null) it.cursor = nextCursor }.build()
+        write(projectionFile(scope, "projection.pb"), projection.toByteArray())
     }
 
     /** Clears disposable server projections while leaving the durable outbox and client identity intact. */

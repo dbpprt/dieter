@@ -13,6 +13,7 @@ import com.dbpprt.dieter.v1.StartCardRequest
 import com.dbpprt.dieter.v1.UiMessage
 import com.google.protobuf.ByteString
 import io.grpc.Status
+import kotlinx.coroutines.CancellationException
 import java.time.Instant
 
 internal fun isServerConversationId(id: String): Boolean = !id.startsWith("local_")
@@ -24,6 +25,24 @@ internal fun outboxFailureIsPermanent(error: Throwable): Boolean = when (Status.
     Status.Code.FAILED_PRECONDITION,
     -> true
     else -> false
+}
+
+/**
+ * Returns whether a failed read can be retried on a replacement transport.
+ *
+ * grpc-kotlin normally reports a lost socket as UNAVAILABLE, but OkHttp and
+ * platform channel teardown can surface the same failure as UNKNOWN (for
+ * example, "broken pipe") or as a gRPC CANCELLED status. A real coroutine
+ * cancellation still belongs to the caller and must never be retried.
+ */
+internal fun rpcReadFailureIsTransient(error: Throwable): Boolean {
+    if (error is CancellationException) return false
+    return Status.fromThrowable(error).code in setOf(
+        Status.Code.CANCELLED,
+        Status.Code.DEADLINE_EXCEEDED,
+        Status.Code.UNAVAILABLE,
+        Status.Code.UNKNOWN,
+    )
 }
 
 internal fun readableRpcError(error: Throwable): String {

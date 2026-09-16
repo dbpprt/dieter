@@ -14,6 +14,7 @@
         private static let secondMarker = "DIETER_TERMINAL_AFTER_CLIENT_RESTART"
         private static let followMarker = "DIETER_TERMINAL_CURSOR_FOLLOW"
         private static let resizeMarker = "DIETER_TERMINAL_AFTER_WINDOW_RESIZE"
+        private static let pasteMarker = "DIETER_TERMINAL_CLIPBOARD_PASTE"
 
         static func run(store: DieterStore) async {
             let output = outputDirectory()
@@ -49,25 +50,39 @@
 
         private static func create(store: DieterStore, window: NSWindow, output: URL) async {
             await store.openTerminals()
+            let originalEndpointID = store.endpoint.id
             guard
                 await waitUntil(
                     timeout: 15,
                     condition: {
-                        store.projects.contains { store.projectEndpointIDs[$0.id] == store.endpoint.id }
+                        store.endpoints.contains {
+                            $0.id != store.endpoint.id && $0.online && $0.apiCompatibility == .compatible
+                        }
                     }),
-                let project = store.projects.first(where: {
-                    store.projectEndpointIDs[$0.id] == store.endpoint.id
+                let destination = store.endpoints.first(where: {
+                    $0.id != store.endpoint.id && $0.online && $0.apiCompatibility == .compatible
                 })
             else {
                 writeReport(
-                    ["project": "failed: isolated project was not loaded"], named: "create-report.json", to: output)
+                    ["machine-switch": "failed: second compatible machine was not discovered"],
+                    named: "create-report.json", to: output)
+                return
+            }
+            await store.openTerminals(on: destination)
+            guard store.endpoint.id == originalEndpointID, store.phase.isConnected else {
+                writeReport(
+                    ["overview-routing": "failed: opening a machine changed the app's active workspace connection"],
+                    named: "create-report.json", to: output)
                 return
             }
 
             store.createTerminalPresented = true
             let sheetPresented = await waitUntil(timeout: 10, condition: { window.attachedSheet != nil })
             let sheetSize = window.attachedSheet?.contentView?.bounds.size
+            var projectPickerWorks = false
             if let sheet = window.attachedSheet {
+                projectPickerWorks =
+                    NativeUIAccessibility.find("new-terminal.project", in: sheet)?.recordedFrame?.isEmpty == false
                 let defaults = DieterAppearance.applicationDefaults()
                 let originalAppearance = defaults.string(forKey: DieterAppearance.storageKey)
                 for appearance in [DieterAppearance.dark, DieterAppearance.light] {
@@ -89,29 +104,44 @@
             store.createTerminalPresented = false
             _ = await waitUntil(timeout: 10, condition: { window.attachedSheet == nil })
 
-            let originalIDs = Set(store.terminals.map(\.id))
+            let originalIDs = Set(store.terminalOverviewEntries.map(\.id))
             await store.createTerminal(
-                projectID: project.id,
+                projectID: "",
+                machineID: destination.id,
+                machineHome: true,
                 name: "persistent-e2e",
                 shell: "sh",
-                workingDirectory: project.path
+                workingDirectory: "~"
             )
             guard
                 await waitUntil(
                     timeout: 15,
                     condition: {
-                        guard let id = store.selectedTerminalID else { return false }
-                        return !originalIDs.contains(id) && store.terminals.contains(where: { $0.id == id })
-                    }), let terminalID = store.selectedTerminalID
+                        guard let id = store.selectedTerminalOverviewID else { return false }
+                        return !originalIDs.contains(id)
+                            && store.terminalOverviewEntries.contains(where: {
+                                $0.id == id && $0.machineID == destination.id
+                            })
+                    }), let selectedOverviewID = store.selectedTerminalOverviewID,
+                let selectedEntry = store.terminalOverviewEntries.first(where: { $0.id == selectedOverviewID })
             else {
                 writeReport(
                     ["terminal-create": "failed: terminal was not created"], named: "create-report.json", to: output)
                 return
             }
+            let terminalID = selectedEntry.terminal.id
+            let nodeBadgeMounted = await waitUntil(
+                timeout: 5,
+                condition: {
+                    NativeUIAccessibility.find("terminal.node.\(destination.id).\(terminalID)", in: window)?
+                        .recordedFrame?.isEmpty == false
+                })
 
             store.sendTerminalInput(id: terminalID, data: command(printing: firstMarker))
             let received = await waitUntil(timeout: 20, condition: { screen(store, terminalID).contains(firstMarker) })
             try? await DieterTaskSleep.milliseconds(500)
+            let clipboard = await terminalClipboardInteraction(store: store, terminalID: terminalID, in: window)
+            capture(window, to: output.appending(path: "01-selection-copy-paste.png"))
             capture(window, to: output.appending(path: "01-before-client-exit.png"))
 
             store.sendTerminalInput(id: terminalID, data: scrollbackCommand())
@@ -161,11 +191,28 @@
                 [
                     "connection": "passed",
                     "terminal-id": terminalID,
+                    "machine-id": destination.id,
+                    "active-machine-id": originalEndpointID,
+                    "overview-routing": "passed",
                     "terminal-create": "passed",
+                    "machine-home-scope": store.selectedTerminal?.projectID.isEmpty == true
+                        ? "passed" : "failed: terminal unexpectedly required a project",
                     "new-terminal-sheet": sheetPresented
                         ? (sheetIsCompact ? "passed" : "failed: terminal sheet escaped its compact layout bounds")
                         : "failed: terminal sheet was not presented",
+                    "project-picker": projectPickerWorks
+                        ? "passed" : "failed: native project picker did not occupy visible layout",
+                    "terminal-node-badge": nodeBadgeMounted
+                        ? "passed" : "failed: selected terminal tab did not show its machine badge",
                     "initial-output": received ? "passed" : "failed: first marker was not rendered",
+                    "terminal-text-selection": clipboard.selection
+                        ? "passed" : "failed: a single native drag did not select terminal text",
+                    "terminal-copy": clipboard.copy
+                        ? "passed" : "failed: Command-C did not copy the selected terminal text",
+                    "terminal-paste": clipboard.paste
+                        ? "passed" : "failed: Command-V did not reach the remote PTY",
+                    "terminal-context-menu": clipboard.contextMenu
+                        ? "passed" : "failed: native terminal edit actions were missing",
                     "scrollback-output": filledScrollback ? "passed" : "failed: scrollback marker was not rendered",
                     "cursor-tracking": presentation.cursorTracks
                         ? "passed"
@@ -199,13 +246,33 @@
             }
 
             await store.openTerminals()
-            if store.terminals.contains(where: { $0.id == terminalID }) {
-                store.selectTerminal(terminalID)
+            guard let machineID = create["machine-id"],
+                await waitUntil(timeout: 15, condition: { store.endpoints.contains(where: { $0.id == machineID }) }),
+                let machine = store.endpoints.first(where: { $0.id == machineID })
+            else {
+                writeReport(
+                    ["machine-restore": "failed: created terminal machine was not rediscovered"],
+                    named: "report.json", to: output)
+                return
             }
+            await store.loadTerminalOverview(preferredMachineID: machine.id)
+            let overviewID = TerminalOverviewEntry.id(machineID: machineID, terminalID: terminalID)
+            if store.terminalOverviewEntries.contains(where: { $0.id == overviewID }) {
+                await store.selectTerminalOverviewEntry(overviewID)
+            }
+            let machineRestored = await waitUntil(timeout: 10) {
+                store.selectedTerminalOverviewID == overviewID
+                    && store.terminalsModel.target.endpointID == machineID
+                    && store.endpoint.id == create["active-machine-id"]
+            }
+            let routingDetail =
+                "selection=\(store.selectedTerminalOverviewID ?? "none") expected=\(overviewID), target=\(store.terminalsModel.target.endpointID) expected=\(machineID), active=\(store.endpoint.id) expected=\(create["active-machine-id"] ?? "none")"
             let listed = await waitUntil(
                 timeout: 20,
                 condition: {
-                    store.terminals.contains(where: { $0.id == terminalID && $0.status == "running" })
+                    store.terminalOverviewEntries.contains(where: {
+                        $0.id == overviewID && $0.terminal.status == "running"
+                    })
                 })
             let replayed = await waitUntil(timeout: 20, condition: { screen(store, terminalID).contains(firstMarker) })
 
@@ -224,6 +291,13 @@
                 (columns: Int($0.columns), rows: Int($0.rows))
             }
             capture(window, to: output.appending(path: "02-after-client-restart.png"))
+            let stayedRunning =
+                store.terminalOverviewEntries.first(where: { $0.id == overviewID })?.terminal.status
+                == "running"
+            await store.closeTerminalOverviewEntry(overviewID)
+            let cleanedUp = await waitUntil(
+                timeout: 10,
+                condition: { !store.terminalOverviewEntries.contains(where: { $0.id == overviewID }) })
 
             writeReport(
                 [
@@ -231,6 +305,9 @@
                     "created-by-first-app": create["terminal-create"] ?? "failed: missing create result",
                     "initial-output": create["initial-output"] ?? "failed: missing output result",
                     "listed-after-restart": listed ? "passed" : "failed: daemon-owned terminal was not listed",
+                    "machine-restore": machineRestored
+                        ? "passed"
+                        : "failed: aggregate terminal routing was not restored independently; \(routingDetail)",
                     "scrollback-replayed": replayed ? "passed" : "failed: pre-disconnect output was not replayed",
                     "input-after-restart": continued ? "passed" : "failed: resumed terminal did not accept input",
                     "rendered-after-restart": rendered
@@ -243,9 +320,11 @@
                     "restart-cursor-tracking": restartPresentation.cursorTracks
                         ? "passed"
                         : "failed: the resumed caret did not track the emulator cursor",
-                    "terminal-running": store.terminals.first(where: { $0.id == terminalID })?.status == "running"
+                    "terminal-running": stayedRunning
                         ? "passed"
                         : "failed: terminal was not running after restart",
+                    "terminal-cleanup": cleanedUp
+                        ? "passed" : "failed: persistent terminal was not closed after the smoke run",
                     "gateway": store.endpoint.address,
                 ], named: "report.json", to: output)
         }
@@ -259,6 +338,96 @@
                 "i=1; while [ \"$i\" -le 80 ]; do printf 'DIETER_FOLLOW_%03d\\n' \"$i\"; i=$((i+1)); done; printf '%s\\n' '\(followMarker)'\n"
                     .utf8
             )
+        }
+
+        private static func terminalClipboardInteraction(
+            store: DieterStore,
+            terminalID: String,
+            in window: NSWindow
+        ) async -> (selection: Bool, copy: Bool, paste: Bool, contextMenu: Bool) {
+            guard let view = terminalView(in: window.contentView) as? RemoteTerminalView else {
+                return (false, false, false, false)
+            }
+
+            let pasteboard = NSPasteboard.general
+            let savedItems =
+                pasteboard.pasteboardItems?.map { source in
+                    source.types.compactMap { type in
+                        source.data(forType: type).map { (type.rawValue, $0) }
+                    }
+                } ?? []
+            defer {
+                pasteboard.clearContents()
+                let restoredItems = savedItems.map { contents in
+                    let item = NSPasteboardItem()
+                    for (type, data) in contents {
+                        item.setData(data, forType: NSPasteboard.PasteboardType(type))
+                    }
+                    return item
+                }
+                if !restoredItems.isEmpty { pasteboard.writeObjects(restoredItems) }
+            }
+
+            _ = window.makeFirstResponder(nil)
+            let cell = view.caretFrame.size
+            let cursor = view.terminal.getCursorLocation()
+            let selectedRow = max(0, cursor.y - 1)
+            let y = view.bounds.height - (CGFloat(selectedRow) + 0.5) * cell.height
+            view.mouseDown(
+                with: mouseEvent(.leftMouseDown, point: NSPoint(x: cell.width / 2, y: y), view: view))
+            view.mouseDragged(
+                with: mouseEvent(.leftMouseDragged, point: NSPoint(x: cell.width * 48.5, y: y), view: view))
+            view.mouseUp(
+                with: mouseEvent(.leftMouseUp, point: NSPoint(x: cell.width * 48.5, y: y), view: view))
+            let selected = window.firstResponder === view && view.selectedRange().length > 0
+
+            pasteboard.clearContents()
+            NSApp.sendEvent(keyEvent("c", keyCode: 8, window: window))
+            let copied = pasteboard.string(forType: .string)?.contains(firstMarker) == true
+            let menuTitles =
+                view.menu(
+                    for: mouseEvent(.rightMouseDown, point: NSPoint(x: cell.width, y: y), view: view))?
+                .items.map(\.title).filter { !$0.isEmpty } ?? []
+
+            pasteboard.clearContents()
+            pasteboard.setString(String(decoding: command(printing: pasteMarker), as: UTF8.self), forType: .string)
+            NSApp.sendEvent(keyEvent("v", keyCode: 9, window: window))
+            let pasted = await waitUntil(timeout: 20) { screen(store, terminalID).contains(pasteMarker) }
+            return (selected, copied, pasted, menuTitles == ["Copy", "Paste", "Select All"])
+        }
+
+        private static func mouseEvent(
+            _ type: NSEvent.EventType,
+            point: NSPoint,
+            modifiers: NSEvent.ModifierFlags = [],
+            view: NSView
+        ) -> NSEvent {
+            NSEvent.mouseEvent(
+                with: type,
+                location: view.convert(point, to: nil),
+                modifierFlags: modifiers,
+                timestamp: 0,
+                windowNumber: view.window?.windowNumber ?? 0,
+                context: nil,
+                eventNumber: 1,
+                clickCount: 1,
+                pressure: 1
+            )!
+        }
+
+        private static func keyEvent(_ characters: String, keyCode: UInt16, window: NSWindow) -> NSEvent {
+            NSEvent.keyEvent(
+                with: .keyDown,
+                location: .zero,
+                modifierFlags: .command,
+                timestamp: 0,
+                windowNumber: window.windowNumber,
+                context: nil,
+                characters: characters,
+                charactersIgnoringModifiers: characters,
+                isARepeat: false,
+                keyCode: keyCode
+            )!
         }
 
         private static func terminalPresentation(in window: NSWindow) -> (cursorTracks: Bool, viewportFollows: Bool) {

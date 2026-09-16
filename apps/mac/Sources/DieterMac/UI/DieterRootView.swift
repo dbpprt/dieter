@@ -100,6 +100,7 @@ struct DieterRootView: View {
                         TerminalsView(model: store.terminalsModel, showAll: { await store.showAllTerminals() })
                     case .screens:
                         ScreensView(
+                            model: store.screensModel,
                             machines: store.machines, initialMachineID: store.endpoint.id,
                             makeConnection: { try await store.remoteDesktopConnection(machineID: $0) })
                     case .files: FilesView(model: store.filesModel)
@@ -165,7 +166,7 @@ struct DieterRootView: View {
                     let popupTop = max(16, geometry.size.height - popupHeight - 28)
 
                     ZStack(alignment: .topLeading) {
-                        Color.clear
+                        Color.black.opacity(DieterTheme.usesTransparency ? 0.16 : 0.08)
                             .contentShape(Rectangle())
                             .onTapGesture { store.dismissMachinePopover() }
                             .accessibilityHidden(true)
@@ -437,7 +438,7 @@ struct AppSidebar: View {
             title: "Screens",
             symbol: "rectangle.inset.filled.and.person.filled",
             selected: store.section == .screens,
-            annotation: "Experimental"
+            badge: store.screensModel.connectedCount
         ) { store.openScreens() }
         .padding(.horizontal, 8)
         .accessibilityIdentifier("sidebar.screens").smokeTarget("sidebar.screens")

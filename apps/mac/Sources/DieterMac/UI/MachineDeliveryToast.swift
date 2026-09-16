@@ -118,7 +118,7 @@ private struct MachineDeliveryToast: View {
         }
         .padding(13)
         .frame(width: 356, alignment: .leading)
-        .background(DieterTheme.elevated.opacity(0.97), in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+        .dieterToastChrome()
         .overlay {
             RoundedRectangle(cornerRadius: 13, style: .continuous)
                 .stroke(tint.opacity(phase == .failed ? 0.38 : 0.24))
@@ -126,7 +126,6 @@ private struct MachineDeliveryToast: View {
         .overlay(alignment: .leading) {
             Capsule().fill(tint).frame(width: 3).padding(.vertical, 12)
         }
-        .shadow(color: .black.opacity(0.22), radius: 18, y: 7)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("machine.\(machine.daemonID ?? machine.id).queue")
         .smokeTarget("machine.\(machine.daemonID ?? machine.id).queue")

@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -800,6 +801,10 @@ func (s *Store) migrateArchivedCards() error {
 }
 
 func (s *Store) listCards(includeArchived bool) ([]model.Card, error) {
+	return s.listCardsContext(context.Background(), includeArchived)
+}
+
+func (s *Store) listCardsContext(ctx context.Context, includeArchived bool) ([]model.Card, error) {
 	paths, err := listMarkdown(s.cardDir())
 	if err != nil {
 		return nil, err
@@ -813,51 +818,62 @@ func (s *Store) listCards(includeArchived bool) ([]model.Card, error) {
 	}
 	result := make([]model.Card, 0, len(paths))
 	for _, path := range paths {
-		var item model.Card
-		body, readErr := readMarkdown(path, &item)
-		if readErr != nil {
-			return nil, readErr
+		if err := ctx.Err(); err != nil {
+			return nil, err
 		}
-		item.InitialPrompt = body
-		if item.Scope == "" {
-			if item.BoardID == "" {
-				item.Scope = model.ConversationScopeChat
-			} else {
-				item.Scope = model.ConversationScopeBoard
-			}
+		item, err := s.readCard(path)
+		if err != nil {
+			return nil, err
 		}
-		item.WorkspaceMode, readErr = normalizeWorkspaceMode(item.WorkspaceMode)
-		if readErr != nil {
-			return nil, readErr
-		}
-		var workspace model.Workspace
-		if readJSON(filepath.Join(s.workspaceDir(), item.ID+".json"), &workspace) == nil {
-			workspace.Mode, _ = normalizeWorkspaceMode(workspace.Mode)
-			item.Workspace = &model.WorkspaceSummary{
-				Mode: workspace.Mode, State: workspace.State, Branch: workspace.Branch, BaseBranch: workspace.BaseBranch,
-				Revision: workspace.Revision, HeadSHA: workspace.HeadSHA, BaseSHA: workspace.CurrentBaseSHA,
-				CurrentOperationID: workspace.CurrentOperationID, Dirty: workspace.Dirty, Conflicted: workspace.State == model.WorkspaceStateConflicted,
-				Ahead: workspace.Ahead, Behind: workspace.Behind, ChangedFiles: workspace.ChangedFiles,
-				Additions: workspace.Additions, Deletions: workspace.Deletions, SizeBytes: workspace.SizeBytes, LastRefreshedAt: workspace.UpdatedAt,
-			}
-		}
-		var pullRequest model.PullRequest
-		if readJSON(filepath.Join(s.pullRequestDir(), item.ID+".json"), &pullRequest) == nil {
-			item.PullRequest = &model.PullRequestSummary{
-				Provider: pullRequest.Provider, Number: pullRequest.Number, URL: pullRequest.URL, State: pullRequest.State,
-				ReviewDecision: pullRequest.ReviewDecision, ChecksState: pullRequest.ChecksState,
-				Mergeable: pullRequest.Mergeable, Draft: pullRequest.Draft, HeadSHA: pullRequest.HeadSHA,
-				BaseSHA: pullRequest.BaseSHA, UpdatedAt: pullRequest.LastSyncedAt,
-			}
-		}
-		// Directory projections need only the badge count. Avoid decoding every
-		// comment body on every sync mutation as histories grow.
-		comments, _ := listMarkdown(filepath.Join(s.commentDir(), item.ID))
-		item.CommentCount = len(comments)
-		item.TokenUsage = s.cardTokenUsage(item.ID)
 		result = append(result, item)
 	}
 	return result, nil
+}
+
+func (s *Store) readCard(path string) (model.Card, error) {
+	var item model.Card
+	body, readErr := readMarkdown(path, &item)
+	if readErr != nil {
+		return model.Card{}, readErr
+	}
+	item.InitialPrompt = body
+	if item.Scope == "" {
+		if item.BoardID == "" {
+			item.Scope = model.ConversationScopeChat
+		} else {
+			item.Scope = model.ConversationScopeBoard
+		}
+	}
+	item.WorkspaceMode, readErr = normalizeWorkspaceMode(item.WorkspaceMode)
+	if readErr != nil {
+		return model.Card{}, readErr
+	}
+	var workspace model.Workspace
+	if readJSON(filepath.Join(s.workspaceDir(), item.ID+".json"), &workspace) == nil {
+		workspace.Mode, _ = normalizeWorkspaceMode(workspace.Mode)
+		item.Workspace = &model.WorkspaceSummary{
+			Mode: workspace.Mode, State: workspace.State, Branch: workspace.Branch, BaseBranch: workspace.BaseBranch,
+			Revision: workspace.Revision, HeadSHA: workspace.HeadSHA, BaseSHA: workspace.CurrentBaseSHA,
+			CurrentOperationID: workspace.CurrentOperationID, Dirty: workspace.Dirty, Conflicted: workspace.State == model.WorkspaceStateConflicted,
+			Ahead: workspace.Ahead, Behind: workspace.Behind, ChangedFiles: workspace.ChangedFiles,
+			Additions: workspace.Additions, Deletions: workspace.Deletions, SizeBytes: workspace.SizeBytes, LastRefreshedAt: workspace.UpdatedAt,
+		}
+	}
+	var pullRequest model.PullRequest
+	if readJSON(filepath.Join(s.pullRequestDir(), item.ID+".json"), &pullRequest) == nil {
+		item.PullRequest = &model.PullRequestSummary{
+			Provider: pullRequest.Provider, Number: pullRequest.Number, URL: pullRequest.URL, State: pullRequest.State,
+			ReviewDecision: pullRequest.ReviewDecision, ChecksState: pullRequest.ChecksState,
+			Mergeable: pullRequest.Mergeable, Draft: pullRequest.Draft, HeadSHA: pullRequest.HeadSHA,
+			BaseSHA: pullRequest.BaseSHA, UpdatedAt: pullRequest.LastSyncedAt,
+		}
+	}
+	// Directory projections need only the badge count. Avoid decoding every
+	// comment body on every sync mutation as histories grow.
+	comments, _ := listMarkdown(filepath.Join(s.commentDir(), item.ID))
+	item.CommentCount = len(comments)
+	item.TokenUsage = s.cardTokenUsage(item.ID)
+	return item, nil
 }
 
 func (s *Store) ListCards(filter CardFilter) ([]model.Card, error) {
@@ -1100,13 +1116,15 @@ func (s *Store) SetCardLabels(cardRef string, requested []string) (model.Card, e
 }
 
 func (s *Store) ResolveCard(ref string) (model.Card, error) {
-	items, err := s.listCards(true)
-	if err != nil {
-		return model.Card{}, err
-	}
-	for _, item := range items {
-		if ref == item.ID {
-			return item, nil
+	if validFileID(ref) {
+		for _, dir := range []string{s.cardDir(), s.archivedCardDir()} {
+			item, err := s.readCard(filepath.Join(dir, ref+".md"))
+			if err == nil {
+				return item, nil
+			}
+			if !errors.Is(err, ErrNotFound) {
+				return model.Card{}, err
+			}
 		}
 	}
 	return model.Card{}, fmt.Errorf("card %q: %w", ref, ErrNotFound)
@@ -1404,9 +1422,11 @@ func (s *Store) ArchiveDoneCards(now time.Time) ([]model.Card, error) {
 	if err != nil || len(due) == 0 {
 		return due, err
 	}
-	if _, err := s.prepareSyncMutation(); err != nil {
+	event, err := s.prepareSyncMutation()
+	if err != nil {
 		return nil, err
 	}
+	defer func() { _ = s.commitSyncMutation(event) }()
 	archived := make([]model.Card, 0, len(due))
 	archivedAt := now.UTC().Format(time.RFC3339Nano)
 	for _, card := range due {
@@ -1590,60 +1610,73 @@ func (s *Store) State(projectRef string, filter CardFilter) (model.State, error)
 // every call rescanned every project, board, card, and comment, making one
 // daemon-wide delta quadratic in the number of projects.
 func (s *Store) GlobalState() (model.State, error) {
-	// A single Store backs every daemon client. Serialize projection builds so
-	// simultaneous watchers share the same O(P+B+C) directory scan instead of
-	// multiplying it by the number of connected clients.
-	for {
-		s.globalStateMu.Lock()
-		cursor, cacheable, err := s.globalStateCacheCursor()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	state, _, err := s.GlobalStateContext(ctx)
+	return state, err
+}
+
+// GlobalStateContext captures a committed workspace revision. A bounded lock
+// acquisition replaces the unbounded "scan until the cursor stops moving"
+// loop. Conversation-only commits reuse the immutable metadata projection.
+func (s *Store) GlobalStateContext(ctx context.Context) (model.State, SyncCursor, error) {
+	if err := s.globalStateMu.LockContext(ctx); err != nil {
+		return model.State{}, SyncCursor{}, err
+	}
+	defer s.globalStateMu.Unlock()
+	release, err := s.beginWriteLockContext(ctx)
+	if err != nil {
+		return model.State{}, SyncCursor{}, err
+	}
+	defer release()
+	if err := s.recoverSyncMutation(); err != nil {
+		return model.State{}, SyncCursor{}, err
+	}
+	cursor, _, err := s.SyncEvents(^uint64(0), 1)
+	if err != nil {
+		return model.State{}, SyncCursor{}, err
+	}
+	metadata, err := os.ReadFile(s.syncMetadataPath())
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return model.State{}, SyncCursor{}, err
+	}
+	key := cursor.Epoch + ":" + string(metadata)
+	// Old writers do not publish metadata-highwater; their newer highwater must
+	// invalidate instead of accidentally reusing a new writer's cache.
+	if s.globalStateSnapshot != nil && s.globalStateMetadataKey == key && s.globalStateCursor.Sequence <= cursor.Sequence {
+		eventsCursor, events, err := s.SyncEvents(s.globalStateCursor.Sequence, 256)
 		if err != nil {
-			s.globalStateMu.Unlock()
-			return model.State{}, err
+			return model.State{}, SyncCursor{}, err
 		}
-		if cacheable && s.globalStateSnapshot != nil && s.globalStateCursor == cursor {
-			result := cloneState(*s.globalStateSnapshot)
-			s.globalStateMu.Unlock()
-			return result, nil
+		reusable := len(events) == 0 || events[len(events)-1].Sequence == eventsCursor.Sequence
+		for _, event := range events {
+			if event.Kind != "conversation_changed" {
+				reusable = false
+			}
 		}
-		result, err := s.materializeGlobalState()
-		if err != nil {
-			s.globalStateMu.Unlock()
-			return model.State{}, err
-		}
-		after, stable, err := s.globalStateCacheCursor()
-		if err != nil {
-			s.globalStateMu.Unlock()
-			return model.State{}, err
-		}
-		if cacheable && stable && cursor == after {
-			cached := cloneState(result)
+		if reusable {
 			s.globalStateCursor = cursor
-			s.globalStateSnapshot = &cached
-			s.globalStateMu.Unlock()
-			return result, nil
+			return cloneState(*s.globalStateSnapshot), cursor, nil
 		}
-		s.globalStateMu.Unlock()
-		time.Sleep(2 * time.Millisecond)
 	}
+	if err := ctx.Err(); err != nil {
+		return model.State{}, SyncCursor{}, err
+	}
+	result, err := s.materializeGlobalStateContext(ctx)
+	if err != nil {
+		return model.State{}, SyncCursor{}, err
+	}
+	if err := ctx.Err(); err != nil {
+		return model.State{}, SyncCursor{}, err
+	}
+	cached := cloneState(result)
+	s.globalStateSnapshot = &cached
+	s.globalStateCursor = cursor
+	s.globalStateMetadataKey = key
+	return result, cursor, nil
 }
 
-func (s *Store) globalStateCacheCursor() (SyncCursor, bool, error) {
-	epoch, err := s.ensureSyncEpoch()
-	if err != nil {
-		return SyncCursor{}, false, err
-	}
-	highwater, err := s.syncHighwater()
-	if err != nil {
-		return SyncCursor{}, false, err
-	}
-	pending, err := s.readPendingSyncEvent()
-	if err != nil {
-		return SyncCursor{}, false, err
-	}
-	return SyncCursor{Epoch: epoch, Sequence: highwater}, pending == nil, nil
-}
-
-func (s *Store) materializeGlobalState() (model.State, error) {
+func (s *Store) materializeGlobalStateContext(ctx context.Context) (model.State, error) {
 	projects, err := s.listProjects()
 	if err != nil {
 		return model.State{}, err
@@ -1652,7 +1685,7 @@ func (s *Store) materializeGlobalState() (model.State, error) {
 	if err != nil {
 		return model.State{}, err
 	}
-	cards, err := s.listCards(false)
+	cards, err := s.listCardsContext(ctx, false)
 	if err != nil {
 		return model.State{}, err
 	}

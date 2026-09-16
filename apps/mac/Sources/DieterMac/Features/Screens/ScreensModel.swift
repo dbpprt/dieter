@@ -1,0 +1,216 @@
+import DieterCore
+import Foundation
+import Observation
+
+struct ScreenShareInactivityPreferences: Equatable {
+    static let defaultMinutes = 30
+    static let enabledKey = "DieterScreenShareInactivityTimeoutEnabled"
+    static let minutesKey = "DieterScreenShareInactivityTimeoutMinutes"
+
+    var enabled: Bool
+    var minutes: Int
+
+    static func load(from defaults: UserDefaults) -> Self {
+        let enabled = defaults.object(forKey: enabledKey) as? Bool ?? true
+        let storedMinutes = defaults.object(forKey: minutesKey) as? Int ?? defaultMinutes
+        return .init(enabled: enabled, minutes: clamped(storedMinutes))
+    }
+
+    func save(to defaults: UserDefaults) {
+        defaults.set(enabled, forKey: Self.enabledKey)
+        defaults.set(Self.clamped(minutes), forKey: Self.minutesKey)
+    }
+
+    static func clamped(_ minutes: Int) -> Int { min(max(minutes, 1), 240) }
+}
+
+@MainActor
+@Observable
+final class ScreenShareSession: Identifiable {
+    let id: String
+    let machineID: String
+    let machineName: String
+    let controller: RemoteDesktopController
+    private(set) var inactivityMessage: String?
+    @ObservationIgnored private var timeoutMinutes: Int?
+    @ObservationIgnored private var lastActivityAt = Date()
+    @ObservationIgnored private var inactivityTask: Task<Void, Never>?
+    @ObservationIgnored private var inactivityMonitorGeneration = 0
+    @ObservationIgnored private let monitorsInactivity: Bool
+
+    init(
+        id: String = UUID().uuidString.lowercased(), machineID: String, machineName: String,
+        controller: RemoteDesktopController = RemoteDesktopController(), monitorsInactivity: Bool = true
+    ) {
+        self.id = id
+        self.machineID = machineID
+        self.machineName = machineName
+        self.controller = controller
+        self.monitorsInactivity = monitorsInactivity
+        controller.onUserActivity = { [weak self] in self?.recordActivity() }
+    }
+
+    var isConnected: Bool { controller.phase == .streaming }
+
+    var keepsConnectionOpen: Bool {
+        switch controller.phase {
+        case .loading, .disabled, .connecting, .streaming, .reconnecting: true
+        case .idle, .failed: false
+        }
+    }
+
+    func connect(
+        makeConnection: @escaping @MainActor () async throws -> RemoteDesktopSignalingConnection
+    ) {
+        inactivityMessage = nil
+        lastActivityAt = Date()
+        _ = controller.connect(machineName: machineName, makeConnection: makeConnection)
+        startInactivityMonitorIfNeeded()
+    }
+
+    func disconnect() {
+        cancelInactivityMonitor()
+        inactivityMessage = nil
+        controller.disconnect()
+    }
+
+    func configureInactivityTimeout(enabled: Bool, minutes: Int) {
+        cancelInactivityMonitor()
+        timeoutMinutes = enabled ? ScreenShareInactivityPreferences.clamped(minutes) : nil
+        if enabled {
+            startInactivityMonitorIfNeeded()
+        }
+    }
+
+    func recordActivity(at now: Date = Date()) {
+        lastActivityAt = now
+        inactivityMessage = nil
+        startInactivityMonitorIfNeeded()
+    }
+
+    @discardableResult
+    func disconnectIfInactive(at now: Date = Date()) -> Bool {
+        guard let timeoutMinutes, keepsConnectionOpen,
+            now.timeIntervalSince(lastActivityAt) >= TimeInterval(timeoutMinutes * 60)
+        else { return false }
+        let unit = timeoutMinutes == 1 ? "minute" : "minutes"
+        inactivityMessage = "Disconnected after " + String(timeoutMinutes) + " " + unit + " of inactivity."
+        controller.disconnect()
+        cancelInactivityMonitor()
+        return true
+    }
+
+    private func startInactivityMonitorIfNeeded() {
+        guard monitorsInactivity, timeoutMinutes != nil, keepsConnectionOpen, inactivityTask == nil else { return }
+        inactivityMonitorGeneration &+= 1
+        let generation = inactivityMonitorGeneration
+        inactivityTask = Task { [weak self] in
+            await self?.monitorInactivity(generation: generation)
+        }
+    }
+
+    private func cancelInactivityMonitor() {
+        inactivityMonitorGeneration &+= 1
+        inactivityTask?.cancel()
+        inactivityTask = nil
+    }
+
+    private func monitorInactivity(generation: Int) async {
+        defer {
+            if inactivityMonitorGeneration == generation {
+                inactivityTask = nil
+            }
+        }
+        while !Task.isCancelled, let timeoutMinutes, keepsConnectionOpen {
+            let deadline = lastActivityAt.addingTimeInterval(TimeInterval(timeoutMinutes * 60))
+            do {
+                try await DieterTaskSleep.seconds(max(0.05, deadline.timeIntervalSinceNow))
+            } catch {
+                return
+            }
+            if disconnectIfInactive() { return }
+        }
+    }
+}
+
+@MainActor
+@Observable
+final class ScreensModel {
+    private let defaults: UserDefaults
+    var sessions: [ScreenShareSession] = []
+    var selectedSessionID: String?
+    var createScreenSharePresented = false
+    var inactivityTimeoutEnabled: Bool {
+        didSet {
+            guard inactivityTimeoutEnabled != oldValue else { return }
+            savePreferencesAndApply()
+        }
+    }
+    var inactivityTimeoutMinutes: Int {
+        didSet {
+            let clamped = ScreenShareInactivityPreferences.clamped(inactivityTimeoutMinutes)
+            if clamped != inactivityTimeoutMinutes {
+                inactivityTimeoutMinutes = clamped
+                return
+            }
+            guard inactivityTimeoutMinutes != oldValue else { return }
+            savePreferencesAndApply()
+        }
+    }
+
+    var selectedSession: ScreenShareSession? {
+        sessions.first { $0.id == selectedSessionID }
+    }
+
+    var connectedCount: Int { sessions.filter(\.isConnected).count }
+
+    init(defaults: UserDefaults) {
+        self.defaults = defaults
+        let preferences = ScreenShareInactivityPreferences.load(from: defaults)
+        inactivityTimeoutEnabled = preferences.enabled
+        inactivityTimeoutMinutes = preferences.minutes
+    }
+
+    @discardableResult
+    func createSession(
+        machineID: String, machineName: String,
+        makeConnection: @escaping @MainActor () async throws -> RemoteDesktopSignalingConnection
+    ) -> ScreenShareSession {
+        let session = ScreenShareSession(machineID: machineID, machineName: machineName)
+        session.configureInactivityTimeout(
+            enabled: inactivityTimeoutEnabled, minutes: inactivityTimeoutMinutes)
+        sessions.append(session)
+        selectedSessionID = session.id
+        createScreenSharePresented = false
+        session.connect(makeConnection: makeConnection)
+        return session
+    }
+
+    func selectSession(_ id: String) {
+        guard let session = sessions.first(where: { $0.id == id }) else { return }
+        selectedSessionID = id
+        session.recordActivity()
+    }
+
+    func closeSession(_ id: String) {
+        guard let index = sessions.firstIndex(where: { $0.id == id }) else { return }
+        let wasSelected = selectedSessionID == id
+        let replacementID: String? = {
+            guard wasSelected, sessions.count > 1 else { return nil }
+            return sessions[index == sessions.count - 1 ? index - 1 : index + 1].id
+        }()
+        sessions[index].disconnect()
+        sessions.remove(at: index)
+        if wasSelected { selectedSessionID = replacementID }
+    }
+
+    private func savePreferencesAndApply() {
+        let preferences = ScreenShareInactivityPreferences(
+            enabled: inactivityTimeoutEnabled, minutes: inactivityTimeoutMinutes)
+        preferences.save(to: defaults)
+        for session in sessions {
+            session.configureInactivityTimeout(
+                enabled: inactivityTimeoutEnabled, minutes: inactivityTimeoutMinutes)
+        }
+    }
+}

@@ -11,6 +11,12 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ConversationDraftStoreTest {
+    private class MemoryDraftPersistence : ConversationDraftPersistence {
+        var texts: Map<String, String> = emptyMap()
+        override fun loadTextDrafts(): Map<String, String> = texts
+        override fun saveTextDrafts(drafts: Map<String, String>) { texts = drafts }
+    }
+
     @Test
     fun draftsRemainOwnedByTheirConversationAndClearOnlyTheAcceptedRevision() {
         val store = ConversationDraftStore()
@@ -73,6 +79,23 @@ class ConversationDraftStoreTest {
 
         assertFalse(store.draft("local:1").hasContent)
         assertEquals("survives admission", store.draft("card-1").text)
+    }
+
+    @Test
+    fun textDraftsSurviveStoreRelaunchForBoardCardsAndChats() {
+        val persistence = MemoryDraftPersistence()
+        var store = ConversationDraftStore(persistence = persistence)
+        store.update("card") { it.copy(text = "Unsent board card draft") }
+        store.update("chat") { it.copy(text = "Unsent All Chats draft") }
+
+        store = ConversationDraftStore(persistence = persistence)
+        assertEquals("Unsent board card draft", store.draft("card").text)
+        assertEquals("Unsent All Chats draft", store.draft("chat").text)
+
+        store.acceptSend("chat", "Unsent All Chats draft", emptyList())
+        val afterSend = ConversationDraftStore(persistence = persistence)
+        assertFalse(afterSend.draft("chat").hasContent)
+        assertEquals("Unsent board card draft", afterSend.draft("card").text)
     }
 
     private fun filePart(name: String): MessagePart = MessagePart.newBuilder()

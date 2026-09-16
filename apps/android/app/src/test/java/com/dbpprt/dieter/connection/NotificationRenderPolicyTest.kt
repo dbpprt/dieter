@@ -49,7 +49,7 @@ class NotificationRenderPolicyTest {
         val card = snapshot.detail.card
         return DieterConnectionState(
             desiredConnected = true,
-            backgroundSyncEnabled = true,
+            backgroundSyncMode = BackgroundSyncMode.PERIODIC,
             phase = ConnectionPhase.CONNECTED,
             activeGatewayId = "gateway",
             configuredConnections = emptyList(),

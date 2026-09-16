@@ -127,6 +127,9 @@ jobs:
           NOTARY_KEY_ID: ${{ secrets.MACOS_NOTARY_KEY_ID }}
           NOTARY_ISSUER_ID: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
         run: just --yes daemon sign-notarize-macos
+      - name: Verify signed fixed-runtime service
+        if: steps.signing.outputs.enabled == 'true'
+        run: just daemon test-signed-runtime
       - name: Build daemon installer
         if: steps.signing.outputs.enabled == 'true'
         env:
@@ -171,7 +174,11 @@ jobs:
           distribution: temurin
           java-version: "21"
           cache: gradle
-      - uses: android-actions/setup-android@v3
+      - uses: android-actions/setup-android@v4
+        with:
+          # Dieter installs its exact SDK packages in the next step. The
+          # action's default still includes the retired `tools` package.
+          packages: ""
       - uses: extractions/setup-just@v3
         with:
           just-version: "1.58.0"

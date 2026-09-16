@@ -332,13 +332,16 @@ func TestGatewayEnrollsDaemonAndRelaysDieterService(t *testing.T) {
 		t.Fatalf("close relayed terminal: %v", err)
 	}
 
-	syncStream, err := dieterClient.WatchSync(routed, &dieterv1.SyncRequest{ConversationLimit: 0, HeartbeatMs: 1_000})
+	syncStream, err := dieterClient.WatchSync(routed, &dieterv1.SyncRequest{ConversationLimit: 0, HeartbeatMs: 1_000, ProtocolVersion: 1})
 	if err != nil {
 		t.Fatalf("open relayed global sync: %v", err)
 	}
 	syncFrame, err := syncStream.Recv()
 	if err != nil || syncFrame.GetSnapshot() == nil || syncFrame.GetCursor().GetEpoch() == "" {
 		t.Fatalf("relayed global sync frame=%#v err=%v", syncFrame, err)
+	}
+	if syncFrame.GetCursor().GetProjectionId() == "" {
+		t.Fatal("relay dropped resumable projection identity")
 	}
 	syncSequence := syncFrame.GetCursor().GetSequence()
 	command := &dieterv1.CreateConversationRequest{
@@ -619,7 +622,12 @@ func TestGatewayEnrollsDaemonAndRelaysDieterService(t *testing.T) {
 	default:
 	}
 	runner.Release()
-	deadline = time.Now().Add(2 * time.Second)
+	// Each completed runner is followed by the daemon's bounded workspace
+	// refresh before the queued turn starts or the durable runtime projection
+	// becomes idle. Under the parallel race suite those two serial refreshes can
+	// legitimately exceed the short event waits used above, so wait within the
+	// lifecycle's own bounds instead of failing during final persistence.
+	deadline = time.Now().Add(35 * time.Second)
 	for time.Now().Before(deadline) {
 		resolved, resolveErr := boardStore.ResolveCard(created.GetId())
 		latestConversation, conversationErr := boardStore.Conversation(created.GetId())
@@ -1162,13 +1170,13 @@ func testRemoteDesktopThroughGateway(t *testing.T, routed context.Context, clien
 		t.Fatal(err)
 	}
 	ordered := true
-	stateChannel, err := viewer.CreateDataChannel("dieter-input-state-v1", &webrtc.DataChannelInit{Ordered: &ordered})
+	stateChannel, err := viewer.CreateDataChannel("dieter-input-state-v2", &webrtc.DataChannelInit{Ordered: &ordered})
 	if err != nil {
 		t.Fatal(err)
 	}
 	unordered := false
 	zero := uint16(0)
-	if _, err := viewer.CreateDataChannel("dieter-pointer-v1", &webrtc.DataChannelInit{Ordered: &unordered, MaxRetransmits: &zero}); err != nil {
+	if _, err := viewer.CreateDataChannel("dieter-pointer-v2", &webrtc.DataChannelInit{Ordered: &unordered, MaxRetransmits: &zero}); err != nil {
 		t.Fatal(err)
 	}
 	trackReceived := make(chan struct{}, 1)

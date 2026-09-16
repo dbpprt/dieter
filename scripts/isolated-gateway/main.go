@@ -12,6 +12,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -29,6 +30,7 @@ import (
 
 	"github.com/dbpprt/dieter/internal/daemon"
 	"github.com/dbpprt/dieter/internal/gateway"
+	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
 	"github.com/dbpprt/dieter/internal/harness"
 	"github.com/dbpprt/dieter/internal/machine"
 	"github.com/dbpprt/dieter/internal/model"
@@ -36,26 +38,43 @@ import (
 	boardstore "github.com/dbpprt/dieter/internal/store"
 )
 
+const enrollmentRPCTimeout = 30 * time.Second
+
+func enrollmentRPC[T any](ctx context.Context, logger *slog.Logger, role, operation string, call func(context.Context) (T, error)) (T, error) {
+	started := time.Now()
+	logger.Info("isolated enrollment starting", "role", role, "operation", operation, "timeout", enrollmentRPCTimeout)
+	requestContext, cancel := context.WithTimeout(ctx, enrollmentRPCTimeout)
+	defer cancel()
+	result, err := call(requestContext)
+	elapsed := time.Since(started).Round(time.Millisecond)
+	if err != nil {
+		return result, fmt.Errorf("isolated %s enrollment %s failed after %s: %w", role, operation, elapsed, err)
+	}
+	logger.Info("isolated enrollment completed", "role", role, "operation", operation, "elapsed", elapsed)
+	return result, nil
+}
+
 func main() {
 	address := flag.String("addr", "127.0.0.1:14243", "loopback listen address for the gateway copy")
 	home := flag.String("home", "", "state root (default: a fresh temporary directory)")
 	offlineTrigger := flag.String("offline-trigger", "", "optional file whose creation disconnects the enrolled daemon while leaving the gateway online")
+	daemonRestartTrigger := flag.String("daemon-restart-trigger", "", "optional file whose creation restarts the isolated daemon API and gateway tunnel")
 	boardStressFixture := flag.Bool("board-stress-fixture", false, "seed a 100-card board with 85 variable-height cards in one lane")
 	flag.Parse()
-	if err := run(*address, *home, *offlineTrigger, *boardStressFixture); err != nil {
+	if err := run(*address, *home, *offlineTrigger, *daemonRestartTrigger, *boardStressFixture); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
 	}
 }
 
-func run(address, home, offlineTrigger string, boardStressFixture bool) error {
+func run(address, home, offlineTrigger, daemonRestartTrigger string, boardStressFixture bool) error {
 	// The mock harness answers every prompt deterministically, so end-to-end
 	// turns complete without real provider credentials.
 	if err := os.Setenv("DIETER_ENABLE_MOCK_HARNESS", "1"); err != nil {
 		return err
 	}
 	// Smoke fixtures exercise client delivery and reconnect behavior with the
-	// bounded in-process mock harness. Do not let the host's production agent
+	// bounded mock harness. Do not let the host's production agent
 	// disk reserve turn that transport assertion into a machine-capacity test.
 	if err := os.Setenv("DIETER_MIN_FREE_BYTES", "0"); err != nil {
 		return err
@@ -66,6 +85,11 @@ func run(address, home, offlineTrigger string, boardStressFixture bool) error {
 		if err != nil {
 			return err
 		}
+	}
+	// Machine-home terminal coverage must remain inside the disposable fixture,
+	// including shell startup files and any history a tested shell may create.
+	if err := os.Setenv("HOME", home); err != nil {
+		return err
 	}
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -106,14 +130,18 @@ func run(address, home, offlineTrigger string, boardStressFixture bool) error {
 	if err != nil {
 		return err
 	}
-	enrollment, err := daemon.BeginEnrollment(ctx, identity)
+	enrollment, err := enrollmentRPC(ctx, logger, "primary", "begin", func(requestContext context.Context) (*gatewayv1.DaemonEnrollment, error) {
+		return daemon.BeginEnrollment(requestContext, identity)
+	})
 	if err != nil {
 		return err
 	}
 	if err = gatewayStore.ApproveEnrollment(enrollment.GetEnrollmentId(), enrollment.GetUserCode(), config.AllowedUserID, config.AllowedLogin); err != nil {
 		return err
 	}
-	credential, err := daemon.CompleteEnrollment(ctx, identity, enrollment.GetEnrollmentId(), enrollment.GetEnrollmentSecret())
+	credential, err := enrollmentRPC(ctx, logger, "primary", "complete", func(requestContext context.Context) (*gatewayv1.DaemonCredential, error) {
+		return daemon.CompleteEnrollment(requestContext, identity, enrollment.GetEnrollmentId(), enrollment.GetEnrollmentSecret())
+	})
 	if err != nil {
 		return err
 	}
@@ -142,7 +170,8 @@ func run(address, home, offlineTrigger string, boardStressFixture bool) error {
 	linkedWorktree := filepath.Join(home, "linked-worktree")
 	for _, command := range [][]string{
 		{"git", "-C", repository, "add", "README.md"},
-		{"git", "-C", repository, "commit", "-m", "initial"},
+		// Disposable fixture commits must not invoke the operator's signing agent.
+		{"git", "-C", repository, "-c", "commit.gpgsign=false", "commit", "-m", "initial"},
 		{"git", "-C", repository, "worktree", "add", "-b", "linked-worktree", linkedWorktree},
 	} {
 		process := exec.CommandContext(ctx, command[0], command[1:]...)
@@ -171,21 +200,68 @@ func run(address, home, offlineTrigger string, boardStressFixture bool) error {
 	if err != nil {
 		return err
 	}
-	runner := newIsolatedRunner(harness.NewSubprocessRunner(data.Root))
-	// Registered before boardHTTP.Close so HTTP admissions close first. The
-	// driver may remove this fixture's runtime only after all its writers exit.
-	defer runner.Shutdown()
-	boardServer := server.NewWithOptions(data, logger, server.Options{
-		Runner: runner,
-		MachineAction: func(_ context.Context, operation machine.Operation) error {
-			logger.Info("isolated machine operation accepted", "operation", operation)
-			return nil
-		},
-		MachineCapabilities: isolatedMachineCapabilities,
-	})
+	var boardServersMu sync.Mutex
+	var boardServers []*server.Server
+	var boardRunners []*isolatedRunner
+	newFixtureServer := func(fixtureData *boardstore.Store) *server.Server {
+		runner := newIsolatedRunner(harness.NewSubprocessRunner(fixtureData.Root))
+		runner.logger = logger
+		value := server.NewWithOptions(fixtureData, logger, server.Options{
+			Runner: runner,
+			MachineAction: func(_ context.Context, operation machine.Operation) error {
+				logger.Info("isolated machine operation accepted", "operation", operation)
+				return nil
+			},
+			MachineCapabilities: isolatedMachineCapabilities,
+		})
+		boardServersMu.Lock()
+		boardServers = append(boardServers, value)
+		boardRunners = append(boardRunners, runner)
+		boardServersMu.Unlock()
+		return value
+	}
+	// Registered before the HTTP server defers so admissions close first. The
+	// driver may remove fixture runtimes only after terminal sessions close and
+	// every fixture-owned turn has stopped writing.
+	defer func() {
+		cleanupContext, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		boardServersMu.Lock()
+		values := append([]*server.Server(nil), boardServers...)
+		runners := append([]*isolatedRunner(nil), boardRunners...)
+		boardServersMu.Unlock()
+		for index := len(values) - 1; index >= 0; index-- {
+			values[index].CloseTerminalSessionsForTesting(cleanupContext)
+		}
+		for index := len(runners) - 1; index >= 0; index-- {
+			runners[index].Shutdown()
+		}
+	}()
+	boardServer := newFixtureServer(data)
 	boardHTTP := &http.Server{Handler: boardServer.Handler()}
 	go func() { _ = boardHTTP.Serve(boardListener) }()
 	defer boardHTTP.Close()
+	secondTarget := ""
+	var secondHandler *replaceableHandler
+	var newSecondServer func() *server.Server
+	var secondServer *server.Server
+	if daemonRestartTrigger != "" {
+		secondData := boardstore.New(filepath.Join(home, "second-dieter"))
+		if err = secondData.Ensure(); err != nil {
+			return err
+		}
+		secondListener, listenErr := net.Listen("tcp", "127.0.0.1:0")
+		if listenErr != nil {
+			return listenErr
+		}
+		newSecondServer = func() *server.Server { return newFixtureServer(secondData) }
+		secondServer = newSecondServer()
+		secondHandler = &replaceableHandler{handler: secondServer.Handler()}
+		secondHTTP := &http.Server{Handler: secondHandler}
+		go func() { _ = secondHTTP.Serve(secondListener) }()
+		defer secondHTTP.Close()
+		secondTarget = secondListener.Addr().String()
+	}
 
 	tunnel := &daemon.GatewayClient{Identity: identity, LocalTarget: boardListener.Addr().String(), Version: "isolated-e2e", APIVersion: server.APIVersion, Log: logger}
 	if offlineTrigger == "" {
@@ -240,14 +316,18 @@ func run(address, home, offlineTrigger string, boardStressFixture bool) error {
 	if err != nil {
 		return err
 	}
-	legacyEnrollment, err := daemon.BeginEnrollment(ctx, legacyIdentity)
+	legacyEnrollment, err := enrollmentRPC(ctx, logger, "legacy", "begin", func(requestContext context.Context) (*gatewayv1.DaemonEnrollment, error) {
+		return daemon.BeginEnrollment(requestContext, legacyIdentity)
+	})
 	if err != nil {
 		return err
 	}
 	if err = gatewayStore.ApproveEnrollment(legacyEnrollment.GetEnrollmentId(), legacyEnrollment.GetUserCode(), config.AllowedUserID, config.AllowedLogin); err != nil {
 		return err
 	}
-	legacyCredential, err := daemon.CompleteEnrollment(ctx, legacyIdentity, legacyEnrollment.GetEnrollmentId(), legacyEnrollment.GetEnrollmentSecret())
+	legacyCredential, err := enrollmentRPC(ctx, logger, "legacy", "complete", func(requestContext context.Context) (*gatewayv1.DaemonCredential, error) {
+		return daemon.CompleteEnrollment(requestContext, legacyIdentity, legacyEnrollment.GetEnrollmentId(), legacyEnrollment.GetEnrollmentSecret())
+	})
 	if err != nil {
 		return err
 	}
@@ -258,6 +338,111 @@ func run(address, home, offlineTrigger string, boardStressFixture bool) error {
 		Identity: legacyIdentity, LocalTarget: boardListener.Addr().String(), Version: "legacy-e2e", APIVersion: "2", Log: logger,
 	}
 	go func() { _ = legacyTunnel.Run(ctx) }()
+
+	secondDaemonID := ""
+	if daemonRestartTrigger != "" {
+		secondIdentity, identityErr := daemon.LoadOrCreateEnrollmentIdentity(
+			filepath.Join(home, "second-daemon"), "Projectless E2E machine", publicURL.String())
+		if identityErr != nil {
+			return identityErr
+		}
+		secondEnrollment, enrollmentErr := enrollmentRPC(ctx, logger, "second", "begin", func(requestContext context.Context) (*gatewayv1.DaemonEnrollment, error) {
+			return daemon.BeginEnrollment(requestContext, secondIdentity)
+		})
+		if enrollmentErr != nil {
+			return enrollmentErr
+		}
+		if err = gatewayStore.ApproveEnrollment(
+			secondEnrollment.GetEnrollmentId(), secondEnrollment.GetUserCode(), config.AllowedUserID, config.AllowedLogin,
+		); err != nil {
+			return err
+		}
+		secondCredential, credentialErr := enrollmentRPC(ctx, logger, "second", "complete", func(requestContext context.Context) (*gatewayv1.DaemonCredential, error) {
+			return daemon.CompleteEnrollment(requestContext, secondIdentity, secondEnrollment.GetEnrollmentId(), secondEnrollment.GetEnrollmentSecret())
+		})
+		if credentialErr != nil {
+			return credentialErr
+		}
+		if err = secondIdentity.SaveCredential(
+			secondCredential.GetDaemonId(), secondCredential.GetDaemonName(), secondCredential.GetCertificatePem(),
+			secondCredential.GetDaemonCaPem(), secondCredential.GetGatewaySigningPublicKey(),
+			secondCredential.GetExpiresAt(), secondCredential.GetGeneration(),
+		); err != nil {
+			return err
+		}
+		secondDaemonID = secondIdentity.ID
+		secondTunnel := &daemon.GatewayClient{
+			Identity: secondIdentity, LocalTarget: secondTarget, Version: "isolated-e2e-second",
+			APIVersion: server.APIVersion, Log: logger,
+		}
+		acknowledged := make(chan struct{}, 1)
+		secondTunnel.OnAcknowledged = func(time.Time) {
+			select {
+			case acknowledged <- struct{}{}:
+			default:
+			}
+		}
+		go func() {
+			var tunnelCancel context.CancelFunc
+			var tunnelDone chan struct{}
+			startTunnel := func() {
+				for len(acknowledged) > 0 {
+					<-acknowledged
+				}
+				tunnelContext, cancel := context.WithCancel(ctx)
+				tunnelCancel = cancel
+				tunnelDone = make(chan struct{})
+				go func() {
+					defer close(tunnelDone)
+					_ = secondTunnel.Run(tunnelContext)
+				}()
+			}
+			stopTunnel := func() {
+				if tunnelCancel == nil {
+					return
+				}
+				tunnelCancel()
+				<-tunnelDone
+				tunnelCancel = nil
+				tunnelDone = nil
+			}
+			startTunnel()
+			defer stopTunnel()
+
+			ticker := time.NewTicker(50 * time.Millisecond)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-ticker.C:
+					if _, statErr := os.Stat(daemonRestartTrigger); statErr != nil {
+						continue
+					}
+					stopTunnel()
+					restartContext, restartCancel := context.WithTimeout(context.Background(), 2*time.Second)
+					secondServer.ShutdownTerminalSessions(restartContext)
+					restartCancel()
+					secondServer = newSecondServer()
+					secondHandler.set(secondServer.Handler())
+					startTunnel()
+					select {
+					case <-acknowledged:
+						if writeErr := os.WriteFile(daemonRestartTrigger+".ready", []byte("ready\n"), 0o600); writeErr != nil {
+							logger.Error("could not acknowledge isolated daemon restart", "error", writeErr)
+						}
+						logger.Info("isolated daemon API and gateway tunnel restarted")
+					case <-time.After(10 * time.Second):
+						logger.Error("isolated daemon gateway tunnel did not reconnect after restart")
+					case <-ctx.Done():
+						return
+					}
+					<-ctx.Done()
+					return
+				}
+			}
+		}()
+	}
 
 	tokenBytes := make([]byte, 24)
 	if _, err = rand.Read(tokenBytes); err != nil {
@@ -281,10 +466,12 @@ func run(address, home, offlineTrigger string, boardStressFixture bool) error {
 	}
 
 	deadline := time.Now().Add(10 * time.Second)
-	for (!gatewayServer.Hub.Online(identity.ID) || !gatewayServer.Hub.Online(legacyIdentity.ID)) && time.Now().Before(deadline) {
+	for (!gatewayServer.Hub.Online(identity.ID) || !gatewayServer.Hub.Online(legacyIdentity.ID) ||
+		(secondDaemonID != "" && !gatewayServer.Hub.Online(secondDaemonID))) && time.Now().Before(deadline) {
 		time.Sleep(20 * time.Millisecond)
 	}
-	if !gatewayServer.Hub.Online(identity.ID) || !gatewayServer.Hub.Online(legacyIdentity.ID) {
+	if !gatewayServer.Hub.Online(identity.ID) || !gatewayServer.Hub.Online(legacyIdentity.ID) ||
+		(secondDaemonID != "" && !gatewayServer.Hub.Online(secondDaemonID)) {
 		return fmt.Errorf("mixed-version daemon tunnels did not come online")
 	}
 
@@ -292,12 +479,33 @@ func run(address, home, offlineTrigger string, boardStressFixture bool) error {
 	fmt.Printf("DIETER_ISOLATED_TOKEN=%s\n", token)
 	fmt.Printf("DIETER_ISOLATED_DAEMON=%s\n", identity.ID)
 	fmt.Printf("DIETER_ISOLATED_LEGACY_DAEMON=%s\n", legacyIdentity.ID)
+	if secondDaemonID != "" {
+		fmt.Printf("DIETER_ISOLATED_SECOND_DAEMON=%s\n", secondDaemonID)
+	}
 	fmt.Printf("DIETER_ISOLATED_PROJECT=%s\n", project.ID)
 	fmt.Printf("DIETER_ISOLATED_BOARD=%s\n", board.ID)
 	fmt.Println("READY")
 
 	<-ctx.Done()
 	return nil
+}
+
+type replaceableHandler struct {
+	mu      sync.RWMutex
+	handler http.Handler
+}
+
+func (h *replaceableHandler) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
+	h.mu.RLock()
+	handler := h.handler
+	h.mu.RUnlock()
+	handler.ServeHTTP(writer, request)
+}
+
+func (h *replaceableHandler) set(handler http.Handler) {
+	h.mu.Lock()
+	h.handler = handler
+	h.mu.Unlock()
 }
 
 // Auto-title always selects Spark independently of the conversation provider.
@@ -316,9 +524,11 @@ type isolatedRun struct {
 
 type isolatedRunner struct {
 	isolatedHarness
-	mu     sync.Mutex
-	closed bool
-	active map[*isolatedRun]struct{}
+	mu       sync.Mutex
+	closed   bool
+	active   map[*isolatedRun]struct{}
+	logger   *slog.Logger // Optional; set before admitting any fixture turns.
+	sequence uint64
 }
 
 func newIsolatedRunner(runner isolatedHarness) *isolatedRunner {
@@ -344,7 +554,7 @@ func (runner *isolatedRunner) Shutdown() {
 	}
 }
 
-func (runner *isolatedRunner) Run(ctx context.Context, request harness.Request, emit func(harness.Output) error) error {
+func (runner *isolatedRunner) Run(ctx context.Context, request harness.Request, emit func(harness.Output) error) (err error) {
 	runner.mu.Lock()
 	if runner.closed {
 		runner.mu.Unlock()
@@ -353,6 +563,8 @@ func (runner *isolatedRunner) Run(ctx context.Context, request harness.Request, 
 	ctx, cancel := context.WithCancel(ctx)
 	run := &isolatedRun{cancel: cancel, done: make(chan struct{})}
 	runner.active[run] = struct{}{}
+	runner.sequence++
+	sequence := runner.sequence
 	runner.mu.Unlock()
 	defer func() {
 		cancel()
@@ -361,6 +573,37 @@ func (runner *isolatedRunner) Run(ctx context.Context, request harness.Request, 
 		close(run.done)
 		runner.mu.Unlock()
 	}()
+	if runner.logger != nil {
+		// Never log request/output data or error strings. Fixed labels and a
+		// fixture-local sequence distinguish startup from delivery failures.
+		provider := "other"
+		if request.Harness == "mock" || request.Harness == "codex" {
+			provider = request.Harness
+		}
+		logger := runner.logger.With("sequence", sequence, "harness", provider)
+		started := time.Now()
+		logger.Info("isolated harness", "phase", "start", "elapsed_ms", 0)
+		defer func() {
+			classification := "ok"
+			switch {
+			case errors.Is(err, context.Canceled):
+				classification = "canceled"
+			case errors.Is(err, context.DeadlineExceeded):
+				classification = "deadline_exceeded"
+			case err != nil:
+				classification = "error"
+			}
+			logger.Info("isolated harness", "phase", "finish", "elapsed_ms", time.Since(started).Milliseconds(), "error_class", classification)
+		}()
+		var first sync.Once
+		next := emit
+		emit = func(output harness.Output) error {
+			first.Do(func() {
+				logger.Info("isolated harness", "phase", "first_output", "elapsed_ms", time.Since(started).Milliseconds())
+			})
+			return next(output)
+		}
+	}
 	return runner.run(ctx, request, emit)
 }
 

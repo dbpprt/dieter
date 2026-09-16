@@ -279,6 +279,7 @@ private fun ConnectionsSettings(
             )
         }
         item { ConnectionStatusCard(state, model) }
+        item { BackgroundSyncModeSelector(state.backgroundSyncMode, model::setBackgroundSyncMode) }
         item { CleanSyncCard(onCleanSync) }
         item {
             Text(

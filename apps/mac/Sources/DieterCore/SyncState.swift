@@ -93,9 +93,8 @@ package struct DieterSyncProjection: Codable, Sendable {
     }
     package var cursor: Data?
     package var snapshot: Data?
-    /// Wall-clock time of the most recent authoritative WatchSync frame.
-    /// Persisting this separately from the snapshot lets the UI report the
-    /// age of a cursor-only heartbeat after relaunching.
+    /// Wall-clock time of the most recent applied workspace projection.
+    /// Transport heartbeats must never make cached data appear freshly applied.
     package var refreshedAt: Date? = nil
 
     package static let empty = DieterSyncProjection(cursor: nil, snapshot: nil)

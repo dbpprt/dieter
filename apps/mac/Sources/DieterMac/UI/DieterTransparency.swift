@@ -138,3 +138,88 @@ struct DieterGlassButtonStyle: PrimitiveButtonStyle {
         }
     }
 }
+
+/// Floating content sits above busy, moving views, so ordinary pane translucency
+/// does not provide enough separation. Keep the native glass highlight and blur,
+/// then add a palette wash whose density matches the size of the floating surface.
+private struct DieterFloatingGlassChrome: ViewModifier {
+    enum Kind {
+        case toast
+        case overlay
+
+        var surfaceOpacity: Double {
+            switch self {
+            case .toast: 0.86
+            case .overlay: 0.78
+            }
+        }
+
+        var ambientShadowOpacity: Double {
+            switch self {
+            case .toast: 0.28
+            case .overlay: 0.38
+            }
+        }
+
+        var ambientShadowRadius: CGFloat {
+            switch self {
+            case .toast: 18
+            case .overlay: 32
+            }
+        }
+
+        var ambientShadowY: CGFloat {
+            switch self {
+            case .toast: 7
+            case .overlay: 16
+            }
+        }
+    }
+
+    let cornerRadius: CGFloat
+    let kind: Kind
+
+    func body(content: Content) -> some View {
+        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+
+        content
+            .background(
+                DieterTheme.opaqueSurface.opacity(DieterTheme.usesTransparency ? kind.surfaceOpacity : 1),
+                in: shape
+            )
+            .glassEffect(DieterTheme.usesTransparency ? .regular : .identity, in: shape)
+            .overlay {
+                shape.stroke(DieterTheme.strongBorder, lineWidth: 1)
+            }
+            .overlay {
+                shape.stroke(
+                    LinearGradient(
+                        colors: [
+                            .white.opacity(DieterTheme.usesTransparency ? 0.28 : 0.10),
+                            .clear,
+                            .black.opacity(DieterTheme.usesTransparency ? 0.16 : 0.08),
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    lineWidth: 0.75
+                )
+            }
+            .shadow(color: .black.opacity(0.16), radius: 2, y: 1)
+            .shadow(
+                color: .black.opacity(kind.ambientShadowOpacity),
+                radius: kind.ambientShadowRadius,
+                y: kind.ambientShadowY
+            )
+    }
+}
+
+extension View {
+    func dieterToastChrome(cornerRadius: CGFloat = 13) -> some View {
+        modifier(DieterFloatingGlassChrome(cornerRadius: cornerRadius, kind: .toast))
+    }
+
+    func dieterOverlayChrome(cornerRadius: CGFloat = 18) -> some View {
+        modifier(DieterFloatingGlassChrome(cornerRadius: cornerRadius, kind: .overlay))
+    }
+}

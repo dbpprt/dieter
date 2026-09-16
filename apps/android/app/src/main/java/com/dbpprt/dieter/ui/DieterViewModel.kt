@@ -1,11 +1,13 @@
 package com.dbpprt.dieter.ui
 
+import android.util.Log
 import androidx.compose.runtime.Immutable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.dbpprt.dieter.connection.DieterConnectionManager
 import com.dbpprt.dieter.connection.DieterConnectionState
+import com.dbpprt.dieter.connection.BackgroundSyncMode
 import com.dbpprt.dieter.connection.ConnectionPhase
 import com.dbpprt.dieter.connection.EndpointConnection
 import com.dbpprt.dieter.connection.EndpointPhase
@@ -13,6 +15,7 @@ import com.dbpprt.dieter.connection.MachineOutboxSummary
 import com.dbpprt.dieter.connection.ProjectHost
 import com.dbpprt.dieter.connection.isServerConversationId
 import com.dbpprt.dieter.connection.resolveConversationId
+import com.dbpprt.dieter.connection.rpcReadFailureIsTransient
 import com.dbpprt.dieter.data.DIETER_ENDPOINTS
 import com.dbpprt.dieter.data.DIETER_LOCAL_ENDPOINT
 import com.dbpprt.dieter.data.DieterEndpoint
@@ -134,7 +137,7 @@ internal fun DieterUiState.preserveConnectionPresentation(previous: DieterUiStat
     connectionError = previous.connectionError,
 )
 
-enum class Destination { CHATS, BOARD, TERMINALS, FILES, SCHEDULES }
+enum class Destination { CHATS, BOARD, TERMINALS, SCREENS, FILES, SCHEDULES }
 
 enum class AppSurface { NEW_CHAT, NEW_CARD, NEW_BOARD, SCHEDULE_EDITOR, WORKSPACE, NEW_PROJECT, APP_SETTINGS }
 
@@ -151,7 +154,7 @@ data class DieterUiState(
     val connectionDialogVisible: Boolean = false,
     val connectionError: String? = null,
     val desiredConnected: Boolean = true,
-    val backgroundSyncEnabled: Boolean = true,
+    val backgroundSyncMode: BackgroundSyncMode = BackgroundSyncMode.LIVE,
     val navigationStyle: NavigationStyle = NavigationStyle.CLASSIC,
     val palette: DieterPalette = DieterPalette.DEFAULT,
     val showReasoningTraces: Boolean = false,
@@ -248,6 +251,7 @@ data class DieterUiState(
     val workspaceReview: WorkspaceReviewState = WorkspaceReviewState(),
 ) {
     val connected: Boolean get() = connectionPhase == ConnectionPhase.CONNECTED
+    val backgroundSyncEnabled: Boolean get() = backgroundSyncMode.usesBackgroundService
     val hasCachedWorkspace: Boolean
         get() = projects.isNotEmpty() || boards.isNotEmpty() || cards.isNotEmpty() || chats.isNotEmpty()
     val presentedProjectHosts: Map<String, ProjectHost>
@@ -339,12 +343,36 @@ internal fun DieterUiState.applyingScheduleRunPage(response: ScheduleRunsRespons
     )
 }
 
-internal fun conversationStreamNeedsRestart(activeCardId: String?, selectedCardId: String?): Boolean =
-    selectedCardId != null && activeCardId != selectedCardId
+internal fun conversationStreamNeedsRestart(
+    activeCardId: String?,
+    selectedCardId: String?,
+    streamActive: Boolean = true,
+): Boolean = selectedCardId != null && (activeCardId != selectedCardId || !streamActive)
 
-class DieterViewModel(
+internal data class ConversationOpenSyncPlan(
+    val cacheIsCurrent: Boolean,
+    val afterSeq: Long,
+) {
+    val needsFreshFrame: Boolean get() = !cacheIsCurrent
+}
+
+internal fun conversationOpenSyncPlan(
+    cachedLastSeq: Long?,
+    coveredByHealthyLiveSync: Boolean,
+): ConversationOpenSyncPlan {
+    val cacheIsCurrent = cachedLastSeq != null && coveredByHealthyLiveSync
+    return ConversationOpenSyncPlan(
+        cacheIsCurrent = cacheIsCurrent,
+        // Cold, Smart, and App-only opens ask the server for its bounded latest
+        // tail immediately. History remains paged backwards on demand.
+        afterSeq = if (cacheIsCurrent) requireNotNull(cachedLastSeq) else 0L,
+    )
+}
+
+class DieterViewModel internal constructor(
     private val connectionManager: DieterConnectionManager,
     private val appPreferences: AppPreferences,
+    private val conversationDrafts: ConversationDraftStore = ConversationDraftStore(),
 ) : ViewModel() {
     private val repository: DieterRepository = connectionManager.repository
     private val _state = MutableStateFlow(DieterUiState())
@@ -386,7 +414,6 @@ class DieterViewModel(
     private var connectionDialogDismissedInterruptionKey: Long? = null
     private var lastRemoteState: State? = null
     private val conversationCache = ConversationUiCache()
-    private val conversationDrafts = ConversationDraftStore()
     private val projectWorkspaceJobs = mutableMapOf<String, Job>()
     private var directoryListingGeneration = 0L
 
@@ -516,8 +543,8 @@ class DieterViewModel(
         }
     }
 
-    fun setBackgroundSyncEnabled(enabled: Boolean) {
-        connectionManager.setBackgroundSyncEnabled(enabled)
+    fun setBackgroundSyncMode(mode: BackgroundSyncMode) {
+        connectionManager.setBackgroundSyncMode(mode)
     }
 
     fun setNavigationStyle(style: NavigationStyle) {
@@ -657,6 +684,9 @@ class DieterViewModel(
         _state.update { current ->
             val selectedCardId = resolveConversationId(current.selectedCardId, connection.resolvedConversationIds)
             conversationDrafts.retarget(current.selectedCardId, selectedCardId)
+            val liveConversation = selectedCardId?.takeIf { cardId ->
+                connection.activeConversations.containsKey(cardId) && connectionManager.liveSyncCoversConversation(cardId)
+            }
             current.copy(
                 endpoint = connection.endpoint?.address
                     ?: connection.configuredConnections.firstOrNull { it.id == connection.activeGatewayId }?.address
@@ -675,7 +705,7 @@ class DieterViewModel(
                 },
                 connectionError = connection.error,
                 desiredConnected = connection.desiredConnected,
-                backgroundSyncEnabled = connection.backgroundSyncEnabled,
+                backgroundSyncMode = connection.backgroundSyncMode,
                 configuredConnections = connection.configuredConnections,
                 activeGatewayId = connection.activeGatewayId,
                 endpointConnections = connection.endpointConnections,
@@ -695,9 +725,15 @@ class DieterViewModel(
                 selectedCardId = selectedCardId,
                 composerDraft = conversationDrafts.draft(selectedCardId),
                 conversation = selectedCardId?.let(connection.activeConversations::get) ?: current.conversation,
-                conversationLastRefreshedAtMillis = selectedCardId
-                    ?.let(connection.conversationRefreshedAtMillis::get)
-                    ?: current.conversationLastRefreshedAtMillis,
+                conversationLastRefreshedAtMillis = if (liveConversation != null) {
+                    connection.lastConnectedAtMs
+                        ?: connection.conversationRefreshedAtMillis[liveConversation]
+                        ?: current.conversationLastRefreshedAtMillis
+                } else {
+                    selectedCardId?.let(connection.conversationRefreshedAtMillis::get)
+                        ?: current.conversationLastRefreshedAtMillis
+                },
+                conversationSyncing = if (liveConversation != null) false else current.conversationSyncing,
                 pendingCardIds = connection.pendingCardIds,
                 pendingMessageIds = connection.pendingMessageIds,
                 acceptedOutboxIds = connection.acceptedOutboxIds,
@@ -706,7 +742,12 @@ class DieterViewModel(
             )
         }
         val resolvedSelectedCardId = _state.value.selectedCardId
-        if (foreground && conversationStreamNeedsRestart(conversationStreamCardId, resolvedSelectedCardId)) {
+        if (foreground && conversationStreamNeedsRestart(
+                conversationStreamCardId,
+                resolvedSelectedCardId,
+                conversationJob?.isActive == true,
+            )
+        ) {
             startConversationStream(requireNotNull(resolvedSelectedCardId))
         }
         resolvedSelectedCardId?.let(::ensureConversationRecovery)
@@ -778,14 +819,15 @@ class DieterViewModel(
     }
 
     private suspend fun retryStream(cause: Throwable, attempt: Long, label: String): Boolean {
-        val code = Status.fromThrowable(cause).code
-        val transient = foreground && (code == Status.Code.UNAVAILABLE || code == Status.Code.DEADLINE_EXCEEDED)
+        val transient = foreground && rpcReadFailureIsTransient(cause)
         if (!transient) return false
         _state.update {
+            val selectedCardId = it.selectedCardId
             it.copy(
                 connectionPhase = ConnectionPhase.RECONNECTING,
                 loading = false,
-                conversationSyncing = it.selectedCardId != null,
+                conversationSyncing = selectedCardId != null &&
+                    !connectionManager.liveSyncCoversConversation(selectedCardId),
                 connectionError = "$label connection interrupted; reconnecting…",
             )
         }
@@ -827,6 +869,8 @@ class DieterViewModel(
         }
     }
 
+    suspend fun openScreenConnection(endpointId: String) = repository.openScreenConnection(endpointId)
+
     fun navigate(destination: Destination) {
         rememberConversation()
         if (destination != Destination.TERMINALS) stopTerminalWatch()
@@ -850,6 +894,7 @@ class DieterViewModel(
             Destination.CHATS -> viewModelScope.launch { loadChats() }
             Destination.FILES -> viewModelScope.launch { loadFiles() }
             Destination.SCHEDULES -> viewModelScope.launch { loadSchedules() }
+            Destination.SCREENS -> Unit
             Destination.TERMINALS -> loadTerminals()
             Destination.BOARD -> refreshSpaces()
         }
@@ -1119,6 +1164,11 @@ class DieterViewModel(
                 connection.conversationRefreshedAtMillis[cardId],
             )
         } ?: conversationCache[cardId]
+        val liveCache = cached != null && connectionManager.liveSyncCoversConversation(cardId)
+        Log.i(
+            DieterConnectionManager.SYNC_LOG_TAG,
+            "chatOpen cache=${cached != null} liveCache=$liveCache frameAgeMs=${connection.conversationRefreshedAtMillis[cardId]?.let { System.currentTimeMillis() - it } ?: -1}",
+        )
         val projectId = resolvedCard.projectId.ifBlank { _state.value.selectedProjectId }
         if (_state.value.workspaceReview.cardId != cardId) resetWorkspaceReview(cardId)
         _state.update {
@@ -1135,8 +1185,12 @@ class DieterViewModel(
                 historyHasMore = cached?.historyHasMore ?: false,
                 historyLoading = false,
                 conversationRefreshing = false,
-                conversationSyncing = isServerConversationId(cardId),
-                conversationLastRefreshedAtMillis = cached?.refreshedAtMillis,
+                conversationSyncing = isServerConversationId(cardId) && !liveCache,
+                conversationLastRefreshedAtMillis = if (liveCache) {
+                    connection.lastConnectedAtMs ?: cached.refreshedAtMillis
+                } else {
+                    cached?.refreshedAtMillis
+                },
                 conversationScrollRequest = it.conversationScrollRequest + 1,
                 detailTab = 0,
                 error = connectionManager.outboxFailure(cardId),
@@ -1173,39 +1227,65 @@ class DieterViewModel(
                 }
                 return@launch
             }
-            var delivered = false
-            // Hedged unary fetch: on a healthy link the stream answers first;
-            // on a dead-after-idle link this bounds time-to-fresh to seconds.
-            val hedge = launch {
-                val snapshot = runCatching {
-                    withTimeout(HEDGE_FETCH_TIMEOUT_MS) { repository.conversation(cardId, limit = CONVERSATION_PAGE_SIZE) }
-                }.getOrNull() ?: return@launch
-                if (!delivered) applyLiveConversation(cardId, snapshot)
+            val openedAt = System.currentTimeMillis()
+            val initial = _state.value.conversation?.takeIf { it.detail.card.id == cardId }
+            val plan = conversationOpenSyncPlan(
+                cachedLastSeq = initial?.conversation?.lastSeq,
+                coveredByHealthyLiveSync = connectionManager.liveSyncCoversConversation(cardId),
+            )
+            var delivered = plan.cacheIsCurrent
+            if (_state.value.selectedCardId == cardId) {
+                _state.update { it.copy(conversationSyncing = plan.needsFreshFrame) }
             }
-            // First-frame watchdog: a stream that stays silent this long on an
-            // allegedly healthy connection is riding a dead transport; rebuild
-            // the channel instead of waiting for keepalive to notice.
-            val watchdog = launch {
-                delay(FIRST_FRAME_DEADLINE_MS)
-                if (!delivered) repository.reconnect()
+            if (plan.cacheIsCurrent) {
+                Log.i(DieterConnectionManager.SYNC_LOG_TAG, "chatReady source=live-cache elapsedMs=${System.currentTimeMillis() - openedAt}")
             }
+            // Cold, Smart, and App-only opens hedge the fresh stream with a
+            // unary fetch. A Live-projected tail is already authoritative and
+            // must not be mistaken for a dead stream when its resume is quiet.
+            val hedge = if (plan.needsFreshFrame) {
+                launch {
+                    val snapshot = runCatching {
+                        withTimeout(HEDGE_FETCH_TIMEOUT_MS) { repository.conversation(cardId, limit = CONVERSATION_PAGE_SIZE) }
+                    }.getOrNull() ?: return@launch
+                    if (!delivered) {
+                        delivered = true
+                        Log.i(DieterConnectionManager.SYNC_LOG_TAG, "chatFirstFrame source=unary elapsedMs=${System.currentTimeMillis() - openedAt}")
+                        applyLiveConversation(cardId, snapshot)
+                    }
+                }
+            } else null
+            // Retry only this conversation subscription. A slow projection
+            // does not prove the workspace or gateway channel is broken.
+            val watchdog = if (plan.needsFreshFrame) {
+                launch {
+                    delay(FIRST_FRAME_DEADLINE_MS)
+                    if (!delivered && _state.value.selectedCardId == cardId) startConversationStream(cardId)
+                }
+            } else null
             try {
-                repository.watchConversation(cardId, CONVERSATION_PAGE_SIZE)
+                repository.watchConversation(
+                    cardId,
+                    CONVERSATION_PAGE_SIZE,
+                    initial = initial,
+                    afterSeq = plan.afterSeq,
+                )
                     .retryWhen { cause, attempt -> retryStream(cause, attempt, "Conversation") }
                     .collectLatest { snapshot ->
                         if (_state.value.selectedCardId != cardId) return@collectLatest
                         if (!delivered) {
                             delivered = true
-                            hedge.cancel()
-                            watchdog.cancel()
+                            hedge?.cancel()
+                            watchdog?.cancel()
+                            Log.i(DieterConnectionManager.SYNC_LOG_TAG, "chatFirstFrame source=stream elapsedMs=${System.currentTimeMillis() - openedAt}")
                         }
                         applyLiveConversation(cardId, snapshot)
                     }
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Throwable) {
-                hedge.cancel()
-                watchdog.cancel()
+                hedge?.cancel()
+                watchdog?.cancel()
                 if (_state.value.selectedCardId == cardId) {
                     _state.update { it.copy(conversationSyncing = false, error = readableError(error)) }
                 }
@@ -3280,12 +3360,14 @@ class DieterViewModel(
             ?: "Dieter could not complete the request"
     }
 
-    class Factory(
+    internal class Factory(
         private val connectionManager: DieterConnectionManager,
         private val appPreferences: AppPreferences,
+        private val conversationDrafts: ConversationDraftStore = ConversationDraftStore(),
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
-        override fun <T : ViewModel> create(modelClass: Class<T>): T = DieterViewModel(connectionManager, appPreferences) as T
+        override fun <T : ViewModel> create(modelClass: Class<T>): T =
+            DieterViewModel(connectionManager, appPreferences, conversationDrafts) as T
     }
 
     companion object {

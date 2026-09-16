@@ -111,6 +111,7 @@ if [ ! -f "$BUNDLE_MANIFEST" ] || \
     rm -rf "$APP_BUNDLE/Contents/Resources/DieterMac_DieterMac.bundle"
     ditto "$MARKDOWN_BUNDLE" "$APP_BUNDLE/Contents/Resources/DieterMac_DieterMac.bundle"
     rm -rf "$APP_BUNDLE/Contents/Resources/Highlighter_Highlighter.bundle"
+    rm -rf "$APP_BUNDLE/Highlighter_Highlighter.bundle"
     ditto "$HIGHLIGHTER_BUNDLE" "$APP_BUNDLE/Contents/Resources/Highlighter_Highlighter.bundle"
     rm -rf "$APP_BUNDLE/Contents/Frameworks/WebRTC.framework"
     ditto "$WEBRTC_FRAMEWORK" "$APP_BUNDLE/Contents/Frameworks/WebRTC.framework"

@@ -10,7 +10,7 @@ class SyncStreamLivenessTest {
     fun restartsAfterThreeMissedHeartbeats() {
         val lastFrame = 1_000L
 
-        assertEquals(45_000L, SYNC_STALE_AFTER_MS)
+        assertEquals(15_000L, SYNC_STALE_AFTER_MS)
         assertFalse(syncStreamIsStale(lastFrame, lastFrame + SYNC_STALE_AFTER_MS - 1))
         assertTrue(syncStreamIsStale(lastFrame, lastFrame + SYNC_STALE_AFTER_MS))
     }

@@ -193,7 +193,9 @@ func (api *grpcAPI) watchGitOperation(ctx context.Context, request *dieterv1.Wat
 		if err != nil {
 			return grpcFailure(err)
 		}
-		if first || len(logs) > 0 || operation.Sequence > after {
+		// Logs and status are read separately. A newer log may advance after
+		// before its terminal status is observed; EOF must still carry that status.
+		if first || len(logs) > 0 || operation.Sequence > after || terminalGitOperation(operation.Status) {
 			frame := &dieterv1.GitOperationFrame{Operation: protoGitOperation(operation)}
 			for _, entry := range logs {
 				frame.Logs = append(frame.Logs, &dieterv1.GitOperationLogEntry{

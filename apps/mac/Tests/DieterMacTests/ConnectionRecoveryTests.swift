@@ -135,6 +135,43 @@ private final class RecoveryProbe: Sendable {
     #expect(!(await task.value))
 }
 
+@Test func lowLevelAndRuntimeTransportFailuresAreRecoverableReads() {
+    #expect(DieterRPCFailure.isTransient(POSIXError(.EPIPE)))
+    #expect(DieterRPCFailure.isTransient(POSIXError(.ECONNRESET)))
+    #expect(
+        DieterRPCFailure.isTransient(
+            RuntimeError(code: .transportError, message: "connection closed", cause: POSIXError(.EPIPE))))
+    #expect(
+        DieterRPCFailure.isTransient(
+            RPCError(
+                code: .unknown, message: "transport failed",
+                cause: RuntimeError(code: .transportError, message: "broken pipe"))))
+    #expect(!DieterRPCFailure.isTransient(POSIXError(.EPERM)))
+    #expect(
+        DieterRPCFailure.canRetryRead(
+            RPCError(code: .unimplemented, message: "No messages received, exactly one was expected.")))
+    #expect(!DieterRPCFailure.canRetryRead(RPCError(code: .unimplemented, message: "unknown method")))
+}
+
+@Test @MainActor func synchronizedConversationClearsAStaleStreamFailure() {
+    let store = recoveryStore(probe: RecoveryProbe())
+    defer { store.disconnect() }
+    store.selectedChatID = "card"
+    store.conversationError = "Conversation updates paused: broken pipe"
+    store.conversationSyncing = true
+    var snapshot = Dieter_V1_GlobalSnapshot()
+    var conversation = Dieter_V1_ConversationSnapshot()
+    conversation.detail.card.id = "card"
+    conversation.conversation.cardID = "card"
+    snapshot.conversations = [conversation]
+
+    store.applySelectedConversationProjection(snapshot, endpointID: store.endpoint.id)
+
+    #expect(store.conversation?.detail.card.id == "card")
+    #expect(store.conversationError == nil)
+    #expect(!store.conversationSyncing)
+}
+
 @Test @MainActor func cancelledActionsDoNotStartAnotherConnection() async {
     let probe = RecoveryProbe()
     let store = recoveryStore(probe: probe)
@@ -146,4 +183,149 @@ private final class RecoveryProbe: Sendable {
     #expect(!(await task.value))
     #expect(probe.attempts.withLock { $0 } == 0)
     #expect(store.errorMessage == nil)
+}
+
+@Test func directCredentialRenewsInPlace() {
+    let credential = DirectAccessCredential(
+        token: "first",
+        expiresAt: "2026-09-15T12:05:00Z",
+        daemonGeneration: 7
+    )
+    #expect(credential.snapshot().token == "first")
+
+    credential.update(
+        token: "second",
+        expiresAt: "2026-09-15T12:10:00Z",
+        daemonGeneration: 7
+    )
+
+    #expect(
+        credential.snapshot()
+            == DirectAccessCredentialSnapshot(
+                token: "second",
+                expiresAt: "2026-09-15T12:10:00Z",
+                daemonGeneration: 7
+            ))
+}
+
+@Test func directCredentialRefreshPolicyRenewsBeforeExpiryAndEscalatesGenerationChanges() {
+    let now = Date(timeIntervalSince1970: 1_000)
+    let expires = now.addingTimeInterval(300)
+
+    #expect(DirectCredentialRefreshPolicy.renewalDelay(expiresAt: expires, now: now) == 270)
+    #expect(DirectCredentialRefreshPolicy.retryDelay(attempt: 0, expiresAt: expires, now: now) == 1)
+    #expect(
+        !DirectCredentialRefreshPolicy.requiresConnectionReplacement(
+            currentGeneration: 7,
+            renewedGeneration: 7
+        ))
+    #expect(
+        DirectCredentialRefreshPolicy.requiresConnectionReplacement(
+            currentGeneration: 7,
+            renewedGeneration: 8
+        ))
+    #expect(
+        DirectCredentialRefreshPolicy.retryDelay(
+            attempt: 3,
+            expiresAt: now.addingTimeInterval(0.5),
+            now: now
+        ) == nil)
+}
+
+@Test func streamRecoveryRetriesImmediatelyThenBacksOff() {
+    #expect(DieterStreamRecoveryPolicy.resubscriptionTimeout == 2)
+    #expect(DieterStreamRecoveryPolicy.delay(consecutiveFailures: 1) == 0)
+    #expect(DieterStreamRecoveryPolicy.delay(consecutiveFailures: 2) == 0.25)
+    #expect(DieterStreamRecoveryPolicy.delay(consecutiveFailures: 100) == 5)
+}
+
+@Test @MainActor func transportHeartbeatNeverAdvancesAppliedProjection() async throws {
+    let store = recoveryStore(probe: RecoveryProbe())
+    defer { store.disconnect() }
+    store.phase = .connected(version: "fixture")
+    store.globalSyncing = true
+    var cursor = Dieter_V1_SyncCursor(); cursor.epoch = "fixture"; cursor.sequence = 4
+    store.syncProjection.cursor = try cursor.serializedData()
+    var frame = Dieter_V1_SyncFrame()
+    frame.heartbeat = true; frame.transportOnly = true; frame.projectionPending = true
+    frame.cursor = cursor; frame.cursor.sequence = 99
+    frame.observedCursor = frame.cursor
+    await store.applySyncFrame(frame, endpointID: store.endpoint.id)
+    let applied = try Dieter_V1_SyncCursor(serializedBytes: #require(store.syncProjection.cursor))
+    #expect(applied.sequence == 4)
+    #expect(store.globalSyncing)
+    #expect(store.lastSyncFrameAt != nil)
+    #expect(!store.syncTransportIsStale)
+    #expect(store.machineIsAvailable(store.endpoint))
+}
+
+@Test @MainActor func partialSyncBatchCannotResumeAndOldSubscriptionCannotApply() async throws {
+    let store = recoveryStore(probe: RecoveryProbe())
+    defer { store.disconnect() }
+    var frame = Dieter_V1_SyncFrame()
+    frame.projectionPending = true
+    frame.snapshot = Dieter_V1_GlobalSnapshot()
+    frame.cursor.epoch = "fixture"; frame.cursor.sequence = 7
+    store.syncProjection.cursor = try frame.cursor.serializedData()
+    await store.applySyncFrame(frame, endpointID: store.endpoint.id)
+    #expect(store.syncProjection.cursor == nil)
+    #expect(store.globalSyncing)
+    let last = store.lastSyncFrameAt
+    store.syncSubscriptionGeneration = 2
+    frame.projectionPending = false
+    await store.applySyncFrame(frame, endpointID: store.endpoint.id, subscription: 1)
+    #expect(store.syncProjection.cursor == nil)
+    #expect(store.lastSyncFrameAt == last)
+}
+
+@Test @MainActor func screenFeedbackContinuesWhileMainActorAndStatisticsAreBlocked() {
+    let frames = Mutex<[Dieter_V1_RemoteDesktopReceiverFeedback]>([])
+    let pump = RemoteDesktopFeedbackPump { value in frames.withLock { $0.append(value) } }
+    var initial = Dieter_V1_RemoteDesktopReceiverFeedback(); initial.protocolVersion = 2
+    pump.start(channel: nil, initial: initial)
+    pump.input(active: true)
+    // No statistics callback, lease renewal or main actor execution is needed.
+    Thread.sleep(forTimeInterval: 1.7)
+    pump.stop()
+    let sent = frames.withLock { $0 }
+    #expect(sent.count >= 3)
+    #expect(sent.enumerated().allSatisfy { $0.element.sequence == UInt64($0.offset + 1) })
+    #expect(sent.last?.inputActive == false)
+}
+
+@Test @MainActor func multiFrameWorkspacePublishesOnlyAfterTheFinalPage() async throws {
+    let store = recoveryStore(probe: RecoveryProbe())
+    defer { store.disconnect() }
+    var existing = Dieter_V1_GlobalSnapshot(); existing.state.storePath = "visible"
+    store.syncSnapshot = existing
+    var first = Dieter_V1_SyncFrame()
+    first.projectionPending = true; first.snapshot.state.storePath = "replacement"
+    await store.applySyncFrame(first, endpointID: store.endpoint.id)
+    #expect(store.syncSnapshot?.state.storePath == "visible")
+    #expect(store.pendingSyncSnapshot?.state.storePath == "replacement")
+    var last = Dieter_V1_SyncFrame()
+    last.cursor.epoch = "fixture"; last.cursor.sequence = 9
+    await store.applySyncFrame(last, endpointID: store.endpoint.id)
+    #expect(store.syncSnapshot?.state.storePath == "replacement")
+    #expect(store.pendingSyncSnapshot == nil)
+    #expect(!store.globalSyncing)
+}
+
+@Test @MainActor func healthyActivationKeepsTheExistingSyncSubscription() throws {
+    let store = recoveryStore(probe: RecoveryProbe())
+    defer { store.disconnect() }
+    store.rpc = try DieterRPC(endpoint: store.endpoint)
+    store.phase = .connected(version: "fixture")
+    store.syncLastActivity = ContinuousClock.now
+    let task = Task { try? await Task.sleep(for: .seconds(60)) }
+    store.syncTask = Task { await task.value }
+    defer { task.cancel() }
+    let subscription = store.syncSubscriptionGeneration
+
+    store.applicationDidBecomeActive()
+    store.applicationDidBecomeActive()
+
+    #expect(store.syncSubscriptionGeneration == subscription)
+    #expect(store.syncTask?.isCancelled == false)
+    #expect(store.phase.isConnected)
 }

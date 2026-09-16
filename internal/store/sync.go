@@ -10,10 +10,9 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"time"
 )
 
-const SyncProjectionVersion = 4
+const SyncProjectionVersion = 5
 
 const (
 	maxSyncJournalBytes   = 16 << 20
@@ -43,6 +42,7 @@ func (s *Store) syncEpochPath() string     { return filepath.Join(s.syncDir(), "
 func (s *Store) syncEventsPath() string    { return filepath.Join(s.syncDir(), "events.ndjson") }
 func (s *Store) syncPendingPath() string   { return filepath.Join(s.syncDir(), "pending.json") }
 func (s *Store) syncHighwaterPath() string { return filepath.Join(s.syncDir(), "highwater") }
+func (s *Store) syncMetadataPath() string  { return filepath.Join(s.syncDir(), "metadata-highwater") }
 
 func (s *Store) ensureSyncEpoch() (string, error) {
 	if err := os.MkdirAll(s.syncDir(), 0o700); err != nil {
@@ -100,19 +100,7 @@ func (s *Store) appendSyncEvent(event SyncEvent) error {
 	if err != nil {
 		return err
 	}
-	file, err := os.OpenFile(s.syncEventsPath(), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
-	if err != nil {
-		return err
-	}
-	_, writeErr := file.Write(append(line, '\n'))
-	if writeErr == nil {
-		writeErr = file.Sync()
-	}
-	closeErr := file.Close()
-	if writeErr != nil {
-		return writeErr
-	}
-	return closeErr
+	return appendJournalRecord(s.syncEventsPath(), line)
 }
 
 // prepareSyncMutation is called only while the central cross-process writer
@@ -123,49 +111,70 @@ func (s *Store) prepareSyncMutation(kind ...string) (*SyncEvent, error) {
 	if _, err := s.ensureSyncEpoch(); err != nil {
 		return nil, err
 	}
+	if err := s.recoverSyncMutation(); err != nil {
+		return nil, err
+	}
 	highwater, err := s.syncHighwater()
 	if err != nil {
 		return nil, err
-	}
-	if pending, pendingErr := s.readPendingSyncEvent(); pendingErr != nil {
-		return nil, pendingErr
-	} else if pending != nil {
-		if pending.Sequence > highwater {
-			if err := s.appendSyncEvent(*pending); err != nil {
-				return nil, err
-			}
-			highwater = pending.Sequence
-			if err := atomicWriteMode(s.syncHighwaterPath(), []byte(strconv.FormatUint(highwater, 10)+"\n"), 0o600); err != nil {
-				return nil, err
-			}
-		}
-		if err := os.Remove(s.syncPendingPath()); err != nil && !errors.Is(err, os.ErrNotExist) {
-			return nil, err
-		}
 	}
 	eventKind := "store_changed"
 	if len(kind) > 0 && strings.TrimSpace(kind[0]) != "" {
 		eventKind = strings.TrimSpace(kind[0])
 	}
 	event := &SyncEvent{Sequence: highwater + 1, Kind: eventKind, CreatedAt: timestamp()}
-	// Publish the invalidation before changing domain files. This removes the
-	// post-mutation crash window. WatchSync waits for the writer lock to clear
-	// before materializing the corresponding projection.
-	if err := s.appendSyncEvent(*event); err != nil {
+	raw, err := json.Marshal(event)
+	if err != nil {
 		return nil, err
 	}
-	if err := atomicWriteMode(s.syncHighwaterPath(), []byte(strconv.FormatUint(event.Sequence, 10)+"\n"), 0o600); err != nil {
+	if err := atomicWriteMode(s.syncPendingPath(), raw, 0o600); err != nil {
 		return nil, err
-	}
-	if info, statErr := os.Stat(s.syncEventsPath()); statErr == nil && info.Size() > maxSyncJournalBytes {
-		if compactErr := s.compactSyncJournal(retainedSyncEventRows); compactErr != nil {
-			return nil, compactErr
-		}
 	}
 	return event, nil
 }
 
+// Must hold the central writer lock. Pending means a writer may have changed
+// some domain files, never that the projection at that sequence is committed.
+func (s *Store) recoverSyncMutation() error {
+	pending, err := s.readPendingSyncEvent()
+	if err != nil || pending == nil {
+		return err
+	}
+	pending.Kind = "store_changed"
+	return s.commitSyncMutation(pending)
+}
+
 func (s *Store) commitSyncMutation(event *SyncEvent) error {
+	if event == nil {
+		return nil
+	}
+	highwater, err := s.syncHighwater()
+	if err != nil {
+		return err
+	}
+	if event.Sequence > highwater {
+		if err := s.appendSyncEvent(*event); err != nil {
+			return err
+		}
+	}
+	// Metadata has its own invalidation boundary: text chunks cannot continuously
+	// invalidate an otherwise unchanged directory scan.
+	if event.Kind != "conversation_changed" {
+		if err := atomicWriteMode(s.syncMetadataPath(), []byte(strconv.FormatUint(event.Sequence, 10)+"\n"), 0o600); err != nil {
+			return err
+		}
+	}
+	if event.Sequence > highwater {
+		if err := atomicWriteMode(s.syncHighwaterPath(), []byte(strconv.FormatUint(event.Sequence, 10)+"\n"), 0o600); err != nil {
+			return err
+		}
+	}
+	if err := os.Remove(s.syncPendingPath()); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	if info, err := os.Stat(s.syncEventsPath()); err == nil && info.Size() > maxSyncJournalBytes {
+		return s.compactSyncJournal(retainedSyncEventRows)
+	}
 	return nil
 }
 
@@ -214,29 +223,19 @@ func (s *Store) compactSyncJournal(retain int) error {
 	return atomicWriteMode(s.syncEpochPath(), []byte(newID("sync_")+"\n"), 0o600)
 }
 
-// WaitForWriter ensures a streamed invalidation is materialized only after
-// the mutation which published it has released the cross-process lock.
+// WaitForWriter crosses the committed writer boundary and recovers a killed
+// owner without relying on a quiet gap between unrelated mutations.
 func (s *Store) WaitForWriter(ctx context.Context) error {
-	lockPath := filepath.Join(s.Root, ".write-lock")
-	for {
-		_, err := os.Stat(lockPath)
-		if errors.Is(err, os.ErrNotExist) {
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(10 * time.Millisecond):
-		}
+	release, err := s.beginWriteLockContext(ctx)
+	if err != nil {
+		return err
 	}
+	defer release()
+	return s.recoverSyncMutation()
 }
 
-// SyncEvents returns committed events after the cursor. A prepared event left
-// by a killed writer is surfaced as a conservative invalidation so a mutation
-// can never become invisible to native clients.
+// SyncEvents returns only committed events. GlobalStateContext and the next
+// writer recover a durable pending invalidation under the central lock.
 func (s *Store) SyncEvents(after uint64, limit int) (SyncCursor, []SyncEvent, error) {
 	epochRaw, err := os.ReadFile(s.syncEpochPath())
 	if errors.Is(err, os.ErrNotExist) {
@@ -253,25 +252,15 @@ func (s *Store) SyncEvents(after uint64, limit int) (SyncCursor, []SyncEvent, er
 	if err != nil {
 		return SyncCursor{}, nil, err
 	}
-	pending, err := s.readPendingSyncEvent()
-	if err != nil {
-		return SyncCursor{}, nil, err
-	}
 	current := highwater
-	if pending != nil && pending.Sequence > current {
-		current = pending.Sequence
-	}
-	// Watchers spend almost all of their lifetime at the current cursor. Avoid
-	// reopening and decoding the complete durable journal on every poll when no
-	// committed row can possibly follow it. A pending crash-recovery event is
-	// still surfaced below when it is newer than the committed highwater.
 	if after >= highwater {
-		result := make([]SyncEvent, 0, 1)
-		if pending != nil && pending.Sequence > after && pending.Sequence > highwater {
-			result = append(result, *pending)
-		}
-		return SyncCursor{Epoch: epoch, Sequence: current}, result, nil
+		return SyncCursor{Epoch: epoch, Sequence: current}, nil, nil
 	}
+	if result, complete, err := s.cachedSyncEvents(epoch, highwater, after, limit); err != nil || complete {
+		return SyncCursor{Epoch: epoch, Sequence: current}, result, err
+	}
+	// A cursor older than the in-memory tail can still inspect retained disk
+	// history. The ordinary connected path never rescans that prefix.
 	result := make([]SyncEvent, 0)
 	file, err := os.Open(s.syncEventsPath())
 	if err == nil {
@@ -279,7 +268,7 @@ func (s *Store) SyncEvents(after uint64, limit int) (SyncCursor, []SyncEvent, er
 		scanner.Buffer(make([]byte, 64*1024), 1<<20)
 		for scanner.Scan() {
 			var event SyncEvent
-			if json.Unmarshal(scanner.Bytes(), &event) == nil && event.Sequence > after {
+			if json.Unmarshal(scanner.Bytes(), &event) == nil && event.Sequence > after && event.Sequence <= highwater {
 				result = append(result, event)
 				if len(result) == limit {
 					break
@@ -297,8 +286,12 @@ func (s *Store) SyncEvents(after uint64, limit int) (SyncCursor, []SyncEvent, er
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return SyncCursor{}, nil, err
 	}
-	if pending != nil && pending.Sequence > after && pending.Sequence > highwater && len(result) < limit {
-		result = append(result, *pending)
-	}
 	return SyncCursor{Epoch: epoch, Sequence: current}, result, nil
+}
+
+// SyncMutationPending lets a watcher recover a writer that died before commit,
+// even when the last published highwater has not changed.
+func (s *Store) SyncMutationPending() bool {
+	_, err := os.Stat(s.syncPendingPath())
+	return err == nil
 }

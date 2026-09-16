@@ -19,12 +19,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.CalendarMonth
-import androidx.compose.material.icons.outlined.ChatBubbleOutline
-import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.material.icons.outlined.Settings
-import androidx.compose.material.icons.outlined.Terminal
-import androidx.compose.material.icons.outlined.ViewKanban
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -62,16 +57,6 @@ internal val GlassFadeSoft get() = DieterGlassFadeSoft
 internal val GlassFadeStrong get() = DieterGlassFadeStrong
 internal val GlassDockFill get() = DieterGlassDockFill
 
-private data class GlassDestination(val destination: Destination, val label: String, val icon: ImageVector)
-
-private val glassDestinations = listOf(
-    GlassDestination(Destination.CHATS, "Chats", Icons.Outlined.ChatBubbleOutline),
-    GlassDestination(Destination.BOARD, "Boards", Icons.Outlined.ViewKanban),
-    GlassDestination(Destination.TERMINALS, "Terminal", Icons.Outlined.Terminal),
-    GlassDestination(Destination.FILES, "Files", Icons.Outlined.FolderOpen),
-    GlassDestination(Destination.SCHEDULES, "Schedules", Icons.Outlined.CalendarMonth),
-)
-
 @Composable
 fun GlassNavigationDock(
     state: DieterUiState,
@@ -106,7 +91,7 @@ fun GlassNavigationDock(
                 Modifier.fillMaxSize().padding(horizontal = 16.dp),
                 verticalAlignment = Alignment.Bottom,
             ) {
-                glassDestinations.forEachIndexed { index, item ->
+                navigationItems.forEachIndexed { index, item ->
                     GlassDockItem(
                         item = item,
                         selected = state.destination == item.destination,
@@ -153,7 +138,7 @@ private fun GlassUtilityButton(
 
 @Composable
 private fun GlassDockItem(
-    item: GlassDestination,
+    item: NavItem,
     selected: Boolean,
     badge: Int,
     enabled: Boolean,
