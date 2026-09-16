@@ -783,6 +783,12 @@ library is used. Capture, input injection and display enumeration live in the
 platform backend; the bounded media/session protocol can accommodate a Linux
 backend later. Linux capture is currently reported as unsupported.
 
+Each Mac viewer session is a machine-scoped Screens tab. It remains connected when
+the user navigates to another Dieter workspace, and the Screens sidebar count shows
+currently live tabs. General settings provides an inactivity timeout, enabled at 30
+minutes by default and switchable off; mouse, keyboard, tab-selection, and screen
+option activity reset it. A timed-out connection can be reconnected from its tab.
+
 The viewer follows its window’s pixel size, up to 3840×2160 at 60 fps and 12 Mbps. The host adapts bitrate,
 frame rate and resolution using transport-wide congestion feedback, encoder cost,
 and fresh receiver decode/loss measurements. It smooths estimates, lowers cadence

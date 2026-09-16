@@ -174,6 +174,7 @@ final class RemoteDesktopController {
     private var previousStatisticsTime = Date()
     var controlActive = false
     var controlUnavailableReason = ""
+    @ObservationIgnored var onUserActivity: @MainActor () -> Void = {}
 
     let renderer = RemoteDesktopMetalView(frame: .zero)
     @ObservationIgnored private let frameObserver = RemoteDesktopFrameObserver()
@@ -268,6 +269,7 @@ final class RemoteDesktopController {
 
     func enableAndConnect() {
         guard let connection, connectTask == nil else { return }
+        onUserActivity()
         phase = .loading
         let token = generation
         connectTask = Task { [weak self] in
@@ -654,6 +656,7 @@ final class RemoteDesktopController {
     private func setReconnecting() { if phase != .idle { phase = .reconnecting } }
 
     func sendPointerMove(x: CGFloat, y: CGFloat) {
+        onUserActivity()
         guard controlActive else { return }
         pendingPointer = (normalized(x), normalized(y))
         guard pointerFlushTask == nil else { return }
@@ -674,6 +677,7 @@ final class RemoteDesktopController {
         _ button: Dieter_V1_RemoteDesktopPointerButton.Button, down: Bool,
         clickCount: Int, x: CGFloat, y: CGFloat, modifiers: NSEvent.ModifierFlags
     ) {
+        onUserActivity()
         var value = Dieter_V1_RemoteDesktopPointerButton()
         value.button = button
         value.down = down
@@ -688,6 +692,7 @@ final class RemoteDesktopController {
         deltaX: CGFloat, deltaY: CGFloat, precise: Bool, modifiers: NSEvent.ModifierFlags, phase: NSEvent.Phase = [],
         momentumPhase: NSEvent.Phase = []
     ) {
+        onUserActivity()
         var value = Dieter_V1_RemoteDesktopScroll()
         value.deltaX = Int32(clamping: Int(deltaX.rounded()))
         value.deltaY = Int32(clamping: Int(deltaY.rounded()))
@@ -700,6 +705,7 @@ final class RemoteDesktopController {
     }
 
     func sendKey(code: UInt16, down: Bool, repeat isRepeat: Bool, modifiers: NSEvent.ModifierFlags) {
+        onUserActivity()
         var value = Dieter_V1_RemoteDesktopKey()
         value.keyCode = UInt32(code)
         value.physicalKey = RemoteDesktopKeyMap.macToHID[code] ?? 0
@@ -711,6 +717,7 @@ final class RemoteDesktopController {
 
     func sendText(_ text: String) {
         guard !text.isEmpty else { return }
+        onUserActivity()
         guard text.utf8.count <= 8192 else { fail(message: "Text input is limited to 8 KB per insertion."); return }
         var chunk = ""
         @MainActor func sendChunk() {
@@ -864,6 +871,7 @@ final class RemoteDesktopController {
 
     func configure(displayID: String? = nil, quality: Dieter_V1_RemoteDesktopQuality? = nil, refresh: Bool = false) {
         guard let connection, !sessionID.isEmpty else { return }
+        onUserActivity()
         releaseAllInput()
         if let displayID { desiredConfiguration.displayID = displayID; configurationPending = true }
         if let quality { desiredConfiguration.quality = quality; self.quality = quality; configurationPending = true }

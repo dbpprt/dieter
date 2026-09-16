@@ -620,11 +620,35 @@
                 NSApp.terminate(nil)
                 return
             }
+            let retainedScreen = ScreenShareSession(
+                id: "screen-smoke", machineID: store.endpoint.id,
+                machineName: store.endpoint.name, monitorsInactivity: false)
+            retainedScreen.controller.phase = .streaming
+            store.screensModel.sessions = [retainedScreen]
+            store.screensModel.selectedSessionID = retainedScreen.id
             store.openScreens()
             try? await DieterTaskSleep.milliseconds(500)
-            results["01a-experimental-screens"] =
-                store.section == .screens ? "passed" : "failed: screens did not open"
-            await captureAppearances(window, named: "01a-experimental-screens.png", in: output)
+            let screenTabsVisible =
+                NativeUIAccessibility.find("screen.select.\(retainedScreen.id)", in: window) != nil
+                && NativeUIAccessibility.find("screens.new", in: window) != nil
+            results["01a-screen-tabs"] =
+                store.section == .screens && screenTabsVisible && store.screensModel.connectedCount == 1
+                ? "passed" : "failed: machine-scoped screen tab did not open"
+            await captureAppearances(window, named: "01a-screen-tabs.png", in: output)
+            await store.openBoard(board.id, projectID: project.id)
+            try? await DieterTaskSleep.milliseconds(500)
+            results["01b-screen-navigation-retention"] =
+                retainedScreen.controller.phase == .streaming && store.screensModel.connectedCount == 1
+                ? "passed" : "failed: navigation disconnected the retained screen tab"
+
+            store.openSettings()
+            try? await DieterTaskSleep.milliseconds(700)
+            let earlyScreenTimeoutVisible =
+                NativeUIAccessibility.find("settings.screenShare.inactivityTimeoutEnabled", in: window) != nil
+                && NativeUIAccessibility.find("settings.screenShare.inactivityTimeoutMinutes", in: window) != nil
+            results["01b-screen-timeout-settings"] =
+                earlyScreenTimeoutVisible ? "passed" : "failed: screen-share inactivity controls were missing"
+            capture(window, to: output.appending(path: "01b-screen-timeout-settings.png"))
             await store.openBoard(board.id, projectID: project.id)
             try? await DieterTaskSleep.milliseconds(500)
 
@@ -798,6 +822,11 @@
             try? await DieterTaskSleep.milliseconds(700)
             results["09-settings-general"] =
                 store.section == .settings ? "passed" : "failed: settings did not open"
+            let screenTimeoutVisible =
+                NativeUIAccessibility.find("settings.screenShare.inactivityTimeoutEnabled", in: window) != nil
+                && NativeUIAccessibility.find("settings.screenShare.inactivityTimeoutMinutes", in: window) != nil
+            results["09a-settings-screen-timeout"] =
+                screenTimeoutVisible ? "passed" : "failed: screen-share inactivity controls were missing"
             await captureAppearances(window, named: "09-settings-general.png", in: output)
 
             let lightPressed = await NativeUIAccessibility.pressWhenSettled("settings.appearance.light", in: window)

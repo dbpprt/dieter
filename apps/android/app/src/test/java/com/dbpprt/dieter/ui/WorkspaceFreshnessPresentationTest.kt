@@ -23,15 +23,17 @@ class WorkspaceFreshnessPresentationTest {
     }
 
     @Test
-    fun liveRefreshAndOfflineOutboxSurfacesStayInteractiveWhileReadOnlySurfacesMute() {
-        val refreshing = workspaceSurfaceTreatment(
-            showsSynchronizedWorkspace = true,
-            hasCachedWorkspace = true,
-            phase = ConnectionPhase.SYNCING,
-        )
-        assertEquals(WorkspaceSurfaceTreatment.REFRESHING, refreshing)
-        assertTrue(refreshing.showsNotice)
-        assertFalse(refreshing.blocksInteraction)
+    fun routineSyncDoesNotCoverCachedWorkspaceWhileUnavailableReadOnlySurfacesMute() {
+        listOf(ConnectionPhase.CONNECTING, ConnectionPhase.SYNCING).forEach { phase ->
+            val refreshing = workspaceSurfaceTreatment(
+                showsSynchronizedWorkspace = true,
+                hasCachedWorkspace = true,
+                phase = phase,
+            )
+            assertEquals(WorkspaceSurfaceTreatment.CURRENT, refreshing)
+            assertFalse(refreshing.showsNotice)
+            assertFalse(refreshing.blocksInteraction)
+        }
 
         val unavailable = workspaceSurfaceTreatment(
             showsSynchronizedWorkspace = true,

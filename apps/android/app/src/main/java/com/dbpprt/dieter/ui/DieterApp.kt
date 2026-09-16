@@ -133,7 +133,6 @@ private fun Destination.supportsOfflineOutbox(): Boolean =
 
 internal enum class WorkspaceSurfaceTreatment {
     CURRENT,
-    REFRESHING,
     UNAVAILABLE;
 
     val showsNotice: Boolean get() = this != CURRENT
@@ -147,8 +146,14 @@ internal fun workspaceSurfaceTreatment(
 ): WorkspaceSurfaceTreatment {
     if (!showsSynchronizedWorkspace || !hasCachedWorkspace) return WorkspaceSurfaceTreatment.CURRENT
     return when (phase) {
-        ConnectionPhase.CONNECTED -> WorkspaceSurfaceTreatment.CURRENT
-        ConnectionPhase.CONNECTING, ConnectionPhase.SYNCING -> WorkspaceSurfaceTreatment.REFRESHING
+        // A route handoff can remain in CONNECTING/SYNCING until the next
+        // workspace heartbeat. Cached surfaces and conversation-level refresh
+        // state are already usable, so do not turn that routine handoff into a
+        // persistent global banner.
+        ConnectionPhase.CONNECTED,
+        ConnectionPhase.CONNECTING,
+        ConnectionPhase.SYNCING,
+        -> WorkspaceSurfaceTreatment.CURRENT
         ConnectionPhase.RECONNECTING,
         ConnectionPhase.AUTH_REQUIRED,
         ConnectionPhase.INCOMPATIBLE,

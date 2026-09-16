@@ -90,6 +90,7 @@ final class AppSession {
     var projectWorkspaces: [Dieter_V1_Workspace] = []
     let schedulesModel = SchedulesModel()
     let terminalsModel: TerminalsModel
+    let screensModel: ScreensModel
     var terminalOverviewEntries: [TerminalOverviewEntry] = []
     var selectedTerminalOverviewID: String?
     var terminalOverviewLoading = false
@@ -282,6 +283,7 @@ final class AppSession {
         self.environment = environment
         composer = ComposerModel(defaults: environment.defaults)
         terminalsModel = TerminalsModel(selectionDefaults: environment.defaults)
+        screensModel = ScreensModel(defaults: environment.defaults)
         sidebarProjectNavigation = SidebarProjectNavigationPreferences.load(from: environment.defaults)
         connections = ConnectionManager(factory: environment.clients, clock: environment.clock)
         authentication = DieterAuthentication(

@@ -15,9 +15,9 @@ through either verified direct TLS or the bounded relay.
   the conversation.
 - Daemon-owned terminal tabs with a real VT renderer, reconnectable scrollback,
   working-directory and shell selection, resize forwarding, and explicit close
-- A machine-oriented Screens workspace with explicit host enablement, signed
-  WebRTC admission, Metal-rendered H.264 video with signed control grants, and reconnectable
-  signaling over direct TLS or the gateway
+- A machine-oriented Screens workspace with persistent tabs, explicit host
+  enablement, signed WebRTC admission, Metal-rendered H.264 video with signed
+  control grants, and reconnectable signaling over direct TLS or the gateway
 - Message parts, reasoning, lazy full tool output, plans, subagents, and comments
 - Project file browsing/editing and file mutations
 - Schedule editing, previewing, enabling, manual runs, and occurrence history
@@ -120,8 +120,12 @@ long-lived stream. Project shells stay inside their registered tree and
 machine-home shells stay inside the user's home after symlink resolution.
 
 Screens are intentionally independent of the project RPC connection. The app
-selects a machine, prefers its verified direct route, falls back to the gateway
-for signaling, and then establishes peer-to-peer WebRTC media. It verifies the
+opens each machine share in its own tab, prefers its verified direct route, falls
+back to the gateway for signaling, and then establishes peer-to-peer WebRTC media.
+Tabs and their connections survive navigation to another Dieter workspace; closing
+a tab or choosing Disconnect tears down that client-owned session. General settings
+has a persisted, switchable inactivity timeout (30 minutes by default) that closes
+unattended media without removing its tab. The app verifies the
 daemon's Ed25519 signature over the client offer, DTLS fingerprint, nonce,
 session ID, and lease before accepting the answer. The client selects H.264
 video and supports keyboard, pointer, and scroll input through a signed control
