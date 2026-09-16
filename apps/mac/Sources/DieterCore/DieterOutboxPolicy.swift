@@ -78,8 +78,10 @@ package enum DieterRPCFailure {
     /// restored from the durable outbox. Other resource limits are not disk pressure.
     package static func isInsufficientStorage(_ message: String?) -> Bool {
         guard let message = message?.lowercased() else { return false }
-        return ["insufficient free disk space", "no space left on device", "disk quota exceeded", "disc quota exceeded"]
-            .contains { message.contains($0) }
+        return [
+            "insufficient free disk space", "no space left on device", "disk quota exceeded", "disc quota exceeded",
+        ]
+        .contains { message.contains($0) }
     }
 
     package static func message(for error: Error) -> String {
