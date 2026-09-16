@@ -107,13 +107,13 @@ import com.dbpprt.dieter.ui.theme.DieterCoral
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.font.FontFamily
 
-private data class NavItem(
+internal data class NavItem(
     val destination: Destination,
     val label: String,
     val icon: ImageVector,
 )
 
-private val navigationItems = listOf(
+internal val navigationItems = listOf(
     NavItem(Destination.CHATS, "Chats", Icons.Outlined.ChatBubbleOutline),
     NavItem(Destination.BOARD, "Boards", Icons.Outlined.ViewKanban),
     NavItem(Destination.SCREENS, "Screens", Icons.Outlined.DesktopWindows),
