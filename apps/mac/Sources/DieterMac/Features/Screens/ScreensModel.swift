@@ -11,7 +11,7 @@ struct ScreenShareInactivityPreferences: Equatable {
     var minutes: Int
 
     static func load(from defaults: UserDefaults) -> Self {
-        let enabled = defaults.object(forKey: enabledKey) as? Bool ?? true
+        let enabled = defaults.object(forKey: enabledKey) as? Bool ?? false
         let storedMinutes = defaults.object(forKey: minutesKey) as? Int ?? defaultMinutes
         return .init(enabled: enabled, minutes: clamped(storedMinutes))
     }
@@ -48,6 +48,7 @@ final class ScreenShareSession: Identifiable {
         self.controller = controller
         self.monitorsInactivity = monitorsInactivity
         controller.onUserActivity = { [weak self] in self?.recordActivity() }
+        controller.onSystemSleep = { [weak self] in self?.cancelInactivityMonitor() }
     }
 
     var isConnected: Bool { controller.phase == .streaming }
@@ -90,7 +91,7 @@ final class ScreenShareSession: Identifiable {
 
     @discardableResult
     func disconnectIfInactive(at now: Date = Date()) -> Bool {
-        guard let timeoutMinutes, keepsConnectionOpen,
+        guard let timeoutMinutes, keepsConnectionOpen, !controller.systemSleeping,
             now.timeIntervalSince(lastActivityAt) >= TimeInterval(timeoutMinutes * 60)
         else { return false }
         let unit = timeoutMinutes == 1 ? "minute" : "minutes"

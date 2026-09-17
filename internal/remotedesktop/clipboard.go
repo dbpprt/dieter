@@ -6,22 +6,26 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 	"unicode/utf8"
 
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
 	"github.com/pion/webrtc/v4"
+	"golang.org/x/text/unicode/norm"
 	"google.golang.org/protobuf/proto"
 )
 
 const ClipboardMaxBytes = 1 << 20
 const clipboardChunkBytes = 16 << 10
-const clipboardWireBytes = ClipboardMaxBytes + 4096
+const ClipboardBinaryMaxBytes = 8 << 20
+const clipboardWireBytes = ClipboardBinaryMaxBytes + (64 << 10)
 const clipboardChannelLabel = "dieter-clipboard-v1"
 
 // ClipboardBackend is deliberately independent of capture and host platform.
-// Implementations must honor cancellation and never log or persist content.
+// Implementations must honor cancellation and never log content. Native file
+// URLs use private, bounded temporary staging under DIETER_HOME.
 type ClipboardBackend interface {
 	Exchange(context.Context, *dieterv1.RemoteDesktopClipboardRequest) (*dieterv1.RemoteDesktopClipboardResponse, error)
 	Close()
@@ -66,6 +70,12 @@ func (s *Session) exchangeClipboard(ctx context.Context, r *dieterv1.RemoteDeskt
 	}
 	if len(r.OperationId) == 0 || len(r.OperationId) > 80 || len(r.Text) > ClipboardMaxBytes || !utf8.ValidString(r.Text) || len(r.KnownRevision) > 128 || r.Action < 0 || r.Action > dieterv1.RemoteDesktopClipboardRequest_CUT {
 		return nil, errors.New("invalid clipboard request (text limit: 1 MiB)")
+	}
+	if err := validateClipboardItems(r.Items, r.Text); err != nil {
+		return nil, err
+	}
+	if len(r.Items) > 0 && r.Action != dieterv1.RemoteDesktopClipboardRequest_WRITE && r.Action != dieterv1.RemoteDesktopClipboardRequest_PASTE {
+		return nil, errors.New("binary content requires write or paste")
 	}
 	if !s.clipboard.mu.TryLock() {
 		return nil, errors.New("clipboard is busy")
@@ -125,7 +135,7 @@ func (s *Session) exchangeClipboard(ctx context.Context, r *dieterv1.RemoteDeskt
 			s.clipboard.backend = newNativeClipboard(s.ctx, s.manager.options.Source, s.manager.clipboardName)
 		}
 	}
-	operationCtx, cancel := context.WithTimeout(ctx, 750*time.Millisecond)
+	operationCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	value, err := s.clipboard.backend.Exchange(operationCtx, r)
 	if err != nil {
@@ -138,6 +148,12 @@ func (s *Session) exchangeClipboard(ctx context.Context, r *dieterv1.RemoteDeskt
 	}
 	if len(value.Text) > ClipboardMaxBytes {
 		value = &dieterv1.RemoteDesktopClipboardResponse{Error: "clipboard text exceeds 1 MiB"}
+	}
+	if err := validateClipboardItems(value.Items, value.Text); err != nil {
+		value = &dieterv1.RemoteDesktopClipboardResponse{Error: err.Error()}
+	}
+	if !r.AcceptBinary {
+		value.Items = nil
 	}
 	value.OperationId = r.OperationId
 	value.Enabled = true
@@ -164,6 +180,7 @@ func (s *Session) exchangeClipboard(ctx context.Context, r *dieterv1.RemoteDeskt
 		// A repeated copy/cut can read current content separately; it must not
 		// invoke the shortcut again against a different selection.
 		cached.Text = ""
+		cached.Items = nil
 		cached.Changed = false
 		cached.HasText = false
 		s.clipboard.results[r.OperationId] = clipboardResult{digest, cached}
@@ -202,7 +219,7 @@ func (s *Session) installClipboardChannel(channel *webrtc.DataChannel) {
 		defer stop()
 		var buffer []byte
 		var id string
-		timer := time.NewTimer(5 * time.Second)
+		timer := time.NewTimer(30 * time.Second)
 		defer timer.Stop()
 		for {
 			select {
@@ -215,7 +232,7 @@ func (s *Session) installClipboardChannel(channel *webrtc.DataChannel) {
 					_ = channel.Close()
 					return
 				}
-				timer.Reset(5 * time.Second)
+				timer.Reset(30 * time.Second)
 			case raw := <-queue:
 				var frame dieterv1.RemoteDesktopClipboardFrame
 				if proto.Unmarshal(raw, &frame) != nil || len(frame.OperationId) == 0 || len(frame.OperationId) > 80 || len(frame.Data) > clipboardChunkBytes || (id != "" && id != frame.OperationId) || len(buffer)+len(frame.Data) > clipboardWireBytes {
@@ -229,7 +246,7 @@ func (s *Session) installClipboardChannel(channel *webrtc.DataChannel) {
 						default:
 						}
 					}
-					timer.Reset(5 * time.Second)
+					timer.Reset(30 * time.Second)
 				}
 				id = frame.OperationId
 				buffer = append(buffer, frame.Data...)
@@ -264,7 +281,7 @@ func sendClipboardResponse(ctx context.Context, channel *webrtc.DataChannel, res
 	if err != nil {
 		return err
 	}
-	deadline := time.NewTimer(5 * time.Second)
+	deadline := time.NewTimer(30 * time.Second)
 	defer deadline.Stop()
 	for len(raw) > 0 {
 		for channel.BufferedAmount() > 32<<10 {
@@ -290,6 +307,7 @@ func sendClipboardResponse(ctx context.Context, channel *webrtc.DataChannel, res
 type MemoryClipboard struct {
 	mu       sync.Mutex
 	text     string
+	items    []*dieterv1.RemoteDesktopClipboardItem
 	revision uint64
 	Pastes   int
 }
@@ -301,15 +319,41 @@ func (m *MemoryClipboard) Exchange(_ context.Context, r *dieterv1.RemoteDesktopC
 	switch r.Action {
 	case dieterv1.RemoteDesktopClipboardRequest_WRITE, dieterv1.RemoteDesktopClipboardRequest_PASTE:
 		m.text = r.Text
+		m.items = proto.Clone(r).(*dieterv1.RemoteDesktopClipboardRequest).Items
 		m.revision++
 		if r.Action == dieterv1.RemoteDesktopClipboardRequest_PASTE {
 			m.Pastes++
 		}
 	}
 	rev := fmt.Sprint(m.revision)
-	v := &dieterv1.RemoteDesktopClipboardResponse{Revision: rev, HasText: m.revision > 0, Changed: r.KnownRevision != rev}
+	v := &dieterv1.RemoteDesktopClipboardResponse{Revision: rev, HasText: m.revision > 0 && len(m.items) == 0, Changed: r.KnownRevision != rev}
 	if (r.Action == dieterv1.RemoteDesktopClipboardRequest_READ && v.Changed) || r.Action == dieterv1.RemoteDesktopClipboardRequest_COPY || r.Action == dieterv1.RemoteDesktopClipboardRequest_CUT {
 		v.Text = m.text
+		if r.AcceptBinary {
+			v.Items = m.items
+		}
 	}
 	return v, nil
+}
+
+func validateClipboardItems(items []*dieterv1.RemoteDesktopClipboardItem, text string) error {
+	if len(items) > 64 || (len(items) > 0 && text != "") {
+		return errors.New("clipboard requires text or at most 64 binary items")
+	}
+	total := 0
+	names := make(map[string]bool)
+	for _, item := range items {
+		if item == nil || item.Name == "" || len(item.Name) > 255 || !utf8.ValidString(item.Name) || item.Name == "." || item.Name == ".." || strings.ContainsAny(item.Name, "/\\\x00") || names[norm.NFC.String(strings.ToLower(item.Name))] || len(item.MimeType) > 128 {
+			return errors.New("invalid clipboard filename")
+		}
+		names[norm.NFC.String(strings.ToLower(item.Name))] = true
+		if item.Kind != dieterv1.RemoteDesktopClipboardItem_FILE && (item.Kind != dieterv1.RemoteDesktopClipboardItem_IMAGE || len(items) != 1 || (item.MimeType != "image/png" && item.MimeType != "image/jpeg" && item.MimeType != "image/tiff" && item.MimeType != "image/webp")) {
+			return errors.New("unsupported clipboard image")
+		}
+		total += len(item.Data)
+		if total > ClipboardBinaryMaxBytes {
+			return errors.New("clipboard binary content exceeds 8 MiB")
+		}
+	}
+	return nil
 }

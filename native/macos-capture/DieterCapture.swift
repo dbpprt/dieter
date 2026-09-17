@@ -18,10 +18,12 @@ struct CaptureOptions {
 
     var eventFD: Int32 = -1
     var profile = "high"
+    var codec = "H264"
     var embeddedCursor = false
     var allowInput = false
     var synthetic = false
     var frameCredits = false
+    var referenceRecovery = false
     var multiplex = false
     var streamID: UInt64 = 0
 
@@ -39,11 +41,15 @@ struct CaptureOptions {
             case "--max-width": value.maxWidth = try integer(raw, name: name, range: 320...16_384)
             case "--max-height": value.maxHeight = try integer(raw, name: name, range: 180...16_384)
             case "--event-fd": value.eventFD = Int32(try integer(raw, name: name, range: 3...3))
+            case "--codec":
+                guard ["H264", "H265"].contains(raw) else { throw CaptureError.invalidArgument("codec") }
+                value.codec = raw
             case "--profile": value.profile = raw == "baseline" ? "baseline" : "high"
             case "--embedded-cursor": value.embeddedCursor = raw == "true"
             case "--allow-input": value.allowInput = raw == "true"
             case "--synthetic": value.synthetic = raw == "true"
             case "--frame-credits": value.frameCredits = raw == "true"
+            case "--reference-recovery": value.referenceRecovery = raw == "true"
             case "--multiplex": value.multiplex = raw == "true"
             default: throw CaptureError.invalidArgument(name)
             }
@@ -64,6 +70,7 @@ enum CaptureError: LocalizedError {
     case stopped
     case noDisplay
     case encoder(OSStatus)
+    case hevcUnavailable(String)
     case invalidFrame
 
     var errorDescription: String? {
@@ -71,6 +78,7 @@ enum CaptureError: LocalizedError {
         case .invalidArgument(let name): "Invalid or missing value for \(name)"
         case .stopped: "native capture rendition stopped"
         case .noDisplay: "The selected display is not available"
+        case .hevcUnavailable(let reason): "HEVC encoder unavailable: \(reason)"
         case .encoder(let status): "VideoToolbox failed with status \(status)"
         case .invalidFrame: "ScreenCaptureKit produced an invalid frame"
         }
@@ -82,11 +90,13 @@ private final class FrameContext {
     let capturedAtNanoseconds: Int64
     let encodeStartedAt: UInt64
     let generation: UInt64
+    let recoveryReference: UInt64
     init(
-        runner: CaptureRunner, capturedAtNanoseconds: Int64, encodeStartedAt: UInt64, generation: UInt64
+        runner: CaptureRunner, capturedAtNanoseconds: Int64, encodeStartedAt: UInt64, generation: UInt64, recoveryReference: UInt64
     ) {
         self.runner = runner
         self.generation = generation
+        self.recoveryReference = recoveryReference
         self.capturedAtNanoseconds = capturedAtNanoseconds
         self.encodeStartedAt = encodeStartedAt
     }
@@ -123,6 +133,12 @@ final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
     private var outputBusy = false
     private var pendingFrame: CapturedFrame?
     private var forceKeyFrame = true
+    private var ltrEnabled = false
+    private var ltrTokens: [UInt64: NSNumber] = [:]
+    private var ltrAnchor: (frame: UInt64, token: NSNumber)?
+    private var forceLTR = false
+    private var ltrRecoveryPending = false
+    private var lastRecoveryFrame: UInt64 = 0
     private var stopped = false
     private var inputInjector: InputInjector?
     private let inputQueue = DispatchQueue(label: "com.dbpprt.dieter.capture.input", qos: .userInteractive)
@@ -234,6 +250,11 @@ final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
     private func startStream() async throws {
         let config = stateQueue.sync { configuration }
         try config.validate()
+        if options.codec == "H265"
+            && (config.maxWidth > 1920 || config.maxHeight > 1080 || config.fps > 60 || config.bitrateKbps > 40000)
+        {
+            throw CaptureError.invalidArgument("HEVC supports at most 1080p60/40000 kbps")
+        }
         if options.synthetic {
             let size = scaledSize(width: 1920, height: 1080)
             try stateQueue.sync {
@@ -339,6 +360,11 @@ final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
 
     private func applyConfiguration(_ config: StreamConfiguration, force: Bool) async throws {
         try config.validate()
+        if options.codec == "H265"
+            && (config.maxWidth > 1920 || config.maxHeight > 1080 || config.fps > 60 || config.bitrateKbps > 40000)
+        {
+            throw CaptureError.invalidArgument("HEVC supports at most 1080p60/40000 kbps")
+        }
         let old = stateQueue.sync { configuration }
         if !force && old == config { return }
         let reset =
@@ -375,15 +401,21 @@ final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
                     width: values.1, height: values.2, fps: config.fps, cursor: config.embeddedCursor)
             }
             try stateQueue.sync {
-                configuration = config
-                syntheticTimer?.schedule(deadline: .now(), repeating: .nanoseconds(1_000_000_000 / config.fps))
                 if let encoder {
-                    try set(encoder, kVTCompressionPropertyKey_AverageBitRate, (config.bitrateKbps * 1000) as CFNumber)
-                    try set(encoder, kVTCompressionPropertyKey_ExpectedFrameRate, config.fps as CFNumber)
-                    _ = VTSessionSetProperty(
-                        encoder, key: kVTCompressionPropertyKey_DataRateLimits,
-                        value: [config.bitrateKbps * 125, 1] as CFArray)
+                    if old.bitrateKbps != config.bitrateKbps {
+                        try set(encoder, kVTCompressionPropertyKey_AverageBitRate, (config.bitrateKbps * 1000) as CFNumber)
+                        _ = VTSessionSetProperty(
+                            encoder, key: kVTCompressionPropertyKey_DataRateLimits,
+                            value: [config.bitrateKbps * 125, 1] as CFArray)
+                    }
+                    if old.fps != config.fps {
+                        try set(encoder, kVTCompressionPropertyKey_ExpectedFrameRate, config.fps as CFNumber)
+                    }
                 }
+                if old.fps != config.fps {
+                    syntheticTimer?.schedule(deadline: .now(), repeating: .nanoseconds(1_000_000_000 / config.fps))
+                }
+                configuration = config
                 // VideoToolbox applies rate changes to subsequent frames. A
                 // bitrate recovery must not inject another large IDR burst.
             }
@@ -397,8 +429,10 @@ final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
                 width: outputWidth, height: outputHeight, fps: configuration.fps,
                 bitrateKbps: configuration.bitrateKbps,
                 displayId: options.synthetic ? "synthetic" : String(selectedDisplayID), displayGeneration: generation,
-                encoder: options.profile == "high"
-                    ? "VideoToolbox H.264 High / low latency" : "VideoToolbox H.264 Baseline / low latency",
+                encoder: options.codec == "H265"
+                    ? "VideoToolbox HEVC Main"
+                    : options.profile == "high"
+                        ? "VideoToolbox H.264 High / low latency" : "VideoToolbox H.264 Baseline / low latency",
                 embeddedCursor: options.multiplex && !options.synthetic
                     ? actualEmbeddedCursor : configuration.embeddedCursor)
         }
@@ -553,11 +587,32 @@ final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
     }
 
     private func createEncoder(width: Int, height: Int) throws {
+        do { try initializeEncoder(width: width, height: height) } catch {
+            // LTR is optional. Older HEVC hardware keeps the existing encoder
+            // mode if it cannot create Apple's low-latency encoder variant.
+            if options.codec == "H265" && options.referenceRecovery {
+                if let encoder { VTCompressionSessionInvalidate(encoder) }; encoder = nil
+                do { try initializeEncoder(width: width, height: height, lowLatencyHEVC: false); return }
+                catch { throw CaptureError.hevcUnavailable(error.localizedDescription) }
+            }
+            if options.codec == "H265" { throw CaptureError.hevcUnavailable(error.localizedDescription) }; throw error
+        }
+    }
+
+    private func initializeEncoder(width: Int, height: Int, lowLatencyHEVC: Bool = true) throws {
+        if options.codec == "H265"
+            && (width > 1920 || height > 1080 || configuration.fps > 60 || configuration.bitrateKbps > 40000)
+        {
+            throw CaptureError.invalidArgument("HEVC supports at most 1080p60/40000 kbps")
+        }
         var session: VTCompressionSession?
-        let spec: [String: Any] = [
+        var spec: [String: Any] = [
             kVTVideoEncoderSpecification_RequireHardwareAcceleratedVideoEncoder as String: true,
             kVTVideoEncoderSpecification_EnableLowLatencyRateControl as String: true,
         ]
+        if options.codec == "H265" && (!options.referenceRecovery || !lowLatencyHEVC) {
+            spec.removeValue(forKey: kVTVideoEncoderSpecification_EnableLowLatencyRateControl as String)
+        }
         let specification = spec as CFDictionary
         let attributes =
             [
@@ -568,7 +623,7 @@ final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
             allocator: kCFAllocatorDefault,
             width: Int32(width),
             height: Int32(height),
-            codecType: kCMVideoCodecType_H264,
+            codecType: options.codec == "H265" ? kCMVideoCodecType_HEVC : kCMVideoCodecType_H264,
             encoderSpecification: specification,
             imageBufferAttributes: attributes,
             compressedDataAllocator: nil,
@@ -587,6 +642,9 @@ final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
         )
         guard status == noErr, let session else { throw CaptureError.encoder(status) }
         encoder = session
+        ltrTokens.removeAll(); ltrAnchor = nil; forceLTR = false; ltrRecoveryPending = false; lastRecoveryFrame = 0
+        ltrEnabled = options.referenceRecovery && VTSessionSetProperty(session, key: kVTCompressionPropertyKey_EnableLTR, value: kCFBooleanTrue) == noErr
+        if options.referenceRecovery { writeDiagnostic("reference recovery codec=\(options.codec) enabled=\(ltrEnabled)") }
         if let transfer { VTPixelTransferSessionInvalidate(transfer) }
         transfer = nil
         pixelPool = nil
@@ -606,8 +664,12 @@ final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
         try set(session, kVTCompressionPropertyKey_AllowFrameReordering, kCFBooleanFalse)
         try set(
             session, kVTCompressionPropertyKey_ProfileLevel,
-            options.profile == "high"
-                ? kVTProfileLevel_H264_High_AutoLevel : kVTProfileLevel_H264_ConstrainedBaseline_AutoLevel)
+            options.codec == "H265"
+                ? kVTProfileLevel_HEVC_Main_AutoLevel
+                : (options.profile == "high"
+                    ? kVTProfileLevel_H264_High_AutoLevel : kVTProfileLevel_H264_ConstrainedBaseline_AutoLevel))
+        // HEVC hardware does not expose MaxFrameDelayCount. Frame reordering is
+        // disabled, and the existing single frame credit bounds encoder work.
         try set(session, kVTCompressionPropertyKey_ExpectedFrameRate, configuration.fps as CFNumber)
         try set(
             session, kVTCompressionPropertyKey_AverageBitRate, (configuration.bitrateKbps * 1_000) as CFNumber)
@@ -623,7 +685,11 @@ final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
 
     private func set(_ session: VTCompressionSession, _ key: CFString, _ value: CFTypeRef) throws {
         let status = VTSessionSetProperty(session, key: key, value: value)
-        guard status == noErr else { throw CaptureError.encoder(status) }
+        guard status == noErr else {
+            throw NSError(
+                domain: "DieterCapture", code: Int(status),
+                userInfo: [NSLocalizedDescriptionKey: "VideoToolbox property \(key) failed with status \(status)"])
+        }
     }
 
     private func encode(_ frame: CapturedFrame) {
@@ -651,19 +717,20 @@ final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
         encoding = true
         let context = FrameContext(
             runner: self, capturedAtNanoseconds: frame.capturedAtNanoseconds,
-            encodeStartedAt: DispatchTime.now().uptimeNanoseconds, generation: generation
+            encodeStartedAt: DispatchTime.now().uptimeNanoseconds, generation: generation,
+            recoveryReference: forceLTR && !forceKeyFrame ? (ltrAnchor?.frame ?? 0) : 0
         )
-        var properties: CFDictionary?
-        if forceKeyFrame {
-            properties = [kVTEncodeFrameOptionKey_ForceKeyFrame as String: true] as CFDictionary
-            forceKeyFrame = false
-        }
+        var properties: [String: Any] = [:]
+        if ltrEnabled, let anchor = ltrAnchor { properties[kVTEncodeFrameOptionKey_AcknowledgedLTRTokens as String] = [anchor.token] }
+        if forceKeyFrame { properties[kVTEncodeFrameOptionKey_ForceKeyFrame as String] = true; forceKeyFrame = false }
+        else if forceLTR { properties[kVTEncodeFrameOptionKey_ForceLTRRefresh as String] = true }
+        forceLTR = false
         let status = VTCompressionSessionEncodeFrame(
             encoder,
             imageBuffer: outputBuffer,
             presentationTimeStamp: CMTime(value: frame.capturedAtNanoseconds, timescale: 1_000_000_000),
             duration: CMTime(value: 1, timescale: CMTimeScale(configuration.fps)),
-            frameProperties: properties,
+            frameProperties: properties as CFDictionary,
             sourceFrameRefcon: Unmanaged.passRetained(context).toOpaque(),
             infoFlagsOut: nil
         )
@@ -688,13 +755,21 @@ final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
         }
         do {
             let keyFrame = isKeyFrame(sampleBuffer)
-            let accessUnit = try annexB(sampleBuffer, includeParameterSets: keyFrame)
+            if context.recoveryReference != 0 && !keyFrame { lastRecoveryFrame = frameID + 1 }
+            if keyFrame { lastRecoveryFrame = 0; ltrAnchor = nil; ltrTokens.removeAll(); ltrRecoveryPending = false }
+            let attachments = CMSampleBufferGetSampleAttachmentsArray(sampleBuffer, createIfNecessary: false) as? [[String: Any]]
+            let ltrToken = ltrEnabled ? attachments?.first?[kVTSampleAttachmentKey_RequireLTRAcknowledgementToken as String] as? NSNumber : nil
+            if let ltrToken {
+                ltrTokens[frameID + 1] = ltrToken
+                for id in ltrTokens.keys.sorted().dropLast(256) { ltrTokens.removeValue(forKey: id) }
+            }
+            let accessUnit = try annexB(sampleBuffer, includeParameterSets: keyFrame || context.recoveryReference != 0)
             let encodeDuration = DispatchTime.now().uptimeNanoseconds - context.encodeStartedAt
             writeFrame(
                 accessUnit,
                 keyFrame: keyFrame,
                 captureNanoseconds: context.capturedAtNanoseconds,
-                encodeNanoseconds: encodeDuration
+                encodeNanoseconds: encodeDuration, ltrToken: ltrToken, recoveryReference: keyFrame ? 0 : context.recoveryReference
             )
         } catch {
             writeDiagnostic("encode output failed: \(error.localizedDescription)")
@@ -723,10 +798,11 @@ final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
         }
         var count = 0
         var headerLength: Int32 = 0
-        let queryStatus = CMVideoFormatDescriptionGetH264ParameterSetAtIndex(
-            format, parameterSetIndex: 0, parameterSetPointerOut: nil,
-            parameterSetSizeOut: nil, parameterSetCountOut: &count,
-            nalUnitHeaderLengthOut: &headerLength
+        let parameterSet =
+            options.codec == "H265"
+            ? CMVideoFormatDescriptionGetHEVCParameterSetAtIndex : CMVideoFormatDescriptionGetH264ParameterSetAtIndex
+        let queryStatus = parameterSet(
+            format, 0, nil, nil, &count, &headerLength
         )
         guard queryStatus == noErr else { throw CaptureError.encoder(queryStatus) }
         guard (1...4).contains(headerLength) else { throw CaptureError.invalidFrame }
@@ -734,10 +810,8 @@ final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
             for index in 0..<count {
                 var pointer: UnsafePointer<UInt8>?
                 var size = 0
-                let parameterStatus = CMVideoFormatDescriptionGetH264ParameterSetAtIndex(
-                    format, parameterSetIndex: index, parameterSetPointerOut: &pointer,
-                    parameterSetSizeOut: &size, parameterSetCountOut: nil,
-                    nalUnitHeaderLengthOut: nil
+                let parameterStatus = parameterSet(
+                    format, index, &pointer, &size, nil, nil
                 )
                 guard parameterStatus == noErr, let pointer else {
                     throw CaptureError.encoder(parameterStatus)
@@ -779,13 +853,13 @@ final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
         _ payload: Data,
         keyFrame: Bool,
         captureNanoseconds: Int64,
-        encodeNanoseconds: UInt64
+        encodeNanoseconds: UInt64, ltrToken: NSNumber?, recoveryReference: UInt64
     ) {
         frameID += 1
         var header = Data()
         if options.multiplex { header.appendBigEndian(options.streamID) }
         header.appendBigEndian(UInt32(payload.count))
-        header.appendBigEndian(UInt32(keyFrame ? 1 : 0))
+        header.appendBigEndian(UInt32((keyFrame ? 1 : 0) | (ltrToken != nil ? 2 : 0) | (recoveryReference != 0 ? 4 : 0)))
         header.appendBigEndian(frameID)
         header.appendBigEndian(generation)
         header.appendBigEndian(UInt64(bitPattern: captureNanoseconds))
@@ -795,6 +869,8 @@ final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
         header.appendBigEndian(UInt32(outputWidth))
         header.appendBigEndian(UInt32(outputHeight))
         header.appendBigEndian(dropped)
+        if let ltrToken { header.appendBigEndian(ltrToken.uint64Value) }
+        if recoveryReference != 0 { header.appendBigEndian(recoveryReference) }
         if options.frameCredits { outstandingFrame = frameID }
         outputBusy = true
         let data = header + payload
@@ -878,8 +954,11 @@ final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
             // desktop/session can enter this synthetic measurement path.
             if options.synthetic && syntheticInputPattern && input.kind == "text",
                 input.text.hasPrefix("dieter-latency:"),
-                let luma = Int32(input.text.dropFirst("dieter-latency:".count)), [16, 235].contains(luma) {
-                stateQueue.async { [self] in syntheticInputLuma = luma; syntheticFrame(force: true) }
+                let luma = Int32(input.text.dropFirst("dieter-latency:".count)), [16, 235].contains(luma)
+            {
+                stateQueue.async { [self] in
+                    syntheticInputLuma = luma; syntheticFrame(force: true)
+                }
             }
         case "configure":
             // Synthetic fault injection never delays a real desktop session.
@@ -904,6 +983,20 @@ final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
                     self.admitPendingFrame()
                 }
             }
+        case "ack_recovery":
+            try self.stateQueue.sync {
+                guard command.generation == generation, command.frameId == lastRecoveryFrame, lastRecoveryFrame != 0 else { throw CaptureError.invalidArgument("recovery acknowledgment") }
+                ltrRecoveryPending = false; lastRecoveryFrame = 0
+            }
+        case "ack_reference":
+            try self.stateQueue.sync {
+                guard ltrEnabled, command.generation == generation, let id = command.frameId,
+                    let token = ltrTokens[id], token.uint64Value == command.ltrToken else { throw CaptureError.invalidArgument("reference acknowledgment") }
+                // One anchor per keyframe interval. The dependency descriptor can
+                // name the exact reference even if the hardware retains old LTRs.
+                if ltrAnchor == nil { ltrAnchor = (id, token) }
+            }
+        case "recover": self.stateQueue.sync { self.refresh(recover: true) }
         case "refresh": self.stateQueue.sync { self.refresh() }
         case "stop":
             self.inputQueue.sync { self.inputInjector?.releaseAll() }
@@ -912,11 +1005,13 @@ final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
         }
     }
 
-    private func refresh() {
+    private func refresh(recover: Bool = false) {
         let now = DispatchTime.now().uptimeNanoseconds
         guard now - lastRefresh > 200_000_000 else { return }
         lastRefresh = now
-        forceKeyFrame = true
+        if recover, ltrEnabled, let anchor = ltrAnchor, frameID - anchor.frame < 8000, !ltrRecoveryPending {
+            forceLTR = true; ltrRecoveryPending = true
+        } else { forceKeyFrame = true; forceLTR = false }
         if let lastFrame {
             // A refresh is a new presentation of retained pixels, not an old RTP time.
             let time = Int64(CMClockGetTime(CMClockGetHostTimeClock()).seconds * 1_000_000_000)
@@ -950,7 +1045,9 @@ final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
         }
         if syntheticInputPattern, let base = CVPixelBufferGetBaseAddressOfPlane(pixel, 0) {
             for row in 0..<min(64, outputHeight) {
-                memset(base.advanced(by: row * CVPixelBufferGetBytesPerRowOfPlane(pixel, 0)), syntheticInputLuma, min(64, outputWidth))
+                memset(
+                    base.advanced(by: row * CVPixelBufferGetBytesPerRowOfPlane(pixel, 0)), syntheticInputLuma,
+                    min(64, outputWidth))
             }
         }
         CVPixelBufferUnlockBaseAddress(pixel, [])
@@ -1051,17 +1148,34 @@ func writeDiagnostic(_ message: String) {
     FileHandle.standardError.write(Data((message + "\n").utf8))
 }
 
-func hardwareEncoderAvailable() -> Bool {
+func hardwareEncoderAvailable(_ codec: CMVideoCodecType = kCMVideoCodecType_H264) -> Bool {
     var session: VTCompressionSession?
     let status = VTCompressionSessionCreate(
-        allocator: kCFAllocatorDefault, width: 640, height: 360,
-        codecType: kCMVideoCodecType_H264,
+        allocator: kCFAllocatorDefault, width: 1920, height: 1080,
+        codecType: codec,
         encoderSpecification: [kVTVideoEncoderSpecification_RequireHardwareAcceleratedVideoEncoder: true]
             as CFDictionary,
         imageBufferAttributes: nil, compressedDataAllocator: nil, outputCallback: nil, refcon: nil,
         compressionSessionOut: &session)
-    if let session { VTCompressionSessionInvalidate(session) }
-    return status == noErr
+    guard status == noErr, let session else { return false }
+    defer { VTCompressionSessionInvalidate(session) }
+    var hardware: CFTypeRef?
+    let query = withUnsafeMutablePointer(to: &hardware) {
+        VTSessionCopyProperty(
+            session, key: kVTCompressionPropertyKey_UsingHardwareAcceleratedVideoEncoder, allocator: nil, valueOut: $0)
+    }
+    guard query == noErr, hardware as? Bool == true else { return false }
+    if codec == kCMVideoCodecType_HEVC {
+        guard
+            VTSessionSetProperty(
+                session, key: kVTCompressionPropertyKey_ProfileLevel, value: kVTProfileLevel_HEVC_Main_AutoLevel)
+                == noErr,
+            VTSessionSetProperty(session, key: kVTCompressionPropertyKey_RealTime, value: kCFBooleanTrue) == noErr,
+            VTSessionSetProperty(session, key: kVTCompressionPropertyKey_AllowFrameReordering, value: kCFBooleanFalse)
+                == noErr
+        else { return false }
+    }
+    return true
 }
 
 #if !DIETER_CAPTURE_TEST
@@ -1087,12 +1201,20 @@ func hardwareEncoderAvailable() -> Bool {
                     let displayData = try encoder.encode(displays)
                     let displayJSON = try JSONSerialization.jsonObject(with: displayData)
                     let granted = synthetic || CGPreflightScreenCaptureAccess()
+                    let hevc = hardwareEncoderAvailable(kCMVideoCodecType_HEVC)
                     let value: [String: Any] = [
                         "platform": "darwin", "helper_version": "native-v2",
                         "graphical_session_active": synthetic || !displays.isEmpty,
                         "capture_permission": granted ? "granted" : "denied",
                         "control_permission": (synthetic || CGPreflightPostEventAccess()) ? "granted" : "denied",
-                        "displays": displayJSON, "codecs": ["H264"],
+                        "displays": displayJSON, "codecs": hevc ? ["H264", "H265"] : ["H264"],
+                        "codec_modes": hevc
+                            ? [
+                                [
+                                    "codec": "H265", "profile": "main", "max_width": 1920, "max_height": 1080,
+                                    "max_fps": 60,
+                                ]
+                            ] : [],
                         "hardware_encoder_available": hardwareEncoderAvailable(), "control_supported": true,
                         "adaptive_supported": true, "cursor_supported": true, "input_protocol_version": 2,
                         "max_fps": 120, "encoder": "VideoToolbox H.264",

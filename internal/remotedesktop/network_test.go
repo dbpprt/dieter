@@ -2,6 +2,7 @@ package remotedesktop
 
 import (
 	"context"
+	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -17,6 +18,15 @@ import (
 // This exercises actual TWCC packets, GCC and the production pacer over an
 // isolated network. It does not change the operator's interfaces or routes.
 func TestCongestionFeedbackOnLossyMediaKeepsControlResponsive(t *testing.T) {
+	exerciseCongestionFeedback(t, false)
+}
+
+func TestFastBitrateReceivesRealTWCCOnConstrainedWebRTC(t *testing.T) {
+	t.Setenv("DIETER_SCREEN_FAST_BITRATE", "1")
+	exerciseCongestionFeedback(t, true)
+}
+
+func exerciseCongestionFeedback(t *testing.T, fast bool) {
 	router, err := vnet.NewRouter(&vnet.RouterConfig{CIDR: "10.10.0.0/24", QueueSize: 256, MinDelay: 15 * time.Millisecond, MaxJitter: 3 * time.Millisecond, LoggerFactory: logging.NewDefaultLoggerFactory()})
 	if err != nil {
 		t.Fatal(err)
@@ -146,6 +156,23 @@ func TestCongestionFeedbackOnLossyMediaKeepsControlResponsive(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+	changes := make(chan networkRateChange, 32)
+	if fast {
+		source := &networkAdaptiveSource{changes: changes, pacer: pacer}
+		config := StreamConfiguration{DisplayID: "primary", MaxWidth: 1920, MaxHeight: 1080, FPS: 60, BitrateKbps: 12000}
+		session := &Session{manager: &Manager{}, source: source, pacer: pacer, ctx: ctx, pc: sender, estimator: *estimator, applied: config,
+			status: &dieterv1.RemoteDesktopSessionState{Configuration: &dieterv1.RemoteDesktopStreamConfiguration{MaxBitrateKbps: 12000, MaxWidth: 1920, MaxHeight: 1080, MaxFps: 60}}}
+		adapted := make(chan struct{})
+		go func() { defer close(adapted); session.adapt() }()
+		defer func() {
+			cancel()
+			select {
+			case <-adapted:
+			case <-time.After(2 * time.Second):
+				t.Error("adaptation did not cancel")
+			}
+		}()
+	}
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
@@ -176,7 +203,23 @@ func TestCongestionFeedbackOnLossyMediaKeepsControlResponsive(t *testing.T) {
 	}()
 	time.Sleep(500 * time.Millisecond)
 	initial := (*estimator).GetTargetBitrate()
+	for len(changes) > 0 {
+		<-changes
+	}
 	bandwidth.Store(800000)
+	var lastChange time.Time
+	if fast {
+		select {
+		case changed := <-changes:
+			lastChange = changed.at
+			if changed.rate >= 12000 || changed.age < 0 || changed.age > 200*time.Millisecond {
+				t.Fatalf("slow or invalid TWCC encoder response: %+v", changed)
+			}
+			t.Logf("real encrypted TWCC -> encoder Configure: %s, rate %d kbps", changed.age, changed.rate)
+		case <-time.After(3 * time.Second):
+			t.Fatal("real transport congestion did not reach encoder")
+		}
+	}
 	deadline = time.Now().Add(10 * time.Second)
 	for ((*estimator).GetTargetBitrate() > 1_200_000 || pacer.TargetBitrate() > 1_200_000) && time.Now().Before(deadline) {
 		time.Sleep(100 * time.Millisecond)
@@ -195,6 +238,23 @@ func TestCongestionFeedbackOnLossyMediaKeepsControlResponsive(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("congested media blocked reliable control")
 	}
+	if fast {
+		for len(changes) > 0 {
+			changed := <-changes
+			if interval := changed.at.Sub(lastChange); interval < 90*time.Millisecond {
+				t.Fatalf("feedback bypassed fast configuration rate limit: %s", interval)
+			}
+			lastChange = changed.at
+		}
+		cancel()
+		pacer.Close()
+		select {
+		case <-done:
+		case <-time.After(time.Second):
+			t.Fatal("paced producer did not cancel")
+		}
+		return
+	}
 	bandwidth.Store(20_000_000)
 	deadline = time.Now().Add(25 * time.Second)
 	for pacer.TargetBitrate() < 3_000_000 && time.Now().Before(deadline) {
@@ -211,4 +271,26 @@ func TestCongestionFeedbackOnLossyMediaKeepsControlResponsive(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("paced producer did not cancel")
 	}
+}
+
+type networkRateChange struct {
+	rate int
+	age  time.Duration
+	at   time.Time
+}
+type networkAdaptiveSource struct {
+	pooledTestSource
+	changes chan networkRateChange
+	pacer   *packetPacer
+}
+
+func (s *networkAdaptiveSource) Configure(_ context.Context, c StreamConfiguration) error {
+	s.pacer.mu.Lock()
+	at := s.pacer.transport.at
+	s.pacer.mu.Unlock()
+	select {
+	case s.changes <- networkRateChange{c.BitrateKbps, time.Since(at), time.Now()}:
+	default:
+	}
+	return nil
 }

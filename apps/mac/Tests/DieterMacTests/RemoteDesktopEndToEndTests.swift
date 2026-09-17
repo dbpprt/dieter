@@ -3,6 +3,8 @@ import DieterAPI
 import DieterClient
 import DieterCore
 import Foundation
+import GRPCCore
+import CryptoKit
 import Testing
 @preconcurrency import WebRTC
 @testable import DieterMac
@@ -21,6 +23,7 @@ private struct ScreenFixtureConnection: Decodable {
         let helper = environment["DIETER_TEST_CAPTURE_HELPER"]
     else { return }
     let real = environment["DIETER_TEST_SCREEN_CAPTURE_REAL"] == "1"
+    let latencyOnly = environment["DIETER_TEST_SCREEN_LATENCY_ONLY"] == "1"
     let stabilitySeconds = max(32, min(600, Int(environment["DIETER_TEST_SCREEN_QUALITY_SOAK_SECONDS"] ?? "32") ?? 32))
     let output = FileManager.default.temporaryDirectory.appending(path: "dieter-screen-viewer-\(UUID().uuidString)")
     try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
@@ -53,8 +56,10 @@ private struct ScreenFixtureConnection: Decodable {
     let endpoint = try #require(DieterEndpoint.parse(fixture.url))
     let configuration = try Dieter_Gateway_V1_RTCConfiguration(serializedBytes: fixture.rtc)
     var routeOpenings = 0
+    var unavailableRoutes = 0
     func openRoute() throws -> RemoteDesktopSignalingConnection {
         routeOpenings += 1
+        if unavailableRoutes > 0 { unavailableRoutes -= 1; throw RPCError(code: .unavailable, message: "Injected sleeping laptop network") }
         let rpc = try DieterRPC(endpoint: endpoint, accessToken: fixture.token)
         let rpcTask = Task<Void, Never> { try? await rpc.run() }
         return RemoteDesktopSignalingConnection(
@@ -72,10 +77,12 @@ private struct ScreenFixtureConnection: Decodable {
             ?? 0
     }
     let controller = RemoteDesktopController()
+    controller.codecPreference = environment["DIETER_TEST_SCREEN_CODEC"] == "hevc" ? .hevc : .h264
     let requestedFPS = Int32(environment["DIETER_TEST_SCREEN_FPS"] ?? "60") ?? 60
     controller.preferredMaxFPS = requestedFPS
     let clientClipboard = NSPasteboard(name: .init("com.dbpprt.dieter.fixture.viewer.\(UUID().uuidString)"))
     controller.clipboard.pasteboard = clientClipboard
+    controller.clipboard.stagingDirectory = output.appending(path: "clipboard")
     // SwiftPM's test runner hosts an NSWindow without an NSApplication event
     // loop. Inject application activation; transport and native clipboard stay real.
     controller.clipboardApplicationActive = { true }
@@ -91,6 +98,7 @@ private struct ScreenFixtureConnection: Decodable {
     window.contentView = surface; window.makeKeyAndOrderFront(nil)
     surface.layoutSubtreeIfNeeded(); surface.layout()
     defer { controller.disconnect(); window.close() }
+    application.activate(ignoringOtherApps: true)
     try await verifyNativeScreenRenderer(controller.renderer)
     var presentationAges: [Double] = [], resumedAges: [Double] = []
     var previousPresentation: Double?
@@ -127,7 +135,7 @@ private struct ScreenFixtureConnection: Decodable {
     let hostClipboard = NSPasteboard(name: .init(try #require(fixture.clipboardName)))
     defer { hostClipboard.releaseGlobally() }
     try await Task.sleep(for: .milliseconds(600))
-    if !real {
+    if !real && !latencyOnly {
         for payload in ["Mac clipboard é漢字🙂\n  whitespace\n", String(repeating: "x", count: 1024 * 1024), ""] {
             clientClipboard.clearContents(); clientClipboard.setString(payload, forType: .string)
             let before = controller.clipboard.completedOperations
@@ -146,6 +154,39 @@ private struct ScreenFixtureConnection: Decodable {
             #expect(hostClipboard.string(forType: .string) == payload)
             let received = try await controller.clipboard.exchange(.read)
             #expect(received.text == payload || !received.changed)
+        }
+        let png = try #require(Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aCWQAAAAASUVORK5CYII="))
+        let fileBytes = Data(repeating: 0xa7, count: 2 * 1024 * 1024)
+        let copiedFile = output.appending(path: "copied.bin"), emptyFile = output.appending(path: "empty.txt")
+        try fileBytes.write(to: copiedFile); try Data().write(to: emptyFile)
+        for image in [true, false] {
+            clientClipboard.clearContents()
+            if image { clientClipboard.setData(png, forType: .png) }
+            else { clientClipboard.writeObjects([copiedFile, emptyFile] as [NSURL]) }
+            let before = controller.clipboard.completedOperations
+            controller.clipboard.paste()
+            try await screenWait("native binary clipboard paste", timeout: 15) { controller.clipboard.completedOperations > before || !controller.clipboardError.isEmpty }
+            try #require(controller.clipboardError.isEmpty, "\(controller.clipboardError)")
+            if image { #expect(hostClipboard.data(forType: .png) == png) }
+            else {
+                let urls = try #require(hostClipboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL])
+                #expect(urls.count == 2); #expect(try Data(contentsOf: urls[0]) == fileBytes); #expect(try Data(contentsOf: urls[1]).isEmpty)
+                #expect(urls[0] != copiedFile, "Host must stage transferred bytes, not reuse the source path")
+            }
+            let copied = controller.clipboard.completedOperations
+            // Clear only the viewer, then copy the native host selection back.
+            controller.clipboard.enabled = false
+            clientClipboard.clearContents()
+            controller.clipboard.enabled = true
+            controller.clipboard.copySelection()
+            try await screenWait("native binary clipboard copy", timeout: 15) { controller.clipboard.completedOperations > copied || !controller.clipboardError.isEmpty }
+            try #require(controller.clipboardError.isEmpty, "\(controller.clipboardError)")
+            if image { #expect(clientClipboard.data(forType: .png) == png) }
+            else {
+                let urls = try #require(clientClipboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL])
+                #expect(try Data(contentsOf: urls[0]) == fileBytes)
+                #expect(try Data(contentsOf: urls[1]).isEmpty)
+            }
         }
         let remoteText = "Remote → local 🦊\nCopy from app menu"
         hostClipboard.clearContents(); hostClipboard.setString(remoteText, forType: .string)
@@ -249,6 +290,9 @@ private struct ScreenFixtureConnection: Decodable {
         let report: [String: Any] = [
             "measurement": "same-host synthetic capture and input to actual Metal presentation",
             "requestedFps": requestedFPS, "captureSamples": sortedAges.count,
+            "codec": controller.sessionState.codec, "presentationMode": controller.renderer.presentationMode.rawValue,
+            "fastBitrate": environment["DIETER_SCREEN_FAST_BITRATE"] != "0",
+            "latePresentations": controller.renderer.latePresentations,
             "captureMedianMs": median, "captureP95Ms": p95, "idleResumeMs": resumedAges,
             "inputSamples": responseAges.count, "inputMedianMs": responseAges[responseAges.count / 2],
             "inputP95Ms": responseAges[responseAges.count * 95 / 100],
@@ -258,6 +302,7 @@ private struct ScreenFixtureConnection: Decodable {
         ]
         try JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys]).write(
             to: output.appending(path: "latency.json"))
+        if latencyOnly { return }
         controller.configure(maxFPS: 120)
         try await screenWait("120 fps live configuration", timeout: 8) {
             controller.sessionState.configuration.maxFps == 120
@@ -306,11 +351,18 @@ private struct ScreenFixtureConnection: Decodable {
         }.sorted()
         let responseReport: [String: Any] = [
             "measurement": "owned app input to actual Metal presentation", "samples": responses.count,
+            "codec": controller.sessionState.codec, "presentationMode": controller.renderer.presentationMode.rawValue,
+            "fastBitrate": environment["DIETER_SCREEN_FAST_BITRATE"] != "0",
             "medianMs": responses[responses.count / 2], "p95Ms": responses[responses.count * 95 / 100],
         ]
         print("Owned app input → actual Metal presentation: \(responseReport)")
         try JSONSerialization.data(withJSONObject: responseReport, options: [.prettyPrinted, .sortedKeys]).write(
             to: output.appending(path: "input-latency.json"))
+        if latencyOnly {
+            target.terminate()
+            try await screenWait("latency target teardown", timeout: 4) { target.isTerminated }
+            return
+        }
         controller.sendPointerButton(.left, down: true, clickCount: 1, x: x, y: y, modifiers: [])
         controller.sendPointerButton(.left, down: false, clickCount: 1, x: x, y: y, modifiers: [])
         controller.sendKey(code: 0, down: true, repeat: false, modifiers: [])
@@ -368,6 +420,17 @@ private struct ScreenFixtureConnection: Decodable {
         let cut = try await controller.clipboard.exchange(.cut)
         try await screenWait("native app cut consumed selection", timeout: 4) { (report()["text"] as? String) == "" }
         #expect(cut.text.contains(pasted))
+        let png = try #require(Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aCWQAAAAASUVORK5CYII="))
+        for item in [ScreenClipboardItem(kind: 1, name: "pixel.png", mimeType: "image/png", data: png),
+                     ScreenClipboardItem(kind: 0, name: "copied.bin", mimeType: "application/octet-stream", data: Data(repeating: 0xa5, count: 2 * 1024 * 1024))] {
+            _ = try await controller.clipboard.exchange(.paste, items: [item])
+            let digest = SHA256.hash(data: item.data).map { String(format: "%02x", $0) }.joined()
+            try await screenWait("owned native app consumed binary paste", timeout: 5) {
+                (report()["pastedBinary"] as? [[String: Any]])?.first?["sha256"] as? String == digest
+            }
+            let returned = try await controller.clipboard.exchange(.copy)
+            #expect(returned.items.first?.data == item.data, "Native application copy must return the same binary bytes")
+        }
         print("Real native app clipboard copy, cut, paste and copy completion after focus loss passed")
         target.terminate()
         try await screenWait("input target teardown", timeout: 4) { target.isTerminated }
@@ -401,9 +464,10 @@ private struct ScreenFixtureConnection: Decodable {
         #expect(routeOpenings == 1, "A healthy peer must survive missing unary lease renewals")
         let rejected = try await inject("/test/reject-screen-signals?enabled=false")
         #expect(rejected >= 3, "Fault injection must actually reject multiple renewal calls")
+        unavailableRoutes = 5
         try await inject("/test/expire-screen")
-        try await screenWait("expired session automatically opens a fresh authenticated route", timeout: 12) {
-            routeOpenings == 2 && controller.controlActive && controller.sessionState.receiverFps > 0
+        try await screenWait("expired session survives five unavailable routes and reauthenticates", timeout: 25) {
+            routeOpenings == 7 && controller.controlActive && controller.sessionState.receiverFps > 0
         }
         #expect(controller.errorMessage == nil)
         #expect(controller.sessionState.configuration.quality == .detail)
@@ -411,17 +475,40 @@ private struct ScreenFixtureConnection: Decodable {
         // well as the authenticated route and native WebRTC peer.
         try await inject("/test/stop-capture")
         try await screenWait("native helper shutdown automatically restarts capture", timeout: 15) {
-            routeOpenings == 3 && controller.controlActive && controller.sessionState.receiverFps > 0
+            routeOpenings == 8 && controller.controlActive && controller.sessionState.receiverFps > 0
         }
         #expect(controller.errorMessage == nil)
         #expect(controller.sessionState.configuration.quality == .detail)
+        NSWorkspace.shared.notificationCenter.post(name: NSWorkspace.willSleepNotification, object: nil)
+        #expect(controller.systemSleeping)
+        NSWorkspace.shared.notificationCenter.post(name: NSWorkspace.didWakeNotification, object: nil)
+        try await screenWait("wake immediately rebuilds the peer and authenticated route", timeout: 12) {
+            routeOpenings == 9 && controller.controlActive && controller.sessionState.receiverFps > 0
+        }
         // Disconnect during a further interruption must cancel delayed recovery.
         try await inject("/test/expire-screen")
         try await screenWait("second interruption enters recovery", timeout: 4) { controller.phase == .reconnecting }
         controller.disconnect()
         try await Task.sleep(nanoseconds: 2_500_000_000)
-        #expect(routeOpenings == 3)
+        #expect(routeOpenings == 9)
+        NSWorkspace.shared.notificationCenter.post(name: NSWorkspace.didWakeNotification, object: nil)
+        try await Task.sleep(for: .milliseconds(300))
+        #expect(routeOpenings == 9, "Explicit disconnect must not reconnect on wake")
         #expect(controller.phase == .idle)
+        await controller.connect(machineName: "Interrupted clipboard fixture") { try openRoute() }.value
+        try await screenWait("reconnect for interrupted binary transfer", timeout: 12) { controller.controlActive }
+        controller.inputFocused = true
+        controller.clipboard.enabled = false
+        try await Task.sleep(for: .milliseconds(300))
+        hostClipboard.clearContents(); hostClipboard.setString("Preserve clipboard on interruption", forType: .string)
+        let partial = Task {
+            try await controller.clipboard.exchange(.paste, items: [.init(kind: 0, name: "partial.bin", mimeType: "application/octet-stream", data: Data(repeating: 0x5a, count: 8 * 1024 * 1024))])
+        }
+        try await Task.sleep(for: .milliseconds(20))
+        controller.disconnect()
+        do { _ = try await partial.value; Issue.record("Interrupted clipboard operation unexpectedly completed") } catch { }
+        try await Task.sleep(for: .milliseconds(300))
+        #expect(hostClipboard.string(forType: .string) == "Preserve clipboard on interruption")
         print(
             "Lease/capture regression: \(rejected) rejected RPC renewals preserved native video; expiry and actual helper shutdown recovered; explicit disconnect canceled recovery"
         )
@@ -432,7 +519,7 @@ private struct ScreenFixtureConnection: Decodable {
     try await screenWait("fixture process teardown", timeout: 5) { !process.isRunning }
 }
 
-private final class NativeScreenPixelBufferProbe: RTCCVPixelBuffer {
+private final class NativeScreenPixelBufferProbe: RTCCVPixelBuffer, @unchecked Sendable {
     private let lock = NSLock()
     private var conversions = 0
     var conversionCount: Int { lock.lock(); defer { lock.unlock() }; return conversions }
@@ -462,14 +549,17 @@ private final class NativeScreenPixelBufferProbe: RTCCVPixelBuffer {
     }
     CVPixelBufferUnlockBaseAddress(buffer, [])
     let probe = NativeScreenPixelBufferProbe(pixelBuffer: buffer)
-    // A burst received while the UI is busy must replace pending frames, not
-    // schedule hundreds of draws or convert their native surfaces on the CPU.
+    // A burst replaces pending frames while rendering proceeds independently.
+    // It must not convert the native surfaces on the CPU.
     for timestamp in 1...1000 {
         renderer.renderFrame(RTCVideoFrame(buffer: probe, rotation: ._0, timeStampNs: Int64(timestamp)))
     }
     try await screenWait("direct NV12 Metal presentation", timeout: 5) { renderer.framesPresented == 1 }
     #expect(probe.conversionCount == 0)
-    #expect(renderer.drawSubmissions <= 2)
+    #expect(renderer.drawSubmissions < 1000, "Decoder bursts must coalesce")
+    // Let the initial visibility commit/redraw and GPU completion drain before
+    // measuring idle behavior. A presented callback can precede that UI commit.
+    try await Task.sleep(for: .milliseconds(250))
     let submissions = renderer.drawSubmissions
     try await Task.sleep(for: .milliseconds(250))
     #expect(renderer.drawSubmissions == submissions, "An idle screen must not run a redraw timer")
@@ -492,6 +582,24 @@ private final class NativeScreenPixelBufferProbe: RTCCVPixelBuffer {
         renderer.renderFrame(frame)
         try await screenWait("distinct RTP presentation", timeout: 2) { renderer.framesPresented == UInt64(timestamp) }
     }
+    // Keep the window unchanged and block only UI processing. Actual hardware
+    // presentation counters must keep advancing on the render thread.
+    let decode = renderer.decodeHandler()
+    let producer = Task.detached {
+        for timestamp: Int32 in 10...40 {
+            if Task.isCancelled { return }
+            let frame = RTCVideoFrame(buffer: probe, rotation: ._0, timeStampNs: 0)
+            frame.timeStamp = timestamp
+            decode(frame)
+            try? await Task.sleep(for: .milliseconds(16))
+        }
+    }
+    let beforeStall = renderer.framesPresented
+    blockScreenUIForSchedulingTest()
+    #expect(renderer.framesPresented > beforeStall + 2, "UI work stalled actual Metal presentation")
+    producer.cancel()
+    await producer.value
+    #expect(probe.conversionCount == 0)
     renderer.reset()
 }
 
@@ -677,4 +785,9 @@ private final class ScreenFrameReadiness: @unchecked Sendable {
     #expect(samples.count == 24)
     #expect(samples.allSatisfy { $0 >= 0 && $0 < 500 }, "Input response must not build a stale queue")
     return samples
+}
+
+// Intentional synchronous UI work models AppKit/layout contention.
+@MainActor private func blockScreenUIForSchedulingTest() {
+    Thread.sleep(forTimeInterval: 0.25)
 }

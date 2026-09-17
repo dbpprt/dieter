@@ -24,7 +24,25 @@ cat > "$SCREEN_TEST_ROOT/InputTarget.app/Contents/Info.plist" <<'PLIST'
 PLIST
 xcrun swiftc -parse-as-library -O -framework AppKit "$SCRIPT_DIR/tests/InputTarget.swift" -o "$SCREEN_TEST_ROOT/InputTarget.app/Contents/MacOS/InputTarget"
 codesign --force --sign - "$SCREEN_TEST_ROOT/InputTarget.app"
-DIETER_TEST_CAPTURE_HELPER="$SCREEN_TEST_ROOT/dieter-capture" \
-DIETER_TEST_SCREEN_FIXTURE="$SCREEN_TEST_ROOT/screens-fixture" \
-DIETER_TEST_INPUT_TARGET="$SCREEN_TEST_ROOT/InputTarget.app" \
-just mac test remoteDesktop
+export DIETER_TEST_CAPTURE_HELPER="$SCREEN_TEST_ROOT/dieter-capture"
+export DIETER_TEST_SCREEN_FIXTURE="$SCREEN_TEST_ROOT/screens-fixture"
+export DIETER_TEST_INPUT_TARGET="$SCREEN_TEST_ROOT/InputTarget.app"
+if [ "${DIETER_TEST_SCREEN_RECOVERY:-0}" = "1" ]; then
+  just mac test remoteDesktopRecoveryAuthenticatedTransport
+elif [ "${DIETER_TEST_SCREEN_LATENCY_MATRIX:-0}" = "1" ]; then
+  export DIETER_TEST_SCREEN_LATENCY_ONLY=1
+  for DIETER_TEST_SCREEN_CODEC in h264 hevc; do
+    export DIETER_TEST_SCREEN_CODEC
+    for DIETER_SCREEN_PRESENTATION in ${DIETER_TEST_SCREEN_PRESENTATIONS:-immediate display-link}; do
+      case "$DIETER_SCREEN_PRESENTATION" in immediate|display-link) ;; *) echo "Invalid presentation mode" >&2; exit 2 ;; esac
+      export DIETER_SCREEN_PRESENTATION
+      for DIETER_SCREEN_FAST_BITRATE in 0 1; do
+        export DIETER_SCREEN_FAST_BITRATE
+        echo "Latency matrix: codec=$DIETER_TEST_SCREEN_CODEC presentation=$DIETER_SCREEN_PRESENTATION fast-bitrate=$DIETER_SCREEN_FAST_BITRATE"
+        just mac test remoteDesktopNativeEndToEnd
+      done
+    done
+  done
+else
+  just mac test remoteDesktop
+fi

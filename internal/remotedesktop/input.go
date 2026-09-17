@@ -381,6 +381,16 @@ func (s *Session) receiveFeedback(raw []byte) {
 	if logRejectedStatistics && s.manager != nil && s.manager.options.Logger != nil {
 		s.manager.options.Logger.Warn("remote desktop ignored invalid receiver statistics; heartbeat accepted", "session", s.id, "measurementSequence", value.MeasurementSequence, "measurementAgeMs", value.MeasurementAgeMs)
 	}
+	if len(value.DecodedReferences) <= 8 && s.referenceQueue != nil {
+		for _, ack := range value.DecodedReferences {
+			if m, ok := s.references.acknowledge(time.Now(), ack); ok {
+				select {
+				case s.referenceQueue <- m:
+				default:
+				}
+			}
+		}
+	}
 	if wasActive && !value.InputActive {
 		s.releaseInput()
 	}

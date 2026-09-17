@@ -27,6 +27,9 @@ type probeAcknowledgments struct {
 }
 type transportHealth struct {
 	at             time.Time
+	sentAt         time.Time // newest acknowledged/lost packet, not callback time
+	packets        int
+	span           time.Duration
 	loss, growthMS float64
 	deliveredRate  int
 	pressure       bool
@@ -50,6 +53,9 @@ type transportFeedbackInterceptor struct {
 
 func (f *transportFeedbackInterceptor) BindLocalStream(info *interceptor.StreamInfo, writer interceptor.RTPWriter) interceptor.RTPWriter {
 	for _, extension := range info.RTPHeaderExtensions {
+		if extension.URI == genericDescriptorURI && extension.ID > 0 && extension.ID < 256 {
+			f.pacer.descriptorID.Store(uint32(extension.ID))
+		}
 		if extension.URI == transportCCURI && extension.ID > 0 && extension.ID < 256 {
 			f.pacer.mu.Lock()
 			f.pacer.transportID = uint8(extension.ID)
@@ -106,6 +112,7 @@ func (p *packetPacer) observeTransport(now time.Time, feedback *rtcp.TransportLa
 	arrival := int64(feedback.ReferenceTime) * 64000
 	var window probeAcknowledgments
 	known, lost := 0, 0
+	var latestSent time.Time
 	visit := func(symbol uint16) {
 		if count >= int(feedback.PacketStatusCount) {
 			return
@@ -128,6 +135,9 @@ func (p *packetPacer) observeTransport(now time.Time, feedback *rtcp.TransportLa
 		// Consuming the entry prevents duplicates/overlapping feedback from earning credit twice.
 		p.transportHistory[int(sequence)%transportHistorySize] = sentTransportPacket{}
 		known++
+		if packet.sent.After(latestSent) {
+			latestSent = packet.sent
+		}
 		if !received {
 			lost++
 			if packet.probe != 0 && packet.probe == p.probeID {
@@ -155,10 +165,11 @@ func (p *packetPacer) observeTransport(now time.Time, feedback *rtcp.TransportLa
 	if known == 0 {
 		return
 	}
-	health := transportHealth{at: now, loss: float64(lost) / float64(known)}
+	health := transportHealth{at: now, sentAt: latestSent, packets: known, loss: float64(lost) / float64(known)}
 	if window.count >= 2 {
 		arrivalSpan := transportSpan(window.lastArrival, window.firstArrival)
 		sendSpan := window.lastSent.Sub(window.firstSent)
+		health.span = max(arrivalSpan, sendSpan)
 		health.growthMS = float64(arrivalSpan-sendSpan) / float64(time.Millisecond)
 		if arrivalSpan > 0 {
 			health.deliveredRate = int(float64((window.bytes-window.firstSize)*8) / arrivalSpan.Seconds())
@@ -166,6 +177,7 @@ func (p *packetPacer) observeTransport(now time.Time, feedback *rtcp.TransportLa
 	}
 	health.pressure = p.transportCongestedLocked(now, health)
 	p.transport = health
+	p.notifyFeedback()
 	if health.pressure {
 		p.confirmedRate = 0
 		p.probeBytes = 0

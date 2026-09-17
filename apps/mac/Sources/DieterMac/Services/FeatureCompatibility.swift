@@ -52,11 +52,21 @@ extension AppSession {
     }
     var selectedCardID: String? {
         get { conversationModel.selectedCardID }
-        set { conversationModel.selectedCardID = newValue; bindComposer(); bindWorktree() }
+        set {
+            guard conversationModel.selectedCardID != newValue else { return }
+            conversationModel.selectedCardID = newValue
+            bindComposer()
+            bindWorktree()
+        }
     }
     var selectedChatID: String? {
         get { conversationModel.selectedChatID }
-        set { conversationModel.selectedChatID = newValue; bindComposer(); bindWorktree() }
+        set {
+            guard conversationModel.selectedChatID != newValue else { return }
+            conversationModel.selectedChatID = newValue
+            bindComposer()
+            bindWorktree()
+        }
     }
     var conversation: Dieter_V1_ConversationSnapshot? {
         get { conversationModel.conversation }

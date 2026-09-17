@@ -3,6 +3,7 @@ package remotedesktop
 import (
 	"context"
 	"errors"
+	"os"
 	"strings"
 	"time"
 
@@ -78,6 +79,9 @@ func (m *Manager) UpdateSession(ctx context.Context, r *dieterv1.UpdateRemoteDes
 	}
 	if r.Configuration != nil {
 		config, err := normalizeConfiguration(r.Configuration)
+		if err == nil && s.codec == VideoCodecH265 && !hevcModeSupported(config) {
+			return nil, errors.New("HEVC mode exceeds 1080p60/40000 kbps; reconnect using H.264")
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -87,11 +91,21 @@ func (m *Manager) UpdateSession(ctx context.Context, r *dieterv1.UpdateRemoteDes
 		}
 		s.configurationMu.Lock()
 		s.releaseInput()
-		err = source.Configure(ctx, nativeConfiguration(config))
+		applied := nativeConfiguration(config)
+		if s.pacer != nil {
+			percent := int(s.pacer.fecPercent.Load())
+			if applied.BitrateKbps*100/(100+percent) < 100 {
+				// The encoder floor leaves no room for repair at this ceiling.
+				s.pacer.fecPercent.Store(0)
+			} else {
+				applied.BitrateKbps = fecMediaBudget(applied.BitrateKbps, percent)
+			}
+		}
+		err = source.Configure(ctx, applied)
 		if err == nil {
 			s.mu.Lock()
 			s.status.Configuration = config
-			s.applied = nativeConfiguration(config)
+			s.applied = applied
 			s.configurationRevision++
 			s.mu.Unlock()
 		}
@@ -108,7 +122,7 @@ func (m *Manager) UpdateSession(ctx context.Context, r *dieterv1.UpdateRemoteDes
 	return m.SessionState(s.id)
 }
 
-func newMediaAPI(settings webrtc.SettingEngine, source FrameSource) (*webrtc.API, *packetPacer, *cc.BandwidthEstimator, error) {
+func newMediaAPI(settings webrtc.SettingEngine, source FrameSource, instrumentation ...interceptor.Factory) (*webrtc.API, *packetPacer, *cc.BandwidthEstimator, error) {
 	engine := &webrtc.MediaEngine{}
 	capability := codecCapability(source.Codec())
 	if native, ok := source.(interface{ CodecParameters() string }); ok {
@@ -120,9 +134,23 @@ func newMediaAPI(settings webrtc.SettingEngine, source FrameSource) (*webrtc.API
 	if err := engine.RegisterHeaderExtension(webrtc.RTPHeaderExtensionCapability{URI: playoutDelayURI}, webrtc.RTPCodecTypeVideo); err != nil {
 		return nil, nil, nil, err
 	}
+	if capable, ok := source.(referenceSource); ok && capable.ReferenceRecoveryEnabled() {
+		if err := engine.RegisterHeaderExtension(webrtc.RTPHeaderExtensionCapability{URI: genericDescriptorURI}, webrtc.RTPCodecTypeVideo); err != nil {
+			return nil, nil, nil, err
+		}
+	}
 	registry := &interceptor.Registry{}
-	registry.Add(immediatePlayoutFactory{})
+	for _, factory := range instrumentation {
+		registry.Add(factory)
+	}
 	pacer := newPacketPacer(4_000_000)
+	if os.Getenv("DIETER_SCREEN_FEC") != "0" {
+		if err := registerFEC(engine); err != nil {
+			pacer.Close()
+			return nil, nil, nil, err
+		}
+		registry.Add(fecBindingFactory{pacer: pacer})
+	}
 	var estimator cc.BandwidthEstimator
 	controller, err := cc.NewInterceptor(func() (cc.BandwidthEstimator, error) {
 		return gcc.NewSendSideBWE(gcc.SendSideBWEInitialBitrate(4_000_000), gcc.SendSideBWEMinBitrate(100_000), gcc.SendSideBWEMaxBitrate(100_000_000), gcc.SendSideBWEPacer(pacer))
@@ -133,10 +161,11 @@ func newMediaAPI(settings webrtc.SettingEngine, source FrameSource) (*webrtc.API
 	}
 	controller.OnNewPeerConnection(func(_ string, value cc.BandwidthEstimator) { estimator = value })
 	registry.Add(controller)
+	registry.Add(immediatePlayoutFactory{})
 	registry.Add(transportFeedbackFactory{pacer: pacer})
 	var refresh func()
 	if controlled, ok := source.(ControlledFrameSource); ok {
-		refresh = controlled.RequestKeyFrame
+		refresh = func() { requestRecovery(controlled) }
 	}
 	engine.RegisterFeedback(webrtc.RTCPFeedback{Type: "nack"}, webrtc.RTPCodecTypeVideo)
 	engine.RegisterFeedback(webrtc.RTCPFeedback{Type: "nack", Parameter: "pli"}, webrtc.RTPCodecTypeVideo)
@@ -201,15 +230,39 @@ func (s *Session) nativeEvent(event SourceEvent) {
 func (s *Session) adapt() {
 	ticker := time.NewTicker(500 * time.Millisecond)
 	defer ticker.Stop()
+	fastTimer := time.NewTimer(time.Hour)
+	fastTimer.Stop()
+	defer fastTimer.Stop()
+	fastEnabled := os.Getenv("DIETER_SCREEN_FAST_BITRATE") != "0"
+	var fast fastBitrateController
+	var repair fecController
+	var lastFast time.Time
 	var controller *qualityController
 	var revision, previousDrops uint64
 	var idleRefresh idleRefreshController
 	evaluated := time.Now()
 	for {
+		fastWake := false
 		select {
 		case <-s.ctx.Done():
 			return
 		case <-ticker.C:
+		case <-s.pacer.feedbackReady:
+			if !fastEnabled {
+				continue
+			}
+			fastWake = true
+		case <-fastTimer.C:
+			fastWake = true
+		}
+		if fastWake {
+			// A timer and a fresh notification can become ready together. Apply
+			// the same interval gate to both and cancel any obsolete timer.
+			if delay := fastBitrateInterval - time.Since(lastFast); delay > 0 {
+				fastTimer.Reset(delay)
+				continue
+			}
+			fastTimer.Stop()
 		}
 		now := time.Now()
 		s.mu.Lock()
@@ -217,11 +270,24 @@ func (s *Session) adapt() {
 			s.mu.Unlock()
 			return
 		}
+		s.status.FecPercent = uint32(s.pacer.fecPercent.Load())
+		s.status.FecPackets = s.pacer.fecPackets.Load()
+		s.status.FecBytes = s.pacer.fecBytes.Load()
 		state := proto.Clone(s.status).(*dieterv1.RemoteDesktopSessionState)
 		feedback, measuredAt, current, currentRevision := s.receiver, s.receiverMeasuredAt, s.applied, s.configurationRevision
 		s.mu.Unlock()
 		if s.pc.ConnectionState() != webrtc.PeerConnectionStateConnected {
 			continue
+		}
+		if controller == nil || currentRevision != revision {
+			if controller != nil {
+				fast = fastBitrateController{observed: now}
+			}
+			controller = newQualityController(now)
+			revision, evaluated, previousDrops = currentRevision, now, state.FramesDropped
+			s.mu.Lock()
+			s.measurements = frameMeasurements{}
+			s.mu.Unlock()
 		}
 		fresh := feedback != nil && !measuredAt.IsZero() && now.Sub(measuredAt) < 2*time.Second
 		s.pacer.mu.Lock()
@@ -233,10 +299,19 @@ func (s *Session) adapt() {
 		}
 		s.pacer.probeCeiling = int(state.GetConfiguration().GetMaxBitrateKbps()) * 1000 * 100 / 85
 		s.pacer.mu.Unlock()
+		s.adaptFEC(now, &repair, transport)
+		s.mu.Lock()
+		current = s.applied
+		s.mu.Unlock()
+		if fastWake {
+			lastFast = now
+			s.reduceBitrate(now, &fast, controller, state, current, currentRevision, transport)
+			continue
+		}
 		// RTT measures round-trip latency, not available throughput. A route or
 		// Wi-Fi latency change alone must not erase acknowledged capacity.
 		// Fresh TWCC queue growth/loss and receiver loss govern congestion.
-		networkPressure := transport.fresh(now) && transport.pressure
+		networkPressure := (transport.fresh(now) && transport.pressure) || now.Before(fast.holdUntil)
 		// GCC can retain an old delay-overuse classification through application
 		// idle. Fresh packet delivery and receiver measurements gate recovery.
 		s.pacer.ObserveNetwork(now, fresh && feedback.LossFraction < .02 && !networkPressure)
@@ -245,16 +320,6 @@ func (s *Session) adapt() {
 			continue
 		}
 		s.sendHost(&dieterv1.RemoteDesktopHostEvent{Payload: &dieterv1.RemoteDesktopHostEvent_State{State: state}})
-		if controller == nil || currentRevision != revision {
-			controller = newQualityController(now)
-			revision = currentRevision
-			evaluated = now
-			previousDrops = state.FramesDropped
-			s.mu.Lock()
-			s.measurements = frameMeasurements{}
-			s.mu.Unlock()
-			continue
-		}
 		elapsed := now.Sub(evaluated)
 		if elapsed < time.Second {
 			continue
@@ -268,7 +333,7 @@ func (s *Session) adapt() {
 		if s.estimator != nil {
 			estimate = s.pacer.TargetBitrate()
 		}
-		budget := receiverBudget(now, int(state.Configuration.MaxBitrateKbps), estimate, int(s.remb.Load()), s.rembAt.Load())
+		budget := fecMediaBudget(receiverBudget(now, int(state.Configuration.MaxBitrateKbps), estimate, int(s.remb.Load()), s.rembAt.Load()), int(s.pacer.fecPercent.Load()))
 		confirmed := min(budget, s.pacer.ConfirmedBitrate()*85/100/1000)
 		// Probe a degraded static desktop, and redraw after a confirmed bitrate
 		// increase. Keep the pending redraw until the new encoder configuration
@@ -291,6 +356,10 @@ func (s *Session) adapt() {
 			width: int(state.Width), height: int(state.Height), drops: drops, elapsed: elapsed,
 			networkPressure: networkPressure, confirmedBudget: confirmed,
 		})
+		desired.BitrateKbps = min(desired.BitrateKbps, fecMediaBudget(int(state.Configuration.MaxBitrateKbps), int(s.pacer.fecPercent.Load())))
+		if now.Before(fast.holdUntil) {
+			desired.BitrateKbps = min(desired.BitrateKbps, fast.ceiling)
+		}
 		if desired == current {
 			refreshIdle(current)
 			continue
@@ -375,7 +444,11 @@ func (s *Session) streamMedia(sample media.Sample) error {
 		s.waitKeyframe = false
 	}
 	if s.packetizer == nil {
-		s.packetizer = rtp.NewPacketizerWithOptions(1180, &codecs.H264Payloader{}, rtp.NewRandomSequencer(), 90000)
+		var payloader rtp.Payloader = &codecs.H264Payloader{}
+		if s.codec == VideoCodecH265 {
+			payloader = &codecs.H265Payloader{}
+		}
+		s.packetizer = rtp.NewPacketizerWithOptions(1180, payloader, rtp.NewRandomSequencer(), 90000)
 	}
 	packets := s.packetizer.Packetize(sample.Data, 0)
 	timestamp := uint32((uint64(metadata.PTS/time.Millisecond) * 90) + (uint64(metadata.PTS%time.Millisecond) * 90 / uint64(time.Millisecond)))
@@ -394,7 +467,19 @@ func (s *Session) streamMedia(sample media.Sample) error {
 	s.pacer.BeginFrame(sendStarted)
 	defer func() { s.pacer.EndFrame(time.Now()) }()
 	writeBefore := s.pacer.writeNanoseconds.Load()
-	for _, packet := range packets {
+	for index, packet := range packets {
+		if id := s.pacer.descriptorID.Load(); id != 0 {
+			descriptor := frameDescriptor(metadata, index == 0, index == len(packets)-1)
+			if descriptor == nil {
+				if source, ok := s.source.(ControlledFrameSource); ok {
+					source.RequestKeyFrame()
+				}
+				return nil
+			}
+			if err := packet.SetExtension(uint8(id), descriptor); err != nil {
+				return err
+			}
+		}
 		packet.Timestamp = timestamp
 		if err := s.rtpTrack.WriteRTP(packet); err != nil {
 			return err
@@ -402,6 +487,12 @@ func (s *Session) streamMedia(sample media.Sample) error {
 	}
 	s.mu.Lock()
 	s.status.FramesSent++
+	if metadata.HasLTR {
+		s.status.ReferenceRecovery = true
+	}
+	if metadata.RecoveryReference != 0 && !metadata.KeyFrame {
+		s.status.ReferenceRecoveryFrames++
+	}
 	s.status.SendMs = float64(time.Since(sendStarted)) / float64(time.Millisecond)
 	s.status.CaptureToSendMs = float64(metadata.CaptureDelay+time.Since(metadata.ReceivedAt)) / float64(time.Millisecond)
 	s.status.PacingBitrateKbps = uint32(s.pacer.TargetBitrate() * 5 / 2 / 1000)
@@ -414,6 +505,11 @@ func (s *Session) streamMedia(sample media.Sample) error {
 		s.measurements.writeMS += s.status.QueueMs
 	}
 	s.mu.Unlock()
+	if s.pacer.descriptorID.Load() != 0 {
+		if challenge := s.references.offer(time.Now(), metadata, timestamp); challenge != nil {
+			s.sendHost(&dieterv1.RemoteDesktopHostEvent{Payload: &dieterv1.RemoteDesktopHostEvent_Reference{Reference: challenge}})
+		}
+	}
 	for i := 0; i < 256 && s.pacer.needsProbePadding(time.Now()); i++ {
 		padding := s.packetizer.GeneratePadding(1)[0]
 		padding.Timestamp = timestamp

@@ -7,19 +7,39 @@ import VideoToolbox
 final class RemoteDesktopDecoderFactory: NSObject, RTCVideoDecoderFactory {
     private let underlying = RTCDefaultVideoDecoderFactory()
     private let onDecodedFrame: (@Sendable (RTCVideoFrame) -> Void)?
-    init(onDecodedFrame: (@Sendable (RTCVideoFrame) -> Void)? = nil) { self.onDecodedFrame = onDecodedFrame }
+    private let enableHEVC: Bool
+    private let onHEVCUnavailable: @Sendable () -> Void
+    init(
+        onDecodedFrame: (@Sendable (RTCVideoFrame) -> Void)? = nil, enableHEVC: Bool = false,
+        onHEVCUnavailable: @escaping @Sendable () -> Void = {}
+    ) {
+        self.onDecodedFrame = onDecodedFrame; self.enableHEVC = enableHEVC; self.onHEVCUnavailable = onHEVCUnavailable
+    }
     func supportedCodecs() -> [RTCVideoCodecInfo] {
         guard VTIsHardwareDecodeSupported(kCMVideoCodecType_H264) else { return [] }
-        return ["640034", "42e034"].map {
+        var codecs = ["640034", "42e034"].map {
             RTCVideoCodecInfo(
                 name: "H264",
                 parameters: [
                     "profile-level-id": $0, "packetization-mode": "1", "level-asymmetry-allowed": "1",
                 ])
         }
+        if enableHEVC && VTIsHardwareDecodeSupported(kCMVideoCodecType_HEVC) {
+            codecs.insert(
+                RTCVideoCodecInfo(
+                    name: "H265",
+                    parameters: ["profile-id": "1", "tier-flag": "0", "level-id": "153", "tx-mode": "SRST"]), at: 0)
+        }
+        return codecs
     }
     func createDecoder(_ info: RTCVideoCodecInfo) -> (any RTCVideoDecoder)? {
-        guard let decoder = underlying.createDecoder(info) else { return nil }
+        let decoder: any RTCVideoDecoder
+        if info.name.caseInsensitiveCompare("H265") == .orderedSame {
+            guard enableHEVC && VTIsHardwareDecodeSupported(kCMVideoCodecType_HEVC) else { return nil }
+            decoder = RemoteDesktopHEVCDecoder(onUnavailable: onHEVCUnavailable)
+        } else {
+            guard let value = underlying.createDecoder(info) else { return nil }; decoder = value
+        }
         guard let onDecodedFrame else { return decoder }
         return RemoteDesktopImmediateDecoder(decoder, onDecodedFrame: onDecodedFrame)
     }

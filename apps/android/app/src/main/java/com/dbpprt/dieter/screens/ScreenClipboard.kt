@@ -13,14 +13,16 @@ import java.nio.ByteBuffer
 import java.util.UUID
 
 /** Independent reliable channel; payloads never enter the video/input queues. */
-class ScreenClipboard(context: Context, private val scope: CoroutineScope) {
+class ScreenClipboard(private val context: Context, private val scope: CoroutineScope) {
     companion object { const val LIMIT = 1 shl 20 }
     private val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
     var request: (() -> RemoteDesktopClipboardRequest.Builder?)? = null
     var onBusy: (Boolean) -> Unit = {}
     var onOperationFinished: (Boolean) -> Unit = {}
     var isCurrentGrant: ((Long) -> Boolean)? = null
+    var onUnavailable: () -> Unit = {}
     var onError: (String) -> Unit = {}
+    var binarySupported = false
     var enabled = true
         set(value) {
             if (field != value) { revision = ""; localTimestamp = clipboard.primaryClipDescription?.timestamp ?: 0 }
@@ -45,7 +47,14 @@ class ScreenClipboard(context: Context, private val scope: CoroutineScope) {
         val current = token
         value.registerObserver(object : DataChannel.Observer {
             override fun onBufferedAmountChange(previousAmount: Long) = Unit
-            override fun onStateChange() = Unit
+            override fun onStateChange() {
+                scope.launch {
+                    if (current == token && channel === value && value.state() == DataChannel.State.CLOSED) {
+                        response?.completeExceptionally(IllegalStateException("Clipboard transfer interrupted; shortcut was not retried"))
+                        onUnavailable()
+                    }
+                }
+            }
             override fun onMessage(message: DataChannel.Buffer) {
                 if (!message.binary || message.data.remaining() > 16 * 1024 + 128) return
                 val raw = ByteArray(message.data.remaining()); message.data.get(raw)
@@ -53,7 +62,7 @@ class ScreenClipboard(context: Context, private val scope: CoroutineScope) {
                     if (current != token || response == null) return@launch
                     try {
                         val frame = RemoteDesktopClipboardFrame.parseFrom(raw)
-                        require(frame.operationId == requestId && frame.data.size() <= 16 * 1024 && buffer.size() + frame.data.size() <= LIMIT + 4096)
+                        require(frame.operationId == requestId && frame.data.size() <= 16 * 1024 && buffer.size() + frame.data.size() <= ScreenClipboardContent.BINARY_LIMIT + 65536)
                         buffer.write(frame.data.toByteArray())
                         if (frame.end) response?.complete(RemoteDesktopClipboardResponse.parseFrom(buffer.toByteArray()))
                     } catch (e: Exception) { response?.completeExceptionally(e); value.close() }
@@ -70,15 +79,16 @@ class ScreenClipboard(context: Context, private val scope: CoroutineScope) {
                     val stamp = clipboard.primaryClipDescription?.timestamp ?: 0
                     if (stamp != localTimestamp) {
                         localTimestamp = stamp
-                        val text = localText()
-                        if (text != null) revision = exchange(RemoteDesktopClipboardRequest.Action.WRITE, text).revision
+                        val clip = clipboard.primaryClip
+                        val content = withContext(Dispatchers.IO) { ScreenClipboardContent.read(this@ScreenClipboard.context, clip, binarySupported) }
+                        if (content.text != null || content.items.isNotEmpty()) revision = exchange(RemoteDesktopClipboardRequest.Action.WRITE, content.text ?: "", items = content.items).revision
                     } else {
                         val previous = revision
                         val result = exchange(RemoteDesktopClipboardRequest.Action.READ)
                         if (request?.invoke()?.controlGeneration != context.controlGeneration) continue
                         revision = result.revision
-                        if (previous.isNotEmpty() && result.changed && result.hasText && (clipboard.primaryClipDescription?.timestamp ?: 0) == stamp && localText() != result.text) {
-                            clipboard.setPrimaryClip(ClipData.newPlainText("Remote screen", result.text))
+                        if (previous.isNotEmpty() && result.changed && (result.hasText || result.itemsCount > 0) && (clipboard.primaryClipDescription?.timestamp ?: 0) == stamp) {
+                            apply(result, stamp, current, context.controlGeneration)
                             localTimestamp = clipboard.primaryClipDescription?.timestamp ?: 0
                         }
                     }
@@ -88,11 +98,14 @@ class ScreenClipboard(context: Context, private val scope: CoroutineScope) {
             }
         }
     }
-    private fun localText(): String? = clipboard.primaryClip?.getItemAt(0)?.text?.toString()
+    private suspend fun apply(result: RemoteDesktopClipboardResponse, stamp: Long, current: Long, grant: Long) {
+        val value = withContext(Dispatchers.IO) { ScreenClipboardContent.response(result).clip(context) }
+        if (value != null && token == current && enabled && (isCurrentGrant?.invoke(grant) ?: false) && (clipboard.primaryClipDescription?.timestamp ?: 0) == stamp) clipboard.setPrimaryClip(value)
+    }
     fun paste() {
-        val text = localText()
-        if (text == null) { onError("Clipboard has no text"); return }
-        perform(RemoteDesktopClipboardRequest.Action.PASTE, text)
+        val clip = clipboard.primaryClip
+        if (clip == null) { onError("Clipboard has no supported content"); return }
+        perform(RemoteDesktopClipboardRequest.Action.PASTE, local = clip)
     }
     fun copy() = perform(RemoteDesktopClipboardRequest.Action.COPY)
     fun configure(value: Boolean) {
@@ -107,7 +120,7 @@ class ScreenClipboard(context: Context, private val scope: CoroutineScope) {
             catch (e: Exception) { if (current == token) onError(e.message ?: "Clipboard unavailable") }
         }
     }
-    fun perform(action: RemoteDesktopClipboardRequest.Action, text: String = "") {
+    fun perform(action: RemoteDesktopClipboardRequest.Action, text: String = "", local: ClipData? = null) {
         if (!enabled) return
         if (operationPending) { onError("A clipboard operation is still in progress"); return }
         val context = request?.invoke() ?: return
@@ -117,11 +130,13 @@ class ScreenClipboard(context: Context, private val scope: CoroutineScope) {
         scope.launch {
             var succeeded = false
             try {
-                val result = exchange(action, text, initial = context)
+                val content = if (local != null) withContext(Dispatchers.IO) { ScreenClipboardContent.read(this@ScreenClipboard.context, local, true) } else ScreenClipboardContent(text)
+                check(content.items.isEmpty() || binarySupported) { "Update the daemon to paste images and files" }
+                val result = exchange(action, content.text ?: "", initial = context, items = content.items)
                 if (current == token) {
                     revision = result.revision
-                    if ((action == RemoteDesktopClipboardRequest.Action.COPY || action == RemoteDesktopClipboardRequest.Action.CUT) && result.hasText && enabled && (clipboard.primaryClipDescription?.timestamp ?: 0) == stamp) {
-                        clipboard.setPrimaryClip(ClipData.newPlainText("Remote screen", result.text))
+                    if ((action == RemoteDesktopClipboardRequest.Action.COPY || action == RemoteDesktopClipboardRequest.Action.CUT) && (result.hasText || result.itemsCount > 0) && enabled && (clipboard.primaryClipDescription?.timestamp ?: 0) == stamp) {
+                        apply(result, stamp, current, context.controlGeneration)
                         localTimestamp = clipboard.primaryClipDescription?.timestamp ?: 0
                     } else { localTimestamp = stamp }
                     completedOperations++; succeeded = true; onError("")
@@ -132,14 +147,15 @@ class ScreenClipboard(context: Context, private val scope: CoroutineScope) {
             } finally { if (current == token) { operationPending = false; onBusy(false); onOperationFinished(succeeded) } }
         }
     }
-    suspend fun exchange(action: RemoteDesktopClipboardRequest.Action, text: String = "", enabled: Boolean = true, initial: RemoteDesktopClipboardRequest.Builder? = null): RemoteDesktopClipboardResponse {
-        require(text.toByteArray().size <= LIMIT) { "Clipboard text exceeds 1 MiB" }
+    suspend fun exchange(action: RemoteDesktopClipboardRequest.Action, text: String = "", enabled: Boolean = true, initial: RemoteDesktopClipboardRequest.Builder? = null, items: List<RemoteDesktopClipboardItem> = emptyList()): RemoteDesktopClipboardResponse {
+        ScreenClipboardContent(if (items.isEmpty()) text else null, items).validate()
+        check(items.isEmpty() || binarySupported) { "Update the daemon to share images and files" }
         val current = token
-        return withTimeout(5000) { mutex.withLock {
+        return withTimeout(30_000) { mutex.withLock {
             val value = channel ?: error("Clipboard unavailable")
             val builder = initial ?: request?.invoke() ?: error("Clipboard requires the active controller")
             check(current == token && value.state() == DataChannel.State.OPEN && (isCurrentGrant?.invoke(builder.controlGeneration) ?: true))
-            val req = builder.setOperationId(UUID.randomUUID().toString()).setAction(action).setText(text).setKnownRevision(revision).setEnabled(enabled).build()
+            val req = builder.setOperationId(UUID.randomUUID().toString()).setAction(action).setText(text).setKnownRevision(revision).setEnabled(enabled).addAllItems(items).setAcceptBinary(binarySupported).build()
             requestId = req.operationId; buffer.reset()
             val pending = CompletableDeferred<RemoteDesktopClipboardResponse>(); response = pending
             try {

@@ -198,7 +198,7 @@ Commands:
   file         Browse and edit project/workspace files with revision checks
   terminal     Create, attach, control, and close daemon-host PTYs
   remote       Run resumable commands and native shells on a daemon host
-  screen       Share screens/clipboard, transfer control, and tune quality/refresh rate
+  screen       Share screens/clipboard, choose codec/recovery, and tune quality
   schedule     Create, preview, dispatch, pause, and inspect schedules
   settings     Inspect and update parallel-session admission limits
   prompt       Inspect, update, scope, and preview prompt templates
@@ -450,6 +450,7 @@ activates a staged signed release there before workers or capture begin.
 	identity, identityErr := dieterdaemon.LoadIdentity(c.Store.Root)
 	enrolled := identityErr == nil && identity.Enrolled()
 	remoteDesktopOptions := remotedesktop.Options{Logger: logger, Source: remoteDesktopSourceOptions(logger)}
+	remoteDesktopOptions.Source.ClipboardDirectory = filepath.Join(c.Store.Root, "clipboard")
 	if enrolled {
 		remoteDesktopOptions.Identity = remotedesktop.Identity{
 			DaemonID: identity.ID, GatewayURL: identity.GatewayURL, Generation: identity.Generation,

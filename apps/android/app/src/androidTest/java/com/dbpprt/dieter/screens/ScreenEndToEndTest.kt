@@ -55,6 +55,7 @@ class ScreenEndToEndTest {
         lateinit var canvas: ScreenCanvasView
         val opened = java.util.concurrent.atomic.AtomicInteger()
         val configurations = java.util.concurrent.atomic.AtomicInteger()
+        val unavailableRoutes = java.util.concurrent.atomic.AtomicInteger()
         val nextConfigurationFailure = AtomicReference<Status?>()
         val faults = object : ClientInterceptor {
             override fun <ReqT : Any?, RespT : Any?> interceptCall(method: MethodDescriptor<ReqT, RespT>, options: CallOptions, next: Channel): ClientCall<ReqT, RespT> {
@@ -71,6 +72,7 @@ class ScreenEndToEndTest {
             }
         }
         suspend fun open(): ScreenConnection {
+            if (unavailableRoutes.getAndUpdate { maxOf(0, it - 1) } > 0) throw Status.UNAVAILABLE.withDescription("Injected sleeping laptop network").asException()
             val channel = OkHttpChannelBuilder.forAddress("127.0.0.1", fixture.getInt("port")).usePlaintext().build()
             val headers = Metadata().apply { put(Metadata.Key.of("authorization", Metadata.ASCII_STRING_MARSHALLER), "Bearer ${fixture.getString("token")}") }
             return ScreenConnection(DieterServiceGrpcKt.DieterServiceCoroutineStub(channel).withInterceptors(MetadataUtils.newAttachHeadersInterceptor(headers), faults),
@@ -125,6 +127,33 @@ class ScreenEndToEndTest {
                         .setAction(action).setText(value).build()
                 val copied = kotlinx.coroutines.runBlocking { clipboardRoute.rpc.exchangeRemoteDesktopClipboard(request(com.dbpprt.dieter.v1.RemoteDesktopClipboardRequest.Action.READ)) }
                 assertEquals(text, copied.text)
+                val binary = ByteArray(2 * 1024 * 1024) { (it % 253).toByte() }
+                val png = Base64.getDecoder().decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aCWQAAAAASUVORK5CYII=")
+                for (image in listOf(true, false)) {
+                    val item = com.dbpprt.dieter.v1.RemoteDesktopClipboardItem.newBuilder()
+                        .setName(if (image) "pixel.png" else "payload.bin")
+                        .setMimeType(if (image) "image/png" else "application/octet-stream")
+                        .setKind(if (image) com.dbpprt.dieter.v1.RemoteDesktopClipboardItem.Kind.IMAGE else com.dbpprt.dieter.v1.RemoteDesktopClipboardItem.Kind.FILE)
+                        .setData(com.google.protobuf.ByteString.copyFrom(if (image) png else binary)).build()
+                    val items = if (image) listOf(item) else listOf(item, com.dbpprt.dieter.v1.RemoteDesktopClipboardItem.newBuilder().setName("empty.txt").setMimeType("text/plain").build())
+                    val clip = requireNotNull(ScreenClipboardContent(items = items).clip(context))
+                    compose.runOnIdle { clipboard.setPrimaryClip(clip) }
+                    val before = controller.clipboard.completedOperations
+                    compose.onNodeWithTag("screens.clipboard.paste").performClick()
+                    compose.waitUntil(15_000) { controller.clipboard.completedOperations > before || controller.state.value.clipboardError.isNotEmpty() }
+                    assertEquals("", controller.state.value.clipboardError)
+                    val received = kotlinx.coroutines.runBlocking { clipboardRoute.rpc.exchangeRemoteDesktopClipboard(request(com.dbpprt.dieter.v1.RemoteDesktopClipboardRequest.Action.READ).toBuilder().setAcceptBinary(true).build()) }
+                    assertArrayEquals(if (image) png else binary, received.itemsList.first().data.toByteArray())
+                    if (!image) { assertEquals(2, received.itemsCount); assertEquals(0, received.itemsList[1].data.size()) }
+                    compose.runOnIdle { controller.clipboard.enabled = false; clipboard.clearPrimaryClip(); controller.clipboard.enabled = true }
+                    val copyBefore = controller.clipboard.completedOperations
+                    compose.onNodeWithTag("screens.clipboard.copy").performClick()
+                    compose.waitUntil(15_000) { controller.clipboard.completedOperations > copyBefore || controller.state.value.clipboardError.isNotEmpty() }
+                    assertEquals("", controller.state.value.clipboardError)
+                    val local = requireNotNull(clipboard.primaryClip)
+                    assertEquals(if (image) 1 else 2, local.itemCount)
+                    assertArrayEquals(if (image) png else binary, context.contentResolver.openInputStream(requireNotNull(local.getItemAt(0).uri))!!.use { it.readBytes() })
+                }
                 val remoteText = "Remote host → Android clipboard 🦊"
                 kotlinx.coroutines.runBlocking { clipboardRoute.rpc.exchangeRemoteDesktopClipboard(request(com.dbpprt.dieter.v1.RemoteDesktopClipboardRequest.Action.WRITE, remoteText)) }
                 compose.waitUntil(7000) { clipboard.primaryClip?.getItemAt(0)?.text?.toString() == remoteText }
@@ -354,6 +383,7 @@ class ScreenEndToEndTest {
 
             // Also expire the actual daemon-side session. Its close signal and the peer
             // disconnect can race; only one replacement is allowed and input must resume.
+            unavailableRoutes.set(5)
             val expiredId = controller.id
             val expiry = java.net.URL("http://127.0.0.1:${fixture.getInt("port")}/test/expire-screen?session=$expiredId").openConnection() as java.net.HttpURLConnection
             try {
@@ -366,6 +396,10 @@ class ScreenEndToEndTest {
             assertEquals(controller.state.value.error, "streaming", controller.state.value.phase)
             assertNotEquals(expiredId, controller.id)
 
+            val beforeResume = controller.id
+            compose.runOnIdle { controller.focus(false); controller.resumeConnection() }
+            compose.waitUntil(30_000) { controller.id != beforeResume && controller.state.value.control }
+            assertEquals("streaming", controller.state.value.phase)
             // A user disconnect during backoff cancels recovery, even after its timer fires.
             compose.onNodeWithTag("screen-disconnect").performClick()
             connect()

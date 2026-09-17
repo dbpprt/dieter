@@ -285,6 +285,46 @@ public nonisolated enum Dieter_V1_ExecutionSignal: SwiftProtobuf.Enum, Swift.Cas
 
 }
 
+public nonisolated enum Dieter_V1_RemoteDesktopCodecPreference: SwiftProtobuf.Enum, Swift.CaseIterable {
+  public typealias RawValue = Int
+  case auto // = 0
+  case h264 // = 1
+
+  /// Strict: unsupported hardware, mode, or offer is an error.
+  case hevc // = 2
+  case UNRECOGNIZED(Int)
+
+  public init() {
+    self = .auto
+  }
+
+  public init?(rawValue: Int) {
+    switch rawValue {
+    case 0: self = .auto
+    case 1: self = .h264
+    case 2: self = .hevc
+    default: self = .UNRECOGNIZED(rawValue)
+    }
+  }
+
+  public var rawValue: Int {
+    switch self {
+    case .auto: return 0
+    case .h264: return 1
+    case .hevc: return 2
+    case .UNRECOGNIZED(let i): return i
+    }
+  }
+
+  // The compiler won't synthesize support with the UNRECOGNIZED case.
+  public static let allCases: [Dieter_V1_RemoteDesktopCodecPreference] = [
+    .auto,
+    .h264,
+    .hevc,
+  ]
+
+}
+
 /// Configuration is a ceiling; the adaptive controller reports the applied values.
 public nonisolated enum Dieter_V1_RemoteDesktopQuality: SwiftProtobuf.Enum, Swift.CaseIterable {
   public typealias RawValue = Int
@@ -5203,11 +5243,37 @@ public nonisolated struct Dieter_V1_RemoteDesktopCapabilities: @unchecked Sendab
     set {_uniqueStorage()._binaryClipboardSupported = newValue}
   }
 
+  /// Hardware-verified operating envelopes; missing entries retain legacy H.264.
+  public var codecModes: [Dieter_V1_RemoteDesktopCodecMode] {
+    get {_storage._codecModes}
+    set {_uniqueStorage()._codecModes = newValue}
+  }
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
 
   fileprivate var _storage = _StorageClass.defaultInstance
+}
+
+public nonisolated struct Dieter_V1_RemoteDesktopCodecMode: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var codec: String = String()
+
+  public var profile: String = String()
+
+  public var maxWidth: Int32 = 0
+
+  public var maxHeight: Int32 = 0
+
+  public var maxFps: Int32 = 0
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
 }
 
 public nonisolated struct Dieter_V1_ProbeRemoteDesktopPermissionsRequest: Sendable {
@@ -5430,6 +5496,17 @@ public nonisolated struct Dieter_V1_StartRemoteDesktopRequest: @unchecked Sendab
   public var clipboard: Bool {
     get {_storage._clipboard}
     set {_uniqueStorage()._clipboard = newValue}
+  }
+
+  public var codecPreference: Dieter_V1_RemoteDesktopCodecPreference {
+    get {_storage._codecPreference}
+    set {_uniqueStorage()._codecPreference = newValue}
+  }
+
+  /// Receiver acknowledges decoded reference challenges and negotiates generic frame dependencies.
+  public var referenceRecovery: Bool {
+    get {_storage._referenceRecovery}
+    set {_uniqueStorage()._referenceRecovery = newValue}
   }
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
@@ -6008,6 +6085,42 @@ public nonisolated struct Dieter_V1_RemoteDesktopSessionState: @unchecked Sendab
     set {_uniqueStorage()._clipboardGeneration = newValue}
   }
 
+  public var referenceRecovery: Bool {
+    get {_storage._referenceRecovery}
+    set {_uniqueStorage()._referenceRecovery = newValue}
+  }
+
+  public var fecPercent: UInt32 {
+    get {_storage._fecPercent}
+    set {_uniqueStorage()._fecPercent = newValue}
+  }
+
+  public var fecPackets: UInt64 {
+    get {_storage._fecPackets}
+    set {_uniqueStorage()._fecPackets = newValue}
+  }
+
+  public var fecBytes: UInt64 {
+    get {_storage._fecBytes}
+    set {_uniqueStorage()._fecBytes = newValue}
+  }
+
+  public var referenceAcks: UInt64 {
+    get {_storage._referenceAcks}
+    set {_uniqueStorage()._referenceAcks = newValue}
+  }
+
+  public var referenceRecoveryFrames: UInt64 {
+    get {_storage._referenceRecoveryFrames}
+    set {_uniqueStorage()._referenceRecoveryFrames = newValue}
+  }
+
+  /// Recovery frames acknowledged after decoding.
+  public var referenceRecoveries: UInt64 {
+    get {_storage._referenceRecoveries}
+    set {_uniqueStorage()._referenceRecoveries = newValue}
+  }
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
@@ -6054,6 +6167,9 @@ public nonisolated struct Dieter_V1_RemoteDesktopReceiverFeedback: Sendable {
   /// Monotonic age of that sample at send time; repeated heartbeats do not refresh it.
   public var measurementAgeMs: UInt32 = 0
 
+  /// At most eight exact challenges, acknowledged only after decoder output.
+  public var decodedReferences: [Dieter_V1_RemoteDesktopReference] = []
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
@@ -6091,6 +6207,22 @@ public nonisolated struct Dieter_V1_RemoteDesktopCursor: Sendable {
   public init() {}
 }
 
+public nonisolated struct Dieter_V1_RemoteDesktopReference: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var generation: UInt64 = 0
+
+  public var frameID: UInt64 = 0
+
+  public var rtpTimestamp: UInt32 = 0
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
 public nonisolated struct Dieter_V1_RemoteDesktopHostEvent: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
@@ -6122,12 +6254,21 @@ public nonisolated struct Dieter_V1_RemoteDesktopHostEvent: Sendable {
     set {payload = .inputAck(newValue)}
   }
 
+  public var reference: Dieter_V1_RemoteDesktopReference {
+    get {
+      if case .reference(let v)? = payload {return v}
+      return Dieter_V1_RemoteDesktopReference()
+    }
+    set {payload = .reference(newValue)}
+  }
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public nonisolated enum OneOf_Payload: Equatable, Sendable {
     case cursor(Dieter_V1_RemoteDesktopCursor)
     case state(Dieter_V1_RemoteDesktopSessionState)
     case inputAck(UInt64)
+    case reference(Dieter_V1_RemoteDesktopReference)
 
   }
 
@@ -6993,6 +7134,10 @@ nonisolated extension Dieter_V1_ExecutionStream: SwiftProtobuf._ProtoNameProvidi
 
 nonisolated extension Dieter_V1_ExecutionSignal: SwiftProtobuf._ProtoNameProviding {
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0EXECUTION_SIGNAL_UNSPECIFIED\0\u{1}EXECUTION_SIGNAL_INTERRUPT\0\u{1}EXECUTION_SIGNAL_TERMINATE\0\u{1}EXECUTION_SIGNAL_KILL\0\u{1}EXECUTION_SIGNAL_HANGUP\0")
+}
+
+nonisolated extension Dieter_V1_RemoteDesktopCodecPreference: SwiftProtobuf._ProtoNameProviding {
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0REMOTE_DESKTOP_CODEC_PREFERENCE_AUTO\0\u{1}REMOTE_DESKTOP_CODEC_PREFERENCE_H264\0\u{1}REMOTE_DESKTOP_CODEC_PREFERENCE_HEVC\0")
 }
 
 nonisolated extension Dieter_V1_RemoteDesktopQuality: SwiftProtobuf._ProtoNameProviding {
@@ -16772,7 +16917,7 @@ nonisolated extension Dieter_V1_ResizeExecutionRequest: SwiftProtobuf.Message, S
 
 nonisolated extension Dieter_V1_RemoteDesktopCapabilities: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".RemoteDesktopCapabilities"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}platform\0\u{3}graphical_session_active\0\u{1}enabled\0\u{1}ready\0\u{3}unavailable_reason\0\u{3}helper_version\0\u{3}capture_permission\0\u{3}control_permission\0\u{1}displays\0\u{1}codecs\0\u{3}hardware_encoder_available\0\u{3}control_supported\0\u{3}clipboard_supported\0\u{3}audio_supported\0\u{3}file_transfer_supported\0\u{3}active_session\0\u{3}adaptive_supported\0\u{3}cursor_supported\0\u{3}input_protocol_version\0\u{3}max_fps\0\u{1}encoder\0\u{3}daemon_executable\0\u{3}capture_executable\0\u{3}max_clients\0\u{3}connected_clients\0\u{3}supported_input_protocol_versions\0\u{3}binary_clipboard_supported\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}platform\0\u{3}graphical_session_active\0\u{1}enabled\0\u{1}ready\0\u{3}unavailable_reason\0\u{3}helper_version\0\u{3}capture_permission\0\u{3}control_permission\0\u{1}displays\0\u{1}codecs\0\u{3}hardware_encoder_available\0\u{3}control_supported\0\u{3}clipboard_supported\0\u{3}audio_supported\0\u{3}file_transfer_supported\0\u{3}active_session\0\u{3}adaptive_supported\0\u{3}cursor_supported\0\u{3}input_protocol_version\0\u{3}max_fps\0\u{1}encoder\0\u{3}daemon_executable\0\u{3}capture_executable\0\u{3}max_clients\0\u{3}connected_clients\0\u{3}supported_input_protocol_versions\0\u{3}binary_clipboard_supported\0\u{3}codec_modes\0")
 
   fileprivate class _StorageClass {
     var _platform: String = String()
@@ -16802,6 +16947,7 @@ nonisolated extension Dieter_V1_RemoteDesktopCapabilities: SwiftProtobuf.Message
     var _connectedClients: UInt32 = 0
     var _supportedInputProtocolVersions: [UInt32] = []
     var _binaryClipboardSupported: Bool = false
+    var _codecModes: [Dieter_V1_RemoteDesktopCodecMode] = []
 
       // This property is used as the initial default value for new instances of the type.
       // The type itself is protecting the reference to its storage via CoW semantics.
@@ -16839,6 +16985,7 @@ nonisolated extension Dieter_V1_RemoteDesktopCapabilities: SwiftProtobuf.Message
       _connectedClients = source._connectedClients
       _supportedInputProtocolVersions = source._supportedInputProtocolVersions
       _binaryClipboardSupported = source._binaryClipboardSupported
+      _codecModes = source._codecModes
     }
   }
 
@@ -16884,6 +17031,7 @@ nonisolated extension Dieter_V1_RemoteDesktopCapabilities: SwiftProtobuf.Message
         case 25: try { try decoder.decodeSingularUInt32Field(value: &_storage._connectedClients) }()
         case 26: try { try decoder.decodeRepeatedUInt32Field(value: &_storage._supportedInputProtocolVersions) }()
         case 27: try { try decoder.decodeSingularBoolField(value: &_storage._binaryClipboardSupported) }()
+        case 28: try { try decoder.decodeRepeatedMessageField(value: &_storage._codecModes) }()
         default: break
         }
       }
@@ -16973,6 +17121,9 @@ nonisolated extension Dieter_V1_RemoteDesktopCapabilities: SwiftProtobuf.Message
       if _storage._binaryClipboardSupported != false {
         try visitor.visitSingularBoolField(value: _storage._binaryClipboardSupported, fieldNumber: 27)
       }
+      if !_storage._codecModes.isEmpty {
+        try visitor.visitRepeatedMessageField(value: _storage._codecModes, fieldNumber: 28)
+      }
     }
     try unknownFields.traverse(visitor: &visitor)
   }
@@ -17009,10 +17160,61 @@ nonisolated extension Dieter_V1_RemoteDesktopCapabilities: SwiftProtobuf.Message
         if _storage._connectedClients != rhs_storage._connectedClients {return false}
         if _storage._supportedInputProtocolVersions != rhs_storage._supportedInputProtocolVersions {return false}
         if _storage._binaryClipboardSupported != rhs_storage._binaryClipboardSupported {return false}
+        if _storage._codecModes != rhs_storage._codecModes {return false}
         return true
       }
       if !storagesAreEqual {return false}
     }
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Dieter_V1_RemoteDesktopCodecMode: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".RemoteDesktopCodecMode"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}codec\0\u{1}profile\0\u{3}max_width\0\u{3}max_height\0\u{3}max_fps\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.codec) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.profile) }()
+      case 3: try { try decoder.decodeSingularInt32Field(value: &self.maxWidth) }()
+      case 4: try { try decoder.decodeSingularInt32Field(value: &self.maxHeight) }()
+      case 5: try { try decoder.decodeSingularInt32Field(value: &self.maxFps) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.codec.isEmpty {
+      try visitor.visitSingularStringField(value: self.codec, fieldNumber: 1)
+    }
+    if !self.profile.isEmpty {
+      try visitor.visitSingularStringField(value: self.profile, fieldNumber: 2)
+    }
+    if self.maxWidth != 0 {
+      try visitor.visitSingularInt32Field(value: self.maxWidth, fieldNumber: 3)
+    }
+    if self.maxHeight != 0 {
+      try visitor.visitSingularInt32Field(value: self.maxHeight, fieldNumber: 4)
+    }
+    if self.maxFps != 0 {
+      try visitor.visitSingularInt32Field(value: self.maxFps, fieldNumber: 5)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Dieter_V1_RemoteDesktopCodecMode, rhs: Dieter_V1_RemoteDesktopCodecMode) -> Bool {
+    if lhs.codec != rhs.codec {return false}
+    if lhs.profile != rhs.profile {return false}
+    if lhs.maxWidth != rhs.maxWidth {return false}
+    if lhs.maxHeight != rhs.maxHeight {return false}
+    if lhs.maxFps != rhs.maxFps {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -17350,7 +17552,7 @@ nonisolated extension Dieter_V1_RemoteDesktopICECandidate: SwiftProtobuf.Message
 
 nonisolated extension Dieter_V1_StartRemoteDesktopRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".StartRemoteDesktopRequest"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}client_nonce\0\u{3}rtc_configuration\0\u{1}offer\0\u{3}initial_candidates\0\u{3}display_id\0\u{1}control\0\u{3}max_width\0\u{3}max_height\0\u{3}max_fps\0\u{3}max_bitrate_kbps\0\u{1}quality\0\u{3}embedded_cursor\0\u{3}input_protocol_version\0\u{3}client_name\0\u{1}clipboard\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}client_nonce\0\u{3}rtc_configuration\0\u{1}offer\0\u{3}initial_candidates\0\u{3}display_id\0\u{1}control\0\u{3}max_width\0\u{3}max_height\0\u{3}max_fps\0\u{3}max_bitrate_kbps\0\u{1}quality\0\u{3}embedded_cursor\0\u{3}input_protocol_version\0\u{3}client_name\0\u{1}clipboard\0\u{3}codec_preference\0\u{3}reference_recovery\0")
 
   fileprivate class _StorageClass {
     var _clientNonce: String = String()
@@ -17368,6 +17570,8 @@ nonisolated extension Dieter_V1_StartRemoteDesktopRequest: SwiftProtobuf.Message
     var _inputProtocolVersion: UInt32 = 0
     var _clientName: String = String()
     var _clipboard: Bool = false
+    var _codecPreference: Dieter_V1_RemoteDesktopCodecPreference = .auto
+    var _referenceRecovery: Bool = false
 
       // This property is used as the initial default value for new instances of the type.
       // The type itself is protecting the reference to its storage via CoW semantics.
@@ -17393,6 +17597,8 @@ nonisolated extension Dieter_V1_StartRemoteDesktopRequest: SwiftProtobuf.Message
       _inputProtocolVersion = source._inputProtocolVersion
       _clientName = source._clientName
       _clipboard = source._clipboard
+      _codecPreference = source._codecPreference
+      _referenceRecovery = source._referenceRecovery
     }
   }
 
@@ -17426,6 +17632,8 @@ nonisolated extension Dieter_V1_StartRemoteDesktopRequest: SwiftProtobuf.Message
         case 13: try { try decoder.decodeSingularUInt32Field(value: &_storage._inputProtocolVersion) }()
         case 14: try { try decoder.decodeSingularStringField(value: &_storage._clientName) }()
         case 15: try { try decoder.decodeSingularBoolField(value: &_storage._clipboard) }()
+        case 16: try { try decoder.decodeSingularEnumField(value: &_storage._codecPreference) }()
+        case 17: try { try decoder.decodeSingularBoolField(value: &_storage._referenceRecovery) }()
         default: break
         }
       }
@@ -17483,6 +17691,12 @@ nonisolated extension Dieter_V1_StartRemoteDesktopRequest: SwiftProtobuf.Message
       if _storage._clipboard != false {
         try visitor.visitSingularBoolField(value: _storage._clipboard, fieldNumber: 15)
       }
+      if _storage._codecPreference != .auto {
+        try visitor.visitSingularEnumField(value: _storage._codecPreference, fieldNumber: 16)
+      }
+      if _storage._referenceRecovery != false {
+        try visitor.visitSingularBoolField(value: _storage._referenceRecovery, fieldNumber: 17)
+      }
     }
     try unknownFields.traverse(visitor: &visitor)
   }
@@ -17507,6 +17721,8 @@ nonisolated extension Dieter_V1_StartRemoteDesktopRequest: SwiftProtobuf.Message
         if _storage._inputProtocolVersion != rhs_storage._inputProtocolVersion {return false}
         if _storage._clientName != rhs_storage._clientName {return false}
         if _storage._clipboard != rhs_storage._clipboard {return false}
+        if _storage._codecPreference != rhs_storage._codecPreference {return false}
+        if _storage._referenceRecovery != rhs_storage._referenceRecovery {return false}
         return true
       }
       if !storagesAreEqual {return false}
@@ -18284,7 +18500,7 @@ nonisolated extension Dieter_V1_RemoteDesktopInput: SwiftProtobuf.Message, Swift
 
 nonisolated extension Dieter_V1_RemoteDesktopSessionState: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".RemoteDesktopSessionState"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}phase\0\u{1}reason\0\u{1}route\0\u{1}codec\0\u{1}width\0\u{1}height\0\u{1}fps\0\u{3}bitrate_kbps\0\u{3}display_id\0\u{3}display_generation\0\u{1}configuration\0\u{3}encode_ms\0\u{3}capture_delay_ms\0\u{3}queue_ms\0\u{3}frames_sent\0\u{3}frames_dropped\0\u{3}last_frame_id\0\u{3}last_input_ordinal\0\u{1}encoder\0\u{3}embedded_cursor\0\u{3}receiver_fps\0\u{3}rtt_ms\0\u{3}media_generation\0\u{3}media_timestamp\0\u{3}send_ms\0\u{3}capture_to_send_ms\0\u{3}jitter_buffer_ms\0\u{3}render_ms\0\u{3}pacing_bitrate_kbps\0\u{3}control_active\0\u{3}control_generation\0\u{3}controller_name\0\u{3}connected_clients\0\u{3}clipboard_enabled\0\u{3}clipboard_generation\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}phase\0\u{1}reason\0\u{1}route\0\u{1}codec\0\u{1}width\0\u{1}height\0\u{1}fps\0\u{3}bitrate_kbps\0\u{3}display_id\0\u{3}display_generation\0\u{1}configuration\0\u{3}encode_ms\0\u{3}capture_delay_ms\0\u{3}queue_ms\0\u{3}frames_sent\0\u{3}frames_dropped\0\u{3}last_frame_id\0\u{3}last_input_ordinal\0\u{1}encoder\0\u{3}embedded_cursor\0\u{3}receiver_fps\0\u{3}rtt_ms\0\u{3}media_generation\0\u{3}media_timestamp\0\u{3}send_ms\0\u{3}capture_to_send_ms\0\u{3}jitter_buffer_ms\0\u{3}render_ms\0\u{3}pacing_bitrate_kbps\0\u{3}control_active\0\u{3}control_generation\0\u{3}controller_name\0\u{3}connected_clients\0\u{3}clipboard_enabled\0\u{3}clipboard_generation\0\u{3}reference_recovery\0\u{3}fec_percent\0\u{3}fec_packets\0\u{3}fec_bytes\0\u{3}reference_acks\0\u{3}reference_recovery_frames\0\u{3}reference_recoveries\0")
 
   fileprivate class _StorageClass {
     var _phase: String = String()
@@ -18322,6 +18538,13 @@ nonisolated extension Dieter_V1_RemoteDesktopSessionState: SwiftProtobuf.Message
     var _connectedClients: UInt32 = 0
     var _clipboardEnabled: Bool = false
     var _clipboardGeneration: UInt64 = 0
+    var _referenceRecovery: Bool = false
+    var _fecPercent: UInt32 = 0
+    var _fecPackets: UInt64 = 0
+    var _fecBytes: UInt64 = 0
+    var _referenceAcks: UInt64 = 0
+    var _referenceRecoveryFrames: UInt64 = 0
+    var _referenceRecoveries: UInt64 = 0
 
       // This property is used as the initial default value for new instances of the type.
       // The type itself is protecting the reference to its storage via CoW semantics.
@@ -18367,6 +18590,13 @@ nonisolated extension Dieter_V1_RemoteDesktopSessionState: SwiftProtobuf.Message
       _connectedClients = source._connectedClients
       _clipboardEnabled = source._clipboardEnabled
       _clipboardGeneration = source._clipboardGeneration
+      _referenceRecovery = source._referenceRecovery
+      _fecPercent = source._fecPercent
+      _fecPackets = source._fecPackets
+      _fecBytes = source._fecBytes
+      _referenceAcks = source._referenceAcks
+      _referenceRecoveryFrames = source._referenceRecoveryFrames
+      _referenceRecoveries = source._referenceRecoveries
     }
   }
 
@@ -18420,6 +18650,13 @@ nonisolated extension Dieter_V1_RemoteDesktopSessionState: SwiftProtobuf.Message
         case 33: try { try decoder.decodeSingularUInt32Field(value: &_storage._connectedClients) }()
         case 34: try { try decoder.decodeSingularBoolField(value: &_storage._clipboardEnabled) }()
         case 35: try { try decoder.decodeSingularUInt64Field(value: &_storage._clipboardGeneration) }()
+        case 36: try { try decoder.decodeSingularBoolField(value: &_storage._referenceRecovery) }()
+        case 37: try { try decoder.decodeSingularUInt32Field(value: &_storage._fecPercent) }()
+        case 38: try { try decoder.decodeSingularUInt64Field(value: &_storage._fecPackets) }()
+        case 39: try { try decoder.decodeSingularUInt64Field(value: &_storage._fecBytes) }()
+        case 40: try { try decoder.decodeSingularUInt64Field(value: &_storage._referenceAcks) }()
+        case 41: try { try decoder.decodeSingularUInt64Field(value: &_storage._referenceRecoveryFrames) }()
+        case 42: try { try decoder.decodeSingularUInt64Field(value: &_storage._referenceRecoveries) }()
         default: break
         }
       }
@@ -18537,6 +18774,27 @@ nonisolated extension Dieter_V1_RemoteDesktopSessionState: SwiftProtobuf.Message
       if _storage._clipboardGeneration != 0 {
         try visitor.visitSingularUInt64Field(value: _storage._clipboardGeneration, fieldNumber: 35)
       }
+      if _storage._referenceRecovery != false {
+        try visitor.visitSingularBoolField(value: _storage._referenceRecovery, fieldNumber: 36)
+      }
+      if _storage._fecPercent != 0 {
+        try visitor.visitSingularUInt32Field(value: _storage._fecPercent, fieldNumber: 37)
+      }
+      if _storage._fecPackets != 0 {
+        try visitor.visitSingularUInt64Field(value: _storage._fecPackets, fieldNumber: 38)
+      }
+      if _storage._fecBytes != 0 {
+        try visitor.visitSingularUInt64Field(value: _storage._fecBytes, fieldNumber: 39)
+      }
+      if _storage._referenceAcks != 0 {
+        try visitor.visitSingularUInt64Field(value: _storage._referenceAcks, fieldNumber: 40)
+      }
+      if _storage._referenceRecoveryFrames != 0 {
+        try visitor.visitSingularUInt64Field(value: _storage._referenceRecoveryFrames, fieldNumber: 41)
+      }
+      if _storage._referenceRecoveries != 0 {
+        try visitor.visitSingularUInt64Field(value: _storage._referenceRecoveries, fieldNumber: 42)
+      }
     }
     try unknownFields.traverse(visitor: &visitor)
   }
@@ -18581,6 +18839,13 @@ nonisolated extension Dieter_V1_RemoteDesktopSessionState: SwiftProtobuf.Message
         if _storage._connectedClients != rhs_storage._connectedClients {return false}
         if _storage._clipboardEnabled != rhs_storage._clipboardEnabled {return false}
         if _storage._clipboardGeneration != rhs_storage._clipboardGeneration {return false}
+        if _storage._referenceRecovery != rhs_storage._referenceRecovery {return false}
+        if _storage._fecPercent != rhs_storage._fecPercent {return false}
+        if _storage._fecPackets != rhs_storage._fecPackets {return false}
+        if _storage._fecBytes != rhs_storage._fecBytes {return false}
+        if _storage._referenceAcks != rhs_storage._referenceAcks {return false}
+        if _storage._referenceRecoveryFrames != rhs_storage._referenceRecoveryFrames {return false}
+        if _storage._referenceRecoveries != rhs_storage._referenceRecoveries {return false}
         return true
       }
       if !storagesAreEqual {return false}
@@ -18592,7 +18857,7 @@ nonisolated extension Dieter_V1_RemoteDesktopSessionState: SwiftProtobuf.Message
 
 nonisolated extension Dieter_V1_RemoteDesktopReceiverFeedback: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".RemoteDesktopReceiverFeedback"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}protocol_version\0\u{3}input_epoch\0\u{1}sequence\0\u{3}frames_per_second\0\u{3}decode_ms\0\u{3}jitter_ms\0\u{3}rtt_ms\0\u{3}loss_fraction\0\u{3}input_active\0\u{3}rendered_frames\0\u{3}jitter_buffer_ms\0\u{3}render_ms\0\u{3}measurement_sequence\0\u{3}measurement_age_ms\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}protocol_version\0\u{3}input_epoch\0\u{1}sequence\0\u{3}frames_per_second\0\u{3}decode_ms\0\u{3}jitter_ms\0\u{3}rtt_ms\0\u{3}loss_fraction\0\u{3}input_active\0\u{3}rendered_frames\0\u{3}jitter_buffer_ms\0\u{3}render_ms\0\u{3}measurement_sequence\0\u{3}measurement_age_ms\0\u{3}decoded_references\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -18614,6 +18879,7 @@ nonisolated extension Dieter_V1_RemoteDesktopReceiverFeedback: SwiftProtobuf.Mes
       case 12: try { try decoder.decodeSingularDoubleField(value: &self.renderMs) }()
       case 13: try { try decoder.decodeSingularUInt64Field(value: &self.measurementSequence) }()
       case 14: try { try decoder.decodeSingularUInt32Field(value: &self.measurementAgeMs) }()
+      case 15: try { try decoder.decodeRepeatedMessageField(value: &self.decodedReferences) }()
       default: break
       }
     }
@@ -18662,6 +18928,9 @@ nonisolated extension Dieter_V1_RemoteDesktopReceiverFeedback: SwiftProtobuf.Mes
     if self.measurementAgeMs != 0 {
       try visitor.visitSingularUInt32Field(value: self.measurementAgeMs, fieldNumber: 14)
     }
+    if !self.decodedReferences.isEmpty {
+      try visitor.visitRepeatedMessageField(value: self.decodedReferences, fieldNumber: 15)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -18680,6 +18949,7 @@ nonisolated extension Dieter_V1_RemoteDesktopReceiverFeedback: SwiftProtobuf.Mes
     if lhs.renderMs != rhs.renderMs {return false}
     if lhs.measurementSequence != rhs.measurementSequence {return false}
     if lhs.measurementAgeMs != rhs.measurementAgeMs {return false}
+    if lhs.decodedReferences != rhs.decodedReferences {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -18765,9 +19035,49 @@ nonisolated extension Dieter_V1_RemoteDesktopCursor: SwiftProtobuf.Message, Swif
   }
 }
 
+nonisolated extension Dieter_V1_RemoteDesktopReference: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".RemoteDesktopReference"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}generation\0\u{3}frame_id\0\u{3}rtp_timestamp\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularUInt64Field(value: &self.generation) }()
+      case 2: try { try decoder.decodeSingularUInt64Field(value: &self.frameID) }()
+      case 3: try { try decoder.decodeSingularUInt32Field(value: &self.rtpTimestamp) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if self.generation != 0 {
+      try visitor.visitSingularUInt64Field(value: self.generation, fieldNumber: 1)
+    }
+    if self.frameID != 0 {
+      try visitor.visitSingularUInt64Field(value: self.frameID, fieldNumber: 2)
+    }
+    if self.rtpTimestamp != 0 {
+      try visitor.visitSingularUInt32Field(value: self.rtpTimestamp, fieldNumber: 3)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Dieter_V1_RemoteDesktopReference, rhs: Dieter_V1_RemoteDesktopReference) -> Bool {
+    if lhs.generation != rhs.generation {return false}
+    if lhs.frameID != rhs.frameID {return false}
+    if lhs.rtpTimestamp != rhs.rtpTimestamp {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
 nonisolated extension Dieter_V1_RemoteDesktopHostEvent: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".RemoteDesktopHostEvent"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}cursor\0\u{1}state\0\u{3}input_ack\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}cursor\0\u{1}state\0\u{3}input_ack\0\u{1}reference\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -18809,6 +19119,19 @@ nonisolated extension Dieter_V1_RemoteDesktopHostEvent: SwiftProtobuf.Message, S
           self.payload = .inputAck(v)
         }
       }()
+      case 4: try {
+        var v: Dieter_V1_RemoteDesktopReference?
+        var hadOneofValue = false
+        if let current = self.payload {
+          hadOneofValue = true
+          if case .reference(let m) = current {v = m}
+        }
+        try decoder.decodeSingularMessageField(value: &v)
+        if let v = v {
+          if hadOneofValue {try decoder.handleConflictingOneOf()}
+          self.payload = .reference(v)
+        }
+      }()
       default: break
       }
     }
@@ -18831,6 +19154,10 @@ nonisolated extension Dieter_V1_RemoteDesktopHostEvent: SwiftProtobuf.Message, S
     case .inputAck?: try {
       guard case .inputAck(let v)? = self.payload else { preconditionFailure() }
       try visitor.visitSingularUInt64Field(value: v, fieldNumber: 3)
+    }()
+    case .reference?: try {
+      guard case .reference(let v)? = self.payload else { preconditionFailure() }
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 4)
     }()
     case nil: break
     }

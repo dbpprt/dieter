@@ -1,8 +1,11 @@
 package remotedesktop
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"github.com/pion/webrtc/v4"
+	"google.golang.org/protobuf/proto"
 	"os"
 	"strings"
 	"testing"
@@ -155,7 +158,7 @@ func TestNativeClipboardService(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	backend := newNativeClipboard(ctx, SourceOptions{Kind: "native-synthetic", HelperPath: helper}, "com.dbpprt.dieter.fixture."+randomID())
+	backend := newNativeClipboard(ctx, SourceOptions{Kind: "native-synthetic", HelperPath: helper, ClipboardDirectory: t.TempDir()}, "com.dbpprt.dieter.fixture."+randomID())
 	defer backend.Close()
 	for i, text := range []string{"", "Native clipboard 🌍\n日本語\n", strings.Repeat("é", ClipboardMaxBytes/2)} {
 		v, err := backend.Exchange(ctx, &dieterv1.RemoteDesktopClipboardRequest{Action: dieterv1.RemoteDesktopClipboardRequest_PASTE, Text: text})
@@ -191,5 +194,176 @@ func TestClipboardWaitsForSelectionInput(t *testing.T) {
 	s.completedStateSequence.Store(7)
 	if err := <-done; err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestClipboardBinaryRoundTripAndValidation(t *testing.T) {
+	s, backend := clipboardFixture(t)
+	r := clipboardRequest(s, dieterv1.RemoteDesktopClipboardRequest_PASTE)
+	r.AcceptBinary = true
+	r.Items = []*dieterv1.RemoteDesktopClipboardItem{{Name: "payload.bin", MimeType: "application/octet-stream", Data: bytes.Repeat([]byte{0, 1, 255, 10}, ClipboardBinaryMaxBytes/4)}, {Name: "empty.txt", MimeType: "text/plain"}}
+	if _, err := s.exchangeClipboard(s.ctx, r); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.exchangeClipboard(s.ctx, r); err != nil {
+		t.Fatal(err)
+	}
+	if backend.Pastes != 1 {
+		t.Fatal("paste replayed")
+	}
+	read := clipboardRequest(s, dieterv1.RemoteDesktopClipboardRequest_READ)
+	read.AcceptBinary = true
+	value, err := s.exchangeClipboard(s.ctx, read)
+	if err != nil || len(value.Items) != 2 || !proto.Equal(value.Items[0], r.Items[0]) || value.HasText {
+		t.Fatalf("binary round trip: %v", err)
+	}
+	read.AcceptBinary = false
+	legacy, err := s.exchangeClipboard(s.ctx, read)
+	if err != nil || len(legacy.Items) != 0 || legacy.HasText {
+		t.Fatal("legacy viewer received binary content")
+	}
+	for _, name := range []string{"../escape", "/absolute", "..", "a\\b", "nul\x00name"} {
+		bad := proto.Clone(r).(*dieterv1.RemoteDesktopClipboardRequest)
+		bad.Items[0].Name = name
+		if _, err := s.exchangeClipboard(s.ctx, bad); err == nil {
+			t.Errorf("accepted name %q", name)
+		}
+	}
+	duplicate := proto.Clone(r).(*dieterv1.RemoteDesktopClipboardRequest)
+	duplicate.Items[1].Name = "PAYLOAD.BIN"
+	if _, err := s.exchangeClipboard(s.ctx, duplicate); err == nil {
+		t.Fatal("accepted filenames that collide on macOS")
+	}
+	r.Items[1].Data = []byte{1}
+	if _, err := s.exchangeClipboard(s.ctx, r); err == nil {
+		t.Fatal("accepted oversized clipboard")
+	}
+	r.Items = []*dieterv1.RemoteDesktopClipboardItem{{Name: "image.png", Kind: dieterv1.RemoteDesktopClipboardItem_IMAGE, MimeType: "application/x-executable"}}
+	if _, err := s.exchangeClipboard(s.ctx, r); err == nil {
+		t.Fatal("accepted unsupported image")
+	}
+}
+
+func TestNativeClipboardBinaryFiles(t *testing.T) {
+	helper := os.Getenv("DIETER_TEST_CAPTURE_HELPER")
+	if helper == "" {
+		t.Skip("native helper not configured")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	root := t.TempDir()
+	backend := newNativeClipboard(ctx, SourceOptions{Kind: "native-synthetic", HelperPath: helper, ClipboardDirectory: root}, "com.dbpprt.dieter.fixture."+randomID())
+	defer backend.Close()
+	items := []*dieterv1.RemoteDesktopClipboardItem{{Name: "data.bin", MimeType: "application/octet-stream", Data: bytes.Repeat([]byte{0, 255, 12}, 700000)}, {Name: "empty.txt", MimeType: "text/plain"}}
+	value, err := backend.Exchange(ctx, &dieterv1.RemoteDesktopClipboardRequest{Action: dieterv1.RemoteDesktopClipboardRequest_PASTE, Items: items, AcceptBinary: true})
+	if err != nil || value.Error != "" {
+		t.Fatalf("native write: %v %v", err, value)
+	}
+	value, err = backend.Exchange(ctx, &dieterv1.RemoteDesktopClipboardRequest{Action: dieterv1.RemoteDesktopClipboardRequest_READ, AcceptBinary: true})
+	if err != nil || value.Error != "" || len(value.Items) != 2 || !bytes.Equal(value.Items[0].Data, items[0].Data) || len(value.Items[1].Data) != 0 {
+		t.Fatalf("native file round trip: %v, %s", err, value.GetError())
+	}
+}
+
+func TestClipboardChannelDisconnectBeforeFinalChunkDoesNotPaste(t *testing.T) {
+	s, backend := clipboardFixture(t)
+	client, err := webrtc.NewPeerConnection(webrtc.Configuration{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+	host, err := webrtc.NewPeerConnection(webrtc.Configuration{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer host.Close()
+	host.OnDataChannel(s.installClipboardChannel)
+	channel, err := client.CreateDataChannel(clipboardChannelLabel, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ready := make(chan struct{})
+	channel.OnOpen(func() { close(ready) })
+	replies := make(chan *dieterv1.RemoteDesktopClipboardResponse, 1)
+	channel.OnMessage(func(m webrtc.DataChannelMessage) {
+		var frame dieterv1.RemoteDesktopClipboardFrame
+		if proto.Unmarshal(m.Data, &frame) != nil || !frame.End {
+			return
+		}
+		var reply dieterv1.RemoteDesktopClipboardResponse
+		if proto.Unmarshal(frame.Data, &reply) == nil {
+			replies <- &reply
+		}
+	})
+	offer, err := client.CreateOffer(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gathered := webrtc.GatheringCompletePromise(client)
+	if err = client.SetLocalDescription(offer); err != nil {
+		t.Fatal(err)
+	}
+	<-gathered
+	if err = host.SetRemoteDescription(*client.LocalDescription()); err != nil {
+		t.Fatal(err)
+	}
+	answer, err := host.CreateAnswer(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gathered = webrtc.GatheringCompletePromise(host)
+	if err = host.SetLocalDescription(answer); err != nil {
+		t.Fatal(err)
+	}
+	<-gathered
+	if err = client.SetRemoteDescription(*host.LocalDescription()); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-ready:
+	case <-time.After(5 * time.Second):
+		t.Fatal("clipboard channel did not open")
+	}
+	send := func(r *dieterv1.RemoteDesktopClipboardRequest, complete bool) {
+		t.Helper()
+		raw, err := proto.Marshal(r)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !complete {
+			raw = raw[:min(len(raw), 2*clipboardChunkBytes)]
+		}
+		for offset := 0; offset < len(raw); offset += clipboardChunkBytes {
+			end := min(offset+clipboardChunkBytes, len(raw))
+			frame, _ := proto.Marshal(&dieterv1.RemoteDesktopClipboardFrame{OperationId: r.OperationId, Data: raw[offset:end], End: complete && end == len(raw)})
+			if err := channel.Send(frame); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	baseline := clipboardRequest(s, dieterv1.RemoteDesktopClipboardRequest_WRITE)
+	baseline.Text = "Preserve this clipboard"
+	send(baseline, true)
+	select {
+	case reply := <-replies:
+		if reply.Error != "" {
+			t.Fatal(reply.Error)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("clipboard baseline did not cross WebRTC")
+	}
+	partial := clipboardRequest(s, dieterv1.RemoteDesktopClipboardRequest_PASTE)
+	partial.OperationId = "partial"
+	partial.AcceptBinary = true
+	partial.Items = []*dieterv1.RemoteDesktopClipboardItem{{Name: "partial.bin", Data: bytes.Repeat([]byte{0xa5}, ClipboardBinaryMaxBytes)}}
+	send(partial, false)
+	if err := channel.Close(); err != nil {
+		t.Fatal(err)
+	}
+	s.cancel()
+	backend.mu.Lock()
+	defer backend.mu.Unlock()
+	if backend.Pastes != 0 || backend.text != baseline.Text {
+		t.Fatal("partial transfer mutated the native clipboard or pasted")
 	}
 }

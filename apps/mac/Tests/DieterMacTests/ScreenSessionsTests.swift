@@ -8,14 +8,14 @@ import Testing
     defer { defaults.removePersistentDomain(forName: suite) }
 
     let initial = ScreensModel(defaults: defaults)
-    #expect(initial.inactivityTimeoutEnabled)
+    #expect(!initial.inactivityTimeoutEnabled)
     #expect(initial.inactivityTimeoutMinutes == 30)
 
-    initial.inactivityTimeoutEnabled = false
+    initial.inactivityTimeoutEnabled = true
     initial.inactivityTimeoutMinutes = 45
 
     let restored = ScreensModel(defaults: defaults)
-    #expect(!restored.inactivityTimeoutEnabled)
+    #expect(restored.inactivityTimeoutEnabled)
     #expect(restored.inactivityTimeoutMinutes == 45)
 }
 
@@ -73,4 +73,15 @@ import Testing
 
     #expect(!session.disconnectIfInactive(at: activity.addingTimeInterval(3_600)))
     #expect(session.controller.phase == .streaming)
+}
+
+@Test @MainActor func sleepingScreenDoesNotExpireItsInactivityTimerBeforeWake() {
+    let session = ScreenShareSession(machineID: "sleep-test", machineName: "Fixture", monitorsInactivity: false)
+    session.controller.phase = .streaming
+    session.configureInactivityTimeout(enabled: true, minutes: 1)
+    session.controller.prepareForSleep()
+    #expect(!session.disconnectIfInactive(at: Date().addingTimeInterval(3600)))
+    #expect(session.controller.phase == .streaming)
+    session.disconnect()
+    #expect(!session.controller.systemSleeping)
 }

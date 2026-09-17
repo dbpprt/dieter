@@ -15,10 +15,17 @@ import (
 // producer owns at most one encoded access unit and the helper replaces raw
 // pending frames. Whole-frame admission/recovery happens before packetization.
 type packetPacer struct {
+	descriptorID           atomic.Uint32
+	fec                    *fecStream // sendMu; finalized packets, at most 12 retained
+	fecNegotiated          atomic.Bool
+	fecPercent             atomic.Int64
+	fecPackets             atomic.Uint64
+	fecBytes               atomic.Uint64
 	mu                     sync.Mutex
 	sendMu                 sync.Mutex
 	writers                map[uint32]interceptor.RTPWriter
 	bitrate                int
+	bitrateUpdated         time.Time
 	next                   time.Time
 	ctx                    context.Context
 	cancel                 context.CancelFunc
@@ -36,6 +43,7 @@ type packetPacer struct {
 	transportID            uint8
 	transportHistory       [transportHistorySize]sentTransportPacket
 	transport              transportHealth
+	feedbackReady          chan struct{} // one coalesced wakeup; never configure from RTCP/GCC
 	transportPressureSince time.Time
 	recoveryRTT            time.Duration
 	recoveryMeasured       time.Time
@@ -66,7 +74,7 @@ func (p *packetPacer) ConfirmedBitrate() int {
 
 func newPacketPacer(rate int) *packetPacer {
 	ctx, cancel := context.WithCancel(context.Background())
-	return &packetPacer{writers: make(map[uint32]interceptor.RTPWriter), bitrate: rate, probeCeiling: 16_000_000, ctx: ctx, cancel: cancel}
+	return &packetPacer{writers: make(map[uint32]interceptor.RTPWriter), bitrate: rate, probeCeiling: 16_000_000, ctx: ctx, cancel: cancel, feedbackReady: make(chan struct{}, 1)}
 }
 func (p *packetPacer) AddStream(ssrc uint32, w interceptor.RTPWriter) {
 	p.mu.Lock()
@@ -76,7 +84,16 @@ func (p *packetPacer) AddStream(ssrc uint32, w interceptor.RTPWriter) {
 func (p *packetPacer) SetTargetBitrate(rate int) {
 	p.mu.Lock()
 	p.bitrate = max(100_000, rate)
+	p.bitrateUpdated = time.Now()
 	p.mu.Unlock()
+	p.notifyFeedback()
+}
+
+func (p *packetPacer) notifyFeedback() {
+	select {
+	case p.feedbackReady <- struct{}{}:
+	default:
+	}
 }
 
 // Feedback is sampled outside GCC's callback (which owns its estimator lock).
@@ -148,6 +165,23 @@ func (p *packetPacer) Write(header *rtp.Header, payload []byte, attributes inter
 	defer p.sendMu.Unlock()
 	p.mu.Lock()
 	writer := p.writers[header.SSRC]
+	p.mu.Unlock()
+	n, err := p.writePacket(header, payload, attributes, writer)
+	if err != nil || p.fec == nil {
+		return n, err
+	}
+	for _, repair := range p.fec.protect(time.Now(), header, payload, int(p.fecPercent.Load())) {
+		if _, err = p.writePacket(&repair.Header, repair.Payload, nil, p.fec.writer); err != nil {
+			return n, err
+		}
+		p.fecPackets.Add(1)
+		p.fecBytes.Add(uint64(repair.MarshalSize() + 48))
+	}
+	return n, nil
+}
+
+func (p *packetPacer) writePacket(header *rtp.Header, payload []byte, attributes interceptor.Attributes, writer interceptor.RTPWriter) (int, error) {
+	p.mu.Lock()
 	next := p.next
 	// Headroom lets a bounded burst (not an unbounded packet queue) carry
 	// keyframes and lets GCC observe capacity above the encoded media rate.

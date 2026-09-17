@@ -8,9 +8,12 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"github.com/dbpprt/dieter/internal/remotedesktop"
 	"io"
+	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"unicode/utf8"
@@ -35,7 +38,7 @@ Actions:
   status SESSION               Show current stream configuration and performance
   configure SESSION [options]  Change display, quality and stream ceilings live
   refresh SESSION              Request a fresh keyframe, including an idle screen
-  clipboard ACTION SESSION     Read, write, copy, paste, or toggle text sharing
+  clipboard ACTION SESSION     Read, write, copy, paste, or toggle clipboard sharing
   close SESSION                Close a remote-desktop session
 
 "start" accepts protobuf JSON from FILE or stdin (-). It can also consume
@@ -210,8 +213,10 @@ func readProtoJSON(path string, in io.Reader, value proto.Message) error {
 }
 
 func (c *CLI) rpcScreenStart(args []string) error {
-	const usage = "Usage: dieter screen start --request FILE|- [--signal-input FILE|-] [--count N]\n"
+	const usage = "Usage: dieter screen start --request FILE|- [--signal-input FILE|-] [--count N] [--codec auto|h264|hevc] [--reference-recovery]\nHEVC requires a compatible signed H265 offer and hardware at up to 1080p60; codec changes require a new session.\nReference recovery requires the generic RTP frame descriptor and acknowledgements after decoder completion. Omitted flags preserve request JSON.\n"
 	set := flags("screen start")
+	references := set.Bool("reference-recovery", false, "receiver supports decoded-reference feedback and generic RTP dependencies")
+	codec := set.String("codec", "auto", "override request codec preference: auto, h264, or strict hevc")
 	requestFile := set.String("request", "", "StartRemoteDesktopRequest protobuf JSON")
 	signalInput := set.String("signal-input", "", "RemoteDesktopSignal JSON Lines for trickle ICE/heartbeat")
 	count := set.Int("count", 0, "stop after N daemon signals; zero streams until close")
@@ -222,6 +227,14 @@ func (c *CLI) rpcScreenStart(args []string) error {
 	if set.NArg() != 0 || strings.TrimSpace(*requestFile) == "" {
 		return errors.New("--request is required")
 	}
+	preference, ok := map[string]dieterv1.RemoteDesktopCodecPreference{
+		"auto": dieterv1.RemoteDesktopCodecPreference_REMOTE_DESKTOP_CODEC_PREFERENCE_AUTO,
+		"h264": dieterv1.RemoteDesktopCodecPreference_REMOTE_DESKTOP_CODEC_PREFERENCE_H264,
+		"hevc": dieterv1.RemoteDesktopCodecPreference_REMOTE_DESKTOP_CODEC_PREFERENCE_HEVC,
+	}[*codec]
+	if !ok {
+		return errors.New("codec must be auto, h264, or hevc")
+	}
 	if *requestFile == "-" && *signalInput == "-" {
 		return errors.New("--request and --signal-input cannot both read stdin")
 	}
@@ -229,6 +242,14 @@ func (c *CLI) rpcScreenStart(args []string) error {
 	if err := readProtoJSON(*requestFile, c.In, request); err != nil {
 		return err
 	}
+	set.Visit(func(f *flag.Flag) {
+		if f.Name == "reference-recovery" {
+			request.ReferenceRecovery = *references
+		}
+		if f.Name == "codec" {
+			request.CodecPreference = preference
+		}
+	})
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	client, rpcCtx, err := c.rpc(ctx)
@@ -482,15 +503,25 @@ as JSON. Supports --machine ID|NAME.
 }
 
 func (c *CLI) rpcScreenClipboard(args []string) error {
-	const usage = `Usage: dieter screen clipboard read|write|paste|copy|cut|enable|disable SESSION [--file FILE|-]
+	const usage = `Usage: dieter screen clipboard read|write|paste|copy|cut|enable|disable SESSION [options]
 
-Share UTF-8 text with an existing controlling screen session. read prints the
-host clipboard as protobuf JSON. write updates it; paste updates it and invokes
-the native paste shortcut once. copy invokes the native copy shortcut; a later
-read returns the copied selection. cut invokes the native cut shortcut. enable/disable controls session sharing.
-write/paste require --file (use - for stdin), at most 1 MiB. Clipboard contents
-are transient. Mutations are never automatically retried. Supports global
---machine ID|NAME with direct TLS and relay fallback.
+Share text, images and regular files with an existing controlling screen session.
+write updates the host clipboard; paste also invokes the native paste shortcut
+once. copy/cut invoke the host shortcut and return the copied content. read returns
+protobuf JSON (binary data is base64). enable/disable controls session sharing.
+
+write/paste require exactly one format:
+  --file FILE|-      UTF-8 text, at most 1 MiB (use - for stdin)
+  --image FILE       PNG, JPEG, TIFF or WebP, at most 8 MiB
+  --attach FILE      Regular file; repeat for up to 64 files, 8 MiB combined
+read/copy/cut optionally accept:
+  --output-dir DIR   Save binary items under a new private directory; never overwrite
+
+Folders, links and duplicate filenames are rejected. Temporary native clipboard
+files use DIETER_HOME/clipboard; the next transfer prunes old (24h) batches
+and retains at most eight batches.
+Mutations are never automatically retried. Supports global --machine ID|NAME
+with direct TLS and relay fallback. Binary sharing requires an updated daemon.
 `
 	if groupHelp(args) || (len(args) > 1 && wantsHelp(args[1:])) {
 		fmt.Fprint(c.Out, usage)
@@ -504,6 +535,10 @@ are transient. Mutations are never automatically retried. Supports global
 	}
 	set := flags("screen clipboard " + action)
 	file := set.String("file", "", "UTF-8 text file, or - for stdin")
+	image := set.String("image", "", "PNG, JPEG, TIFF or WebP image")
+	var attachments repeatedStrings
+	set.Var(&attachments, "attach", "regular file (repeatable)")
+	outputDir := set.String("output-dir", "", "new directory for received binary files")
 	rest := args[1:]
 	if len(rest) > 0 && !strings.HasPrefix(rest[0], "-") {
 		rest = append(append([]string{}, rest[1:]...), rest[0])
@@ -516,7 +551,29 @@ are transient. Mutations are never automatically retried. Supports global
 		return errors.New(usage)
 	}
 	var text string
-	if action == "write" || action == "paste" {
+	var items []*dieterv1.RemoteDesktopClipboardItem
+	writing := action == "write" || action == "paste"
+	formats := 0
+	for _, present := range []bool{*file != "", *image != "", len(attachments) > 0} {
+		if present {
+			formats++
+		}
+	}
+	if writing && formats != 1 {
+		return errors.New("write/paste require exactly one of --file, --image, or --attach")
+	}
+	if !writing && formats != 0 {
+		return errors.New("clipboard input flags require write or paste")
+	}
+	if *outputDir != "" && action != "read" && action != "copy" && action != "cut" {
+		return errors.New("--output-dir requires read, copy or cut")
+	}
+	if *outputDir != "" {
+		if _, err := os.Lstat(*outputDir); !os.IsNotExist(err) {
+			return errors.New("--output-dir must not already exist")
+		}
+	}
+	if writing && *file != "" {
 		if *file == "" {
 			return errors.New("write/paste require --file FILE or --file -")
 		}
@@ -537,8 +594,55 @@ are transient. Mutations are never automatically retried. Supports global
 			return errors.New("clipboard requires UTF-8 text of at most 1 MiB")
 		}
 		text = string(raw)
-	} else if *file != "" {
-		return errors.New("--file is only valid for write and paste")
+	}
+	if writing && *file == "" {
+		paths := []string(attachments)
+		if *image != "" {
+			paths = []string{*image}
+		}
+		if len(paths) > 64 {
+			return errors.New("clipboard accepts at most 64 files")
+		}
+		total := 0
+		names := make(map[string]bool)
+		for _, path := range paths {
+			info, err := os.Lstat(path)
+			if err != nil {
+				return err
+			}
+			if !info.Mode().IsRegular() {
+				return errors.New("clipboard requires regular files; folders and links are unsupported")
+			}
+			name := filepath.Base(path)
+			if names[name] || len(name) > 255 || strings.ContainsAny(name, "/\\\x00") {
+				return errors.New("invalid or duplicate clipboard filename")
+			}
+			names[name] = true
+			if info.Size() > int64(remotedesktop.ClipboardBinaryMaxBytes-total) {
+				return errors.New("clipboard files exceed 8 MiB")
+			}
+			f, err := os.Open(path)
+			if err != nil {
+				return err
+			}
+			raw, err := io.ReadAll(io.LimitReader(f, int64(remotedesktop.ClipboardBinaryMaxBytes-total+1)))
+			_ = f.Close()
+			if err != nil {
+				return err
+			}
+			total += len(raw)
+			if total > remotedesktop.ClipboardBinaryMaxBytes {
+				return errors.New("clipboard files exceed 8 MiB")
+			}
+			item := &dieterv1.RemoteDesktopClipboardItem{Name: name, MimeType: screenClipboardMIME(raw), Data: raw}
+			if *image != "" {
+				item.Kind = dieterv1.RemoteDesktopClipboardItem_IMAGE
+				if item.MimeType != "image/png" && item.MimeType != "image/jpeg" && item.MimeType != "image/tiff" && item.MimeType != "image/webp" {
+					return errors.New("unsupported clipboard image format")
+				}
+			}
+			items = append(items, item)
+		}
 	}
 	ctx, cancel := c.commandContext()
 	defer cancel()
@@ -554,12 +658,53 @@ are transient. Mutations are never automatically retried. Supports global
 	if _, err = rand.Read(id); err != nil {
 		return err
 	}
-	value, err := client.ExchangeRemoteDesktopClipboard(rpcCtx, &dieterv1.RemoteDesktopClipboardRequest{SessionId: set.Arg(0), OperationId: hex.EncodeToString(id), ControlGeneration: state.ControlGeneration, Action: kind, Text: text, Enabled: action == "enable"})
+	if len(items) > 0 {
+		caps, err := client.GetRemoteDesktopCapabilities(rpcCtx, &emptypb.Empty{})
+		if err != nil {
+			return err
+		}
+		if !caps.BinaryClipboardSupported {
+			return errors.New("update the daemon to share images and files")
+		}
+	}
+	value, err := client.ExchangeRemoteDesktopClipboard(rpcCtx, &dieterv1.RemoteDesktopClipboardRequest{SessionId: set.Arg(0), OperationId: hex.EncodeToString(id), ControlGeneration: state.ControlGeneration, Action: kind, Text: text, Items: items, AcceptBinary: true, Enabled: action == "enable"})
 	if err != nil {
 		return err
 	}
 	if value.Error != "" {
 		return errors.New(value.Error)
 	}
+	if *outputDir != "" && len(value.Items) > 0 {
+		if err := os.Mkdir(*outputDir, 0700); err != nil {
+			return err
+		}
+		for _, item := range value.Items {
+			if item.Name == "" || item.Name == "." || item.Name == ".." || strings.ContainsAny(item.Name, "/\\\x00") {
+				return errors.New("invalid received clipboard filename")
+			}
+			f, err := os.OpenFile(filepath.Join(*outputDir, item.Name), os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+			if err != nil {
+				return err
+			}
+			_, err = f.Write(item.Data)
+			closeErr := f.Close()
+			if err != nil {
+				return err
+			}
+			if closeErr != nil {
+				return closeErr
+			}
+			item.Data = nil
+		}
+	}
 	return protoJSONOut(c.Out, value)
+}
+
+// net/http's browser-oriented sniff table omits TIFF, which is a native macOS
+// pasteboard representation. Recognize its byte-order header explicitly.
+func screenClipboardMIME(raw []byte) string {
+	if len(raw) >= 4 && (string(raw[:4]) == "II*\x00" || string(raw[:4]) == "MM\x00*") {
+		return "image/tiff"
+	}
+	return http.DetectContentType(raw)
 }

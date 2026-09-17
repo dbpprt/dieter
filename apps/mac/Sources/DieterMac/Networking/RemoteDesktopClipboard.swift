@@ -1,15 +1,19 @@
 import AppKit
 import DieterAPI
+import DieterCore
 import Foundation
 @preconcurrency import WebRTC
 
 @MainActor
 final class RemoteDesktopClipboard: NSObject, RTCDataChannelDelegate {
     static let limit = 1 << 20
+    var binarySupported = false
+    var stagingDirectory = ScreenClipboardContent.defaultDirectory
     var makeRequest: (() -> Dieter_V1_RemoteDesktopClipboardRequest?)?
     var onOperationFinished: ((Bool) -> Void)?
     var onBusy: ((Bool) -> Void)?
     var isCurrentGrant: ((UInt64) -> Bool)?
+    var onUnavailable: (() -> Void)?
     var onError: ((String) -> Void)?
     var pasteboard = NSPasteboard.general
     private var channel: RTCDataChannel?
@@ -42,8 +46,9 @@ final class RemoteDesktopClipboard: NSObject, RTCDataChannelDelegate {
                 do {
                     if self.pasteboard.changeCount != self.localCount {
                         self.localCount = self.pasteboard.changeCount
-                        if let text = self.pasteboard.string(forType: .string) {
-                            let response = try await self.exchange(.write, text: text)
+                        let content = try ScreenClipboardContent.read(self.pasteboard, binary: self.binarySupported)
+                        if content.text != nil || !content.items.isEmpty {
+                            let response = try await self.exchange(.write, text: content.text ?? "", items: content.items)
                             self.revision = response.revision
                         }
                     } else {
@@ -52,9 +57,8 @@ final class RemoteDesktopClipboard: NSObject, RTCDataChannelDelegate {
                         let response = try await self.exchange(.read)
                         guard self.makeRequest?()?.controlGeneration == context.controlGeneration else { continue }
                         self.revision = response.revision
-                        if !previous.isEmpty, response.changed, response.hasText_p, self.pasteboard.changeCount == count,
-                            self.pasteboard.string(forType: .string) != response.text {
-                            self.pasteboard.clearContents(); self.pasteboard.setString(response.text, forType: .string)
+                        if !previous.isEmpty, response.changed, response.hasText_p || !response.items.isEmpty, self.pasteboard.changeCount == count {
+                            try self.apply(response)
                             self.localCount = self.pasteboard.changeCount
                         }
                     }
@@ -79,12 +83,17 @@ final class RemoteDesktopClipboard: NSObject, RTCDataChannelDelegate {
         }
     }
     func paste() {
-        guard enabled, let text = pasteboard.string(forType: .string) else { onError?("Clipboard has no text"); return }
-        perform(.paste, text: text)
+        guard enabled else { return }
+        do {
+            let content = try ScreenClipboardContent.read(pasteboard, binary: true)
+            guard content.text != nil || !content.items.isEmpty else { onError?("Clipboard has no supported content"); return }
+            guard content.items.isEmpty || binarySupported else { onError?("Update the daemon to paste images and files"); return }
+            perform(.paste, text: content.text ?? "", items: content.items)
+        } catch { onError?(error.localizedDescription) }
     }
     func copySelection() { perform(.copy) }
     func cut() { perform(.cut) }
-    func perform(_ action: Dieter_V1_RemoteDesktopClipboardRequest.Action, text: String = "") {
+    func perform(_ action: Dieter_V1_RemoteDesktopClipboardRequest.Action, text: String = "", items: [ScreenClipboardItem] = []) {
         guard enabled, let context = makeRequest?() else { return }
         guard !operationPending else { onError?("A clipboard operation is still in progress"); return }
         operationPending = true; onBusy?(true)
@@ -95,21 +104,22 @@ final class RemoteDesktopClipboard: NSObject, RTCDataChannelDelegate {
             var succeeded = false
             defer { if token == self.serial { self.operationPending = false; self.onBusy?(false); self.onOperationFinished?(succeeded) } }
             do {
-                let response = try await self.exchange(action, text: text, initial: context)
+                let response = try await self.exchange(action, text: text, items: items, initial: context)
                 guard token == self.serial else { return }
                 self.revision = response.revision
-                if (action == .copy || action == .cut), response.hasText_p, self.enabled, self.pasteboard.changeCount == count {
-                    self.pasteboard.clearContents(); self.pasteboard.setString(response.text, forType: .string)
+                if (action == .copy || action == .cut), response.hasText_p || !response.items.isEmpty, self.enabled, self.pasteboard.changeCount == count {
+                    try self.apply(response)
                     self.localCount = self.pasteboard.changeCount
                 } else { self.localCount = count }
                 self.completedOperations += 1; succeeded = true; self.onError?("")
             } catch { if token == self.serial { self.onError?(error.localizedDescription) } }
         }
     }
-    func exchange(_ action: Dieter_V1_RemoteDesktopClipboardRequest.Action, text: String = "", enabled: Bool = true, initial: Dieter_V1_RemoteDesktopClipboardRequest? = nil) async throws -> Dieter_V1_RemoteDesktopClipboardResponse {
-        guard text.utf8.count <= Self.limit else { throw failure("Clipboard text exceeds 1 MiB") }
+    func exchange(_ action: Dieter_V1_RemoteDesktopClipboardRequest.Action, text: String = "", items: [ScreenClipboardItem] = [], enabled: Bool = true, initial: Dieter_V1_RemoteDesktopClipboardRequest? = nil) async throws -> Dieter_V1_RemoteDesktopClipboardResponse {
+        try ScreenClipboardContent(text: items.isEmpty ? text : nil, items: items).validate()
+        guard items.isEmpty || binarySupported else { throw failure("Update the daemon to share images and files") }
         let token = serial
-        for _ in 0..<500 {
+        for _ in 0..<3000 {
             if !busy { break }; try await Task.sleep(nanoseconds: 10_000_000)
         }
         guard !busy, token == serial, var request = initial ?? makeRequest?(), let channel, channel.readyState == .open else { throw failure("Clipboard unavailable for this viewer") }
@@ -118,6 +128,13 @@ final class RemoteDesktopClipboard: NSObject, RTCDataChannelDelegate {
         defer { if token == serial { busy = false; requestID = ""; buffer.removeAll() } }
         request.operationID = UUID().uuidString; request.action = action; request.text = text
         request.knownRevision = revision; request.enabled = enabled
+        request.acceptBinary = binarySupported
+        request.items = items.map { item in
+            var value = Dieter_V1_RemoteDesktopClipboardItem()
+            value.kind = .init(rawValue: Int(item.kind)) ?? .file; value.name = item.name
+            value.mimeType = item.mimeType; value.data = item.data
+            return value
+        }
         requestID = request.operationID
         let raw = try request.serializedData()
         let response = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Dieter_V1_RemoteDesktopClipboardResponse, Error>) in
@@ -140,7 +157,7 @@ final class RemoteDesktopClipboard: NSObject, RTCDataChannelDelegate {
                 } catch { if token == self.serial, self.requestID == request.operationID { self.finish(.failure(error)) } }
             }
             Task { [weak self] in
-                try? await Task.sleep(nanoseconds: 5_000_000_000)
+                try? await Task.sleep(nanoseconds: 30_000_000_000)
                 guard let self, token == self.serial, self.requestID == request.operationID, self.continuation != nil else { return }
                 self.finish(.failure(self.failure("Clipboard timed out; paste was not retried")))
                 channel.close()
@@ -150,11 +167,23 @@ final class RemoteDesktopClipboard: NSObject, RTCDataChannelDelegate {
         if !response.error.isEmpty { throw failure(response.error) }
         return response
     }
+    private func apply(_ response: Dieter_V1_RemoteDesktopClipboardResponse) throws {
+        let content = ScreenClipboardContent(text: response.hasText_p ? response.text : nil, items: response.items.map {
+            ScreenClipboardItem(kind: Int32($0.kind.rawValue), name: $0.name, mimeType: $0.mimeType, data: $0.data)
+        })
+        try content.write(pasteboard, directory: stagingDirectory)
+    }
     private func failure(_ text: String) -> NSError { NSError(domain: "DieterClipboard", code: 1, userInfo: [NSLocalizedDescriptionKey: text]) }
     private func finish(_ result: Result<Dieter_V1_RemoteDesktopClipboardResponse, Error>) {
         let pending = continuation; continuation = nil; pending?.resume(with: result)
     }
-    nonisolated func dataChannelDidChangeState(_ dataChannel: RTCDataChannel) {}
+    nonisolated func dataChannelDidChangeState(_ dataChannel: RTCDataChannel) {
+        Task { @MainActor [weak self] in
+            guard let self, self.channel === dataChannel, dataChannel.readyState == .closed else { return }
+            self.finish(.failure(self.failure("Clipboard transfer interrupted; shortcut was not retried")))
+            self.onUnavailable?()
+        }
+    }
     nonisolated func dataChannel(_ dataChannel: RTCDataChannel, didReceiveMessageWith data: RTCDataBuffer) {
         guard data.isBinary, data.data.count <= 16 * 1024 + 128 else { return }
         let raw = data.data
@@ -163,7 +192,7 @@ final class RemoteDesktopClipboard: NSObject, RTCDataChannelDelegate {
             do {
                 let frame = try Dieter_V1_RemoteDesktopClipboardFrame(serializedBytes: raw)
                 guard frame.operationID == self.requestID, frame.data.count <= 16 * 1024,
-                    self.buffer.count + frame.data.count <= Self.limit + 4096 else { throw self.failure("Invalid clipboard response") }
+                    self.buffer.count + frame.data.count <= ScreenClipboardContent.binaryLimit + 65536 else { throw self.failure("Invalid clipboard response") }
                 self.buffer.append(frame.data)
                 if frame.end { self.finish(.success(try Dieter_V1_RemoteDesktopClipboardResponse(serializedBytes: self.buffer))) }
             } catch { self.finish(.failure(error)); dataChannel.close() }

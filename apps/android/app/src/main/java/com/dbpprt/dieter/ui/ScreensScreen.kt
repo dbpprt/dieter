@@ -27,6 +27,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.dbpprt.dieter.screens.ScreenCanvasView
 import com.dbpprt.dieter.screens.ScreenController
 import com.dbpprt.dieter.v1.RemoteDesktopPointerButton.Button
+import com.dbpprt.dieter.v1.RemoteDesktopCodecPreference
 import com.dbpprt.dieter.v1.RemoteDesktopQuality
 import kotlin.math.roundToInt
 
@@ -64,9 +65,9 @@ internal fun ScreenWorkspace(
     DisposableEffect(controller, lifecycle) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_STOP) {
-                if (activity?.isChangingConfigurations == true) controller.focus(false) else disconnect()
+                controller.focus(false)
             }
-            if (event == Lifecycle.Event.ON_RESUME) controller.focus(true)
+            if (event == Lifecycle.Event.ON_RESUME) controller.resumeConnection()
         }
         lifecycle.lifecycle.addObserver(observer)
         onDispose {
@@ -109,7 +110,8 @@ internal fun ScreenWorkspace(
                         ) }
                     }
                 }
-                Box {
+            }
+            Box {
                     IconButton(onClick = { qualityMenu = true }) { Icon(Icons.Outlined.Tune, "Screen quality") }
                     DropdownMenu(qualityMenu, { qualityMenu = false }) {
                         listOf("Auto" to RemoteDesktopQuality.REMOTE_DESKTOP_QUALITY_AUTO,
@@ -118,14 +120,21 @@ internal fun ScreenWorkspace(
                             DropdownMenuItem(text = { Text(label) }, onClick = { controller.configure(quality = value); qualityMenu = false })
                         }
                         HorizontalDivider()
+                        listOf("Automatic codec" to RemoteDesktopCodecPreference.REMOTE_DESKTOP_CODEC_PREFERENCE_AUTO,
+                            "H.264 compatibility" to RemoteDesktopCodecPreference.REMOTE_DESKTOP_CODEC_PREFERENCE_H264,
+                            "HEVC · up to 1080p60" to RemoteDesktopCodecPreference.REMOTE_DESKTOP_CODEC_PREFERENCE_HEVC).forEach { (label, value) ->
+                            DropdownMenuItem(text = { Text(label) }, onClick = { controller.selectCodec(value); qualityMenu = false })
+                        }
+                        HorizontalDivider()
                         listOf(30, 60, 90, 120).filter { it <= (screen.capabilities.maxFps.takeIf { fps -> fps > 0 } ?: 60) }.forEach { fps ->
                             DropdownMenuItem(text = { Text("Up to $fps fps") }, onClick = { controller.configure(maxFPS = fps); qualityMenu = false })
                         }
                     }
-                }
             }
             IconButton(onClick = { help = true }) { Icon(Icons.Outlined.HelpOutline, "Screen gestures") }
         }
+        if (screen.session.codec.isNotBlank()) Text(screen.session.codec + if (screen.codecFallbackReason.isNotBlank()) " · ${screen.codecFallbackReason}" else "",
+            style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(horizontal = 12.dp))
         if (screen.error.isNotBlank()) Text(screen.error, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(12.dp))
         if (machines.isEmpty()) Text("Connect an enrolled machine to view its screen.", modifier = Modifier.padding(16.dp))
         if (!active && screen.error.isBlank()) Text("Use this screen as a trackpad. Move the remote cursor with one finger; zoom and pan with two.",
@@ -187,7 +196,7 @@ internal fun ScreenWorkspace(
     }
     }
     if (help) AlertDialog(onDismissRequest = { help = false }, title = { Text("Screen gestures") }, text = {
-        Text("One finger: move the cursor\nTap: left click\nDouble tap: double click\nHold, then move: drag\nTwo fingers: freely move and resize the canvas, including zooming out\nThree fingers: scroll the remote screen\n\nFit screen centers the entire desktop again. The bottom bar also opens the keyboard, modifier keys, and right click. Copy retrieves the remote selection; Paste inserts the phone clipboard. Share clipboard synchronizes text while this screen is focused. Leaving Screens or putting Dieter in the background disconnects and releases held keys.")
+        Text("One finger: move the cursor\nTap: left click\nDouble tap: double click\nHold, then move: drag\nTwo fingers: freely move and resize the canvas, including zooming out\nThree fingers: scroll the remote screen\n\nFit screen centers the entire desktop again. The bottom bar also opens the keyboard, modifier keys, and right click. Copy retrieves the remote selection; Paste inserts the phone clipboard. Share clipboard synchronizes text, images and files while this screen is focused (up to 8 MiB for images/files). Backgrounding releases held keys; returning reconnects automatically. Leaving Screens or Disconnect stops recovery.")
     }, confirmButton = { TextButton(onClick = { help = false }) { Text("Got it") } })
 }
 

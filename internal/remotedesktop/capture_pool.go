@@ -70,6 +70,13 @@ func sourceConfiguration(o SourceOptions) StreamConfiguration {
 }
 
 func (p *capturePool) Subscribe(options SourceOptions) (FrameSource, error) {
+	if options.Codec == "" {
+		options.Codec = preferredVideoCodec(options)
+	}
+	if options.Codec == VideoCodecH265 {
+		// H.264 fallback profiles in an offer must not duplicate HEVC Main.
+		options.Profile = "main"
+	}
 	// Match the same defaults as requestConfiguration before constructing a key.
 	normalized, err := normalizeConfiguration(&dieterv1.RemoteDesktopStreamConfiguration{DisplayId: options.Display,
 		MaxWidth: int32(options.MaxWidth), MaxHeight: int32(options.MaxHeight), MaxFps: int32(options.FPS), MaxBitrateKbps: int32(options.Bitrate), EmbeddedCursor: options.EmbeddedCursor})
@@ -93,7 +100,7 @@ func (p *capturePool) Subscribe(options SourceOptions) (FrameSource, error) {
 
 func (p *capturePool) variantLocked(options SourceOptions, config StreamConfiguration) (*captureVariant, error) {
 	for v := range p.variants {
-		if !v.changing && v.config == config && v.options.Profile == options.Profile {
+		if !v.changing && v.config == config && v.options.Profile == options.Profile && v.options.Codec == options.Codec && v.options.RecoveryID == options.RecoveryID {
 			return v, nil
 		}
 	}
@@ -364,7 +371,7 @@ func (s *sharedSource) Configure(ctx context.Context, config StreamConfiguration
 	// into a separate rendition so another viewer's ceilings are never changed.
 	var next *captureVariant
 	for v := range p.variants {
-		if v != old && !v.changing && v.config == config && v.options.Profile == s.options.Profile {
+		if v != old && !v.changing && v.config == config && v.options.Profile == s.options.Profile && v.options.Codec == s.options.Codec && v.options.RecoveryID == s.options.RecoveryID {
 			next = v
 			break
 		}

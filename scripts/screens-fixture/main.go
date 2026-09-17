@@ -31,6 +31,7 @@ import (
 	"github.com/dbpprt/dieter/internal/server"
 	"github.com/dbpprt/dieter/internal/store"
 	"github.com/dbpprt/dieter/internal/trust"
+	"github.com/pion/interceptor"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
 	"google.golang.org/protobuf/proto"
@@ -116,7 +117,8 @@ func run(helper, kind, ready string, authenticate bool) error {
 		return err
 	}
 	config.SignedEnvelope = []byte(envelope)
-	manager := remotedesktop.New(remotedesktop.Options{Identity: remotedesktop.Identity{DaemonID: config.DaemonId, GatewayURL: "http://screens.fixture", Generation: 1, PrivateKey: dk, GatewaySigningPublicKey: pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: publicDER})}, Source: remotedesktop.SourceOptions{Kind: kind, HelperPath: helper, ClipboardName: "com.dbpprt.dieter.fixture." + fmt.Sprint(os.Getpid())}})
+	loss := newMediaLoss()
+	manager := remotedesktop.New(remotedesktop.Options{MediaInterceptors: []interceptor.Factory{loss}, Identity: remotedesktop.Identity{DaemonID: config.DaemonId, GatewayURL: "http://screens.fixture", Generation: 1, PrivateKey: dk, GatewaySigningPublicKey: pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: publicDER})}, Source: remotedesktop.SourceOptions{ClipboardDirectory: filepath.Join(root, "clipboard"), Kind: kind, HelperPath: helper, ClipboardName: "com.dbpprt.dieter.fixture." + fmt.Sprint(os.Getpid())}})
 	defer manager.Shutdown(context.Background())
 	api := server.NewWithOptions(data, slog.Default(), server.Options{RemoteDesktop: manager})
 	listener, err := net.Listen("tcp4", "127.0.0.1:0")
@@ -140,6 +142,14 @@ func run(helper, kind, ready string, authenticate bool) error {
 			return
 		}
 		// Test-only fault injection on the disposable, authenticated fixture.
+		if authenticate && r.URL.Path == "/test/media-loss" {
+			if r.Method == http.MethodPost {
+				loss.configure(r.URL.Query().Get("mode"))
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(loss.snapshot())
+			return
+		}
 		if authenticate && r.Method == http.MethodPost && r.URL.Path == "/test/interrupt-screen-signaling" {
 			signalingMu.Lock()
 			w.Header().Set("X-Dieter-Test-Interrupted-Signals", fmt.Sprint(len(signalingStreams)))

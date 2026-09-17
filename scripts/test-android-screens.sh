@@ -62,13 +62,28 @@ argument=$(base64 < "$root/test.json" | tr -d '\n')
 ANDROID_SERIAL="$serial" ANDROID_HOME="$sdk" JAVA_HOME="${JAVA_HOME:-/Applications/Android Studio.app/Contents/jbr/Contents/Home}"
 export ANDROID_SERIAL ANDROID_HOME JAVA_HOME
 apps/android/gradlew --project-dir apps/android connectedDebugAndroidTest \
-    -Pandroid.testInstrumentationRunnerArguments.class=com.dbpprt.dieter.screens.ScreenEndToEndTest \
+    "-Pandroid.testInstrumentationRunnerArguments.class=${DIETER_SCREEN_TEST_CLASS:-com.dbpprt.dieter.screens.ScreenEndToEndTest}" \
     "-Pandroid.testInstrumentationRunnerArguments.screenFixture=$argument"
 if [[ -n "$mac_pid" ]]; then
     touch "$root/mac-stop"
     if ! wait "$mac_pid"; then cat "$root/mac.log"; exit 1; fi
     mac_pid=""
     cat "$root/mac-stats.json"
+fi
+if [[ "${DIETER_SCREEN_TEST_CLASS:-}" == com.dbpprt.dieter.screens.ScreenRecoveryEndToEndTest ]]; then
+    for codec in H264 H265; do
+        "$adb" -s "$serial" pull "/sdcard/Android/data/com.dbpprt.dieter/files/screen-recovery-$codec.png" "$root/recovery-$codec.png"
+    done
+    "$adb" -s "$serial" logcat -d -s DieterRecovery:I > "$root/recovery.log"
+    cat "$root/recovery.log"
+    echo "Recovery integration evidence: $root"
+    exit 0
+fi
+if [[ "${DIETER_SCREEN_TEST_CLASS:-}" == com.dbpprt.dieter.screens.ScreenCodecEndToEndTest ]]; then
+    "$adb" -s "$serial" pull /sdcard/Android/data/com.dbpprt.dieter/files/screen-codec.png "$root/viewer.png"
+    "$adb" -s "$serial" pull /sdcard/Android/data/com.dbpprt.dieter/files/screen-hevc.png "$root/hevc.png" 2>/dev/null || true
+    echo "Codec integration evidence: $root"
+    exit 0
 fi
 python3 - "$root/input.json" "${DIETER_SCREEN_TEST_SOURCE:-native-synthetic}" <<'PY'
 import json,sys

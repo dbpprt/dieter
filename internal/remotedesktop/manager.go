@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"os"
 	"runtime"
 	"strings"
 	"sync"
@@ -19,6 +20,7 @@ import (
 	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
 	"github.com/dbpprt/dieter/internal/trust"
+	"github.com/pion/interceptor"
 	"github.com/pion/interceptor/pkg/cc"
 	"github.com/pion/rtcp"
 	"github.com/pion/rtp"
@@ -56,18 +58,20 @@ type Identity struct {
 }
 
 type Options struct {
-	ClipboardFactory func() ClipboardBackend
-	Identity         Identity
-	Source           SourceOptions
-	SessionLease     time.Duration
-	DetachGrace      time.Duration
-	MonitorInterval  time.Duration
-	CaptureProbe     func(context.Context, SourceOptions) error
-	ControlProbe     func(context.Context, SourceOptions, bool) error
-	SourceFactory    func(SourceOptions) (FrameSource, error)
-	Logger           *slog.Logger
-	Now              func() time.Time
-	CapabilityProbe  func(context.Context, SourceOptions) (*dieterv1.RemoteDesktopCapabilities, error)
+	// Optional transport instrumentation for isolated fixtures; never set by the daemon CLI.
+	MediaInterceptors []interceptor.Factory
+	ClipboardFactory  func() ClipboardBackend
+	Identity          Identity
+	Source            SourceOptions
+	SessionLease      time.Duration
+	DetachGrace       time.Duration
+	MonitorInterval   time.Duration
+	CaptureProbe      func(context.Context, SourceOptions) error
+	ControlProbe      func(context.Context, SourceOptions, bool) error
+	SourceFactory     func(SourceOptions) (FrameSource, error)
+	Logger            *slog.Logger
+	Now               func() time.Time
+	CapabilityProbe   func(context.Context, SourceOptions) (*dieterv1.RemoteDesktopCapabilities, error)
 }
 
 type Manager struct {
@@ -152,6 +156,7 @@ func (m *Manager) Capabilities(enabled, controlEnabled bool) *dieterv1.RemoteDes
 	value := m.capabilities(enabled, controlEnabled, false)
 	value.DaemonExecutable, value.CaptureExecutable = executableIdentity(m.options.Source)
 	value.ClipboardSupported = runtime.GOOS == "darwin" || m.options.ClipboardFactory != nil
+	value.BinaryClipboardSupported = value.ClipboardSupported
 	value.MaxClients = maxClients
 	value.SupportedInputProtocolVersions = []uint32{2, 3}
 	m.mu.Lock()
@@ -285,7 +290,7 @@ func (m *Manager) Start(request *dieterv1.StartRemoteDesktopRequest, enabled, co
 			continue
 		}
 		offerHash := sha256.Sum256([]byte(request.GetOffer().GetSdp()))
-		if current.operatorSubject != operatorSubject || current.offerHash != offerHash || current.control != request.GetControl() || current.displayID != normalizedDisplayID(request.GetDisplayId()) || current.protocol != requestedInputProtocol(request) {
+		if current.operatorSubject != operatorSubject || current.offerHash != offerHash || current.control != request.GetControl() || current.displayID != normalizedDisplayID(request.GetDisplayId()) || current.protocol != requestedInputProtocol(request) || current.codecPreference != request.CodecPreference || current.referenceRecovery != request.ReferenceRecovery {
 			m.mu.Unlock()
 			return nil, ErrBusy
 		}
@@ -325,7 +330,7 @@ func (m *Manager) Start(request *dieterv1.StartRemoteDesktopRequest, enabled, co
 		return nil, err
 	}
 
-	session, err := newSession(m, request, operatorSubject)
+	session, err := newSession(m, request, operatorSubject, capabilities)
 	if err != nil {
 		return nil, err
 	}
@@ -461,6 +466,8 @@ func (m *Manager) verifyRTCConfiguration(configuration *gatewayv1.RTCConfigurati
 }
 
 type Session struct {
+	references             referenceTracker
+	referenceQueue         chan FrameMetadata
 	clipboard              sessionClipboard
 	manager                *Manager
 	id                     string
@@ -502,6 +509,8 @@ type Session struct {
 	feedbackSequence       atomic.Uint64
 	source                 FrameSource
 	codec                  VideoCodec
+	codecPreference        dieterv1.RemoteDesktopCodecPreference
+	referenceRecovery      bool
 	ctx                    context.Context
 	cancel                 context.CancelFunc
 	startOnce              sync.Once
@@ -535,12 +544,17 @@ func (s *Session) active() bool {
 	return !s.closed
 }
 
-func newSession(manager *Manager, request *dieterv1.StartRemoteDesktopRequest, operatorSubject string) (*Session, error) {
+func newSession(manager *Manager, request *dieterv1.StartRemoteDesktopRequest, operatorSubject string, capabilities *dieterv1.RemoteDesktopCapabilities) (*Session, error) {
 	config, configErr := normalizeConfiguration(requestConfiguration(request))
 	if configErr != nil {
 		return nil, configErr
 	}
 	sourceOptions := manager.options.Source
+	codec, err := selectVideoCodec(request.CodecPreference, request.GetOffer().GetSdp(), config, capabilities, sourceOptions)
+	if err != nil {
+		return nil, err
+	}
+	sourceOptions.Codec = codec
 	sourceOptions.Profile = "baseline"
 	if offerSupportsHigh(request.GetOffer().GetSdp()) {
 		sourceOptions.Profile = "high"
@@ -565,6 +579,9 @@ func newSession(manager *Manager, request *dieterv1.StartRemoteDesktopRequest, o
 	if config.MaxFps > 60 {
 		sourceOptions.MaxWidth, sourceOptions.MaxHeight = int(config.MaxWidth), int(config.MaxHeight)
 	}
+	if request.ReferenceRecovery && os.Getenv("DIETER_SCREEN_LTR") != "0" && offerSupportsReferences(request.GetOffer().GetSdp()) {
+		sourceOptions.RecoveryID = randomID()
+	}
 	source, err := manager.media.Subscribe(sourceOptions)
 	if err != nil {
 		return nil, err
@@ -588,7 +605,7 @@ func newSession(manager *Manager, request *dieterv1.StartRemoteDesktopRequest, o
 	}
 	settingEngine := webrtc.SettingEngine{}
 	settingEngine.SetIncludeLoopbackCandidate(true)
-	api, pacer, estimator, err := newMediaAPI(settingEngine, source)
+	api, pacer, estimator, err := newMediaAPI(settingEngine, source, manager.options.MediaInterceptors...)
 	if err != nil {
 		return nil, err
 	}
@@ -601,13 +618,14 @@ func newSession(manager *Manager, request *dieterv1.StartRemoteDesktopRequest, o
 	now := manager.options.Now().UTC()
 	offerHash := sha256.Sum256([]byte(request.GetOffer().GetSdp()))
 	session := &Session{
-		status:  &dieterv1.RemoteDesktopSessionState{Phase: "connecting", Codec: string(source.Codec()), DisplayId: config.DisplayId, Configuration: config, DisplayGeneration: 1, ClipboardEnabled: request.GetClipboard()},
-		applied: nativeConfiguration(config), pacer: pacer, estimator: *estimator,
+		referenceQueue: make(chan FrameMetadata, 8),
+		status:         &dieterv1.RemoteDesktopSessionState{Phase: "connecting", Codec: string(source.Codec()), DisplayId: config.DisplayId, Configuration: config, DisplayGeneration: 1, ClipboardEnabled: request.GetClipboard()},
+		applied:        nativeConfiguration(config), pacer: pacer, estimator: *estimator,
 		inputChannels: make(map[string]bool),
 		manager:       manager, id: randomID(), clientNonce: request.GetClientNonce(), clientName: strings.TrimSpace(request.GetClientName()), protocol: requestedInputProtocol(request), operatorSubject: operatorSubject, pc: pc,
 		ctx: ctx, cancel: cancel, subscribers: make(map[uint64]chan *dieterv1.RemoteDesktopSignal),
 		leaseExpiresAt: now.Add(manager.options.SessionLease), offerHash: offerHash,
-		source: source, codec: source.Codec(), control: request.GetControl(), displayID: normalizedDisplayID(sourceOptions.Display), inputEpoch: randomBytes(16),
+		source: source, codec: source.Codec(), codecPreference: request.CodecPreference, referenceRecovery: request.ReferenceRecovery, control: request.GetControl(), displayID: normalizedDisplayID(sourceOptions.Display), inputEpoch: randomBytes(16),
 		pointerInput: make(chan *dieterv1.RemoteDesktopInput, 1), stateInput: make(chan *dieterv1.RemoteDesktopInput, 128),
 	}
 	fail := func(cause error) (*Session, error) {
@@ -640,6 +658,7 @@ func newSession(manager *Manager, request *dieterv1.StartRemoteDesktopRequest, o
 		adaptive.SetEventHandler(session.nativeEvent)
 	}
 	go session.handleRTCP(sender)
+	go session.referenceWorker()
 	go session.adapt()
 	session.installInputChannels()
 	go session.runInput()
@@ -899,8 +918,15 @@ func (s *Session) streamSource(request *dieterv1.StartRemoteDesktopRequest) {
 	err := s.source.Stream(s.ctx, s.streamMedia)
 	if err != nil && s.ctx.Err() == nil {
 		recoverable := recoverableCaptureFailure(err)
-		s.emitError("capture_failed", err.Error(), recoverable)
+		code := "capture_failed"
+		if s.source.Codec() == VideoCodecH265 && hevcEncoderUnavailable(err) {
+			code, recoverable = "hevc_unavailable", false
+		}
+		s.emitError(code, err.Error(), recoverable)
 		reason := err.Error()
+		if code == "hevc_unavailable" {
+			reason = "HEVC encoder unavailable"
+		}
 		if recoverable {
 			// Either the error or the terminal state may reach the viewer first.
 			// Retain detailed diagnostics while giving both a stable retry signal.
@@ -1021,7 +1047,7 @@ func (s *Session) handleRTCP(sender *webrtc.RTPSender) {
 			switch value := packet.(type) {
 			case *rtcp.PictureLossIndication, *rtcp.FullIntraRequest:
 				if controlled, ok := source.(ControlledFrameSource); ok {
-					controlled.RequestKeyFrame()
+					requestRecovery(controlled)
 				}
 				if logger != nil {
 					logger.Debug("remote desktop keyframe requested", "feedback", fmt.Sprintf("%T", packet))
@@ -1044,6 +1070,9 @@ func (s *Session) handleRTCP(sender *webrtc.RTPSender) {
 }
 
 func codecCapability(codec VideoCodec) webrtc.RTPCodecCapability {
+	if codec == VideoCodecH265 {
+		return webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeH265, ClockRate: 90000, SDPFmtpLine: hevcFMTP}
+	}
 	if codec == VideoCodecH264 {
 		return webrtc.RTPCodecCapability{
 			MimeType: webrtc.MimeTypeH264, ClockRate: 90_000,

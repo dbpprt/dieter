@@ -1,3 +1,4 @@
+import AppKit
 import DieterAPI
 import DieterCore
 import Foundation
@@ -65,15 +66,16 @@ private final class ScreenFixture: ScreenSignalingRPC {
     Thread.sleep(forTimeInterval: 0.18)
 }
 
-@Test func screenRecoveryIsBoundedAndResetsOnlyAfterHealthyStreaming() {
+@Test func screenRecoveryContinuesWithBoundedFrequencyUntilDisconnected() {
     var recovery = RemoteDesktopRecovery()
-    #expect(recovery.nextDelay(now: 0) == 1)
+    #expect(recovery.nextDelay(now: 0) == 0.25)
     recovery.streaming(now: 1)
-    #expect(recovery.nextDelay(now: 2) == 2)
-    #expect(recovery.nextDelay(now: 3) == 4)
-    #expect(recovery.nextDelay(now: 4) == nil)
+    #expect(recovery.nextDelay(now: 2) == 0.5)
+    #expect(recovery.nextDelay(now: 3) == 1)
+    #expect(recovery.nextDelay(now: 4) == 2)
+    for now in 5..<1000 { #expect(recovery.nextDelay(now: Double(now)) <= 5) }
     recovery.streaming(now: 5)
-    #expect(recovery.nextDelay(now: 16) == 1)
+    #expect(recovery.nextDelay(now: 16) == 0.25)
     #expect(RemoteDesktopRecovery.retryableClosure("session lease expired"))
     for reason in ["native capture rendition stopped", "native daemon heartbeat expired",
                    "native capture helper unresponsive", "native capture helper stopped"] {
@@ -199,4 +201,25 @@ private actor TerminalInputFixture: TerminalInputRPC {
     await #expect(throws: CancellationError.self) { try await task.value }
     // A native callback after cancellation is harmless and cannot resume twice.
     callback.withLock { $0 }?(.success(7))
+}
+
+@Test @MainActor func screenWakeNotificationReopensOnlyAnIntentionallyOpenTab() async throws {
+    let controller = RemoteDesktopController(), rpc = ScreenFixture()
+    let session = ScreenShareSession(machineID: "wake", machineName: "Fixture", controller: controller, monitorsInactivity: false)
+    session.configureInactivityTimeout(enabled: true, minutes: 1)
+    var openings = 0
+    session.connect { openings += 1; return rpc.connection("wake fixture") }
+    try await waitForSession { openings == 1 }
+    NSWorkspace.shared.notificationCenter.post(name: NSWorkspace.willSleepNotification, object: nil)
+    #expect(controller.systemSleeping)
+    #expect(!session.disconnectIfInactive(at: Date().addingTimeInterval(3600)))
+    NSWorkspace.shared.notificationCenter.post(name: NSWorkspace.didWakeNotification, object: nil)
+    try await waitForSession { openings == 2 }
+    #expect(!controller.systemSleeping)
+    #expect(!session.disconnectIfInactive())
+    session.disconnect()
+    NSWorkspace.shared.notificationCenter.post(name: NSWorkspace.didWakeNotification, object: nil)
+    try await Task.sleep(nanoseconds: 300_000_000)
+    #expect(openings == 2)
+    #expect(controller.phase == .idle)
 }

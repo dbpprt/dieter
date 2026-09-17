@@ -26,7 +26,7 @@ struct ScreensView: View {
                         prominent: true
                     )
                     Spacer()
-                    if let selectedSession, selectedSession.controller.phase == .streaming {
+                    if let selectedSession {
                         screenOptions(selectedSession.controller)
                     }
                     if let selectedSession { primaryAction(selectedSession) }
@@ -58,6 +58,9 @@ struct ScreensView: View {
             }
             if let selectedSession {
                 screenWorkspace(selectedSession)
+                    // The native surface owns this session's renderer and input.
+                    // Reusing it would route input to a different machine's video.
+                    .id(selectedSession.id)
             } else {
                 emptyState(
                     title: "No open screen shares",
@@ -146,6 +149,13 @@ struct ScreensView: View {
                     !controller.controlActive || !controller.clipboardEnabled || controller.clipboardBusy)
                 if !controller.clipboardError.isEmpty { Text(controller.clipboardError) }
             }
+            Menu("Video codec") {
+                Button("Automatic (HEVC when supported)") { controller.selectCodec(.auto) }
+                Button("H.264 compatibility") { controller.selectCodec(.h264) }
+                Button("HEVC — up to 1080p60") { controller.selectCodec(.hevc) }
+            }
+            if !controller.sessionState.codec.isEmpty { Text("Codec: \(controller.sessionState.codec)") }
+            if !controller.codecFallbackReason.isEmpty { Text(controller.codecFallbackReason) }
             Button("Refresh screen") { controller.configure(refresh: true) }
         } label: {
             Image(systemName: "slider.horizontal.3")
@@ -340,7 +350,7 @@ private struct ScreenShareTab: View {
     @State private var hovering = false
 
     var body: some View {
-        HStack(spacing: 7) {
+        HStack(spacing: 0) {
             Button(action: select) {
                 HStack(spacing: 7) {
                     Circle()
@@ -354,10 +364,14 @@ private struct ScreenShareTab: View {
                         .padding(.horizontal, 5)
                         .padding(.vertical, 2)
                         .background(DieterTheme.raised, in: Capsule())
-                        .overlay(Capsule().stroke(DieterTheme.border))
+                        .overlay(Capsule().stroke(DieterTheme.border).allowsHitTesting(false))
                         .accessibilityIdentifier("screen.node.\(session.machineID)")
+                        .smokeTarget("screen.badge.\(session.id)")
                 }
                 .frame(minWidth: 120, maxWidth: 210, alignment: .leading)
+                .padding(.leading, 12)
+                .padding(.trailing, 7)
+                .frame(height: 38)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -370,19 +384,24 @@ private struct ScreenShareTab: View {
                     .font(.system(size: 8, weight: .semibold))
                     .frame(width: 16, height: 16)
                     .background(hovering ? DieterTheme.raised : Color.clear, in: RoundedRectangle(cornerRadius: 4))
+                    .frame(width: 30, height: 38)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .foregroundStyle(DieterTheme.tertiary)
             .help("Close screen share")
+            .accessibilityLabel("Close screen share, \(session.machineName)")
+            .accessibilityIdentifier("screen.close.\(session.id)")
+            .smokeTarget("screen.close.\(session.id)")
         }
-        .padding(.leading, 12)
-        .padding(.trailing, 7)
         .frame(height: 38)
         .background(selected ? DieterTheme.background : Color.clear)
         .overlay(alignment: .bottom) {
-            Rectangle().fill(selected ? DieterTheme.shell : Color.clear).frame(height: 1)
+            Rectangle().fill(selected ? DieterTheme.shell : Color.clear).frame(height: 1).allowsHitTesting(false)
         }
-        .overlay(alignment: .trailing) { Rectangle().fill(DieterTheme.border).frame(width: 1) }
+        .overlay(alignment: .trailing) {
+            Rectangle().fill(DieterTheme.border).frame(width: 1).allowsHitTesting(false)
+        }
         .onHover { hovering = $0 }
         .contextMenu { Button("Close screen share", action: close) }
     }
@@ -445,7 +464,6 @@ private struct RemoteDesktopVideoSurface: NSViewRepresentable {
         RemoteDesktopInputView(renderer: controller.renderer, controller: controller)
     }
     func updateNSView(_ nsView: RemoteDesktopInputView, context: Context) {
-        nsView.controller = controller
         nsView.refreshCursor()
     }
 }
@@ -453,7 +471,7 @@ private struct RemoteDesktopVideoSurface: NSViewRepresentable {
 @MainActor
 final class RemoteDesktopInputView: NSView, @preconcurrency NSTextInputClient, @preconcurrency RTCVideoViewDelegate {
     let renderer: RemoteDesktopMetalView
-    weak var controller: RemoteDesktopController?
+    private(set) weak var controller: RemoteDesktopController?
     private var videoSize = CGSize(width: 16, height: 9)
     private var trackingAreaReference: NSTrackingArea?
     private var buttonsDown = Set<Int>()

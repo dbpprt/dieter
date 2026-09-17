@@ -10,6 +10,7 @@ final class RemoteDesktopFeedbackPump: @unchecked Sendable {
     private var timer: DispatchSourceTimer?
     private var channel: RTCDataChannel?
     private var feedback = Dieter_V1_RemoteDesktopReceiverFeedback()
+    private var references: [Dieter_V1_RemoteDesktopReference] = []
     private var sequence: UInt64 = 0
     private var generation: UInt64 = 0
     private var measurementSequence: UInt64 = 1
@@ -30,6 +31,7 @@ final class RemoteDesktopFeedbackPump: @unchecked Sendable {
             let current = generation
             self.channel = channel
             feedback = initial
+            references.removeAll()
             sequence = 0
             measurementSequence = 1
             measuredAt = clock()
@@ -49,6 +51,14 @@ final class RemoteDesktopFeedbackPump: @unchecked Sendable {
         }
     }
 
+    func acknowledge(_ values: [Dieter_V1_RemoteDesktopReference]) {
+        let current = lock.withLock { () -> UInt64 in
+            references = Array((references + values).suffix(8))
+            return generation
+        }
+        queue.async { [weak self] in self?.send(generation: current) }
+    }
+
     func input(active: Bool) {
         lock.withLock {
             inputActive = active
@@ -58,7 +68,7 @@ final class RemoteDesktopFeedbackPump: @unchecked Sendable {
 
     func stop() {
         lock.withLock {
-            generation &+= 1; timer?.cancel(); timer = nil; channel = nil; inputActive = false
+            generation &+= 1; timer?.cancel(); timer = nil; channel = nil; inputActive = false; references.removeAll()
         }
     }
 
@@ -71,6 +81,7 @@ final class RemoteDesktopFeedbackPump: @unchecked Sendable {
             sequence &+= 1
             var value = feedback
             value.sequence = sequence
+            value.decodedReferences = references
             value.measurementSequence = measurementSequence
             value.measurementAgeMs = UInt32(min(Double(UInt32.max), max(0, (clock() - measuredAt) * 1000)))
             value.inputActive = inputActive && clock() - inputUpdatedAt < 1

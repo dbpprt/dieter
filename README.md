@@ -824,7 +824,7 @@ grace period. Mac renewal runs independently of the UI thread; recoverable sessi
 expiry opens a fresh authenticated route with at most three backoff attempts.
 
 Mac screen sharing uses ScreenCaptureKit, NV12 pixel buffers, hardware VideoToolbox
-H.264, and the Mac client's native WebRTC/Metal renderer. No FFmpeg executable or
+H.264 or opt-in HEVC, and the Mac client's native WebRTC/Metal renderer. No FFmpeg executable or
 library is used. Capture, input injection and display enumeration live in the
 platform backend; the bounded media/session protocol can accommodate a Linux
 backend later. Linux capture is currently reported as unsupported.
@@ -840,9 +840,11 @@ special keys.
 
 Each Mac viewer session is a machine-scoped Screens tab. It remains connected when
 the user navigates to another Dieter workspace, and the Screens sidebar count shows
-currently live tabs. General settings provides an inactivity timeout, enabled at 30
-minutes by default and switchable off; mouse, keyboard, tab-selection, and screen
-option activity reset it. A timed-out connection can be reconnected from its tab.
+currently live tabs. General settings provides an optional inactivity timeout,
+disabled by default, with a 30-minute duration when enabled. Mouse, keyboard,
+tab-selection, and screen-option activity reset it. System sleep pauses the timer;
+waking resets it and immediately reconnects an open tab. A deliberately timed-out
+connection can be reconnected from its tab.
 
 The viewer follows its window’s pixel size, up to 3840×2160 at 60 fps and 12 Mbps
 by default. Screen options and `dieter screen configure SESSION --fps 120` select
@@ -863,7 +865,9 @@ replay an old overload sample. Deliberate packet pacing is not counted as conges
 Bitrate and cadence updates keep the native encoder session alive. Transport returns
 one frame credit after sending a complete H.264 access unit; while it waits, capture
 retains only the newest raw surface. Pipe writes run independently of capture and
-input. Mac and Android render directly from decoder completion; Mac callbacks are
+input. Mac renders on a dedicated thread from decoder completion, with one GPU
+submission and one replaceable decoded frame. Android renders directly from
+decoder completion; Mac callbacks are
 bound to the renderer generation so a released decoder cannot draw into a new
 session. Both viewers send the first pointer movement immediately and coalesce
 subsequent movement over four milliseconds. Compatible receivers negotiate
@@ -915,18 +919,21 @@ accepts a protobuf JSON WebRTC offer; media and input use the encrypted peer
 connection. Clients negotiate signed input protocol v3 for control handoff and retain v2
 compatibility with older daemons.
 
-Text clipboard sharing is available on updated Mac and Android viewers. Enable
+Text, image and file clipboard sharing is available on updated Mac and Android viewers. Enable
 **Share clipboard** in Screen options (Mac) or the bottom bar (Android). Mac
 ⌘C/⌘X and remote app menus copy back to the local clipboard; ⌘V transfers the
-local text and then invokes the host paste shortcut. Android provides Copy and
+local content and then invokes the host paste shortcut. Android provides Copy and
 Paste buttons, IME clipboard actions and the host's ⌘V hardware shortcut.
 Synchronization runs only for the focused controlling viewer. View-only viewers
 cannot read or write it. Connecting or taking control does not overwrite either
-clipboard; subsequent text changes sync in both directions. Clipboard access can
+clipboard; subsequent supported changes sync in both directions. Clipboard access can
 require an OS pasteboard grant; a denied request leaves video running.
 
-Only UTF-8 plain text is supported, up to 1 MiB, including empty text, Unicode and
-newlines. Images, rich text and files are not transferred. A dedicated encrypted
+UTF-8 plain text supports up to 1 MiB, including empty text, Unicode and newlines.
+PNG, JPEG, TIFF and WebP images and up to 64 regular files support 8 MiB combined.
+Folders, symbolic links, duplicate filenames and rich-text formatting are not
+transferred. Binary clipboard support is negotiated; older daemons require an update.
+A dedicated encrypted
 WebRTC channel uses 16 KiB chunks and bounded buffering. Native clipboard IPC runs
 in a separate instance of the installed helper, outside capture and heartbeat
 queues. A stale control grant is rejected before a mutation. Clipboard shortcuts
@@ -934,8 +941,11 @@ wait for prior selection input, and subsequent typing waits for the shortcut
 acknowledgment. Failed/uncertain
 pastes are never automatically retried; the daemon retains the most recent 128
 mutation results per session for duplicate detection. Reconnecting creates a new
-session and never replays clipboard operations. Contents are transient and never
-stored in Dieter history or logs.
+session and never replays clipboard operations. Contents never enter Dieter history
+or logs. Native file URLs use private staging under `DIETER_HOME/clipboard` (the
+Android app uses its private files directory and granted content URIs). The next
+file transfer removes batches older than 24 hours and retains at most eight batches
+(64 MiB); disconnecting does not invalidate the most recently copied files.
 
 The CLI uses the same daemon implementation over local, direct TLS or relay:
 
@@ -944,18 +954,30 @@ dieter screen clipboard enable SESSION
 dieter screen clipboard read SESSION
 dieter screen clipboard write SESSION --file clipboard.txt
 dieter screen clipboard paste SESSION --file - < clipboard.txt
+dieter screen clipboard paste SESSION --image screenshot.png
+dieter screen clipboard paste SESSION --attach report.pdf --attach diagram.png
 dieter screen clipboard copy SESSION
+dieter screen clipboard read SESSION --output-dir ./received-files
 dieter screen clipboard cut SESSION
 dieter screen clipboard disable SESSION
 ```
 
-`read` prints protobuf JSON, including `hasText`, `changed`, `revision` and `text`.
+`read` prints protobuf JSON, including `hasText`, `changed`, `revision`, `text` and
+`items` (binary data is base64). `--output-dir` saves binary items into a new
+directory without overwriting files and omits their data from the JSON output.
 `write` only changes the host clipboard; `paste` also invokes its paste shortcut.
-`copy` and `cut` invoke the host shortcut and return the resulting text after the
+`copy` and `cut` invoke the host shortcut and return the resulting content after the
 clipboard changes.
-`write` and `paste` require `--file`, with `-` reading stdin. All operations require
+`write` and `paste` require exactly one of `--file` (UTF-8; `-` reads stdin),
+`--image`, or repeatable `--attach`. All operations require
 an existing controlling session; they do not silently take control. Clipboard
-failures are surfaced separately and do not disconnect screen sharing.
+errors are surfaced separately; a broken clipboard channel reopens the screen
+session without replaying the interrupted paste. Transient connection failures
+retry while the screen tab stays open: 250 ms initially, capped at five seconds,
+with no attempt limit. Mac wake and Android resume reopen the authenticated route.
+Explicit Disconnect, closing the tab, and permanent permission/identity/policy
+errors stop recovery. Mac inactivity disconnect is optional and disabled by
+default; explicitly configured inactivity limits remain honored.
 
 Native screen regression checks:
 
@@ -975,11 +997,91 @@ the installed daemon is untouched. Viewer integration refuses to start while an
 operator Dieter app is running. Evidence paths are printed by the test.
 
 Screen sharing supports up to four clients per machine. Matching display,
-codec profile, and stream settings share a hardware encoder; different settings
-use independent renditions fed by one native capture stream per physical display.
+codec profile, and stream settings share a hardware encoder when decoded-reference
+recovery is disabled. Recovery-enabled viewers use independent encoders so one
+viewer cannot invalidate another viewer’s references. All renditions still use
+one native capture stream per physical display, with at most four encoders.
 Each viewer adapts independently and can change displays or disconnect without
 closing another session. Only one client controls mouse and keyboard at a time.
 The first control-capable client receives control; other clients use Take Control
 (or `dieter screen control take SESSION`). Release Control leaves the video open.
 Handoff requires protocol 3; an older controlling client must disconnect first.
 `dieter screen sessions` reports connected clients and allocated capture resources.
+
+### Screen codec selection
+
+Native viewers start with H.264. Their video quality menu can select Automatic
+or strict HEVC. HEVC uses hardware encoding/decoding, 8-bit 4:2:0 SDR Main,
+up to 1920×1080 at 60 fps. `screen capabilities` exposes codec-specific modes.
+Automatic selects HEVC only when both endpoints advertise a compatible mode;
+codec initialization or first-frame decoding failure retries H.264 once per
+connection. Transient reconnects retain that decision. Strict HEVC reports an
+unsupported mode instead of silently changing codecs. Changing codecs creates a
+fresh authenticated session and releases held input.
+
+`dieter screen start --request offer.json --codec auto|h264|hevc` overrides the
+protobuf JSON codec preference without rewriting SDP. The request must include
+an offer supporting the requested codec. Omitting the flag preserves the JSON
+preference (an absent field means automatic). CLI signaling supports the same
+local, verified direct TLS, and authenticated relay routes. Existing H.264-only
+clients and hosts remain compatible. HEVC remains opt-in pending matched-quality
+bandwidth and physical-device latency benchmarks.
+
+Screen congestion feedback also has a fast downward bitrate path. Fresh TWCC loss
+or repeated queue growth can update the encoder at most every 100 ms, independently
+of the slower cadence/resolution controller. Quiet traffic, stale feedback and
+RTT changes alone do not trigger it. Shared viewers retain separate ceilings;
+a bitrate-only change on an exclusive encoder preserves its reference frames.
+Recovery waits at least two seconds after a fast cut and retains the normal
+quality controller's measured recovery rules.
+
+For isolated latency experiments, `DIETER_SCREEN_FAST_BITRATE=0` on the daemon
+restores the slower adaptation path. On the Mac viewer,
+`DIETER_SCREEN_PRESENTATION=display-link` selects display-timed rendering with
+`CAMetalDisplayLink`; `immediate` is the default. Both modes render independently
+of the UI thread and pause when idle. These are process-environment diagnostics,
+not session RPC options. Restart only a disposable test process to compare them.
+
+`DIETER_TEST_SCREEN_LATENCY_MATRIX=1 just mac screens-test` runs H.264/HEVC,
+immediate/display-link, and fast adaptation off/on against an isolated native
+fixture. Add `DIETER_TEST_SCREEN_CAPTURE_REAL=1` to measure owned-application
+input to actual display presentation; that run requires native capture/input
+permissions. Each run prints its evidence directory and writes JSON labeled with
+the codec and both experiment settings. The runner refuses an existing Dieter
+app and never manages the operator daemon. Network-drop coverage runs separately
+in `TestFastBitrateReceivesRealTWCCOnConstrainedWebRTC` on an isolated virtual
+network; synthetic and physical input measurements must not be compared as if
+identical workloads.
+
+### Screen reference recovery and adaptive FEC
+
+Native Mac and Android viewers negotiate decoded-reference recovery for H.264
+and HEVC. Supporting VideoToolbox encoders recover from an acknowledged long-term
+reference after loss. Decoder completion, frame identity, display generation,
+and the authenticated input epoch scope each acknowledgement. Unsupported
+hardware, older clients, expired references, or an unacknowledged recovery use
+the existing keyframe path. Each recovery viewer gets its own bounded encoder.
+
+`dieter screen start --request offer.json --reference-recovery` opts an automation
+receiver into this protocol. The offer must advertise the generic frame descriptor
+RTP extension, and the receiver must acknowledge `reference` host events only
+after successful decoding through `decodedReferences` in receiver feedback.
+Omitting the flag preserves the request JSON; `--reference-recovery=false`
+explicitly disables it. Signaling works over local, direct TLS, and relay routes.
+
+FlexFEC-03 protection is negotiated automatically. Fresh moderate loss without
+queue growth selects a 10% or 20% repair-byte allowance; stale feedback, sustained
+clean traffic, excessive loss, or queue growth disables repair. Encoder bitrate
+reserves this allowance within the existing bandwidth budget. Media never waits
+for a parity group. Protection adds redundancy and cannot repair every loss burst.
+`screen sessions` / `screen status SESSION` report `referenceRecovery`,
+`referenceAcks`, `referenceRecoveryFrames`, `referenceRecoveries` (decoded),
+`fecPercent`, `fecPackets`, and `fecBytes`.
+
+For disposable-process A/B tests, `DIETER_SCREEN_LTR=0` disables reference recovery
+and `DIETER_SCREEN_FEC=0` disables FEC negotiation. Do not restart an operator daemon
+for these comparisons. `DIETER_TEST_SCREEN_RECOVERY=1 just mac screens-test`
+runs the native H.264/HEVC recovery matrix. Android coverage uses
+`DIETER_SCREEN_TEST_CLASS=com.dbpprt.dieter.screens.ScreenRecoveryEndToEndTest just android screens-test`.
+Both use authenticated disposable fixtures and targeted packet loss, without
+altering saved credentials or system network configuration.

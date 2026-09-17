@@ -104,6 +104,15 @@ extension DieterStore {
         }
 
         conversationLoading = true
+        // Give SwiftUI one executor turn to paint the selected row and loading
+        // state before a cached transcript mounts its native text views. The
+        // in-memory projection below can otherwise complete synchronously and
+        // fold selection, teardown, hydration, and initial scrolling into one
+        // expensive main-actor transaction.
+        await Task.yield()
+        guard selectionGeneration == conversationSelectionGeneration,
+            (selectedCardID ?? selectedChatID) == cardID
+        else { return }
         let cached = await projectedConversation(cardID: cardID, endpointID: endpointID)
         guard selectionGeneration == conversationSelectionGeneration else { return }
         if let cached {

@@ -74,7 +74,7 @@ import Foundation
         let stoppedRunner = CaptureRunner(options: CaptureOptions())
         await stoppedRunner.stopAndWait()
         let finalCredit = NativeCommand(version: 2, id: 1, kind: "frame_consumed", input: nil,
-            configuration: nil, frameId: 1, streamId: nil, profile: nil)
+            configuration: nil, frameId: 1, streamId: nil, profile: nil, codec: nil)
         stoppedRunner.enqueue(finalCredit) { error in
             precondition(error == "native capture rendition stopped", "Final frame credit lost shutdown cause")
         }

@@ -2,7 +2,7 @@ package com.dbpprt.dieter.screens
 
 import io.grpc.Status
 
-/** One reconnect budget per interruption; brief connections must not reset a failure loop. */
+/** Retry for the lifetime of the open screen; cap frequency, never attempts. */
 internal class ScreenRecovery {
     private var attempts = 0
     private var streamingSince: Long? = null
@@ -12,10 +12,11 @@ internal class ScreenRecovery {
         if (streamingSince?.let { now - it >= 10_000 } == true) attempts = 0
         streamingSince = null
     }
-    fun nextDelay(now: Long): Long? {
+    fun nextDelay(now: Long): Long {
         interrupted(now)
-        if (attempts == 3) return null
-        return 1_000L shl attempts++
+        val delay = minOf(5_000L, 250L shl attempts)
+        attempts = minOf(attempts + 1, 5)
+        return delay
     }
 
     companion object {
@@ -27,6 +28,8 @@ internal class ScreenRecovery {
         fun retryableClosure(reason: String): Boolean = reason in setOf(
             "session lease expired", "signaling observer did not reconnect", "WebRTC peer did not reconnect",
             "peer connection failed", "peer connection closed", "daemon shutdown",
+            "remote desktop data channel closed", "remote desktop input channel failed",
+            "remote input queue overflow", "remote input delivery failed",
             "native capture rendition stopped", "native daemon heartbeat expired",
             "native capture helper unresponsive", "native capture helper stopped",
         )

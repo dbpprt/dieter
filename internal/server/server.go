@@ -108,7 +108,7 @@ func newWithAuth(data *store.Store, logger *slog.Logger, runner harness.Runner, 
 	s := &Server{
 		store: data, app: service, workspaces: service.Workspaces, schedules: scheduler.New(data, service), log: logger,
 		mux: http.NewServeMux(), auth: manager, terminals: terminal.NewPersistent(data.Root), executions: remoteexec.New(),
-		remoteDesktop: remotedesktop.New(remotedesktop.Options{Logger: logger}),
+		remoteDesktop: remotedesktop.New(remotedesktop.Options{Logger: logger, Source: remotedesktop.SourceOptions{ClipboardDirectory: filepath.Join(data.Root, "clipboard")}}),
 		machine:       machine.NewCollector(data.Root),
 		machineAction: func(ctx context.Context, operation machine.Operation) error {
 			return machine.ExecuteOperationAtRoot(ctx, data.Root, operation)

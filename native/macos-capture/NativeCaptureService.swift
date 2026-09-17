@@ -117,7 +117,10 @@ final class NativeCaptureService: @unchecked Sendable {
                         pending[id] = PendingCapture(); return true
                     }
                     guard accepted else {
-                        reply(command, lock.withLock { stopped } ? "native capture helper stopped" : "Native encoder capacity reached")
+                        reply(
+                            command,
+                            lock.withLock { stopped }
+                                ? "native capture helper stopped" : "Native encoder capacity reached")
                         continue
                     }
                     // Starting a display/encoder must not stall existing input or frame credits.
@@ -136,7 +139,9 @@ final class NativeCaptureService: @unchecked Sendable {
                             try? await Task.sleep(nanoseconds: delay * 1_000_000)
                             self.reply(command, nil)
                         }
-                    } else { reply(command, nil) }
+                    } else {
+                        reply(command, nil)
+                    }
                 } else if command.kind == "stop" {
                     reply(command, nil); stop()
                 } else if let id = command.streamId, let runner = lock.withLock({ runners[id] }) {
@@ -145,7 +150,8 @@ final class NativeCaptureService: @unchecked Sendable {
                     // Shutdown removes runners before publishing their terminal
                     // events. A final frame credit must retain a recoverable
                     // shutdown cause whichever response reaches the daemon first.
-                    reply(command, lock.withLock { stopped } ? "native capture helper stopped" : "Unknown native stream")
+                    reply(
+                        command, lock.withLock { stopped } ? "native capture helper stopped" : "Unknown native stream")
                 }
             }
             if data.count > 16384 { break }
@@ -164,6 +170,9 @@ final class NativeCaptureService: @unchecked Sendable {
             guard let config = command.configuration else { throw CaptureError.invalidArgument("configuration") }
             try config.validate()
             var value = options
+            value.codec = command.codec ?? "H264"
+            value.referenceRecovery = command.referenceRecovery ?? false
+            guard ["H264", "H265"].contains(value.codec) else { throw CaptureError.invalidArgument("codec") }
             value.streamID = id; value.profile = command.profile == "baseline" ? "baseline" : "high"
             value.displayID = config.displayId; value.maxWidth = config.maxWidth; value.maxHeight = config.maxHeight
             value.fps = config.fps; value.bitrateKbps = config.bitrateKbps; value.embeddedCursor = config.embeddedCursor

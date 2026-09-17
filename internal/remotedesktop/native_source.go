@@ -32,15 +32,17 @@ const (
 // FrameMetadata preserves the native monotonic media timeline across idle gaps,
 // raw-frame replacement and encoder reconfiguration. ReceivedAt is Go monotonic.
 type FrameMetadata struct {
-	ID, Generation           uint64
-	StreamID                 uint64
-	PTS                      time.Duration
-	EncodeTime, CaptureDelay time.Duration
-	Width, Height            int
-	Dropped                  uint64
-	KeyFrame                 bool
-	Discontinuity            bool
-	ReceivedAt               time.Time
+	LTRToken, RecoveryReference, NativeGeneration uint64
+	HasLTR                                        bool
+	ID, Generation                                uint64
+	StreamID                                      uint64
+	PTS                                           time.Duration
+	EncodeTime, CaptureDelay                      time.Duration
+	Width, Height                                 int
+	Dropped                                       uint64
+	KeyFrame                                      bool
+	Discontinuity                                 bool
+	ReceivedAt                                    time.Time
 }
 
 type StreamConfiguration struct {
@@ -80,14 +82,18 @@ type nativeInputPayload struct {
 }
 
 type nativeCommand struct {
-	StreamID      uint64               `json:"stream_id,omitempty"`
-	Profile       string               `json:"profile,omitempty"`
-	FrameID       uint64               `json:"frame_id,omitempty"`
-	Version       int                  `json:"version"`
-	ID            uint64               `json:"id"`
-	Kind          string               `json:"kind"`
-	Input         *nativeInputPayload  `json:"input,omitempty"`
-	Configuration *StreamConfiguration `json:"configuration,omitempty"`
+	ReferenceRecovery bool                 `json:"reference_recovery,omitempty"`
+	Generation        uint64               `json:"generation,omitempty"`
+	LTRToken          uint64               `json:"ltr_token"`
+	StreamID          uint64               `json:"stream_id,omitempty"`
+	Codec             VideoCodec           `json:"codec,omitempty"`
+	Profile           string               `json:"profile,omitempty"`
+	FrameID           uint64               `json:"frame_id,omitempty"`
+	Version           int                  `json:"version"`
+	ID                uint64               `json:"id"`
+	Kind              string               `json:"kind"`
+	Input             *nativeInputPayload  `json:"input,omitempty"`
+	Configuration     *StreamConfiguration `json:"configuration,omitempty"`
 }
 
 type SourceEvent struct {
@@ -113,10 +119,12 @@ type nativeWrite struct {
 
 type nativeHelperSource struct {
 	path, display, profile                  string
+	codec                                   VideoCodec
 	fps, bitrateKbps, maxWidth, maxHeight   int
 	logger                                  *slog.Logger
 	synthetic, embeddedCursor, inputAllowed bool
 	multiplex                               bool
+	referenceRecovery                       bool
 	ready                                   chan struct{}
 
 	mu            sync.Mutex
@@ -130,10 +138,18 @@ type nativeHelperSource struct {
 }
 
 func (s *nativeHelperSource) Description() string {
-	return "ScreenCaptureKit / VideoToolbox hardware H.264"
+	return "ScreenCaptureKit / VideoToolbox hardware " + string(s.Codec())
 }
-func (*nativeHelperSource) Codec() VideoCodec { return VideoCodecH264 }
+func (s *nativeHelperSource) Codec() VideoCodec {
+	if s.codec == VideoCodecH265 {
+		return VideoCodecH265
+	}
+	return VideoCodecH264
+}
 func (s *nativeHelperSource) CodecParameters() string {
+	if s.Codec() == VideoCodecH265 {
+		return hevcFMTP
+	}
 	profile := "42e034"
 	if s.profile == "high" {
 		profile = "640034"
@@ -287,8 +303,14 @@ func (s *nativeHelperSource) Stream(ctx context.Context, emit func(media.Sample)
 	config := s.currentConfigurationLocked()
 	s.mu.Unlock()
 	args := []string{"--frame-credits", "true", "--display-id", config.DisplayID, "--fps", strconv.Itoa(config.FPS), "--bitrate-kbps", strconv.Itoa(config.BitrateKbps), "--max-width", strconv.Itoa(config.MaxWidth), "--max-height", strconv.Itoa(config.MaxHeight), "--event-fd", "3", "--profile", s.profile, "--embedded-cursor", strconv.FormatBool(config.EmbeddedCursor), "--allow-input", strconv.FormatBool(s.inputAllowed)}
+	if s.referenceRecovery {
+		args = append(args, "--reference-recovery", "true")
+	}
 	if s.multiplex {
 		args = append(args, "--multiplex", "true")
+	}
+	if s.Codec() == VideoCodecH265 {
+		args = append(args, "--codec", "H265")
 	}
 	if s.synthetic {
 		args = append(args, "--synthetic", "true")
@@ -520,6 +542,21 @@ func readNativeCaptureSample(reader io.Reader, fps int) (media.Sample, int64, ti
 		return media.Sample{}, 0, 0, errors.New("native frame exceeds bounds")
 	}
 	m := FrameMetadata{KeyFrame: binary.BigEndian.Uint32(header[4:8])&1 != 0, ID: binary.BigEndian.Uint64(header[8:16]), Generation: binary.BigEndian.Uint64(header[16:24]), PTS: time.Duration(binary.BigEndian.Uint64(header[24:32])), EncodeTime: time.Duration(binary.BigEndian.Uint64(header[32:40])), CaptureDelay: time.Duration(binary.BigEndian.Uint64(header[40:48])), Width: int(binary.BigEndian.Uint32(header[48:52])), Height: int(binary.BigEndian.Uint32(header[52:56])), Dropped: binary.BigEndian.Uint64(header[56:64]), ReceivedAt: time.Now()}
+	m.NativeGeneration = m.Generation
+	flags := binary.BigEndian.Uint32(header[4:8])
+	if flags&2 != 0 {
+		var value uint64
+		if err := binary.Read(reader, binary.BigEndian, &value); err != nil {
+			return media.Sample{}, 0, 0, err
+		}
+		m.LTRToken, m.HasLTR = value, true
+	}
+	if flags&4 != 0 {
+		if err := binary.Read(reader, binary.BigEndian, &m.RecoveryReference); err != nil {
+			return media.Sample{}, 0, 0, err
+		}
+	}
+
 	if m.PTS < 0 || m.Width < 2 || m.Height < 2 || m.Width > 16384 || m.Height > 16384 {
 		return media.Sample{}, 0, 0, errors.New("invalid native frame metadata")
 	}

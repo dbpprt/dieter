@@ -5,26 +5,27 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class ScreenRecoveryTest {
-    @Test fun retriesAreBoundedEvenWhenAShortConnectionBrieflyDisplaysVideo() {
+    @Test fun retriesContinueWithCappedFrequencyForTheLifetimeOfTheScreen() {
         val recovery = ScreenRecovery()
-        assertEquals(1_000L, recovery.nextDelay(0))
+        assertEquals(250L, recovery.nextDelay(0))
         recovery.streaming(1_000)
-        assertEquals(2_000L, recovery.nextDelay(1_500))
+        assertEquals(500L, recovery.nextDelay(1_500))
         recovery.streaming(3_500)
-        assertEquals(4_000L, recovery.nextDelay(4_000))
+        assertEquals(1_000L, recovery.nextDelay(4_000))
         recovery.streaming(8_000)
-        assertNull(recovery.nextDelay(8_500))
+        assertEquals(2_000L, recovery.nextDelay(8_500))
+        repeat(1_000) { assertTrue(recovery.nextDelay(10_000L + it) <= 5_000L) }
     }
 
     @Test fun stableVideoRestoresBudgetButDisconnectedTimeDoesNotCount() {
         val recovery = ScreenRecovery()
-        assertEquals(1_000L, recovery.nextDelay(0))
+        assertEquals(250L, recovery.nextDelay(0))
         recovery.streaming(1_000)
         recovery.streaming(5_000)
-        assertEquals(1_000L, recovery.nextDelay(11_000))
+        assertEquals(250L, recovery.nextDelay(11_000))
         recovery.streaming(12_000)
         recovery.interrupted(13_000)
-        assertEquals(2_000L, recovery.nextDelay(60_000))
+        assertEquals(500L, recovery.nextDelay(60_000))
     }
 
     @Test fun transportAndMissingSessionsReopenButTrustAndPolicyFailuresDoNot() {

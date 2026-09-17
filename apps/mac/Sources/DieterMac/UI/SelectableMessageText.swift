@@ -155,7 +155,12 @@ final class MessageTextView: NSTextView {
         }
         renderedSource = source
         renderedColor = color
-        invalidateIntrinsicContentSize()
+        // NSViewRepresentable.sizeThatFits owns this view's SwiftUI size.
+        // Invalidating AppKit's intrinsic size from updateNSView can re-enter
+        // NSHostingView layout while SwiftUI is still rendering the update;
+        // AppKit then skips that layout pass and the transcript appears to
+        // stall until a later frame. SwiftUI remeasures sizeThatFits whenever
+        // this representable's source or environment changes.
     }
 
     func fittingSize(width proposedWidth: CGFloat?) -> CGSize {

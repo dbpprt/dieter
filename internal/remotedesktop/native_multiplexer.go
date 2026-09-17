@@ -73,7 +73,7 @@ func (m *nativeMultiplexer) process(ctx context.Context, template *nativeHelperS
 		m.mu.Unlock()
 		return waitNativeReady(ctx, root)
 	}
-	root := &nativeHelperSource{path: template.path, display: template.display, profile: template.profile,
+	root := &nativeHelperSource{path: template.path, display: template.display, profile: template.profile, codec: template.codec,
 		fps: template.fps, bitrateKbps: template.bitrateKbps, maxWidth: template.maxWidth, maxHeight: template.maxHeight,
 		synthetic: template.synthetic, inputAllowed: true, logger: template.logger, multiplex: true, ready: make(chan struct{})}
 	processCtx, cancel := context.WithCancel(context.Background())
@@ -154,7 +154,7 @@ func (m *nativeMultiplexer) Close() {
 }
 
 func (s *nativeRendition) Description() string     { return s.template.Description() }
-func (s *nativeRendition) Codec() VideoCodec       { return VideoCodecH264 }
+func (s *nativeRendition) Codec() VideoCodec       { return s.template.Codec() }
 func (s *nativeRendition) CodecParameters() string { return s.template.CodecParameters() }
 func (s *nativeRendition) SetEventHandler(f func(SourceEvent)) {
 	s.mux.mu.Lock()
@@ -202,7 +202,7 @@ func (s *nativeRendition) Stream(ctx context.Context, emit func(media.Sample) er
 	config := s.config
 	s.createSent = true
 	s.mux.mu.Unlock()
-	err := s.command(startup, nativeCommand{Kind: "create", Configuration: &config, Profile: s.template.profile}, true)
+	err := s.command(startup, nativeCommand{Kind: "create", Configuration: &config, Profile: s.template.profile, Codec: s.template.codec, ReferenceRecovery: s.template.referenceRecovery}, true)
 	close(s.createDone)
 	if err != nil {
 		return err

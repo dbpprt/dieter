@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import CryptoKit
 
 final class InputTarget: NSView {
     let output: URL
@@ -8,6 +9,9 @@ final class InputTarget: NSView {
     var text = ""
     var scrolls = 0
     var latencyWhite: Bool?
+    var clipboardFiles: [URL] = []
+    var clipboardImage: Data?
+    var pastedBinary: [[String: Any]] = []
     let clipboard: NSPasteboard = CommandLine.arguments.count > 3 ? NSPasteboard(name: .init(CommandLine.arguments[3])) : .general
     init(output: URL) { self.output = output; super.init(frame: .zero) }
     required init?(coder: NSCoder) { nil }
@@ -17,8 +21,25 @@ final class InputTarget: NSView {
             latencyWhite = event.keyCode == 18; needsDisplay = true; report(); return
         }
         keys.append("\(event.keyCode):down")
-        if event.modifierFlags.contains(.command), event.keyCode == 9 { text += clipboard.string(forType: .string) ?? "" }
-        else if event.modifierFlags.contains(.command), [7, 8].contains(event.keyCode) { clipboard.clearContents(); clipboard.setString(text, forType: .string); if event.keyCode == 7 { text = "" } }
+        if event.modifierFlags.contains(.command), event.keyCode == 9 {
+            clipboardFiles = clipboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL] ?? []
+            clipboardImage = clipboard.data(forType: .png)
+            if !clipboardFiles.isEmpty {
+                pastedBinary = clipboardFiles.compactMap { url in
+                    guard let data = try? Data(contentsOf: url) else { return nil }
+                    return ["name": url.lastPathComponent, "bytes": data.count, "sha256": SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()]
+                }
+            } else if let data = clipboardImage {
+                pastedBinary = [["name": "image", "bytes": data.count, "sha256": SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()]]
+            } else { pastedBinary = []; text += clipboard.string(forType: .string) ?? "" }
+        }
+        else if event.modifierFlags.contains(.command), [7, 8].contains(event.keyCode) {
+            clipboard.clearContents()
+            if !clipboardFiles.isEmpty { clipboard.writeObjects(clipboardFiles as [NSURL]) }
+            else if let data = clipboardImage { clipboard.setData(data, forType: .png) }
+            else { clipboard.setString(text, forType: .string) }
+            if event.keyCode == 7 { text = ""; clipboardFiles = []; clipboardImage = nil }
+        }
         else { text += event.characters ?? "" }
         report()
     }
@@ -44,7 +65,7 @@ final class InputTarget: NSView {
         ).origin
         let main = CGDisplayBounds(CGMainDisplayID())
         let value: [String: Any] = [
-            "keys": keys, "ups": ups, "text": text, "scrolls": scrolls, "x": (point.x - main.minX) / main.width,
+            "pastedBinary": pastedBinary, "keys": keys, "ups": ups, "text": text, "scrolls": scrolls, "x": (point.x - main.minX) / main.width,
             "y": (main.height - point.y) / main.height, "active": NSApp.isActive,
             "pid": ProcessInfo.processInfo.processIdentifier,
         ]

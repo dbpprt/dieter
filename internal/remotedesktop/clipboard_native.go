@@ -46,6 +46,9 @@ func (n *nativeClipboard) start() error {
 	ctx, cancel := context.WithCancel(n.ctx)
 	n.cancel = cancel
 	args := []string{"--clipboard-service"}
+	if n.options.ClipboardDirectory != "" {
+		args = append(args, "--clipboard-directory", n.options.ClipboardDirectory)
+	}
 	if n.options.ClipboardName != "" {
 		args = append(args, "--clipboard-name", n.options.ClipboardName)
 	} else if n.options.Kind == "native-synthetic" {
@@ -73,17 +76,21 @@ func (n *nativeClipboard) start() error {
 	n.command = command
 	go func() {
 		scanner := bufio.NewScanner(out)
-		scanner.Buffer(make([]byte, 65536), 8<<20)
+		scanner.Buffer(make([]byte, 65536), 16<<20)
 		for scanner.Scan() {
 			var value struct {
-				Revision string `json:"revision"`
-				Text     string `json:"text"`
-				Changed  bool   `json:"changed"`
-				HasText  bool   `json:"hasText"`
-				Error    string `json:"error"`
+				Revision string                `json:"revision"`
+				Text     string                `json:"text"`
+				Changed  bool                  `json:"changed"`
+				HasText  bool                  `json:"hasText"`
+				Error    string                `json:"error"`
+				Items    []clipboardNativeItem `json:"items"`
 			}
 			err := json.Unmarshal(scanner.Bytes(), &value)
 			reply := nativeClipboardReply{&dieterv1.RemoteDesktopClipboardResponse{Revision: value.Revision, Text: value.Text, Changed: value.Changed, HasText: value.HasText, Error: value.Error}, err}
+			for _, item := range value.Items {
+				reply.value.Items = append(reply.value.Items, &dieterv1.RemoteDesktopClipboardItem{Kind: dieterv1.RemoteDesktopClipboardItem_Kind(item.Kind), Name: item.Name, MimeType: item.MimeType, Data: item.Data})
+			}
 			select {
 			case n.output <- reply:
 			case <-ctx.Done():
@@ -104,11 +111,21 @@ func (n *nativeClipboard) Exchange(ctx context.Context, r *dieterv1.RemoteDeskto
 			return nil, err
 		}
 	}
+	items := make([]clipboardNativeItem, 0, len(r.Items))
+	for _, item := range r.Items {
+		data := item.Data
+		if data == nil {
+			data = []byte{}
+		}
+		items = append(items, clipboardNativeItem{int32(item.Kind), item.Name, item.MimeType, data})
+	}
 	raw, err := json.Marshal(struct {
-		Action        int32  `json:"action"`
-		Text          string `json:"text"`
-		KnownRevision string `json:"knownRevision"`
-	}{int32(r.Action), r.Text, r.KnownRevision})
+		Action        int32                 `json:"action"`
+		Text          string                `json:"text"`
+		KnownRevision string                `json:"knownRevision"`
+		Items         []clipboardNativeItem `json:"items"`
+		AcceptBinary  bool                  `json:"acceptBinary"`
+	}{int32(r.Action), r.Text, r.KnownRevision, items, r.AcceptBinary})
 	if err != nil {
 		return nil, err
 	}
@@ -131,4 +148,11 @@ func (n *nativeClipboard) Exchange(ctx context.Context, r *dieterv1.RemoteDeskto
 		n.Close()
 		return nil, errors.New("clipboard timed out; outcome unknown, not retried")
 	}
+}
+
+type clipboardNativeItem struct {
+	Kind     int32  `json:"kind"`
+	Name     string `json:"name"`
+	MimeType string `json:"mimeType"`
+	Data     []byte `json:"data"`
 }

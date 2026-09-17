@@ -25,6 +25,7 @@ type VideoCodec string
 const (
 	VideoCodecVP8  VideoCodec = "VP8"
 	VideoCodecH264 VideoCodec = "H264"
+	VideoCodecH265 VideoCodec = "H265"
 )
 
 // FrameSource emits complete encoded frames and owns capture, encoding, and
@@ -51,19 +52,22 @@ type InputSink interface {
 }
 
 type SourceOptions struct {
+	RecoveryID string // private encoder identity for acknowledged references; capture stays shared
 	// Optional named pasteboard for isolated native fixtures; empty uses the system clipboard.
-	ClipboardName  string
-	Kind           string
-	HelperPath     string
-	Display        string
-	FPS            int
-	Bitrate        int
-	MaxWidth       int
-	MaxHeight      int
-	Logger         *slog.Logger
-	Profile        string
-	EmbeddedCursor bool
-	Control        bool
+	ClipboardDirectory string
+	ClipboardName      string
+	Kind               string
+	HelperPath         string
+	Display            string
+	FPS                int
+	Bitrate            int
+	MaxWidth           int
+	MaxHeight          int
+	Logger             *slog.Logger
+	Profile            string
+	Codec              VideoCodec
+	EmbeddedCursor     bool
+	Control            bool
 }
 
 const captureProbeTimeout = 15 * time.Second
@@ -102,6 +106,9 @@ func ProbeCapture(ctx context.Context, options SourceOptions) error {
 }
 
 func NewFrameSource(options SourceOptions) (FrameSource, error) {
+	if options.Codec != "" && options.Codec != VideoCodecH264 && options.Codec != VideoCodecH265 && options.Codec != VideoCodecVP8 {
+		return nil, errors.New("unsupported screen codec")
+	}
 	if options.FPS <= 0 {
 		options.FPS = 60
 	}
@@ -136,7 +143,7 @@ func NewFrameSource(options SourceOptions) (FrameSource, error) {
 				path: helper, display: options.Display, fps: options.FPS,
 				bitrateKbps: options.Bitrate, maxWidth: options.MaxWidth,
 				maxHeight: options.MaxHeight, logger: options.Logger,
-				profile: options.Profile, synthetic: options.Kind == "native-synthetic",
+				profile: options.Profile, codec: options.Codec, referenceRecovery: options.RecoveryID != "", synthetic: options.Kind == "native-synthetic",
 				embeddedCursor: options.EmbeddedCursor, inputAllowed: options.Control,
 			}, nil
 		}

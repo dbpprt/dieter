@@ -47,6 +47,10 @@ struct NativeCommand: Decodable {
     let frameId: UInt64?
     let streamId: UInt64?
     let profile: String?
+    let codec: String?
+    var referenceRecovery: Bool? = nil
+    var generation: UInt64? = nil
+    var ltrToken: UInt64? = nil
 }
 
 struct NativeCursor: Encodable {

@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"os"
 	"path/filepath"
 	"strings"
@@ -86,7 +87,12 @@ func assertScreenSessionCLI(t *testing.T, client *CLI, output *bytes.Buffer, con
 	if err = os.WriteFile(file, raw, 0600); err != nil {
 		t.Fatal(err)
 	}
-	lines := strings.Split(strings.TrimSpace(runDaemonCLI(t, client, output, "screen", "start", "--request", file, "--count", "2")), "\n")
+	// Strict HEVC reaches the same core negotiation policy over every CLI route;
+	// this VP8 fixture cannot silently satisfy a forced HEVC request.
+	if err := client.Run([]string{"screen", "start", "--request", file, "--codec", "hevc", "--count", "2"}); err == nil || !strings.Contains(err.Error(), "HEVC requires") {
+		t.Fatalf("strict HEVC over %s: %v", client.transport.route, err)
+	}
+	lines := strings.Split(strings.TrimSpace(runDaemonCLI(t, client, output, "screen", "start", "--request", file, "--codec", "auto", "--reference-recovery", "--count", "2")), "\n")
 	signal := &dieterv1.RemoteDesktopSignal{}
 	if err = protojson.Unmarshal([]byte(lines[0]), signal); err != nil {
 		t.Fatal(err)
@@ -146,6 +152,46 @@ func assertScreenSessionCLI(t *testing.T, client *CLI, output *bytes.Buffer, con
 			t.Fatalf("clipboard round trip: %q", result.Text)
 		}
 	}
+
+	binary := bytes.Repeat([]byte{0, 255, 10, 17}, 600000)
+	binaryFile := filepath.Join(t.TempDir(), "blob.bin")
+	if err := os.WriteFile(binaryFile, binary, 0600); err != nil {
+		t.Fatal(err)
+	}
+	emptyFile := filepath.Join(t.TempDir(), "empty.txt")
+	if err := os.WriteFile(emptyFile, nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	runDaemonCLI(t, client, output, "screen", "clipboard", "paste", id, "--attach", binaryFile, "--attach", emptyFile)
+	destination := filepath.Join(t.TempDir(), "received")
+	runDaemonCLI(t, client, output, "screen", "clipboard", "read", id, "--output-dir", destination)
+	received, err := os.ReadFile(filepath.Join(destination, "blob.bin"))
+	if err != nil || !bytes.Equal(received, binary) {
+		t.Fatalf("binary round trip over %s: %v", client.transport.route, err)
+	}
+	empty, err := os.ReadFile(filepath.Join(destination, "empty.txt"))
+	if err != nil || len(empty) != 0 {
+		t.Fatal("empty file lost")
+	}
+	if err := client.Run([]string{"screen", "clipboard", "read", id, "--output-dir", destination}); err == nil {
+		t.Fatal("output directory overwritten")
+	}
+	png, err := base64.StdEncoding.DecodeString("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aCWQAAAAASUVORK5CYII=")
+	if err != nil {
+		t.Fatal(err)
+	}
+	pngFile := filepath.Join(t.TempDir(), "pixel.png")
+	if err := os.WriteFile(pngFile, png, 0600); err != nil {
+		t.Fatal(err)
+	}
+	runDaemonCLI(t, client, output, "screen", "clipboard", "paste", id, "--image", pngFile)
+	var imageResult dieterv1.RemoteDesktopClipboardResponse
+	if err := protojson.Unmarshal([]byte(runDaemonCLI(t, client, output, "screen", "clipboard", "read", id)), &imageResult); err != nil {
+		t.Fatal(err)
+	}
+	if len(imageResult.Items) != 1 || imageResult.Items[0].Kind != dieterv1.RemoteDesktopClipboardItem_IMAGE || !bytes.Equal(imageResult.Items[0].Data, png) {
+		t.Fatal("clipboard image round trip failed")
+	}
 	runDaemonCLI(t, client, output, "screen", "clipboard", "disable", id)
 	if err := client.Run([]string{"screen", "clipboard", "read", id}); err == nil {
 		t.Fatal("disabled clipboard read succeeded")
@@ -157,5 +203,24 @@ func assertScreenSessionCLI(t *testing.T, client *CLI, output *bytes.Buffer, con
 	output.Reset()
 	if err = client.Run([]string{"screen", "status", id}); err == nil {
 		t.Fatal("closed session still accessible")
+	}
+}
+
+func TestScreenClipboardRecognizesNativeTIFF(t *testing.T) {
+	for _, header := range []string{"II*\x00", "MM\x00*"} {
+		if got := screenClipboardMIME([]byte(header)); got != "image/tiff" {
+			t.Fatalf("TIFF identified as %s", got)
+		}
+	}
+	if got := screenClipboardMIME([]byte("ordinary text")); got == "image/tiff" {
+		t.Fatal("text identified as image")
+	}
+}
+
+func TestScreenStartRejectsInvalidCodecOffline(t *testing.T) {
+	client := &CLI{Out: &bytes.Buffer{}}
+	err := client.rpcScreenStart([]string{"--request", "not-read.json", "--codec", "av1"})
+	if err == nil || err.Error() != "codec must be auto, h264, or hevc" {
+		t.Fatalf("codec validation: %v", err)
 	}
 }

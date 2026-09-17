@@ -19,7 +19,7 @@ import kotlin.math.roundToInt
 
 data class ScreenState(
     val clipboardBusy: Boolean = false, val clipboardEnabled: Boolean = true, val clipboardError: String = "",
-    val phase: String = "idle", val error: String = "", val control: Boolean = false,
+    val codecFallbackReason: String = "", val phase: String = "idle", val error: String = "", val control: Boolean = false,
     val capabilities: RemoteDesktopCapabilities = RemoteDesktopCapabilities.getDefaultInstance(),
     val session: RemoteDesktopSessionState = RemoteDesktopSessionState.getDefaultInstance(),
     val cursor: RemoteDesktopCursor = RemoteDesktopCursor.getDefaultInstance(),
@@ -59,6 +59,7 @@ class ScreenController(context: Context) : AutoCloseable {
     private var signaling: Job? = null
     private var monitoring: Job? = null
     private var configuring: Job? = null
+    private var peerWatchdog: Job? = null
     private var recovering: Job? = null
     private var closing: Job? = null
     private var recovery = ScreenRecovery()
@@ -67,12 +68,19 @@ class ScreenController(context: Context) : AutoCloseable {
     private var pointerLastSent: Long? = null
     var preferredMaxFPS: Int = 60
         private set
+    var codecPreference = RemoteDesktopCodecPreference.REMOTE_DESKTOP_CODEC_PREFERENCE_H264
+        private set
+    private var hevcFailed = false
+    private var codecFallbackReason = ""
+    private val effectiveCodec get() = if (hevcFailed && codecPreference == RemoteDesktopCodecPreference.REMOTE_DESKTOP_CODEC_PREFERENCE_AUTO)
+        RemoteDesktopCodecPreference.REMOTE_DESKTOP_CODEC_PREFERENCE_H264 else codecPreference
     private var pendingPointer: Pair<Float, Float>? = null
     internal var pointerSequence = 0L
         private set
     private var stateSequence = 0L
     private var ordinal = 0L
     private val feedbackPump = ScreenFeedbackPump()
+    private var referenceReceiver: ScreenReferenceReceiver? = null
     private var leaseRenewal: Job? = null
     private var presentedGeneration = 0L
     private var lastPresentedTimestamp: Long? = null
@@ -98,12 +106,14 @@ class ScreenController(context: Context) : AutoCloseable {
         }
         clipboard.isCurrentGrant = { mutable.value.session.controlActive && mutable.value.session.controlGeneration == it }
         clipboard.onError = { mutable.value = mutable.value.copy(clipboardError = it) }
+        clipboard.onUnavailable = { recover("Clipboard channel closed") }
     }
 
     fun connect(open: suspend () -> ScreenConnection) {
         check(!closed) { "Screen controller is closed" }
         disconnect()
         reopen = open
+        hevcFailed = false; codecFallbackReason = ""
         recovery = ScreenRecovery()
         certificate = null
         configuration = RemoteDesktopStreamConfiguration.getDefaultInstance()
@@ -113,12 +123,12 @@ class ScreenController(context: Context) : AutoCloseable {
     private fun startConnection() {
         val open = reopen ?: return
         val current = token
-        mutable.value = ScreenState(clipboardEnabled = clipboard.enabled, phase = if (recovering == null) "connecting" else "reconnecting")
+        mutable.value = ScreenState(clipboardEnabled = clipboard.enabled, codecFallbackReason = codecFallbackReason, phase = if (recovering == null) "connecting" else "reconnecting")
         signaling = scope.launch {
             try {
                 // A rapid Retry must not race the previous session's asynchronous Close RPC.
                 closing?.join()
-                val route = openRoute(open)
+                val route = withTimeout(20_000) { openRoute(open) }
                 if (current != token) { route.close(); return@launch }
                 connection = route
                 require(certificate?.contentEquals(route.certificate) != false) { "The enrolled machine identity changed. Reconnect to verify it." }
@@ -127,12 +137,18 @@ class ScreenController(context: Context) : AutoCloseable {
                 mutable.value = mutable.value.copy(capabilities = caps, signalingRoute = route.route)
                 require(caps.enabled && caps.ready) { caps.unavailableReason.ifBlank { "Enable screen sharing on this machine first" } }
                 require(caps.inputProtocolVersion == 2) { "Update the daemon to use input protocol v2" }
+                clipboard.binarySupported = caps.binaryClipboardSupported
                 val settings = rpc().getRemoteDesktopSettings(Empty.getDefaultInstance())
-                val decoders = ScreenDecoderFactory(egl.eglBaseContext) { frame ->
+                val references = ScreenReferenceReceiver { feedbackPump.acknowledge(it) }
+                referenceReceiver?.stop(); referenceReceiver = references
+                val decoders = ScreenDecoderFactory(egl.eglBaseContext,
+                    enableHEVC = effectiveCodec != RemoteDesktopCodecPreference.REMOTE_DESKTOP_CODEC_PREFERENCE_H264,
+                    unavailable = { scope.launch { if (current == token) hevcUnavailable() } }) { frame ->
+                    references.decoded(frame.timestampNs)
                     if (authorized && token == current) videoSink?.invoke(frame, current)
                 }
                 require(decoders.supportedCodecs.isNotEmpty()) { "This device has no H.264 MediaCodec decoder" }
-                factory = PeerConnectionFactory.builder().setVideoDecoderFactory(decoders).createPeerConnectionFactory()
+                factory = PeerConnectionFactory.builder().setFieldTrials("WebRTC-GenericDescriptorAdvertised/Enabled/").setVideoDecoderFactory(decoders).createPeerConnectionFactory()
                 val rtc = PeerConnection.RTCConfiguration(route.rtc.iceServersList.map {
                     PeerConnection.IceServer.builder(it.urlsList).setUsername(it.username).setPassword(it.credential).createIceServer()
                 }).apply {
@@ -148,16 +164,20 @@ class ScreenController(context: Context) : AutoCloseable {
                 listOfNotNull(pointer, input, host).forEach { channel -> channel.registerObserver(channelObserver(channel, current)) }
                 val video = pc.addTransceiver(MediaStreamTrack.MediaType.MEDIA_TYPE_VIDEO,
                     RtpTransceiver.RtpTransceiverInit(RtpTransceiver.RtpTransceiverDirection.RECV_ONLY))
+                val canHEVC = caps.codecModesList.any { it.codec == "H265" && it.profile == "main" &&
+                    it.maxWidth >= 1920 && it.maxHeight >= 1080 && it.maxFps >= preferredMaxFPS }
                 val codecs = factory!!.getRtpReceiverCapabilities(MediaStreamTrack.MediaType.MEDIA_TYPE_VIDEO).codecs
-                    .filter { it.name.equals("H264", true) }.sortedByDescending { it.parameters["profile-level-id"]?.startsWith("64") == true }
-                require(codecs.isNotEmpty()) { "H.264 negotiation is unavailable" }
+                    .filter { it.name.equals("flexfec-03", true) || (it.name.equals("H265", true) && canHEVC && effectiveCodec != RemoteDesktopCodecPreference.REMOTE_DESKTOP_CODEC_PREFERENCE_H264) ||
+                        (it.name.equals("H264", true) && effectiveCodec != RemoteDesktopCodecPreference.REMOTE_DESKTOP_CODEC_PREFERENCE_HEVC) }
+                    .sortedByDescending { if (it.name.equals("H265", true)) 2 else if (it.parameters["profile-level-id"]?.startsWith("64") == true) 1 else 0 }
+                require(codecs.isNotEmpty()) { "Selected codec unavailable. HEVC requires hardware decoding and an updated host at up to 1080p60." }
                 video.setCodecPreferences(codecs)
                 val offer = createOffer(pc)
                 setDescription(pc, offer, local = true)
                 if (current != token) return@launch
                 val display = caps.displaysList.firstOrNull { it.id == configuration.displayId }
                     ?: caps.displaysList.firstOrNull { it.primary } ?: caps.displaysList.first()
-                val start = StartRemoteDesktopRequest.newBuilder().setClipboard(caps.clipboardSupported && clipboard.enabled).setClientNonce(UUID.randomUUID().toString())
+                val start = StartRemoteDesktopRequest.newBuilder().setReferenceRecovery(offer.description.contains(SCREEN_GENERIC_DESCRIPTOR_URI)).setCodecPreference(effectiveCodec).setClipboard(caps.clipboardSupported && clipboard.enabled).setClientNonce(UUID.randomUUID().toString())
                     .setRtcConfiguration(route.rtc).setDisplayId(display.id)
                     .setInputProtocolVersion(if (caps.supportedInputProtocolVersionsList.contains(3)) 3 else 2).setClientName("Android")
                     .setControl(settings.controlEnabled && caps.controlSupported && caps.controlPermission == "granted")
@@ -182,6 +202,7 @@ class ScreenController(context: Context) : AutoCloseable {
                         throw e
                     }
                 }
+            } catch (e: TimeoutCancellationException) { if (current == token) recover("Connection attempt timed out")
             } catch (e: CancellationException) { throw e
             } catch (e: Exception) { if (current == token) connectionFailure(e) }
         }
@@ -217,7 +238,9 @@ class ScreenController(context: Context) : AutoCloseable {
                 else { require(remoteCandidates.size < 256); remoteCandidates.add(ice) }
             }
             RemoteDesktopSignal.PayloadCase.STATE -> applyState(signal.state)
-            RemoteDesktopSignal.PayloadCase.ERROR -> if (signal.error.recoverable ||
+            RemoteDesktopSignal.PayloadCase.ERROR -> if (signal.error.code == "hevc_unavailable") {
+                hevcUnavailable()
+            } else if (signal.error.recoverable ||
                 (signal.error.code == "capture_failed" && ScreenRecovery.retryableClosure(signal.error.message))) {
                 recover(signal.error.message)
             } else fail(signal.error.message)
@@ -246,12 +269,17 @@ class ScreenController(context: Context) : AutoCloseable {
         override fun onConnectionChange(value: PeerConnection.PeerConnectionState) { scope.launch {
             if (token != current) return@launch
             when (value) {
-                PeerConnection.PeerConnectionState.FAILED -> recover("The video connection failed")
+                PeerConnection.PeerConnectionState.FAILED, PeerConnection.PeerConnectionState.CLOSED -> recover("The video connection failed")
                 PeerConnection.PeerConnectionState.DISCONNECTED -> {
                     releaseInput(); peerConnected = false; recovery.interrupted(SystemClock.elapsedRealtime())
                     mutable.value = mutable.value.copy(phase = "reconnecting", control = false)
+                    peerWatchdog?.cancel()
+                    peerWatchdog = scope.launch {
+                        delay(3_000)
+                        if (token == current && !peerConnected) recover("The peer did not recover after losing connectivity")
+                    }
                 }
-                PeerConnection.PeerConnectionState.CONNECTED -> { peerConnected = true; readiness() }
+                PeerConnection.PeerConnectionState.CONNECTED -> { peerWatchdog?.cancel(); peerWatchdog = null; peerConnected = true; readiness() }
                 else -> Unit
             }
         } }
@@ -285,6 +313,7 @@ class ScreenController(context: Context) : AutoCloseable {
                 try {
                     val event = RemoteDesktopHostEvent.parseFrom(bytes)
                     when (event.payloadCase) {
+                        RemoteDesktopHostEvent.PayloadCase.REFERENCE -> referenceReceiver?.expect(event.reference)
                         RemoteDesktopHostEvent.PayloadCase.STATE -> applyState(event.state)
                         RemoteDesktopHostEvent.PayloadCase.CURSOR -> if (event.cursor.displayGeneration == mutable.value.session.displayGeneration) {
                             onCursor?.invoke(event.cursor)
@@ -299,6 +328,7 @@ class ScreenController(context: Context) : AutoCloseable {
     }
     private fun applyState(value: RemoteDesktopSessionState) {
         if (value.phase == "closed") {
+            if (value.reason == "HEVC encoder unavailable") { hevcUnavailable(); return }
             if (ScreenRecovery.retryableClosure(value.reason)) recover(value.reason)
             else fail(value.reason.ifBlank { "The screen session closed" })
             return
@@ -422,6 +452,19 @@ class ScreenController(context: Context) : AutoCloseable {
             if (reliable && !builder.hasReleaseAll()) recover("Remote input could not be delivered")
         }
     }
+    fun selectCodec(value: RemoteDesktopCodecPreference) {
+        codecPreference = value; hevcFailed = false; codecFallbackReason = ""
+        if (reopen != null) recover("Changing video codec", immediate = true)
+    }
+
+    internal fun hevcUnavailable() {
+        if (codecPreference != RemoteDesktopCodecPreference.REMOTE_DESKTOP_CODEC_PREFERENCE_AUTO || hevcFailed) {
+            fail("HEVC hardware codec could not initialize"); return
+        }
+        hevcFailed = true; codecFallbackReason = "HEVC unavailable; using H.264"
+        recover(codecFallbackReason, immediate = true)
+    }
+
     fun configure(display: String? = null, quality: RemoteDesktopQuality? = null, maxFPS: Int? = null, refresh: Boolean = false) {
         if (sessionId.isEmpty()) return
         if (display != null && display != configuration.displayId) { releaseInput(); mutable.value = mutable.value.copy(control = false) }
@@ -430,6 +473,9 @@ class ScreenController(context: Context) : AutoCloseable {
             display?.let(::setDisplayId); quality?.let(::setQuality)
             if (maxFPS != null) setMaxFps(preferredMaxFPS)
         }.build()
+        if (mutable.value.session.codec == "H265" && preferredMaxFPS > 60) {
+            recover("Frame rate exceeds HEVC mode", immediate = true); return
+        }
         configuring?.cancel()
         val current = token
         configuring = scope.launch {
@@ -437,6 +483,7 @@ class ScreenController(context: Context) : AutoCloseable {
                 val result = rpc().updateRemoteDesktopSession(UpdateRemoteDesktopSessionRequest.newBuilder()
                     .setSessionId(sessionId).setConfiguration(configuration).setRefresh(refresh).build())
                 if (current == token) applyState(result)
+            } catch (e: TimeoutCancellationException) { if (current == token) recover("Connection attempt timed out")
             } catch (e: CancellationException) { throw e
             } catch (e: Exception) { if (current == token) connectionFailure(e) }
         }
@@ -490,7 +537,7 @@ class ScreenController(context: Context) : AutoCloseable {
                     val incoming = stats.statsMap.values.firstOrNull { it.type == "inbound-rtp" && it.members["kind"] == "video" }?.members.orEmpty()
                     val pair = stats.statsMap.values.firstOrNull { it.type == "candidate-pair" && it.members["state"] == "succeeded" && it.members["nominated"] == true }?.members.orEmpty()
                     fun number(key: String) = (incoming[key] as? Number)?.toDouble() ?: 0.0
-                    val values = listOf("framesDecoded", "totalDecodeTime", "jitterBufferEmittedCount", "jitterBufferDelay", "packetsLost", "packetsReceived")
+                    val values = listOf("framesDecoded", "totalDecodeTime", "jitterBufferEmittedCount", "jitterBufferDelay", "packetsLost", "packetsReceived", "framesReceived")
                         .associateWith(::number) + mapOf("presented" to framesPresented.get().toDouble(), "renderMs" to totalRenderMs)
                     fun delta(key: String) = max(0.0, values.getValue(key) - (previous[key] ?: values.getValue(key)))
                     val now = SystemClock.elapsedRealtime(); val elapsed = max(0.001, (now - previousTime) / 1000.0)
@@ -512,7 +559,11 @@ class ScreenController(context: Context) : AutoCloseable {
                     mutable.value = mutable.value.copy(receivedFps = fps, mediaRoute = if (pair.isEmpty()) "" else if (relayed) "Relayed media" else "Direct media")
                     previous = values; previousTime = now
                     if (framesPresented.get() == 0L && ticks == 6) configure(refresh = true)
-                    if (framesPresented.get() == 0L && ticks >= 40) error("No screen frame was displayed")
+                    if (framesPresented.get() == 0L && ticks >= 40) {
+                        if (mutable.value.session.codec == "H265" && peerConnected && (values["framesReceived"] ?: 0.0) > 0 && (values["framesDecoded"] ?: 0.0) == 0.0)
+                            hevcUnavailable() else recover("No screen frame was displayed")
+                        return@launch
+                    }
                 } catch (e: CancellationException) { throw e
                 } catch (e: Exception) { if (current == token) connectionFailure(e); return@launch }
             }
@@ -551,8 +602,9 @@ class ScreenController(context: Context) : AutoCloseable {
     private fun stopSession() {
         if (disconnecting) return
         disconnecting = true
+        peerWatchdog?.cancel(); peerWatchdog = null
         releaseInput(); token++; authorized = false
-        feedbackPump.stop(); leaseRenewal?.cancel(); leaseRenewal = null
+        referenceReceiver?.stop(); referenceReceiver = null; feedbackPump.stop(); leaseRenewal?.cancel(); leaseRenewal = null
         signaling?.cancel(); signaling = null; monitoring?.cancel(); monitoring = null; configuring?.cancel(); configuring = null
         val old = connection; val id = sessionId
         connection = null; sessionId = ""
@@ -575,10 +627,14 @@ class ScreenController(context: Context) : AutoCloseable {
         if (ScreenRecovery.retryable(error)) recover(error.message ?: "Screen connection lost")
         else fail(error.message ?: "Screen connection failed")
     }
-    private fun recover(message: String) {
+    fun resumeConnection() {
+        focus(true)
+        if (reopen != null) recover("Resuming connection", immediate = true)
+    }
+
+    private fun recover(message: String, immediate: Boolean = false) {
         if (closed || reopen == null) return
-        val delayMillis = recovery.nextDelay(SystemClock.elapsedRealtime())
-        if (delayMillis == null) { fail("Could not reconnect. Check the machine connection and tap Retry. ($message)"); return }
+        val delayMillis = if (immediate) 0L else recovery.nextDelay(SystemClock.elapsedRealtime())
         recovering?.cancel()
         stopSession()
         val current = token

@@ -81,6 +81,7 @@ struct ConversationTimeline: View {
     @State private var windowChangeInFlight = false
     @State private var historyRequestID: UUID?
     @State private var tailScrollRequest = 0
+    @State private var tailScrollRequestPending = false
     @State private var jumpToLatestHovered = false
 
     private var messages: [Dieter_V1_UiMessage] { context.conversationMessages }
@@ -328,6 +329,7 @@ struct ConversationTimeline: View {
                 historyRequestID = nil
                 blockedHistoryEdge = nil
                 restoringOffset = nil
+                tailScrollRequestPending = false
                 contentCanScroll = true
                 projection = .empty
                 projectionConversationID = ""
@@ -392,6 +394,12 @@ struct ConversationTimeline: View {
                     request: tailScrollRequest
                 )
             ) {
+                let request = tailScrollRequest
+                defer {
+                    if request == tailScrollRequest {
+                        tailScrollRequestPending = false
+                    }
+                }
                 guard tailScrollRequest > 0,
                     projectionConversationID == conversationID,
                     ConversationScrollBehavior.followsLatest(viewportMode)
@@ -433,6 +441,12 @@ struct ConversationTimeline: View {
     }
 
     private func requestTailScroll() {
+        // Geometry, projection, and transcript updates can all request the
+        // same initial scroll during one frame. One in-flight task is enough;
+        // repeatedly changing the task identity makes SwiftUI restart it and
+        // produces "updated multiple times per frame" feedback loops.
+        guard !tailScrollRequestPending else { return }
+        tailScrollRequestPending = true
         tailScrollRequest &+= 1
     }
 

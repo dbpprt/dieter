@@ -1680,6 +1680,23 @@ message RemoteDesktopCapabilities {
   uint32 connected_clients = 25;
   repeated uint32 supported_input_protocol_versions = 26;
   bool binary_clipboard_supported = 27;
+  // Hardware-verified operating envelopes; missing entries retain legacy H.264.
+  repeated RemoteDesktopCodecMode codec_modes = 28;
+}
+
+message RemoteDesktopCodecMode {
+  string codec = 1;
+  string profile = 2;
+  int32 max_width = 3;
+  int32 max_height = 4;
+  int32 max_fps = 5;
+}
+
+enum RemoteDesktopCodecPreference {
+  REMOTE_DESKTOP_CODEC_PREFERENCE_AUTO = 0;
+  REMOTE_DESKTOP_CODEC_PREFERENCE_H264 = 1;
+  // Strict: unsupported hardware, mode, or offer is an error.
+  REMOTE_DESKTOP_CODEC_PREFERENCE_HEVC = 2;
 }
 
 message ProbeRemoteDesktopPermissionsRequest {
@@ -1752,6 +1769,9 @@ message StartRemoteDesktopRequest {
   uint32 input_protocol_version = 13;
   string client_name = 14;
   bool clipboard = 15;
+  RemoteDesktopCodecPreference codec_preference = 16;
+  // Receiver acknowledges decoded reference challenges and negotiates generic frame dependencies.
+  bool reference_recovery = 17;
 }
 
 message RemoteDesktopSessions {
@@ -1915,6 +1935,13 @@ message RemoteDesktopSessionState {
   uint32 connected_clients = 33;
   bool clipboard_enabled = 34;
   uint64 clipboard_generation = 35;
+  bool reference_recovery = 36;
+  uint32 fec_percent = 37;
+  uint64 fec_packets = 38;
+  uint64 fec_bytes = 39;
+  uint64 reference_acks = 40;
+  uint64 reference_recovery_frames = 41;
+  uint64 reference_recoveries = 42; // Recovery frames acknowledged after decoding.
 }
 
 // Encrypted on the authenticated session DataChannel; never persisted.
@@ -1938,6 +1965,8 @@ message RemoteDesktopReceiverFeedback {
   uint64 measurement_sequence = 13;
   // Monotonic age of that sample at send time; repeated heartbeats do not refresh it.
   uint32 measurement_age_ms = 14;
+  // At most eight exact challenges, acknowledged only after decoder output.
+  repeated RemoteDesktopReference decoded_references = 15;
 }
 message RemoteDesktopCursor {
   string shape_id = 1;
@@ -1952,11 +1981,17 @@ message RemoteDesktopCursor {
   uint64 display_generation = 10;
   uint64 last_input_ordinal = 11;
 }
+message RemoteDesktopReference {
+  uint64 generation = 1;
+  uint64 frame_id = 2;
+  uint32 rtp_timestamp = 3;
+}
 message RemoteDesktopHostEvent {
   oneof payload {
     RemoteDesktopCursor cursor = 1;
     RemoteDesktopSessionState state = 2;
     uint64 input_ack = 3;
+    RemoteDesktopReference reference = 4;
   }
 }
 
