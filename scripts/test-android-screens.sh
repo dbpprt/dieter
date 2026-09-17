@@ -29,10 +29,12 @@ cat > "$root/InputTarget.app/Contents/Info.plist" <<'PLIST'
 PLIST
 xcrun swiftc -parse-as-library -O -framework AppKit native/macos-capture/tests/InputTarget.swift -o "$root/InputTarget.app/Contents/MacOS/InputTarget"
 codesign --force --sign - "$root/InputTarget.app"
-"$root/InputTarget.app/Contents/MacOS/InputTarget" "$root/input.json" $$ >"$root/input.log" 2>&1 &
-target_pid=$!
 "$root/screens-fixture" --helper "$root/dieter-capture" --source "${DIETER_SCREEN_TEST_SOURCE:-native-synthetic}" --authenticate --ready "$root/ready.json" >"$root/fixture.log" 2>&1 &
 fixture_pid=$!
+for _ in {1..60}; do [[ -s "$root/ready.json" ]] && break; sleep 1; done
+clipboard_name=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["clipboardName"])' "$root/ready.json")
+"$root/InputTarget.app/Contents/MacOS/InputTarget" "$root/input.json" $$ "$clipboard_name" >"$root/input.log" 2>&1 &
+target_pid=$!
 for _ in {1..60}; do [[ -s "$root/ready.json" && -s "$root/input.json" ]] && break; sleep 1; done
 if [[ "${DIETER_SCREEN_TEST_MULTI:-0}" == 1 ]]; then
     if pgrep -x DieterMac >/dev/null; then echo 'A Dieter app is running; concurrent fixture unavailable.' >&2; exit 1; fi
@@ -76,6 +78,7 @@ if sys.argv[2] != 'screen':
 value=json.load(open(sys.argv[1]))
 assert value['ups'] >= 1, value
 assert 'Android écran 世界' in value['text'], value
+assert 'Android native paste marker' in value['text'], value
 assert 'temporary' not in value['text'], value
 assert value['scrolls'] > 0, value
 assert '0:up' in value['keys'], value
@@ -83,4 +86,7 @@ print('Native host received relative click, committed Unicode, special keys, thr
 PY
 "$adb" -s "$serial" pull /sdcard/Android/data/com.dbpprt.dieter/files/screen-e2e.png "$root/viewer.png"
 "$adb" -s "$serial" pull /sdcard/Android/data/com.dbpprt.dieter/files/screen-e2e-stats.json "$root/stats.json"
+for phase in fit pan pinch; do
+    "$adb" -s "$serial" pull "/sdcard/Android/data/com.dbpprt.dieter/files/screen-canvas-$phase.png" "$root/canvas-$phase.png"
+done
 echo "Screen integration evidence: $root"

@@ -7,13 +7,20 @@ final class InputTarget: NSView {
     var ups = 0
     var text = ""
     var scrolls = 0
+    let clipboard: NSPasteboard = CommandLine.arguments.count > 3 ? NSPasteboard(name: .init(CommandLine.arguments[3])) : .general
     init(output: URL) { self.output = output; super.init(frame: .zero) }
     required init?(coder: NSCoder) { nil }
     override var acceptsFirstResponder: Bool { true }
     override func keyDown(with event: NSEvent) {
         keys.append("\(event.keyCode):down")
-        text += event.characters ?? ""
+        if event.modifierFlags.contains(.command), event.keyCode == 9 { text += clipboard.string(forType: .string) ?? "" }
+        else if event.modifierFlags.contains(.command), [7, 8].contains(event.keyCode) { clipboard.clearContents(); clipboard.setString(text, forType: .string); if event.keyCode == 7 { text = "" } }
+        else { text += event.characters ?? "" }
         report()
+    }
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        if event.modifierFlags.contains(.command), [7, 8, 9].contains(event.keyCode) { keyDown(with: event); return true }
+        return super.performKeyEquivalent(with: event)
     }
     override func scrollWheel(with event: NSEvent) { scrolls += 1; report() }
     override func keyUp(with event: NSEvent) { keys.append("\(event.keyCode):up"); report() }

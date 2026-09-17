@@ -56,20 +56,22 @@ type Identity struct {
 }
 
 type Options struct {
-	Identity        Identity
-	Source          SourceOptions
-	SessionLease    time.Duration
-	DetachGrace     time.Duration
-	MonitorInterval time.Duration
-	CaptureProbe    func(context.Context, SourceOptions) error
-	ControlProbe    func(context.Context, SourceOptions, bool) error
-	SourceFactory   func(SourceOptions) (FrameSource, error)
-	Logger          *slog.Logger
-	Now             func() time.Time
-	CapabilityProbe func(context.Context, SourceOptions) (*dieterv1.RemoteDesktopCapabilities, error)
+	ClipboardFactory func() ClipboardBackend
+	Identity         Identity
+	Source           SourceOptions
+	SessionLease     time.Duration
+	DetachGrace      time.Duration
+	MonitorInterval  time.Duration
+	CaptureProbe     func(context.Context, SourceOptions) error
+	ControlProbe     func(context.Context, SourceOptions, bool) error
+	SourceFactory    func(SourceOptions) (FrameSource, error)
+	Logger           *slog.Logger
+	Now              func() time.Time
+	CapabilityProbe  func(context.Context, SourceOptions) (*dieterv1.RemoteDesktopCapabilities, error)
 }
 
 type Manager struct {
+	clipboardName      string
 	permissionMu       sync.Mutex
 	capabilityMu       sync.Mutex
 	cachedCapabilities *dieterv1.RemoteDesktopCapabilities
@@ -137,6 +139,11 @@ func New(options Options) *Manager {
 		options.Now = time.Now
 	}
 	m := &Manager{options: options, sessions: make(map[string]*Session), admissions: make(chan struct{}, maxClients)}
+	m.clipboardName = "com.dbpprt.dieter.fixture." + randomID()
+	if options.Source.Kind == "synthetic" && options.ClipboardFactory == nil {
+		backend := &MemoryClipboard{}
+		m.options.ClipboardFactory = func() ClipboardBackend { return backend }
+	}
 	m.media = newCapturePool(func(o SourceOptions) (FrameSource, error) { return m.options.SourceFactory(o) })
 	return m
 }
@@ -144,6 +151,7 @@ func New(options Options) *Manager {
 func (m *Manager) Capabilities(enabled, controlEnabled bool) *dieterv1.RemoteDesktopCapabilities {
 	value := m.capabilities(enabled, controlEnabled, false)
 	value.DaemonExecutable, value.CaptureExecutable = executableIdentity(m.options.Source)
+	value.ClipboardSupported = runtime.GOOS == "darwin" || m.options.ClipboardFactory != nil
 	value.MaxClients = maxClients
 	value.SupportedInputProtocolVersions = []uint32{2, 3}
 	m.mu.Lock()
@@ -453,49 +461,51 @@ func (m *Manager) verifyRTCConfiguration(configuration *gatewayv1.RTCConfigurati
 }
 
 type Session struct {
-	manager               *Manager
-	id                    string
-	clientNonce           string
-	clientName            string
-	protocol              uint32
-	operatorSubject       string
-	offerHash             [sha256.Size]byte
-	pc                    *webrtc.PeerConnection
-	track                 *webrtc.TrackLocalStaticSample
-	rtpTrack              *webrtc.TrackLocalStaticRTP
-	packetizer            rtp.Packetizer
-	pacer                 *packetPacer
-	estimator             cc.BandwidthEstimator
-	status                *dieterv1.RemoteDesktopSessionState
-	cursor                *dieterv1.RemoteDesktopCursor
-	hostChannel           *webrtc.DataChannel
-	hostSendMu            sync.Mutex
-	lastCursorShapeSent   string
-	inputChannels         map[string]bool
-	receiver              *dieterv1.RemoteDesktopReceiverFeedback
-	lastFeedback          time.Time
-	receiverMeasuredAt    time.Time
-	receiverMeasurement   uint64
-	receiverStatsRejected bool
-	applied               StreamConfiguration
-	configurationRevision uint64
-	measurements          frameMeasurements
-	configurationMu       sync.Mutex
-	inputMu               sync.Mutex
-	inputStopped          atomic.Bool
-	lastStateApplied      uint64
-	lastOrdinal           uint64
-	transportDrops        uint64
-	waitKeyframe          bool
-	remb                  atomic.Int64
-	rembAt                atomic.Int64
-	feedbackSequence      atomic.Uint64
-	source                FrameSource
-	codec                 VideoCodec
-	ctx                   context.Context
-	cancel                context.CancelFunc
-	startOnce             sync.Once
-	closeOnce             sync.Once
+	clipboard              sessionClipboard
+	manager                *Manager
+	id                     string
+	clientNonce            string
+	clientName             string
+	protocol               uint32
+	operatorSubject        string
+	offerHash              [sha256.Size]byte
+	pc                     *webrtc.PeerConnection
+	track                  *webrtc.TrackLocalStaticSample
+	rtpTrack               *webrtc.TrackLocalStaticRTP
+	packetizer             rtp.Packetizer
+	pacer                  *packetPacer
+	estimator              cc.BandwidthEstimator
+	status                 *dieterv1.RemoteDesktopSessionState
+	cursor                 *dieterv1.RemoteDesktopCursor
+	hostChannel            *webrtc.DataChannel
+	hostSendMu             sync.Mutex
+	lastCursorShapeSent    string
+	inputChannels          map[string]bool
+	receiver               *dieterv1.RemoteDesktopReceiverFeedback
+	lastFeedback           time.Time
+	receiverMeasuredAt     time.Time
+	receiverMeasurement    uint64
+	receiverStatsRejected  bool
+	applied                StreamConfiguration
+	configurationRevision  uint64
+	measurements           frameMeasurements
+	configurationMu        sync.Mutex
+	inputMu                sync.Mutex
+	inputStopped           atomic.Bool
+	lastStateApplied       uint64
+	completedStateSequence atomic.Uint64
+	lastOrdinal            uint64
+	transportDrops         uint64
+	waitKeyframe           bool
+	remb                   atomic.Int64
+	rembAt                 atomic.Int64
+	feedbackSequence       atomic.Uint64
+	source                 FrameSource
+	codec                  VideoCodec
+	ctx                    context.Context
+	cancel                 context.CancelFunc
+	startOnce              sync.Once
+	closeOnce              sync.Once
 
 	mu                   sync.Mutex
 	closed               bool
@@ -588,7 +598,7 @@ func newSession(manager *Manager, request *dieterv1.StartRemoteDesktopRequest, o
 	now := manager.options.Now().UTC()
 	offerHash := sha256.Sum256([]byte(request.GetOffer().GetSdp()))
 	session := &Session{
-		status:  &dieterv1.RemoteDesktopSessionState{Phase: "connecting", Codec: string(source.Codec()), DisplayId: config.DisplayId, Configuration: config, DisplayGeneration: 1},
+		status:  &dieterv1.RemoteDesktopSessionState{Phase: "connecting", Codec: string(source.Codec()), DisplayId: config.DisplayId, Configuration: config, DisplayGeneration: 1, ClipboardEnabled: request.GetClipboard()},
 		applied: nativeConfiguration(config), pacer: pacer, estimator: *estimator,
 		inputChannels: make(map[string]bool),
 		manager:       manager, id: randomID(), clientNonce: request.GetClientNonce(), clientName: strings.TrimSpace(request.GetClientName()), protocol: requestedInputProtocol(request), operatorSubject: operatorSubject, pc: pc,
@@ -885,8 +895,16 @@ func (s *Session) signal(value *dieterv1.RemoteDesktopSignal) error {
 func (s *Session) streamSource(request *dieterv1.StartRemoteDesktopRequest) {
 	err := s.source.Stream(s.ctx, s.streamMedia)
 	if err != nil && s.ctx.Err() == nil {
-		s.emitError("capture_failed", err.Error(), false)
-		s.close(err.Error())
+		recoverable := recoverableCaptureFailure(err)
+		s.emitError("capture_failed", err.Error(), recoverable)
+		reason := err.Error()
+		if recoverable {
+			// Either the error or the terminal state may reach the viewer first.
+			// Retain detailed diagnostics while giving both a stable retry signal.
+			s.manager.options.Logger.Warn("remote desktop capture interrupted", "session", s.id, "error", err)
+			reason = "native capture helper stopped"
+		}
+		s.close(reason)
 	}
 }
 
@@ -945,6 +963,15 @@ func (s *Session) close(reason string) {
 		s.mu.Unlock()
 		s.manager.clear(s)
 		s.cancel()
+		go func() {
+			s.clipboard.mu.Lock()
+			defer s.clipboard.mu.Unlock()
+			if s.clipboard.backend != nil {
+				s.clipboard.backend.Close()
+			}
+			s.clipboard.results = nil
+			s.clipboard.order = nil
+		}()
 		if shared, ok := s.source.(interface{ Close() }); ok {
 			shared.Close()
 		}

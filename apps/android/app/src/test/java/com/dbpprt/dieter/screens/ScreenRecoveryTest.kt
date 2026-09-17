@@ -34,6 +34,11 @@ class ScreenRecoveryTest {
             Status.CANCELLED).forEach { assertFalse(ScreenRecovery.retryable(it.asException())) }
         assertFalse(ScreenRecovery.retryable(IllegalArgumentException("Invalid screen-sharing signature")))
         assertTrue(ScreenRecovery.retryableClosure("session lease expired"))
+        listOf("native capture rendition stopped", "native daemon heartbeat expired",
+            "native capture helper unresponsive", "native capture helper stopped").forEach {
+            assertTrue(ScreenRecovery.retryableClosure(it))
+        }
+        assertFalse(ScreenRecovery.retryableClosure("capture permission denied"))
         assertFalse(ScreenRecovery.retryableClosure("remote desktop disabled"))
         assertFalse(ScreenRecovery.retryableClosure("remote desktop control disabled"))
         assertFalse(ScreenRecovery.retryableClosure("client closed"))

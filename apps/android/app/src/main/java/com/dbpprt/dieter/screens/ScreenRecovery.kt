@@ -27,6 +27,8 @@ internal class ScreenRecovery {
         fun retryableClosure(reason: String): Boolean = reason in setOf(
             "session lease expired", "signaling observer did not reconnect", "WebRTC peer did not reconnect",
             "peer connection failed", "peer connection closed", "daemon shutdown",
+            "native capture rendition stopped", "native daemon heartbeat expired",
+            "native capture helper unresponsive", "native capture helper stopped",
         )
     }
 }

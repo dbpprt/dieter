@@ -41,9 +41,13 @@ final class NativeCaptureService: @unchecked Sendable {
     private var pending: [UInt64: PendingCapture] = [:]
     private var retiring = Set<UInt64>()
     private var stopped = false
-    private var heartbeat = DispatchTime.now().uptimeNanoseconds
+    private let liveness = NativeDaemonLiveness()
+    private var delayedTestHeartbeat = false
     private let done = DispatchSemaphore(value: 0)
     private var signals: [DispatchSourceSignal] = []
+    private var testStopFile: String? {
+        options.synthetic ? ProcessInfo.processInfo.environment["DIETER_TEST_CAPTURE_STOP_FILE"] : nil
+    }
     init(options: CaptureOptions) { self.options = options; events = EventWriter(fd: options.eventFD) }
 
     func run() async throws {
@@ -54,7 +58,14 @@ final class NativeCaptureService: @unchecked Sendable {
         watchdog.schedule(deadline: .now() + .milliseconds(500), repeating: .milliseconds(500))
         watchdog.setEventHandler { [weak self] in
             guard let self else { return }
-            if self.lock.withLock({ DispatchTime.now().uptimeNanoseconds - self.heartbeat > 3_000_000_000 }) {
+            // The disposable authenticated fixture can stop its own synthetic
+            // helper once. Removing the marker lets a new helper recover.
+            if let path = self.testStopFile, (try? FileManager.default.removeItem(atPath: path)) != nil {
+                self.stop(reason: "native capture rendition stopped")
+                return
+            }
+            if let diagnostic = self.liveness.timeoutDiagnostic() {
+                writeDiagnostic(diagnostic)
                 self.stop(reason: "native daemon heartbeat expired")
             }
         }
@@ -80,7 +91,7 @@ final class NativeCaptureService: @unchecked Sendable {
         guard let active else { return }
         if let reason { writeDiagnostic(reason) }
         SharedInputAuthority.shared.releaseAll()
-        active.forEach { $0.stop() }
+        active.forEach { $0.stop(reason: reason ?? "native capture rendition stopped") }
         done.signal()
     }
     private func read() {
@@ -96,6 +107,7 @@ final class NativeCaptureService: @unchecked Sendable {
                     command.version == 2
                 else { stop(reason: "native command decoding failed"); return }
                 data.removeSubrange(...end)
+                liveness.receive(command.kind)
                 if command.kind == "create" {
                     let accepted = lock.withLock { () -> Bool in
                         guard !stopped, runners.count + pending.count + retiring.count < 4, let id = command.streamId,
@@ -104,20 +116,36 @@ final class NativeCaptureService: @unchecked Sendable {
                         else { return false }
                         pending[id] = PendingCapture(); return true
                     }
-                    guard accepted else { reply(command, "Native encoder capacity reached"); continue }
+                    guard accepted else {
+                        reply(command, lock.withLock { stopped } ? "native capture helper stopped" : "Native encoder capacity reached")
+                        continue
+                    }
                     // Starting a display/encoder must not stall existing input or frame credits.
                     Task { await self.create(command) }
                 } else if command.kind == "remove" {
                     Task { await self.remove(command) }
                 } else if command.kind == "heartbeat" {
-                    lock.withLock { heartbeat = DispatchTime.now().uptimeNanoseconds }
-                    reply(command, nil)
+                    // Fault injection is restricted to synthetic capture and a
+                    // single reply, so tests cannot accumulate delayed tasks.
+                    if options.synthetic, !delayedTestHeartbeat,
+                        let raw = ProcessInfo.processInfo.environment["DIETER_TEST_CAPTURE_HEARTBEAT_ACK_DELAY_MS"],
+                        let delay = UInt64(raw), delay <= 5000
+                    {
+                        delayedTestHeartbeat = true
+                        Task {
+                            try? await Task.sleep(nanoseconds: delay * 1_000_000)
+                            self.reply(command, nil)
+                        }
+                    } else { reply(command, nil) }
                 } else if command.kind == "stop" {
                     reply(command, nil); stop()
                 } else if let id = command.streamId, let runner = lock.withLock({ runners[id] }) {
                     runner.enqueue(command) { self.reply(command, $0) }
                 } else {
-                    reply(command, "Unknown native stream")
+                    // Shutdown removes runners before publishing their terminal
+                    // events. A final frame credit must retain a recoverable
+                    // shutdown cause whichever response reaches the daemon first.
+                    reply(command, lock.withLock { stopped } ? "native capture helper stopped" : "Unknown native stream")
                 }
             }
             if data.count > 16384 { break }
@@ -146,7 +174,7 @@ final class NativeCaptureService: @unchecked Sendable {
                 pending.removeValue(forKey: id)
                 runners[id] = created; return true
             }
-            if !accepted { throw CaptureError.invalidArgument("capture stopped") }
+            if !accepted { throw CaptureError.stopped }
             reply(command, nil)
         } catch {
             await runner?.stopAndWait()
@@ -169,6 +197,7 @@ final class NativeCaptureService: @unchecked Sendable {
     }
 
     private func reply(_ command: NativeCommand, _ error: String?) {
+        if options.synthetic, ProcessInfo.processInfo.environment["DIETER_TEST_CAPTURE_DROP_ACKS"] == "1" { return }
         if !events.send(NativeEvent(streamId: command.streamId ?? 0, ack: command.id, error: error)) {
             stop(reason: "native event pipe unavailable")
         }

@@ -11,6 +11,8 @@ private struct ScreenFixtureConnection: Decodable {
     var url: String
     var certificate: Data
     var rtc: Data
+    var clipboardName: String?
+    var token: String
 }
 
 @Test @MainActor func remoteDesktopNativeEndToEnd() async throws {
@@ -27,7 +29,7 @@ private struct ScreenFixtureConnection: Decodable {
     FileManager.default.createFile(atPath: log.path, contents: nil)
     let logHandle = try FileHandle(forWritingTo: log)
     let process = Process(); process.executableURL = URL(fileURLWithPath: executable)
-    process.arguments = ["--helper", helper, "--source", real ? "screen" : "native-synthetic", "--ready", ready.path]
+    process.arguments = ["--helper", helper, "--source", real ? "screen" : "native-synthetic", "--authenticate", "--ready", ready.path]
     process.standardOutput = logHandle; process.standardError = logHandle
     if !real {
         var fixtureEnvironment = environment
@@ -46,13 +48,31 @@ private struct ScreenFixtureConnection: Decodable {
     }
     let fixture = try JSONDecoder().decode(ScreenFixtureConnection.self, from: Data(contentsOf: ready))
     let endpoint = try #require(DieterEndpoint.parse(fixture.url))
-    let rpc = try DieterRPC(endpoint: endpoint)
-    let rpcTask = Task<Void, Never> { try? await rpc.run() }
     let configuration = try Dieter_Gateway_V1_RTCConfiguration(serializedBytes: fixture.rtc)
-    let connection = RemoteDesktopSignalingConnection(
-        rpc: rpc, connectionTask: rpcTask,
-        rtcConfiguration: configuration, daemonCertificatePEM: fixture.certificate, routeLabel: "Fixture loopback")
+    var routeOpenings = 0
+    func openRoute() throws -> RemoteDesktopSignalingConnection {
+        routeOpenings += 1
+        let rpc = try DieterRPC(endpoint: endpoint, accessToken: fixture.token)
+        let rpcTask = Task<Void, Never> { try? await rpc.run() }
+        return RemoteDesktopSignalingConnection(
+            rpc: rpc, connectionTask: rpcTask,
+            rtcConfiguration: configuration, daemonCertificatePEM: fixture.certificate, routeLabel: "Fixture loopback")
+    }
+    @discardableResult func inject(_ path: String) async throws -> Int {
+        var request = URLRequest(url: try #require(URL(string: fixture.url + path)))
+        request.httpMethod = "POST"
+        request.setValue("Bearer " + fixture.token, forHTTPHeaderField: "Authorization")
+        let (_, response) = try await URLSession.shared.data(for: request)
+        #expect((response as? HTTPURLResponse)?.statusCode == 204)
+        return Int((response as? HTTPURLResponse)?.value(forHTTPHeaderField: "X-Dieter-Test-Rejected-Signals") ?? "0") ?? 0
+    }
     let controller = RemoteDesktopController()
+    let clientClipboard = NSPasteboard(name: .init("com.dbpprt.dieter.fixture.viewer.\(UUID().uuidString)"))
+    controller.clipboard.pasteboard = clientClipboard
+    // SwiftPM's test runner hosts an NSWindow without an NSApplication event
+    // loop. Inject application activation; transport and native clipboard stay real.
+    controller.clipboardApplicationActive = { true }
+    defer { clientClipboard.releaseGlobally() }
     let application = NSApplication.shared
     application.setActivationPolicy(.regular)
     let window = NSWindow(
@@ -78,7 +98,7 @@ private struct ScreenFixtureConnection: Decodable {
         if let previousPresentation, presentedAt - previousPresentation > 2 { resumedAges.append(age) }
         previousPresentation = presentedAt
     }
-    await controller.connect(machineName: "Isolated native fixture") { connection }.value
+    await controller.connect(machineName: "Isolated native fixture") { try openRoute() }.value
     try await screenWait("hardware video decode: \(controller.phase)", timeout: 20) {
         (controller.sessionState.receiverFps > 0 && controller.controlActive) || controller.errorMessage != nil
     }
@@ -92,8 +112,45 @@ private struct ScreenFixtureConnection: Decodable {
         try await screenWait("separate native cursor", timeout: 4) { !controller.remoteCursorState.shapeID.isEmpty }
         #expect(!controller.sessionState.embeddedCursor)
     }
+    NSApp.activate(ignoringOtherApps: true)
+    window.makeKeyAndOrderFront(nil); window.makeFirstResponder(surface)
+    controller.inputFocused = true
+
+    let clipboardContext = try #require(controller.clipboard.makeRequest?())
+    let hostClipboard = NSPasteboard(name: .init(try #require(fixture.clipboardName)))
+    defer { hostClipboard.releaseGlobally() }
+    try await Task.sleep(for: .milliseconds(600))
+    if !real {
+        for payload in ["Mac clipboard é漢字🙂\n  whitespace\n", String(repeating: "x", count: 1024 * 1024), ""] {
+            clientClipboard.clearContents(); clientClipboard.setString(payload, forType: .string)
+            let before = controller.clipboard.completedOperations
+            let event = try #require(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [.command], timestamp: 0, windowNumber: window.windowNumber, context: nil, characters: "v", charactersIgnoringModifiers: "v", isARepeat: false, keyCode: 9))
+            surface.keyDown(with: event)
+            try await screenWait("clipboard paste \(payload.utf8.count) bytes: \(controller.clipboardError)", timeout: 7) {
+                controller.clipboard.completedOperations > before || !controller.clipboardError.isEmpty
+            }
+            try #require(controller.clipboardError.isEmpty, "\(controller.clipboardError)")
+            #expect(hostClipboard.string(forType: .string) == payload)
+            let received = try await controller.clipboard.exchange(.read)
+            #expect(received.text == payload || !received.changed)
+        }
+        let remoteText = "Remote → local 🦊\nCopy from app menu"
+        hostClipboard.clearContents(); hostClipboard.setString(remoteText, forType: .string)
+        try await screenWait("remote copy to local clipboard", timeout: 5) { clientClipboard.string(forType: .string) == remoteText }
+        controller.clipboard.setEnabled(false)
+        try await Task.sleep(for: .milliseconds(350))
+        hostClipboard.clearContents(); hostClipboard.setString("disabled", forType: .string)
+        try await Task.sleep(for: .milliseconds(400))
+        #expect(clientClipboard.string(forType: .string) == remoteText)
+        controller.clipboard.setEnabled(true)
+        try await Task.sleep(for: .milliseconds(350))
+        print("Clipboard: Unicode, empty text, 1 MiB paste, bidirectional transfer and disabled sharing passed")
+    }
     let firstGeneration = controller.sessionState.displayGeneration
     if !real {
+        // Continue real native media/feedback for longer than the 15-second
+        // session lease while every unary renewal fails. No reconnect allowed.
+        try await inject("/test/reject-screen-signals?enabled=true")
         let presentationStart = Date(), presentedBefore = controller.renderer.framesPresented
         try await Task.sleep(for: .seconds(2))
         let presentedFPS =
@@ -165,7 +222,10 @@ private struct ScreenFixtureConnection: Decodable {
         let targetExecutable = try #require(environment["DIETER_TEST_INPUT_TARGET"])
         let targetReport = output.appending(path: "input-target.json")
         let launch = NSWorkspace.OpenConfiguration()
-        launch.arguments = [targetReport.path, String(ProcessInfo.processInfo.processIdentifier)]
+        launch.arguments = [targetReport.path, String(ProcessInfo.processInfo.processIdentifier), try #require(fixture.clipboardName)]
+        // Same-host tests must activate the owned target rather than the viewer.
+        controller.clipboard.makeRequest = { clipboardContext }
+        controller.clipboard.enabled = false
         launch.activates = true
         let target = try await NSWorkspace.shared.openApplication(
             at: URL(fileURLWithPath: targetExecutable), configuration: launch)
@@ -196,6 +256,34 @@ private struct ScreenFixtureConnection: Decodable {
                 && (report()["scrolls"] as? Int ?? 0) > 0
                 && (report()["keys"] as? [String] ?? []).contains("1:up")
         }
+        let pasted = " Native clipboard paste é漢字🙂\n"
+        controller.clipboard.enabled = true
+        controller.inputFocused = true
+        let beforePaste = controller.clipboard.completedOperations
+        controller.clipboard.perform(.paste, text: pasted)
+        controller.sendText("AFTER_PASTE")
+        try await screenWait("ordered clipboard shortcut completes", timeout: 4) { controller.clipboard.completedOperations > beforePaste }
+        controller.clipboard.enabled = false
+        try await screenWait("typing stays after paste", timeout: 4) { (report()["text"] as? String ?? "").contains(pasted + "AFTER_PASTE") }
+        try await screenWait("native app consumed clipboard paste", timeout: 4) { (report()["text"] as? String ?? "").contains(pasted) }
+        _ = try await controller.clipboard.exchange(.copy)
+        try await screenWait("native app copy updated pasteboard", timeout: 4) { hostClipboard.string(forType: .string) == (report()["text"] as? String) }
+        let copied = try await controller.clipboard.exchange(.read)
+        #expect(copied.text.contains(pasted))
+        // Copy is an explicit operation: its result must still reach the local
+        // clipboard if the viewer loses focus before the native app answers.
+        controller.clipboard.enabled = true
+        let beforeCopy = controller.clipboard.completedOperations
+        controller.clipboard.copySelection()
+        controller.clipboard.makeRequest = { nil }
+        try await screenWait("copy completes after viewer focus loss", timeout: 4) { controller.clipboard.completedOperations > beforeCopy }
+        #expect(clientClipboard.string(forType: .string) == (report()["text"] as? String))
+        controller.clipboard.makeRequest = { clipboardContext }
+        controller.clipboard.enabled = false
+        let cut = try await controller.clipboard.exchange(.cut)
+        try await screenWait("native app cut consumed selection", timeout: 4) { (report()["text"] as? String) == "" }
+        #expect(cut.text.contains(pasted))
+        print("Real native app clipboard copy, cut, paste and copy completion after focus loss passed")
         target.terminate()
         try await screenWait("input target teardown", timeout: 4) { target.isTerminated }
     }
@@ -224,6 +312,33 @@ private struct ScreenFixtureConnection: Decodable {
     print(
         "Latency stages: capture→send \(controller.sessionState.captureToSendMs) ms, paced send \(controller.sessionState.sendMs) ms, jitter buffer \(controller.sessionState.jitterBufferMs) ms, render \(controller.sessionState.renderMs) ms. Cursor embedded=\(controller.sessionState.embeddedCursor) shape=\(controller.remoteCursorState.shapeID); displayed \(controller.sessionState.width)x\(controller.sessionState.height), \(controller.sessionState.receiverFps) fps, encode \(controller.sessionState.encodeMs) ms, RTT \(controller.sessionState.rttMs) ms, \(controller.mediaRouteLabel)"
     )
+    if !real {
+        #expect(routeOpenings == 1, "A healthy peer must survive missing unary lease renewals")
+        let rejected = try await inject("/test/reject-screen-signals?enabled=false")
+        #expect(rejected >= 3, "Fault injection must actually reject multiple renewal calls")
+        try await inject("/test/expire-screen")
+        try await screenWait("expired session automatically opens a fresh authenticated route", timeout: 12) {
+            routeOpenings == 2 && controller.controlActive && controller.sessionState.receiverFps > 0
+        }
+        #expect(controller.errorMessage == nil)
+        #expect(controller.sessionState.configuration.quality == .detail)
+        // Stop the real disposable helper, so recovery must replace capture as
+        // well as the authenticated route and native WebRTC peer.
+        try await inject("/test/stop-capture")
+        try await screenWait("native helper shutdown automatically restarts capture", timeout: 15) {
+            routeOpenings == 3 && controller.controlActive && controller.sessionState.receiverFps > 0
+        }
+        #expect(controller.errorMessage == nil)
+        #expect(controller.sessionState.configuration.quality == .detail)
+        // Disconnect during a further interruption must cancel delayed recovery.
+        try await inject("/test/expire-screen")
+        try await screenWait("second interruption enters recovery", timeout: 4) { controller.phase == .reconnecting }
+        controller.disconnect()
+        try await Task.sleep(nanoseconds: 2_500_000_000)
+        #expect(routeOpenings == 3)
+        #expect(controller.phase == .idle)
+        print("Lease/capture regression: \(rejected) rejected RPC renewals preserved native video; expiry and actual helper shutdown recovered; explicit disconnect canceled recovery")
+    }
     controller.disconnect()
     try await screenWait("session teardown", timeout: 4) { !controller.controlActive }
     process.terminate()

@@ -31,6 +31,10 @@ const (
 
 func (s *Session) installInputChannels() {
 	s.pc.OnDataChannel(func(channel *webrtc.DataChannel) {
+		if channel.Label() == clipboardChannelLabel {
+			s.installClipboardChannel(channel)
+			return
+		}
 		if channel.Label() == hostChannelLabel {
 			s.mu.Lock()
 			duplicate := s.hostChannel != nil
@@ -160,6 +164,7 @@ func (s *Session) runInput() {
 		case input := <-s.stateInput:
 			s.deliverInput(sink, input)
 			s.lastStateApplied = input.GetSequence()
+			s.completedStateSequence.Store(input.GetSequence())
 		default:
 			if pending != nil && pending.GetStateBarrier() <= s.lastStateApplied {
 				if pending.GetEventOrdinal() == 0 || pending.GetEventOrdinal() > s.lastOrdinal {
@@ -173,6 +178,7 @@ func (s *Session) runInput() {
 			case input := <-s.stateInput:
 				s.deliverInput(sink, input)
 				s.lastStateApplied = input.GetSequence()
+				s.completedStateSequence.Store(input.GetSequence())
 			case input := <-s.pointerInput:
 				pending = input
 			}
@@ -324,8 +330,19 @@ func (s *Session) receiveFeedback(raw []byte) {
 		return
 	}
 	s.mu.Lock()
+	if s.closed {
+		s.mu.Unlock()
+		return
+	}
 	wasActive := s.receiver.GetInputActive()
 	s.lastFeedback = time.Now()
+	// The authenticated signaling subscription supplies authorization; the
+	// epoch-bound, increasing WebRTC heartbeat supplies receiver liveness.
+	// A delayed unary renewal must not kill a healthy peer. Do not renew after
+	// signaling detaches: its existing grace still bounds expiry/revocation.
+	if s.manager != nil && len(s.subscribers) > 0 {
+		s.leaseExpiresAt = s.manager.options.Now().UTC().Add(s.manager.options.SessionLease)
+	}
 	if s.receiverInputExpired {
 		// Discard input queued before/during the interruption, even if its
 		// worker runs only after the new heartbeat has resumed control.

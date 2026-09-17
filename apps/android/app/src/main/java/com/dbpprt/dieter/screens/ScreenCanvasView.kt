@@ -115,6 +115,9 @@ class ScreenCanvasView(context: Context, val controller: ScreenController) : Fra
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) { super.onSizeChanged(w, h, oldw, oldh); geometry() }
     private fun geometry() {
         canvasModel.resize(width, height, frameWidth, frameHeight)
+        applyCanvasTransform()
+    }
+    private fun applyCanvasTransform() {
         val m = canvasModel
         // TextureView is the viewport; transform its content into the remote aspect and canvas bounds.
         texture.setTransform(Matrix().apply {
@@ -123,7 +126,7 @@ class ScreenCanvasView(context: Context, val controller: ScreenController) : Fra
         })
         invalidate()
     }
-    fun resetCanvas() { canvasModel.reset(); geometry() }
+    fun resetCanvas() { canvasModel.reset(); applyCanvasTransform() }
     fun clearFrame() {
         if (released) return
         visibleSession = -1L; texture.visibility = INVISIBLE
@@ -184,7 +187,16 @@ class ScreenCanvasView(context: Context, val controller: ScreenController) : Fra
         removeCallbacks(longPress)
         if (dragging) button(Button.BUTTON_LEFT, false)
         if (scrolling) controller.scroll(0f, 0f, 4)
-        dragging = false; scrolling = false; fingers = 0; maxFingers = 0
+        dragging = false; scrolling = false; fingers = 0; maxFingers = 0; previousSpan = 0f
+    }
+    private fun rebasePointers(event: MotionEvent, excluding: Int = -1) {
+        val active = (0 until event.pointerCount).filter { it != excluding }
+        fingers = active.size
+        if (active.isEmpty()) { previousSpan = 0f; return }
+        previousX = active.sumOf { event.getX(it).toDouble() }.toFloat() / fingers
+        previousY = active.sumOf { event.getY(it).toDouble() }.toFloat() / fingers
+        previousSpan = if (fingers == 2) hypot(event.getX(active[1]) - event.getX(active[0]),
+            event.getY(active[1]) - event.getY(active[0])) else 0f
     }
     override fun onTouchEvent(event: MotionEvent): Boolean {
         if (event.source and InputDevice.SOURCE_MOUSE == InputDevice.SOURCE_MOUSE) return mouse(event)
@@ -202,9 +214,10 @@ class ScreenCanvasView(context: Context, val controller: ScreenController) : Fra
             MotionEvent.ACTION_POINTER_DOWN -> {
                 removeCallbacks(longPress)
                 if (dragging) { button(Button.BUTTON_LEFT, false); dragging = false }
+                if (scrolling) { controller.scroll(0f, 0f, 4); scrolling = false }
                 fingers = count; maxFingers = max(maxFingers, count); moved = true
-                if (count == 3) { controller.scroll(0f, 0f, 1); scrolling = true }
-                previousX = cx; previousY = cy; previousSpan = span
+                if (count == 3 && maxFingers == 3) { controller.scroll(0f, 0f, 1); scrolling = true }
+                rebasePointers(event)
             }
             MotionEvent.ACTION_MOVE -> {
                 val dx = cx - previousX; val dy = cy - previousY
@@ -212,10 +225,11 @@ class ScreenCanvasView(context: Context, val controller: ScreenController) : Fra
                 when {
                     count == 1 && maxFingers == 1 -> {
                         canvasModel.move(dx, dy); controller.pointer(canvasModel.cursorX, canvasModel.cursorY)
-                        lastLocalMove = event.eventTime; geometry()
+                        lastLocalMove = event.eventTime; applyCanvasTransform()
                     }
-                    count == 2 && maxFingers == 2 && previousSpan > 0 -> {
-                        canvasModel.transform(span / previousSpan, previousX, previousY, cx, cy); geometry()
+                    count == 2 && maxFingers == 2 -> {
+                        val factor = if (previousSpan > 1f && span > 1f) span / previousSpan else 1f
+                        canvasModel.transform(factor, previousX, previousY, cx, cy); applyCanvasTransform()
                     }
                     count == 3 && maxFingers == 3 -> controller.scroll(dx / resources.displayMetrics.density, dy / resources.displayMetrics.density, 2)
                 }
@@ -224,8 +238,10 @@ class ScreenCanvasView(context: Context, val controller: ScreenController) : Fra
             MotionEvent.ACTION_POINTER_UP -> {
                 removeCallbacks(longPress)
                 if (scrolling) { controller.scroll(0f, 0f, 4); scrolling = false }
-                // Lifting fingers never changes a canvas/scroll gesture into a click or cursor move.
-                maxFingers = max(4, maxFingers); fingers = count - 1
+                // Rebase around the remaining pointer IDs so replacing one
+                // finger can continue the canvas gesture without a jump.
+                // maxFingers still prevents an accidental one-finger mouse move/click.
+                rebasePointers(event, event.actionIndex)
             }
             MotionEvent.ACTION_UP -> {
                 if (maxFingers == 1 && !moved && !dragging && event.eventTime - downTime < ViewConfiguration.getLongPressTimeout()) {
@@ -270,6 +286,12 @@ class ScreenCanvasView(context: Context, val controller: ScreenController) : Fra
         info.imeOptions = EditorInfo.IME_FLAG_NO_EXTRACT_UI or EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING
         return object : BaseInputConnection(this, true) {
             override fun getEditable(): Editable = editorBuffer
+            override fun performContextMenuAction(id: Int): Boolean = when (id) {
+                android.R.id.paste -> { controller.clipboard.paste(); true }
+                android.R.id.cut -> { controller.clipboard.perform(com.dbpprt.dieter.v1.RemoteDesktopClipboardRequest.Action.CUT); true }
+                android.R.id.copy -> { controller.clipboard.copy(); true }
+                else -> super.performContextMenuAction(id)
+            }
             override fun commitText(text: CharSequence?, newCursorPosition: Int): Boolean {
                 text?.let { committedText(it.toString()) }; editorBuffer.clear(); return true
             }

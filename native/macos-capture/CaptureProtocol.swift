@@ -161,7 +161,7 @@ actor ConfigurationGate {
     private var closed = false
     private var shutdownWaiter: CheckedContinuation<Void, Never>?
     func acquire() async throws {
-        guard !closed else { throw CaptureError.invalidArgument("capture stopped") }
+        guard !closed else { throw CaptureError.stopped }
         if !busy {
             busy = true
             return
@@ -183,7 +183,7 @@ actor ConfigurationGate {
         closed = true
         let pending = waiters
         waiters.removeAll()
-        pending.forEach { $0.resume(throwing: CaptureError.invalidArgument("capture stopped")) }
+        pending.forEach { $0.resume(throwing: CaptureError.stopped) }
         if busy {
             await withCheckedContinuation { shutdownWaiter = $0 }
         }

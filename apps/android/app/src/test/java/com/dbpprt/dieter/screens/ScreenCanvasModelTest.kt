@@ -12,14 +12,67 @@ class ScreenCanvasModelTest {
         canvas.move(100000f, -100000f)
         assertEquals(1f, canvas.cursorX, 0f); assertEquals(0f, canvas.cursorY, 0f)
     }
-    @Test fun pinchPreservesTheAnchorAndPanCannotLoseDesktop() {
+    @Test fun pinchPreservesTheAnchorAndPanKeepsARecoverableEdge() {
         val canvas = ScreenCanvasModel().apply { resize(1000, 600, 2000, 1200) }
         val anchor = (300 - canvas.left) / canvas.scale
         canvas.transform(2f, 300f, 250f, 350f, 280f)
         assertEquals(anchor, (350 - canvas.left) / canvas.scale, .001f)
         canvas.transform(1f, 350f, 280f, 10000f, 10000f)
-        assertTrue(canvas.left <= 0); assertTrue(canvas.left + canvas.remoteWidth * canvas.scale >= 1000)
+        assertTrue(canvas.left < 1000); assertTrue(canvas.left + canvas.remoteWidth * canvas.scale > 0)
+        assertTrue(canvas.top < 600); assertTrue(canvas.top + canvas.remoteHeight * canvas.scale > 0)
         canvas.reset(); assertEquals(1f, canvas.zoom, 0f); assertEquals(0f, canvas.panX, 0f)
+    }
+    @Test fun fittedDesktopPansFreelyInBothAxesOnAPortraitPhone() {
+        val canvas = ScreenCanvasModel().apply { resize(1000, 1800, 1920, 1080) }
+        val left = canvas.left; val top = canvas.top
+        canvas.transform(1f, 500f, 900f, 670f, 1140f)
+        assertEquals(left + 170, canvas.left, .001f)
+        assertEquals(top + 240, canvas.top, .001f)
+        assertEquals(1f, canvas.zoom, 0f)
+    }
+    @Test fun zoomOutAndCombinedPanKeepThePointBetweenTheFingersAttached() {
+        val canvas = ScreenCanvasModel().apply { resize(1000, 1800, 1920, 1080) }
+        val u = (380 - canvas.left) / (canvas.remoteWidth * canvas.scale)
+        val v = (780 - canvas.top) / (canvas.remoteHeight * canvas.scale)
+        canvas.transform(.7f, 380f, 780f, 435f, 865f)
+        assertEquals(.7f, canvas.zoom, .0001f)
+        assertEquals(435f, canvas.left + u * canvas.remoteWidth * canvas.scale, .001f)
+        assertEquals(865f, canvas.top + v * canvas.remoteHeight * canvas.scale, .001f)
+        canvas.transform(.5f, 435f, 865f, 435f, 865f)
+        assertEquals(.35f, canvas.zoom, .0001f)
+    }
+    @Test fun smallPinchStepsAreContinuousAndIndependentOfEncodedResolution() {
+        val canvas = ScreenCanvasModel().apply { resize(1000, 1800, 1920, 1080) }
+        repeat(12) {
+            val zoom = canvas.zoom
+            canvas.transform(1.017f, 380f, 820f, 383f, 824f)
+            assertEquals(zoom * 1.017f, canvas.zoom, .00001f)
+        }
+        val left = canvas.left; val top = canvas.top
+        val extent = canvas.remoteWidth * canvas.scale
+        canvas.resize(1000, 1800, 960, 540)
+        assertEquals(left, canvas.left, .001f); assertEquals(top, canvas.top, .001f)
+        assertEquals(extent, canvas.remoteWidth * canvas.scale, .001f)
+    }
+    @Test fun viewportResizeKeepsTheSameDesktopPointAtItsCenter() {
+        val canvas = ScreenCanvasModel().apply {
+            resize(1000, 1800, 1920, 1080)
+            transform(1.8f, 500f, 900f, 650f, 1100f)
+        }
+        val u = (500 - canvas.left) / (canvas.remoteWidth * canvas.scale)
+        val v = (900 - canvas.top) / (canvas.remoteHeight * canvas.scale)
+        canvas.resize(1800, 1000, 1920, 1080)
+        assertEquals(u, (900 - canvas.left) / (canvas.remoteWidth * canvas.scale), .0001f)
+        assertEquals(v, (500 - canvas.top) / (canvas.remoteHeight * canvas.scale), .0001f)
+    }
+    @Test fun invalidPinchSamplesCannotCorruptTheCanvas() {
+        val canvas = ScreenCanvasModel().apply { resize(1000, 1800, 1920, 1080) }
+        for (factor in listOf(Float.NaN, Float.POSITIVE_INFINITY, -1f, 0f)) {
+            canvas.transform(factor, 500f, 900f, 520f, 930f)
+            assertEquals(1f, canvas.zoom, 0f); assertEquals(0f, canvas.panX, 0f)
+        }
+        canvas.transform(1f, 500f, 900f, Float.NaN, 930f)
+        assertTrue(canvas.left.isFinite() && canvas.top.isFinite())
     }
     @Test fun rotationPreservesZoomAndBounds() {
         val canvas = ScreenCanvasModel().apply { resize(400, 800, 1600, 900); transform(4f, 200f, 400f, 200f, 400f) }

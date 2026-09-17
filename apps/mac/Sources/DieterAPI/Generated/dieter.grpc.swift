@@ -1295,6 +1295,19 @@ public enum Dieter_V1_DieterService: Sendable {
                 type: .unary
             )
         }
+        /// Namespace for "ExchangeRemoteDesktopClipboard" metadata.
+        public enum ExchangeRemoteDesktopClipboard: Sendable {
+            /// Request type for "ExchangeRemoteDesktopClipboard".
+            public typealias Input = Dieter_V1_RemoteDesktopClipboardRequest
+            /// Response type for "ExchangeRemoteDesktopClipboard".
+            public typealias Output = Dieter_V1_RemoteDesktopClipboardResponse
+            /// Descriptor for "ExchangeRemoteDesktopClipboard".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.DieterService"),
+                method: "ExchangeRemoteDesktopClipboard",
+                type: .unary
+            )
+        }
         /// Namespace for "CloseRemoteDesktop" metadata.
         public enum CloseRemoteDesktop: Sendable {
             /// Request type for "CloseRemoteDesktop".
@@ -1512,6 +1525,7 @@ public enum Dieter_V1_DieterService: Sendable {
             ListRemoteDesktopSessions.descriptor,
             SetRemoteDesktopControl.descriptor,
             UpdateRemoteDesktopSession.descriptor,
+            ExchangeRemoteDesktopClipboard.descriptor,
             CloseRemoteDesktop.descriptor,
             ListSchedules.descriptor,
             PreviewSchedule.descriptor,
@@ -3449,6 +3463,25 @@ extension Dieter_V1_DieterService {
             deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_RemoteDesktopSessionState>,
             options: GRPCCore.CallOptions,
             onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_RemoteDesktopSessionState>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "ExchangeRemoteDesktopClipboard" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_RemoteDesktopClipboardRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_RemoteDesktopClipboardRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_RemoteDesktopClipboardResponse` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func exchangeRemoteDesktopClipboard<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_RemoteDesktopClipboardRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_RemoteDesktopClipboardRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_RemoteDesktopClipboardResponse>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_RemoteDesktopClipboardResponse>) async throws -> Result
         ) async throws -> Result where Result: Sendable
 
         /// Call the "CloseRemoteDesktop" method.
@@ -6614,6 +6647,36 @@ extension Dieter_V1_DieterService {
             )
         }
 
+        /// Call the "ExchangeRemoteDesktopClipboard" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_RemoteDesktopClipboardRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_RemoteDesktopClipboardRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_RemoteDesktopClipboardResponse` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func exchangeRemoteDesktopClipboard<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_RemoteDesktopClipboardRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_RemoteDesktopClipboardRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_RemoteDesktopClipboardResponse>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_RemoteDesktopClipboardResponse>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Dieter_V1_DieterService.Method.ExchangeRemoteDesktopClipboard.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
         /// Call the "CloseRemoteDesktop" method.
         ///
         /// - Parameters:
@@ -9369,6 +9432,31 @@ extension Dieter_V1_DieterService.ClientProtocol {
             request: request,
             serializer: GRPCProtobuf.ProtobufSerializer<Dieter_V1_UpdateRemoteDesktopSessionRequest>(),
             deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_V1_RemoteDesktopSessionState>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "ExchangeRemoteDesktopClipboard" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Dieter_V1_RemoteDesktopClipboardRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func exchangeRemoteDesktopClipboard<Result>(
+        request: GRPCCore.ClientRequest<Dieter_V1_RemoteDesktopClipboardRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_RemoteDesktopClipboardResponse>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.exchangeRemoteDesktopClipboard(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_V1_RemoteDesktopClipboardRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_V1_RemoteDesktopClipboardResponse>(),
             options: options,
             onResponse: handleResponse
         )
@@ -12474,6 +12562,35 @@ extension Dieter_V1_DieterService.ClientProtocol {
             metadata: metadata
         )
         return try await self.updateRemoteDesktopSession(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "ExchangeRemoteDesktopClipboard" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func exchangeRemoteDesktopClipboard<Result>(
+        _ message: Dieter_V1_RemoteDesktopClipboardRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_RemoteDesktopClipboardResponse>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Dieter_V1_RemoteDesktopClipboardRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.exchangeRemoteDesktopClipboard(
             request: request,
             options: options,
             onResponse: handleResponse

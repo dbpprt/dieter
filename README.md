@@ -809,16 +809,34 @@ The native iOS 18+ SwiftUI client connects to enrolled remote nodes through the 
 ### Native screen sharing
 
 Native command acknowledgments and heartbeats are independent of encoder
-configuration and downstream cursor/state delivery. A brief receiver heartbeat
+configuration and downstream cursor/state delivery. Keepalives run at a fixed
+cadence without waiting for an individual reply; other acknowledged commands
+also prove helper liveness. The three-second silent-helper/daemon bound remains
+enforced, with command-age diagnostics and bounded client recovery after a native
+capture interruption. A brief receiver heartbeat
 gap releases held input and pauses control without closing video; fresh feedback
 resumes control in the same session. Peer/signaling grace periods and the session
 lease still bound disconnected sessions.
+Fresh, epoch-validated WebRTC heartbeats renew that lease while the authenticated
+signaling subscription remains open, so delayed unary renewals do not kill healthy
+video. Detaching or revoking signaling still ends the share after its bounded
+grace period. Mac renewal runs independently of the UI thread; recoverable session
+expiry opens a fresh authenticated route with at most three backoff attempts.
 
 Mac screen sharing uses ScreenCaptureKit, NV12 pixel buffers, hardware VideoToolbox
 H.264, and the Mac client's native WebRTC/Metal renderer. No FFmpeg executable or
 library is used. Capture, input injection and display enumeration live in the
 platform backend; the bounded media/session protocol can accommodate a Linux
 backend later. Linux capture is currently reported as unsupported.
+
+On Android, one finger moves the remote cursor like a trackpad. Two fingers
+continuously zoom and pan the desktop canvas in both axes, including below its
+initial fit size. The point between the fingers follows the gesture; lifting and
+replacing one finger resumes it without moving the remote cursor. A small visible
+edge keeps the desktop reachable, and **Fit screen** restores the centered view.
+These gestures transform the local GPU view without changing capture quality.
+Three fingers scroll the remote screen; the bottom bar provides keyboard and
+special keys.
 
 Each Mac viewer session is a machine-scoped Screens tab. It remains connected when
 the user navigates to another Dieter workspace, and the Screens sidebar count shows
@@ -880,6 +898,48 @@ clock; measuring display scanout/photons still requires an external camera. `sta
 accepts a protobuf JSON WebRTC offer; media and input use the encrypted peer
 connection. Clients negotiate signed input protocol v3 for control handoff and retain v2
 compatibility with older daemons.
+
+Text clipboard sharing is available on updated Mac and Android viewers. Enable
+**Share clipboard** in Screen options (Mac) or the bottom bar (Android). Mac
+⌘C/⌘X and remote app menus copy back to the local clipboard; ⌘V transfers the
+local text and then invokes the host paste shortcut. Android provides Copy and
+Paste buttons, IME clipboard actions and the host's ⌘V hardware shortcut.
+Synchronization runs only for the focused controlling viewer. View-only viewers
+cannot read or write it. Connecting or taking control does not overwrite either
+clipboard; subsequent text changes sync in both directions. Clipboard access can
+require an OS pasteboard grant; a denied request leaves video running.
+
+Only UTF-8 plain text is supported, up to 1 MiB, including empty text, Unicode and
+newlines. Images, rich text and files are not transferred. A dedicated encrypted
+WebRTC channel uses 16 KiB chunks and bounded buffering. Native clipboard IPC runs
+in a separate instance of the installed helper, outside capture and heartbeat
+queues. A stale control grant is rejected before a mutation. Clipboard shortcuts
+wait for prior selection input, and subsequent typing waits for the shortcut
+acknowledgment. Failed/uncertain
+pastes are never automatically retried; the daemon retains the most recent 128
+mutation results per session for duplicate detection. Reconnecting creates a new
+session and never replays clipboard operations. Contents are transient and never
+stored in Dieter history or logs.
+
+The CLI uses the same daemon implementation over local, direct TLS or relay:
+
+```sh
+dieter screen clipboard enable SESSION
+dieter screen clipboard read SESSION
+dieter screen clipboard write SESSION --file clipboard.txt
+dieter screen clipboard paste SESSION --file - < clipboard.txt
+dieter screen clipboard copy SESSION
+dieter screen clipboard cut SESSION
+dieter screen clipboard disable SESSION
+```
+
+`read` prints protobuf JSON, including `hasText`, `changed`, `revision` and `text`.
+`write` only changes the host clipboard; `paste` also invokes its paste shortcut.
+`copy` and `cut` invoke the host shortcut and return the resulting text after the
+clipboard changes.
+`write` and `paste` require `--file`, with `-` reading stdin. All operations require
+an existing controlling session; they do not silently take control. Clipboard
+failures are surfaced separately and do not disconnect screen sharing.
 
 Native screen regression checks:
 

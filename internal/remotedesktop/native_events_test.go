@@ -3,6 +3,8 @@ package remotedesktop
 import (
 	"context"
 	"errors"
+	"fmt"
+	"io"
 	"testing"
 	"time"
 
@@ -66,5 +68,38 @@ func TestNativeStoppedCommandsRetainFailureCause(t *testing.T) {
 	source := &nativeHelperSource{writes: make(chan nativeWrite), stopped: stopped, stoppedErr: cause, pending: make(map[uint64]chan error)}
 	if err := source.send(context.Background(), nativeCommand{Kind: "configure"}, true); !errors.Is(err, cause) {
 		t.Fatalf("failure cause lost: %v", err)
+	}
+}
+
+func TestNativeLivenessRequiresNewAcknowledgments(t *testing.T) {
+	now := time.Now()
+	liveness := nativeLiveness{at: now}
+	// Autonomous state/cursor events and unknown/replayed ACKs must not keep
+	// a helper alive if its command reader has stopped progressing.
+	liveness.acknowledge(0, 10, now.Add(time.Second))
+	liveness.acknowledge(11, 10, now.Add(time.Second))
+	if _, age := liveness.snapshot(now.Add(4 * time.Second)); age != 4*time.Second {
+		t.Fatal("unsolicited event renewed liveness")
+	}
+	liveness.acknowledge(9, 10, now.Add(4*time.Second))
+	liveness.acknowledge(8, 10, now.Add(5*time.Second))
+	liveness.acknowledge(9, 10, now.Add(6*time.Second))
+	if ack, age := liveness.snapshot(now.Add(7 * time.Second)); ack != 9 || age != 3*time.Second {
+		t.Fatal("late/replayed ACK renewed liveness")
+	}
+}
+
+func TestCaptureRecoveryPreservesPermanentFailures(t *testing.T) {
+	for _, err := range []error{nil, errors.New("capture permission denied"), errors.New("invalid native frame metadata"),
+		nativeCaptureFailure(io.EOF, "The user declined TCCs")} {
+		if recoverableCaptureFailure(err) {
+			t.Fatalf("permanent failure retried: %v", err)
+		}
+	}
+	for _, err := range []error{io.EOF, io.ErrUnexpectedEOF, fmt.Errorf("event pipe: %w", errNativeHelperStopped),
+		errors.New("native daemon heartbeat expired"), errors.New("native capture rendition stopped"), errors.New("native capture helper unresponsive")} {
+		if !recoverableCaptureFailure(err) {
+			t.Fatalf("transient capture failure did not recover: %v", err)
+		}
 	}
 }

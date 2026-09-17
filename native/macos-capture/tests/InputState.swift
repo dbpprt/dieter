@@ -3,6 +3,15 @@ import Foundation
 
 @main struct InputStateTest {
     static func main() async throws {
+        let liveness = NativeDaemonLiveness(now: 0)
+        precondition(liveness.timeoutDiagnostic(now: 3_000_000_000) == nil)
+        liveness.receive("frame_consumed", now: 2_900_000_000)
+        precondition(liveness.timeoutDiagnostic(now: 5_000_000_000) == nil,
+            "Live command traffic must prevent an idle-heartbeat timeout")
+        precondition(liveness.timeoutDiagnostic(now: 6_000_000_000)?.contains("lastCommand=frame_consumed") == true,
+            "A silent owner must still expire and retain the last command kind")
+        liveness.receive("heartbeat", now: 6_000_000_000)
+        precondition(liveness.timeoutDiagnostic(now: 6_100_000_000) == nil)
         let input = InputInjector(bounds: CGRect(x: -1280, y: 0, width: 1280, height: 720), dryRun: true)
         var value = NativeInput(); value.kind = "key"; value.physicalKey = 4; value.generation = 1
         value.down = true; try input.handle(value)
@@ -54,6 +63,21 @@ import Foundation
         precondition(finished)
         queue.close()
         precondition(!queue.submit { preconditionFailure("stopped native command queue") })
+        let configurationGate = ConfigurationGate()
+        await configurationGate.shutdown()
+        do {
+            try await configurationGate.acquire()
+            preconditionFailure("stopped capture accepted configuration")
+        } catch {
+            precondition(error.localizedDescription == "native capture rendition stopped")
+        }
+        let stoppedRunner = CaptureRunner(options: CaptureOptions())
+        await stoppedRunner.stopAndWait()
+        let finalCredit = NativeCommand(version: 2, id: 1, kind: "frame_consumed", input: nil,
+            configuration: nil, frameId: 1, streamId: nil, profile: nil)
+        stoppedRunner.enqueue(finalCredit) { error in
+            precondition(error == "native capture rendition stopped", "Final frame credit lost shutdown cause")
+        }
         print(
             "Native input state: physical key zero, independent Shift sides, drag bounds, release and display generation passed"
         )

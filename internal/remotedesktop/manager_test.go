@@ -402,6 +402,10 @@ func TestManagerStopsCaptureWhenSignalingObserverDisconnects(t *testing.T) {
 	}
 
 	subscription.Close()
+	// An already-admitted peer cannot keep capture alive after its
+	// authenticated signaling subscription disappears (including revocation).
+	raw, _ := proto.Marshal(&dieterv1.RemoteDesktopReceiverFeedback{ProtocolVersion: inputProtocolVersion, InputEpoch: session.inputEpoch, Sequence: 1})
+	session.receiveFeedback(raw)
 	select {
 	case <-source.stopped:
 	case <-time.After(time.Second):

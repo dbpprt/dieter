@@ -215,3 +215,14 @@ func remoteDesktopFailure(err error) error {
 		return status.Error(codes.InvalidArgument, err.Error())
 	}
 }
+
+func (api *grpcAPI) ExchangeRemoteDesktopClipboard(ctx context.Context, request *dieterv1.RemoteDesktopClipboardRequest) (*dieterv1.RemoteDesktopClipboardResponse, error) {
+	value, err := api.server.remoteDesktop.ExchangeClipboard(ctx, request)
+	if err != nil {
+		return nil, remoteDesktopFailure(err)
+	}
+	return value, nil
+}
+func (api *connectAPI) ExchangeRemoteDesktopClipboard(ctx context.Context, request *connect.Request[dieterv1.RemoteDesktopClipboardRequest]) (*connect.Response[dieterv1.RemoteDesktopClipboardResponse], error) {
+	return connectUnary(ctx, request, api.core.ExchangeRemoteDesktopClipboard)
+}

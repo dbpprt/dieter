@@ -162,6 +162,15 @@ internal fun ScreenWorkspace(
                 }
             }
         }
+        if (screen.capabilities.clipboardSupported) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                FilterChip(selected = screen.clipboardEnabled, enabled = screen.control, onClick = { controller.setClipboardEnabled(!screen.clipboardEnabled) },
+                    label = { Text("Share clipboard") }, modifier = Modifier.testTag("screens.clipboard.toggle"))
+                TextButton(enabled = screen.control && screen.clipboardEnabled && !screen.clipboardBusy, onClick = { controller.clipboard.copy() }, modifier = Modifier.testTag("screens.clipboard.copy")) { Text("Copy") }
+                TextButton(enabled = screen.control && screen.clipboardEnabled && !screen.clipboardBusy, onClick = { controller.clipboard.paste() }, modifier = Modifier.testTag("screens.clipboard.paste")) { Text("Paste") }
+            }
+        }
+        if (screen.clipboardError.isNotBlank()) Text(screen.clipboardError, color = MaterialTheme.colorScheme.error)
         Surface(tonalElevation = 3.dp) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
                 IconButton(enabled = screen.control, onClick = { keyboard = !keyboard; canvas?.showKeyboard(keyboard) }) { Icon(Icons.Outlined.Keyboard, "Toggle keyboard") }
@@ -174,7 +183,7 @@ internal fun ScreenWorkspace(
     }
     }
     if (help) AlertDialog(onDismissRequest = { help = false }, title = { Text("Screen gestures") }, text = {
-        Text("One finger: move the cursor\nTap: left click\nDouble tap: double click\nHold, then move: drag\nTwo fingers: zoom and pan the canvas\nThree fingers: scroll the remote screen\n\nThe bottom bar opens the keyboard, modifier keys, right click, and Fit screen. Leaving Screens or putting Dieter in the background disconnects and releases held keys.")
+        Text("One finger: move the cursor\nTap: left click\nDouble tap: double click\nHold, then move: drag\nTwo fingers: freely move and resize the canvas, including zooming out\nThree fingers: scroll the remote screen\n\nFit screen centers the entire desktop again. The bottom bar also opens the keyboard, modifier keys, and right click. Copy retrieves the remote selection; Paste inserts the phone clipboard. Share clipboard synchronizes text while this screen is focused. Leaving Screens or putting Dieter in the background disconnects and releases held keys.")
     }, confirmButton = { TextButton(onClick = { help = false }) { Text("Got it") } })
 }
 

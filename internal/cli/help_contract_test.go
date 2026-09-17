@@ -28,8 +28,9 @@ var rpcCommand = map[string]string{
 	"ListTerminals": "terminal list", "CreateTerminal": "terminal create", "WatchTerminal": "terminal watch", "WriteTerminal": "terminal write", "ResizeTerminal": "terminal resize", "RenameTerminal": "terminal rename", "CloseTerminal": "terminal close",
 	"ListExecutions": "remote list", "StartExecution": "remote exec", "GetExecution": "remote show", "WatchExecution": "remote watch", "WriteExecutionInput": "remote input", "SignalExecution": "remote signal", "ResizeExecution": "remote resize", "CancelExecution": "remote cancel", "CloseExecution": "remote close",
 	"GetRemoteDesktopCapabilities": "screen capabilities", "GetRemoteDesktopSettings": "screen settings", "UpdateRemoteDesktopSettings": "screen update", "StartRemoteDesktop": "screen start", "SendRemoteDesktopSignal": "screen signal", "CloseRemoteDesktop": "screen close", "ListRemoteDesktopSessions": "screen sessions",
-	"SetRemoteDesktopControl": "screen control",
-	"GetRemoteDesktopSession": "screen status", "UpdateRemoteDesktopSession": "screen configure",
+	"SetRemoteDesktopControl":        "screen control",
+	"ExchangeRemoteDesktopClipboard": "screen clipboard",
+	"GetRemoteDesktopSession":        "screen status", "UpdateRemoteDesktopSession": "screen configure",
 	"ListSchedules": "schedule list", "PreviewSchedule": "schedule preview", "CreateSchedule": "schedule create", "UpdateSchedule": "schedule update", "DeleteSchedule": "schedule delete", "RunSchedule": "schedule run", "SetScheduleEnabled": "schedule pause", "ListScheduleRuns": "schedule runs",
 }
 
@@ -67,7 +68,7 @@ func TestEveryDaemonCLICommandHasOfflineHelp(t *testing.T) {
 		"file", "file list", "file read", "file save", "file create", "file move", "file delete",
 		"terminal", "terminal list", "terminal create", "terminal attach", "terminal watch", "terminal write", "terminal resize", "terminal rename", "terminal close",
 		"remote", "remote exec", "remote shell", "remote list", "remote show", "remote watch", "remote wait", "remote attach", "remote input", "remote signal", "remote resize", "remote cancel", "remote close",
-		"screen", "screen sessions", "screen control", "screen control take", "screen control release", "screen capabilities", "screen permissions", "screen settings", "screen update", "screen start", "screen signal", "screen close", "screen status", "screen configure", "screen refresh",
+		"screen", "screen clipboard", "screen clipboard read", "screen clipboard write", "screen clipboard paste", "screen clipboard copy", "screen clipboard cut", "screen clipboard enable", "screen clipboard disable", "screen sessions", "screen control", "screen control take", "screen control release", "screen capabilities", "screen permissions", "screen settings", "screen update", "screen start", "screen signal", "screen close", "screen status", "screen configure", "screen refresh",
 		"schedule", "schedule create", "schedule list", "schedule show", "schedule preview", "schedule update", "schedule run", "schedule pause", "schedule resume", "schedule runs", "schedule delete",
 		"settings", "settings show", "settings options", "settings update",
 		"prompt", "prompt show", "prompt update", "prompt project", "prompt board", "prompt preview",

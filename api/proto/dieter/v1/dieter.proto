@@ -144,6 +144,7 @@ service DieterService {
   rpc ListRemoteDesktopSessions(google.protobuf.Empty) returns (RemoteDesktopSessions);
   rpc SetRemoteDesktopControl(RemoteDesktopControlRequest) returns (RemoteDesktopSessionState);
   rpc UpdateRemoteDesktopSession(UpdateRemoteDesktopSessionRequest) returns (RemoteDesktopSessionState);
+  rpc ExchangeRemoteDesktopClipboard(RemoteDesktopClipboardRequest) returns (RemoteDesktopClipboardResponse);
   rpc CloseRemoteDesktop(RemoteDesktopRef)
       returns (google.protobuf.Empty);
 
@@ -1749,6 +1750,7 @@ message StartRemoteDesktopRequest {
   // Zero selects legacy v2. V3 adds revocable, machine-wide input ownership.
   uint32 input_protocol_version = 13;
   string client_name = 14;
+  bool clipboard = 15;
 }
 
 message RemoteDesktopSessions {
@@ -1910,6 +1912,8 @@ message RemoteDesktopSessionState {
   uint64 control_generation = 31;
   string controller_name = 32;
   uint32 connected_clients = 33;
+  bool clipboard_enabled = 34;
+  uint64 clipboard_generation = 35;
 }
 
 // Encrypted on the authenticated session DataChannel; never persisted.
@@ -2139,4 +2143,43 @@ message UpdateBoardHostnamesRequest {
  string board_id = 1;
  repeated string hostnames = 2;
  bool append = 3;
+}
+
+// Clipboard payloads are transient. Both RPC and the dedicated encrypted
+// dieter-clipboard-v1 channel use this same operation contract.
+message RemoteDesktopClipboardRequest {
+  enum Action {
+    READ = 0;
+    WRITE = 1;
+    PASTE = 2;
+    CONFIGURE = 3;
+    COPY = 4;
+    CUT = 5;
+  }
+  string session_id = 1;
+  string operation_id = 2;
+  bytes input_epoch = 3;
+  uint64 control_generation = 4;
+  Action action = 5;
+  string text = 6;
+  string known_revision = 7;
+  bool enabled = 8;
+  // Wait for prior reliable input (selection/focus) before a clipboard shortcut.
+  uint64 input_barrier = 9;
+}
+message RemoteDesktopClipboardResponse {
+  string operation_id = 1;
+  string revision = 2;
+  string text = 3;
+  bool changed = 4;
+  bool has_text = 5;
+  string error = 6;
+  bool enabled = 7;
+}
+// One sequential transfer per direction; at most 16 KiB per chunk and
+// 1 MiB of UTF-8 content. Final chunks complete one serialized message.
+message RemoteDesktopClipboardFrame {
+  string operation_id = 1;
+  bytes data = 2;
+  bool end = 3;
 }

@@ -314,6 +314,9 @@ const (
 	// DieterServiceUpdateRemoteDesktopSessionProcedure is the fully-qualified name of the
 	// DieterService's UpdateRemoteDesktopSession RPC.
 	DieterServiceUpdateRemoteDesktopSessionProcedure = "/dieter.v1.DieterService/UpdateRemoteDesktopSession"
+	// DieterServiceExchangeRemoteDesktopClipboardProcedure is the fully-qualified name of the
+	// DieterService's ExchangeRemoteDesktopClipboard RPC.
+	DieterServiceExchangeRemoteDesktopClipboardProcedure = "/dieter.v1.DieterService/ExchangeRemoteDesktopClipboard"
 	// DieterServiceCloseRemoteDesktopProcedure is the fully-qualified name of the DieterService's
 	// CloseRemoteDesktop RPC.
 	DieterServiceCloseRemoteDesktopProcedure = "/dieter.v1.DieterService/CloseRemoteDesktop"
@@ -465,6 +468,7 @@ type DieterServiceClient interface {
 	ListRemoteDesktopSessions(context.Context, *connect.Request[emptypb.Empty]) (*connect.Response[v1.RemoteDesktopSessions], error)
 	SetRemoteDesktopControl(context.Context, *connect.Request[v1.RemoteDesktopControlRequest]) (*connect.Response[v1.RemoteDesktopSessionState], error)
 	UpdateRemoteDesktopSession(context.Context, *connect.Request[v1.UpdateRemoteDesktopSessionRequest]) (*connect.Response[v1.RemoteDesktopSessionState], error)
+	ExchangeRemoteDesktopClipboard(context.Context, *connect.Request[v1.RemoteDesktopClipboardRequest]) (*connect.Response[v1.RemoteDesktopClipboardResponse], error)
 	CloseRemoteDesktop(context.Context, *connect.Request[v1.RemoteDesktopRef]) (*connect.Response[emptypb.Empty], error)
 	ListSchedules(context.Context, *connect.Request[v1.ListSchedulesRequest]) (*connect.Response[v1.SchedulesResponse], error)
 	PreviewSchedule(context.Context, *connect.Request[v1.PreviewScheduleRequest]) (*connect.Response[v1.SchedulePreview], error)
@@ -1075,6 +1079,12 @@ func NewDieterServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 			connect.WithSchema(dieterServiceMethods.ByName("UpdateRemoteDesktopSession")),
 			connect.WithClientOptions(opts...),
 		),
+		exchangeRemoteDesktopClipboard: connect.NewClient[v1.RemoteDesktopClipboardRequest, v1.RemoteDesktopClipboardResponse](
+			httpClient,
+			baseURL+DieterServiceExchangeRemoteDesktopClipboardProcedure,
+			connect.WithSchema(dieterServiceMethods.ByName("ExchangeRemoteDesktopClipboard")),
+			connect.WithClientOptions(opts...),
+		),
 		closeRemoteDesktop: connect.NewClient[v1.RemoteDesktopRef, emptypb.Empty](
 			httpClient,
 			baseURL+DieterServiceCloseRemoteDesktopProcedure,
@@ -1232,6 +1242,7 @@ type dieterServiceClient struct {
 	listRemoteDesktopSessions      *connect.Client[emptypb.Empty, v1.RemoteDesktopSessions]
 	setRemoteDesktopControl        *connect.Client[v1.RemoteDesktopControlRequest, v1.RemoteDesktopSessionState]
 	updateRemoteDesktopSession     *connect.Client[v1.UpdateRemoteDesktopSessionRequest, v1.RemoteDesktopSessionState]
+	exchangeRemoteDesktopClipboard *connect.Client[v1.RemoteDesktopClipboardRequest, v1.RemoteDesktopClipboardResponse]
 	closeRemoteDesktop             *connect.Client[v1.RemoteDesktopRef, emptypb.Empty]
 	listSchedules                  *connect.Client[v1.ListSchedulesRequest, v1.SchedulesResponse]
 	previewSchedule                *connect.Client[v1.PreviewScheduleRequest, v1.SchedulePreview]
@@ -1733,6 +1744,11 @@ func (c *dieterServiceClient) UpdateRemoteDesktopSession(ctx context.Context, re
 	return c.updateRemoteDesktopSession.CallUnary(ctx, req)
 }
 
+// ExchangeRemoteDesktopClipboard calls dieter.v1.DieterService.ExchangeRemoteDesktopClipboard.
+func (c *dieterServiceClient) ExchangeRemoteDesktopClipboard(ctx context.Context, req *connect.Request[v1.RemoteDesktopClipboardRequest]) (*connect.Response[v1.RemoteDesktopClipboardResponse], error) {
+	return c.exchangeRemoteDesktopClipboard.CallUnary(ctx, req)
+}
+
 // CloseRemoteDesktop calls dieter.v1.DieterService.CloseRemoteDesktop.
 func (c *dieterServiceClient) CloseRemoteDesktop(ctx context.Context, req *connect.Request[v1.RemoteDesktopRef]) (*connect.Response[emptypb.Empty], error) {
 	return c.closeRemoteDesktop.CallUnary(ctx, req)
@@ -1900,6 +1916,7 @@ type DieterServiceHandler interface {
 	ListRemoteDesktopSessions(context.Context, *connect.Request[emptypb.Empty]) (*connect.Response[v1.RemoteDesktopSessions], error)
 	SetRemoteDesktopControl(context.Context, *connect.Request[v1.RemoteDesktopControlRequest]) (*connect.Response[v1.RemoteDesktopSessionState], error)
 	UpdateRemoteDesktopSession(context.Context, *connect.Request[v1.UpdateRemoteDesktopSessionRequest]) (*connect.Response[v1.RemoteDesktopSessionState], error)
+	ExchangeRemoteDesktopClipboard(context.Context, *connect.Request[v1.RemoteDesktopClipboardRequest]) (*connect.Response[v1.RemoteDesktopClipboardResponse], error)
 	CloseRemoteDesktop(context.Context, *connect.Request[v1.RemoteDesktopRef]) (*connect.Response[emptypb.Empty], error)
 	ListSchedules(context.Context, *connect.Request[v1.ListSchedulesRequest]) (*connect.Response[v1.SchedulesResponse], error)
 	PreviewSchedule(context.Context, *connect.Request[v1.PreviewScheduleRequest]) (*connect.Response[v1.SchedulePreview], error)
@@ -2506,6 +2523,12 @@ func NewDieterServiceHandler(svc DieterServiceHandler, opts ...connect.HandlerOp
 		connect.WithSchema(dieterServiceMethods.ByName("UpdateRemoteDesktopSession")),
 		connect.WithHandlerOptions(opts...),
 	)
+	dieterServiceExchangeRemoteDesktopClipboardHandler := connect.NewUnaryHandler(
+		DieterServiceExchangeRemoteDesktopClipboardProcedure,
+		svc.ExchangeRemoteDesktopClipboard,
+		connect.WithSchema(dieterServiceMethods.ByName("ExchangeRemoteDesktopClipboard")),
+		connect.WithHandlerOptions(opts...),
+	)
 	dieterServiceCloseRemoteDesktopHandler := connect.NewUnaryHandler(
 		DieterServiceCloseRemoteDesktopProcedure,
 		svc.CloseRemoteDesktop,
@@ -2758,6 +2781,8 @@ func NewDieterServiceHandler(svc DieterServiceHandler, opts ...connect.HandlerOp
 			dieterServiceSetRemoteDesktopControlHandler.ServeHTTP(w, r)
 		case DieterServiceUpdateRemoteDesktopSessionProcedure:
 			dieterServiceUpdateRemoteDesktopSessionHandler.ServeHTTP(w, r)
+		case DieterServiceExchangeRemoteDesktopClipboardProcedure:
+			dieterServiceExchangeRemoteDesktopClipboardHandler.ServeHTTP(w, r)
 		case DieterServiceCloseRemoteDesktopProcedure:
 			dieterServiceCloseRemoteDesktopHandler.ServeHTTP(w, r)
 		case DieterServiceListSchedulesProcedure:
@@ -3175,6 +3200,10 @@ func (UnimplementedDieterServiceHandler) SetRemoteDesktopControl(context.Context
 
 func (UnimplementedDieterServiceHandler) UpdateRemoteDesktopSession(context.Context, *connect.Request[v1.UpdateRemoteDesktopSessionRequest]) (*connect.Response[v1.RemoteDesktopSessionState], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.UpdateRemoteDesktopSession is not implemented"))
+}
+
+func (UnimplementedDieterServiceHandler) ExchangeRemoteDesktopClipboard(context.Context, *connect.Request[v1.RemoteDesktopClipboardRequest]) (*connect.Response[v1.RemoteDesktopClipboardResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.ExchangeRemoteDesktopClipboard is not implemented"))
 }
 
 func (UnimplementedDieterServiceHandler) CloseRemoteDesktop(context.Context, *connect.Request[v1.RemoteDesktopRef]) (*connect.Response[emptypb.Empty], error) {

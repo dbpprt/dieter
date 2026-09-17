@@ -3,6 +3,8 @@ package cli
 import (
 	"bufio"
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"flag"
 	"fmt"
@@ -11,6 +13,7 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
+	"unicode/utf8"
 
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -32,6 +35,7 @@ Actions:
   status SESSION               Show current stream configuration and performance
   configure SESSION [options]  Change display, quality and stream ceilings live
   refresh SESSION              Request a fresh keyframe, including an idle screen
+  clipboard ACTION SESSION     Read, write, copy, paste, or toggle text sharing
   close SESSION                Close a remote-desktop session
 
 "start" accepts protobuf JSON from FILE or stdin (-). It can also consume
@@ -61,6 +65,8 @@ func (c *CLI) rpcScreen(args []string) error {
 		return c.rpcScreenSignal(args[1:])
 	case "sessions":
 		return c.rpcScreenSessions(args[1:])
+	case "clipboard":
+		return c.rpcScreenClipboard(args[1:])
 	case "control":
 		return c.rpcScreenControl(args[1:])
 	case "status", "configure", "refresh":
@@ -468,6 +474,89 @@ as JSON. Supports --machine ID|NAME.
 	value, err := client.SetRemoteDesktopControl(rpcCtx, &dieterv1.RemoteDesktopControlRequest{SessionId: args[1], TakeControl: args[0] == "take"})
 	if err != nil {
 		return err
+	}
+	return protoJSONOut(c.Out, value)
+}
+
+func (c *CLI) rpcScreenClipboard(args []string) error {
+	const usage = `Usage: dieter screen clipboard read|write|paste|copy|cut|enable|disable SESSION [--file FILE|-]
+
+Share UTF-8 text with an existing controlling screen session. read prints the
+host clipboard as protobuf JSON. write updates it; paste updates it and invokes
+the native paste shortcut once. copy invokes the native copy shortcut; a later
+read returns the copied selection. cut invokes the native cut shortcut. enable/disable controls session sharing.
+write/paste require --file (use - for stdin), at most 1 MiB. Clipboard contents
+are transient. Mutations are never automatically retried. Supports global
+--machine ID|NAME with direct TLS and relay fallback.
+`
+	if groupHelp(args) || (len(args) > 1 && wantsHelp(args[1:])) {
+		fmt.Fprint(c.Out, usage)
+		return nil
+	}
+	action := args[0]
+	actions := map[string]dieterv1.RemoteDesktopClipboardRequest_Action{"read": dieterv1.RemoteDesktopClipboardRequest_READ, "write": dieterv1.RemoteDesktopClipboardRequest_WRITE, "paste": dieterv1.RemoteDesktopClipboardRequest_PASTE, "copy": dieterv1.RemoteDesktopClipboardRequest_COPY, "cut": dieterv1.RemoteDesktopClipboardRequest_CUT, "enable": dieterv1.RemoteDesktopClipboardRequest_CONFIGURE, "disable": dieterv1.RemoteDesktopClipboardRequest_CONFIGURE}
+	kind, ok := actions[action]
+	if !ok {
+		return errors.New(usage)
+	}
+	set := flags("screen clipboard " + action)
+	file := set.String("file", "", "UTF-8 text file, or - for stdin")
+	rest := args[1:]
+	if len(rest) > 0 && !strings.HasPrefix(rest[0], "-") {
+		rest = append(append([]string{}, rest[1:]...), rest[0])
+	}
+	help, err := parse(set, rest, usage, c.Out)
+	if help || err != nil {
+		return err
+	}
+	if set.NArg() != 1 {
+		return errors.New(usage)
+	}
+	var text string
+	if action == "write" || action == "paste" {
+		if *file == "" {
+			return errors.New("write/paste require --file FILE or --file -")
+		}
+		var reader io.Reader = c.In
+		if *file != "-" {
+			f, e := os.Open(*file)
+			if e != nil {
+				return e
+			}
+			defer f.Close()
+			reader = f
+		}
+		raw, e := io.ReadAll(io.LimitReader(reader, (1<<20)+1))
+		if e != nil {
+			return e
+		}
+		if len(raw) > 1<<20 || !utf8.Valid(raw) {
+			return errors.New("clipboard requires UTF-8 text of at most 1 MiB")
+		}
+		text = string(raw)
+	} else if *file != "" {
+		return errors.New("--file is only valid for write and paste")
+	}
+	ctx, cancel := c.commandContext()
+	defer cancel()
+	client, rpcCtx, err := c.rpc(ctx)
+	if err != nil {
+		return err
+	}
+	state, err := client.GetRemoteDesktopSession(rpcCtx, &dieterv1.RemoteDesktopRef{SessionId: set.Arg(0)})
+	if err != nil {
+		return err
+	}
+	id := make([]byte, 16)
+	if _, err = rand.Read(id); err != nil {
+		return err
+	}
+	value, err := client.ExchangeRemoteDesktopClipboard(rpcCtx, &dieterv1.RemoteDesktopClipboardRequest{SessionId: set.Arg(0), OperationId: hex.EncodeToString(id), ControlGeneration: state.ControlGeneration, Action: kind, Text: text, Enabled: action == "enable"})
+	if err != nil {
+		return err
+	}
+	if value.Error != "" {
+		return errors.New(value.Error)
 	}
 	return protoJSONOut(c.Out, value)
 }

@@ -102,7 +102,10 @@ struct DieterRootView: View {
                         ScreensView(
                             model: store.screensModel,
                             machines: store.machines, initialMachineID: store.endpoint.id,
-                            makeConnection: { try await store.remoteDesktopConnection(machineID: $0) })
+                            makeConnection: { [weak store] machineID in
+                                guard let store else { throw CancellationError() }
+                                return try await store.remoteDesktopConnection(machineID: machineID)
+                            })
                     case .files: FilesView(model: store.filesModel)
                     case .changes: ProjectChangesView()
                     case .schedules:

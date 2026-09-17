@@ -51,6 +51,8 @@ type InputSink interface {
 }
 
 type SourceOptions struct {
+	// Optional named pasteboard for isolated native fixtures; empty uses the system clipboard.
+	ClipboardName  string
 	Kind           string
 	HelperPath     string
 	Display        string

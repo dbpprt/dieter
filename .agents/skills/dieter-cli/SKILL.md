@@ -418,6 +418,14 @@ evidence before shrinking pixels. Heartbeat and statistics freshness are separat
 A brief receiver heartbeat gap releases held input and pauses control without
 closing video. Fresh feedback resumes control and discards stale queued input;
 peer/signaling grace periods and session leases still bound disconnected sessions.
+Fresh, epoch-validated WebRTC heartbeats renew the lease only while authenticated
+signaling remains attached. Delayed unary renewals therefore do not end healthy
+video; detached/revoked signaling still expires normally. Mac viewers retry
+recoverable session expiry with a fresh route and bounded backoff. Native helper
+keepalives do not wait for individual replies; acknowledged command traffic also
+proves liveness. Silent helper/daemon IPC still expires after three seconds.
+Mac and Android reopen a fresh session after transient native capture loss;
+permission and policy failures remain terminal.
 Recovery probes are bounded to a doubled rate, 64 KiB / 250 ms, every three seconds
 during active/resumed video; acknowledged delivery validates capacity and congestion
 revokes it. The daemon log records session IDs, quality changes, measurement age,
@@ -430,6 +438,46 @@ are not a physical glass-to-glass total. Capture admits one encoded frame at a t
 and replaces pending raw surfaces; compatible peers request immediate playout.
 All screen commands support global `--machine ID|NAME` with verified direct TLS
 and authenticated relay fallback.
+
+Text clipboard sharing is available on updated Mac and Android viewers. Enable
+**Share clipboard** in Screen options (Mac) or the bottom bar (Android). Mac
+⌘C/⌘X and remote app menus copy back to the local clipboard; ⌘V transfers the
+local text and then invokes the host paste shortcut. Android provides Copy and
+Paste buttons, IME clipboard actions and the host's ⌘V hardware shortcut.
+Synchronization runs only for the focused controlling viewer. View-only viewers
+cannot read or write it. Connecting or taking control does not overwrite either
+clipboard; subsequent text changes sync in both directions. Clipboard access can
+require an OS pasteboard grant; a denied request leaves video running.
+
+Only UTF-8 plain text is supported, up to 1 MiB, including empty text, Unicode and
+newlines. Images, rich text and files are not transferred. A dedicated encrypted
+WebRTC channel uses 16 KiB chunks and bounded buffering. Native clipboard IPC runs
+in a separate instance of the installed helper, outside capture and heartbeat
+queues. A stale control grant is rejected before a mutation. Failed/uncertain
+pastes are never automatically retried; the daemon retains the most recent 128
+mutation results per session for duplicate detection. Reconnecting creates a new
+session and never replays clipboard operations. Contents are transient and never
+stored in Dieter history or logs.
+
+The CLI uses the same daemon implementation over local, direct TLS or relay:
+
+```sh
+dieter screen clipboard enable SESSION
+dieter screen clipboard read SESSION
+dieter screen clipboard write SESSION --file clipboard.txt
+dieter screen clipboard paste SESSION --file - < clipboard.txt
+dieter screen clipboard copy SESSION
+dieter screen clipboard cut SESSION
+dieter screen clipboard disable SESSION
+```
+
+`read` prints protobuf JSON, including `hasText`, `changed`, `revision` and `text`.
+`write` only changes the host clipboard; `paste` also invokes its paste shortcut.
+`copy` and `cut` invoke the host shortcut and return the resulting text after the
+clipboard changes.
+`write` and `paste` require `--file`, with `-` reading stdin. All operations require
+an existing controlling session; they do not silently take control. Clipboard
+failures are surfaced separately and do not disconnect screen sharing.
 
 Screen sharing uses explicit daemon policy plus WebRTC signaling. Check
 `dieter screen capabilities` and `dieter screen settings`; do not enable capture

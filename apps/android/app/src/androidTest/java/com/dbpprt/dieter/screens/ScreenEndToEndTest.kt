@@ -54,9 +54,11 @@ class ScreenEndToEndTest {
         lateinit var controller: ScreenController
         lateinit var canvas: ScreenCanvasView
         val opened = java.util.concurrent.atomic.AtomicInteger()
+        val configurations = java.util.concurrent.atomic.AtomicInteger()
         val nextConfigurationFailure = AtomicReference<Status?>()
         val faults = object : ClientInterceptor {
             override fun <ReqT : Any?, RespT : Any?> interceptCall(method: MethodDescriptor<ReqT, RespT>, options: CallOptions, next: Channel): ClientCall<ReqT, RespT> {
+                if (method.bareMethodName == "UpdateRemoteDesktopSession") configurations.incrementAndGet()
                 val failure = if (method.bareMethodName == "UpdateRemoteDesktopSession") nextConfigurationFailure.getAndSet(null) else null
                 if (failure == null) return next.newCall(method, options)
                 return object : ClientCall<ReqT, RespT>() {
@@ -100,6 +102,45 @@ class ScreenEndToEndTest {
             compose.waitUntil(15_000) { opened.get() >= 2 && controller.state.value.control }
             compose.waitUntil(10_000) { controller.state.value.receivedFps > 5 }
             assertTrue(controller.state.value.session.width >= 640)
+            val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+            val originalClip = clipboard.primaryClip
+            val clipboardRoute = kotlinx.coroutines.runBlocking { open() }
+            try {
+                val text = "Android clipboard é漢字🙂\n  keep whitespace\n"
+                compose.runOnIdle { clipboard.setPrimaryClip(android.content.ClipData.newPlainText("Screen fixture", text)) }
+                val completed = controller.clipboard.completedOperations
+                compose.onNodeWithTag("screens.clipboard.paste").performClick()
+                compose.waitUntil(7000) { controller.clipboard.completedOperations > completed || controller.state.value.clipboardError.isNotEmpty() }
+                assertEquals("", controller.state.value.clipboardError)
+                fun request(action: com.dbpprt.dieter.v1.RemoteDesktopClipboardRequest.Action, value: String = "") =
+                    com.dbpprt.dieter.v1.RemoteDesktopClipboardRequest.newBuilder().setSessionId(controller.id)
+                        .setControlGeneration(controller.state.value.session.controlGeneration).setOperationId(java.util.UUID.randomUUID().toString())
+                        .setAction(action).setText(value).build()
+                val copied = kotlinx.coroutines.runBlocking { clipboardRoute.rpc.exchangeRemoteDesktopClipboard(request(com.dbpprt.dieter.v1.RemoteDesktopClipboardRequest.Action.READ)) }
+                assertEquals(text, copied.text)
+                val remoteText = "Remote host → Android clipboard 🦊"
+                kotlinx.coroutines.runBlocking { clipboardRoute.rpc.exchangeRemoteDesktopClipboard(request(com.dbpprt.dieter.v1.RemoteDesktopClipboardRequest.Action.WRITE, remoteText)) }
+                compose.waitUntil(7000) { clipboard.primaryClip?.getItemAt(0)?.text?.toString() == remoteText }
+                val large = "x".repeat(1024 * 1024)
+                val result = kotlinx.coroutines.runBlocking { kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                    controller.clipboard.exchange(com.dbpprt.dieter.v1.RemoteDesktopClipboardRequest.Action.WRITE, large)
+                } }
+                assertEquals("", result.error)
+                // Clear the large host payload before Android's system clipboard observes it.
+                kotlinx.coroutines.runBlocking { clipboardRoute.rpc.exchangeRemoteDesktopClipboard(request(com.dbpprt.dieter.v1.RemoteDesktopClipboardRequest.Action.WRITE, remoteText)) }
+                compose.onNodeWithTag("screens.clipboard.toggle").performClick()
+                SystemClock.sleep(400)
+                kotlinx.coroutines.runBlocking {
+                    try { clipboardRoute.rpc.exchangeRemoteDesktopClipboard(request(com.dbpprt.dieter.v1.RemoteDesktopClipboardRequest.Action.READ)); fail("Disabled sharing accepted clipboard read") }
+                    catch (_: io.grpc.StatusException) { }
+                }
+                compose.onNodeWithTag("screens.clipboard.toggle").performClick()
+                SystemClock.sleep(400)
+                assertTrue(controller.state.value.control)
+            } finally {
+                clipboardRoute.close()
+                compose.runOnIdle { if (originalClip != null) clipboard.setPrimaryClip(originalClip) else clipboard.clearPrimaryClip() }
+            }
             if (fixture.optBoolean("multi")) {
                 compose.waitUntil(10_000) { controller.state.value.session.connectedClients >= 2 }
                 val route = kotlinx.coroutines.runBlocking { open() }
@@ -175,6 +216,53 @@ class ScreenEndToEndTest {
             // Two fingers change only the local canvas; they must never generate mouse input.
             SystemClock.sleep(200)
             val beforeZoom = controller.lastPointerOrdinal
+            val beforeCanvasConfigurations = configurations.get()
+            compose.runOnIdle { canvas.resetCanvas() }
+            fun canvasEvidence(name: String) {
+                SystemClock.sleep(80)
+                val bitmap = InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot()
+                File(context.getExternalFilesDir(null), "screen-canvas-$name.png").outputStream().use {
+                    bitmap.compress(Bitmap.CompressFormat.PNG, 100, it)
+                }
+                bitmap.recycle()
+            }
+            val gx = canvas.width * .5f; val gy = canvas.height * .5f
+            canvasEvidence("fit")
+            val fitLeft = canvas.canvasModel.left; val fitTop = canvas.canvasModel.top
+            gesture(canvas, listOf(listOf(gx - 70 to gy, gx + 70 to gy),
+                listOf(gx - 10 to gy + 80, gx + 130 to gy + 80)))
+            canvasEvidence("pan")
+            assertEquals("Fit must allow horizontal canvas movement", fitLeft + 60, canvas.canvasModel.left, .1f)
+            assertEquals("Letterboxing must not lock vertical panning", fitTop + 80, canvas.canvasModel.top, .1f)
+
+            val anchorX = (gx - canvas.canvasModel.left) / (canvas.canvasModel.remoteWidth * canvas.canvasModel.scale)
+            val anchorY = (gy - canvas.canvasModel.top) / (canvas.canvasModel.remoteHeight * canvas.canvasModel.scale)
+            gesture(canvas, listOf(listOf(gx - 100 to gy, gx + 100 to gy),
+                listOf(gx - 60 to gy + 30, gx + 100 to gy + 30)))
+            assertEquals(.8f, canvas.canvasModel.zoom, .001f)
+            assertEquals(gx + 20, canvas.canvasModel.left + anchorX * canvas.canvasModel.remoteWidth * canvas.canvasModel.scale, .1f)
+            assertEquals(gy + 30, canvas.canvasModel.top + anchorY * canvas.canvasModel.remoteHeight * canvas.canvasModel.scale, .1f)
+            canvasEvidence("pinch")
+
+            val continuous = (0..12).map { step ->
+                val radius = 70f * Math.pow(1.017, step.toDouble()).toFloat()
+                listOf(gx + step * 2 - radius to gy + step * 3, gx + step * 2 + radius to gy + step * 3)
+            }
+            gesture(canvas, continuous)
+            assertEquals(.8f * Math.pow(1.017, 12.0).toFloat(), canvas.canvasModel.zoom, .001f)
+            val recontactLeft = canvas.canvasModel.left; val recontactTop = canvas.canvasModel.top
+            // Keep one finger down while lifting/replacing the other: rebase
+            // the pinch without turning the remaining finger into mouse input.
+            gesture(canvas, listOf(listOf(gx - 70 to gy, gx + 70 to gy),
+                listOf(gx - 55 to gy + 20, gx + 85 to gy + 20),
+                listOf(gx - 55 to gy + 20),
+                listOf(gx - 55 to gy + 20, gx + 85 to gy + 20),
+                listOf(gx - 30 to gy + 50, gx + 110 to gy + 50)))
+            assertEquals(recontactLeft + 40, canvas.canvasModel.left, .1f)
+            assertEquals(recontactTop + 50, canvas.canvasModel.top, .1f)
+            assertEquals(beforeCanvasConfigurations, configurations.get())
+            assertEquals(beforeZoom, controller.lastPointerOrdinal)
+            compose.runOnIdle { canvas.resetCanvas() }
             gesture(canvas, listOf(listOf(cx - 70 to cy, cx + 70 to cy), listOf(cx - 120 to cy + 30, cx + 120 to cy + 30)))
             assertTrue(canvas.canvasModel.zoom > 1.4f)
             assertEquals(beforeZoom, controller.lastPointerOrdinal)
@@ -183,6 +271,19 @@ class ScreenEndToEndTest {
             gesture(canvas, listOf(listOf(cx - 80 to cy, cx to cy, cx + 80 to cy),
                 listOf(cx - 80 to cy + 60, cx to cy + 60, cx + 80 to cy + 60)))
             assertEquals(zoom, canvas.canvasModel.zoom, 0f)
+            if (fixture.getBoolean("real")) {
+                val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                val beforeCopy = controller.clipboard.completedOperations
+                compose.onNodeWithTag("screens.clipboard.copy").performClick()
+                compose.waitUntil(7000) { controller.clipboard.completedOperations > beforeCopy || controller.state.value.clipboardError.isNotEmpty() }
+                assertEquals("", controller.state.value.clipboardError)
+                assertTrue(clipboard.primaryClip?.getItemAt(0)?.text?.toString()?.contains("Android écran 世界") == true)
+                compose.runOnIdle { clipboard.setPrimaryClip(android.content.ClipData.newPlainText("Fixture paste", "Android native paste marker")) }
+                val beforePaste = controller.clipboard.completedOperations
+                compose.onNodeWithTag("screens.clipboard.paste").performClick()
+                compose.waitUntil(7000) { controller.clipboard.completedOperations > beforePaste || controller.state.value.clipboardError.isNotEmpty() }
+                assertEquals("", controller.state.value.clipboardError)
+            }
             // Held keys are released when focus is lost and control stays disabled until restored.
             compose.runOnIdle { controller.key(4, true); controller.focus(false) }
             assertFalse(controller.state.value.control)
@@ -258,6 +359,23 @@ class ScreenEndToEndTest {
             compose.onNodeWithTag("screen-disconnect").performClick()
             connect()
             compose.waitUntil(30_000) { controller.state.value.control }
+            if (!fixture.optBoolean("real") && !fixture.optBoolean("multi")) {
+                val oldCaptureId = controller.id
+                val oldCaptureRoutes = opened.get()
+                val stopCapture = java.net.URL("http://127.0.0.1:${fixture.getInt("port")}/test/stop-capture").openConnection() as java.net.HttpURLConnection
+                try {
+                    stopCapture.requestMethod = "POST"
+                    stopCapture.connectTimeout = 5_000; stopCapture.readTimeout = 5_000
+                    stopCapture.setRequestProperty("Authorization", "Bearer ${fixture.getString("token")}")
+                    assertEquals(204, stopCapture.responseCode)
+                } finally { stopCapture.disconnect() }
+                compose.waitUntil(30_000) { (controller.id != oldCaptureId && controller.state.value.control) || controller.state.value.phase == "failed" }
+                assertEquals(controller.state.value.error, "streaming", controller.state.value.phase)
+                assertNotEquals(oldCaptureId, controller.id)
+                assertEquals("One helper failure must open exactly one new route", oldCaptureRoutes + 1, opened.get())
+                compose.runOnIdle { controller.key(41, true); controller.key(41, false) }
+                compose.waitUntil(5_000) { controller.state.value.session.lastInputOrdinal >= 2 }
+            }
             nextConfigurationFailure.set(Status.NOT_FOUND)
             compose.runOnIdle { controller.configure(refresh = true) }
             compose.waitUntil(5_000) { controller.state.value.phase == "reconnecting" }
@@ -294,7 +412,17 @@ class ScreenEndToEndTest {
         dispatch(MotionEvent.ACTION_DOWN, frames.first().take(1))
         if (holdStartMillis > 0) SystemClock.sleep(holdStartMillis)
         for (count in 2..frames.first().size) dispatch(MotionEvent.ACTION_POINTER_DOWN or ((count - 1) shl MotionEvent.ACTION_POINTER_INDEX_SHIFT), frames.first().take(count))
-        frames.drop(1).forEach { dispatch(MotionEvent.ACTION_MOVE, it) }
+        var previous = frames.first()
+        frames.drop(1).forEach { points ->
+            for (count in previous.size downTo points.size + 1) {
+                dispatch(MotionEvent.ACTION_POINTER_UP or ((count - 1) shl MotionEvent.ACTION_POINTER_INDEX_SHIFT), previous.take(count))
+            }
+            for (count in previous.size + 1..points.size) {
+                dispatch(MotionEvent.ACTION_POINTER_DOWN or ((count - 1) shl MotionEvent.ACTION_POINTER_INDEX_SHIFT), points.take(count))
+            }
+            dispatch(MotionEvent.ACTION_MOVE, points)
+            previous = points
+        }
         for (count in frames.last().size downTo 2) dispatch(MotionEvent.ACTION_POINTER_UP or ((count - 1) shl MotionEvent.ACTION_POINTER_INDEX_SHIFT), frames.last().take(count))
         dispatch(MotionEvent.ACTION_UP, frames.last().take(1))
     }

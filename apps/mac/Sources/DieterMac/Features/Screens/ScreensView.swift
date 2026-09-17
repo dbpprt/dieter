@@ -126,6 +126,14 @@ struct ScreensView: View {
                 isOn: Binding(
                     get: { controller.textInputMode },
                     set: { controller.textInputMode = $0 }))
+            if controller.capabilities.clipboardSupported {
+                Toggle("Share clipboard", isOn: Binding(get: { controller.clipboardEnabled }, set: {
+                    controller.clipboardEnabled = $0; controller.clipboard.setEnabled($0)
+                })).disabled(!controller.controlActive)
+                Button("Copy from remote") { controller.clipboard.copySelection() }.disabled(!controller.controlActive || !controller.clipboardEnabled || controller.clipboardBusy)
+                Button("Paste to remote") { controller.clipboard.paste() }.disabled(!controller.controlActive || !controller.clipboardEnabled || controller.clipboardBusy)
+                if !controller.clipboardError.isEmpty { Text(controller.clipboardError) }
+            }
             Button("Refresh screen") { controller.configure(refresh: true) }
         } label: {
             Image(systemName: "slider.horizontal.3")
@@ -146,7 +154,9 @@ struct ScreensView: View {
                 .accessibilityIdentifier("screens.enable")
         default:
             Button("Connect") {
-                session.connect { try await makeConnection(session.machineID) }
+                session.connect { [makeConnection, machineID = session.machineID] in
+                    try await makeConnection(machineID)
+                }
             }
             .buttonStyle(DieterPrimaryButtonStyle())
             .disabled(selectedMachine?.online != true)
@@ -188,6 +198,10 @@ struct ScreensView: View {
                 if !controller.controlTransferError.isEmpty {
                     Text(controller.controlTransferError).foregroundStyle(.orange)
                 }
+                if !controller.clipboardError.isEmpty {
+                    Text("Clipboard: \(controller.clipboardError)").foregroundStyle(.orange).lineLimit(1)
+                        .help(controller.clipboardError)
+                }
                 Text(controller.mediaRouteLabel)
                 if controller.sessionState.width > 0 {
                     Text(
@@ -201,7 +215,8 @@ struct ScreensView: View {
             .frame(height: 28)
             .background(DieterTheme.sidebar)
         }
-        .onAppear { session.recordActivity() }
+        .onAppear { session.recordActivity(); controller.clipboardVisible = true }
+        .onDisappear { controller.clipboardVisible = false }
     }
 
     @ViewBuilder private func content(_ session: ScreenShareSession) -> some View {
@@ -388,7 +403,8 @@ private struct NewScreenShareSheet: View {
                 Button("Connect") {
                     guard let machine = selectedMachine else { return }
                     model.createSession(machineID: machine.id, machineName: machine.name) {
-                        try await makeConnection(machine.id)
+                        [makeConnection, machineID = machine.id] in
+                        try await makeConnection(machineID)
                     }
                     dismiss()
                 }
@@ -450,6 +466,7 @@ final class RemoteDesktopInputView: NSView, @preconcurrency NSTextInputClient, @
     override var acceptsFirstResponder: Bool { true }
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
+        controller?.clipboardWindow = window
         focusObserverBag.tokens.forEach(NotificationCenter.default.removeObserver)
         focusObserverBag.tokens.removeAll()
         for (name, object) in [
@@ -555,6 +572,17 @@ final class RemoteDesktopInputView: NSView, @preconcurrency NSTextInputClient, @
     }
 
     override func keyDown(with event: NSEvent) {
+        if [7, 8, 9].contains(event.keyCode), event.modifierFlags.intersection([.command, .control, .option, .shift]) == .command,
+            controller?.capabilities.clipboardSupported == true, controller?.clipboardEnabled == true {
+            if !event.isARepeat {
+                switch event.keyCode {
+                case 7: controller?.clipboard.cut()
+                case 8: controller?.clipboard.copySelection()
+                default: controller?.clipboard.paste()
+                }
+            }
+            return
+        }
         if event.keyCode == 53 && event.modifierFlags.contains([.command, .shift]) {
             controller?.releaseAllInput()
             window?.makeFirstResponder(nil)

@@ -20,6 +20,8 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -71,6 +73,12 @@ func run(helper, kind, ready string, authenticate bool) error {
 		return err
 	}
 	defer os.RemoveAll(root)
+	stopCaptureFile := filepath.Join(root, "stop-synthetic-capture")
+	if authenticate && kind == "native-synthetic" {
+		if err = os.Setenv("DIETER_TEST_CAPTURE_STOP_FILE", stopCaptureFile); err != nil {
+			return err
+		}
+	}
 	data := store.New(root)
 	if err = data.Ensure(); err != nil {
 		return err
@@ -107,7 +115,7 @@ func run(helper, kind, ready string, authenticate bool) error {
 		return err
 	}
 	config.SignedEnvelope = []byte(envelope)
-	manager := remotedesktop.New(remotedesktop.Options{Identity: remotedesktop.Identity{DaemonID: config.DaemonId, GatewayURL: "http://screens.fixture", Generation: 1, PrivateKey: dk, GatewaySigningPublicKey: pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: publicDER})}, Source: remotedesktop.SourceOptions{Kind: kind, HelperPath: helper}})
+	manager := remotedesktop.New(remotedesktop.Options{Identity: remotedesktop.Identity{DaemonID: config.DaemonId, GatewayURL: "http://screens.fixture", Generation: 1, PrivateKey: dk, GatewaySigningPublicKey: pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: publicDER})}, Source: remotedesktop.SourceOptions{Kind: kind, HelperPath: helper, ClipboardName: "com.dbpprt.dieter.fixture." + fmt.Sprint(os.Getpid())}})
 	defer manager.Shutdown(context.Background())
 	api := server.NewWithOptions(data, slog.Default(), server.Options{RemoteDesktop: manager})
 	listener, err := net.Listen("tcp4", "127.0.0.1:0")
@@ -121,12 +129,33 @@ func run(helper, kind, ready string, authenticate bool) error {
 	}
 	token := base64.RawURLEncoding.EncodeToString(tokenBytes)
 	handler := api.Handler()
+	var rejectLeaseRPC atomic.Bool
+	var rejectedSignals atomic.Int64
 	httpServer := &http.Server{Handler: h2c.NewHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if authenticate && r.Header.Get("Authorization") != "Bearer "+token {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
 		// Test-only fault injection on the disposable, authenticated fixture.
+		if authenticate && kind == "native-synthetic" && r.Method == http.MethodPost && r.URL.Path == "/test/stop-capture" {
+			if err := os.WriteFile(stopCaptureFile, nil, 0600); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		if authenticate && r.Method == http.MethodPost && r.URL.Path == "/test/reject-screen-signals" {
+			rejectLeaseRPC.Store(r.URL.Query().Get("enabled") == "true")
+			w.Header().Set("X-Dieter-Test-Rejected-Signals", fmt.Sprint(rejectedSignals.Load()))
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		if rejectLeaseRPC.Load() && r.URL.Path == "/dieter.v1.DieterService/SendRemoteDesktopSignal" {
+			rejectedSignals.Add(1)
+			http.Error(w, "injected signaling outage", http.StatusServiceUnavailable)
+			return
+		}
 		if authenticate && r.Method == http.MethodPost && r.URL.Path == "/test/expire-screen" {
 			if id := r.URL.Query().Get("session"); id != "" {
 				_ = manager.Close(id, "session lease expired")
@@ -142,7 +171,7 @@ func run(helper, kind, ready string, authenticate bool) error {
 	defer httpServer.Close()
 	go func() { _ = httpServer.Serve(listener) }()
 	configRaw, _ := proto.Marshal(config)
-	output, _ := json.Marshal(map[string]any{"url": "http://" + listener.Addr().String(), "certificate": pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), "rtc": configRaw, "token": token})
+	output, _ := json.Marshal(map[string]any{"clipboardName": "com.dbpprt.dieter.fixture." + fmt.Sprint(os.Getpid()), "url": "http://" + listener.Addr().String(), "certificate": pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), "rtc": configRaw, "token": token})
 	if err = os.WriteFile(ready, output, 0600); err != nil {
 		return err
 	}

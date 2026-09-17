@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -596,6 +598,96 @@ func TestNativeConfigurationAndSlowEventsPreserveHeartbeat(t *testing.T) {
 			case <-time.After(4 * time.Second):
 				t.Fatal("helper did not stop")
 			}
+		})
+	}
+}
+
+// A delayed reply to one keepalive must not stop subsequent keepalives or kill
+// capture while the same helper continues acknowledging frame credits/input.
+func TestNativeDelayedHeartbeatReplyPreservesActiveCapture(t *testing.T) {
+	path := os.Getenv("DIETER_TEST_CAPTURE_HELPER")
+	if path == "" {
+		t.Skip("native helper not configured")
+	}
+	t.Setenv("DIETER_TEST_CAPTURE_HEARTBEAT_ACK_DELAY_MS", "4000")
+	ctx, cancel := context.WithTimeout(context.Background(), 9*time.Second)
+	defer cancel()
+	mux := newNativeMultiplexer()
+	defer mux.Close()
+	source, err := mux.Source(&nativeHelperSource{path: path, synthetic: true, profile: "high", fps: 30, maxWidth: 640, maxHeight: 360, bitrateKbps: 2000, inputAllowed: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner := source.(*nativeRendition)
+	defer runner.Close()
+	started := time.Now()
+	complete := errors.New("capture survived delayed heartbeat reply")
+	frames := 0
+	err = runner.Stream(ctx, func(media.Sample) error {
+		frames++
+		if time.Since(started) > 6*time.Second {
+			return complete
+		}
+		return nil
+	})
+	if !errors.Is(err, complete) {
+		t.Fatalf("capture stopped after %s and %d frames: %v", time.Since(started), frames, err)
+	}
+	t.Logf("received %d frames despite a four-second heartbeat reply delay", frames)
+}
+
+func TestNativeUnacknowledgedHelperStillTimesOut(t *testing.T) {
+	path := os.Getenv("DIETER_TEST_CAPTURE_HELPER")
+	if path == "" {
+		t.Skip("native helper not configured")
+	}
+	t.Setenv("DIETER_TEST_CAPTURE_DROP_ACKS", "1")
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+	source := &nativeHelperSource{path: path, synthetic: true, multiplex: true, profile: "high", fps: 30, maxWidth: 640, maxHeight: 360, bitrateKbps: 2000}
+	started := time.Now()
+	err := source.Stream(ctx, func(media.Sample) error { return nil })
+	if err == nil || err.Error() != "native capture helper unresponsive" {
+		t.Fatalf("missing acknowledgments: %v", err)
+	}
+	if elapsed := time.Since(started); elapsed < 3*time.Second || elapsed > 6*time.Second {
+		t.Fatalf("helper liveness deadline: %s", elapsed)
+	}
+}
+
+// The helper may reply to a final frame credit before its terminal event.
+// Both orderings must yield a recoverable shutdown, never an unknown stream.
+func TestNativeHelperShutdownDuringFrameCreditsIsRecoverable(t *testing.T) {
+	path := os.Getenv("DIETER_TEST_CAPTURE_HELPER")
+	if path == "" {
+		t.Skip("native helper not configured")
+	}
+	marker := filepath.Join(t.TempDir(), "stop-capture")
+	t.Setenv("DIETER_TEST_CAPTURE_STOP_FILE", marker)
+	for attempt := range 3 {
+		t.Run(fmt.Sprint(attempt), func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+			defer cancel()
+			mux := newNativeMultiplexer()
+			defer mux.Close()
+			source, err := mux.Source(&nativeHelperSource{path: path, synthetic: true, profile: "high", fps: 60, maxWidth: 640, maxHeight: 360, bitrateKbps: 2000})
+			if err != nil {
+				t.Fatal(err)
+			}
+			runner := source.(*nativeRendition)
+			defer runner.Close()
+			frames := 0
+			err = runner.Stream(ctx, func(media.Sample) error {
+				frames++
+				if frames == 10 {
+					return os.WriteFile(marker, nil, 0600)
+				}
+				return nil
+			})
+			if frames < 10 || !recoverableCaptureFailure(err) {
+				t.Fatalf("shutdown after %d frames is not recoverable: %v", frames, err)
+			}
+			t.Logf("shutdown after %d frames: %v", frames, err)
 		})
 	}
 }

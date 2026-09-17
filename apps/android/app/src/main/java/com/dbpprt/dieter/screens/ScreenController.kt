@@ -18,6 +18,7 @@ import kotlin.math.max
 import kotlin.math.roundToInt
 
 data class ScreenState(
+    val clipboardBusy: Boolean = false, val clipboardEnabled: Boolean = true, val clipboardError: String = "",
     val phase: String = "idle", val error: String = "", val control: Boolean = false,
     val capabilities: RemoteDesktopCapabilities = RemoteDesktopCapabilities.getDefaultInstance(),
     val session: RemoteDesktopSessionState = RemoteDesktopSessionState.getDefaultInstance(),
@@ -30,6 +31,8 @@ class ScreenController(context: Context) : AutoCloseable {
     val egl: EglBase = EglBase.create()
     val canvasModel = ScreenCanvasModel()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private val clipboardInput = ArrayDeque<RemoteDesktopInput>()
+    val clipboard = ScreenClipboard(context.applicationContext, scope)
     private val mutable = MutableStateFlow(ScreenState())
     val state = mutable.asStateFlow()
     @Volatile var videoSink: ((VideoFrame, Long) -> Unit)? = null
@@ -79,6 +82,18 @@ class ScreenController(context: Context) : AutoCloseable {
 
     init {
         initialize(context.applicationContext)
+        clipboard.request = {
+            if (!mutable.value.control || !focused || binding == null) null else
+                RemoteDesktopClipboardRequest.newBuilder().setSessionId(sessionId).setInputEpoch(binding!!.inputEpoch)
+                    .setControlGeneration(mutable.value.session.controlGeneration).setInputBarrier(stateSequence)
+        }
+        clipboard.onBusy = { mutable.value = mutable.value.copy(clipboardBusy = it) }
+        clipboard.onOperationFinished = { succeeded ->
+            val pending = clipboardInput.toList(); clipboardInput.clear()
+            if (succeeded && mutable.value.control && focused) pending.forEach { send(it.toBuilder()) } else releaseInput()
+        }
+        clipboard.isCurrentGrant = { mutable.value.session.controlActive && mutable.value.session.controlGeneration == it }
+        clipboard.onError = { mutable.value = mutable.value.copy(clipboardError = it) }
     }
 
     fun connect(open: suspend () -> ScreenConnection) {
@@ -94,7 +109,7 @@ class ScreenController(context: Context) : AutoCloseable {
     private fun startConnection() {
         val open = reopen ?: return
         val current = token
-        mutable.value = ScreenState(phase = if (recovering == null) "connecting" else "reconnecting")
+        mutable.value = ScreenState(clipboardEnabled = clipboard.enabled, phase = if (recovering == null) "connecting" else "reconnecting")
         signaling = scope.launch {
             try {
                 // A rapid Retry must not race the previous session's asynchronous Close RPC.
@@ -125,6 +140,7 @@ class ScreenController(context: Context) : AutoCloseable {
                 pointer = pc.createDataChannel("dieter-pointer-v2", DataChannel.Init().apply { ordered = false; maxRetransmits = 0 })
                 input = pc.createDataChannel("dieter-input-state-v2", DataChannel.Init())
                 host = pc.createDataChannel("dieter-session-v2", DataChannel.Init())
+                if (caps.clipboardSupported) clipboard.attach(pc.createDataChannel("dieter-clipboard-v1", DataChannel.Init()))
                 listOfNotNull(pointer, input, host).forEach { channel -> channel.registerObserver(channelObserver(channel, current)) }
                 val video = pc.addTransceiver(MediaStreamTrack.MediaType.MEDIA_TYPE_VIDEO,
                     RtpTransceiver.RtpTransceiverInit(RtpTransceiver.RtpTransceiverDirection.RECV_ONLY))
@@ -137,7 +153,7 @@ class ScreenController(context: Context) : AutoCloseable {
                 if (current != token) return@launch
                 val display = caps.displaysList.firstOrNull { it.id == configuration.displayId }
                     ?: caps.displaysList.firstOrNull { it.primary } ?: caps.displaysList.first()
-                val start = StartRemoteDesktopRequest.newBuilder().setClientNonce(UUID.randomUUID().toString())
+                val start = StartRemoteDesktopRequest.newBuilder().setClipboard(caps.clipboardSupported && clipboard.enabled).setClientNonce(UUID.randomUUID().toString())
                     .setRtcConfiguration(route.rtc).setDisplayId(display.id)
                     .setInputProtocolVersion(if (caps.supportedInputProtocolVersionsList.contains(3)) 3 else 2).setClientName("Android")
                     .setControl(settings.controlEnabled && caps.controlSupported && caps.controlPermission == "granted")
@@ -197,7 +213,10 @@ class ScreenController(context: Context) : AutoCloseable {
                 else { require(remoteCandidates.size < 256); remoteCandidates.add(ice) }
             }
             RemoteDesktopSignal.PayloadCase.STATE -> applyState(signal.state)
-            RemoteDesktopSignal.PayloadCase.ERROR -> if (signal.error.recoverable) recover(signal.error.message) else fail(signal.error.message)
+            RemoteDesktopSignal.PayloadCase.ERROR -> if (signal.error.recoverable ||
+                (signal.error.code == "capture_failed" && ScreenRecovery.retryableClosure(signal.error.message))) {
+                recover(signal.error.message)
+            } else fail(signal.error.message)
             else -> Unit
         }
     }
@@ -292,6 +311,12 @@ class ScreenController(context: Context) : AutoCloseable {
             next = next.toBuilder().setControlGeneration(previous.controlGeneration).setControlActive(previous.controlActive)
                 .setControllerName(previous.controllerName).build()
         }
+        if (next.clipboardGeneration < previous.clipboardGeneration) {
+            next = next.toBuilder().setClipboardGeneration(previous.clipboardGeneration).setClipboardEnabled(previous.clipboardEnabled).build()
+        } else if (next.clipboardGeneration > previous.clipboardGeneration) {
+            clipboard.enabled = next.clipboardEnabled
+            mutable.value = mutable.value.copy(clipboardEnabled = next.clipboardEnabled)
+        }
         mutable.value = mutable.value.copy(session = next)
         lastPresentedTimestamp?.let(::markPresented)
         readiness()
@@ -337,8 +362,17 @@ class ScreenController(context: Context) : AutoCloseable {
     fun scroll(dx: Float, dy: Float, phase: Int) = send(RemoteDesktopInput.newBuilder().setScroll(
         RemoteDesktopScroll.newBuilder().setPrecise(true).setPreciseDeltaX(dx.toDouble()).setPreciseDeltaY(dy.toDouble())
             .setDeltaX(dx.roundToInt()).setDeltaY(dy.roundToInt()).setPhase(phase)))
-    fun key(hid: Int, down: Boolean, modifiers: Int = 0, repeat: Boolean = false) = send(RemoteDesktopInput.newBuilder().setKey(
-        RemoteDesktopKey.newBuilder().setPhysicalKey(hid).setDown(down).setModifiers(modifiers).setRepeat(repeat)))
+    fun key(hid: Int, down: Boolean, modifiers: Int = 0, repeat: Boolean = false) {
+        if (hid in listOf(6, 25, 27) && modifiers and 15 == 8 && mutable.value.capabilities.clipboardSupported && clipboard.enabled) {
+            if (down && !repeat) when (hid) {
+                6 -> clipboard.copy()
+                27 -> clipboard.perform(RemoteDesktopClipboardRequest.Action.CUT)
+                else -> clipboard.paste()
+            }
+            return
+        }
+        send(RemoteDesktopInput.newBuilder().setKey(RemoteDesktopKey.newBuilder().setPhysicalKey(hid).setDown(down).setModifiers(modifiers).setRepeat(repeat)))
+    }
     fun text(text: String) {
         if (text.toByteArray().size > 8192) return
         // Bound the host's UTF-16 input without splitting a surrogate pair.
@@ -358,6 +392,11 @@ class ScreenController(context: Context) : AutoCloseable {
     fun focus(value: Boolean) { if (!value) releaseInput(); focused = value; readiness() }
     private fun send(builder: RemoteDesktopInput.Builder, reliable: Boolean = true) {
         if (!mutable.value.control) return
+        if (builder.hasReleaseAll()) clipboardInput.clear()
+        else if (reliable && clipboard.operationPending) {
+            if (clipboardInput.size >= 128) { mutable.value = mutable.value.copy(clipboardError = "Input paused while clipboard transfer finishes"); releaseInput(); return }
+            clipboardInput.addLast(builder.build()); return
+        }
         val channel = if (reliable) input else pointer
         if (channel?.state() != DataChannel.State.OPEN || channel.bufferedAmount() >= 65536) {
             if (reliable && !builder.hasReleaseAll()) recover("Remote input stalled")
@@ -486,6 +525,8 @@ class ScreenController(context: Context) : AutoCloseable {
         catch (error: Exception) { opened?.close(); throw error }
     }
 
+    fun setClipboardEnabled(value: Boolean) { clipboard.configure(value); mutable.value = mutable.value.copy(clipboardEnabled = value) }
+
     fun disconnect() {
         recovering?.cancel(); recovering = null
         reopen = null
@@ -502,6 +543,7 @@ class ScreenController(context: Context) : AutoCloseable {
         val old = connection; val id = sessionId
         connection = null; sessionId = ""
         listOfNotNull(pointer, input, host).forEach { it.unregisterObserver(); it.close(); it.dispose() }
+        clipboard.close(); clipboardInput.clear(); mutable.value = mutable.value.copy(clipboardBusy = false)
         pointer = null; input = null; host = null
         peer?.close(); peer?.dispose(); peer = null; peerConnected = false; factory?.dispose(); factory = null
         if (old != null) closing = scope.launch(Dispatchers.IO) {

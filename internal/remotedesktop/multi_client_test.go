@@ -29,6 +29,7 @@ func TestMultipleClientsAdmissionReconnectAndControl(t *testing.T) {
 		req.ClientName = fmt.Sprintf("Client %d", i)
 		req.InputProtocolVersion = 3
 		req.Control = true
+		req.Clipboard = true
 		peer := testViewer(t, req)
 		defer peer.Close()
 		sub, err := manager.Start(req, true, true, "github:7")
@@ -57,6 +58,16 @@ func TestMultipleClientsAdmissionReconnectAndControl(t *testing.T) {
 		t.Fatalf("resources: %v", counts)
 	}
 	first, second := sessions[0], sessions[1]
+	initial := &dieterv1.RemoteDesktopClipboardRequest{SessionId: first.id, OperationId: randomID(), ControlGeneration: manager.controlGeneration, Action: dieterv1.RemoteDesktopClipboardRequest_WRITE, Text: "Only the controlling viewer"}
+	if _, err := manager.ExchangeClipboard(context.Background(), initial); err != nil {
+		t.Fatal(err)
+	}
+	for i, session := range sessions {
+		_, err := manager.ExchangeClipboard(context.Background(), &dieterv1.RemoteDesktopClipboardRequest{SessionId: session.id, OperationId: randomID(), ControlGeneration: manager.controlGeneration})
+		if (err == nil) != (i == 0) {
+			t.Fatalf("clipboard access for viewer %d: %v", i, err)
+		}
+	}
 	oldGrant := manager.controlGeneration
 	packet := func(grant uint64) *dieterv1.RemoteDesktopInput {
 		return &dieterv1.RemoteDesktopInput{ControlGeneration: grant, Payload: &dieterv1.RemoteDesktopInput_Text{Text: &dieterv1.RemoteDesktopText{Text: "test"}}}
@@ -71,6 +82,14 @@ func TestMultipleClientsAdmissionReconnectAndControl(t *testing.T) {
 	}
 	if len(source.released) != 1 {
 		t.Fatal("handoff did not release held input")
+	}
+	initial.OperationId = randomID()
+	if _, err := manager.ExchangeClipboard(context.Background(), initial); err == nil {
+		t.Fatal("retired controller wrote clipboard")
+	}
+	copied, err := manager.ExchangeClipboard(context.Background(), &dieterv1.RemoteDesktopClipboardRequest{SessionId: second.id, OperationId: randomID(), ControlGeneration: state.ControlGeneration})
+	if err != nil || copied.Text != "Only the controlling viewer" {
+		t.Fatalf("clipboard handoff: %v %v", copied, err)
 	}
 	first.deliverInput(first.source.(InputSink), packet(oldGrant))
 	second.deliverInput(second.source.(InputSink), packet(oldGrant))

@@ -61,6 +61,7 @@ struct CaptureOptions {
 
 enum CaptureError: LocalizedError {
     case invalidArgument(String)
+    case stopped
     case noDisplay
     case encoder(OSStatus)
     case invalidFrame
@@ -68,6 +69,7 @@ enum CaptureError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .invalidArgument(let name): "Invalid or missing value for \(name)"
+        case .stopped: "native capture rendition stopped"
         case .noDisplay: "The selected display is not available"
         case .encoder(let status): "VideoToolbox failed with status \(status)"
         case .invalidFrame: "ScreenCaptureKit produced an invalid frame"
@@ -136,7 +138,7 @@ final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
     private var paused = false
     private var lastFrame: CapturedFrame?
     private var lastRefresh: UInt64 = 0
-    private var lastHeartbeat = DispatchTime.now().uptimeNanoseconds
+    private let daemonLiveness = NativeDaemonLiveness()
     private var timers: [DispatchSourceTimer] = []
     private let configurationGate = ConfigurationGate()
     private let commands = NativeCommandQueue(capacity: 128)
@@ -190,7 +192,8 @@ final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
             watchdog.schedule(deadline: .now() + .milliseconds(500), repeating: .milliseconds(500))
             watchdog.setEventHandler { [weak self] in
                 guard let self else { return }
-                if DispatchTime.now().uptimeNanoseconds - self.lastHeartbeat > 3_000_000_000 {
+                if let diagnostic = self.daemonLiveness.timeoutDiagnostic() {
+                    writeDiagnostic(diagnostic)
                     self.inputInjector?.releaseAll()
                     self.stop()
                 }
@@ -281,7 +284,7 @@ final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
                 })
             if isStopped {
                 await SharedDisplayPool.shared.remove(display: display.displayID, id: options.streamID)
-                throw CaptureError.invalidArgument("capture stopped")
+                throw CaptureError.stopped
             }
             stateQueue.sync { paused = false }
             emitState()
@@ -295,7 +298,7 @@ final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
             self.stream = stream; self.paused = false
         }
         try await stream.startCapture()
-        if isStopped { try? await stream.stopCapture(); throw CaptureError.invalidArgument("capture stopped") }
+        if isStopped { try? await stream.stopCapture(); throw CaptureError.stopped }
         emitState()
     }
 
@@ -317,7 +320,7 @@ final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
     {
         try await configurationGate.acquire()
         do {
-            guard !isStopped else { throw CaptureError.invalidArgument("capture stopped") }
+            guard !isStopped else { throw CaptureError.stopped }
             var config = requested ?? stateQueue.sync { configuration }
             let fallback = stateQueue.sync {
                 if embedCursor { forceEmbeddedCursor = true }
@@ -419,7 +422,7 @@ final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
         stopLock.unlock()
     }
 
-    func stop() {
+    func stop(reason: String = "native capture rendition stopped") {
         stopLock.lock()
         if stopped {
             stopLock.unlock()
@@ -431,7 +434,7 @@ final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
         stopLock.unlock()
         commands.close(); inputs.close(); configurations.close()
         for timer in stoppedTimers { timer.cancel() }
-        if options.multiplex { _ = events.send(NativeEvent(error: "native capture rendition stopped")) }
+        if options.multiplex { _ = events.send(NativeEvent(error: reason)) }
         // Teardown owns the runner until callbacks and shared capture detach finish.
         inputQueue.async { [self] in
             if self.options.multiplex {
@@ -827,8 +830,8 @@ final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
                     guard let command = try? decoder.decode(NativeCommand.self, from: data), command.version == 2 else {
                         self.stop(); return
                     }
+                    self.daemonLiveness.receive(command.kind)
                     if command.kind == "heartbeat" {
-                        self.inputQueue.sync { self.lastHeartbeat = DispatchTime.now().uptimeNanoseconds }
                         if !self.events.send(NativeEvent(ack: command.id)) { self.stop(); return }
                     } else {
                         self.enqueue(command) { error in
@@ -848,15 +851,15 @@ final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
         if !queue.submit({
             do { try await self.handle(command); reply(nil) } catch { reply(error.localizedDescription) }
         }) {
-            reply("Native command queue is full or stopped")
+            reply(isStopped ? CaptureError.stopped.localizedDescription : "Native command queue is full")
         }
     }
 
     func handle(_ command: NativeCommand) async throws {
-        guard !isStopped else { throw CaptureError.invalidArgument("capture stopped") }
+        guard !isStopped else { throw CaptureError.stopped }
         switch command.kind {
         case "heartbeat":
-            self.inputQueue.sync { self.lastHeartbeat = DispatchTime.now().uptimeNanoseconds }
+            daemonLiveness.receive(command.kind)
         case "input":
             guard let input = command.input, self.options.allowInput || input.kind == "release_all"
             else { throw CaptureError.invalidArgument("control not granted") }
@@ -1052,6 +1055,10 @@ func hardwareEncoderAvailable() -> Bool {
     private struct DieterCapture {
         static func main() async {
             do {
+                if CommandLine.arguments.contains("--clipboard-service") {
+                    await Task.detached { ClipboardService.run() }.value
+                    return
+                }
                 if CommandLine.arguments.dropFirst().contains("--capabilities") {
                     let synthetic = CommandLine.arguments.contains("--synthetic")
                     let displays =

@@ -383,6 +383,7 @@ func (s *nativeHelperSource) Stream(ctx context.Context, emit func(media.Sample)
 		}
 	}()
 	mailbox := newNativeEventMailbox()
+	liveness := &nativeLiveness{at: time.Now()}
 	go mailbox.run(processCtx, func(event SourceEvent) {
 		s.mu.Lock()
 		handler := s.onEvent
@@ -400,6 +401,7 @@ func (s *nativeHelperSource) Stream(ctx context.Context, emit func(media.Sample)
 				cancelCause(errors.New("invalid native helper event"))
 				return
 			}
+			liveness.acknowledge(event.Ack, s.sequence.Load(), time.Now())
 			s.mu.Lock()
 			done := s.pending[event.Ack]
 			s.mu.Unlock()
@@ -427,7 +429,7 @@ func (s *nativeHelperSource) Stream(ctx context.Context, emit func(media.Sample)
 		if err := scanner.Err(); err != nil {
 			cancelCause(fmt.Errorf("native helper event reader: %w", err))
 		} else {
-			cancelCause(nativeCaptureFailure(errors.New("native helper event pipe closed"), stderr.String()))
+			cancelCause(nativeCaptureFailure(errNativeHelperStopped, stderr.String()))
 		}
 	}()
 	go func() {
@@ -438,8 +440,18 @@ func (s *nativeHelperSource) Stream(ctx context.Context, emit func(media.Sample)
 			case <-processCtx.Done():
 				return
 			case <-timer.C:
-				if err := s.send(processCtx, nativeCommand{Kind: "heartbeat"}, true); err != nil {
-					cancelCause(fmt.Errorf("native helper heartbeat acknowledgment: %w", err))
+				// The bounded pipe writer still reports write failures. Do not
+				// serialize the cadence behind an individual acknowledgment.
+				if err := s.send(processCtx, nativeCommand{Kind: "heartbeat"}, false); err != nil {
+					cancelCause(fmt.Errorf("native helper heartbeat enqueue: %w", err))
+					return
+				}
+				if ack, age := liveness.snapshot(time.Now()); age > nativeLivenessTimeout {
+					if s.logger != nil {
+						s.logger.Warn("native helper IPC stalled", "pid", command.Process.Pid, "lastAck", ack,
+							"ackAgeMs", age.Milliseconds(), "issuedCommands", s.sequence.Load(), "queuedCommands", len(writes))
+					}
+					cancelCause(errors.New("native capture helper unresponsive"))
 					return
 				}
 			}

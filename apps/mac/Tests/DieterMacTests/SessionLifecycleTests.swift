@@ -7,6 +7,7 @@ import Testing
 
 private final class ScreenFixture: ScreenSignalingRPC {
     let closed = Mutex(false)
+    let leaseSignals = Mutex<[Dieter_V1_RemoteDesktopSignal]>([])
     func shutdown() { closed.withLock { $0 = true } }
     func remoteDesktopSettings() async throws -> Dieter_V1_RemoteDesktopSettings { .init() }
     func remoteDesktopCapabilities() async throws -> Dieter_V1_RemoteDesktopCapabilities { .init() }
@@ -17,7 +18,9 @@ private final class ScreenFixture: ScreenSignalingRPC {
         _ request: Dieter_V1_StartRemoteDesktopRequest,
         receive: @escaping @Sendable (Dieter_V1_RemoteDesktopSignal) async throws -> Void
     ) async throws {}
-    func sendRemoteDesktopSignal(_ signal: Dieter_V1_RemoteDesktopSignal) async throws {}
+    func sendRemoteDesktopSignal(_ signal: Dieter_V1_RemoteDesktopSignal) async throws {
+        leaseSignals.withLock { $0.append(signal) }
+    }
     func remoteDesktopSession(sessionID: String) async throws -> Dieter_V1_RemoteDesktopSessionState { .init() }
     func updateRemoteDesktopSession(_ request: Dieter_V1_UpdateRemoteDesktopSessionRequest) async throws
         -> Dieter_V1_RemoteDesktopSessionState
@@ -31,6 +34,54 @@ private final class ScreenFixture: ScreenSignalingRPC {
             rpc: self, connectionTask: Task {}, rtcConfiguration: .init(), daemonCertificatePEM: Data(),
             routeLabel: label)
     }
+}
+
+@Test @MainActor func screenLeaseRenewalDoesNotWaitForTheMainActor() async throws {
+    let rpc = ScreenFixture()
+    let renewal = RemoteDesktopLeaseRenewal.start(rpc: rpc, sessionID: "owned-session", interval: .milliseconds(15)) { _ in }
+    // Confirm the detached sender has been scheduled before measuring it while
+    // the main actor is blocked. Task startup latency is not part of the lease
+    // renewal invariant.
+    for _ in 0..<200 where rpc.leaseSignals.withLock({ $0.isEmpty }) {
+        try await Task.sleep(nanoseconds: 5_000_000)
+    }
+    try #require(rpc.leaseSignals.withLock { !$0.isEmpty })
+    rpc.leaseSignals.withLock { $0.removeAll() }
+    // Deliberately prevent the UI actor from executing. The sender must keep
+    // renewing independently, just like the native receiver feedback pump.
+    blockUIForLeaseRenewalTest()
+    #expect(rpc.leaseSignals.withLock { !$0.isEmpty })
+    #expect(rpc.leaseSignals.withLock { signals in signals.allSatisfy { signal in
+        guard case .leaseHeartbeat = signal.payload else { return false }
+        return signal.sessionID == "owned-session"
+    } })
+    renewal.cancel(); await renewal.value
+    let count = rpc.leaseSignals.withLock { $0.count }
+    try await Task.sleep(nanoseconds: 50_000_000)
+    #expect(rpc.leaseSignals.withLock { $0.count } == count)
+}
+
+@MainActor private func blockUIForLeaseRenewalTest() {
+    Thread.sleep(forTimeInterval: 0.18)
+}
+
+@Test func screenRecoveryIsBoundedAndResetsOnlyAfterHealthyStreaming() {
+    var recovery = RemoteDesktopRecovery()
+    #expect(recovery.nextDelay(now: 0) == 1)
+    recovery.streaming(now: 1)
+    #expect(recovery.nextDelay(now: 2) == 2)
+    #expect(recovery.nextDelay(now: 3) == 4)
+    #expect(recovery.nextDelay(now: 4) == nil)
+    recovery.streaming(now: 5)
+    #expect(recovery.nextDelay(now: 16) == 1)
+    #expect(RemoteDesktopRecovery.retryableClosure("session lease expired"))
+    for reason in ["native capture rendition stopped", "native daemon heartbeat expired",
+                   "native capture helper unresponsive", "native capture helper stopped"] {
+        #expect(RemoteDesktopRecovery.retryableClosure(reason))
+    }
+    #expect(!RemoteDesktopRecovery.retryableClosure("remote desktop disabled"))
+    #expect(!RemoteDesktopRecovery.retryableClosure("closed by client"))
+    #expect(!RemoteDesktopRecovery.retryableClosure("capture permission denied"))
 }
 private actor DelayedScreenRoute {
     var continuation: CheckedContinuation<RemoteDesktopSignalingConnection, Never>?
@@ -58,6 +109,19 @@ private actor DelayedScreenRoute {
     await route.finish(rpc.connection("late")); await task.value
     #expect(controller.phase == .idle)
     #expect(controller.routeLabel.isEmpty)
+    #expect(rpc.closed.withLock { $0 })
+}
+
+@Test @MainActor func screenTeardownWithClosedInputDoesNotFailRecursively() async {
+    let controller = RemoteDesktopController(), rpc = ScreenFixture()
+    await controller.connect(machineName: "Fixture") { rpc.connection("fixture") }.value
+    // The peer can close its data channel before the main actor observes it.
+    // Teardown still tries to release held keys, but that send is best effort.
+    controller.controlActive = true
+    controller.disconnect()
+    #expect(controller.phase == .idle)
+    #expect(controller.errorMessage == nil)
+    #expect(!controller.controlActive)
     #expect(rpc.closed.withLock { $0 })
 }
 
