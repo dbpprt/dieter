@@ -37,8 +37,13 @@ func normalizeConfiguration(c *dieterv1.RemoteDesktopStreamConfiguration) (*diet
 	if c.MaxBitrateKbps == 0 {
 		c.MaxBitrateKbps = 12000
 	}
-	if len(c.DisplayId) > 64 || c.MaxWidth < 320 || c.MaxWidth > 3840 || c.MaxHeight < 180 || c.MaxHeight > 2160 || c.MaxFps < 1 || c.MaxFps > 60 || c.MaxBitrateKbps < 100 || c.MaxBitrateKbps > 100000 || c.Quality < 0 || c.Quality > 2 {
+	if len(c.DisplayId) > 64 || c.MaxWidth < 320 || c.MaxWidth > 3840 || c.MaxHeight < 180 || c.MaxHeight > 2160 || c.MaxFps < 1 || c.MaxFps > 120 || c.MaxBitrateKbps < 100 || c.MaxBitrateKbps > 100000 || c.Quality < 0 || c.Quality > 2 {
 		return nil, errors.New("invalid stream configuration limits")
+	}
+	// H.264 level 5.2 supports 4K60, but not 4K120. High refresh is
+	// negotiated as at most 1080p; preserve aspect ratio in the capture backend.
+	if c.MaxFps > 60 {
+		c.MaxWidth, c.MaxHeight = min(c.MaxWidth, 1920), min(c.MaxHeight, 1080)
 	}
 	return c, nil
 }
@@ -136,7 +141,7 @@ func newMediaAPI(settings webrtc.SettingEngine, source FrameSource) (*webrtc.API
 	engine.RegisterFeedback(webrtc.RTCPFeedback{Type: "nack"}, webrtc.RTPCodecTypeVideo)
 	engine.RegisterFeedback(webrtc.RTCPFeedback{Type: "nack", Parameter: "pli"}, webrtc.RTPCodecTypeVideo)
 	if err = webrtc.ConfigureTWCCHeaderExtensionSender(engine, registry); err == nil {
-		registry.Add(retransmissionFactory{refresh: refresh})
+		registry.Add(retransmissionFactory{refresh: refresh, deadline: pacer.RecoveryDeadline})
 		err = webrtc.ConfigureRTCPReports(registry)
 	}
 	if err == nil {
@@ -198,8 +203,7 @@ func (s *Session) adapt() {
 	defer ticker.Stop()
 	var controller *qualityController
 	var revision, previousDrops uint64
-	var minimumRTT float64
-	var rttWindow time.Time
+	var idleRefresh idleRefreshController
 	evaluated := time.Now()
 	for {
 		select {
@@ -220,21 +224,19 @@ func (s *Session) adapt() {
 			continue
 		}
 		fresh := feedback != nil && !measuredAt.IsZero() && now.Sub(measuredAt) < 2*time.Second
-		if fresh && feedback.RttMs > 0 {
-			// A route change must not leave a former LAN RTT as a permanent
-			// congestion baseline. Packet acknowledgments still bound recovery.
-			if minimumRTT == 0 || now.Sub(rttWindow) >= 30*time.Second {
-				minimumRTT, rttWindow = feedback.RttMs, now
-			} else {
-				minimumRTT = min(minimumRTT, feedback.RttMs)
-			}
-		}
-		rttPressure := fresh && minimumRTT > 0 && feedback.RttMs > minimumRTT+max(50, minimumRTT*.5)
 		s.pacer.mu.Lock()
 		transport := s.pacer.transport
+		if fresh && feedback.RttMs > 0 {
+			s.pacer.recoveryRTT = time.Duration(feedback.RttMs * float64(time.Millisecond))
+			s.pacer.recoveryMeasured = measuredAt
+			s.pacer.recoveryFPS = current.FPS
+		}
 		s.pacer.probeCeiling = int(state.GetConfiguration().GetMaxBitrateKbps()) * 1000 * 100 / 85
 		s.pacer.mu.Unlock()
-		networkPressure := rttPressure || (transport.fresh(now) && transport.congested())
+		// RTT measures round-trip latency, not available throughput. A route or
+		// Wi-Fi latency change alone must not erase acknowledged capacity.
+		// Fresh TWCC queue growth/loss and receiver loss govern congestion.
+		networkPressure := transport.fresh(now) && transport.pressure
 		// GCC can retain an old delay-overuse classification through application
 		// idle. Fresh packet delivery and receiver measurements gate recovery.
 		s.pacer.ObserveNetwork(now, fresh && feedback.LossFraction < .02 && !networkPressure)
@@ -267,6 +269,18 @@ func (s *Session) adapt() {
 			estimate = s.pacer.TargetBitrate()
 		}
 		budget := receiverBudget(now, int(state.Configuration.MaxBitrateKbps), estimate, int(s.remb.Load()), s.rembAt.Load())
+		confirmed := min(budget, s.pacer.ConfirmedBitrate()*85/100/1000)
+		// Probe a degraded static desktop, and redraw after a confirmed bitrate
+		// increase. Keep the pending redraw until the new encoder configuration
+		// is applied; refreshing first could preserve the same blurry picture.
+		refreshIdle := func(configuration StreamConfiguration) {
+			if idleRefresh.due(now, frames.interFrames < 2, fresh && !networkPressure && feedback.LossFraction < .02,
+				configuration.BitrateKbps < int(state.Configuration.MaxBitrateKbps)*4/5) {
+				if controlled, ok := s.source.(ControlledFrameSource); ok {
+					controlled.RequestKeyFrame()
+				}
+			}
+		}
 		drops := uint64(0)
 		if state.FramesDropped >= previousDrops {
 			drops = state.FramesDropped - previousDrops
@@ -275,9 +289,10 @@ func (s *Session) adapt() {
 		desired, reason := controller.next(now, current, state.Configuration, adaptationSample{
 			frames: frames, feedback: feedback, feedbackAt: measuredAt, budget: budget,
 			width: int(state.Width), height: int(state.Height), drops: drops, elapsed: elapsed,
-			networkPressure: networkPressure,
+			networkPressure: networkPressure, confirmedBudget: confirmed,
 		})
 		if desired == current {
+			refreshIdle(current)
 			continue
 		}
 		s.configurationMu.Lock()
@@ -290,6 +305,8 @@ func (s *Session) adapt() {
 			cancel()
 			if err == nil {
 				controller.applied(now, current, desired)
+				idleRefresh.configured(current, desired, frames.interFrames < 2)
+				current = desired
 				s.mu.Lock()
 				s.applied = desired
 				s.mu.Unlock()
@@ -315,6 +332,7 @@ func (s *Session) adapt() {
 			}
 		}
 		s.configurationMu.Unlock()
+		refreshIdle(current)
 	}
 }
 

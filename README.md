@@ -844,23 +844,39 @@ currently live tabs. General settings provides an inactivity timeout, enabled at
 minutes by default and switchable off; mouse, keyboard, tab-selection, and screen
 option activity reset it. A timed-out connection can be reconnected from its tab.
 
-The viewer follows its window’s pixel size, up to 3840×2160 at 60 fps and 12 Mbps. The host adapts bitrate,
+The viewer follows its window’s pixel size, up to 3840×2160 at 60 fps and 12 Mbps
+by default. Screen options and `dieter screen configure SESSION --fps 120` select
+30/60/90/120 fps ceilings on updated hosts. Rates above 60 use at most 1920×1080
+to stay within the negotiated H.264 level. Actual cadence depends on capture,
+encoder/decoder capacity and the viewer display. Older hosts retain their 60 fps
+ceiling. The host adapts bitrate,
 frame rate and resolution using transport-wide congestion feedback, encoder cost,
-and fresh receiver decode/loss measurements. It smooths estimates, lowers cadence
-before pixels, and requires sustained pressure before resizing (at least 12 seconds
-between reductions). Recovery preserves measured headroom across quiet intervals
+and fresh receiver decode/loss measurements. Automatic/detail modes lower cadence
+before pixels and require at least 12 seconds between reductions. Responsive motion
+mode reduces pixels first while above its 640-pixel floor, with sustained pressure
+and at least four seconds between resizes; compute capacity still limits cadence. Recovery preserves measured headroom across quiet intervals
 without counting idle time as capacity evidence. Low estimates alone do not remove
-pixels; reductions require fresh loss or transport/RTT pressure. Receiver heartbeats
+pixels; reductions require fresh loss or sustained transport queue growth. RTT
+changes alone do not discard acknowledged bandwidth. Receiver heartbeats
 carry independent measurement identities and ages, so stalled statistics cannot
 replay an old overload sample. Deliberate packet pacing is not counted as congestion.
 Bitrate and cadence updates keep the native encoder session alive. Transport returns
 one frame credit after sending a complete H.264 access unit; while it waits, capture
 retains only the newest raw surface. Pipe writes run independently of capture and
-input. Compatible receivers negotiate immediate playout. Healthy receivers permit
+input. Mac and Android render directly from decoder completion; Mac callbacks are
+bound to the renderer generation so a released decoder cannot draw into a new
+session. Both viewers send the first pointer movement immediately and coalesce
+subsequent movement over four milliseconds. Compatible receivers negotiate
+immediate playout. Packet repair uses fresh RTT and frame cadence to bound useful
+retransmissions (50–250 ms from the first packet, reserving outward transit time);
+missing/stale timing retains the bounded compatibility window. Expired repair
+requests trigger a rate-limited keyframe refresh. Healthy receivers permit
 bounded recovery probes during active or resumed video: at most double the current
 rate, 64 KiB / 250 ms, once per three seconds. Small RTP padding completes probes
-after sparse frames; an idle desktop sends no probe timer traffic. Only actual
-transport acknowledgments establish capacity; fresh congestion revokes it. The daemon
+after sparse frames. A degraded idle desktop requests a refresh at most once per
+three seconds so acknowledged probes can restore bitrate and redraw a sharp image.
+Silence alone never raises quality. Only actual transport acknowledgments establish
+capacity; loss or sustained queue growth revokes it. The daemon
 log records quality changes, sample age, delivered rate, queue growth and GCC state.
 Screen options select a display,
 prefer sharp text or smooth motion, or request an idle-screen refresh. Cursor shape,

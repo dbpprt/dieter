@@ -34,7 +34,7 @@ struct CaptureOptions {
             let raw = arguments.removeFirst()
             switch name {
             case "--display-id": value.displayID = raw
-            case "--fps": value.fps = try integer(raw, name: name, range: 1...60)
+            case "--fps": value.fps = try integer(raw, name: name, range: 1...120)
             case "--bitrate-kbps": value.bitrateKbps = try integer(raw, name: name, range: 100...100_000)
             case "--max-width": value.maxWidth = try integer(raw, name: name, range: 320...16_384)
             case "--max-height": value.maxHeight = try integer(raw, name: name, range: 180...16_384)
@@ -155,6 +155,8 @@ final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
     private var lastCursorSentAt: UInt64 = 0
     private var syntheticTimer: DispatchSourceTimer?
     private var syntheticCounter: UInt64 = 0
+    private var syntheticInputLuma: Int32 = 128
+    private let syntheticInputPattern = ProcessInfo.processInfo.environment["DIETER_TEST_CAPTURE_INPUT_PATTERN"] == "1"
     private let syntheticStarted = DispatchTime.now().uptimeNanoseconds
     private let syntheticIdleCycle = ProcessInfo.processInfo.environment["DIETER_TEST_CAPTURE_IDLE_CYCLE"] == "1"
     private let syntheticQualityCycle = ProcessInfo.processInfo.environment["DIETER_TEST_CAPTURE_QUALITY_CYCLE"] == "1"
@@ -872,6 +874,13 @@ final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
                     }
                 }
             }
+            // Opt-in fixture responds to input with encoded pixels. No real
+            // desktop/session can enter this synthetic measurement path.
+            if options.synthetic && syntheticInputPattern && input.kind == "text",
+                input.text.hasPrefix("dieter-latency:"),
+                let luma = Int32(input.text.dropFirst("dieter-latency:".count)), [16, 235].contains(luma) {
+                stateQueue.async { [self] in syntheticInputLuma = luma; syntheticFrame(force: true) }
+            }
         case "configure":
             // Synthetic fault injection never delays a real desktop session.
             if options.synthetic, let raw = ProcessInfo.processInfo.environment["DIETER_TEST_CAPTURE_CONFIG_DELAY_MS"],
@@ -915,12 +924,12 @@ final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
         }
     }
 
-    private func syntheticFrame() {
+    private func syntheticFrame(force: Bool = false) {
         guard !paused else { return }
-        if syntheticQualityCycle {
+        if syntheticQualityCycle && !force {
             let elapsed = (DispatchTime.now().uptimeNanoseconds - syntheticStarted) / 1_000_000_000 % 180
             if (8..<53).contains(elapsed) || ((53..<143).contains(elapsed) && elapsed % 2 == 0) { return }
-        } else if syntheticIdleCycle {
+        } else if syntheticIdleCycle && !force {
             let elapsed = (DispatchTime.now().uptimeNanoseconds - syntheticStarted) / 1_000_000_000
             if (8..<13).contains(elapsed % 18) { return }
         }
@@ -937,6 +946,11 @@ final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
                 memset(
                     base, plane == 0 ? Int32(32 + syntheticCounter % 160) : 128,
                     CVPixelBufferGetBytesPerRowOfPlane(pixel, plane) * CVPixelBufferGetHeightOfPlane(pixel, plane))
+            }
+        }
+        if syntheticInputPattern, let base = CVPixelBufferGetBaseAddressOfPlane(pixel, 0) {
+            for row in 0..<min(64, outputHeight) {
+                memset(base.advanced(by: row * CVPixelBufferGetBytesPerRowOfPlane(pixel, 0)), syntheticInputLuma, min(64, outputWidth))
             }
         }
         CVPixelBufferUnlockBaseAddress(pixel, [])
@@ -1081,7 +1095,7 @@ func hardwareEncoderAvailable() -> Bool {
                         "displays": displayJSON, "codecs": ["H264"],
                         "hardware_encoder_available": hardwareEncoderAvailable(), "control_supported": true,
                         "adaptive_supported": true, "cursor_supported": true, "input_protocol_version": 2,
-                        "max_fps": 60, "encoder": "VideoToolbox H.264",
+                        "max_fps": 120, "encoder": "VideoToolbox H.264",
                     ]
                     FileHandle.standardOutput.write(try JSONSerialization.data(withJSONObject: value))
                     return

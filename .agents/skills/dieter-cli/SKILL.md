@@ -409,7 +409,11 @@ quality and timing, `dieter screen configure SESSION --quality auto|detail|motio
 for live policy, and `dieter screen refresh SESSION` to refresh an idle screen.
 `configure` also accepts `--display ID`, `--width`, `--height`, `--fps`, `--bitrate`
 (kbps) and `--embedded-cursor=true|false`; omitted fields retain their values.
-Limits are adaptive ceilings up to 3840×2160/60 fps. Screen media uses native macOS
+Limits are adaptive ceilings up to 3840×2160/60 fps or 1920×1080/120 fps. `--fps`
+accepts 1–120; values above 60 clamp the requested geometry to 1920×1080. Check
+`screen capabilities` for the target's `maxFps` before requesting high refresh.
+Motion policy trades resolution before cadence under sustained congestion;
+automatic/detail policies retain their cadence-first behavior. Screen media uses native macOS
 capture and hardware H.264. Signed input protocol v3 supports control handoff;
 clients retain v2 compatibility with older daemons.
 Adaptation preserves idle-screen geometry and recovery evidence across quiet
@@ -427,7 +431,8 @@ proves liveness. Silent helper/daemon IPC still expires after three seconds.
 Mac and Android reopen a fresh session after transient native capture loss;
 permission and policy failures remain terminal.
 Recovery probes are bounded to a doubled rate, 64 KiB / 250 ms, every three seconds
-during active/resumed video; acknowledged delivery validates capacity and congestion
+during active/resumed video, including bounded refreshes while idle quality is
+degraded; acknowledged delivery validates capacity and congestion
 revokes it. The daemon log records session IDs, quality changes, measurement age,
 delivered bandwidth, transport queue growth and GCC state.
 `status` separates socket work (`queueMs`), paced sending (`sendMs`), approximate
@@ -436,6 +441,10 @@ and decoded-frame-to-Metal presentation (`renderMs`). Receiver timing is availab
 with updated Mac viewers; zero can mean no fresh sample. These stages overlap and
 are not a physical glass-to-glass total. Capture admits one encoded frame at a time
 and replaces pending raw surfaces; compatible peers request immediate playout.
+Mac and Android display at decoder completion and dispatch the first pointer
+movement immediately, with four-millisecond coalescing for bursts. RTT-aware
+packet repair deadlines range from 50–250 ms per frame; stale timing retains the
+compatibility window. These deadlines do not impose a playback delay.
 All screen commands support global `--machine ID|NAME` with verified direct TLS
 and authenticated relay fallback.
 

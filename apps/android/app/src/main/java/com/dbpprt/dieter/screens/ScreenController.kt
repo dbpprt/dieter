@@ -64,8 +64,12 @@ class ScreenController(context: Context) : AutoCloseable {
     private var recovery = ScreenRecovery()
     private var certificate: ByteArray? = null
     private var pointerFlush: Job? = null
+    private var pointerLastSent: Long? = null
+    var preferredMaxFPS: Int = 60
+        private set
     private var pendingPointer: Pair<Float, Float>? = null
-    private var pointerSequence = 0L
+    internal var pointerSequence = 0L
+        private set
     private var stateSequence = 0L
     private var ordinal = 0L
     private val feedbackPump = ScreenFeedbackPump()
@@ -157,11 +161,11 @@ class ScreenController(context: Context) : AutoCloseable {
                     .setRtcConfiguration(route.rtc).setDisplayId(display.id)
                     .setInputProtocolVersion(if (caps.supportedInputProtocolVersionsList.contains(3)) 3 else 2).setClientName("Android")
                     .setControl(settings.controlEnabled && caps.controlSupported && caps.controlPermission == "granted")
-                    .setMaxWidth(1920).setMaxHeight(1080).setMaxFps(60).setMaxBitrateKbps(12000).setQuality(configuration.quality)
+                    .setMaxWidth(1920).setMaxHeight(1080).setMaxFps(minOf(preferredMaxFPS, caps.maxFps.takeIf { it > 0 } ?: 60)).setMaxBitrateKbps(12000).setQuality(configuration.quality)
                     .setOffer(RemoteDesktopSessionDescription.newBuilder().setType("offer").setSdp(offer.description)).build()
                 request = start
                 configuration = RemoteDesktopStreamConfiguration.newBuilder().setDisplayId(display.id)
-                    .setMaxWidth(start.maxWidth).setMaxHeight(start.maxHeight).setMaxFps(60).setMaxBitrateKbps(12000).setQuality(start.quality).build()
+                    .setMaxWidth(start.maxWidth).setMaxHeight(start.maxHeight).setMaxFps(start.maxFps).setMaxBitrateKbps(12000).setQuality(start.quality).build()
                 while (isActive && current == token) {
                     val sourceRoute = requireNotNull(connection)
                     try {
@@ -346,14 +350,20 @@ class ScreenController(context: Context) : AutoCloseable {
         if (!mutable.value.control) return
         pendingPointer = x to y
         if (pointerFlush != null) return
+        val wait = pointerLastSent?.let { (4 - (SystemClock.uptimeMillis() - it)).coerceAtLeast(0) } ?: 0
+        if (wait == 0L) { flushPointer(); return }
         pointerFlush = scope.launch {
-            delay(8); pointerFlush = null
-            pendingPointer?.let { (px, py) ->
-                pendingPointer = null
-                send(RemoteDesktopInput.newBuilder().setPointerMove(RemoteDesktopPointerMove.newBuilder()
-                    .setNormalizedX(normalize(px)).setNormalizedY(normalize(py))), reliable = false)
-            }
+            delay(wait); pointerFlush = null
+            flushPointer()
         }
+    }
+    private fun flushPointer() {
+        val point = pendingPointer ?: return
+        pendingPointer = null
+        if (!mutable.value.control) return
+        pointerLastSent = SystemClock.uptimeMillis()
+        send(RemoteDesktopInput.newBuilder().setPointerMove(RemoteDesktopPointerMove.newBuilder()
+            .setNormalizedX(normalize(point.first)).setNormalizedY(normalize(point.second))), reliable = false)
     }
     fun button(button: RemoteDesktopPointerButton.Button, down: Boolean, x: Float, y: Float, count: Int = 1, modifiers: Int = 0) =
         send(RemoteDesktopInput.newBuilder().setPointerButton(RemoteDesktopPointerButton.newBuilder()
@@ -386,7 +396,7 @@ class ScreenController(context: Context) : AutoCloseable {
     }
     private fun sendText(value: String) = send(RemoteDesktopInput.newBuilder().setText(RemoteDesktopText.newBuilder().setText(value)))
     fun releaseInput() {
-        pointerFlush?.cancel(); pointerFlush = null; pendingPointer = null
+        pointerFlush?.cancel(); pointerFlush = null; pendingPointer = null; pointerLastSent = null
         if (mutable.value.control) send(RemoteDesktopInput.newBuilder().setReleaseAll(RemoteDesktopReleaseAll.getDefaultInstance()))
     }
     fun focus(value: Boolean) { if (!value) releaseInput(); focused = value; readiness() }
@@ -412,10 +422,14 @@ class ScreenController(context: Context) : AutoCloseable {
             if (reliable && !builder.hasReleaseAll()) recover("Remote input could not be delivered")
         }
     }
-    fun configure(display: String? = null, quality: RemoteDesktopQuality? = null, refresh: Boolean = false) {
+    fun configure(display: String? = null, quality: RemoteDesktopQuality? = null, maxFPS: Int? = null, refresh: Boolean = false) {
         if (sessionId.isEmpty()) return
         if (display != null && display != configuration.displayId) { releaseInput(); mutable.value = mutable.value.copy(control = false) }
-        configuration = configuration.toBuilder().apply { display?.let(::setDisplayId); quality?.let(::setQuality) }.build()
+        if (maxFPS != null) preferredMaxFPS = maxFPS.coerceIn(1, minOf(120, mutable.value.capabilities.maxFps.takeIf { it > 0 } ?: 60))
+        configuration = configuration.toBuilder().apply {
+            display?.let(::setDisplayId); quality?.let(::setQuality)
+            if (maxFPS != null) setMaxFps(preferredMaxFPS)
+        }.build()
         configuring?.cancel()
         val current = token
         configuring = scope.launch {

@@ -105,6 +105,17 @@ func NewFrameSource(options SourceOptions) (FrameSource, error) {
 	if options.FPS <= 0 {
 		options.FPS = 60
 	}
+	if options.FPS > 120 {
+		return nil, errors.New("screen frame rate exceeds 120 fps")
+	}
+	if options.FPS > 60 {
+		if options.MaxWidth <= 0 || options.MaxWidth > 1920 {
+			options.MaxWidth = 1920
+		}
+		if options.MaxHeight <= 0 || options.MaxHeight > 1080 {
+			options.MaxHeight = 1080
+		}
+	}
 	if options.Bitrate <= 0 {
 		options.Bitrate = 12_000
 	}

@@ -173,11 +173,15 @@ final class RemoteDesktopController {
     var inputFocused = false
     var textInputMode = false
     var quality: Dieter_V1_RemoteDesktopQuality = .auto
+    var preferredMaxFPS: Int32 = 60
+    var availableFrameRates: [Int32] {
+        [30, 60, 90, 120].filter { $0 <= (capabilities.maxFps > 0 ? capabilities.maxFps : 60) }
+    }
     private var cursorCache: [String: NSCursor] = [:]
     private var hostChannel: RTCDataChannel?
     private var hostChannelDelegate: RemoteDesktopDataChannelDelegate?
     private let feedbackPump = RemoteDesktopFeedbackPump()
-    private var eventOrdinal: UInt64 = 0
+    private(set) var eventOrdinal: UInt64 = 0
     private var previousStatistics: [String: Double] = [:]
     private var previousStatisticsTime = Date()
     var controlActive = false
@@ -188,10 +192,8 @@ final class RemoteDesktopController {
     @ObservationIgnored private let frameObserver = RemoteDesktopFrameObserver()
     private var presentedGeneration: UInt64 = 0
 
-    private let factory = RTCPeerConnectionFactory(
-        encoderFactory: RTCDefaultVideoEncoderFactory(),
-        decoderFactory: RemoteDesktopDecoderFactory()
-    )
+    private var factory: RTCPeerConnectionFactory?
+    private let decodedTrackSink = RemoteDesktopDecodedTrackSink()
     private let delegate = RemoteDesktopPeerDelegate()
     private var peerConnection: RTCPeerConnection?
     private var connection: RemoteDesktopSignalingConnection?
@@ -218,9 +220,10 @@ final class RemoteDesktopController {
     private var stateChannel: RTCDataChannel?
     private var pointerChannelDelegate: RemoteDesktopDataChannelDelegate?
     private var stateChannelDelegate: RemoteDesktopDataChannelDelegate?
-    private var pointerSequence: UInt64 = 0
+    private(set) var pointerSequence: UInt64 = 0
     private var stateSequence: UInt64 = 0
     private var pendingPointer: (Int32, Int32)?
+    private var pointerLastSent: TimeInterval = -.infinity
     private var pointerFlushTask: Task<Void, Never>?
     private var signalingReceiveFailure: String?
     private var viewport = CGSize(width: 1920, height: 1080)
@@ -279,9 +282,13 @@ final class RemoteDesktopController {
                 try await self.startPeerSession(generation: token)
             } catch {
                 guard self.owns(token) else { return }
-                if DieterRPCFailure.isTransient(error) { self.recover(message: DieterRPCFailure.message(for: error)) }
-                else if DieterRPCFailure.isCancellation(error) { self.disconnect() }
-                else { self.fail(error) }
+                if DieterRPCFailure.isTransient(error) {
+                    self.recover(message: DieterRPCFailure.message(for: error))
+                } else if DieterRPCFailure.isCancellation(error) {
+                    self.disconnect()
+                } else {
+                    self.fail(error)
+                }
             }
         }
         connectTask = task
@@ -352,7 +359,7 @@ final class RemoteDesktopController {
         } else {
             previousConnection?.shutdown()
         }
-        videoTrack?.remove(renderer)
+        videoTrack?.remove(decodedTrackSink)
         frameObserver.reset(); renderer.reset(); presentedGeneration = 0
         videoTrack = nil
         pointerChannel?.close()
@@ -412,6 +419,10 @@ final class RemoteDesktopController {
             )
         }
         let constraints = RTCMediaConstraints(mandatoryConstraints: nil, optionalConstraints: nil)
+        let factory = RTCPeerConnectionFactory(
+            encoderFactory: RTCDefaultVideoEncoderFactory(),
+            decoderFactory: RemoteDesktopDecoderFactory(onDecodedFrame: renderer.decodeHandler()))
+        self.factory = factory
         guard
             let peer = factory.peerConnection(
                 with: configuration, constraints: constraints, delegate: delegate)
@@ -437,7 +448,10 @@ final class RemoteDesktopController {
         hostChannel?.delegate = hostChannelDelegate
         if capabilities.clipboardSupported {
             clipboard.makeRequest = { [weak self] in
-                guard let self, self.controlActive, (self.inputFocused || (self.clipboardVisible && self.clipboardWindow?.isKeyWindow == true)), self.clipboardApplicationActive(), let binding = self.binding else { return nil }
+                guard let self, self.controlActive,
+                    (self.inputFocused || (self.clipboardVisible && self.clipboardWindow?.isKeyWindow == true)),
+                    self.clipboardApplicationActive(), let binding = self.binding
+                else { return nil }
                 var value = Dieter_V1_RemoteDesktopClipboardRequest()
                 value.sessionID = self.sessionID; value.inputEpoch = binding.inputEpoch
                 value.controlGeneration = self.sessionState.controlGeneration; value.inputBarrier = self.stateSequence
@@ -449,14 +463,18 @@ final class RemoteDesktopController {
                 let pending = self.clipboardInput; self.clipboardInput.removeAll()
                 if succeeded && self.controlActive && self.inputFocused {
                     for payload in pending { self.sendState(payload) }
-                } else { self.releaseAllInput() }
+                } else {
+                    self.releaseAllInput()
+                }
             }
             clipboard.isCurrentGrant = { [weak self] grant in
                 self?.controlActive == true && self?.sessionState.controlGeneration == grant
             }
             clipboard.onError = { [weak self] in self?.clipboardError = $0 }
             clipboard.enabled = clipboardEnabled
-            if let channel = peer.dataChannel(forLabel: "dieter-clipboard-v1", configuration: stateConfiguration) { clipboard.attach(channel) }
+            if let channel = peer.dataChannel(forLabel: "dieter-clipboard-v1", configuration: stateConfiguration) {
+                clipboard.attach(channel)
+            }
         }
         pointerChannel?.delegate = pointerDelegate
         stateChannel?.delegate = stateDelegate
@@ -493,7 +511,7 @@ final class RemoteDesktopController {
             capabilities.displays.first(where: { $0.id == desiredConfiguration.displayID })?.id
             ?? capabilities.displays.first(where: \.primary)?.id ?? capabilities.displays.first?.id
             ?? "primary"
-        request.maxFps = 60
+        request.maxFps = min(preferredMaxFPS, capabilities.maxFps > 0 ? capabilities.maxFps : 60)
         request.maxBitrateKbps = 12_000
         request.maxWidth = Int32(viewport.width)
         request.maxHeight = Int32(viewport.height)
@@ -556,7 +574,9 @@ final class RemoteDesktopController {
                     guard attempt <= 2, self?.peerConnection != nil else {
                         if DieterRPCFailure.isTransient(error) || DieterRPCFailure.isAuthenticationFailure(error) {
                             self?.recover(message: failureMessage)
-                        } else { self?.fail(message: failureMessage) }
+                        } else {
+                            self?.fail(message: failureMessage)
+                        }
                         return
                     }
                     self?.setReconnecting()
@@ -595,7 +615,7 @@ final class RemoteDesktopController {
             }
         case .state(let value):
             if value.phase == "streaming" { phase = presentedGeneration > 0 ? .streaming : .connecting }
-            if value.phase == "reconnecting" { phase = .reconnecting }
+            if value.phase == "reconnecting" { setReconnecting() }
             if value.phase == "closed", phase != .idle {
                 if RemoteDesktopRecovery.retryableClosure(value.reason) {
                     recover(message: value.reason)
@@ -611,7 +631,9 @@ final class RemoteDesktopController {
                     ])
             }
         case .error(let value):
-            if value.recoverable || (value.code == "capture_failed" && RemoteDesktopRecovery.retryableClosure(value.message)) {
+            if value.recoverable
+                || (value.code == "capture_failed" && RemoteDesktopRecovery.retryableClosure(value.message))
+            {
                 recover(message: value.message)
                 throw CancellationError()
             }
@@ -697,9 +719,9 @@ final class RemoteDesktopController {
 
     fileprivate func received(track: RTCVideoTrack) {
         if videoTrack?.isEqual(track) == true { return }
-        videoTrack?.remove(renderer)
+        videoTrack?.remove(decodedTrackSink)
         videoTrack = track
-        track.add(renderer)
+        track.add(decodedTrackSink)
     }
 
     fileprivate func connectionStateChanged(_ state: RTCPeerConnectionState) {
@@ -719,24 +741,37 @@ final class RemoteDesktopController {
         }
     }
 
-    private func setReconnecting() { if phase != .idle { phase = .reconnecting } }
+    private func setReconnecting() {
+        guard phase != .idle else { return }
+        // Signaling can retry while the authenticated media peer stays live.
+        // Do not cover an already presented desktop with a reconnect overlay.
+        if peerConnection?.connectionState == .connected && presentedGeneration > 0
+            && presentedGeneration == sessionState.displayGeneration { return }
+        phase = .reconnecting
+    }
 
     func sendPointerMove(x: CGFloat, y: CGFloat) {
         onUserActivity()
         guard controlActive else { return }
         pendingPointer = (normalized(x), normalized(y))
         guard pointerFlushTask == nil else { return }
+        let delay = max(0, 0.004 - (ProcessInfo.processInfo.systemUptime - pointerLastSent))
+        if delay == 0 { flushPointer(); return }
         pointerFlushTask = Task { [weak self] in
-            try? await DieterTaskSleep.seconds(0.008)
+            try? await DieterTaskSleep.seconds(delay)
             guard !Task.isCancelled, let self else { return }
             self.pointerFlushTask = nil
-            guard let point = self.pendingPointer else { return }
-            self.pendingPointer = nil
-            var move = Dieter_V1_RemoteDesktopPointerMove()
-            move.normalizedX = point.0
-            move.normalizedY = point.1
-            self.sendPointer(.pointerMove(move))
+            self.flushPointer()
         }
+    }
+
+    private func flushPointer() {
+        guard controlActive, let point = pendingPointer else { pendingPointer = nil; return }
+        pendingPointer = nil
+        pointerLastSent = ProcessInfo.processInfo.systemUptime
+        var move = Dieter_V1_RemoteDesktopPointerMove()
+        move.normalizedX = point.0; move.normalizedY = point.1
+        sendPointer(.pointerMove(move))
     }
 
     func sendPointerButton(
@@ -804,6 +839,7 @@ final class RemoteDesktopController {
     func releaseAllInput(failOnError: Bool = true) {
         pendingPointer = nil
         pointerFlushTask?.cancel(); pointerFlushTask = nil
+        pointerLastSent = -.infinity
         guard controlActive else { return }
         sendState(.releaseAll(Dieter_V1_RemoteDesktopReleaseAll()), failOnError: failOnError)
     }
@@ -818,9 +854,12 @@ final class RemoteDesktopController {
 
     private func sendState(_ payload: Dieter_V1_RemoteDesktopInput.OneOf_Payload, failOnError: Bool = true) {
         guard controlActive else { return }
-        if case .releaseAll = payload { clipboardInput.removeAll() }
-        else if clipboard.operationPending {
-            guard clipboardInput.count < 128 else { clipboardError = "Input paused while clipboard transfer finishes"; releaseAllInput(); return }
+        if case .releaseAll = payload {
+            clipboardInput.removeAll()
+        } else if clipboard.operationPending {
+            guard clipboardInput.count < 128 else {
+                clipboardError = "Input paused while clipboard transfer finishes"; releaseAllInput(); return
+            }
             clipboardInput.append(payload); return
         }
         guard let channel = stateChannel, channel.readyState == .open,
@@ -911,7 +950,8 @@ final class RemoteDesktopController {
             state.controllerName = sessionState.controllerName
         }
         if state.clipboardGeneration < sessionState.clipboardGeneration {
-            state.clipboardGeneration = sessionState.clipboardGeneration; state.clipboardEnabled = sessionState.clipboardEnabled
+            state.clipboardGeneration = sessionState.clipboardGeneration;
+            state.clipboardEnabled = sessionState.clipboardEnabled
         } else if state.clipboardGeneration > sessionState.clipboardGeneration {
             clipboardEnabled = state.clipboardEnabled; clipboard.enabled = state.clipboardEnabled
         }
@@ -977,11 +1017,21 @@ final class RemoteDesktopController {
         }
     }
 
-    func configure(displayID: String? = nil, quality: Dieter_V1_RemoteDesktopQuality? = nil, refresh: Bool = false) {
+    func configure(
+        displayID: String? = nil, quality: Dieter_V1_RemoteDesktopQuality? = nil, maxFPS: Int32? = nil,
+        refresh: Bool = false
+    ) {
         guard let connection, !sessionID.isEmpty else { return }
         onUserActivity()
         releaseAllInput()
         if let displayID { desiredConfiguration.displayID = displayID; configurationPending = true }
+        if let maxFPS {
+            preferredMaxFPS = max(1, min(120, min(maxFPS, capabilities.maxFps > 0 ? capabilities.maxFps : 60)))
+            desiredConfiguration.maxFps = preferredMaxFPS
+            desiredConfiguration.maxWidth = Int32(viewport.width);
+            desiredConfiguration.maxHeight = Int32(viewport.height)
+            configurationPending = true
+        }
         if let quality { desiredConfiguration.quality = quality; self.quality = quality; configurationPending = true }
         refreshPending = refreshPending || refresh
         submitConfiguration(connection: connection)
@@ -1062,6 +1112,13 @@ final class RemoteDesktopController {
                 feedback.lossFraction = delta("packetsLost") / max(1, delta("packetsLost") + delta("packetsReceived"))
                 feedback.inputActive = self.controlActive && self.inputFocused && NSApp.isActive
                 feedback.renderedFrames = UInt32(clamping: self.renderer.framesPresented)
+                if self.phase == .reconnecting, delta("framesPresented") > 0,
+                    peer.connectionState == .connected, self.presentedGeneration > 0,
+                    self.presentedGeneration == self.sessionState.displayGeneration
+                {
+                    self.phase = .streaming
+                    self.updateControlReadiness()
+                }
                 self.feedbackPump.update(feedback, measuredAt: measurementStarted)
                 self.feedbackPump.input(active: self.controlActive && self.inputFocused && NSApp.isActive)
                 if let localID = candidate["localCandidateId"] as? String,

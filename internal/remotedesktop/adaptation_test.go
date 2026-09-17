@@ -241,3 +241,104 @@ func TestQualityHeartbeatDoesNotRefreshAnOldMeasurement(t *testing.T) {
 		}
 	}
 }
+
+func TestMotionSacrificesPixelsBeforeCadence(t *testing.T) {
+	s := newQualitySimulation(t)
+	s.limits.Quality = dieterv1.RemoteDesktopQuality_REMOTE_DESKTOP_QUALITY_MOTION
+	resized := false
+	for range 40 {
+		before := s.current
+		s.step(900, 3, 3, .08, 120000, true)
+		if s.current.MaxWidth < before.MaxWidth && !resized {
+			resized = true
+			if s.current.FPS != 60 {
+				t.Fatalf("motion lost cadence before pixels: %+v", s.current)
+			}
+		}
+	}
+	if !resized || s.current.MaxWidth < 640 {
+		t.Fatalf("unbounded or missing response: %+v", s.current)
+	}
+	for range 240 {
+		s.step(16000, 3, 3, 0, 200000, true)
+	}
+	if s.current.MaxWidth != 1920 || s.current.FPS != 60 {
+		t.Fatalf("motion did not recover: %+v", s.current)
+	}
+}
+
+func TestHighRefreshConfigurationAndRecovery(t *testing.T) {
+	c, err := normalizeConfiguration(&dieterv1.RemoteDesktopStreamConfiguration{MaxFps: 120, MaxWidth: 3840, MaxHeight: 2160})
+	if err != nil || c.MaxFps != 120 || c.MaxWidth != 1920 || c.MaxHeight != 1080 {
+		t.Fatalf("high refresh H.264 limit: %v %v", c, err)
+	}
+	if _, err := normalizeConfiguration(&dieterv1.RemoteDesktopStreamConfiguration{MaxFps: 121}); err == nil {
+		t.Fatal("unbounded refresh accepted")
+	}
+	s := newQualitySimulation(t)
+	s.limits = c
+	s.current = nativeConfiguration(c)
+	s.current.FPS = 60
+	for range 120 {
+		s.step(12000, 3, 3, 0, 200000, true)
+	}
+	if s.current.FPS != 120 {
+		t.Fatalf("cannot recover through 90 to 120: %+v", s.current)
+	}
+}
+
+func TestIdleBitrateRecoveryRequiresConfirmedCapacityAndFreshHealthyFeedback(t *testing.T) {
+	for _, scenario := range []string{"confirmed", "unproven", "stale", "congested", "loss"} {
+		t.Run(scenario, func(t *testing.T) {
+			s := newQualitySimulation(t)
+			s.current.BitrateKbps = 148
+			sample := adaptationSample{elapsed: time.Second, budget: 12000, confirmedBudget: 6000,
+				feedbackAt: s.now.Add(time.Second), feedback: &dieterv1.RemoteDesktopReceiverFeedback{MeasurementSequence: 1}}
+			switch scenario {
+			case "unproven":
+				sample.confirmedBudget = 0
+			case "stale":
+				sample.feedbackAt = s.now.Add(-5 * time.Second)
+			case "congested":
+				sample.networkPressure = true
+			case "loss":
+				sample.feedback.LossFraction = .05
+			}
+			after, _ := s.controller.next(s.now.Add(time.Second), s.current, s.limits, sample)
+			if scenario == "confirmed" {
+				if after.BitrateKbps != 6000 {
+					t.Fatalf("idle desktop remained blurry despite acknowledged capacity: %+v", after)
+				}
+			} else if after != s.current {
+				t.Fatalf("invalid recovery evidence changed idle quality: %+v", after)
+			}
+			if after.FPS != s.current.FPS || after.MaxWidth != s.current.MaxWidth {
+				t.Fatal("idle feedback invented decoder capacity")
+			}
+		})
+	}
+}
+
+func TestIdleRedrawSurvivesBitrateRecoveryUntilTheRefreshCooldownEnds(t *testing.T) {
+	var refresh idleRefreshController
+	now := time.Unix(1000, 0)
+	if !refresh.due(now, true, true, true) {
+		t.Fatal("degraded desktop did not probe")
+	}
+	refresh.configured(StreamConfiguration{BitrateKbps: 148}, StreamConfiguration{BitrateKbps: 12000}, true)
+	if refresh.due(now.Add(time.Second), true, true, false) {
+		t.Fatal("redraw bypassed refresh cooldown")
+	}
+	if refresh.due(now.Add(3*time.Second), true, false, false) {
+		t.Fatal("redraw bypassed missing/pressured feedback")
+	}
+	if !refresh.due(now.Add(4*time.Second), true, true, false) {
+		t.Fatal("reaching the bitrate ceiling lost the pending sharp redraw")
+	}
+	if refresh.due(now.Add(10*time.Second), true, true, false) {
+		t.Fatal("healthy idle desktop kept requesting refreshes")
+	}
+	if refresh.due(now.Add(20*time.Second), false, true, true) {
+		t.Fatal("active desktop requested an idle refresh")
+	}
+}

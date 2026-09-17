@@ -29,6 +29,7 @@ type transportHealth struct {
 	at             time.Time
 	loss, growthMS float64
 	deliveredRate  int
+	pressure       bool
 }
 
 func (h transportHealth) congested() bool { return h.loss >= .02 || h.growthMS > 15 }
@@ -163,12 +164,18 @@ func (p *packetPacer) observeTransport(now time.Time, feedback *rtcp.TransportLa
 			health.deliveredRate = int(float64((window.bytes-window.firstSize)*8) / arrivalSpan.Seconds())
 		}
 	}
+	health.pressure = p.transportCongestedLocked(now, health)
 	p.transport = health
-	if health.congested() {
+	if health.pressure {
 		p.confirmedRate = 0
 		p.probeBytes = 0
 		p.probeACK.lost = true
 		p.healthyUntil = time.Time{}
+		return
+	}
+	// Do not earn capacity during an ambiguous delayed burst, even while
+	// retaining the previous proof until pressure is sustained.
+	if health.congested() {
 		return
 	}
 	if p.probeACK.lost {

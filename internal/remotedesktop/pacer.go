@@ -15,27 +15,53 @@ import (
 // producer owns at most one encoded access unit and the helper replaces raw
 // pending frames. Whole-frame admission/recovery happens before packetization.
 type packetPacer struct {
-	mu               sync.Mutex
-	sendMu           sync.Mutex
-	writers          map[uint32]interceptor.RTPWriter
-	bitrate          int
-	next             time.Time
-	ctx              context.Context
-	cancel           context.CancelFunc
-	writeNanoseconds atomic.Int64
-	lastFrameEnd     time.Time
-	lastProbe        time.Time
-	probeUntil       time.Time
-	probeBytes       int
-	probeRate        int
-	healthyUntil     time.Time
-	confirmedRate    int
-	probeCeiling     int
-	probeID          uint64
-	probeACK         probeAcknowledgments
-	transportID      uint8
-	transportHistory [transportHistorySize]sentTransportPacket
-	transport        transportHealth
+	mu                     sync.Mutex
+	sendMu                 sync.Mutex
+	writers                map[uint32]interceptor.RTPWriter
+	bitrate                int
+	next                   time.Time
+	ctx                    context.Context
+	cancel                 context.CancelFunc
+	writeNanoseconds       atomic.Int64
+	lastFrameEnd           time.Time
+	lastProbe              time.Time
+	probeUntil             time.Time
+	probeBytes             int
+	probeRate              int
+	healthyUntil           time.Time
+	confirmedRate          int
+	probeCeiling           int
+	probeID                uint64
+	probeACK               probeAcknowledgments
+	transportID            uint8
+	transportHistory       [transportHistorySize]sentTransportPacket
+	transport              transportHealth
+	transportPressureSince time.Time
+	recoveryRTT            time.Duration
+	recoveryMeasured       time.Time
+	recoveryFPS            int
+}
+
+// One delayed feedback burst is jitter, not sustained queue growth. Loss
+// still revokes capacity immediately; delay needs repeated fresh evidence.
+func (p *packetPacer) transportCongestedLocked(now time.Time, health transportHealth) bool {
+	if health.loss >= .02 {
+		return true
+	}
+	if health.growthMS <= 15 {
+		p.transportPressureSince = time.Time{}
+		return false
+	}
+	if p.transportPressureSince.IsZero() || now.Sub(p.transport.at) >= 2*time.Second {
+		p.transportPressureSince = now
+	}
+	return now.Sub(p.transportPressureSince) >= 500*time.Millisecond
+}
+
+func (p *packetPacer) ConfirmedBitrate() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.confirmedRate
 }
 
 func newPacketPacer(rate int) *packetPacer {
@@ -54,7 +80,8 @@ func (p *packetPacer) SetTargetBitrate(rate int) {
 }
 
 // Feedback is sampled outside GCC's callback (which owns its estimator lock).
-// Delay overuse, loss, or a high RTT cancels probing, even on private routes.
+// Sustained queue growth, loss, or missing fresh receiver feedback cancels
+// probing, even on private routes.
 func (p *packetPacer) ObserveNetwork(now time.Time, healthy bool) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -167,4 +194,17 @@ func (p *packetPacer) Write(header *rtp.Header, payload []byte, attributes inter
 	n, err := writer.Write(header, payload, attributes)
 	p.writeNanoseconds.Add(int64(time.Since(started)))
 	return n, err
+}
+
+// RecoveryDeadline bounds useful repair time from the first packet of a frame.
+// RTT is a round trip; reserve half for the retransmission's outward transit.
+// Unknown/stale receiver timing keeps the compatibility retention window.
+func (p *packetPacer) RecoveryDeadline() (time.Duration, time.Duration) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.recoveryRTT <= 0 || time.Since(p.recoveryMeasured) > 2*time.Second {
+		return retransmissionAge, 0
+	}
+	frame := time.Second / time.Duration(max(1, p.recoveryFPS))
+	return min(retransmissionAge, max(50*time.Millisecond, 2*p.recoveryRTT+2*frame)), p.recoveryRTT / 2
 }

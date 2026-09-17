@@ -102,6 +102,13 @@ class ScreenEndToEndTest {
             compose.waitUntil(15_000) { opened.get() >= 2 && controller.state.value.control }
             compose.waitUntil(10_000) { controller.state.value.receivedFps > 5 }
             assertTrue(controller.state.value.session.width >= 640)
+            compose.runOnIdle {
+                val before = controller.pointerSequence
+                controller.pointer(0.2f, 0.2f)
+                assertEquals("First pointer movement must dispatch immediately", before + 1, controller.pointerSequence)
+                controller.pointer(0.3f, 0.3f)
+                controller.releaseInput()
+            }
             val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
             val originalClip = clipboard.primaryClip
             val clipboardRoute = kotlinx.coroutines.runBlocking { open() }
@@ -191,7 +198,7 @@ class ScreenEndToEndTest {
             val startY = canvas.canvasModel.cursorY
             val cx = canvas.width * .5f; val cy = canvas.height * .55f
             gesture(canvas, listOf(listOf(cx to cy), listOf(cx + 12 to cy + 10), listOf(cx + 24 to cy + 20)))
-            assertTrue(canvas.canvasModel.cursorX > startX && canvas.canvasModel.cursorX < startX + .1)
+            assertTrue("Relative X: $startX -> ${canvas.canvasModel.cursorX}; canvas ${canvas.width}x${canvas.height}, scale ${canvas.canvasModel.scale}", canvas.canvasModel.cursorX > startX && canvas.canvasModel.cursorX < startX + .1)
             assertTrue(canvas.canvasModel.cursorY > startY && canvas.canvasModel.cursorY < startY + .1)
             gesture(canvas, listOf(listOf(40f to 100f), listOf(40f to 100f)))
             gesture(canvas, listOf(listOf(cx to cy), listOf(cx + 8 to cy + 8)), holdStartMillis = 600)
@@ -292,7 +299,11 @@ class ScreenEndToEndTest {
             assertEquals(1f, canvas.canvasModel.zoom, 0f)
             compose.waitUntil(5000) { controller.state.value.control && controller.state.value.session.lastInputOrdinal > beforeZoom }
             compose.waitUntil(10_000) { opened.get() >= 2 && controller.state.value.control }
-            compose.runOnIdle { controller.configure(quality = RemoteDesktopQuality.REMOTE_DESKTOP_QUALITY_MOTION, refresh = true) }
+            compose.runOnIdle { controller.configure(quality = RemoteDesktopQuality.REMOTE_DESKTOP_QUALITY_MOTION, maxFPS = 120, refresh = true) }
+            compose.waitUntil(10_000) { controller.state.value.session.configuration.maxFps == 120 }
+            assertTrue(controller.state.value.session.configuration.maxWidth <= 1920)
+            compose.runOnIdle { controller.configure(maxFPS = 60) }
+            compose.waitUntil(10_000) { controller.state.value.session.configuration.maxFps == 60 }
             compose.waitUntil(10_000) { controller.state.value.session.configuration.quality == RemoteDesktopQuality.REMOTE_DESKTOP_QUALITY_MOTION }
             if (controller.state.value.capabilities.displaysCount > 1) {
                 val primary = controller.state.value.session.displayId
@@ -393,6 +404,8 @@ class ScreenEndToEndTest {
                 if (it < 2) compose.onNodeWithTag("screen-disconnect").performClick()
             }
         } catch (failure: Throwable) {
+            val capture = InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot()
+            File(context.getExternalFilesDir(null), "screen-failure.png").outputStream().use { capture?.compress(Bitmap.CompressFormat.PNG, 100, it) }
             throw AssertionError("Screen state: ${controller.state.value}; pointer ordinal=${controller.lastPointerOrdinal}; window focus=${canvas.hasWindowFocus()}", failure)
         } finally {
             compose.runOnIdle { canvas.release(); controller.close() }

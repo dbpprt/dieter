@@ -12,7 +12,7 @@ struct StreamConfiguration: Codable, Equatable {
 
     func validate() throws {
         guard (320...3840).contains(maxWidth), (180...2160).contains(maxHeight),
-            (1...60).contains(fps), (100...100000).contains(bitrateKbps), displayId.utf8.count <= 64
+            (1...120).contains(fps), (100...100000).contains(bitrateKbps), displayId.utf8.count <= 64
         else { throw CaptureError.invalidArgument("stream configuration") }
     }
 }

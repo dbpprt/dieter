@@ -114,8 +114,12 @@ internal fun ScreenWorkspace(
                     DropdownMenu(qualityMenu, { qualityMenu = false }) {
                         listOf("Auto" to RemoteDesktopQuality.REMOTE_DESKTOP_QUALITY_AUTO,
                             "Detail" to RemoteDesktopQuality.REMOTE_DESKTOP_QUALITY_DETAIL,
-                            "Motion" to RemoteDesktopQuality.REMOTE_DESKTOP_QUALITY_MOTION).forEach { (label, value) ->
+                            "Responsive motion" to RemoteDesktopQuality.REMOTE_DESKTOP_QUALITY_MOTION).forEach { (label, value) ->
                             DropdownMenuItem(text = { Text(label) }, onClick = { controller.configure(quality = value); qualityMenu = false })
+                        }
+                        HorizontalDivider()
+                        listOf(30, 60, 90, 120).filter { it <= (screen.capabilities.maxFps.takeIf { fps -> fps > 0 } ?: 60) }.forEach { fps ->
+                            DropdownMenuItem(text = { Text("Up to $fps fps") }, onClick = { controller.configure(maxFPS = fps); qualityMenu = false })
                         }
                     }
                 }

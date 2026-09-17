@@ -1679,6 +1679,7 @@ message RemoteDesktopCapabilities {
   uint32 max_clients = 24;
   uint32 connected_clients = 25;
   repeated uint32 supported_input_protocol_versions = 26;
+  bool binary_clipboard_supported = 27;
 }
 
 message ProbeRemoteDesktopPermissionsRequest {
@@ -2166,6 +2167,17 @@ message RemoteDesktopClipboardRequest {
   bool enabled = 8;
   // Wait for prior reliable input (selection/focus) before a clipboard shortcut.
   uint64 input_barrier = 9;
+  // Images or regular files, at most 64 items and 8 MiB combined.
+  repeated RemoteDesktopClipboardItem items = 10;
+  // Older viewers receive only text, never file paths or partial binary data.
+  bool accept_binary = 11;
+}
+message RemoteDesktopClipboardItem {
+  enum Kind { FILE = 0; IMAGE = 1; }
+  Kind kind = 1;
+  string name = 2;
+  string mime_type = 3;
+  bytes data = 4;
 }
 message RemoteDesktopClipboardResponse {
   string operation_id = 1;
@@ -2175,9 +2187,11 @@ message RemoteDesktopClipboardResponse {
   bool has_text = 5;
   string error = 6;
   bool enabled = 7;
+  repeated RemoteDesktopClipboardItem items = 8;
 }
 // One sequential transfer per direction; at most 16 KiB per chunk and
-// 1 MiB of UTF-8 content. Final chunks complete one serialized message.
+// 8 MiB of binary content (text remains limited to 1 MiB).
+// Final chunks complete one serialized message; incomplete transfers never paste.
 message RemoteDesktopClipboardFrame {
   string operation_id = 1;
   bytes data = 2;

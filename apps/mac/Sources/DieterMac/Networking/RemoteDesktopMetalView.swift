@@ -94,6 +94,14 @@ final class RemoteDesktopMetalView: NSView, RTCVideoRenderer, MTKViewDelegate {
         Task { @MainActor [weak self] in self?.updateSize(size) }
     }
 
+    func decodeHandler() -> @Sendable (RTCVideoFrame) -> Void {
+        let token = mailbox.currentToken
+        return { [weak self, mailbox] frame in
+            guard let self, mailbox.offer(frame, expectedToken: token) else { return }
+            Task { @MainActor [weak self] in self?.drawPendingFrame() }
+        }
+    }
+
     nonisolated func renderFrame(_ frame: RTCVideoFrame?) {
         guard let frame, mailbox.offer(frame) else { return }
         Task { @MainActor [weak self] in self?.drawPendingFrame() }
@@ -121,6 +129,13 @@ final class RemoteDesktopMetalView: NSView, RTCVideoRenderer, MTKViewDelegate {
     }
 
     func draw(in view: MTKView) {
+        // nextDrawable may wait for the compositor. Select the latest frame
+        // AFTER that wait, allowing decoder arrivals to replace stale work.
+        guard bounds.width > 0, bounds.height > 0, let drawable = view.currentDrawable,
+            let descriptor = view.currentRenderPassDescriptor
+        else {
+            _ = mailbox.take(); completeDraw(); return
+        }
         guard let (frame, token, arrivedAt) = mailbox.take() else { completeDraw(); return }
         guard initializationFailure == nil, let queue = commandQueue, let cache = textureCache,
             let native = frame.buffer as? RTCCVPixelBuffer
@@ -144,8 +159,7 @@ final class RemoteDesktopMetalView: NSView, RTCVideoRenderer, MTKViewDelegate {
         lastFrame = frame
         lastPixelFormat = format
         view.isHidden = false
-        guard bounds.width > 0, bounds.height > 0, let drawable = view.currentDrawable,
-            let descriptor = view.currentRenderPassDescriptor, let command = queue.makeCommandBuffer(),
+        guard let command = queue.makeCommandBuffer(),
             let pipeline = isNV12 ? nv12Pipeline : rgbPipeline
         else { completeDraw(); return }
         var retained: [CVMetalTexture] = []
@@ -275,8 +289,10 @@ private final class RemoteDesktopRenderMailbox: @unchecked Sendable {
     private var busy = false
     private var token: UInt64 = 0
     var hasPending: Bool { lock.lock(); defer { lock.unlock() }; return pending != nil }
-    func offer(_ frame: RTCVideoFrame) -> Bool {
+    var currentToken: UInt64 { lock.lock(); defer { lock.unlock() }; return token }
+    func offer(_ frame: RTCVideoFrame, expectedToken: UInt64? = nil) -> Bool {
         lock.lock(); defer { lock.unlock() }
+        if let expectedToken, expectedToken != token { return false }
         pending = frame
         arrivedAt = CACurrentMediaTime()
         if busy { return false }

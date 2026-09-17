@@ -43,6 +43,9 @@ additional RemoteDesktopSignal JSON Lines from --signal-input FILE while the
 daemon response stream remains open. Use "dieter machine rtc" to obtain signed
 ICE configuration for remote sessions. Media and encrypted control travel over
 the negotiated WebRTC connection, never through the CLI RPC transport.
+Configure supports 1–120 fps; above 60 fps geometry is capped at 1920x1080.
+Check capabilities.maxFps for older hosts. Motion trades pixels before cadence;
+auto/detail preserve their cadence-first policy. All limits are adaptive.
 `
 
 func (c *CLI) rpcScreen(args []string) error {
@@ -340,7 +343,7 @@ func (c *CLI) rpcScreenSession(action string, args []string) error {
 	quality := set.String("quality", "auto", "auto, detail or motion")
 	width := set.Int("width", 3840, "maximum pixel width")
 	height := set.Int("height", 2160, "maximum pixel height")
-	fps := set.Int("fps", 60, "maximum frames per second (1–60)")
+	fps := set.Int("fps", 60, "maximum frames per second (1–120; above 60 caps resolution at 1080p)")
 	bitrate := set.Int("bitrate", 12000, "maximum video kilobits per second")
 	cursor := set.Bool("embedded-cursor", false, "include cursor in video")
 	if action != "configure" && len(args) != 1 {
@@ -387,8 +390,8 @@ func (c *CLI) rpcScreenSession(action string, args []string) error {
 				}
 				config.MaxHeight = int32(*height)
 			case "fps":
-				if *fps < 1 || *fps > 60 {
-					invalid = errors.New("fps must be between 1 and 60")
+				if *fps < 1 || *fps > 120 {
+					invalid = errors.New("fps must be between 1 and 120")
 				}
 				config.MaxFps = int32(*fps)
 			case "bitrate":

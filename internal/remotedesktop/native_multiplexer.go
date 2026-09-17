@@ -166,7 +166,9 @@ func (s *nativeRendition) command(ctx context.Context, command nativeCommand, wa
 	root, closed := s.mux.root, s.closed
 	s.mux.mu.Unlock()
 	if root == nil || closed {
-		return errors.New("native encoder is not running")
+		// Helper exit can race a frame-credit command. Preserve the same
+		// recoverable classification as the stream's EOF, whichever wins.
+		return errNativeHelperStopped
 	}
 	command.StreamID = s.id
 	return root.send(ctx, command, wait)

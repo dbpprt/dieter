@@ -103,3 +103,11 @@ func TestCaptureRecoveryPreservesPermanentFailures(t *testing.T) {
 		}
 	}
 }
+
+func TestFrameCreditAfterHelperExitRemainsRecoverable(t *testing.T) {
+	rendition := &nativeRendition{mux: &nativeMultiplexer{}}
+	err := rendition.command(context.Background(), nativeCommand{Kind: "frame-credit"}, false)
+	if !recoverableCaptureFailure(err) {
+		t.Fatalf("helper exit raced credit into a terminal failure: %v", err)
+	}
+}

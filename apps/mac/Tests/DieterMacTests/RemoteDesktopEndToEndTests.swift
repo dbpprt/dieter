@@ -29,11 +29,14 @@ private struct ScreenFixtureConnection: Decodable {
     FileManager.default.createFile(atPath: log.path, contents: nil)
     let logHandle = try FileHandle(forWritingTo: log)
     let process = Process(); process.executableURL = URL(fileURLWithPath: executable)
-    process.arguments = ["--helper", helper, "--source", real ? "screen" : "native-synthetic", "--authenticate", "--ready", ready.path]
+    process.arguments = [
+        "--helper", helper, "--source", real ? "screen" : "native-synthetic", "--authenticate", "--ready", ready.path,
+    ]
     process.standardOutput = logHandle; process.standardError = logHandle
     if !real {
         var fixtureEnvironment = environment
         fixtureEnvironment["DIETER_TEST_CAPTURE_IDLE_CYCLE"] = "1"
+        fixtureEnvironment["DIETER_TEST_CAPTURE_INPUT_PATTERN"] = "1"
         if stabilitySeconds >= 180 { fixtureEnvironment["DIETER_TEST_CAPTURE_QUALITY_CYCLE"] = "1" }
         process.environment = fixtureEnvironment
     }
@@ -64,9 +67,13 @@ private struct ScreenFixtureConnection: Decodable {
         request.setValue("Bearer " + fixture.token, forHTTPHeaderField: "Authorization")
         let (_, response) = try await URLSession.shared.data(for: request)
         #expect((response as? HTTPURLResponse)?.statusCode == 204)
-        return Int((response as? HTTPURLResponse)?.value(forHTTPHeaderField: "X-Dieter-Test-Rejected-Signals") ?? "0") ?? 0
+        return Int((response as? HTTPURLResponse)?.value(forHTTPHeaderField: "X-Dieter-Test-Rejected-Signals")
+            ?? (response as? HTTPURLResponse)?.value(forHTTPHeaderField: "X-Dieter-Test-Interrupted-Signals") ?? "0")
+            ?? 0
     }
     let controller = RemoteDesktopController()
+    let requestedFPS = Int32(environment["DIETER_TEST_SCREEN_FPS"] ?? "60") ?? 60
+    controller.preferredMaxFPS = requestedFPS
     let clientClipboard = NSPasteboard(name: .init("com.dbpprt.dieter.fixture.viewer.\(UUID().uuidString)"))
     controller.clipboard.pasteboard = clientClipboard
     // SwiftPM's test runner hosts an NSWindow without an NSApplication event
@@ -124,9 +131,15 @@ private struct ScreenFixtureConnection: Decodable {
         for payload in ["Mac clipboard é漢字🙂\n  whitespace\n", String(repeating: "x", count: 1024 * 1024), ""] {
             clientClipboard.clearContents(); clientClipboard.setString(payload, forType: .string)
             let before = controller.clipboard.completedOperations
-            let event = try #require(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [.command], timestamp: 0, windowNumber: window.windowNumber, context: nil, characters: "v", charactersIgnoringModifiers: "v", isARepeat: false, keyCode: 9))
+            let event = try #require(
+                NSEvent.keyEvent(
+                    with: .keyDown, location: .zero, modifierFlags: [.command], timestamp: 0,
+                    windowNumber: window.windowNumber, context: nil, characters: "v", charactersIgnoringModifiers: "v",
+                    isARepeat: false, keyCode: 9))
             surface.keyDown(with: event)
-            try await screenWait("clipboard paste \(payload.utf8.count) bytes: \(controller.clipboardError)", timeout: 7) {
+            try await screenWait(
+                "clipboard paste \(payload.utf8.count) bytes: \(controller.clipboardError)", timeout: 7
+            ) {
                 controller.clipboard.completedOperations > before || !controller.clipboardError.isEmpty
             }
             try #require(controller.clipboardError.isEmpty, "\(controller.clipboardError)")
@@ -136,7 +149,9 @@ private struct ScreenFixtureConnection: Decodable {
         }
         let remoteText = "Remote → local 🦊\nCopy from app menu"
         hostClipboard.clearContents(); hostClipboard.setString(remoteText, forType: .string)
-        try await screenWait("remote copy to local clipboard", timeout: 5) { clientClipboard.string(forType: .string) == remoteText }
+        try await screenWait("remote copy to local clipboard", timeout: 5) {
+            clientClipboard.string(forType: .string) == remoteText
+        }
         controller.clipboard.setEnabled(false)
         try await Task.sleep(for: .milliseconds(350))
         hostClipboard.clearContents(); hostClipboard.setString("disabled", forType: .string)
@@ -148,6 +163,16 @@ private struct ScreenFixtureConnection: Decodable {
     }
     let firstGeneration = controller.sessionState.displayGeneration
     if !real {
+        let beforeSignalingRetry = controller.renderer.framesPresented
+        #expect(try await inject("/test/interrupt-screen-signaling") == 1)
+        // The HTTP signaling stream is canceled, while real WebRTC media
+        // continues. Its retry must not put a spinner over a live desktop.
+        for _ in 0..<60 {
+            try await Task.sleep(for: .milliseconds(25))
+            #expect(controller.phase == .streaming, "Signaling retry covered live native video")
+        }
+        #expect(controller.renderer.framesPresented > beforeSignalingRetry)
+        #expect(routeOpenings == 1)
         // Continue real native media/feedback for longer than the 15-second
         // session lease while every unary renewal fails. No reconnect allowed.
         try await inject("/test/reject-screen-signals?enabled=true")
@@ -161,7 +186,16 @@ private struct ScreenFixtureConnection: Decodable {
         #expect(
             controller.renderer.lastPixelFormat == kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange
                 || controller.renderer.lastPixelFormat == kCVPixelFormatType_420YpCbCr8BiPlanarFullRange)
+        let pointerBefore = controller.pointerSequence
+        controller.sendPointerMove(x: 0.2, y: 0.2)
+        #expect(controller.pointerSequence == pointerBefore + 1, "First pointer movement must dispatch synchronously")
+        controller.sendPointerMove(x: 0.3, y: 0.3)
+        controller.releaseAllInput()
+        let releasedPointer = controller.pointerSequence
+        try await Task.sleep(for: .milliseconds(15))
+        #expect(controller.pointerSequence == releasedPointer, "Focus/release must cancel trailing motion")
         let start = Date()
+        let inputBefore = controller.eventOrdinal
         controller.sendKey(code: 0, down: true, repeat: false, modifiers: [])
         controller.sendKey(code: 0, down: false, repeat: false, modifiers: [])
         controller.sendPointerButton(.left, down: true, clickCount: 1, x: 0, y: 0, modifiers: [])
@@ -169,7 +203,7 @@ private struct ScreenFixtureConnection: Decodable {
         // Real desktop interaction below is restricted to the owned probe window.
         // Synthetic mode verifies the same complete control protocol without posting.
         try await screenWait("native input acknowledgment", timeout: 4) {
-            controller.sessionState.lastInputOrdinal >= 4 || controller.errorMessage != nil
+            controller.sessionState.lastInputOrdinal >= inputBefore + 4 || controller.errorMessage != nil
         }
         #expect(controller.errorMessage == nil)
         print("Input acknowledgment observed within \(Date().timeIntervalSince(start) * 1000) ms")
@@ -205,6 +239,34 @@ private struct ScreenFixtureConnection: Decodable {
         #expect(resumedAges.allSatisfy { $0 < 200 }, "Motion must resume without a slow keyframe drain")
         #expect(controller.sessionState.captureToSendMs > 0)
         #expect(controller.sessionState.renderMs >= 0)
+        let responses = try await measureScreenInputResponse(controller, x: 0.02, y: 0.02) { white in
+            controller.sendText("dieter-latency:\(white ? 235 : 16)")
+        }
+        let responseAges = responses.sorted()
+        print(
+            "Synthetic input → actual Metal presentation: median \(responseAges[responseAges.count / 2]) ms, p95 \(responseAges[responseAges.count * 95 / 100]) ms"
+        )
+        let report: [String: Any] = [
+            "measurement": "same-host synthetic capture and input to actual Metal presentation",
+            "requestedFps": requestedFPS, "captureSamples": sortedAges.count,
+            "captureMedianMs": median, "captureP95Ms": p95, "idleResumeMs": resumedAges,
+            "inputSamples": responseAges.count, "inputMedianMs": responseAges[responseAges.count / 2],
+            "inputP95Ms": responseAges[responseAges.count * 95 / 100],
+            "encodeMs": controller.sessionState.encodeMs, "sendMs": controller.sessionState.sendMs,
+            "jitterBufferMs": controller.sessionState.jitterBufferMs,
+            "renderMs": controller.sessionState.renderMs,
+        ]
+        try JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys]).write(
+            to: output.appending(path: "latency.json"))
+        controller.configure(maxFPS: 120)
+        try await screenWait("120 fps live configuration", timeout: 8) {
+            controller.sessionState.configuration.maxFps == 120
+        }
+        #expect(controller.sessionState.configuration.maxWidth <= 1920)
+        controller.configure(maxFPS: 60)
+        try await screenWait("60 fps live configuration", timeout: 8) {
+            controller.sessionState.configuration.maxFps == 60
+        }
         // Canceled resize tasks must not submit intermediate geometries.
         for width in [640, 1120, 1280, 800] {
             let scale = window.backingScaleFactor
@@ -222,7 +284,9 @@ private struct ScreenFixtureConnection: Decodable {
         let targetExecutable = try #require(environment["DIETER_TEST_INPUT_TARGET"])
         let targetReport = output.appending(path: "input-target.json")
         let launch = NSWorkspace.OpenConfiguration()
-        launch.arguments = [targetReport.path, String(ProcessInfo.processInfo.processIdentifier), try #require(fixture.clipboardName)]
+        launch.arguments = [
+            targetReport.path, String(ProcessInfo.processInfo.processIdentifier), try #require(fixture.clipboardName),
+        ]
         // Same-host tests must activate the owned target rather than the viewer.
         controller.clipboard.makeRequest = { clipboardContext }
         controller.clipboard.enabled = false
@@ -236,6 +300,17 @@ private struct ScreenFixtureConnection: Decodable {
         }
         try await screenWait("owned input target activation", timeout: 4) { report()["active"] as? Bool == true }
         let x = try #require(report()["x"] as? Double), y = try #require(report()["y"] as? Double)
+        let responses = try await measureScreenInputResponse(controller, x: x, y: y) { white in
+            controller.sendKey(code: white ? 18 : 19, down: true, repeat: false, modifiers: [])
+            controller.sendKey(code: white ? 18 : 19, down: false, repeat: false, modifiers: [])
+        }.sorted()
+        let responseReport: [String: Any] = [
+            "measurement": "owned app input to actual Metal presentation", "samples": responses.count,
+            "medianMs": responses[responses.count / 2], "p95Ms": responses[responses.count * 95 / 100],
+        ]
+        print("Owned app input → actual Metal presentation: \(responseReport)")
+        try JSONSerialization.data(withJSONObject: responseReport, options: [.prettyPrinted, .sortedKeys]).write(
+            to: output.appending(path: "input-latency.json"))
         controller.sendPointerButton(.left, down: true, clickCount: 1, x: x, y: y, modifiers: [])
         controller.sendPointerButton(.left, down: false, clickCount: 1, x: x, y: y, modifiers: [])
         controller.sendKey(code: 0, down: true, repeat: false, modifiers: [])
@@ -262,12 +337,20 @@ private struct ScreenFixtureConnection: Decodable {
         let beforePaste = controller.clipboard.completedOperations
         controller.clipboard.perform(.paste, text: pasted)
         controller.sendText("AFTER_PASTE")
-        try await screenWait("ordered clipboard shortcut completes", timeout: 4) { controller.clipboard.completedOperations > beforePaste }
+        try await screenWait("ordered clipboard shortcut completes", timeout: 4) {
+            controller.clipboard.completedOperations > beforePaste
+        }
         controller.clipboard.enabled = false
-        try await screenWait("typing stays after paste", timeout: 4) { (report()["text"] as? String ?? "").contains(pasted + "AFTER_PASTE") }
-        try await screenWait("native app consumed clipboard paste", timeout: 4) { (report()["text"] as? String ?? "").contains(pasted) }
+        try await screenWait("typing stays after paste", timeout: 4) {
+            (report()["text"] as? String ?? "").contains(pasted + "AFTER_PASTE")
+        }
+        try await screenWait("native app consumed clipboard paste", timeout: 4) {
+            (report()["text"] as? String ?? "").contains(pasted)
+        }
         _ = try await controller.clipboard.exchange(.copy)
-        try await screenWait("native app copy updated pasteboard", timeout: 4) { hostClipboard.string(forType: .string) == (report()["text"] as? String) }
+        try await screenWait("native app copy updated pasteboard", timeout: 4) {
+            hostClipboard.string(forType: .string) == (report()["text"] as? String)
+        }
         let copied = try await controller.clipboard.exchange(.read)
         #expect(copied.text.contains(pasted))
         // Copy is an explicit operation: its result must still reach the local
@@ -276,7 +359,9 @@ private struct ScreenFixtureConnection: Decodable {
         let beforeCopy = controller.clipboard.completedOperations
         controller.clipboard.copySelection()
         controller.clipboard.makeRequest = { nil }
-        try await screenWait("copy completes after viewer focus loss", timeout: 4) { controller.clipboard.completedOperations > beforeCopy }
+        try await screenWait("copy completes after viewer focus loss", timeout: 4) {
+            controller.clipboard.completedOperations > beforeCopy
+        }
         #expect(clientClipboard.string(forType: .string) == (report()["text"] as? String))
         controller.clipboard.makeRequest = { clipboardContext }
         controller.clipboard.enabled = false
@@ -337,7 +422,9 @@ private struct ScreenFixtureConnection: Decodable {
         try await Task.sleep(nanoseconds: 2_500_000_000)
         #expect(routeOpenings == 3)
         #expect(controller.phase == .idle)
-        print("Lease/capture regression: \(rejected) rejected RPC renewals preserved native video; expiry and actual helper shutdown recovered; explicit disconnect canceled recovery")
+        print(
+            "Lease/capture regression: \(rejected) rejected RPC renewals preserved native video; expiry and actual helper shutdown recovered; explicit disconnect canceled recovery"
+        )
     }
     controller.disconnect()
     try await screenWait("session teardown", timeout: 4) { !controller.controlActive }
@@ -386,6 +473,7 @@ private final class NativeScreenPixelBufferProbe: RTCCVPixelBuffer {
     let submissions = renderer.drawSubmissions
     try await Task.sleep(for: .milliseconds(250))
     #expect(renderer.drawSubmissions == submissions, "An idle screen must not run a redraw timer")
+    let oldDecoder = renderer.decodeHandler()
     renderer.reset()
     #expect(renderer.framesPresented == 0)
     renderer.renderFrame(RTCVideoFrame(buffer: probe, rotation: ._0, timeStampNs: 2000))
@@ -393,6 +481,9 @@ private final class NativeScreenPixelBufferProbe: RTCCVPixelBuffer {
     try await Task.sleep(for: .milliseconds(100))
     #expect(renderer.drawSubmissions == 0, "Disconnect must invalidate queued draws")
     #expect(renderer.framesPresented == 0)
+    oldDecoder(RTCVideoFrame(buffer: probe, rotation: ._0, timeStampNs: 3000))
+    try await Task.sleep(for: .milliseconds(50))
+    #expect(renderer.drawSubmissions == 0, "A released decoder must not draw into a new session")
     // Immediate playout can give every decoded frame the same render time.
     // Only the RTP timestamp identifies a new video presentation.
     for timestamp: Int32 in [1, 2] {
@@ -549,4 +640,41 @@ private final class ScreenFrameReadiness: @unchecked Sendable {
     try JSONSerialization.data(withJSONObject: evidence, options: .prettyPrinted).write(
         to: root.appending(path: "mac-stats.json"))
     print("Concurrent Mac viewer evidence: \(root.path)")
+}
+
+// The timestamp is taken before input dispatch, on the same clock as Metal's
+// actual presentation callback. Pixel verification observes the response, not an
+// input ACK or a frame captured before the application changed its content.
+@MainActor private func measureScreenInputResponse(
+    _ controller: RemoteDesktopController, x: Double, y: Double,
+    send: (Bool) -> Void
+) async throws -> [Double] {
+    let previous = controller.renderer.onPresentationTiming
+    var waiting: (white: Bool, started: Double)?
+    var samples: [Double] = []
+    controller.renderer.onPresentationTiming = { frame, presentedAt in
+        previous?(frame, presentedAt)
+        guard let pending = waiting, presentedAt >= pending.started,
+            let buffer = (frame.buffer as? RTCCVPixelBuffer)?.pixelBuffer,
+            CVPixelBufferIsPlanar(buffer)
+        else { return }
+        CVPixelBufferLockBaseAddress(buffer, .readOnly)
+        defer { CVPixelBufferUnlockBaseAddress(buffer, .readOnly) }
+        guard let base = CVPixelBufferGetBaseAddressOfPlane(buffer, 0) else { return }
+        let px = max(0, min(CVPixelBufferGetWidth(buffer) - 1, Int(x * Double(CVPixelBufferGetWidth(buffer)))))
+        let py = max(0, min(CVPixelBufferGetHeight(buffer) - 1, Int(y * Double(CVPixelBufferGetHeight(buffer)))))
+        let luma = base.load(fromByteOffset: py * CVPixelBufferGetBytesPerRowOfPlane(buffer, 0) + px, as: UInt8.self)
+        guard pending.white ? luma > 215 : luma < 35 else { return }
+        samples.append((presentedAt - pending.started) * 1000)
+        waiting = nil
+    }
+    defer { controller.renderer.onPresentationTiming = previous }
+    for index in 0..<24 {
+        waiting = (index % 2 != 0, CACurrentMediaTime())
+        send(index % 2 != 0)
+        try await screenWait("input changed presented pixels", timeout: 3) { waiting == nil }
+    }
+    #expect(samples.count == 24)
+    #expect(samples.allSatisfy { $0 >= 0 && $0 < 500 }, "Input response must not build a stale queue")
+    return samples
 }

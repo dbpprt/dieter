@@ -91,3 +91,42 @@ func TestCongestionRevokesOldProbeProofPermanently(t *testing.T) {
 		t.Fatal("new healthy feedback resurrected a revoked probe")
 	}
 }
+
+func TestIsolatedDelayBurstKeepsProvenCapacityButSustainedDelayRevokesIt(t *testing.T) {
+	p := newPacketPacer(150000)
+	defer p.Close()
+	p.transportID = 3
+	now := time.Now()
+	p.ObserveNetwork(now, true)
+	p.confirmedRate = 8_000_000
+	sequence := uint16(1)
+	report := func(at time.Time, delay time.Duration) {
+		t.Helper()
+		base := sequence
+		for i := 0; i < 3; i++ {
+			p.transportHistory[int(sequence)%transportHistorySize] = sentTransportPacket{sequence: sequence, sent: at.Add(time.Duration(i) * 10 * time.Millisecond), size: 1200}
+			sequence++
+		}
+		delta := int64((10*time.Millisecond + delay/2) / time.Microsecond)
+		p.observeTransport(at.Add(100*time.Millisecond), &rtcp.TransportLayerCC{
+			BaseSequenceNumber: base, PacketStatusCount: 3, ReferenceTime: 1,
+			PacketChunks: []rtcp.PacketStatusChunk{&rtcp.RunLengthChunk{PacketStatusSymbol: rtcp.TypeTCCPacketReceivedSmallDelta, RunLength: 3}},
+			RecvDeltas:   []*rtcp.RecvDelta{{Type: rtcp.TypeTCCPacketReceivedSmallDelta}, {Type: rtcp.TypeTCCPacketReceivedSmallDelta, Delta: delta}, {Type: rtcp.TypeTCCPacketReceivedSmallDelta, Delta: delta}},
+		})
+	}
+	report(now, 25*time.Millisecond)
+	if p.TargetBitrate() != 8_000_000 {
+		t.Fatal("one jitter burst erased proven bandwidth")
+	}
+	report(now.Add(200*time.Millisecond), 0)
+	report(now.Add(400*time.Millisecond), 25*time.Millisecond)
+	if p.TargetBitrate() != 8_000_000 {
+		t.Fatal("separate jitter bursts accumulated as sustained congestion")
+	}
+	for i := 1; i <= 5; i++ {
+		report(now.Add(400*time.Millisecond+time.Duration(i)*100*time.Millisecond), 25*time.Millisecond)
+	}
+	if p.TargetBitrate() != 150000 {
+		t.Fatal("sustained queue growth did not revoke old capacity")
+	}
+}

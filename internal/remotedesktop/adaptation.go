@@ -22,6 +22,28 @@ type adaptationSample struct {
 	drops                 uint64
 	elapsed               time.Duration
 	networkPressure       bool
+	confirmedBudget       int
+}
+
+// Keep the redraw pending across the probe cooldown, even after the encoder
+// reaches its bitrate ceiling and no longer qualifies as degraded.
+type idleRefreshController struct {
+	last    time.Time
+	pending bool
+}
+
+func (c *idleRefreshController) configured(before, after StreamConfiguration, idle bool) {
+	if idle && after.BitrateKbps > before.BitrateKbps {
+		c.pending = true
+	}
+}
+
+func (c *idleRefreshController) due(now time.Time, idle, healthy, belowBudget bool) bool {
+	if !idle || !healthy || (!c.pending && !belowBudget) || now.Sub(c.last) < 3*time.Second {
+		return false
+	}
+	c.last, c.pending = now, false
+	return true
 }
 
 type qualityController struct {
@@ -56,7 +78,7 @@ func sustained(now time.Time, since *time.Time, condition bool, duration time.Du
 }
 
 func fpsStep(limit int) int {
-	for _, fps := range []int{60, 45, 30, 24, 15, 10, 5, 1} {
+	for _, fps := range []int{120, 90, 60, 45, 30, 24, 15, 10, 5, 1} {
 		if fps <= limit {
 			return fps
 		}
@@ -65,7 +87,7 @@ func fpsStep(limit int) int {
 }
 
 func nextFPS(current, ceiling int) int {
-	for _, fps := range []int{5, 10, 15, 24, 30, 45, 60} {
+	for _, fps := range []int{5, 10, 15, 24, 30, 45, 60, 90, 120} {
 		if fps > current {
 			return min(fps, ceiling)
 		}
@@ -112,6 +134,18 @@ func (c *qualityController) next(now time.Time, current StreamConfiguration, lim
 		} else {
 			pauseRecovery()
 		}
+		// Silence alone proves nothing, but acknowledged probe traffic does.
+		// Restore bitrate without inventing decode capacity or resizing an idle
+		// display. The next bounded recovery refresh replaces the blurry image.
+		if freshFeedback && !sample.networkPressure && sample.feedback.LossFraction < .02 &&
+			sample.confirmedBudget > current.BitrateKbps && now.Sub(c.lastBitrate) >= time.Second {
+			target := min(sample.confirmedBudget, int(limits.MaxBitrateKbps))
+			if target-current.BitrateKbps >= max(150, current.BitrateKbps/5) {
+				desired.BitrateKbps = target
+				c.budget = float64(target)
+				return desired, "acknowledged idle bitrate recovery"
+			}
+		}
 		return desired, "idle or keyframe-only interval"
 	}
 	if !c.lastActive.IsZero() && now.Sub(c.lastActive) > 3*time.Second {
@@ -151,6 +185,7 @@ func (c *qualityController) next(now time.Time, current StreamConfiguration, lim
 	}
 	ceiling := int(limits.MaxFps)
 	minFPS := min(15, ceiling)
+	motion := limits.Quality == dieterv1.RemoteDesktopQuality_REMOTE_DESKTOP_QUALITY_MOTION
 	if limits.Quality == dieterv1.RemoteDesktopQuality_REMOTE_DESKTOP_QUALITY_DETAIL {
 		ceiling, minFPS = min(30, ceiling), min(10, ceiling)
 	} else if limits.Quality == dieterv1.RemoteDesktopQuality_REMOTE_DESKTOP_QUALITY_MOTION {
@@ -170,10 +205,11 @@ func (c *qualityController) next(now time.Time, current StreamConfiguration, lim
 	// A low estimate alone is not evidence that a mostly static screen needs
 	// fewer pixels. Require actual traffic pressure or fresh receiver loss.
 	// Saturating our own low bitrate cap is not evidence that the link is full.
-	// Require fresh transport queue growth/RTT or loss before removing pixels.
+	// Require sustained transport queue growth or loss before removing pixels.
 	pressure := (sample.networkPressure && mediaKbps >= c.budget*.65) || loss >= .03
 	networkFPS := ceiling
-	if pressure {
+	// Motion trades pixels before cadence while there is room to shrink.
+	if pressure && (!motion || w <= min(640, int(limits.MaxWidth))) {
 		networkFPS = max(minFPS, int(c.budget/max(.001, perFPS)))
 	}
 	targetFPS := min(computeFPS, networkFPS)
@@ -202,15 +238,23 @@ func (c *qualityController) next(now time.Time, current StreamConfiguration, lim
 		desired.FPS = next
 		reason = "sustained frame-rate recovery"
 	}
-	// Lower cadence first. Spatial changes need eight seconds of continuous
-	// pressure, twelve seconds between resizes, and time for the new FPS to settle.
+	// Automatic/detail lower cadence first, requiring sustained pressure and
+	// time for the new FPS to settle. Motion permits earlier spatial reductions.
 	needSmaller := warm && current.FPS <= minFPS && pressure && c.budget < perFPS*float64(minFPS)*.75
-	if sustained(now, &c.smallerSince, needSmaller, 8*time.Second) && desired.FPS == current.FPS && now.Sub(c.lastSize) >= 12*time.Second && now.Sub(c.lastFPS) >= 4*time.Second {
+	sizePressureTime, resizeInterval := 8*time.Second, 12*time.Second
+	if motion {
+		needSmaller = warm && pressure && c.budget < perFPS*float64(current.FPS)*.85
+		sizePressureTime, resizeInterval = time.Second, 4*time.Second
+	}
+	if sustained(now, &c.smallerSince, needSmaller, sizePressureTime) && desired.FPS == current.FPS && now.Sub(c.lastSize) >= resizeInterval && now.Sub(c.lastFPS) >= 4*time.Second {
 		floorWidth := min(640, w)
 		width := max(floorWidth, (w*4/5)/160*160)
 		if width < w {
 			desired.MaxWidth, desired.MaxHeight = fitVideo(width, current.MaxHeight, c.aspect)
 			reason = "sustained resolution pressure"
+			if motion {
+				reason = "preserve motion cadence"
+			}
 		}
 	}
 	fullW, fullH := fitVideo(int(limits.MaxWidth), int(limits.MaxHeight), c.aspect)

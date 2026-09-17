@@ -7,11 +7,15 @@ final class InputTarget: NSView {
     var ups = 0
     var text = ""
     var scrolls = 0
+    var latencyWhite: Bool?
     let clipboard: NSPasteboard = CommandLine.arguments.count > 3 ? NSPasteboard(name: .init(CommandLine.arguments[3])) : .general
     init(output: URL) { self.output = output; super.init(frame: .zero) }
     required init?(coder: NSCoder) { nil }
     override var acceptsFirstResponder: Bool { true }
     override func keyDown(with event: NSEvent) {
+        if [18, 19].contains(event.keyCode) {
+            latencyWhite = event.keyCode == 18; needsDisplay = true; report(); return
+        }
         keys.append("\(event.keyCode):down")
         if event.modifierFlags.contains(.command), event.keyCode == 9 { text += clipboard.string(forType: .string) ?? "" }
         else if event.modifierFlags.contains(.command), [7, 8].contains(event.keyCode) { clipboard.clearContents(); clipboard.setString(text, forType: .string); if event.keyCode == 7 { text = "" } }
@@ -27,7 +31,8 @@ final class InputTarget: NSView {
     override func mouseDown(with event: NSEvent) { window?.makeFirstResponder(self) }
     override func mouseUp(with event: NSEvent) { ups += 1; report() }
     override func draw(_ dirtyRect: NSRect) {
-        NSColor.systemTeal.setFill(); bounds.fill()
+        (latencyWhite.map { $0 ? NSColor.white : NSColor.black } ?? NSColor.systemTeal).setFill(); bounds.fill()
+        if latencyWhite != nil { return }
         ("Dieter native input test" as NSString).draw(
             at: NSPoint(x: 20, y: 80),
             withAttributes: [.font: NSFont.systemFont(ofSize: 24), .foregroundColor: NSColor.white])

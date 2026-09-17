@@ -109,6 +109,13 @@ func assertScreenSessionCLI(t *testing.T, client *CLI, output *bytes.Buffer, con
 	if state.GetConfiguration().GetMaxFps() != 24 || state.GetConfiguration().GetMaxWidth() != 1920 || state.GetConfiguration().GetDisplayId() != "2" || state.GetConfiguration().GetQuality() != dieterv1.RemoteDesktopQuality_REMOTE_DESKTOP_QUALITY_DETAIL {
 		t.Fatalf("changed state: %v", &state)
 	}
+	raw = []byte(runDaemonCLI(t, client, output, "screen", "configure", id, "--quality", "motion", "--fps", "120", "--width", "3840", "--height", "2160"))
+	if err = protojson.Unmarshal(raw, &state); err != nil {
+		t.Fatal(err)
+	}
+	if state.GetConfiguration().GetMaxFps() != 120 || state.GetConfiguration().GetMaxWidth() != 1920 || state.GetConfiguration().GetMaxHeight() != 1080 {
+		t.Fatalf("high refresh configuration over %s: %v", client.transport.route, &state)
+	}
 	var sessions dieterv1.RemoteDesktopSessions
 	if err := protojson.Unmarshal([]byte(runDaemonCLI(t, client, output, "screen", "sessions")), &sessions); err != nil {
 		t.Fatal(err)

@@ -119,7 +119,12 @@ struct ScreensView: View {
             Divider()
             Button("Automatic quality") { controller.configure(quality: .auto) }
             Button("Prefer sharp text") { controller.configure(quality: .detail) }
-            Button("Prefer smooth motion") { controller.configure(quality: .motion) }
+            Button("Prefer responsive motion") { controller.configure(quality: .motion) }
+            Menu("Frame rate") {
+                ForEach(controller.availableFrameRates, id: \.self) { rate in
+                    Button("Up to \(rate) fps") { controller.configure(maxFPS: rate) }
+                }
+            }
             Divider()
             Toggle(
                 "Compose text locally (IME)",
@@ -127,11 +132,18 @@ struct ScreensView: View {
                     get: { controller.textInputMode },
                     set: { controller.textInputMode = $0 }))
             if controller.capabilities.clipboardSupported {
-                Toggle("Share clipboard", isOn: Binding(get: { controller.clipboardEnabled }, set: {
-                    controller.clipboardEnabled = $0; controller.clipboard.setEnabled($0)
-                })).disabled(!controller.controlActive)
-                Button("Copy from remote") { controller.clipboard.copySelection() }.disabled(!controller.controlActive || !controller.clipboardEnabled || controller.clipboardBusy)
-                Button("Paste to remote") { controller.clipboard.paste() }.disabled(!controller.controlActive || !controller.clipboardEnabled || controller.clipboardBusy)
+                Toggle(
+                    "Share clipboard",
+                    isOn: Binding(
+                        get: { controller.clipboardEnabled },
+                        set: {
+                            controller.clipboardEnabled = $0; controller.clipboard.setEnabled($0)
+                        })
+                ).disabled(!controller.controlActive)
+                Button("Copy from remote") { controller.clipboard.copySelection() }.disabled(
+                    !controller.controlActive || !controller.clipboardEnabled || controller.clipboardBusy)
+                Button("Paste to remote") { controller.clipboard.paste() }.disabled(
+                    !controller.controlActive || !controller.clipboardEnabled || controller.clipboardBusy)
                 if !controller.clipboardError.isEmpty { Text(controller.clipboardError) }
             }
             Button("Refresh screen") { controller.configure(refresh: true) }
@@ -215,7 +227,9 @@ struct ScreensView: View {
             .frame(height: 28)
             .background(DieterTheme.sidebar)
         }
-        .onAppear { session.recordActivity(); controller.clipboardVisible = true }
+        .onAppear {
+            session.recordActivity(); controller.clipboardVisible = true
+        }
         .onDisappear { controller.clipboardVisible = false }
     }
 
@@ -572,8 +586,10 @@ final class RemoteDesktopInputView: NSView, @preconcurrency NSTextInputClient, @
     }
 
     override func keyDown(with event: NSEvent) {
-        if [7, 8, 9].contains(event.keyCode), event.modifierFlags.intersection([.command, .control, .option, .shift]) == .command,
-            controller?.capabilities.clipboardSupported == true, controller?.clipboardEnabled == true {
+        if [7, 8, 9].contains(event.keyCode),
+            event.modifierFlags.intersection([.command, .control, .option, .shift]) == .command,
+            controller?.capabilities.clipboardSupported == true, controller?.clipboardEnabled == true
+        {
             if !event.isARepeat {
                 switch event.keyCode {
                 case 7: controller?.clipboard.cut()

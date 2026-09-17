@@ -13,11 +13,14 @@ import (
 const retransmissionPackets = 512
 const retransmissionAge = 250 * time.Millisecond
 
-type retransmissionFactory struct{ refresh func() }
+type retransmissionFactory struct {
+	refresh  func()
+	deadline func() (time.Duration, time.Duration)
+}
 
 func (f retransmissionFactory) NewInterceptor(string) (interceptor.Interceptor, error) {
 	ctx, cancel := context.WithCancel(context.Background())
-	value := &retransmissionInterceptor{ctx: ctx, cancel: cancel, streams: make(map[uint32]*retransmissionStream), pending: make(map[retransmissionKey]bool), requests: make(chan retransmissionKey, 64), refresh: f.refresh}
+	value := &retransmissionInterceptor{ctx: ctx, cancel: cancel, streams: make(map[uint32]*retransmissionStream), pending: make(map[retransmissionKey]bool), requests: make(chan retransmissionKey, 64), refresh: f.refresh, deadline: f.deadline}
 	go value.run()
 	return value, nil
 }
@@ -27,14 +30,17 @@ type retransmissionKey struct {
 	sequence uint16
 }
 type cachedRTP struct {
-	header   rtp.Header
-	payload  []byte
-	stored   time.Time
-	attempts int
+	header       rtp.Header
+	payload      []byte
+	stored       time.Time
+	frameStarted time.Time
+	attempts     int
 }
 type retransmissionStream struct {
-	packets [retransmissionPackets]*cachedRTP
-	writer  interceptor.RTPWriter
+	packets      [retransmissionPackets]*cachedRTP
+	writer       interceptor.RTPWriter
+	timestamp    uint32
+	frameStarted time.Time
 }
 
 // A single worker replaces per-NACK goroutines. Packet history, retry age,
@@ -48,6 +54,7 @@ type retransmissionInterceptor struct {
 	ctx      context.Context
 	cancel   context.CancelFunc
 	refresh  func()
+	deadline func() (time.Duration, time.Duration)
 }
 
 func (r *retransmissionInterceptor) BindLocalStream(info *interceptor.StreamInfo, writer interceptor.RTPWriter) interceptor.RTPWriter {
@@ -63,6 +70,10 @@ func (r *retransmissionInterceptor) BindLocalStream(info *interceptor.StreamInfo
 		if len(p) <= 2048 && h.MarshalSize() <= 256 {
 			packet := &cachedRTP{header: h.Clone(), payload: append([]byte(nil), p...), stored: time.Now()}
 			r.mu.Lock()
+			if stream.frameStarted.IsZero() || stream.timestamp != h.Timestamp {
+				stream.timestamp, stream.frameStarted = h.Timestamp, packet.stored
+			}
+			packet.frameStarted = stream.frameStarted
 			stream.packets[int(h.SequenceNumber)%retransmissionPackets] = packet
 			r.mu.Unlock()
 		}
@@ -123,6 +134,9 @@ func (r *retransmissionInterceptor) run() {
 				packet = stream.packets[int(key.sequence)%retransmissionPackets]
 			}
 			valid := packet != nil && packet.header.SequenceNumber == key.sequence && time.Since(packet.stored) <= retransmissionAge && packet.attempts < 2
+			if valid {
+				valid = r.repairUseful(packet, time.Now())
+			}
 			padding := packet != nil && packet.header.SequenceNumber == key.sequence && packet.header.Padding
 			var header rtp.Header
 			if valid {
@@ -140,3 +154,15 @@ func (r *retransmissionInterceptor) run() {
 	}
 }
 func (r *retransmissionInterceptor) Close() error { r.cancel(); return nil }
+
+func (r *retransmissionInterceptor) repairUseful(packet *cachedRTP, now time.Time) bool {
+	if r.deadline == nil {
+		return true
+	}
+	window, transit := r.deadline()
+	started := packet.frameStarted
+	if started.IsZero() {
+		started = packet.stored
+	}
+	return now.Add(transit).Before(started.Add(window))
+}

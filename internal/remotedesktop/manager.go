@@ -562,6 +562,9 @@ func newSession(manager *Manager, request *dieterv1.StartRemoteDesktopRequest, o
 	if request.GetMaxHeight() > 0 {
 		sourceOptions.MaxHeight = int(request.GetMaxHeight())
 	}
+	if config.MaxFps > 60 {
+		sourceOptions.MaxWidth, sourceOptions.MaxHeight = int(config.MaxWidth), int(config.MaxHeight)
+	}
 	source, err := manager.media.Subscribe(sourceOptions)
 	if err != nil {
 		return nil, err
@@ -758,8 +761,8 @@ func validateStartRequest(request *dieterv1.StartRemoteDesktopRequest) error {
 			return errors.New("initial ICE candidate is too large")
 		}
 	}
-	if fps := request.GetMaxFps(); fps < 0 || fps > 60 {
-		return errors.New("max_fps must be at most 60")
+	if fps := request.GetMaxFps(); fps < 0 || fps > 120 {
+		return errors.New("max_fps must be at most 120")
 	}
 	if bitrate := request.GetMaxBitrateKbps(); bitrate < 0 || bitrate > 100_000 {
 		return errors.New("max_bitrate_kbps must be at most 100000")

@@ -21,6 +21,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -131,12 +132,38 @@ func run(helper, kind, ready string, authenticate bool) error {
 	handler := api.Handler()
 	var rejectLeaseRPC atomic.Bool
 	var rejectedSignals atomic.Int64
+	var signalingMu sync.Mutex
+	signalingStreams := make(map[*http.Request]context.CancelFunc)
 	httpServer := &http.Server{Handler: h2c.NewHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if authenticate && r.Header.Get("Authorization") != "Bearer "+token {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
 		// Test-only fault injection on the disposable, authenticated fixture.
+		if authenticate && r.Method == http.MethodPost && r.URL.Path == "/test/interrupt-screen-signaling" {
+			signalingMu.Lock()
+			w.Header().Set("X-Dieter-Test-Interrupted-Signals", fmt.Sprint(len(signalingStreams)))
+			for _, cancel := range signalingStreams {
+				cancel()
+			}
+			signalingMu.Unlock()
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		if authenticate && r.URL.Path == "/dieter.v1.DieterService/StartRemoteDesktop" {
+			ctx, cancel := context.WithCancel(r.Context())
+			signalingMu.Lock()
+			signalingStreams[r] = cancel
+			signalingMu.Unlock()
+			original := r
+			defer func() {
+				cancel()
+				signalingMu.Lock()
+				delete(signalingStreams, original)
+				signalingMu.Unlock()
+			}()
+			r = r.WithContext(ctx)
+		}
 		if authenticate && kind == "native-synthetic" && r.Method == http.MethodPost && r.URL.Path == "/test/stop-capture" {
 			if err := os.WriteFile(stopCaptureFile, nil, 0600); err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)

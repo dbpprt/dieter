@@ -3,9 +3,11 @@ import VideoToolbox
 @preconcurrency import WebRTC
 
 // The bundled decoder accepts H.264 High, but its default SDP list advertises
-// level 3.1. Advertise the hardware path's 4K/60 ceiling explicitly.
+// level 3.1. Advertise the hardware path's 4K60 / 1080p120 ceiling explicitly.
 final class RemoteDesktopDecoderFactory: NSObject, RTCVideoDecoderFactory {
     private let underlying = RTCDefaultVideoDecoderFactory()
+    private let onDecodedFrame: (@Sendable (RTCVideoFrame) -> Void)?
+    init(onDecodedFrame: (@Sendable (RTCVideoFrame) -> Void)? = nil) { self.onDecodedFrame = onDecodedFrame }
     func supportedCodecs() -> [RTCVideoCodecInfo] {
         guard VTIsHardwareDecodeSupported(kCMVideoCodecType_H264) else { return [] }
         return ["640034", "42e034"].map {
@@ -17,6 +19,43 @@ final class RemoteDesktopDecoderFactory: NSObject, RTCVideoDecoderFactory {
         }
     }
     func createDecoder(_ info: RTCVideoCodecInfo) -> (any RTCVideoDecoder)? {
-        underlying.createDecoder(info)
+        guard let decoder = underlying.createDecoder(info) else { return nil }
+        guard let onDecodedFrame else { return decoder }
+        return RemoteDesktopImmediateDecoder(decoder, onDecodedFrame: onDecodedFrame)
     }
+}
+
+// Keep libwebrtc's callback for reference management/statistics, while presenting
+// desktop output immediately. There is no audio clock to synchronize against.
+private final class RemoteDesktopImmediateDecoder: NSObject, RTCVideoDecoder {
+    let underlying: any RTCVideoDecoder
+    let onDecodedFrame: @Sendable (RTCVideoFrame) -> Void
+    init(_ underlying: any RTCVideoDecoder, onDecodedFrame: @escaping @Sendable (RTCVideoFrame) -> Void) {
+        self.underlying = underlying; self.onDecodedFrame = onDecodedFrame
+    }
+    func setCallback(_ callback: @escaping RTCVideoDecoderCallback) {
+        underlying.setCallback { [onDecodedFrame] frame in
+            onDecodedFrame(frame)
+            callback(frame)
+        }
+    }
+    func startDecode(withNumberOfCores numberOfCores: Int32) -> Int {
+        underlying.startDecode(withNumberOfCores: numberOfCores)
+    }
+    func release() -> Int { underlying.release() }
+    func decode(
+        _ encodedImage: RTCEncodedImage, missingFrames: Bool, codecSpecificInfo info: (any RTCCodecSpecificInfo)?,
+        renderTimeMs: Int64
+    ) -> Int {
+        underlying.decode(
+            encodedImage, missingFrames: missingFrames, codecSpecificInfo: info, renderTimeMs: renderTimeMs)
+    }
+    func implementationName() -> String { underlying.implementationName() }
+}
+
+// A registered sink keeps the receive track active. Presentation happens in the
+// decoder callback; the later scheduled callback must not draw the frame twice.
+final class RemoteDesktopDecodedTrackSink: NSObject, RTCVideoRenderer {
+    func setSize(_ size: CGSize) {}
+    func renderFrame(_ frame: RTCVideoFrame?) {}
 }

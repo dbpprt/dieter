@@ -33,3 +33,12 @@ private final class ScreenFeedbackSamples: @unchecked Sendable {
     #expect(fresh.measurementAgeMs < 1000)
     #expect(fresh.decodeMs == 4)
 }
+
+@Test @MainActor func remoteDesktopFrameRateChoicesRespectHostCapabilities() {
+    let controller = RemoteDesktopController()
+    #expect(controller.availableFrameRates == [30, 60])
+    controller.capabilities.maxFps = 30
+    #expect(controller.availableFrameRates == [30])
+    controller.capabilities.maxFps = 120
+    #expect(controller.availableFrameRates == [30, 60, 90, 120])
+}

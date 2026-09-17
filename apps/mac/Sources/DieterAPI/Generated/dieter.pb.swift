@@ -5198,6 +5198,11 @@ public nonisolated struct Dieter_V1_RemoteDesktopCapabilities: @unchecked Sendab
     set {_uniqueStorage()._supportedInputProtocolVersions = newValue}
   }
 
+  public var binaryClipboardSupported: Bool {
+    get {_storage._binaryClipboardSupported}
+    set {_uniqueStorage()._binaryClipboardSupported = newValue}
+  }
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
@@ -6804,6 +6809,12 @@ public nonisolated struct Dieter_V1_RemoteDesktopClipboardRequest: Sendable {
   /// Wait for prior reliable input (selection/focus) before a clipboard shortcut.
   public var inputBarrier: UInt64 = 0
 
+  /// Images or regular files, at most 64 items and 8 MiB combined.
+  public var items: [Dieter_V1_RemoteDesktopClipboardItem] = []
+
+  /// Older viewers receive only text, never file paths or partial binary data.
+  public var acceptBinary: Bool = false
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public nonisolated enum Action: SwiftProtobuf.Enum, Swift.CaseIterable {
@@ -6859,6 +6870,58 @@ public nonisolated struct Dieter_V1_RemoteDesktopClipboardRequest: Sendable {
   public init() {}
 }
 
+public nonisolated struct Dieter_V1_RemoteDesktopClipboardItem: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var kind: Dieter_V1_RemoteDesktopClipboardItem.Kind = .file
+
+  public var name: String = String()
+
+  public var mimeType: String = String()
+
+  public var data: Data = Data()
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public nonisolated enum Kind: SwiftProtobuf.Enum, Swift.CaseIterable {
+    public typealias RawValue = Int
+    case file // = 0
+    case image // = 1
+    case UNRECOGNIZED(Int)
+
+    public init() {
+      self = .file
+    }
+
+    public init?(rawValue: Int) {
+      switch rawValue {
+      case 0: self = .file
+      case 1: self = .image
+      default: self = .UNRECOGNIZED(rawValue)
+      }
+    }
+
+    public var rawValue: Int {
+      switch self {
+      case .file: return 0
+      case .image: return 1
+      case .UNRECOGNIZED(let i): return i
+      }
+    }
+
+    // The compiler won't synthesize support with the UNRECOGNIZED case.
+    public static let allCases: [Dieter_V1_RemoteDesktopClipboardItem.Kind] = [
+      .file,
+      .image,
+    ]
+
+  }
+
+  public init() {}
+}
+
 public nonisolated struct Dieter_V1_RemoteDesktopClipboardResponse: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
@@ -6878,13 +6941,16 @@ public nonisolated struct Dieter_V1_RemoteDesktopClipboardResponse: Sendable {
 
   public var enabled: Bool = false
 
+  public var items: [Dieter_V1_RemoteDesktopClipboardItem] = []
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
 }
 
 /// One sequential transfer per direction; at most 16 KiB per chunk and
-/// 1 MiB of UTF-8 content. Final chunks complete one serialized message.
+/// 8 MiB of binary content (text remains limited to 1 MiB).
+/// Final chunks complete one serialized message; incomplete transfers never paste.
 public nonisolated struct Dieter_V1_RemoteDesktopClipboardFrame: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
@@ -16706,7 +16772,7 @@ nonisolated extension Dieter_V1_ResizeExecutionRequest: SwiftProtobuf.Message, S
 
 nonisolated extension Dieter_V1_RemoteDesktopCapabilities: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".RemoteDesktopCapabilities"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}platform\0\u{3}graphical_session_active\0\u{1}enabled\0\u{1}ready\0\u{3}unavailable_reason\0\u{3}helper_version\0\u{3}capture_permission\0\u{3}control_permission\0\u{1}displays\0\u{1}codecs\0\u{3}hardware_encoder_available\0\u{3}control_supported\0\u{3}clipboard_supported\0\u{3}audio_supported\0\u{3}file_transfer_supported\0\u{3}active_session\0\u{3}adaptive_supported\0\u{3}cursor_supported\0\u{3}input_protocol_version\0\u{3}max_fps\0\u{1}encoder\0\u{3}daemon_executable\0\u{3}capture_executable\0\u{3}max_clients\0\u{3}connected_clients\0\u{3}supported_input_protocol_versions\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}platform\0\u{3}graphical_session_active\0\u{1}enabled\0\u{1}ready\0\u{3}unavailable_reason\0\u{3}helper_version\0\u{3}capture_permission\0\u{3}control_permission\0\u{1}displays\0\u{1}codecs\0\u{3}hardware_encoder_available\0\u{3}control_supported\0\u{3}clipboard_supported\0\u{3}audio_supported\0\u{3}file_transfer_supported\0\u{3}active_session\0\u{3}adaptive_supported\0\u{3}cursor_supported\0\u{3}input_protocol_version\0\u{3}max_fps\0\u{1}encoder\0\u{3}daemon_executable\0\u{3}capture_executable\0\u{3}max_clients\0\u{3}connected_clients\0\u{3}supported_input_protocol_versions\0\u{3}binary_clipboard_supported\0")
 
   fileprivate class _StorageClass {
     var _platform: String = String()
@@ -16735,6 +16801,7 @@ nonisolated extension Dieter_V1_RemoteDesktopCapabilities: SwiftProtobuf.Message
     var _maxClients: UInt32 = 0
     var _connectedClients: UInt32 = 0
     var _supportedInputProtocolVersions: [UInt32] = []
+    var _binaryClipboardSupported: Bool = false
 
       // This property is used as the initial default value for new instances of the type.
       // The type itself is protecting the reference to its storage via CoW semantics.
@@ -16771,6 +16838,7 @@ nonisolated extension Dieter_V1_RemoteDesktopCapabilities: SwiftProtobuf.Message
       _maxClients = source._maxClients
       _connectedClients = source._connectedClients
       _supportedInputProtocolVersions = source._supportedInputProtocolVersions
+      _binaryClipboardSupported = source._binaryClipboardSupported
     }
   }
 
@@ -16815,6 +16883,7 @@ nonisolated extension Dieter_V1_RemoteDesktopCapabilities: SwiftProtobuf.Message
         case 24: try { try decoder.decodeSingularUInt32Field(value: &_storage._maxClients) }()
         case 25: try { try decoder.decodeSingularUInt32Field(value: &_storage._connectedClients) }()
         case 26: try { try decoder.decodeRepeatedUInt32Field(value: &_storage._supportedInputProtocolVersions) }()
+        case 27: try { try decoder.decodeSingularBoolField(value: &_storage._binaryClipboardSupported) }()
         default: break
         }
       }
@@ -16901,6 +16970,9 @@ nonisolated extension Dieter_V1_RemoteDesktopCapabilities: SwiftProtobuf.Message
       if !_storage._supportedInputProtocolVersions.isEmpty {
         try visitor.visitPackedUInt32Field(value: _storage._supportedInputProtocolVersions, fieldNumber: 26)
       }
+      if _storage._binaryClipboardSupported != false {
+        try visitor.visitSingularBoolField(value: _storage._binaryClipboardSupported, fieldNumber: 27)
+      }
     }
     try unknownFields.traverse(visitor: &visitor)
   }
@@ -16936,6 +17008,7 @@ nonisolated extension Dieter_V1_RemoteDesktopCapabilities: SwiftProtobuf.Message
         if _storage._maxClients != rhs_storage._maxClients {return false}
         if _storage._connectedClients != rhs_storage._connectedClients {return false}
         if _storage._supportedInputProtocolVersions != rhs_storage._supportedInputProtocolVersions {return false}
+        if _storage._binaryClipboardSupported != rhs_storage._binaryClipboardSupported {return false}
         return true
       }
       if !storagesAreEqual {return false}
@@ -20153,7 +20226,7 @@ nonisolated extension Dieter_V1_UpdateBoardHostnamesRequest: SwiftProtobuf.Messa
 
 nonisolated extension Dieter_V1_RemoteDesktopClipboardRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".RemoteDesktopClipboardRequest"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}session_id\0\u{3}operation_id\0\u{3}input_epoch\0\u{3}control_generation\0\u{1}action\0\u{1}text\0\u{3}known_revision\0\u{1}enabled\0\u{3}input_barrier\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}session_id\0\u{3}operation_id\0\u{3}input_epoch\0\u{3}control_generation\0\u{1}action\0\u{1}text\0\u{3}known_revision\0\u{1}enabled\0\u{3}input_barrier\0\u{1}items\0\u{3}accept_binary\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -20170,6 +20243,8 @@ nonisolated extension Dieter_V1_RemoteDesktopClipboardRequest: SwiftProtobuf.Mes
       case 7: try { try decoder.decodeSingularStringField(value: &self.knownRevision) }()
       case 8: try { try decoder.decodeSingularBoolField(value: &self.enabled) }()
       case 9: try { try decoder.decodeSingularUInt64Field(value: &self.inputBarrier) }()
+      case 10: try { try decoder.decodeRepeatedMessageField(value: &self.items) }()
+      case 11: try { try decoder.decodeSingularBoolField(value: &self.acceptBinary) }()
       default: break
       }
     }
@@ -20203,6 +20278,12 @@ nonisolated extension Dieter_V1_RemoteDesktopClipboardRequest: SwiftProtobuf.Mes
     if self.inputBarrier != 0 {
       try visitor.visitSingularUInt64Field(value: self.inputBarrier, fieldNumber: 9)
     }
+    if !self.items.isEmpty {
+      try visitor.visitRepeatedMessageField(value: self.items, fieldNumber: 10)
+    }
+    if self.acceptBinary != false {
+      try visitor.visitSingularBoolField(value: self.acceptBinary, fieldNumber: 11)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -20216,6 +20297,8 @@ nonisolated extension Dieter_V1_RemoteDesktopClipboardRequest: SwiftProtobuf.Mes
     if lhs.knownRevision != rhs.knownRevision {return false}
     if lhs.enabled != rhs.enabled {return false}
     if lhs.inputBarrier != rhs.inputBarrier {return false}
+    if lhs.items != rhs.items {return false}
+    if lhs.acceptBinary != rhs.acceptBinary {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -20225,9 +20308,58 @@ nonisolated extension Dieter_V1_RemoteDesktopClipboardRequest.Action: SwiftProto
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0READ\0\u{1}WRITE\0\u{1}PASTE\0\u{1}CONFIGURE\0\u{1}COPY\0\u{1}CUT\0")
 }
 
+nonisolated extension Dieter_V1_RemoteDesktopClipboardItem: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".RemoteDesktopClipboardItem"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}kind\0\u{1}name\0\u{3}mime_type\0\u{1}data\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularEnumField(value: &self.kind) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.name) }()
+      case 3: try { try decoder.decodeSingularStringField(value: &self.mimeType) }()
+      case 4: try { try decoder.decodeSingularBytesField(value: &self.data) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if self.kind != .file {
+      try visitor.visitSingularEnumField(value: self.kind, fieldNumber: 1)
+    }
+    if !self.name.isEmpty {
+      try visitor.visitSingularStringField(value: self.name, fieldNumber: 2)
+    }
+    if !self.mimeType.isEmpty {
+      try visitor.visitSingularStringField(value: self.mimeType, fieldNumber: 3)
+    }
+    if !self.data.isEmpty {
+      try visitor.visitSingularBytesField(value: self.data, fieldNumber: 4)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Dieter_V1_RemoteDesktopClipboardItem, rhs: Dieter_V1_RemoteDesktopClipboardItem) -> Bool {
+    if lhs.kind != rhs.kind {return false}
+    if lhs.name != rhs.name {return false}
+    if lhs.mimeType != rhs.mimeType {return false}
+    if lhs.data != rhs.data {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Dieter_V1_RemoteDesktopClipboardItem.Kind: SwiftProtobuf._ProtoNameProviding {
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0FILE\0\u{1}IMAGE\0")
+}
+
 nonisolated extension Dieter_V1_RemoteDesktopClipboardResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".RemoteDesktopClipboardResponse"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}operation_id\0\u{1}revision\0\u{1}text\0\u{1}changed\0\u{3}has_text\0\u{1}error\0\u{1}enabled\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}operation_id\0\u{1}revision\0\u{1}text\0\u{1}changed\0\u{3}has_text\0\u{1}error\0\u{1}enabled\0\u{1}items\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -20242,6 +20374,7 @@ nonisolated extension Dieter_V1_RemoteDesktopClipboardResponse: SwiftProtobuf.Me
       case 5: try { try decoder.decodeSingularBoolField(value: &self.hasText_p) }()
       case 6: try { try decoder.decodeSingularStringField(value: &self.error) }()
       case 7: try { try decoder.decodeSingularBoolField(value: &self.enabled) }()
+      case 8: try { try decoder.decodeRepeatedMessageField(value: &self.items) }()
       default: break
       }
     }
@@ -20269,6 +20402,9 @@ nonisolated extension Dieter_V1_RemoteDesktopClipboardResponse: SwiftProtobuf.Me
     if self.enabled != false {
       try visitor.visitSingularBoolField(value: self.enabled, fieldNumber: 7)
     }
+    if !self.items.isEmpty {
+      try visitor.visitRepeatedMessageField(value: self.items, fieldNumber: 8)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -20280,6 +20416,7 @@ nonisolated extension Dieter_V1_RemoteDesktopClipboardResponse: SwiftProtobuf.Me
     if lhs.hasText_p != rhs.hasText_p {return false}
     if lhs.error != rhs.error {return false}
     if lhs.enabled != rhs.enabled {return false}
+    if lhs.items != rhs.items {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

@@ -691,3 +691,43 @@ func TestNativeHelperShutdownDuringFrameCreditsIsRecoverable(t *testing.T) {
 		})
 	}
 }
+
+func TestNativeHelperHighRefreshHardware(t *testing.T) {
+	path := os.Getenv("DIETER_TEST_CAPTURE_HELPER")
+	if path == "" {
+		t.Skip("native helper not configured")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	source, err := NewFrameSource(SourceOptions{Kind: "native-synthetic", HelperPath: path, Profile: "high", FPS: 120, MaxWidth: 1920, MaxHeight: 1080, Bitrate: 12000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	complete := errors.New("high refresh verified")
+	count := 0
+	var first, last time.Duration
+	var total time.Duration
+	err = source.Stream(ctx, func(sample media.Sample) error {
+		m := sample.Metadata.(FrameMetadata)
+		count++
+		if count == 30 {
+			first = m.PTS
+		}
+		if count > 30 {
+			total += m.EncodeTime
+		}
+		if count == 270 {
+			last = m.PTS
+			return complete
+		}
+		return nil
+	})
+	if !errors.Is(err, complete) {
+		t.Fatalf("120 fps hardware stream: %v", err)
+	}
+	fps := 240 / (last - first).Seconds()
+	t.Logf("1080p120 native hardware: %.1f fps, mean encode %s", fps, total/240)
+	if fps < 80 {
+		t.Fatalf("high refresh was capped to 60 or could not sustain this fixture: %.1f fps", fps)
+	}
+}
