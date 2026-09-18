@@ -504,7 +504,12 @@
             }
         }
 
-        func trimHistoryAtBottom() { transcript.trimToLatest(); publishTranscript() }
+        @discardableResult
+        func trimHistoryAtBottom() -> Bool {
+            guard transcript.trimToLatest() else { return false }
+            publishTranscript()
+            return true
+        }
 
         private func publishTranscript() {
             conversation = transcript.conversation
@@ -677,6 +682,31 @@
                 }
                 return nil
             }
+        }
+
+        func remoteDesktopConnection() async throws -> RemoteDesktopSignalingConnection {
+            guard foreground, let gateway, let accessToken, let target = selectedMachine else {
+                throw NSError(
+                    domain: "DieterScreens", code: 1,
+                    userInfo: [NSLocalizedDescriptionKey: "Select a connected Dieter machine."])
+            }
+            guard target.online else {
+                throw NSError(
+                    domain: "DieterScreens", code: 2,
+                    userInfo: [NSLocalizedDescriptionKey: "\(target.name) is offline."])
+            }
+            guard IOSMachinePolicy.isCompatible(target) else {
+                throw IOSStoreError.incompatible(target.apiVersion)
+            }
+            var candidateScope = DirectCandidateScope.nonLoopback
+            #if DEBUG
+                if ProcessInfo.processInfo.environment["DIETER_IOS_TEST_GATEWAY"] != nil {
+                    candidateScope = .all
+                }
+            #endif
+            return try await connections.remoteDesktopConnection(
+                gateway: gateway, target: target, gatewayAccessToken: accessToken,
+                directCandidateScope: candidateScope)
         }
 
         func suspend() {

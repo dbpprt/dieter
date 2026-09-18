@@ -401,8 +401,7 @@ extension DieterStore {
     func remoteDesktopConnection(machineID: String) async throws -> RemoteDesktopSignalingConnection {
         guard
             let target = machines.first(where: { $0.id == machineID })
-                ?? (endpoint.id == machineID ? endpoint : nil),
-            let daemonID = target.daemonID
+                ?? (endpoint.id == machineID ? endpoint : nil)
         else {
             throw NSError(
                 domain: "DieterScreens", code: 1,
@@ -423,19 +422,8 @@ extension DieterStore {
             gatewayTask.cancel()
             gateway.shutdown()
         }
-        let route = try await gateway.route(daemonID: daemonID)
-        let rtcConfiguration = try await gateway.rtcConfiguration(daemonID: daemonID)
-
-        let plane = try await connections.selectDataPlane(
-            gateway: gateway, target: target, gatewayAccessToken: gatewayToken,
-            refreshDirectToken: true, route: route
-        )
-        return RemoteDesktopSignalingConnection(
-            rpc: plane.rpc, connectionTask: plane.task, rtcConfiguration: rtcConfiguration,
-            daemonCertificatePEM: route.daemonCertificatePem,
-            routeLabel: plane.connection.route == .local ? "Direct" : "Gateway",
-            credentialRefreshTask: plane.credentialRefreshTask
-        )
+        return try await connections.remoteDesktopConnection(
+            gateway: gateway, target: target, gatewayAccessToken: gatewayToken)
     }
 
     func startConnectionTask(for client: DieterRPC) -> Task<Void, Never> {

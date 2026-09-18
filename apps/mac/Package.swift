@@ -30,6 +30,8 @@ let package = Package(
             dependencies: [
                 "DieterCore", "DieterClient", "DieterAPI",
                 .product(name: "GRPCCore", package: "grpc-swift-2"),
+                .product(name: "SwiftProtobuf", package: "swift-protobuf"),
+                "WebRTC",
             ]
         ),
         .testTarget(

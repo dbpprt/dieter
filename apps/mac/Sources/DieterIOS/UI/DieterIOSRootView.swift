@@ -48,13 +48,24 @@
                 sidebar
                     .navigationSplitViewColumnWidth(min: 230, ideal: 270, max: 340)
             } content: {
-                IOSTaskListView(
-                    store: store, destination: destination ?? .allTasks, selectedTaskID: $selectedTaskID,
-                    createTask: { createPresented = true }
-                )
-                .navigationSplitViewColumnWidth(min: 280, ideal: 350, max: 480)
+                if destination == .screens {
+                    IOSScreensPlaceholderView { preferredColumn = .detail }
+                        .navigationSplitViewColumnWidth(min: 280, ideal: 350, max: 480)
+                } else {
+                    IOSTaskListView(
+                        store: store, destination: destination ?? .allTasks, selectedTaskID: $selectedTaskID,
+                        createTask: { createPresented = true }
+                    )
+                    .navigationSplitViewColumnWidth(min: 280, ideal: 350, max: 480)
+                }
             } detail: {
-                if let id = selectedTaskID {
+                if destination == .screens {
+                    IOSScreensView(store: store) {
+                        destination = nil
+                        preferredColumn = .sidebar
+                    }
+                    .id(store.selectedMachine?.daemonID ?? "")
+                } else if let id = selectedTaskID {
                     IOSConversationView(
                         store: store, cardID: id, draft: draftBinding(for: id),
                         browseFiles: { openFiles(for: store.selectedCard?.card) }
@@ -85,6 +96,7 @@
             .onChange(of: destination) { _, _ in
                 selectedTaskID = nil
                 store.closeConversation()
+                if destination == .screens { preferredColumn = .detail }
             }
             .onChange(of: selectedTaskID) { _, id in
                 if id != nil { preferredColumn = .detail } else { store.closeConversation() }
@@ -116,6 +128,10 @@
                         Label("Chats", systemImage: "bubble.left.and.bubble.right")
                     }
                     .accessibilityIdentifier("ios.chats")
+                    NavigationLink(value: IOSWorkspaceDestination.screens) {
+                        Label("Screens", systemImage: "display")
+                    }
+                    .accessibilityIdentifier("ios.screens.open")
                 }
                 Section("Projects") {
                     if store.projects.isEmpty {
@@ -238,6 +254,7 @@
             switch destination {
             case .allTasks: "All tasks"
             case .chats: "Chats"
+            case .screens: "Screens"
             case let .project(id): store.projects.first { $0.id == id }?.name ?? "Project"
             case let .board(id): store.boards.first { $0.id == id }?.name ?? "Board"
             }
@@ -250,6 +267,7 @@
                 switch destination {
                 case let .project(id): if card.projectID != id { return false }
                 case let .board(id): if card.boardID != id { return false }
+                case .screens: return false
                 default: break
                 }
                 return (lane.isEmpty || destination == .chats || card.lane == lane)

@@ -11,6 +11,7 @@
         @State private var followsLatest = true
         @State private var bottomVisible = false
         @State private var userScrolling = false
+        @State private var scrollPosition = ScrollPosition(edge: .bottom)
         @FocusState private var composerFocused: Bool
 
         private var card: Dieter_V1_Card? {
@@ -70,89 +71,94 @@
         }
 
         private func transcript(_ card: Dieter_V1_Card) -> some View {
-            ScrollViewReader { proxy in
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 22) {
-                        HStack {
-                            IOSStatusBadge(state: card.runtime)
-                            Spacer()
-                            Text(card.model).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                        }
-                        if store.hasOlderMessages {
-                            Button {
-                                let previousFirst = messages.first?.id
-                                followsLatest = false
-                                Task {
-                                    await store.loadOlderMessages()
-                                    if let previousFirst { proxy.scrollTo(previousFirst, anchor: .top) }
-                                }
-                            } label: {
-                                HStack {
-                                    if store.loadingOlder { ProgressView() }
-                                    Text(store.loadingOlder ? "Loading earlier messages…" : "Load earlier messages")
-                                }.frame(maxWidth: .infinity)
-                            }
-                            .disabled(store.loadingOlder || !store.phase.isConnected)
-                            .accessibilityIdentifier("ios.conversation.earlier")
-                        }
-                        if messages.isEmpty {
-                            ContentUnavailableView(
-                                "Ready when you are", systemImage: "bubble.left",
-                                description: Text(
-                                    card.initialPrompt.isEmpty ? "Send a message to begin." : card.initialPrompt))
-                        }
-                        ForEach(messages, id: \.id) { message in
-                            IOSConversationMessage(message: message)
-                                .id(message.id)
-                                .accessibilityIdentifier("ios.message.\(message.id)")
-                        }
-                        if let queued = store.conversation?.queue.count, queued > 0 {
-                            Label("\(queued) queued \(queued == 1 ? "message" : "messages")", systemImage: "clock")
-                                .font(.caption).foregroundStyle(.secondary)
-                        }
-                        Color.clear.frame(height: 1).id("latest")
-                            .onAppear {
-                                bottomVisible = true
-                                followsLatest = true
-                            }
-                            .onDisappear {
-                                bottomVisible = false
-                                if userScrolling { followsLatest = false }
-                            }
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 22) {
+                    HStack {
+                        IOSStatusBadge(state: card.runtime)
+                        Spacer()
+                        Text(card.model).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                     }
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 20)
-                    .frame(maxWidth: 900)
-                    .frame(maxWidth: .infinity)
-                }
-                .accessibilityIdentifier("ios.conversation.transcript")
-                .scrollDismissesKeyboard(.interactively)
-                .onScrollPhaseChange { _, phase in
-                    userScrolling = phase == .interacting || phase == .decelerating
-                    if phase == .idle {
-                        followsLatest = bottomVisible
-                        if bottomVisible, !store.loadingOlder { store.trimHistoryAtBottom() }
+                    if store.hasOlderMessages {
+                        Button {
+                            let previousFirst = messages.first?.id
+                            followsLatest = false
+                            Task {
+                                await store.loadOlderMessages()
+                                if let previousFirst { scrollPosition.scrollTo(id: previousFirst, anchor: .top) }
+                            }
+                        } label: {
+                            HStack {
+                                if store.loadingOlder { ProgressView() }
+                                Text(store.loadingOlder ? "Loading earlier messages…" : "Load earlier messages")
+                            }.frame(maxWidth: .infinity)
+                        }
+                        .disabled(store.loadingOlder || !store.phase.isConnected)
+                        .accessibilityIdentifier("ios.conversation.earlier")
                     }
-                }
-                .defaultScrollAnchor(.bottom, for: .initialOffset)
-                .onChange(of: store.conversation?.lastSeq) { _, _ in
-                    if followsLatest { proxy.scrollTo("latest", anchor: .bottom) }
-                }
-                .overlay(alignment: .bottom) {
-                    if !bottomVisible, !messages.isEmpty {
-                        Button("Jump to latest", systemImage: "arrow.down") {
+                    if messages.isEmpty {
+                        ContentUnavailableView(
+                            "Ready when you are", systemImage: "bubble.left",
+                            description: Text(
+                                card.initialPrompt.isEmpty ? "Send a message to begin." : card.initialPrompt))
+                    }
+                    ForEach(messages, id: \.id) { message in
+                        IOSConversationMessage(message: message)
+                            .id(message.id)
+                            .accessibilityIdentifier("ios.message.\(message.id)")
+                    }
+                    if let queued = store.conversation?.queue.count, queued > 0 {
+                        Label("\(queued) queued \(queued == 1 ? "message" : "messages")", systemImage: "clock")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    Color.clear.frame(height: 1)
+                        .onAppear {
+                            bottomVisible = true
                             followsLatest = true
-                            withAnimation { proxy.scrollTo("latest", anchor: .bottom) }
                         }
-                        .font(.subheadline.weight(.semibold))
-                        .padding(.horizontal, 14).padding(.vertical, 10)
-                        .background(.regularMaterial, in: Capsule())
-                        .padding(.bottom, 10)
-                        .accessibilityIdentifier("ios.conversation.latest")
+                        .onDisappear {
+                            bottomVisible = false
+                            if userScrolling { followsLatest = false }
+                        }
+                }
+                .scrollTargetLayout()
+                .padding(.horizontal, 20)
+                .padding(.vertical, 20)
+                .frame(maxWidth: 900)
+                .frame(maxWidth: .infinity)
+            }
+            .accessibilityIdentifier("ios.conversation.transcript")
+            .scrollDismissesKeyboard(.interactively)
+            .scrollPosition($scrollPosition)
+            .onScrollPhaseChange { _, phase in
+                userScrolling = phase == .interacting || phase == .decelerating
+                if phase == .idle {
+                    followsLatest = bottomVisible
+                    if bottomVisible, !store.loadingOlder, store.trimHistoryAtBottom() {
+                        scrollPosition.scrollTo(edge: .bottom)
                     }
                 }
-                .safeAreaInset(edge: .bottom, spacing: 0) { composer }
             }
+            .defaultScrollAnchor(.bottom, for: .initialOffset)
+            .onChange(of: store.conversation?.lastSeq) { _, _ in
+                if followsLatest { scrollPosition.scrollTo(edge: .bottom) }
+            }
+            .overlay(alignment: .bottom) {
+                if !bottomVisible, !messages.isEmpty {
+                    Button("Jump to latest", systemImage: "arrow.down") {
+                        followsLatest = true
+                        // Compact first, then pin the real edge of the shorter lazy stack. Retaining the old
+                        // sentinel offset can leave the viewport below the content as an empty dark screen.
+                        if !store.loadingOlder { store.trimHistoryAtBottom() }
+                        scrollPosition.scrollTo(edge: .bottom)
+                    }
+                    .font(.subheadline.weight(.semibold))
+                    .padding(.horizontal, 14).padding(.vertical, 10)
+                    .background(.regularMaterial, in: Capsule())
+                    .padding(.bottom, 10)
+                    .accessibilityIdentifier("ios.conversation.latest")
+                }
+            }
+            .safeAreaInset(edge: .bottom, spacing: 0) { composer }
         }
 
         private var composer: some View {

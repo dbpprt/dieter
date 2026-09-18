@@ -267,5 +267,24 @@ final class RemoteNodeUITests: XCTestCase {
         tap(app, "ios.machine.\(daemon)")
         waitForBoard(app, project: project, board: board)
         screenshot(app, "10-compatible-node-restored")
+
+        if environment["DIETER_IOS_TEST_LANDSCAPE"] != "1" {
+            tap(app, "ios.screens.open")
+            XCTAssertTrue(element(app, "ios.screens.back").waitForExistence(timeout: 10))
+            XCTAssertTrue(element(app, "ios.screens.settings").isHittable)
+            let window = app.windows.firstMatch
+            let landscape = XCTNSPredicateExpectation(
+                predicate: NSPredicate { _, _ in window.frame.width > window.frame.height }, object: window)
+            XCTAssertEqual(
+                XCTWaiter.wait(for: [landscape], timeout: 10), .completed,
+                "The iPhone screen viewer should request landscape automatically.\n\(app.debugDescription)")
+            screenshot(app, "11-remote-screen-phone-chrome")
+            tap(app, "ios.screens.back")
+            let portrait = XCTNSPredicateExpectation(
+                predicate: NSPredicate { _, _ in window.frame.height > window.frame.width }, object: window)
+            XCTAssertEqual(
+                XCTWaiter.wait(for: [portrait], timeout: 10), .completed,
+                "Leaving the iPhone screen viewer should restore portrait.\n\(app.debugDescription)")
+        }
     }
 }
