@@ -25,7 +25,10 @@ final class RemoteNodeUITests: XCTestCase {
     }
 
     private func enter(_ app: XCUIApplication, _ identifier: String, _ text: String) {
-        let field = element(app, identifier)
+        // All editable journey fields are native text fields. Query that small
+        // type directly: a descendant `.any` lookup can stall while snapshotting
+        // the complete iPad split view and then falsely report the field missing.
+        let field = app.textFields.matching(identifier: identifier).firstMatch
         XCTAssertTrue(field.waitForExistence(timeout: 10), "Missing \(identifier)")
         let keyboard = app.keyboards.firstMatch
         var activated = false
@@ -138,7 +141,7 @@ final class RemoteNodeUITests: XCTestCase {
         }
         // Return to the first form section after selecting the provider.
         for _ in 0..<4 {
-            let titleField = element(app, "ios.create.title")
+            let titleField = app.textFields.matching(identifier: "ios.create.title").firstMatch
             if titleField.isHittable && titleField.frame.minY >= form.frame.minY { break }
             form.swipeDown()
         }
