@@ -52,6 +52,17 @@ final class RemoteNodeUITests: XCTestCase {
         }
     }
 
+    private func tapPicker(_ picker: XCUIElement) {
+        if picker.isHittable {
+            picker.tap()
+        } else {
+            // Xcode 26.5 can keep reporting a fully visible SwiftUI Picker as
+            // non-hittable after the app relaunches and presents this sheet a
+            // second time. Its resolved frame still receives native events.
+            picker.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        }
+    }
+
     private func fillTask(_ app: XCUIApplication, title: String, prompt: String) {
         // Configure the isolated provider while submission is still disabled.
         // A compact iPad sheet scrolls the Agent section beneath its fixed footer.
@@ -66,21 +77,21 @@ final class RemoteNodeUITests: XCTestCase {
         }
         XCTAssertLessThan(
             provider.frame.maxY, footer.frame.minY - 8, "Provider must be above the footer before tapping.")
+        XCTAssertGreaterThanOrEqual(
+            provider.frame.minY, form.frame.minY, "Provider must be inside the visible form before tapping.")
         let providerReady = XCTNSPredicateExpectation(
             predicate: NSPredicate(format: "exists == true AND hittable == true"), object: provider)
-        XCTAssertEqual(
-            XCTWaiter.wait(for: [providerReady], timeout: 5), .completed,
-            "The provider picker must be hittable before opening its menu.\n\(app.debugDescription)")
+        _ = XCTWaiter.wait(for: [providerReady], timeout: 5)
         let previousProvider = provider.value as? String
-        provider.tap()
+        tapPicker(provider)
         let openingOption = app.buttons.matching(NSPredicate(format: "label == 'Mock'")).firstMatch
         if !openingOption.waitForExistence(timeout: 5), !openingOption.exists,
-            provider.isHittable, let previousProvider,
+            provider.exists, let previousProvider,
             provider.value as? String == previousProvider
         {
             // A native picker can leave an opening tap unconsumed after relaunch.
             // Retry once only while no option appeared and the selection is unchanged.
-            provider.tap()
+            tapPicker(provider)
         }
         var mockSelected = false
         for attempt in 0..<2 {
