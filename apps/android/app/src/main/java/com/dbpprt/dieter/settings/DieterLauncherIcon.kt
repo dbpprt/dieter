@@ -26,7 +26,7 @@ object DieterLauncherIcon {
             Pair(
                 // A build-type applicationIdSuffix changes the installed package,
                 // but relative manifest aliases keep the code namespace.
-                ComponentName(appContext, "${DieterApplication::class.java.packageName}.$alias"),
+                ComponentName(appContext, "${DieterApplication::class.java.name.substringBeforeLast('.')}.$alias"),
                 if (palette == selected) {
                     PackageManager.COMPONENT_ENABLED_STATE_ENABLED
                 } else {
