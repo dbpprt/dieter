@@ -31,8 +31,8 @@ final class RemoteNodeUITests: XCTestCase {
         var activated = false
         for attempt in 0..<2 {
             field.tap()
-            dismissKeyboardIntroduction(app)
             if keyboard.waitForExistence(timeout: 5) {
+                dismissKeyboardIntroduction(app)
                 activated = true
                 break
             }
@@ -50,13 +50,11 @@ final class RemoteNodeUITests: XCTestCase {
         // A fresh simulator can inherit the host’s bilingual keyboard and show
         // its first-use introduction above the keys. Handle that system UI,
         // rather than tapping an obscured app toolbar through it.
-        let introduction = app.staticTexts.matching(
-            NSPredicate(format: "label CONTAINS 'same keyboard'")
-        ).firstMatch
-        if introduction.waitForExistence(timeout: 1) {
-            let next = app.buttons["Continue"]
-            XCTAssertTrue(next.isHittable)
-            next.tap()
+        // Resolve its action directly: asking XCTest for the broad static-text
+        // snapshot can hang on iPad when SwiftUI exposes duplicate descendants.
+        let continueButton = app.buttons.matching(identifier: "Continue").firstMatch
+        if continueButton.exists {
+            continueButton.tap()
         }
     }
 
