@@ -104,7 +104,6 @@
                     ForEach(messages, id: \.id) { message in
                         IOSConversationMessage(message: message)
                             .id(message.id)
-                            .accessibilityIdentifier("ios.message.\(message.id)")
                     }
                     if let queued = store.conversation?.queue.count, queued > 0 {
                         Label("\(queued) queued \(queued == 1 ? "message" : "messages")", systemImage: "clock")
