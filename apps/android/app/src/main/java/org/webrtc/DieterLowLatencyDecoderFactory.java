@@ -129,7 +129,14 @@ public final class DieterLowLatencyDecoderFactory extends HardwareVideoDecoderFa
       try { codec = factory.createByCodecName(name); }
       catch (IOException failure) { throw new IllegalStateException("Decoder fallback creation failed", failure); }
       released = false;
-      format.removeKey(MediaFormat.KEY_LOW_LATENCY);
+      // Production creates this wrapper only when Android advertises the
+      // API-30 low-latency feature. Keep the API guard explicit so the app's
+      // API-26 class path never invokes MediaFormat.removeKey (API 29).
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        format.removeKey(MediaFormat.KEY_LOW_LATENCY);
+      } else {
+        throw new IllegalStateException("Low-latency decoder requires Android 11");
+      }
       codec.configure(format, surface, crypto, flags);
       listener.configured(name, true, false, "low-latency " + stage + " rejected: " + rejected.getClass().getSimpleName());
     }
