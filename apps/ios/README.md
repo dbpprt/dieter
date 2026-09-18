@@ -68,9 +68,6 @@ machine's verified direct route or gateway relay. Tap to click, move the pointer
 with one finger, hold and move to drag, scroll with two fingers, and use the
 keyboard and special-key menus for text and HID input. Display, quality, refresh,
 frame-rate, and protocol-3 control handoff are available from the screen toolbar.
-When the host supports protocol 3, Copy Remote Selection and the system Paste
-button provide explicit, foreground-only text clipboard operations; Dieter does
-not poll the iOS pasteboard.
 On iPhone, opening Screens requests landscape automatically, then follows a
 portrait remote display when its dimensions arrive. The viewer replaces the
 navigation bar with floating Back and stream-settings controls; tap the live

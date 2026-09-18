@@ -65,16 +65,6 @@ import CoreGraphics
             .onChange(of: session.videoSize) { _, videoSize in
                 followRemoteOrientation(videoSize)
             }
-            .alert(
-                "Clipboard",
-                isPresented: Binding(
-                    get: { !session.clipboardError.isEmpty },
-                    set: { if !$0 { session.clipboardError = "" } })
-            ) {
-                Button("OK") { session.clipboardError = "" }
-            } message: {
-                Text(session.clipboardError)
-            }
             .sheet(isPresented: $phoneSettingsPresented) { phoneSettingsSheet }
             .privacySensitive()
         }
@@ -148,7 +138,6 @@ import CoreGraphics
                 Label(
                     session.controlActive ? "Control" : "View only",
                     systemImage: session.controlActive ? "cursorarrow.motionlines" : "eye")
-                if !session.clipboardNotice.isEmpty { Text("· \(session.clipboardNotice)") }
             }
             .font(.caption2.weight(.medium))
             .foregroundStyle(.secondary)
@@ -166,7 +155,6 @@ import CoreGraphics
                             .accessibilityIdentifier("ios.screens.keyboard")
                         inputMenu
                     }
-                    if session.clipboardAvailable { clipboardMenu }
                     optionsMenu
                     if session.canTransferControl {
                         Button(
@@ -236,9 +224,6 @@ import CoreGraphics
                             inputMenu
                         }
                     }
-                    if session.clipboardAvailable {
-                        Section("Clipboard") { clipboardItems }
-                    }
                     if session.canTransferControl {
                         Section("Control") {
                             Button(
@@ -295,26 +280,6 @@ import CoreGraphics
                 Button("Release All Input") { session.releaseAllInput() }
             }
             .accessibilityIdentifier("ios.screens.keys")
-        }
-
-        private var clipboardMenu: some View {
-            Menu("Clipboard", systemImage: "doc.on.clipboard") {
-                clipboardItems
-            }
-            .accessibilityIdentifier("ios.screens.clipboard")
-        }
-
-        @ViewBuilder private var clipboardItems: some View {
-            Button("Copy Remote Selection", systemImage: "doc.on.doc") {
-                session.copyRemoteSelection()
-            }
-            .disabled(session.clipboardBusy)
-            .accessibilityIdentifier("ios.screens.clipboard.copy")
-            PasteButton(payloadType: String.self) { values in
-                session.pasteText(values)
-            }
-            .disabled(session.clipboardBusy)
-            .accessibilityIdentifier("ios.screens.clipboard.paste")
         }
 
         private func modifier(_ title: String, bit: UInt32) -> some View {
@@ -485,6 +450,13 @@ import CoreGraphics
         private var videoSize = CGSize(width: 16, height: 9)
         private var cursorImages: [String: UIImage] = [:]
         private var dragging = false
+        private var remoteScrolling = false
+        private var zoomScale: CGFloat = 1
+        private var zoomOffset = CGPoint.zero
+        private var pinchStartScale: CGFloat = 1
+        private var pinchAnchor = CGPoint.zero
+        private var inputMode = IOSRemoteDesktopInputMode.pointer
+        private lazy var suppressedSoftwareKeyboard = UIView(frame: .zero)
         var chromeTapped: () -> Void
 
         init(session: IOSRemoteDesktopSession, chromeTapped: @escaping () -> Void) {
@@ -501,12 +473,16 @@ import CoreGraphics
             addSubview(cursorView)
             installGestures()
             accessibilityLabel =
-                "Remote screen. Drag one finger to move the pointer, tap to click, hold and move to drag, and scroll with two fingers."
+                "Remote screen. Drag one finger to move the pointer, tap to click, hold and move to drag, "
+                + "scroll with two fingers, and pinch to zoom."
             use(session: session)
         }
 
         required init?(coder: NSCoder) { nil }
         override var canBecomeFirstResponder: Bool { true }
+        override var inputView: UIView? {
+            inputMode.presentsSoftwareKeyboard ? nil : suppressedSoftwareKeyboard
+        }
         var hasText: Bool { false }
 
         func insertText(_ text: String) { session?.text(text) }
@@ -538,7 +514,7 @@ import CoreGraphics
             self.session = session
             session.attach(renderer: video)
             session.setKeyboardHandler { [weak self] show in
-                if show { self?.becomeFirstResponder() } else { self?.resignFirstResponder() }
+                self?.setTextInputActive(show)
             }
             session.setCursorHandler { [weak self] cursor in self?.updateCursor(cursor) }
             setNeedsLayout()
@@ -548,25 +524,59 @@ import CoreGraphics
             guard let session else { return }
             if dragging { session.button(.left, down: false) }
             dragging = false
+            if remoteScrolling { session.scroll(deltaX: 0, deltaY: 0, phase: 4) }
+            remoteScrolling = false
             session.releaseAllInput()
             session.detach(renderer: video)
             session.setKeyboardHandler(nil)
             session.setCursorHandler(nil)
             video.renderFrame(nil)
             cursorView.isHidden = true
-            resignFirstResponder()
+            zoomScale = 1
+            zoomOffset = .zero
+            inputMode = .pointer
+            _ = resignFirstResponder()
             self.session = nil
+        }
+
+        override func resignFirstResponder() -> Bool {
+            let resigned = super.resignFirstResponder()
+            if resigned { inputMode = .pointer }
+            return resigned
+        }
+
+        private func setTextInputActive(_ active: Bool) {
+            let nextMode = IOSRemoteDesktopInputMode(textInputActive: active)
+            let changed = nextMode != inputMode
+            inputMode = nextMode
+            if active {
+                if isFirstResponder {
+                    if changed { reloadInputViews() }
+                } else {
+                    becomeFirstResponder()
+                }
+            } else if !resignFirstResponder(), changed {
+                reloadInputViews()
+            }
         }
 
         override func layoutSubviews() {
             super.layoutSubviews()
-            video.frame = bounds
+            zoomOffset = IOSRemoteDesktopGeometry.clampedZoomOffset(
+                zoomOffset, bounds: bounds, videoSize: videoSize, zoomScale: zoomScale)
+            video.bounds = CGRect(origin: .zero, size: bounds.size)
+            video.center = CGPoint(x: bounds.midX + zoomOffset.x, y: bounds.midY + zoomOffset.y)
+            video.transform = CGAffineTransform(scaleX: zoomScale, y: zoomScale)
             session?.setViewport(bounds.size, scale: window?.screen.scale ?? UIScreen.main.scale)
             layoutCursor()
         }
 
         func videoView(_ videoView: any RTCVideoRenderer, didChangeVideoSize size: CGSize) {
             guard size.width > 0, size.height > 0 else { return }
+            if size != videoSize {
+                zoomScale = 1
+                zoomOffset = .zero
+            }
             videoSize = size
             session?.videoSizeChanged(size)
             setNeedsLayout()
@@ -596,6 +606,10 @@ import CoreGraphics
             drag.delegate = self
             tap.require(toFail: drag)
             addGestureRecognizer(drag)
+
+            let pinch = UIPinchGestureRecognizer(target: self, action: #selector(pinched(_:)))
+            pinch.delegate = self
+            addGestureRecognizer(pinch)
 
             let scroll = UIPanGestureRecognizer(target: self, action: #selector(scrolled(_:)))
             scroll.minimumNumberOfTouches = 2
@@ -659,19 +673,69 @@ import CoreGraphics
             let scale = window?.screen.scale ?? UIScreen.main.scale
             switch gesture.state {
             case .began:
+                guard !isPinching else { return }
+                remoteScrolling = true
                 session?.scroll(deltaX: 0, deltaY: 0, phase: 1)
             case .changed:
+                guard remoteScrolling else {
+                    gesture.setTranslation(.zero, in: self)
+                    return
+                }
+                if isPinching {
+                    session?.scroll(deltaX: 0, deltaY: 0, phase: 4)
+                    remoteScrolling = false
+                    gesture.setTranslation(.zero, in: self)
+                    return
+                }
                 session?.scroll(deltaX: translation.x / scale, deltaY: translation.y / scale, phase: 2)
                 gesture.setTranslation(.zero, in: self)
             case .ended, .cancelled, .failed:
-                session?.scroll(deltaX: 0, deltaY: 0, phase: 4)
+                if remoteScrolling { session?.scroll(deltaX: 0, deltaY: 0, phase: 4) }
+                remoteScrolling = false
             default:
                 break
             }
         }
 
+        @objc private func pinched(_ gesture: UIPinchGestureRecognizer) {
+            let location = gesture.location(in: self)
+            switch gesture.state {
+            case .began:
+                if remoteScrolling { session?.scroll(deltaX: 0, deltaY: 0, phase: 4) }
+                remoteScrolling = false
+                pinchStartScale = zoomScale
+                pinchAnchor = IOSRemoteDesktopGeometry.unzoomed(
+                    point: location, bounds: bounds, zoomScale: zoomScale, zoomOffset: zoomOffset)
+            case .changed:
+                zoomScale = IOSRemoteDesktopGeometry.clampedZoomScale(pinchStartScale * gesture.scale)
+                zoomOffset = IOSRemoteDesktopGeometry.zoomOffset(
+                    keeping: pinchAnchor,
+                    at: location,
+                    bounds: bounds,
+                    videoSize: videoSize,
+                    zoomScale: zoomScale)
+                setNeedsLayout()
+            case .ended, .cancelled, .failed:
+                zoomOffset = IOSRemoteDesktopGeometry.clampedZoomOffset(
+                    zoomOffset, bounds: bounds, videoSize: videoSize, zoomScale: zoomScale)
+                setNeedsLayout()
+            default:
+                break
+            }
+        }
+
+        private var isPinching: Bool {
+            gestureRecognizers?.contains {
+                guard let pinch = $0 as? UIPinchGestureRecognizer else { return false }
+                return pinch.state == .began || pinch.state == .changed
+            } == true
+        }
+
         private func normalized(_ point: CGPoint, clamp: Bool = false) -> CGPoint? {
-            IOSRemoteDesktopGeometry.normalized(point: point, bounds: bounds, videoSize: videoSize, clamp: clamp)
+            let unzoomed = IOSRemoteDesktopGeometry.unzoomed(
+                point: point, bounds: bounds, zoomScale: zoomScale, zoomOffset: zoomOffset)
+            return IOSRemoteDesktopGeometry.normalized(
+                point: unzoomed, bounds: bounds, videoSize: videoSize, clamp: clamp)
         }
 
         private func sendHardwareKeys(_ presses: Set<UIPress>, down: Bool) -> Bool {
@@ -712,14 +776,19 @@ import CoreGraphics
             guard let session, !cursorView.isHidden else { return }
             let cursor = session.cursor
             let content = IOSRemoteDesktopGeometry.contentRect(bounds: bounds, videoSize: videoSize)
-            let scale = max(1, window?.screen.scale ?? UIScreen.main.scale) / 2
-            let width = max(18, CGFloat(cursor.width) * scale)
-            let height = max(18, CGFloat(cursor.height) * scale)
+            let cursorScale = max(1, window?.screen.scale ?? UIScreen.main.scale) / 2 * zoomScale
+            let point = IOSRemoteDesktopGeometry.zoomed(
+                point: CGPoint(
+                    x: content.minX + content.width * CGFloat(cursor.normalizedX) / 1_000_000,
+                    y: content.minY + content.height * CGFloat(cursor.normalizedY) / 1_000_000),
+                bounds: bounds,
+                zoomScale: zoomScale,
+                zoomOffset: zoomOffset)
+            let width = max(18, CGFloat(cursor.width) * cursorScale)
+            let height = max(18, CGFloat(cursor.height) * cursorScale)
             cursorView.frame = CGRect(
-                x: content.minX + content.width * CGFloat(cursor.normalizedX) / 1_000_000
-                    - CGFloat(cursor.hotspotX) * scale,
-                y: content.minY + content.height * CGFloat(cursor.normalizedY) / 1_000_000
-                    - CGFloat(cursor.hotspotY) * scale,
+                x: point.x - CGFloat(cursor.hotspotX) * cursorScale,
+                y: point.y - CGFloat(cursor.hotspotY) * cursorScale,
                 width: width,
                 height: height)
         }
@@ -734,7 +803,20 @@ enum IOSRemoteDesktopOrientation {
     }
 }
 
+enum IOSRemoteDesktopInputMode: Equatable {
+    case pointer
+    case text
+
+    init(textInputActive: Bool) {
+        self = textInputActive ? .text : .pointer
+    }
+
+    var presentsSoftwareKeyboard: Bool { self == .text }
+}
+
 enum IOSRemoteDesktopGeometry {
+    private static let maximumZoomScale: CGFloat = 4
+
     static func normalized(
         point: CGPoint,
         bounds: CGRect,
@@ -760,5 +842,65 @@ enum IOSRemoteDesktopGeometry {
             y: bounds.midY - size.height / 2,
             width: size.width,
             height: size.height)
+    }
+
+    static func clampedZoomScale(_ value: CGFloat) -> CGFloat {
+        max(1, min(maximumZoomScale, value))
+    }
+
+    static func zoomed(
+        point: CGPoint,
+        bounds: CGRect,
+        zoomScale: CGFloat,
+        zoomOffset: CGPoint
+    ) -> CGPoint {
+        let scale = clampedZoomScale(zoomScale)
+        return CGPoint(
+            x: bounds.midX + (point.x - bounds.midX) * scale + zoomOffset.x,
+            y: bounds.midY + (point.y - bounds.midY) * scale + zoomOffset.y)
+    }
+
+    static func unzoomed(
+        point: CGPoint,
+        bounds: CGRect,
+        zoomScale: CGFloat,
+        zoomOffset: CGPoint
+    ) -> CGPoint {
+        let scale = clampedZoomScale(zoomScale)
+        return CGPoint(
+            x: bounds.midX + (point.x - bounds.midX - zoomOffset.x) / scale,
+            y: bounds.midY + (point.y - bounds.midY - zoomOffset.y) / scale)
+    }
+
+    static func zoomOffset(
+        keeping contentPoint: CGPoint,
+        at displayPoint: CGPoint,
+        bounds: CGRect,
+        videoSize: CGSize,
+        zoomScale: CGFloat
+    ) -> CGPoint {
+        let scale = clampedZoomScale(zoomScale)
+        return clampedZoomOffset(
+            CGPoint(
+                x: displayPoint.x - bounds.midX - (contentPoint.x - bounds.midX) * scale,
+                y: displayPoint.y - bounds.midY - (contentPoint.y - bounds.midY) * scale),
+            bounds: bounds,
+            videoSize: videoSize,
+            zoomScale: scale)
+    }
+
+    static func clampedZoomOffset(
+        _ offset: CGPoint,
+        bounds: CGRect,
+        videoSize: CGSize,
+        zoomScale: CGFloat
+    ) -> CGPoint {
+        let content = contentRect(bounds: bounds, videoSize: videoSize)
+        let scale = clampedZoomScale(zoomScale)
+        let maximumX = max(0, (content.width * scale - bounds.width) / 2)
+        let maximumY = max(0, (content.height * scale - bounds.height) / 2)
+        return CGPoint(
+            x: max(-maximumX, min(maximumX, offset.x)),
+            y: max(-maximumY, min(maximumY, offset.y)))
     }
 }

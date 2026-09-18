@@ -45,26 +45,17 @@
         var controlUnavailableReason = ""
         var controlTransferPending = false
         var controlTransferError = ""
-        var clipboardBusy = false
-        var clipboardChannelOpen = false
-        var clipboardError = ""
-        var clipboardNotice = ""
-        var preferredMaxFPS: Int32 = 60
+        private(set) var preferredMaxFPS = IOSRemoteDesktopFrameRate.maximum
         var quality: Dieter_V1_RemoteDesktopQuality = .auto
         var keyboardModifiers: UInt32 = 0
         var videoSize = CGSize(width: 16, height: 9)
 
         var availableFrameRates: [Int32] {
-            [30, 60].filter { $0 <= (capabilities.maxFps > 0 ? capabilities.maxFps : 60) }
+            IOSRemoteDesktopFrameRate.available(hostMaximum: capabilities.maxFps)
         }
         var canTransferControl: Bool {
             binding?.inputProtocolVersion == 3 && binding?.controlGranted == true
         }
-        var clipboardAvailable: Bool {
-            controlActive && binding?.inputProtocolVersion == 3 && sessionState.clipboardEnabled
-                && clipboardChannelOpen && clipboard.available
-        }
-
         @ObservationIgnored private var openConnection:
             (@MainActor () async throws -> RemoteDesktopSignalingConnection)?
         @ObservationIgnored private var connectTask: Task<Void, Never>?
@@ -98,12 +89,10 @@
         private var hostDelegate: IOSRemoteDesktopDataChannelDelegate?
         private var videoTrack: RTCVideoTrack?
         private var videoRelay: IOSRemoteDesktopVideoRelay!
-        private let clipboard = IOSRemoteDesktopClipboard()
         private var presentedGeneration: UInt64 = 0
         private var pointerSequence: UInt64 = 0
         private var stateSequence: UInt64 = 0
         private var eventOrdinal: UInt64 = 0
-        private var clipboardInput: [Dieter_V1_RemoteDesktopInput.OneOf_Payload] = []
         private var lastPointer = CGPoint(x: 0.5, y: 0.5)
         private var desiredConfiguration = Dieter_V1_RemoteDesktopStreamConfiguration()
 
@@ -238,45 +227,6 @@
 
             let inputProtocolVersion: UInt32 =
                 capabilities.supportedInputProtocolVersions.contains(3) ? 3 : 2
-            var clipboardRequested = false
-            if capabilities.clipboardSupported, inputProtocolVersion == 3,
-                let channel = peer.dataChannel(
-                    forLabel: "dieter-clipboard-v1", configuration: stateConfiguration)
-            {
-                clipboard.makeRequest = { [weak self] in
-                    guard let self, self.controlActive, let binding = self.binding else { return nil }
-                    var value = Dieter_V1_RemoteDesktopClipboardRequest()
-                    value.sessionID = self.sessionID
-                    value.inputEpoch = binding.inputEpoch
-                    value.controlGeneration = self.sessionState.controlGeneration
-                    value.inputBarrier = self.stateSequence
-                    return value
-                }
-                clipboard.isCurrentGrant = { [weak self] grant in
-                    self?.controlActive == true && self?.sessionState.controlGeneration == grant
-                }
-                clipboard.onBusy = { [weak self] in self?.clipboardBusy = $0 }
-                clipboard.onAvailabilityChanged = { [weak self] in self?.clipboardChannelOpen = $0 }
-                clipboard.onOperationFinished = { [weak self] succeeded in
-                    guard let self else { return }
-                    let pending = self.clipboardInput
-                    self.clipboardInput.removeAll(keepingCapacity: true)
-                    if succeeded, self.controlActive {
-                        for payload in pending { self.sendState(payload) }
-                    } else {
-                        self.releaseAllInput()
-                    }
-                }
-                clipboard.onError = { [weak self] in self?.clipboardError = $0 }
-                clipboard.onCopiedText = { [weak self] text in
-                    UIPasteboard.general.string = text
-                    self?.clipboardNotice = "Remote text copied"
-                }
-                clipboard.onUnavailable = { [weak self] in self?.recover() }
-                clipboard.attach(channel)
-                clipboardRequested = true
-            }
-
             let transceiver = RTCRtpTransceiverInit()
             transceiver.direction = .recvOnly
             guard let video = peer.addTransceiver(of: .video, init: transceiver) else {
@@ -310,7 +260,8 @@
                 capabilities.displays.first(where: { $0.id == desiredConfiguration.displayID })?.id
                 ?? capabilities.displays.first(where: \.primary)?.id
                 ?? capabilities.displays.first?.id ?? "primary"
-            request.maxFps = min(preferredMaxFPS, capabilities.maxFps > 0 ? capabilities.maxFps : 60)
+            request.maxFps = IOSRemoteDesktopFrameRate.capped(
+                preferredMaxFPS, hostMaximum: capabilities.maxFps)
             request.maxBitrateKbps = 12_000
             request.maxWidth = desiredConfiguration.maxWidth > 0 ? desiredConfiguration.maxWidth : 1_920
             request.maxHeight = desiredConfiguration.maxHeight > 0 ? desiredConfiguration.maxHeight : 1_080
@@ -318,7 +269,7 @@
             request.control =
                 settings.controlEnabled && capabilities.controlSupported
                 && capabilities.controlPermission == "granted"
-            request.clipboard = clipboardRequested
+            request.clipboard = false
             controlUnavailableReason =
                 settings.controlEnabled && !request.control
                 ? "Accessibility permission is required on the host" : ""
@@ -696,24 +647,7 @@
 
         func releaseAllInput() {
             guard controlActive else { return }
-            sendState(
-                .releaseAll(Dieter_V1_RemoteDesktopReleaseAll()), failOnError: false,
-                bypassClipboard: true)
-        }
-
-        func copyRemoteSelection() {
-            guard clipboardAvailable, !clipboardBusy else { return }
-            clipboardNotice = ""
-            clipboardError = ""
-            clipboard.copySelection()
-        }
-
-        func pasteText(_ values: [String]) {
-            guard clipboardAvailable, !clipboardBusy else { return }
-            let text = values.joined(separator: "\n")
-            clipboardNotice = ""
-            clipboardError = ""
-            clipboard.paste(text: text)
+            sendState(.releaseAll(Dieter_V1_RemoteDesktopReleaseAll()), failOnError: false)
         }
 
         private func sendPointer(_ payload: Dieter_V1_RemoteDesktopInput.OneOf_Payload) {
@@ -726,19 +660,8 @@
 
         private func sendState(
             _ payload: Dieter_V1_RemoteDesktopInput.OneOf_Payload,
-            failOnError: Bool = true,
-            bypassClipboard: Bool = false
+            failOnError: Bool = true
         ) {
-            if clipboardBusy, !bypassClipboard {
-                guard clipboardInput.count < 128 else {
-                    clipboardInput.removeAll(keepingCapacity: true)
-                    clipboardError = "Input paused while the clipboard operation finishes."
-                    releaseAllInput()
-                    return
-                }
-                clipboardInput.append(payload)
-                return
-            }
             guard controlActive, let channel = stateChannel, channel.readyState == .open,
                 channel.bufferedAmount < 65_536, let binding
             else { return }
@@ -806,7 +729,8 @@
             if let displayID { desiredConfiguration.displayID = displayID }
             if let quality { desiredConfiguration.quality = quality; self.quality = quality }
             if let maxFPS {
-                preferredMaxFPS = max(1, min(maxFPS, capabilities.maxFps > 0 ? capabilities.maxFps : 60))
+                preferredMaxFPS = IOSRemoteDesktopFrameRate.capped(
+                    maxFPS, hostMaximum: capabilities.maxFps)
                 desiredConfiguration.maxFps = preferredMaxFPS
             }
             var request = Dieter_V1_UpdateRemoteDesktopSessionRequest()
@@ -883,7 +807,6 @@
             videoTrack = nil
             videoRelay.use(token: generation)
             pointerChannel?.close(); stateChannel?.close(); hostChannel?.close()
-            clipboard.close()
             pointerChannel = nil; stateChannel = nil; hostChannel = nil
             pointerDelegate = nil; stateDelegate = nil; hostDelegate = nil
             peerConnection?.close(); peerConnection = nil
@@ -893,10 +816,8 @@
             sessionID = ""; remoteDescriptionApplied = false; authorized = false
             localCandidates.removeAll(); remoteCandidates.removeAll()
             presentedGeneration = 0; pointerSequence = 0; stateSequence = 0; eventOrdinal = 0
-            clipboardInput.removeAll(keepingCapacity: true)
             sessionState = .init(); cursor = .init(); controlActive = false
             controlTransferPending = false; controlTransferError = ""
-            clipboardBusy = false; clipboardChannelOpen = false; clipboardError = ""; clipboardNotice = ""
             routeLabel = ""
             cursorHandler?(cursor)
             if !keepConnectionFactory { openConnection = nil }
@@ -1076,9 +997,51 @@
         }
 
         func renderFrame(_ frame: RTCVideoFrame?) {
+            let frame = frame.map { frame in
+                let renderTimestamp = IOSRemoteDesktopFrameTimestamp.nanoseconds(
+                    decodedNanoseconds: frame.timeStampNs,
+                    rtpTimestamp: frame.timeStamp)
+                guard renderTimestamp != frame.timeStampNs else { return frame }
+                let normalized = RTCVideoFrame(
+                    buffer: frame.buffer,
+                    rotation: frame.rotation,
+                    timeStampNs: renderTimestamp)
+                normalized.timeStamp = frame.timeStamp
+                return normalized
+            }
             let (renderer, token) = lock.withLock { (self.renderer, self.token) }
             renderer?.renderFrame(frame)
             if frame != nil, renderer != nil { onFrame(token) }
         }
     }
 #endif
+
+enum IOSRemoteDesktopFrameTimestamp {
+    private static let rtpClockRate: UInt64 = 90_000
+    private static let nanosecondsPerSecond: UInt64 = 1_000_000_000
+
+    static func nanoseconds(decodedNanoseconds: Int64, rtpTimestamp: Int32) -> Int64 {
+        guard decodedNanoseconds == 0 else { return decodedNanoseconds }
+        // WebRTC's stock iOS renderers use timeStampNs to reject duplicate frames.
+        // Remote desktop frames can carry only their 90 kHz RTP timestamp, leaving
+        // timeStampNs at its zero sentinel and causing every frame to be skipped.
+        let ticks = UInt64(UInt32(bitPattern: rtpTimestamp)) + 1
+        return Int64(ticks * nanosecondsPerSecond / rtpClockRate)
+    }
+}
+
+enum IOSRemoteDesktopFrameRate {
+    static let maximum: Int32 = 30
+
+    static func available(hostMaximum: Int32) -> [Int32] {
+        [maximum].filter { $0 <= effectiveHostMaximum(hostMaximum) }
+    }
+
+    static func capped(_ requested: Int32, hostMaximum: Int32) -> Int32 {
+        max(1, min(requested, maximum, effectiveHostMaximum(hostMaximum)))
+    }
+
+    private static func effectiveHostMaximum(_ hostMaximum: Int32) -> Int32 {
+        hostMaximum > 0 ? hostMaximum : maximum
+    }
+}

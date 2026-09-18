@@ -174,11 +174,55 @@ struct IOSModelTests {
         #expect(clamped == CGPoint(x: 1, y: 0))
     }
 
+    @Test func remoteDesktopZoomPreservesCoordinatesAndStaysBounded() {
+        let bounds = CGRect(x: 0, y: 0, width: 300, height: 300)
+        let video = CGSize(width: 300, height: 150)
+        let contentPoint = CGPoint(x: 75, y: 112.5)
+        let displayed = IOSRemoteDesktopGeometry.zoomed(
+            point: contentPoint, bounds: bounds, zoomScale: 2, zoomOffset: .zero)
+        #expect(displayed == CGPoint(x: 0, y: 75))
+        #expect(
+            IOSRemoteDesktopGeometry.unzoomed(
+                point: displayed, bounds: bounds, zoomScale: 2, zoomOffset: .zero) == contentPoint)
+        #expect(IOSRemoteDesktopGeometry.clampedZoomScale(0.5) == 1)
+        #expect(IOSRemoteDesktopGeometry.clampedZoomScale(8) == 4)
+        #expect(
+            IOSRemoteDesktopGeometry.clampedZoomOffset(
+                CGPoint(x: 200, y: 100), bounds: bounds, videoSize: video, zoomScale: 2)
+                == CGPoint(x: 150, y: 0))
+    }
+
     @Test func remoteDesktopOrientationFollowsTheRemoteDisplay() {
         #expect(IOSRemoteDesktopOrientation.isPortrait(CGSize(width: 1_080, height: 1_920)) == true)
         #expect(IOSRemoteDesktopOrientation.isPortrait(CGSize(width: 1_920, height: 1_080)) == false)
         #expect(IOSRemoteDesktopOrientation.isPortrait(CGSize(width: 1_024, height: 1_024)) == false)
         #expect(IOSRemoteDesktopOrientation.isPortrait(.zero) == nil)
+    }
+
+    @Test func remoteDesktopOnlyPresentsSoftwareKeyboardForTextInput() {
+        #expect(!IOSRemoteDesktopInputMode.pointer.presentsSoftwareKeyboard)
+        #expect(IOSRemoteDesktopInputMode.text.presentsSoftwareKeyboard)
+        #expect(IOSRemoteDesktopInputMode(textInputActive: false) == .pointer)
+        #expect(IOSRemoteDesktopInputMode(textInputActive: true) == .text)
+    }
+
+    @Test func remoteDesktopFramesWithOnlyRTPTimestampsRemainRenderable() {
+        let first = IOSRemoteDesktopFrameTimestamp.nanoseconds(decodedNanoseconds: 0, rtpTimestamp: 0)
+        let second = IOSRemoteDesktopFrameTimestamp.nanoseconds(decodedNanoseconds: 0, rtpTimestamp: 1_500)
+        #expect(first > 0)
+        #expect(second > first)
+        #expect(
+            IOSRemoteDesktopFrameTimestamp.nanoseconds(
+                decodedNanoseconds: 42_000,
+                rtpTimestamp: 1_500) == 42_000)
+    }
+
+    @Test func remoteDesktopFrameRateIsCappedAtThirty() {
+        #expect(IOSRemoteDesktopFrameRate.available(hostMaximum: 0) == [30])
+        #expect(IOSRemoteDesktopFrameRate.available(hostMaximum: 60) == [30])
+        #expect(IOSRemoteDesktopFrameRate.available(hostMaximum: 24).isEmpty)
+        #expect(IOSRemoteDesktopFrameRate.capped(60, hostMaximum: 60) == 30)
+        #expect(IOSRemoteDesktopFrameRate.capped(30, hostMaximum: 24) == 24)
     }
 
     @Test func mixedFleetSelectionSkipsLegacyAndOfflineNodes() {
