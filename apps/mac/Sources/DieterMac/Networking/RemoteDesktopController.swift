@@ -1116,6 +1116,8 @@ final class RemoteDesktopController {
                 let emitted = delta("jitterBufferEmittedCount"), presented = delta("timedPresentations")
                 feedback.jitterBufferMs = emitted > 0 ? delta("jitterBufferDelay") * 1000 / emitted : 0
                 feedback.renderMs = presented > 0 ? delta("renderMilliseconds") / presented : 0
+                feedback.renderMeasurement = .metalPresented
+                feedback.decoderImplementation = (inbound["decoderImplementation"] as? String) ?? ""
                 feedback.jitterMs = ((inbound["jitter"] as? NSNumber)?.doubleValue ?? 0) * 1000
                 feedback.rttMs = ((candidate["currentRoundTripTime"] as? NSNumber)?.doubleValue ?? 0) * 1000
                 feedback.lossFraction = delta("packetsLost") / max(1, delta("packetsLost") + delta("packetsReceived"))

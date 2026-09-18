@@ -121,7 +121,7 @@ def go_packages(root):
 def affected_go_packages(root, paths, packages):
     by_name = {p["ImportPath"]: p for p in packages}
     if any(p in {"go.mod", "go.sum", "just/daemon.just", "just/gateway.just"}
-           or p.startswith(("api/proto/", "native/")) for p in paths):
+           or p.startswith("api/proto/") or (p.startswith("native/") and not p.startswith("native/android-webrtc/")) for p in paths):
         return sorted(by_name)
     affected = set()
     for package in packages:
@@ -156,14 +156,16 @@ def plan_checks(root, paths, packages=None):
     brand = any(p.startswith("assets/brand/") for p in code)
     mac = schema or fixture or brand or any((p.startswith("apps/mac/") and not p.startswith("apps/mac/Sources/DieterIOS/")) or p == "just/mac.just" for p in code)
     ios = schema or fixture or brand or any(p.startswith(("apps/ios/", "apps/mac/Sources/DieterIOS/", "apps/mac/Sources/DieterCore/", "apps/mac/Sources/DieterClient/", "apps/mac/Sources/DieterAPI/")) or p in {"apps/mac/Package.swift", "just/ios.just"} for p in code)
-    android = schema or fixture or brand or any(p.startswith("apps/android/") or p == "just/android.just" for p in code)
+    android = schema or fixture or brand or any(p.startswith(("apps/android/", "native/android-webrtc/")) or p == "just/android.just" for p in code)
     mac_suites = affected_mac_smoke_suites(code)
     android_integration = android and (schema or fixture or brand or any(
         (p.startswith("apps/android/") and not p.startswith("apps/android/app/src/test/"))
-        or p == "just/android.just" for p in code))
+        or p.startswith("native/android-webrtc/") or p == "just/android.just" for p in code))
 
     if any(p.startswith("scripts/check_changed") or p in {"justfile", "just/mac.just", "just/ios.just"} for p in code):
         add("python3", "-m", "unittest", "discover", "-s", "scripts", "-p", "check_changed_test.py")
+    if any(p.startswith("scripts/qualify_screens") or p == "docs/screenshare-qualification-local.json" for p in code):
+        add("python3", "-m", "unittest", "discover", "-s", "scripts", "-p", "qualify_screens_test.py")
     if any(p == "justfile" or p.startswith("just/") for p in code):
         add("just", "justfile-check")
     if any(p.startswith(".github/workflows/") or p == "just/release.just" for p in code):
@@ -176,7 +178,8 @@ def plan_checks(root, paths, packages=None):
         add("just", "proto")
     go_changed = schema or any(
         p.endswith(".go") or p in {"go.mod", "go.sum", "just/daemon.just", "just/gateway.just"}
-        or p.startswith(("config/", "native/", "internal/", "api/gen/")) for p in code)
+        or p.startswith(("config/", "internal/", "api/gen/"))
+        or (p.startswith("native/") and not p.startswith("native/android-webrtc/")) for p in code)
     if go_changed:
         affected = affected_go_packages(root, code, go_packages(root) if packages is None else packages)
         if schema and not affected:
@@ -207,7 +210,9 @@ def plan_checks(root, paths, packages=None):
         add("just", "mac", "smoke-suites", *mac_suites)
     if android_integration:
         add("just", "android", "connected-test")
-    if screens or any(p == "scripts/test-android-screens.sh" or
+    if screens or any(p.startswith("scripts/test-android-screens") or
+                      p.startswith("native/android-webrtc/") or
+                      p.startswith("apps/android/app/src/main/java/org/webrtc/") or
                       (p.startswith("apps/android/") and ("/screens/" in p or p.endswith("/ScreensScreen.kt")))
                       for p in code):
         add("just", "android", "screens-test")

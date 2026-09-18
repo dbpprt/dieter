@@ -38,16 +38,38 @@ class ScreenCodecEndToEndTest {
                 "Isolated codec fixture") { channel.shutdownNow() }
         }
         compose.setContent {
-            controller = androidx.compose.runtime.remember { ScreenController(context) }
+            controller = androidx.compose.runtime.remember { ScreenController(context).apply {
+                lowLatencyDecoding = InstrumentationRegistry.getArguments().getString("screenLowLatency") != "0"
+                surfacePresentation = InstrumentationRegistry.getArguments().getString("screenSurface") == "1"
+                directSurfacePresentation = InstrumentationRegistry.getArguments().getString("screenDirectSurface") == "1"
+            } }
             DieterTheme { androidx.compose.material3.Scaffold { padding ->
                 ScreenWorkspace(listOf(EndpointConnection("fixture", "Codec test Mac", "isolated", daemonId = "d_screens_fixture")), padding, controller) { open() }
             } }
         }
-        fun waitVideo(codec: String) {
+        fun waitVideo(codec: String, directOutput: Boolean = controller.directSurfacePresentation) {
             compose.waitUntil(30_000) { controller.state.value.phase == "failed" ||
                 (controller.state.value.phase == "streaming" && controller.state.value.session.codec == codec && controller.state.value.receivedFps > 0) }
             assertEquals(controller.state.value.error, "streaming", controller.state.value.phase)
             assertEquals(codec, controller.state.value.session.codec)
+            assertNotNull("Actual decoder configuration must be observable", controller.decoderStatus)
+            val status = requireNotNull(controller.decoderStatus)
+            android.util.Log.i("DieterScreenCodec", "$codec decoder=$status")
+            val endpoint = if (directOutput)
+                com.dbpprt.dieter.v1.RemoteDesktopRenderMeasurement.REMOTE_DESKTOP_RENDER_MEASUREMENT_ANDROID_FRAME_RENDERED
+                else com.dbpprt.dieter.v1.RemoteDesktopRenderMeasurement.REMOTE_DESKTOP_RENDER_MEASUREMENT_EGL_SUBMITTED
+            compose.waitUntil(5_000) { controller.state.value.session.renderMeasurement == endpoint }
+            assertEquals(endpoint, controller.state.value.session.renderMeasurement)
+            assertTrue("JNI decode-completion statistics must advance", controller.state.value.decodedFrames > 0)
+            File(context.getExternalFilesDir(null), "screen-decoder-$codec.json").writeText(JSONObject(mapOf(
+                "schemaVersion" to 1, "sessionId" to controller.id,
+                "codec" to codec, "implementation" to status.implementation, "hardware" to status.hardware,
+                "lowLatencyRequested" to status.lowLatencyRequested, "lowLatencyAccepted" to status.lowLatencyAccepted,
+                "reason" to status.reason, "renderEndpoint" to endpoint.name,
+                "nativeFramesDecoded" to controller.state.value.decodedFrames,
+                "directRequested" to controller.directSurfacePresentation,
+                "renderSurface" to if (directOutput) "mediacodec-direct" else if (controller.surfacePresentation) "surface-view-egl" else "texture-view-egl",
+            )).toString())
         }
         fun choose(label: String) {
             compose.onNodeWithContentDescription("Screen quality").performClick()
@@ -58,6 +80,32 @@ class ScreenCodecEndToEndTest {
             compose.onNodeWithText("Codec test Mac").performClick()
             compose.onNodeWithTag("screen-connect").performClick()
             waitVideo("H264")
+            if (controller.directSurfacePresentation) {
+                val oldSurface = requireNotNull(controller.decoderSurface)
+                // Decode real output but withhold direct presentation. The
+                // bounded watchdog must retire this target once, reconnect,
+                // and deliver normal texture frames through the genuine sink.
+                val sink = controller.videoSink
+                compose.runOnIdle {
+                    controller.videoSink = { frame, session ->
+                        if (frame.buffer !is org.webrtc.VideoFrame.SurfaceBuffer) sink?.invoke(frame, session)
+                    }
+                    controller.resumeConnection()
+                }
+                waitVideo("H264", directOutput = false)
+                assertFalse(oldSurface.isOpen)
+                compose.runOnIdle { controller.videoSink = sink }
+                lateinit var view: android.view.View
+                compose.runOnIdle {
+                    view = requireNotNull(android.view.inspector.WindowInspector.getGlobalWindowViews()
+                        .firstNotNullOfOrNull { it.findViewWithTag<android.view.View>("dieter-direct-output") })
+                    view.visibility = android.view.View.INVISIBLE
+                }
+                compose.waitUntil(5_000) { controller.decoderSurface == null }
+                compose.runOnIdle { view.visibility = android.view.View.VISIBLE }
+                compose.waitUntil(5_000) { controller.decoderSurface != null && controller.decoderSurface !== oldSurface }
+                waitVideo("H264")
+            }
             val first = controller.id
             var hevc = false
             compose.runOnIdle { hevc = ScreenDecoderFactory(controller.egl.eglBaseContext, enableHEVC = true) {}.supportedCodecs.any { it.name == "H265" } }
@@ -79,7 +127,7 @@ class ScreenCodecEndToEndTest {
             choose("HEVC · up to 1080p60")
             if (hevc) {
                 waitVideo("H265")
-                val hevcCapture = InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot()
+                val hevcCapture = captureScreenFixture()
                 File(context.getExternalFilesDir(null), "screen-hevc.png").outputStream().use { hevcCapture?.compress(Bitmap.CompressFormat.PNG, 100, it) }
                 // Strict HEVC cannot silently accept the H.264-only 120fps mode.
                 choose("Up to 120 fps")
@@ -94,7 +142,7 @@ class ScreenCodecEndToEndTest {
                 compose.onNodeWithTag("screen-connect").performClick()
             }
             waitVideo("H264")
-            val capture = InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot()
+            val capture = captureScreenFixture()
             File(context.getExternalFilesDir(null), "screen-codec.png").outputStream().use { capture?.compress(Bitmap.CompressFormat.PNG, 100, it) }
         } finally { compose.runOnIdle { controller.close() } }
     }

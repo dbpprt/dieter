@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "repository": "https://github.com/webrtc-sdk/webrtc",
+  "commit": "73cb8180f7258ee292878d6edd05177f41883962",
+  "maven": "io.github.webrtc-sdk:android:150.7871.01",
+  "aarSHA256": "0a1627b1a48c2bc17d9a40d62fc47bd45166f44a311e95917f147c402de379b0",
+  "upstreamFiles": {
+    "sdk/android/api/org/webrtc/VideoFrame.java": "893b96dd720df985bed38d0f35c39dc04fce41e9c7fea8a5011fbb61499add53",
+    "sdk/android/api/org/webrtc/DecoderSurface.java": null,
+    "sdk/android/src/java/org/webrtc/AndroidVideoDecoder.java": "b5deea4dfd47a868f71ba4fb2ea0b28842d06af576c6f680325f636ee42b4e21",
+    "sdk/android/src/java/org/webrtc/MediaCodecSurfaceFrame.java": null,
+    "sdk/android/src/java/org/webrtc/MediaCodecWrapper.java": "c27e46b28fd6aa9751fe0534bf99381819347343497e713a8aafbda3626a0a8b",
+    "sdk/android/src/java/org/webrtc/MediaCodecWrapperFactoryImpl.java": "584a2801ca352e8b1e03710a33461a6357d2b31381691023537b0fb8dc87c53c"
+  }
+}

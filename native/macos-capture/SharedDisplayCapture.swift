@@ -4,6 +4,38 @@ import CoreVideo
 import Foundation
 import ScreenCaptureKit
 
+// Metadata-only classification: no CPU readback of desktop pixels. Missing or
+// unfamiliar attachments remain unknown. Overlapping rectangles deliberately
+// produce a conservative upper bound on changed area.
+func captureChangedFraction(_ sample: CMSampleBuffer) -> Double? {
+    guard let image = CMSampleBufferGetImageBuffer(sample),
+        let attachments = CMSampleBufferGetSampleAttachmentsArray(sample, createIfNecessary: false) as? [[SCStreamFrameInfo: Any]],
+        let values = attachments.first else { return nil }
+    let rects: [CGRect]
+    if let value = values[.dirtyRects] as? [CGRect] { rects = value }
+    else if let value = values[.dirtyRects] as? [NSValue] { rects = value.map(\.rectValue) }
+    else { return nil }
+    let bounds = (values[.contentRect] as? CGRect) ?? CGRect(x: 0, y: 0,
+        width: CVPixelBufferGetWidth(image), height: CVPixelBufferGetHeight(image))
+    return captureChangedFraction(rects: rects, bounds: bounds)
+}
+
+func captureChangedFraction(rects: [CGRect], bounds: CGRect) -> Double? {
+    guard rects.count <= 1024 else { return 1 }
+    guard bounds.width.isFinite, bounds.height.isFinite, bounds.minX.isFinite, bounds.minY.isFinite,
+        bounds.width > 0, bounds.height > 0 else { return nil }
+    var area: Double = 0
+    for rect in rects {
+        guard rect.width.isFinite, rect.height.isFinite, rect.minX.isFinite, rect.minY.isFinite else { return nil }
+        let clipped = rect.intersection(bounds)
+        if !clipped.isNull { area += max(0, clipped.width * clipped.height) }
+    }
+    // A coordinate-space mismatch must not turn reported damage into an idle
+    // frame and suppress real pixels. Only explicitly empty damage proves zero.
+    if !rects.isEmpty && area == 0 { return nil }
+    return min(1, area / (bounds.width * bounds.height))
+}
+
 // One ScreenCaptureKit stream per physical display. Surfaces stay in the native
 // process and feed the bounded, independent VideoToolbox rendition mailboxes.
 actor SharedDisplayPool {
@@ -68,11 +100,13 @@ private final class SharedDisplayCapture: NSObject, SCStreamOutput, SCStreamDele
     private var consumers: [UInt64: Consumer] = [:]
     private var stream: SCStream?
     private var applied: [Int] = []
+    private var lastFrame: CapturedFrame?
     init(display: SCDisplay) { self.display = display }
     var empty: Bool { lock.withLock { consumers.isEmpty } }
     func add(id: UInt64, consumer: Consumer) async throws {
         lock.withLock { consumers[id] = consumer }
         try await configure()
+        if let frame = lock.withLock({ lastFrame }) { consumer.receive(frame) }
     }
     func update(id: UInt64, width: Int, height: Int, fps: Int, cursor: Bool) async throws {
         lock.withLock {
@@ -136,7 +170,9 @@ private final class SharedDisplayCapture: NSObject, SCStreamOutput, SCStreamDele
         }
         let frame = CapturedFrame(
             sampleBuffer: sampleBuffer,
-            capturedAtNanoseconds: Int64(CMSampleBufferGetPresentationTimeStamp(sampleBuffer).seconds * 1_000_000_000))
+            capturedAtNanoseconds: Int64(CMSampleBufferGetPresentationTimeStamp(sampleBuffer).seconds * 1_000_000_000),
+            changedFraction: captureChangedFraction(sampleBuffer))
+        lock.withLock { lastFrame = frame }
         lock.withLock { Array(consumers.values) }.forEach { $0.receive(frame) }
     }
 }

@@ -51,6 +51,8 @@ struct NativeCommand: Decodable {
     var referenceRecovery: Bool? = nil
     var generation: UInt64? = nil
     var ltrToken: UInt64? = nil
+    var recoveryWindowMs: Int? = nil
+    var overlapBudgetMs: Int? = nil
 }
 
 struct NativeCursor: Encodable {
@@ -76,6 +78,14 @@ struct NativeState: Encodable {
     var displayGeneration: UInt64
     var encoder: String
     var embeddedCursor: Bool
+    var encoderConfiguration: String = ""
+}
+
+struct NativeContent: Encodable {
+    let generation: UInt64
+    let sequence: UInt64
+    let samples: UInt32
+    let changedFraction: Double
 }
 
 struct NativeEvent: Encodable {
@@ -85,6 +95,8 @@ struct NativeEvent: Encodable {
     var error: String?
     var cursor: NativeCursor?
     var state: NativeState?
+    var content: NativeContent?
+    var frameOverlapSupported = true
 }
 
 // A separate bounded descriptor prevents screen payloads from holding up input

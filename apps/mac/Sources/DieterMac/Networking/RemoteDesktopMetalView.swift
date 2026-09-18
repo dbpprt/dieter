@@ -25,6 +25,9 @@ final class RemoteDesktopMetalView: NSView, RTCVideoRenderer {
     var lastPixelFormat: OSType { renderer.snapshot.lastPixelFormat }
     var initializationFailure: String? { renderer.initializationFailure }
     var presentationMode: RemoteDesktopPresentationMode { renderer.mode }
+    var renderTrace: [RemoteDesktopRenderTraceRecord] { renderer.trace.snapshot }
+    var maxUnpresented: UInt64 { renderer.snapshot.maxUnpresented }
+    var presentationTimeouts: UInt64 { renderer.snapshot.presentationTimeouts }
     private let surface = NSView(frame: .zero)
     private var videoSize = CGSize.zero
     nonisolated private let renderer: RemoteDesktopMetalRenderer

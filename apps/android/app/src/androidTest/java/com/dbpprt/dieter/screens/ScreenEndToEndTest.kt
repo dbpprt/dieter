@@ -79,7 +79,11 @@ class ScreenEndToEndTest {
                 Base64.getDecoder().decode(fixture.getString("certificate")), RTCConfiguration.parseFrom(Base64.getDecoder().decode(fixture.getString("rtc"))), "Isolated native fixture", if (opened.incrementAndGet() == 1) System.currentTimeMillis() + 3000 else null) { channel.shutdownNow() }
         }
         compose.setContent {
-            controller = androidx.compose.runtime.remember { ScreenController(context) }
+            controller = androidx.compose.runtime.remember { ScreenController(context).apply {
+                lowLatencyDecoding = InstrumentationRegistry.getArguments().getString("screenLowLatency") != "0"
+                surfacePresentation = InstrumentationRegistry.getArguments().getString("screenSurface") == "1"
+                directSurfacePresentation = InstrumentationRegistry.getArguments().getString("screenDirectSurface") == "1"
+            } }
             DieterTheme {
                 androidx.compose.material3.Scaffold { padding ->
                     ScreenWorkspace(listOf(EndpointConnection("fixture", "Native test Mac", "isolated", daemonId = "d_screens_fixture")),
@@ -119,7 +123,7 @@ class ScreenEndToEndTest {
                 compose.runOnIdle { clipboard.setPrimaryClip(android.content.ClipData.newPlainText("Screen fixture", text)) }
                 val completed = controller.clipboard.completedOperations
                 compose.onNodeWithTag("screens.clipboard.paste").performClick()
-                compose.waitUntil(7000) { controller.clipboard.completedOperations > completed || controller.state.value.clipboardError.isNotEmpty() }
+                compose.waitUntil(7000) { controller.clipboard.completedOperations > completed || (!controller.clipboard.operationPending && controller.state.value.clipboardError.isNotEmpty()) }
                 assertEquals("", controller.state.value.clipboardError)
                 fun request(action: com.dbpprt.dieter.v1.RemoteDesktopClipboardRequest.Action, value: String = "") =
                     com.dbpprt.dieter.v1.RemoteDesktopClipboardRequest.newBuilder().setSessionId(controller.id)
@@ -140,7 +144,7 @@ class ScreenEndToEndTest {
                     compose.runOnIdle { clipboard.setPrimaryClip(clip) }
                     val before = controller.clipboard.completedOperations
                     compose.onNodeWithTag("screens.clipboard.paste").performClick()
-                    compose.waitUntil(15_000) { controller.clipboard.completedOperations > before || controller.state.value.clipboardError.isNotEmpty() }
+                    compose.waitUntil(15_000) { controller.clipboard.completedOperations > before || (!controller.clipboard.operationPending && controller.state.value.clipboardError.isNotEmpty()) }
                     assertEquals("", controller.state.value.clipboardError)
                     val received = kotlinx.coroutines.runBlocking { clipboardRoute.rpc.exchangeRemoteDesktopClipboard(request(com.dbpprt.dieter.v1.RemoteDesktopClipboardRequest.Action.READ).toBuilder().setAcceptBinary(true).build()) }
                     assertArrayEquals(if (image) png else binary, received.itemsList.first().data.toByteArray())
@@ -148,7 +152,7 @@ class ScreenEndToEndTest {
                     compose.runOnIdle { controller.clipboard.enabled = false; clipboard.clearPrimaryClip(); controller.clipboard.enabled = true }
                     val copyBefore = controller.clipboard.completedOperations
                     compose.onNodeWithTag("screens.clipboard.copy").performClick()
-                    compose.waitUntil(15_000) { controller.clipboard.completedOperations > copyBefore || controller.state.value.clipboardError.isNotEmpty() }
+                    compose.waitUntil(15_000) { controller.clipboard.completedOperations > copyBefore || (!controller.clipboard.operationPending && controller.state.value.clipboardError.isNotEmpty()) }
                     assertEquals("", controller.state.value.clipboardError)
                     val local = requireNotNull(clipboard.primaryClip)
                     assertEquals(if (image) 1 else 2, local.itemCount)
@@ -203,14 +207,14 @@ class ScreenEndToEndTest {
             }
 
             // Capture the actual GPU output, not only a composable placeholder.
-            val screenshot = InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot()
+            val screenshot = captureScreenFixture()
             assertNotNull(screenshot)
             val samples = mutableSetOf<Int>()
             for (x in 0 until screenshot.width step 37) for (y in 0 until screenshot.height step 37) samples.add(screenshot.getPixel(x, y))
             if (fixture.getBoolean("real")) assertTrue("Video should contain actual screen pixels", samples.size > 50)
             else {
                 SystemClock.sleep(350)
-                val next = InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot()
+                val next = captureScreenFixture()
                 assertNotEquals("Synthetic luminance must visibly advance", screenshot.getPixel(screenshot.width / 2 + 80, screenshot.height / 2),
                     next.getPixel(next.width / 2 + 80, next.height / 2))
             }
@@ -256,7 +260,7 @@ class ScreenEndToEndTest {
             compose.runOnIdle { canvas.resetCanvas() }
             fun canvasEvidence(name: String) {
                 SystemClock.sleep(80)
-                val bitmap = InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot()
+                val bitmap = captureScreenFixture()
                 File(context.getExternalFilesDir(null), "screen-canvas-$name.png").outputStream().use {
                     bitmap.compress(Bitmap.CompressFormat.PNG, 100, it)
                 }
@@ -309,16 +313,25 @@ class ScreenEndToEndTest {
             assertEquals(zoom, canvas.canvasModel.zoom, 0f)
             if (fixture.getBoolean("real")) {
                 val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                val beforeCopy = controller.clipboard.completedOperations
-                compose.onNodeWithTag("screens.clipboard.copy").performClick()
-                compose.waitUntil(7000) { controller.clipboard.completedOperations > beforeCopy || controller.state.value.clipboardError.isNotEmpty() }
-                assertEquals("", controller.state.value.clipboardError)
-                assertTrue(clipboard.primaryClip?.getItemAt(0)?.text?.toString()?.contains("Android écran 世界") == true)
-                compose.runOnIdle { clipboard.setPrimaryClip(android.content.ClipData.newPlainText("Fixture paste", "Android native paste marker")) }
-                val beforePaste = controller.clipboard.completedOperations
-                compose.onNodeWithTag("screens.clipboard.paste").performClick()
-                compose.waitUntil(7000) { controller.clipboard.completedOperations > beforePaste || controller.state.value.clipboardError.isNotEmpty() }
-                assertEquals("", controller.state.value.clipboardError)
+                val originalClip = clipboard.primaryClip
+                try {
+                    val beforeCopy = controller.clipboard.completedOperations
+                    compose.onNodeWithTag("screens.clipboard.copy").performClick()
+                    compose.waitUntil(7000) { controller.clipboard.completedOperations > beforeCopy || (!controller.clipboard.operationPending && controller.state.value.clipboardError.isNotEmpty()) }
+                    assertEquals("", controller.state.value.clipboardError)
+                    assertTrue(clipboard.primaryClip?.getItemAt(0)?.text?.toString()?.contains("Android écran 世界") == true)
+                    compose.runOnIdle { clipboard.setPrimaryClip(android.content.ClipData.newPlainText("Fixture paste", "Android native paste marker")) }
+                    val beforePaste = controller.clipboard.completedOperations
+                    compose.onNodeWithTag("screens.clipboard.paste").performClick()
+                    compose.waitUntil(7000) { controller.clipboard.completedOperations > beforePaste || (!controller.clipboard.operationPending && controller.state.value.clipboardError.isNotEmpty()) }
+                    assertEquals("", controller.state.value.clipboardError)
+                } finally {
+                    compose.runOnIdle {
+                        controller.clipboard.enabled = false
+                        if (originalClip != null) clipboard.setPrimaryClip(originalClip) else clipboard.clearPrimaryClip()
+                        controller.clipboard.enabled = true
+                    }
+                }
             }
             // Held keys are released when focus is lost and control stays disabled until restored.
             compose.runOnIdle { controller.key(4, true); controller.focus(false) }
@@ -344,12 +357,21 @@ class ScreenEndToEndTest {
                 compose.runOnIdle { controller.configure(display = primary) }
                 compose.waitUntil(15_000) { controller.state.value.session.displayId == primary && controller.state.value.control }
             }
+            val measuredEndpoint = if (controller.directSurfacePresentation)
+                com.dbpprt.dieter.v1.RemoteDesktopRenderMeasurement.REMOTE_DESKTOP_RENDER_MEASUREMENT_ANDROID_FRAME_RENDERED
+                else com.dbpprt.dieter.v1.RemoteDesktopRenderMeasurement.REMOTE_DESKTOP_RENDER_MEASUREMENT_EGL_SUBMITTED
+            compose.waitUntil(5_000) { controller.state.value.session.renderMeasurement == measuredEndpoint && controller.state.value.decodedFrames > 0 }
             File(context.getExternalFilesDir(null), "screen-e2e-stats.json").writeText(JSONObject(mapOf(
+                "schemaVersion" to 1, "sessionId" to controller.id, "nativeFramesDecoded" to controller.state.value.decodedFrames,
                 "width" to controller.state.value.session.width, "height" to controller.state.value.session.height,
                 "fps" to controller.state.value.receivedFps, "inputAck" to controller.state.value.session.lastInputOrdinal,
                 "encodeMs" to controller.state.value.session.encodeMs, "captureToSendMs" to controller.state.value.session.captureToSendMs,
                 "jitterBufferMs" to controller.state.value.session.jitterBufferMs,
                 "renderMs" to controller.state.value.session.renderMs,
+                "renderEndpoint" to controller.state.value.session.renderMeasurement.name,
+                "decoder" to controller.decoderStatus?.implementation,
+                "decoderHardware" to controller.decoderStatus?.hardware,
+                "decoderLowLatencyAccepted" to controller.decoderStatus?.lowLatencyAccepted,
             )).toString())
             compose.onNodeWithTag("screen-disconnect").performClick()
             assertEquals("idle", controller.state.value.phase)
@@ -357,7 +379,7 @@ class ScreenEndToEndTest {
             compose.onNodeWithTag("screen-connect").assertIsDisplayed()
             compose.waitForIdle()
             SystemClock.sleep(200)
-            val cleared = InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot()
+            val cleared = captureScreenFixture()
             assertEquals("Disconnect must clear remote pixels", android.graphics.Color.rgb(12, 15, 20),
                 cleared.getPixel(cleared.width / 2, cleared.height / 2))
             connect()
@@ -438,8 +460,11 @@ class ScreenEndToEndTest {
                 if (it < 2) compose.onNodeWithTag("screen-disconnect").performClick()
             }
         } catch (failure: Throwable) {
-            val capture = InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot()
-            File(context.getExternalFilesDir(null), "screen-failure.png").outputStream().use { capture?.compress(Bitmap.CompressFormat.PNG, 100, it) }
+            runCatching {
+                val capture = captureScreenFixture()
+                File(context.getExternalFilesDir(null), "screen-failure.png").outputStream().use { capture.compress(Bitmap.CompressFormat.PNG, 100, it) }
+                capture.recycle()
+            }.onFailure { failure.addSuppressed(it) }
             throw AssertionError("Screen state: ${controller.state.value}; pointer ordinal=${controller.lastPointerOrdinal}; window focus=${canvas.hasWindowFocus()}", failure)
         } finally {
             compose.runOnIdle { canvas.release(); controller.close() }

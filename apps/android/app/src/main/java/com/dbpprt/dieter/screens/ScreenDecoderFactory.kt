@@ -11,11 +11,17 @@ import java.util.concurrent.atomic.AtomicBoolean
  */
 internal class ScreenDecoderFactory(
     context: EglBase.Context, private val enableHEVC: Boolean = false,
+    lowLatency: Boolean = false, private val configured: (ScreenDecoderStatus) -> Unit = {},
+    directSurface: () -> DecoderSurface? = { null },
+    private val outputDecoded: (Long) -> Unit = {},
     private val unavailable: () -> Unit = {}, private val decoded: (VideoFrame) -> Unit,
 ) : VideoDecoderFactory {
-    private val hardware = HardwareVideoDecoderFactory(context)
+    private val listener = DieterLowLatencyDecoderFactory.Listener { name, requested, accepted, reason ->
+        configured(ScreenDecoderStatus(name, true, requested, accepted, reason))
+    }
+    private val hardware = DieterLowLatencyDecoderFactory(context, { true }, lowLatency, listener, directSurface, outputDecoded)
     private val platform = PlatformSoftwareVideoDecoderFactory(context)
-    private val hevcHardware = HardwareVideoDecoderFactory(context) { supportsHEVC(it) }
+    private val hevcHardware = DieterLowLatencyDecoderFactory(context, { supportsHEVC(it) }, lowLatency, listener, directSurface, outputDecoded)
     override fun getSupportedCodecs(): Array<VideoCodecInfo> =
         ((if (enableHEVC) hevcHardware.supportedCodecs.filter { it.name.equals("H265", true) }.map {
             VideoCodecInfo("H265", mapOf("profile-id" to "1", "tier-flag" to "0", "level-id" to "153", "tx-mode" to "SRST"), emptyList())
@@ -25,7 +31,9 @@ internal class ScreenDecoderFactory(
     override fun createDecoder(info: VideoCodecInfo): VideoDecoder? {
         val hevc = info.name.equals("H265", true)
         if (!info.name.equals("H264", true) && !(enableHEVC && hevc)) return null
-        val decoder = if (hevc) hevcHardware.createDecoder(info) else hardware.createDecoder(info) ?: platform.createDecoder(info)
+        val decoder = if (hevc) hevcHardware.createDecoder(info) else hardware.createDecoder(info) ?: platform.createDecoder(info)?.also {
+            configured(ScreenDecoderStatus(it.implementationName, false, false, false, "platform software fallback"))
+        }
         if (decoder == null) { if (hevc) unavailable(); return null }
         val hasDecoded = AtomicBoolean()
         val reported = AtomicBoolean()
@@ -37,6 +45,9 @@ internal class ScreenDecoderFactory(
             override fun initDecode(settings: VideoDecoder.Settings, callback: VideoDecoder.Callback): VideoCodecStatus =
                 check(decoder.initDecode(settings) { frame, time, qp ->
                     hasDecoded.set(true)
+                    // Software/platform fallback may not expose the dequeue
+                    // hook. The receiver deduplicates the hardware's two paths.
+                    outputDecoded(frame.timestampNs)
                     decoded(frame)
                     callback.onDecodedFrame(frame, time, qp)
                 })
@@ -56,6 +67,9 @@ internal class ScreenDecoderFactory(
         }.getOrDefault(false)
     }
 }
+
+data class ScreenDecoderStatus(val implementation: String, val hardware: Boolean,
+    val lowLatencyRequested: Boolean, val lowLatencyAccepted: Boolean, val reason: String)
 
 /** The Android decoder API carries RTP time as floor(timestamp / 90) milliseconds.
  * Compare on the wrapping 32-bit RTP clock, allowing only its sub-ms quantization.

@@ -272,6 +272,12 @@ func (runner *interruptQueueRunner) Run(ctx context.Context, request harness.Req
 		if err := emit(harness.Output{Type: "chunk", Chunk: json.RawMessage(`{"type":"start","messageId":"first-assistant"}`)}); err != nil {
 			return err
 		}
+		if err := emit(harness.Output{Type: "chunk", Chunk: json.RawMessage(`{"type":"tool-input-available","toolCallId":"tool-inspect","toolName":"bash","input":{"command":"git status --short"}}`)}); err != nil {
+			return err
+		}
+		if err := emit(harness.Output{Type: "chunk", Chunk: json.RawMessage(`{"type":"tool-output-available","toolCallId":"tool-inspect","toolName":"bash","output":{"exitCode":0,"output":" M retained.txt"}}`)}); err != nil {
+			return err
+		}
 		if err := emit(harness.Output{Type: "session", State: json.RawMessage(`{"type":"resume-session","data":{"acpSessionId":"interrupted"},"continueFrom":{"type":"continue-turn"}}`)}); err != nil {
 			return err
 		}
@@ -1492,7 +1498,7 @@ func TestQueuedMessageStartsAfterInterruptWithoutRecordingFailure(t *testing.T) 
 		t.Fatalf("queued turn did not settle: status=%q queue=%d runtime=%q active=%v", conversation.Status, len(conversation.Queue), stored.Runtime, active != nil)
 	}
 	prompts := runner.prompts()
-	if len(prompts) != 2 || prompts[0] != "Keep working" || prompts[1] != "Use this instead" {
+	if len(prompts) != 2 || prompts[0] != "Keep working" || !strings.Contains(prompts[1], "<interrupted_turn_context>") || !strings.Contains(prompts[1], `git status --short`) || !strings.Contains(prompts[1], `M retained.txt`) || !strings.HasSuffix(prompts[1], "USER:\nUse this instead") {
 		t.Fatalf("prompts=%#v", prompts)
 	}
 	runner.mu.Lock()
@@ -1511,6 +1517,33 @@ func TestQueuedMessageStartsAfterInterruptWithoutRecordingFailure(t *testing.T) 
 				t.Fatalf("interrupt was recorded as failure: %#v", conversation.Messages)
 			}
 		}
+	}
+}
+
+func TestInterruptedConversationPromptExcludesReasoningAndMarksMissingToolResults(t *testing.T) {
+	conversation := model.Conversation{
+		Status: "interrupted",
+		Messages: []model.UIMessage{
+			{Role: "user", Parts: []model.UIMessagePart{{Type: "text", Text: "Original task"}}},
+			{Role: "assistant", Parts: []model.UIMessagePart{
+				{Type: "reasoning", Text: "private chain of thought"},
+				{Type: "text", Text: "I found the relevant package."},
+				{Type: "dynamic-tool", ToolCallID: "complete", ToolName: "bash", State: "output-available", Input: json.RawMessage(`{"command":"pwd"}`), Output: json.RawMessage(`{"output":"/repo"}`)},
+				{Type: "dynamic-tool", ToolCallID: "pending", ToolName: "bash", State: "input-available", Input: json.RawMessage(`{"command":"go test ./..."}`)},
+			}},
+		},
+	}
+	prompt := interruptedConversationPrompt(conversation, "Continue safely")
+	for _, expected := range []string{"I found the relevant package.", `"command":"pwd"`, `"output":"/repo"`, "NO RESULT WAS OBSERVED BEFORE THE INTERRUPT.", "USER:\nContinue safely"} {
+		if !strings.Contains(prompt, expected) {
+			t.Fatalf("prompt missing %q: %s", expected, prompt)
+		}
+	}
+	if strings.Contains(prompt, "private chain of thought") {
+		t.Fatalf("prompt leaked reasoning: %s", prompt)
+	}
+	if got := interruptedConversationPrompt(model.Conversation{Status: "idle"}, "Unchanged"); got != "Unchanged" {
+		t.Fatalf("idle prompt=%q", got)
 	}
 }
 

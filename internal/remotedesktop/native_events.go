@@ -35,6 +35,10 @@ func (m *nativeEventMailbox) push(event SourceEvent) bool {
 		}
 		old.Cursor = event.Cursor
 	}
+	if event.Content != nil && (old.Content == nil || event.Content.Generation > old.Content.Generation ||
+		event.Content.Generation == old.Content.Generation && event.Content.Sequence > old.Content.Sequence) {
+		old.Content = event.Content
+	}
 	if event.Err != nil {
 		old.Err = event.Err
 	}

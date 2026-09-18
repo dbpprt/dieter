@@ -24,6 +24,9 @@ struct RemoteDesktopRenderSnapshot: @unchecked Sendable {
     var totalRenderMilliseconds: Double = 0
     var timedPresentations: UInt64 = 0
     var latePresentations: UInt64 = 0
+    var maxUnpresented: UInt64 = 0
+    var presentationTimeouts: UInt64 = 0
+    var lastPresentedSubmission: UInt64 = 0
     var lastTimestamp: Int32?
     var lastTimedTimestamp: Int32?
     var lastPixelFormat: OSType = 0
@@ -71,14 +74,18 @@ final class RemoteDesktopRenderMailbox: @unchecked Sendable {
     private var busy = false
     private var closed = false
     private var token: UInt64 = 0
+    private var cadence = RemoteDesktopPresentationCadence()
+    var presentationBudget: Int { lock.withLock { cadence.budget(at: CACurrentMediaTime()) } }
     var hasPending: Bool { lock.withLock { pending != nil } }
     var currentToken: UInt64 { lock.withLock { token } }
-    func offer(_ frame: RTCVideoFrame, expectedToken: UInt64? = nil) -> Bool {
+    func offer(_ frame: RTCVideoFrame, expectedToken: UInt64? = nil, wakeForCadence: Bool = false) -> Bool {
         lock.withLock {
             guard !closed else { return false }
             if let expectedToken, expectedToken != token { return false }
-            pending = frame; arrivedAt = CACurrentMediaTime()
-            if busy { return false }
+            let now = CACurrentMediaTime(), previous = cadence.budget(at: CACurrentMediaTime())
+            pending = frame; arrivedAt = now
+            cadence.observe(timestamp: frame.timeStamp, at: now)
+            if busy { return wakeForCadence && previous == 1 && cadence.budget(at: now) == 2 }
             busy = true
             return true
         }
@@ -99,7 +106,7 @@ final class RemoteDesktopRenderMailbox: @unchecked Sendable {
     }
     @discardableResult func reset() -> UInt64 {
         lock.withLock {
-            token &+= 1; pending = nil; return token
+            token &+= 1; pending = nil; cadence = RemoteDesktopPresentationCadence(); return token
         }
     }
     func close() {

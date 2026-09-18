@@ -447,8 +447,9 @@ revokes it. The daemon log records session IDs, quality changes, measurement age
 delivered bandwidth, transport queue growth and GCC state.
 `status` separates socket work (`queueMs`), paced sending (`sendMs`), approximate
 capture-to-send age (`captureToSendMs`), jitter-buffer residence (`jitterBufferMs`),
-and decoded-frame-to-Metal presentation (`renderMs`). Receiver timing is available
-with updated Mac viewers; zero can mean no fresh sample. These stages overlap and
+and decoded-frame-to-output timing (`renderMs`). `renderMeasurement` distinguishes
+Mac Metal presentation from Android EGL submission. Receiver timing is available
+with updated native viewers; zero can mean no fresh sample. These stages overlap and
 are not a physical glass-to-glass total. Capture admits one encoded frame at a time
 and replaces pending raw surfaces; compatible peers request immediate playout.
 Mac and Android display at decoder completion and dispatch the first pointer
@@ -707,3 +708,30 @@ runs the native H.264/HEVC recovery matrix. Android coverage uses
 `DIETER_SCREEN_TEST_CLASS=com.dbpprt.dieter.screens.ScreenRecoveryEndToEndTest just android screens-test`.
 Both use authenticated disposable fixtures and targeted packet loss, without
 altering saved credentials or system network configuration.
+
+### Screen performance diagnostics
+
+`screen status SESSION` includes `encoderConfiguration`, `decoderImplementation`,
+optional `decoderHardware`/`decoderLowLatencyAccepted`, `renderMeasurement`,
+`contentChangedFraction`, `contentMeasurementSequence`, `contentSamples` and
+`contentClass`. Configuration acceptance and metadata classification are not
+proof of measured latency/visual quality. Missing optional capability means unknown.
+
+`mediaRtpBytes`, `repairRtpBytes`, `probeRtpBytes` and `fecRtpBytes` separate serialized
+RTP traffic; they exclude SRTP, RTCP, SCTP, ICE, IP/UDP and TURN overhead.
+`recoveryDiagnostics` reports history decisions and current retention, bounded to
+4,096 packets/4 MiB per session across streams. Old generations cannot repair a
+new display; the pacer rechecks repair usefulness after waiting. Existing CLI
+status/configuration operations carry diagnostics over all three routes.
+
+Performance candidates remain isolated-process switches: Mac
+`DIETER_SCREEN_PRESENTATION=bounded|low-latency|immediate|display-link`; daemon
+`DIETER_SCREEN_CONTENT_ADAPTATION=1`, `DIETER_SCREEN_OVERLAP=1`, and native helper
+`DIETER_SCREEN_ENCODER_BURST_MS=100|250|500`. Defaults retain current compatibility
+behavior until matched qualification. Never restart the live service to set them.
+The qualified one-credit fallback remains available with older helpers.
+
+`scripts/qualify_screens.py --help` describes reproducible local/device evidence
+collection. The physical Android runner requires an exact serial and a separate
+fixture application ID; the original emulator-only runner remains unchanged in
+its device policy. Do not present a skipped/unavailable matrix cell as a pass.

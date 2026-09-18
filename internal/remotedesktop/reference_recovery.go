@@ -44,6 +44,34 @@ func requestRecovery(source ControlledFrameSource) {
 		source.RequestKeyFrame()
 	}
 }
+
+func requestRecoveryWithin(source ControlledFrameSource, window time.Duration) {
+	if value, ok := source.(interface{ RequestRecoveryWithin(time.Duration) }); ok {
+		value.RequestRecoveryWithin(window)
+	} else {
+		requestRecovery(source)
+	}
+}
+
+func recoveryCommand(window time.Duration) nativeCommand {
+	return nativeCommand{Kind: "recover", RecoveryWindowMS: min(250, max(50, int(window/time.Millisecond)))}
+}
+
+func (s *nativeHelperSource) RequestRecoveryWithin(window time.Duration) {
+	_ = s.send(context.Background(), recoveryCommand(window), false)
+}
+func (s *nativeRendition) RequestRecoveryWithin(window time.Duration) {
+	_ = s.command(context.Background(), recoveryCommand(window), false)
+}
+func (s *sharedSource) RequestRecoveryWithin(window time.Duration) {
+	s.pool.mu.Lock()
+	source, ok := s.variant.source.(ControlledFrameSource)
+	valid := ok && !s.closed
+	s.pool.mu.Unlock()
+	if valid {
+		requestRecoveryWithin(source, window)
+	}
+}
 func referenceCommand(m FrameMetadata) nativeCommand {
 	kind := "ack_reference"
 	if m.RecoveryReference != 0 {

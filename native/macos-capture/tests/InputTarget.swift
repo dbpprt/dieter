@@ -40,7 +40,12 @@ final class InputTarget: NSView {
             else { clipboard.setString(text, forType: .string) }
             if event.keyCode == 7 { text = ""; clipboardFiles = []; clipboardImage = nil }
         }
-        else { text += event.characters ?? "" }
+        else {
+            // Typing selects text in this owned fixture. An earlier binary
+            // paste must not keep winning a later Copy after new text input.
+            clipboardFiles = []; clipboardImage = nil
+            text += event.characters ?? ""
+        }
         report()
     }
     override func performKeyEquivalent(with event: NSEvent) -> Bool {

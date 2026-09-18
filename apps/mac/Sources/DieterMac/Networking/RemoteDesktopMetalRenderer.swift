@@ -5,6 +5,8 @@ import CoreVideo
 enum RemoteDesktopPresentationMode: String, Sendable {
     case immediate
     case displayLink = "display-link"
+    case bounded
+    case lowLatency = "low-latency"
     // Keep display timing opt-in until physical input/presentation A/B testing.
     static var configured: Self {
         Self(rawValue: ProcessInfo.processInfo.environment["DIETER_SCREEN_PRESENTATION"] ?? "") ?? .immediate
@@ -21,6 +23,9 @@ final class RemoteDesktopMetalRenderer: NSObject, CAMetalDisplayLinkDelegate, @u
     private let executor = RemoteDesktopRenderExecutor()
     private let mailbox = RemoteDesktopRenderMailbox()
     private let statistics = RemoteDesktopRenderStatistics()
+    let trace = RemoteDesktopRenderTrace()
+    private var presentations: RemoteDesktopPresentationLedger
+    private var presentationWatchdogScheduled = false
     private let wakeUI: @Sendable () -> Void
     private var commandQueue: (any MTLCommandQueue)?
     private var nv12Pipeline: (any MTLRenderPipelineState)?
@@ -36,6 +41,7 @@ final class RemoteDesktopMetalRenderer: NSObject, CAMetalDisplayLinkDelegate, @u
 
     init(layer: CAMetalLayer, mode: RemoteDesktopPresentationMode, wakeUI: @escaping @Sendable () -> Void) {
         self.layer = layer; self.mode = mode; self.wakeUI = wakeUI
+        presentations = RemoteDesktopPresentationLedger(limit: mode == .bounded ? 1 : 2)
         super.init()
         guard let device = MTLCreateSystemDefaultDevice() else {
             initializationFailure = "Metal is unavailable on this Mac."; return
@@ -44,6 +50,8 @@ final class RemoteDesktopMetalRenderer: NSObject, CAMetalDisplayLinkDelegate, @u
         layer.pixelFormat = .bgra8Unorm
         layer.colorspace = CGColorSpace(name: CGColorSpace.sRGB)
         layer.maximumDrawableCount = 2
+        layer.displaySyncEnabled = mode != .lowLatency
+        layer.presentsWithTransaction = false
         layer.framebufferOnly = true
         layer.allowsNextDrawableTimeout = true
         do {
@@ -74,7 +82,7 @@ final class RemoteDesktopMetalRenderer: NSObject, CAMetalDisplayLinkDelegate, @u
         return { [weak self] frame in self?.offer(frame, token: token) }
     }
     func offer(_ frame: RTCVideoFrame, token: UInt64? = nil) {
-        guard mailbox.offer(frame, expectedToken: token) else { return }
+        guard mailbox.offer(frame, expectedToken: token, wakeForCadence: mode == .bounded) else { return }
         executor.perform { [weak self] in self?.wake() }
     }
     func redraw() {
@@ -88,6 +96,7 @@ final class RemoteDesktopMetalRenderer: NSObject, CAMetalDisplayLinkDelegate, @u
         statistics.reset(token: token)
         executor.perform { [weak self] in
             guard let self else { return }
+            self.presentations.invalidatePresentations()
             if self.lastFrame?.1 != self.mailbox.currentToken { self.lastFrame = nil }
             if !self.gpuBusy { self.completeDraw() }
         }
@@ -96,8 +105,9 @@ final class RemoteDesktopMetalRenderer: NSObject, CAMetalDisplayLinkDelegate, @u
         mailbox.close()
         executor.perform { [self] in
             stopped = true; lastFrame = nil
+            presentations.invalidatePresentations()
             displayLink?.invalidate(); displayLink = nil
-            executor.stop()
+            if !gpuBusy { executor.stop() }
         }
     }
     func resize(_ size: CGSize, scale: CGFloat, attached: Bool) {
@@ -116,6 +126,8 @@ final class RemoteDesktopMetalRenderer: NSObject, CAMetalDisplayLinkDelegate, @u
     }
     private func wake() {
         guard !stopped, !gpuBusy else { return }
+        if mode == .bounded { presentations.limit = mailbox.presentationBudget }
+        guard presentations.canSubmit else { schedulePresentationWatchdog(); return }
         guard attached, size.width > 0, size.height > 0, mailbox.hasPending else {
             _ = mailbox.take(); completeDraw(); return
         }
@@ -131,16 +143,17 @@ final class RemoteDesktopMetalRenderer: NSObject, CAMetalDisplayLinkDelegate, @u
             displayLink?.isPaused = false
         } else {
             // Select the latest frame AFTER nextDrawable's compositor wait.
-            render(drawable: layer.nextDrawable(), targetPresentation: nil)
+            let requestedAt = CACurrentMediaTime()
+            render(drawable: layer.nextDrawable(), targetPresentation: nil, drawableRequestedAt: requestedAt)
         }
     }
     func metalDisplayLink(_ link: CAMetalDisplayLink, needsUpdate update: CAMetalDisplayLink.Update) {
         autoreleasepool {
-            guard !stopped, attached, !gpuBusy, mailbox.hasPending else {
+            guard !stopped, attached, !gpuBusy, presentations.canSubmit, mailbox.hasPending else {
                 pauseDisplayLinkIfIdle()
                 return
             }
-            render(drawable: update.drawable, targetPresentation: update.targetPresentationTimestamp)
+            render(drawable: update.drawable, targetPresentation: update.targetPresentationTimestamp, drawableRequestedAt: CACurrentMediaTime())
         }
     }
     private func completeDraw() {
@@ -159,10 +172,28 @@ final class RemoteDesktopMetalRenderer: NSObject, CAMetalDisplayLinkDelegate, @u
             displayLink?.isPaused = true
         }
     }
+    private func schedulePresentationWatchdog() {
+        guard !stopped, !presentationWatchdogScheduled, presentations.outstanding > 0 else { return }
+        presentationWatchdogScheduled = true
+        DispatchQueue.global(qos: .userInteractive).asyncAfter(deadline: .now() + 0.1) { [weak self] in
+            self?.executor.perform { [weak self] in
+                guard let self, !self.stopped else { return }
+                self.presentationWatchdogScheduled = false
+                let expired = self.presentations.expire(at: CACurrentMediaTime())
+                if expired > 0 {
+                    let token = self.mailbox.currentToken
+                    if self.statistics.update(token: token, { $0.presentationTimeouts &+= UInt64(expired) }) { self.wakeUI() }
+                    self.wake()
+                }
+                self.schedulePresentationWatchdog()
+            }
+        }
+    }
     private func fail(_ message: String, token: UInt64) {
         if statistics.update(token: token, { $0.failure = message }) { wakeUI() }
     }
-    private func render(drawable: (any CAMetalDrawable)?, targetPresentation: Double?) {
+    private func render(drawable: (any CAMetalDrawable)?, targetPresentation: Double?, drawableRequestedAt: Double) {
+        let drawableReadyAt = CACurrentMediaTime()
         guard let drawable else { _ = mailbox.take(); completeDraw(); return }
         guard let (frame, token, arrivedAt) = mailbox.take() else { completeDraw(); return }
         guard initializationFailure == nil, let queue = commandQueue, let cache = textureCache,
@@ -231,13 +262,30 @@ final class RemoteDesktopMetalRenderer: NSObject, CAMetalDisplayLinkDelegate, @u
         encoder.setFragmentBytes(&range, length: MemoryLayout<SIMD4<Float>>.size, index: 1)
         encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
         encoder.endEncoding()
+        guard mailbox.isCurrent(token), let submissionID = presentations.begin(token: token, at: CACurrentMediaTime()) else {
+            completeDraw(); return
+        }
         let submission = RemoteDesktopMetalSubmission(frame: frame, textures: retained, token: token)
+        trace.append(RemoteDesktopRenderTraceRecord(submission: submissionID, epoch: token,
+            rtpTimestamp: UInt32(bitPattern: frame.timeStamp), decodedAt: arrivedAt,
+            drawableRequestedAt: drawableRequestedAt, drawableReadyAt: drawableReadyAt, committedAt: CACurrentMediaTime()))
         drawable.addPresentedHandler { [weak self, submission] drawable in
             guard let self else { return }
             let presentedAt = drawable.presentedTime
+            self.trace.update(submissionID) {
+                $0.presentedAt = presentedAt > 0 ? presentedAt : nil
+                $0.presentationCallbackAt = CACurrentMediaTime()
+            }
+            self.executor.perform { [weak self] in
+                guard let self, !self.stopped else { return }
+                _ = self.presentations.presented(submissionID)
+                self.wake()
+            }
             if self.statistics.update(
                 token: submission.token,
                 { state in
+                    guard submissionID > state.lastPresentedSubmission else { return }
+                    state.lastPresentedSubmission = submissionID
                     var timing: Double = 0
                     if state.lastTimestamp != submission.frame.timeStamp {
                         state.framesPresented &+= 1
@@ -267,23 +315,34 @@ final class RemoteDesktopMetalRenderer: NSObject, CAMetalDisplayLinkDelegate, @u
             // IOSurface/CVMetalTexture wrappers remain alive through GPU use.
             _ = submission
             let failure = command.error?.localizedDescription
+            self?.trace.update(submissionID) {
+                $0.gpuStartedAt = command.gpuStartTime > 0 ? command.gpuStartTime : nil
+                $0.gpuCompletedAt = command.gpuEndTime > 0 ? command.gpuEndTime : nil
+            }
             self?.executor.perform { [weak self, submission] in
-                guard let self else { return }
+                guard let self, self.presentations.completedGPU(submissionID) else { return }
                 self.completeDraw()
                 if let failure { self.fail("Metal could not display the screen: \(failure)", token: submission.token) }
+                if self.stopped { self.executor.stop() }
             }
         }
-        guard mailbox.isCurrent(token) else { completeDraw(); return }
+        guard mailbox.isCurrent(token) else {
+            _ = presentations.completedGPU(submissionID)
+            _ = presentations.presented(submissionID)
+            completeDraw(); return
+        }
         lastFrame = (frame, token)
         gpuBusy = true
         if statistics.update(
             token: token,
             { state in
                 state.drawSubmissions &+= 1; state.lastPixelFormat = format; state.size = videoSize
+                state.maxUnpresented = max(state.maxUnpresented, UInt64(presentations.outstanding))
             })
         {
             wakeUI()
         }
+        schedulePresentationWatchdog()
         if targetPresentation != nil {
             // Display-link drawables require present() after GPU commits and
             // before the update deadline. Timed present variants assert.

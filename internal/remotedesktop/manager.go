@@ -509,6 +509,7 @@ type Session struct {
 	receiver               *dieterv1.RemoteDesktopReceiverFeedback
 	lastFeedback           time.Time
 	receiverMeasuredAt     time.Time
+	contentMeasuredAt      time.Time
 	receiverMeasurement    uint64
 	receiverStatsRejected  bool
 	applied                StreamConfiguration
@@ -1066,7 +1067,8 @@ func (s *Session) handleRTCP(sender *webrtc.RTPSender) {
 			switch value := packet.(type) {
 			case *rtcp.PictureLossIndication, *rtcp.FullIntraRequest:
 				if controlled, ok := source.(ControlledFrameSource); ok {
-					requestRecovery(controlled)
+					window, _ := s.pacer.RecoveryDeadline()
+					requestRecoveryWithin(controlled, window)
 				}
 				if logger != nil {
 					logger.Debug("remote desktop keyframe requested", "feedback", fmt.Sprintf("%T", packet))

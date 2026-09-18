@@ -10,6 +10,7 @@ import android.view.inputmethod.*
 import android.widget.FrameLayout
 import com.dbpprt.dieter.v1.RemoteDesktopCursor
 import com.dbpprt.dieter.v1.RemoteDesktopPointerButton.Button
+import com.dbpprt.dieter.v1.RemoteDesktopRenderMeasurement
 import org.webrtc.*
 import java.util.concurrent.CountDownLatch
 import kotlin.math.*
@@ -18,8 +19,21 @@ import kotlin.math.*
 class ScreenCanvasView(context: Context, val controller: ScreenController) : FrameLayout(context) {
     val canvasModel = controller.canvasModel
     private val texture = TextureView(context)
+    private val direct = controller.directSurfacePresentation
+    private val surface = if (controller.surfacePresentation || direct) SurfaceView(context) else null
+    private val videoView: View get() = if (direct) texture else surface ?: texture
+    private val directCover = View(context).apply { setBackgroundColor(Color.rgb(12, 15, 20)) }
+    private var decoderSurface: DecoderSurface? = null
+    private val directLock = Any()
+    private var pendingDirect: Pair<VideoFrame, Long>? = null
+    private var directPosted = false
+    internal fun isVisibleVideoSurface(view: SurfaceView): Boolean = surface === view && view.isShown &&
+        (!direct || (texture.alpha == 0f && directCover.visibility != VISIBLE))
+    private data class Viewport(val x: Int, val y: Int, val width: Int, val height: Int)
+    @Volatile private var viewport = Viewport(0, 0, 1, 1)
     private val sink: (VideoFrame, Long) -> Unit = { frame, token -> onFrame(frame, token) }
     private val cursorListener: (RemoteDesktopCursor) -> Unit = { updateCursor(it) }
+    private val resetListener: () -> Unit = { clearFrame() }
     private var drawnTimestamp = 0L
     private var drawnSession = -1L
     private var drawnArrival = 0L
@@ -28,7 +42,8 @@ class ScreenCanvasView(context: Context, val controller: ScreenController) : Fra
     private var drawnHeight = 1
     private val renderer = EglRenderer("DieterScreen", object : VideoFrameDrawer() {
         override fun drawFrame(frame: VideoFrame, drawer: RendererCommon.GlDrawer, matrix: Matrix?, x: Int, y: Int, width: Int, height: Int) {
-            super.drawFrame(frame, drawer, matrix, x, y, width, height)
+            if (surface == null || direct) super.drawFrame(frame, drawer, matrix, x, y, width, height)
+            else viewport.let { super.drawFrame(frame, drawer, matrix, it.x, it.y, it.width, it.height) }
             drawnTimestamp = frame.timestampNs
             val metadata = synchronized(frameSessions) { frameSessions.remove(frame.timestampNs) }
             drawnSession = metadata?.first ?: -1L; drawnArrival = metadata?.second ?: System.nanoTime()
@@ -73,13 +88,22 @@ class ScreenCanvasView(context: Context, val controller: ScreenController) : Fra
         setBackgroundColor(Color.rgb(12, 15, 20))
         isFocusable = true; isFocusableInTouchMode = true; keepScreenOn = true
         contentDescription = "Remote screen. One finger moves the cursor; tap clicks; hold and move drags. Two fingers zoom and pan. Three fingers scroll."
-        addView(texture, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+        if (direct) {
+            surface?.tag = "dieter-direct-output"
+            addView(surface, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+            addView(texture, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+            addView(directCover, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+        } else addView(videoView, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
         setWillNotDraw(false)
         renderer.init(controller.egl.eglBaseContext, EglBase.CONFIG_PLAIN, GlRectDrawer())
         initialized = true
         renderer.addRenderListener { submittedAt ->
             val timestamp = drawnTimestamp; val w = drawnWidth; val h = drawnHeight
             controller.presented(timestamp, drawnSession, (submittedAt - drawnArrival).coerceAtLeast(0) / 1_000_000.0)
+            if (direct) {
+                val session = drawnSession
+                post { if (!released && controller.acceptsFrame(session)) { texture.alpha = 1f; directCover.visibility = GONE } }
+            }
             if (w != frameWidth || h != frameHeight) post {
                 if (!released) { frameWidth = w; frameHeight = h; geometry() }
             }
@@ -96,14 +120,61 @@ class ScreenCanvasView(context: Context, val controller: ScreenController) : Fra
             }
             override fun onSurfaceTextureUpdated(surface: SurfaceTexture) = Unit
         }
+        surface?.holder?.addCallback(object : SurfaceHolder.Callback {
+            override fun surfaceCreated(holder: SurfaceHolder) {
+                if (!released) {
+                    if (direct) {
+                        lateinit var target: DecoderSurface
+                        target = DecoderSurface(holder.surface) { timestamp, decodedAt, _, renderedAt, _, _ ->
+                            val metadata = synchronized(frameSessions) { frameSessions.remove(timestamp) }
+                            if (!released && decoderSurface === target && metadata != null && controller.acceptsFrame(metadata.first)) {
+                                texture.alpha = 0f; directCover.visibility = GONE
+                                controller.presented(timestamp, metadata.first,
+                                    (renderedAt - decodedAt).coerceAtLeast(0) / 1_000_000.0,
+                                    RemoteDesktopRenderMeasurement.REMOTE_DESKTOP_RENDER_MEASUREMENT_ANDROID_FRAME_RENDERED)
+                            }
+                        }
+                        decoderSurface = target
+                        controller.attachDecoderSurface(target)
+                    } else renderer.createEglSurface(holder.surface)
+                    geometry(); controller.configure(refresh = true)
+                }
+            }
+            override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) = geometry()
+            override fun surfaceDestroyed(holder: SurfaceHolder) {
+                if (direct) {
+                    clearPendingDirect()
+                    decoderSurface?.let(controller::detachDecoderSurface)
+                    decoderSurface = null
+                    texture.alpha = 1f; directCover.visibility = VISIBLE
+                    return
+                }
+                // SurfaceHolder owns the Surface. Finish all old EGL use before
+                // returning ownership; never release the holder's Surface here.
+                val latch = CountDownLatch(1)
+                if (initialized) { renderer.releaseEglSurface { latch.countDown() }; latch.await() }
+            }
+        })
         controller.videoSink = sink
         controller.onCursor = cursorListener
+        controller.onVideoReset = resetListener
     }
     private fun onFrame(frame: VideoFrame, token: Long) {
         if (released || !controller.acceptsFrame(token)) return
+        if (frame.buffer is VideoFrame.SurfaceBuffer) {
+            // One latest decoded buffer may wait for the UI transform. The SDK
+            // separately caps actual codec output ownership and fences reuse.
+            synchronized(directLock) {
+                frame.retain()
+                pendingDirect?.first?.release()
+                pendingDirect = frame to token
+                if (!directPosted) { directPosted = true; post(::renderDirect) }
+            }
+            return
+        }
         if (visibleSession != token) {
             visibleSession = token
-            post { if (!released && controller.acceptsFrame(token)) texture.visibility = VISIBLE }
+            post { if (!released && controller.acceptsFrame(token)) videoView.visibility = VISIBLE }
         }
         synchronized(frameSessions) {
             if (frameSessions.size >= 8) frameSessions.remove(frameSessions.keys.first())
@@ -112,6 +183,32 @@ class ScreenCanvasView(context: Context, val controller: ScreenController) : Fra
         if (paused) { paused = false; renderer.disableFpsReduction() }
         renderer.onFrame(frame)
     }
+    private fun renderDirect() {
+        val pending = synchronized(directLock) { directPosted = false; pendingDirect.also { pendingDirect = null } } ?: return
+        val (frame, session) = pending
+        try {
+            if (released || !controller.acceptsFrame(session)) return
+            if (frame.rotation != 0) {
+                // Surface layout handles canvas transforms, not per-frame
+                // rotation. Closing the optional target forces texture fallback.
+                decoderSurface?.close(); controller.resumeConnection(); return
+            }
+            if (frameWidth != frame.rotatedWidth || frameHeight != frame.rotatedHeight) {
+                frameWidth = frame.rotatedWidth; frameHeight = frame.rotatedHeight; geometry()
+            }
+            synchronized(frameSessions) {
+                if (frameSessions.size >= 32) frameSessions.remove(frameSessions.keys.first())
+                frameSessions[frame.timestampNs] = session to System.nanoTime()
+            }
+            val displayed = runCatching { (frame.buffer as VideoFrame.SurfaceBuffer).render() }.getOrElse {
+                decoderSurface?.close(); controller.resumeConnection(); false
+            }
+            if (!displayed) synchronized(frameSessions) { frameSessions.remove(frame.timestampNs) }
+        } finally { frame.release() }
+    }
+    private fun clearPendingDirect() {
+        synchronized(directLock) { pendingDirect?.first?.release(); pendingDirect = null }
+    }
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) { super.onSizeChanged(w, h, oldw, oldh); geometry() }
     private fun geometry() {
         canvasModel.resize(width, height, frameWidth, frameHeight)
@@ -119,17 +216,35 @@ class ScreenCanvasView(context: Context, val controller: ScreenController) : Fra
     }
     private fun applyCanvasTransform() {
         val m = canvasModel
+        // SurfaceView avoids TextureView composition but still uses the same
+        // EGL texture decoder. Clip an explicit GL viewport, without allocating
+        // a zoom-sized Surface or changing input/cursor coordinates.
+        viewport = Viewport(m.left.roundToInt(), (height - m.top - m.remoteHeight * m.scale).roundToInt(),
+            (m.remoteWidth * m.scale).roundToInt().coerceAtLeast(1), (m.remoteHeight * m.scale).roundToInt().coerceAtLeast(1))
         // TextureView is the viewport; transform its content into the remote aspect and canvas bounds.
         texture.setTransform(Matrix().apply {
             setScale(m.remoteWidth * m.scale / width.coerceAtLeast(1), m.remoteHeight * m.scale / height.coerceAtLeast(1))
             postTranslate(m.left, m.top)
         })
+        if (direct) surface?.let {
+            // Fixed decoder-sized storage; zoom only changes compositor geometry.
+            // Allocating a zoom-sized buffer would multiply bandwidth and memory.
+            it.holder.setFixedSize(frameWidth, frameHeight)
+            it.layoutParams = LayoutParams(
+                (m.remoteWidth * m.scale).roundToInt().coerceAtLeast(1),
+                (m.remoteHeight * m.scale).roundToInt().coerceAtLeast(1)).apply {
+                leftMargin = m.left.roundToInt(); topMargin = m.top.roundToInt()
+            }
+        }
         invalidate()
     }
     fun resetCanvas() { canvasModel.reset(); applyCanvasTransform() }
     fun clearFrame() {
         if (released) return
-        visibleSession = -1L; texture.visibility = INVISIBLE
+        visibleSession = -1L
+        if (direct) { directCover.visibility = VISIBLE; texture.alpha = 1f; clearPendingDirect() }
+        else videoView.visibility = INVISIBLE
+        synchronized(frameSessions) { frameSessions.clear() }
         paused = true; renderer.pauseVideo()
         renderer.clearImage(12 / 255f, 15 / 255f, 20 / 255f, 1f)
         cursorShapes.clear(); cursorBitmap = null; invalidate()
@@ -139,7 +254,10 @@ class ScreenCanvasView(context: Context, val controller: ScreenController) : Fra
         cancelGesture(); controller.releaseInput()
         if (controller.onCursor === cursorListener) controller.onCursor = null
         if (controller.videoSink === sink) controller.videoSink = null
+        if (controller.onVideoReset === resetListener) controller.onVideoReset = null
         released = true; initialized = false
+        clearPendingDirect()
+        decoderSurface?.let(controller::detachDecoderSurface); decoderSurface = null
         renderer.release(); cursorShapes.clear(); cursorBitmap = null
     }
     private fun updateCursor(value: RemoteDesktopCursor) {

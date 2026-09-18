@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
@@ -18,9 +20,23 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
+var errScreenAnswerCollected = errors.New("fixture collected screen answer")
+
+type screenAnswerOutput struct{ *bytes.Buffer }
+
+func (w screenAnswerOutput) Write(raw []byte) (int, error) {
+	n, err := w.Buffer.Write(raw)
+	var value dieterv1.RemoteDesktopSignal
+	if protojson.Unmarshal(bytes.TrimSpace(raw), &value) == nil && value.GetDescription() != nil {
+		return n, errScreenAnswerCollected
+	}
+	return n, err
+}
+
 type configurableScreenFixture struct {
 	mu    sync.Mutex
 	event func(remotedesktop.SourceEvent)
+	state *dieterv1.RemoteDesktopSessionState
 }
 
 func (*configurableScreenFixture) Codec() remotedesktop.VideoCodec {
@@ -40,14 +56,20 @@ func (*configurableScreenFixture) SetBitrateKbps(int)           {}
 func (s *configurableScreenFixture) SetEventHandler(event func(remotedesktop.SourceEvent)) {
 	s.mu.Lock()
 	s.event = event
+	state := s.state
 	s.mu.Unlock()
+	if state != nil {
+		event(remotedesktop.SourceEvent{State: state})
+	}
 }
 func (s *configurableScreenFixture) Configure(_ context.Context, c remotedesktop.StreamConfiguration) error {
 	s.mu.Lock()
+	s.state = &dieterv1.RemoteDesktopSessionState{Width: int32(c.MaxWidth), Height: int32(c.MaxHeight), Fps: int32(c.FPS), BitrateKbps: int32(c.BitrateKbps), DisplayId: c.DisplayID, DisplayGeneration: 1, EncoderConfiguration: "fixture accepted realtime"}
+	state := s.state
 	event := s.event
 	s.mu.Unlock()
 	if event != nil {
-		event(remotedesktop.SourceEvent{State: &dieterv1.RemoteDesktopSessionState{Width: int32(c.MaxWidth), Height: int32(c.MaxHeight), Fps: int32(c.FPS), BitrateKbps: int32(c.BitrateKbps), DisplayId: c.DisplayID, DisplayGeneration: 1}})
+		event(remotedesktop.SourceEvent{State: state})
 	}
 	return nil
 }
@@ -69,7 +91,9 @@ func assertScreenSessionCLI(t *testing.T, client *CLI, output *bytes.Buffer, con
 			t.Fatal(err)
 		}
 	}
-	viewer, err := webrtc.NewPeerConnection(webrtc.Configuration{})
+	settings := webrtc.SettingEngine{}
+	settings.SetIncludeLoopbackCandidate(true)
+	viewer, err := webrtc.NewAPI(webrtc.WithSettingEngine(settings)).NewPeerConnection(webrtc.Configuration{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -81,6 +105,16 @@ func assertScreenSessionCLI(t *testing.T, client *CLI, output *bytes.Buffer, con
 	if err != nil {
 		t.Fatal(err)
 	}
+	gathered := webrtc.GatheringCompletePromise(viewer)
+	if err := viewer.SetLocalDescription(offer); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-gathered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("fixture ICE gathering timed out")
+	}
+	offer = *viewer.LocalDescription()
 	request := &dieterv1.StartRemoteDesktopRequest{Control: true, Clipboard: true, InputProtocolVersion: 3, ClientName: "CLI fixture", ClientNonce: "cli-screen-" + client.transport.route, RtcConfiguration: configuration, Offer: &dieterv1.RemoteDesktopSessionDescription{Type: "offer", Sdp: offer.SDP}, MaxWidth: 1920, MaxHeight: 1080, MaxFps: 60, MaxBitrateKbps: 6000}
 	raw, _ := protojson.Marshal(request)
 	file := filepath.Join(t.TempDir(), "request.json")
@@ -92,7 +126,16 @@ func assertScreenSessionCLI(t *testing.T, client *CLI, output *bytes.Buffer, con
 	if err := client.Run([]string{"screen", "start", "--request", file, "--codec", "hevc", "--count", "2"}); err == nil || !strings.Contains(err.Error(), "HEVC requires") {
 		t.Fatalf("strict HEVC over %s: %v", client.transport.route, err)
 	}
-	lines := strings.Split(strings.TrimSpace(runDaemonCLI(t, client, output, "screen", "start", "--request", file, "--codec", "auto", "--reference-recovery", "--count", "2")), "\n")
+	// Candidate/state ordering varies with ICE. Stop after the actual answer,
+	// not an assumed signal count, without ending the durable screen session.
+	output.Reset()
+	client.Out = screenAnswerOutput{output}
+	err = client.Run([]string{"screen", "start", "--request", file, "--codec", "auto", "--reference-recovery"})
+	client.Out = output
+	if !errors.Is(err, errScreenAnswerCollected) {
+		t.Fatalf("collect screen answer: %v", err)
+	}
+	lines := strings.Split(strings.TrimSpace(output.String()), "\n")
 	signal := &dieterv1.RemoteDesktopSignal{}
 	if err = protojson.Unmarshal([]byte(lines[0]), signal); err != nil {
 		t.Fatal(err)
@@ -100,6 +143,20 @@ func assertScreenSessionCLI(t *testing.T, client *CLI, output *bytes.Buffer, con
 	id := signal.SessionId
 	if id == "" {
 		t.Fatal("missing session")
+	}
+	for _, line := range lines {
+		var value dieterv1.RemoteDesktopSignal
+		if err := protojson.Unmarshal([]byte(line), &value); err != nil {
+			t.Fatal(err)
+		}
+		if answer := value.GetDescription(); answer != nil {
+			if err := viewer.SetRemoteDescription(webrtc.SessionDescription{Type: webrtc.SDPTypeAnswer, SDP: answer.Sdp}); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if viewer.RemoteDescription() == nil {
+		t.Fatal("CLI start did not return the answer")
 	}
 	var modes dieterv1.RemoteDesktopDisplayModes
 	if err := protojson.Unmarshal([]byte(runDaemonCLI(t, client, output, "screen", "resolution", "modes", id)), &modes); err != nil {
@@ -132,6 +189,17 @@ func assertScreenSessionCLI(t *testing.T, client *CLI, output *bytes.Buffer, con
 	}
 	if state.GetConfiguration().GetMaxFps() != 24 || state.GetConfiguration().GetMaxWidth() != 1920 || state.GetConfiguration().GetDisplayId() != "2" || state.GetConfiguration().GetQuality() != dieterv1.RemoteDesktopQuality_REMOTE_DESKTOP_QUALITY_DETAIL {
 		t.Fatalf("changed state: %v", &state)
+	}
+	// Encoder diagnostics are asynchronous, and only exist after ICE starts
+	// the capture source. Exercise the real status operation on every route.
+	for deadline := time.Now().Add(5 * time.Second); state.GetEncoderConfiguration() == "" && time.Now().Before(deadline); {
+		time.Sleep(20 * time.Millisecond)
+		if err := protojson.Unmarshal([]byte(runDaemonCLI(t, client, output, "screen", "status", id)), &state); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if state.GetEncoderConfiguration() != "fixture accepted realtime" {
+		t.Fatalf("encoder diagnostics lost over %s: %v", client.transport.route, &state)
 	}
 	raw = []byte(runDaemonCLI(t, client, output, "screen", "configure", id, "--quality", "motion", "--fps", "120", "--width", "3840", "--height", "2160"))
 	if err = protojson.Unmarshal(raw, &state); err != nil {

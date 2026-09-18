@@ -36,7 +36,7 @@ elif [ "${DIETER_TEST_SCREEN_LATENCY_MATRIX:-0}" = "1" ]; then
   for DIETER_TEST_SCREEN_CODEC in h264 hevc; do
     export DIETER_TEST_SCREEN_CODEC
     for DIETER_SCREEN_PRESENTATION in ${DIETER_TEST_SCREEN_PRESENTATIONS:-immediate display-link}; do
-      case "$DIETER_SCREEN_PRESENTATION" in immediate|display-link) ;; *) echo "Invalid presentation mode" >&2; exit 2 ;; esac
+      case "$DIETER_SCREEN_PRESENTATION" in immediate|display-link|bounded|low-latency) ;; *) echo "Invalid presentation mode" >&2; exit 2 ;; esac
       export DIETER_SCREEN_PRESENTATION
       for DIETER_SCREEN_FAST_BITRATE in 0 1; do
         export DIETER_SCREEN_FAST_BITRATE
@@ -45,6 +45,8 @@ elif [ "${DIETER_TEST_SCREEN_LATENCY_MATRIX:-0}" = "1" ]; then
       done
     done
   done
+elif [ "${DIETER_TEST_SCREEN_LATENCY_ONLY:-0}" = "1" ]; then
+  just mac test remoteDesktopNativeEndToEnd
 else
   just mac test remoteDesktop
 fi

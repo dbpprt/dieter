@@ -180,12 +180,12 @@ func newMediaAPI(settings webrtc.SettingEngine, source FrameSource, instrumentat
 	registry.Add(transportFeedbackFactory{pacer: pacer})
 	var refresh func()
 	if controlled, ok := source.(ControlledFrameSource); ok {
-		refresh = func() { requestRecovery(controlled) }
+		refresh = func() { window, _ := pacer.RecoveryDeadline(); requestRecoveryWithin(controlled, window) }
 	}
 	engine.RegisterFeedback(webrtc.RTCPFeedback{Type: "nack"}, webrtc.RTPCodecTypeVideo)
 	engine.RegisterFeedback(webrtc.RTCPFeedback{Type: "nack", Parameter: "pli"}, webrtc.RTPCodecTypeVideo)
 	if err = webrtc.ConfigureTWCCHeaderExtensionSender(engine, registry); err == nil {
-		registry.Add(retransmissionFactory{refresh: refresh, deadline: pacer.RecoveryDeadline})
+		registry.Add(retransmissionFactory{refresh: refresh, deadline: pacer.RecoveryDeadline, metrics: &pacer.recoveryMetrics, generation: pacer.mediaGeneration.Load})
 		err = webrtc.ConfigureRTCPReports(registry)
 	}
 	if err == nil {
@@ -216,6 +216,12 @@ func (s *Session) nativeEvent(event SourceEvent) {
 		generationChanged := old.DisplayGeneration != v.DisplayGeneration
 		old.Width, old.Height, old.Fps, old.BitrateKbps = v.Width, v.Height, v.Fps, v.BitrateKbps
 		old.DisplayId, old.DisplayGeneration, old.Encoder, old.EmbeddedCursor = v.DisplayId, v.DisplayGeneration, v.Encoder, v.EmbeddedCursor
+		old.EncoderConfiguration = v.EncoderConfiguration
+		if generationChanged {
+			old.ContentChangedFraction = nil
+			old.ContentSamples, old.ContentMeasurementSequence = 0, 0
+			s.contentMeasuredAt = time.Time{}
+		}
 		state := proto.Clone(old).(*dieterv1.RemoteDesktopSessionState)
 		cursor := s.cursor
 		s.mu.Unlock()
@@ -228,6 +234,15 @@ func (s *Session) nativeEvent(event SourceEvent) {
 		if generationChanged && cursor.GetDisplayGeneration() == state.DisplayGeneration {
 			s.sendHost(&dieterv1.RemoteDesktopHostEvent{Payload: &dieterv1.RemoteDesktopHostEvent_Cursor{Cursor: cursor}})
 		}
+	}
+	if v := event.Content; v != nil && v.Samples > 0 && v.Sequence > 0 && finiteBound(v.ChangedFraction, 1) && v.ChangedFraction >= 0 {
+		s.mu.Lock()
+		if !s.closed && s.status != nil && v.Generation == s.status.DisplayGeneration && v.Sequence > s.status.ContentMeasurementSequence {
+			s.status.ContentChangedFraction = proto.Float64(v.ChangedFraction)
+			s.status.ContentSamples, s.status.ContentMeasurementSequence = v.Samples, v.Sequence
+			s.contentMeasuredAt = time.Now()
+		}
+		s.mu.Unlock()
 	}
 	if event.Cursor != nil {
 		s.mu.Lock()
@@ -288,8 +303,14 @@ func (s *Session) adapt() {
 		s.status.FecPercent = uint32(s.pacer.fecPercent.Load())
 		s.status.FecPackets = s.pacer.fecPackets.Load()
 		s.status.FecBytes = s.pacer.fecBytes.Load()
+		s.status.MediaRtpBytes = s.pacer.mediaRTPBytes.Load()
+		s.status.RepairRtpBytes = s.pacer.repairRTPBytes.Load()
+		s.status.ProbeRtpBytes = s.pacer.probeRTPBytes.Load()
+		s.status.FecRtpBytes = s.pacer.fecRTPBytes.Load()
+		s.status.RecoveryDiagnostics = s.pacer.recoveryMetrics.snapshot()
 		state := proto.Clone(s.status).(*dieterv1.RemoteDesktopSessionState)
 		feedback, measuredAt, current, currentRevision := s.receiver, s.receiverMeasuredAt, s.applied, s.configurationRevision
+		contentAt := s.contentMeasuredAt
 		s.mu.Unlock()
 		if s.pc.ConnectionState() != webrtc.PeerConnectionStateConnected {
 			continue
@@ -305,13 +326,14 @@ func (s *Session) adapt() {
 			s.mu.Unlock()
 		}
 		fresh := feedback != nil && !measuredAt.IsZero() && now.Sub(measuredAt) < 2*time.Second
+		if fresh && feedback.RttMs > 0 {
+			s.pacer.observeRecoveryRTT(now, time.Duration(feedback.RttMs*float64(time.Millisecond)), measuredAt, current.FPS)
+		} else if !fastWake {
+			rtt, at := recoveryRTTFromStats(now, s.pc.GetStats())
+			s.pacer.observeRecoveryRTT(now, rtt, at, current.FPS)
+		}
 		s.pacer.mu.Lock()
 		transport := s.pacer.transport
-		if fresh && feedback.RttMs > 0 {
-			s.pacer.recoveryRTT = time.Duration(feedback.RttMs * float64(time.Millisecond))
-			s.pacer.recoveryMeasured = measuredAt
-			s.pacer.recoveryFPS = current.FPS
-		}
 		s.pacer.probeCeiling = int(state.GetConfiguration().GetMaxBitrateKbps()) * 1000 * 100 / 85
 		s.pacer.mu.Unlock()
 		s.adaptFEC(now, &repair, transport)
@@ -370,7 +392,12 @@ func (s *Session) adapt() {
 			frames: frames, feedback: feedback, feedbackAt: measuredAt, budget: budget,
 			width: int(state.Width), height: int(state.Height), drops: drops, elapsed: elapsed,
 			networkPressure: networkPressure, confirmedBudget: confirmed,
+			changedFraction: state.ContentChangedFraction, contentAt: contentAt,
+			contentSequence: state.ContentMeasurementSequence, generation: state.DisplayGeneration, inputOrdinal: state.LastInputOrdinal,
 		})
+		s.mu.Lock()
+		s.status.ContentClass = controller.content.class
+		s.mu.Unlock()
 		desired.BitrateKbps = min(desired.BitrateKbps, fecMediaBudget(int(state.Configuration.MaxBitrateKbps), int(s.pacer.fecPercent.Load())))
 		if now.Before(fast.holdUntil) {
 			desired.BitrateKbps = min(desired.BitrateKbps, fast.ceiling)
@@ -476,6 +503,7 @@ func (s *Session) streamMedia(sample media.Sample) error {
 	}
 	s.mu.Unlock()
 	if boundary != nil {
+		s.pacer.mediaGeneration.Store(metadata.Generation)
 		s.sendHost(&dieterv1.RemoteDesktopHostEvent{Payload: &dieterv1.RemoteDesktopHostEvent_State{State: boundary}})
 	}
 	sendStarted := time.Now()
@@ -518,6 +546,8 @@ func (s *Session) streamMedia(sample media.Sample) error {
 		s.measurements.interFrames++
 		s.measurements.encodeMS += s.status.EncodeMs
 		s.measurements.writeMS += s.status.QueueMs
+		s.measurements.sendMS += s.status.SendMs
+		s.measurements.interBytes += uint64(len(sample.Data))
 	}
 	s.mu.Unlock()
 	if s.pacer.descriptorID.Load() != 0 {

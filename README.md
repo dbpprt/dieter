@@ -1001,8 +1001,10 @@ are ceilings, not promises. `status` reports active dimensions, frame rate, bitr
 encoder time, frame drops, display generation and input acknowledgments. Timing
 fields separate socket work (`queueMs`), total paced send (`sendMs`), approximate
 capture-to-send age (`captureToSendMs`, including encoder/pipe delivery), receiver
-jitter-buffer residence (`jitterBufferMs`), and decoded-frame-to-Metal presentation
-(`renderMs`). `pacingBitrateKbps` includes packet pacing headroom. Receiver timings require an updated Mac client and use interval means;
+jitter-buffer residence (`jitterBufferMs`), and decoded-frame-to-output timing
+(`renderMs`). `renderMeasurement` identifies actual Metal presentation on Mac or
+EGL submission on Android. `pacingBitrateKbps` includes packet pacing headroom.
+Receiver timings require updated clients and use interval means;
 zero may mean no new timed frame. These overlapping stages must not be summed as a
 physical glass-to-glass measurement. The native fixture reports same-host capture
 to actual Metal presentation median/p95 and idle recovery using the shared host
@@ -1204,3 +1206,48 @@ keys and buttons.
 isolated native full-screen journey, verifies session continuity and input,
 and records docked/full-screen input-to-Metal timing and screenshots. It never
 replaces or restarts the operator daemon.
+
+### Screen performance qualification
+
+`screen status SESSION` also reports actual decoder identity, optional hardware
+and low-latency acceptance, encoder setting/fallback diagnostics, native damage
+fraction and content classification. Absent optional booleans mean unknown.
+Accepted codec configuration is not proof of a latency improvement.
+
+`mediaRtpBytes`, `repairRtpBytes`, `probeRtpBytes` and `fecRtpBytes` count serialized
+RTP headers, payload and padding after successful sending. They exclude
+SRTP/RTCP/SCTP/ICE and IP/UDP/TURN overhead and must not be called total wire bytes.
+`recoveryDiagnostics` exposes history hits/misses, cap evictions, expired repairs,
+duplicate requests and retained packets/bytes. History is bounded to 4,096 packets
+and 4 MiB per session across SSRCs, with 250 ms maximum useful retention.
+Generation changes retire old repair history and queued repairs recheck deadlines.
+
+New experiments preserve compatibility defaults: `DIETER_SCREEN_PRESENTATION=bounded`
+limits compositor submissions; `low-latency` tests unsynchronized presentation.
+`DIETER_SCREEN_CONTENT_ADAPTATION=1` enables the damage/cost controller;
+`DIETER_SCREEN_ENCODER_BURST_MS=100|250|500` tests shorter encoder caps with 1.5×
+headroom; `DIETER_SCREEN_OVERLAP=1` admits at most one extra fresh encode behind
+a send when both helper and daemon support it. These are disposable-process
+experiments, not reasons to restart an operator daemon.
+Android low-latency configuration, SurfaceView/EGL, and direct MediaCodec output
+remain fixture switches until physical performance qualification. Use
+`DIETER_SCREEN_TEST_DIRECT_SURFACE=1` with the isolated Android runner for real
+decoder output to an owned SurfaceView; `DIETER_SCREEN_TEST_SURFACE=1` selects
+the separate EGL experiment. The direct path reports Android frame-render
+callbacks, which may be batched and are not physical scanout timestamps.
+The reproducible [SDK extension](native/android-webrtc/README.md) preserves all
+four pinned JNI binaries and uses real dequeued output buffers.
+
+Run repeatable physical/local qualification with:
+
+```sh
+python3 scripts/qualify_screens.py --manifest docs/screenshare-qualification-local.json \
+  --output /tmp/dieter-screen-qualification-UNIQUE --serial EXACT_PHYSICAL_SERIAL
+```
+
+The runner records source identity, exact settings, hardware, results and bounded
+evidence. `--baseline /path/to/results.json` compares matching latency/cadence
+cases. Missing mandatory cases fail; an external-device or optical case is
+reported unavailable. The physical Android fixture uses its own app ID and never
+replaces the operator app. See [decoder adapter contract](apps/android/webrtc-adapter.md)
+and [implementation evidence](docs/screenshare-performance-implementation-2026-09-18.md).

@@ -29,6 +29,7 @@ func TestNativeReferenceRecovery(t *testing.T) {
 			frames := 0
 			recoveries := 0
 			fallback := false
+			var unacknowledgedAt time.Time
 			done := errors.New("verified reference recovery")
 			err = source.Stream(ctx, func(sample media.Sample) error {
 				frames++
@@ -42,7 +43,7 @@ func TestNativeReferenceRecovery(t *testing.T) {
 					}
 					anchor = m.ID
 				}
-				if frames == 30 || frames == 60 || frames == 90 {
+				if frames == 30 || frames == 60 {
 					source.(referenceSource).RequestRecovery()
 				}
 				if m.RecoveryReference != 0 && !m.KeyFrame {
@@ -54,10 +55,14 @@ func TestNativeReferenceRecovery(t *testing.T) {
 					if recoveries == 1 {
 						return source.(referenceSource).AcknowledgeReference(ctx, m)
 					}
-					// Leave the second recovery unacknowledged: another repair
-					// request must reset the reference chain with an IDR.
+					// Withhold its ACK and send no further repair requests. The
+					// bounded deadline must reset the dependency chain by itself.
+					unacknowledgedAt = time.Now()
 				}
-				if frames > 90 && m.KeyFrame {
+				if !unacknowledgedAt.IsZero() && m.KeyFrame {
+					if elapsed := time.Since(unacknowledgedAt); elapsed > 500*time.Millisecond {
+						t.Fatalf("unacknowledged recovery took %s to fall back", elapsed)
+					}
 					fallback = true
 					return done
 				}

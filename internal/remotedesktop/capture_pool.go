@@ -317,6 +317,11 @@ func (s *sharedSource) eventLocked(event SourceEvent) func() {
 		output.Cursor = proto.Clone(event.Cursor).(*dieterv1.RemoteDesktopCursor)
 		output.Cursor.DisplayGeneration, output.Cursor.LastInputOrdinal = s.generation, s.ordinal
 	}
+	if event.Content != nil && event.Content.Generation == s.nativeGeneration {
+		value := *event.Content
+		value.Generation = s.generation
+		output.Content = &value
+	}
 	callback := s.onEvent
 	return func() { callback(output) }
 }

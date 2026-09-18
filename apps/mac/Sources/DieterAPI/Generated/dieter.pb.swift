@@ -364,6 +364,50 @@ public nonisolated enum Dieter_V1_RemoteDesktopQuality: SwiftProtobuf.Enum, Swif
 
 }
 
+/// Render timings end at different platform events. Neither endpoint measures
+/// physical scanout. Zero means an older receiver did not identify its endpoint.
+public nonisolated enum Dieter_V1_RemoteDesktopRenderMeasurement: SwiftProtobuf.Enum, Swift.CaseIterable {
+  public typealias RawValue = Int
+  case unspecified // = 0
+  case metalPresented // = 1
+  case eglSubmitted // = 2
+  case androidFrameRendered // = 3
+  case UNRECOGNIZED(Int)
+
+  public init() {
+    self = .unspecified
+  }
+
+  public init?(rawValue: Int) {
+    switch rawValue {
+    case 0: self = .unspecified
+    case 1: self = .metalPresented
+    case 2: self = .eglSubmitted
+    case 3: self = .androidFrameRendered
+    default: self = .UNRECOGNIZED(rawValue)
+    }
+  }
+
+  public var rawValue: Int {
+    switch self {
+    case .unspecified: return 0
+    case .metalPresented: return 1
+    case .eglSubmitted: return 2
+    case .androidFrameRendered: return 3
+    case .UNRECOGNIZED(let i): return i
+    }
+  }
+
+  // The compiler won't synthesize support with the UNRECOGNIZED case.
+  public static let allCases: [Dieter_V1_RemoteDesktopRenderMeasurement] = [
+    .unspecified,
+    .metalPresented,
+    .eglSubmitted,
+    .androidFrameRendered,
+  ]
+
+}
+
 public nonisolated struct Dieter_V1_HealthResponse: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
@@ -6191,6 +6235,102 @@ public nonisolated struct Dieter_V1_RemoteDesktopSessionState: @unchecked Sendab
     set {_uniqueStorage()._referenceRecoveries = newValue}
   }
 
+  public var renderMeasurement: Dieter_V1_RemoteDesktopRenderMeasurement {
+    get {_storage._renderMeasurement}
+    set {_uniqueStorage()._renderMeasurement = newValue}
+  }
+
+  public var decoderImplementation: String {
+    get {_storage._decoderImplementation}
+    set {_uniqueStorage()._decoderImplementation = newValue}
+  }
+
+  public var decoderHardware: Bool {
+    get {_storage._decoderHardware ?? false}
+    set {_uniqueStorage()._decoderHardware = newValue}
+  }
+  /// Returns true if `decoderHardware` has been explicitly set.
+  public var hasDecoderHardware: Bool {_storage._decoderHardware != nil}
+  /// Clears the value of `decoderHardware`. Subsequent reads from it will return its default value.
+  public mutating func clearDecoderHardware() {_uniqueStorage()._decoderHardware = nil}
+
+  public var decoderLowLatencyAccepted: Bool {
+    get {_storage._decoderLowLatencyAccepted ?? false}
+    set {_uniqueStorage()._decoderLowLatencyAccepted = newValue}
+  }
+  /// Returns true if `decoderLowLatencyAccepted` has been explicitly set.
+  public var hasDecoderLowLatencyAccepted: Bool {_storage._decoderLowLatencyAccepted != nil}
+  /// Clears the value of `decoderLowLatencyAccepted`. Subsequent reads from it will return its default value.
+  public mutating func clearDecoderLowLatencyAccepted() {_uniqueStorage()._decoderLowLatencyAccepted = nil}
+
+  public var decoderConfigurationReason: String {
+    get {_storage._decoderConfigurationReason}
+    set {_uniqueStorage()._decoderConfigurationReason = newValue}
+  }
+
+  /// Serialized RTP bytes, including extensions/padding. Excludes SRTP, RTCP,
+  /// SCTP, ICE and IP/UDP/TURN overhead; these are not total wire-byte counts.
+  public var mediaRtpBytes: UInt64 {
+    get {_storage._mediaRtpBytes}
+    set {_uniqueStorage()._mediaRtpBytes = newValue}
+  }
+
+  public var repairRtpBytes: UInt64 {
+    get {_storage._repairRtpBytes}
+    set {_uniqueStorage()._repairRtpBytes = newValue}
+  }
+
+  public var probeRtpBytes: UInt64 {
+    get {_storage._probeRtpBytes}
+    set {_uniqueStorage()._probeRtpBytes = newValue}
+  }
+
+  public var fecRtpBytes: UInt64 {
+    get {_storage._fecRtpBytes}
+    set {_uniqueStorage()._fecRtpBytes = newValue}
+  }
+
+  /// Accepted settings and optional-property fallbacks.
+  public var encoderConfiguration: String {
+    get {_storage._encoderConfiguration}
+    set {_uniqueStorage()._encoderConfiguration = newValue}
+  }
+
+  /// Native capture damage, unknown when absent.
+  public var contentChangedFraction: Double {
+    get {_storage._contentChangedFraction ?? 0}
+    set {_uniqueStorage()._contentChangedFraction = newValue}
+  }
+  /// Returns true if `contentChangedFraction` has been explicitly set.
+  public var hasContentChangedFraction: Bool {_storage._contentChangedFraction != nil}
+  /// Clears the value of `contentChangedFraction`. Subsequent reads from it will return its default value.
+  public mutating func clearContentChangedFraction() {_uniqueStorage()._contentChangedFraction = nil}
+
+  public var contentMeasurementSequence: UInt64 {
+    get {_storage._contentMeasurementSequence}
+    set {_uniqueStorage()._contentMeasurementSequence = newValue}
+  }
+
+  public var contentSamples: UInt32 {
+    get {_storage._contentSamples}
+    set {_uniqueStorage()._contentSamples = newValue}
+  }
+
+  /// Applied controller classification, not a visual-quality score.
+  public var contentClass: String {
+    get {_storage._contentClass}
+    set {_uniqueStorage()._contentClass = newValue}
+  }
+
+  public var recoveryDiagnostics: Dieter_V1_RemoteDesktopRecoveryDiagnostics {
+    get {_storage._recoveryDiagnostics ?? Dieter_V1_RemoteDesktopRecoveryDiagnostics()}
+    set {_uniqueStorage()._recoveryDiagnostics = newValue}
+  }
+  /// Returns true if `recoveryDiagnostics` has been explicitly set.
+  public var hasRecoveryDiagnostics: Bool {_storage._recoveryDiagnostics != nil}
+  /// Clears the value of `recoveryDiagnostics`. Subsequent reads from it will return its default value.
+  public mutating func clearRecoveryDiagnostics() {_uniqueStorage()._recoveryDiagnostics = nil}
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
@@ -6198,51 +6338,162 @@ public nonisolated struct Dieter_V1_RemoteDesktopSessionState: @unchecked Sendab
   fileprivate var _storage = _StorageClass.defaultInstance
 }
 
-/// Encrypted on the authenticated session DataChannel; never persisted.
-public nonisolated struct Dieter_V1_RemoteDesktopReceiverFeedback: Sendable {
+/// Session-local history counters, not proof of successful decode repair.
+public nonisolated struct Dieter_V1_RemoteDesktopRecoveryDiagnostics: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
 
-  public var protocolVersion: UInt32 = 0
+  public var historyHits: UInt64 = 0
 
-  public var inputEpoch: Data = Data()
+  public var historyMisses: UInt64 = 0
 
-  public var sequence: UInt64 = 0
+  public var capacityEvictions: UInt64 = 0
 
-  public var framesPerSecond: Double = 0
+  public var expiredRepairs: UInt64 = 0
 
-  public var decodeMs: Double = 0
+  public var duplicateRequests: UInt64 = 0
 
-  public var jitterMs: Double = 0
+  public var retainedPackets: UInt64 = 0
 
-  public var rttMs: Double = 0
-
-  public var lossFraction: Double = 0
-
-  public var inputActive: Bool = false
-
-  public var renderedFrames: UInt32 = 0
-
-  /// Mean residence in WebRTC's jitter buffer, distinct from RTP jitter.
-  public var jitterBufferMs: Double = 0
-
-  /// Mean decoded-frame arrival to actual Metal presentation in this interval.
-  public var renderMs: Double = 0
-
-  /// Independent of the heartbeat sequence. Zero is a legacy sender; new senders
-  /// start at one (an empty sample) and advance only when statistics are collected.
-  public var measurementSequence: UInt64 = 0
-
-  /// Monotonic age of that sample at send time; repeated heartbeats do not refresh it.
-  public var measurementAgeMs: UInt32 = 0
-
-  /// At most eight exact challenges, acknowledged only after decoder output.
-  public var decodedReferences: [Dieter_V1_RemoteDesktopReference] = []
+  /// Serialized RTP headers and payload.
+  public var retainedBytes: UInt64 = 0
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
+}
+
+/// Encrypted on the authenticated session DataChannel; never persisted.
+public nonisolated struct Dieter_V1_RemoteDesktopReceiverFeedback: @unchecked Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var protocolVersion: UInt32 {
+    get {_storage._protocolVersion}
+    set {_uniqueStorage()._protocolVersion = newValue}
+  }
+
+  public var inputEpoch: Data {
+    get {_storage._inputEpoch}
+    set {_uniqueStorage()._inputEpoch = newValue}
+  }
+
+  public var sequence: UInt64 {
+    get {_storage._sequence}
+    set {_uniqueStorage()._sequence = newValue}
+  }
+
+  public var framesPerSecond: Double {
+    get {_storage._framesPerSecond}
+    set {_uniqueStorage()._framesPerSecond = newValue}
+  }
+
+  public var decodeMs: Double {
+    get {_storage._decodeMs}
+    set {_uniqueStorage()._decodeMs = newValue}
+  }
+
+  public var jitterMs: Double {
+    get {_storage._jitterMs}
+    set {_uniqueStorage()._jitterMs = newValue}
+  }
+
+  public var rttMs: Double {
+    get {_storage._rttMs}
+    set {_uniqueStorage()._rttMs = newValue}
+  }
+
+  public var lossFraction: Double {
+    get {_storage._lossFraction}
+    set {_uniqueStorage()._lossFraction = newValue}
+  }
+
+  public var inputActive: Bool {
+    get {_storage._inputActive}
+    set {_uniqueStorage()._inputActive = newValue}
+  }
+
+  public var renderedFrames: UInt32 {
+    get {_storage._renderedFrames}
+    set {_uniqueStorage()._renderedFrames = newValue}
+  }
+
+  /// Mean residence in WebRTC's jitter buffer, distinct from RTP jitter.
+  public var jitterBufferMs: Double {
+    get {_storage._jitterBufferMs}
+    set {_uniqueStorage()._jitterBufferMs = newValue}
+  }
+
+  /// Mean decoded-frame arrival to the identified render_measurement endpoint.
+  /// Legacy Mac reports presentation; legacy Android reports EGL submission.
+  public var renderMs: Double {
+    get {_storage._renderMs}
+    set {_uniqueStorage()._renderMs = newValue}
+  }
+
+  /// Independent of the heartbeat sequence. Zero is a legacy sender; new senders
+  /// start at one (an empty sample) and advance only when statistics are collected.
+  public var measurementSequence: UInt64 {
+    get {_storage._measurementSequence}
+    set {_uniqueStorage()._measurementSequence = newValue}
+  }
+
+  /// Monotonic age of that sample at send time; repeated heartbeats do not refresh it.
+  public var measurementAgeMs: UInt32 {
+    get {_storage._measurementAgeMs}
+    set {_uniqueStorage()._measurementAgeMs = newValue}
+  }
+
+  /// At most eight exact challenges, acknowledged only after decoder output.
+  public var decodedReferences: [Dieter_V1_RemoteDesktopReference] {
+    get {_storage._decodedReferences}
+    set {_uniqueStorage()._decodedReferences = newValue}
+  }
+
+  public var renderMeasurement: Dieter_V1_RemoteDesktopRenderMeasurement {
+    get {_storage._renderMeasurement}
+    set {_uniqueStorage()._renderMeasurement = newValue}
+  }
+
+  /// At most 256 UTF-8 bytes.
+  public var decoderImplementation: String {
+    get {_storage._decoderImplementation}
+    set {_uniqueStorage()._decoderImplementation = newValue}
+  }
+
+  /// Absent means unknown, not software.
+  public var decoderHardware: Bool {
+    get {_storage._decoderHardware ?? false}
+    set {_uniqueStorage()._decoderHardware = newValue}
+  }
+  /// Returns true if `decoderHardware` has been explicitly set.
+  public var hasDecoderHardware: Bool {_storage._decoderHardware != nil}
+  /// Clears the value of `decoderHardware`. Subsequent reads from it will return its default value.
+  public mutating func clearDecoderHardware() {_uniqueStorage()._decoderHardware = nil}
+
+  /// Acceptance is not a latency measurement.
+  public var decoderLowLatencyAccepted: Bool {
+    get {_storage._decoderLowLatencyAccepted ?? false}
+    set {_uniqueStorage()._decoderLowLatencyAccepted = newValue}
+  }
+  /// Returns true if `decoderLowLatencyAccepted` has been explicitly set.
+  public var hasDecoderLowLatencyAccepted: Bool {_storage._decoderLowLatencyAccepted != nil}
+  /// Clears the value of `decoderLowLatencyAccepted`. Subsequent reads from it will return its default value.
+  public mutating func clearDecoderLowLatencyAccepted() {_uniqueStorage()._decoderLowLatencyAccepted = nil}
+
+  /// At most 256 UTF-8 bytes.
+  public var decoderConfigurationReason: String {
+    get {_storage._decoderConfigurationReason}
+    set {_uniqueStorage()._decoderConfigurationReason = newValue}
+  }
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+
+  fileprivate var _storage = _StorageClass.defaultInstance
 }
 
 public nonisolated struct Dieter_V1_RemoteDesktopCursor: Sendable {
@@ -7212,6 +7463,10 @@ nonisolated extension Dieter_V1_RemoteDesktopCodecPreference: SwiftProtobuf._Pro
 
 nonisolated extension Dieter_V1_RemoteDesktopQuality: SwiftProtobuf._ProtoNameProviding {
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0REMOTE_DESKTOP_QUALITY_AUTO\0\u{1}REMOTE_DESKTOP_QUALITY_DETAIL\0\u{1}REMOTE_DESKTOP_QUALITY_MOTION\0")
+}
+
+nonisolated extension Dieter_V1_RemoteDesktopRenderMeasurement: SwiftProtobuf._ProtoNameProviding {
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0REMOTE_DESKTOP_RENDER_MEASUREMENT_UNSPECIFIED\0\u{1}REMOTE_DESKTOP_RENDER_MEASUREMENT_METAL_PRESENTED\0\u{1}REMOTE_DESKTOP_RENDER_MEASUREMENT_EGL_SUBMITTED\0\u{1}REMOTE_DESKTOP_RENDER_MEASUREMENT_ANDROID_FRAME_RENDERED\0")
 }
 
 nonisolated extension Dieter_V1_HealthResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
@@ -18732,7 +18987,7 @@ nonisolated extension Dieter_V1_RemoteDesktopInput: SwiftProtobuf.Message, Swift
 
 nonisolated extension Dieter_V1_RemoteDesktopSessionState: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".RemoteDesktopSessionState"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}phase\0\u{1}reason\0\u{1}route\0\u{1}codec\0\u{1}width\0\u{1}height\0\u{1}fps\0\u{3}bitrate_kbps\0\u{3}display_id\0\u{3}display_generation\0\u{1}configuration\0\u{3}encode_ms\0\u{3}capture_delay_ms\0\u{3}queue_ms\0\u{3}frames_sent\0\u{3}frames_dropped\0\u{3}last_frame_id\0\u{3}last_input_ordinal\0\u{1}encoder\0\u{3}embedded_cursor\0\u{3}receiver_fps\0\u{3}rtt_ms\0\u{3}media_generation\0\u{3}media_timestamp\0\u{3}send_ms\0\u{3}capture_to_send_ms\0\u{3}jitter_buffer_ms\0\u{3}render_ms\0\u{3}pacing_bitrate_kbps\0\u{3}control_active\0\u{3}control_generation\0\u{3}controller_name\0\u{3}connected_clients\0\u{3}clipboard_enabled\0\u{3}clipboard_generation\0\u{3}reference_recovery\0\u{3}fec_percent\0\u{3}fec_packets\0\u{3}fec_bytes\0\u{3}reference_acks\0\u{3}reference_recovery_frames\0\u{3}reference_recoveries\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}phase\0\u{1}reason\0\u{1}route\0\u{1}codec\0\u{1}width\0\u{1}height\0\u{1}fps\0\u{3}bitrate_kbps\0\u{3}display_id\0\u{3}display_generation\0\u{1}configuration\0\u{3}encode_ms\0\u{3}capture_delay_ms\0\u{3}queue_ms\0\u{3}frames_sent\0\u{3}frames_dropped\0\u{3}last_frame_id\0\u{3}last_input_ordinal\0\u{1}encoder\0\u{3}embedded_cursor\0\u{3}receiver_fps\0\u{3}rtt_ms\0\u{3}media_generation\0\u{3}media_timestamp\0\u{3}send_ms\0\u{3}capture_to_send_ms\0\u{3}jitter_buffer_ms\0\u{3}render_ms\0\u{3}pacing_bitrate_kbps\0\u{3}control_active\0\u{3}control_generation\0\u{3}controller_name\0\u{3}connected_clients\0\u{3}clipboard_enabled\0\u{3}clipboard_generation\0\u{3}reference_recovery\0\u{3}fec_percent\0\u{3}fec_packets\0\u{3}fec_bytes\0\u{3}reference_acks\0\u{3}reference_recovery_frames\0\u{3}reference_recoveries\0\u{3}render_measurement\0\u{3}decoder_implementation\0\u{3}decoder_hardware\0\u{3}decoder_low_latency_accepted\0\u{3}decoder_configuration_reason\0\u{3}media_rtp_bytes\0\u{3}repair_rtp_bytes\0\u{3}probe_rtp_bytes\0\u{3}fec_rtp_bytes\0\u{3}encoder_configuration\0\u{3}content_changed_fraction\0\u{3}content_measurement_sequence\0\u{3}content_samples\0\u{3}content_class\0\u{3}recovery_diagnostics\0")
 
   fileprivate class _StorageClass {
     var _phase: String = String()
@@ -18777,6 +19032,21 @@ nonisolated extension Dieter_V1_RemoteDesktopSessionState: SwiftProtobuf.Message
     var _referenceAcks: UInt64 = 0
     var _referenceRecoveryFrames: UInt64 = 0
     var _referenceRecoveries: UInt64 = 0
+    var _renderMeasurement: Dieter_V1_RemoteDesktopRenderMeasurement = .unspecified
+    var _decoderImplementation: String = String()
+    var _decoderHardware: Bool? = nil
+    var _decoderLowLatencyAccepted: Bool? = nil
+    var _decoderConfigurationReason: String = String()
+    var _mediaRtpBytes: UInt64 = 0
+    var _repairRtpBytes: UInt64 = 0
+    var _probeRtpBytes: UInt64 = 0
+    var _fecRtpBytes: UInt64 = 0
+    var _encoderConfiguration: String = String()
+    var _contentChangedFraction: Double? = nil
+    var _contentMeasurementSequence: UInt64 = 0
+    var _contentSamples: UInt32 = 0
+    var _contentClass: String = String()
+    var _recoveryDiagnostics: Dieter_V1_RemoteDesktopRecoveryDiagnostics? = nil
 
       // This property is used as the initial default value for new instances of the type.
       // The type itself is protecting the reference to its storage via CoW semantics.
@@ -18829,6 +19099,21 @@ nonisolated extension Dieter_V1_RemoteDesktopSessionState: SwiftProtobuf.Message
       _referenceAcks = source._referenceAcks
       _referenceRecoveryFrames = source._referenceRecoveryFrames
       _referenceRecoveries = source._referenceRecoveries
+      _renderMeasurement = source._renderMeasurement
+      _decoderImplementation = source._decoderImplementation
+      _decoderHardware = source._decoderHardware
+      _decoderLowLatencyAccepted = source._decoderLowLatencyAccepted
+      _decoderConfigurationReason = source._decoderConfigurationReason
+      _mediaRtpBytes = source._mediaRtpBytes
+      _repairRtpBytes = source._repairRtpBytes
+      _probeRtpBytes = source._probeRtpBytes
+      _fecRtpBytes = source._fecRtpBytes
+      _encoderConfiguration = source._encoderConfiguration
+      _contentChangedFraction = source._contentChangedFraction
+      _contentMeasurementSequence = source._contentMeasurementSequence
+      _contentSamples = source._contentSamples
+      _contentClass = source._contentClass
+      _recoveryDiagnostics = source._recoveryDiagnostics
     }
   }
 
@@ -18889,6 +19174,21 @@ nonisolated extension Dieter_V1_RemoteDesktopSessionState: SwiftProtobuf.Message
         case 40: try { try decoder.decodeSingularUInt64Field(value: &_storage._referenceAcks) }()
         case 41: try { try decoder.decodeSingularUInt64Field(value: &_storage._referenceRecoveryFrames) }()
         case 42: try { try decoder.decodeSingularUInt64Field(value: &_storage._referenceRecoveries) }()
+        case 43: try { try decoder.decodeSingularEnumField(value: &_storage._renderMeasurement) }()
+        case 44: try { try decoder.decodeSingularStringField(value: &_storage._decoderImplementation) }()
+        case 45: try { try decoder.decodeSingularBoolField(value: &_storage._decoderHardware) }()
+        case 46: try { try decoder.decodeSingularBoolField(value: &_storage._decoderLowLatencyAccepted) }()
+        case 47: try { try decoder.decodeSingularStringField(value: &_storage._decoderConfigurationReason) }()
+        case 48: try { try decoder.decodeSingularUInt64Field(value: &_storage._mediaRtpBytes) }()
+        case 49: try { try decoder.decodeSingularUInt64Field(value: &_storage._repairRtpBytes) }()
+        case 50: try { try decoder.decodeSingularUInt64Field(value: &_storage._probeRtpBytes) }()
+        case 51: try { try decoder.decodeSingularUInt64Field(value: &_storage._fecRtpBytes) }()
+        case 52: try { try decoder.decodeSingularStringField(value: &_storage._encoderConfiguration) }()
+        case 53: try { try decoder.decodeSingularDoubleField(value: &_storage._contentChangedFraction) }()
+        case 54: try { try decoder.decodeSingularUInt64Field(value: &_storage._contentMeasurementSequence) }()
+        case 55: try { try decoder.decodeSingularUInt32Field(value: &_storage._contentSamples) }()
+        case 56: try { try decoder.decodeSingularStringField(value: &_storage._contentClass) }()
+        case 57: try { try decoder.decodeSingularMessageField(value: &_storage._recoveryDiagnostics) }()
         default: break
         }
       }
@@ -19027,6 +19327,51 @@ nonisolated extension Dieter_V1_RemoteDesktopSessionState: SwiftProtobuf.Message
       if _storage._referenceRecoveries != 0 {
         try visitor.visitSingularUInt64Field(value: _storage._referenceRecoveries, fieldNumber: 42)
       }
+      if _storage._renderMeasurement != .unspecified {
+        try visitor.visitSingularEnumField(value: _storage._renderMeasurement, fieldNumber: 43)
+      }
+      if !_storage._decoderImplementation.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._decoderImplementation, fieldNumber: 44)
+      }
+      try { if let v = _storage._decoderHardware {
+        try visitor.visitSingularBoolField(value: v, fieldNumber: 45)
+      } }()
+      try { if let v = _storage._decoderLowLatencyAccepted {
+        try visitor.visitSingularBoolField(value: v, fieldNumber: 46)
+      } }()
+      if !_storage._decoderConfigurationReason.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._decoderConfigurationReason, fieldNumber: 47)
+      }
+      if _storage._mediaRtpBytes != 0 {
+        try visitor.visitSingularUInt64Field(value: _storage._mediaRtpBytes, fieldNumber: 48)
+      }
+      if _storage._repairRtpBytes != 0 {
+        try visitor.visitSingularUInt64Field(value: _storage._repairRtpBytes, fieldNumber: 49)
+      }
+      if _storage._probeRtpBytes != 0 {
+        try visitor.visitSingularUInt64Field(value: _storage._probeRtpBytes, fieldNumber: 50)
+      }
+      if _storage._fecRtpBytes != 0 {
+        try visitor.visitSingularUInt64Field(value: _storage._fecRtpBytes, fieldNumber: 51)
+      }
+      if !_storage._encoderConfiguration.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._encoderConfiguration, fieldNumber: 52)
+      }
+      try { if let v = _storage._contentChangedFraction {
+        try visitor.visitSingularDoubleField(value: v, fieldNumber: 53)
+      } }()
+      if _storage._contentMeasurementSequence != 0 {
+        try visitor.visitSingularUInt64Field(value: _storage._contentMeasurementSequence, fieldNumber: 54)
+      }
+      if _storage._contentSamples != 0 {
+        try visitor.visitSingularUInt32Field(value: _storage._contentSamples, fieldNumber: 55)
+      }
+      if !_storage._contentClass.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._contentClass, fieldNumber: 56)
+      }
+      try { if let v = _storage._recoveryDiagnostics {
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 57)
+      } }()
     }
     try unknownFields.traverse(visitor: &visitor)
   }
@@ -19078,6 +19423,21 @@ nonisolated extension Dieter_V1_RemoteDesktopSessionState: SwiftProtobuf.Message
         if _storage._referenceAcks != rhs_storage._referenceAcks {return false}
         if _storage._referenceRecoveryFrames != rhs_storage._referenceRecoveryFrames {return false}
         if _storage._referenceRecoveries != rhs_storage._referenceRecoveries {return false}
+        if _storage._renderMeasurement != rhs_storage._renderMeasurement {return false}
+        if _storage._decoderImplementation != rhs_storage._decoderImplementation {return false}
+        if _storage._decoderHardware != rhs_storage._decoderHardware {return false}
+        if _storage._decoderLowLatencyAccepted != rhs_storage._decoderLowLatencyAccepted {return false}
+        if _storage._decoderConfigurationReason != rhs_storage._decoderConfigurationReason {return false}
+        if _storage._mediaRtpBytes != rhs_storage._mediaRtpBytes {return false}
+        if _storage._repairRtpBytes != rhs_storage._repairRtpBytes {return false}
+        if _storage._probeRtpBytes != rhs_storage._probeRtpBytes {return false}
+        if _storage._fecRtpBytes != rhs_storage._fecRtpBytes {return false}
+        if _storage._encoderConfiguration != rhs_storage._encoderConfiguration {return false}
+        if _storage._contentChangedFraction != rhs_storage._contentChangedFraction {return false}
+        if _storage._contentMeasurementSequence != rhs_storage._contentMeasurementSequence {return false}
+        if _storage._contentSamples != rhs_storage._contentSamples {return false}
+        if _storage._contentClass != rhs_storage._contentClass {return false}
+        if _storage._recoveryDiagnostics != rhs_storage._recoveryDiagnostics {return false}
         return true
       }
       if !storagesAreEqual {return false}
@@ -19087,9 +19447,9 @@ nonisolated extension Dieter_V1_RemoteDesktopSessionState: SwiftProtobuf.Message
   }
 }
 
-nonisolated extension Dieter_V1_RemoteDesktopReceiverFeedback: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
-  public static let protoMessageName: String = _protobuf_package + ".RemoteDesktopReceiverFeedback"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}protocol_version\0\u{3}input_epoch\0\u{1}sequence\0\u{3}frames_per_second\0\u{3}decode_ms\0\u{3}jitter_ms\0\u{3}rtt_ms\0\u{3}loss_fraction\0\u{3}input_active\0\u{3}rendered_frames\0\u{3}jitter_buffer_ms\0\u{3}render_ms\0\u{3}measurement_sequence\0\u{3}measurement_age_ms\0\u{3}decoded_references\0")
+nonisolated extension Dieter_V1_RemoteDesktopRecoveryDiagnostics: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".RemoteDesktopRecoveryDiagnostics"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}history_hits\0\u{3}history_misses\0\u{3}capacity_evictions\0\u{3}expired_repairs\0\u{3}duplicate_requests\0\u{3}retained_packets\0\u{3}retained_bytes\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -19097,91 +19457,254 @@ nonisolated extension Dieter_V1_RemoteDesktopReceiverFeedback: SwiftProtobuf.Mes
       // allocates stack space for every case branch when no optimizations are
       // enabled. https://github.com/apple/swift-protobuf/issues/1034
       switch fieldNumber {
-      case 1: try { try decoder.decodeSingularUInt32Field(value: &self.protocolVersion) }()
-      case 2: try { try decoder.decodeSingularBytesField(value: &self.inputEpoch) }()
-      case 3: try { try decoder.decodeSingularUInt64Field(value: &self.sequence) }()
-      case 4: try { try decoder.decodeSingularDoubleField(value: &self.framesPerSecond) }()
-      case 5: try { try decoder.decodeSingularDoubleField(value: &self.decodeMs) }()
-      case 6: try { try decoder.decodeSingularDoubleField(value: &self.jitterMs) }()
-      case 7: try { try decoder.decodeSingularDoubleField(value: &self.rttMs) }()
-      case 8: try { try decoder.decodeSingularDoubleField(value: &self.lossFraction) }()
-      case 9: try { try decoder.decodeSingularBoolField(value: &self.inputActive) }()
-      case 10: try { try decoder.decodeSingularUInt32Field(value: &self.renderedFrames) }()
-      case 11: try { try decoder.decodeSingularDoubleField(value: &self.jitterBufferMs) }()
-      case 12: try { try decoder.decodeSingularDoubleField(value: &self.renderMs) }()
-      case 13: try { try decoder.decodeSingularUInt64Field(value: &self.measurementSequence) }()
-      case 14: try { try decoder.decodeSingularUInt32Field(value: &self.measurementAgeMs) }()
-      case 15: try { try decoder.decodeRepeatedMessageField(value: &self.decodedReferences) }()
+      case 1: try { try decoder.decodeSingularUInt64Field(value: &self.historyHits) }()
+      case 2: try { try decoder.decodeSingularUInt64Field(value: &self.historyMisses) }()
+      case 3: try { try decoder.decodeSingularUInt64Field(value: &self.capacityEvictions) }()
+      case 4: try { try decoder.decodeSingularUInt64Field(value: &self.expiredRepairs) }()
+      case 5: try { try decoder.decodeSingularUInt64Field(value: &self.duplicateRequests) }()
+      case 6: try { try decoder.decodeSingularUInt64Field(value: &self.retainedPackets) }()
+      case 7: try { try decoder.decodeSingularUInt64Field(value: &self.retainedBytes) }()
       default: break
       }
     }
   }
 
   public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
-    if self.protocolVersion != 0 {
-      try visitor.visitSingularUInt32Field(value: self.protocolVersion, fieldNumber: 1)
+    if self.historyHits != 0 {
+      try visitor.visitSingularUInt64Field(value: self.historyHits, fieldNumber: 1)
     }
-    if !self.inputEpoch.isEmpty {
-      try visitor.visitSingularBytesField(value: self.inputEpoch, fieldNumber: 2)
+    if self.historyMisses != 0 {
+      try visitor.visitSingularUInt64Field(value: self.historyMisses, fieldNumber: 2)
     }
-    if self.sequence != 0 {
-      try visitor.visitSingularUInt64Field(value: self.sequence, fieldNumber: 3)
+    if self.capacityEvictions != 0 {
+      try visitor.visitSingularUInt64Field(value: self.capacityEvictions, fieldNumber: 3)
     }
-    if self.framesPerSecond.bitPattern != 0 {
-      try visitor.visitSingularDoubleField(value: self.framesPerSecond, fieldNumber: 4)
+    if self.expiredRepairs != 0 {
+      try visitor.visitSingularUInt64Field(value: self.expiredRepairs, fieldNumber: 4)
     }
-    if self.decodeMs.bitPattern != 0 {
-      try visitor.visitSingularDoubleField(value: self.decodeMs, fieldNumber: 5)
+    if self.duplicateRequests != 0 {
+      try visitor.visitSingularUInt64Field(value: self.duplicateRequests, fieldNumber: 5)
     }
-    if self.jitterMs.bitPattern != 0 {
-      try visitor.visitSingularDoubleField(value: self.jitterMs, fieldNumber: 6)
+    if self.retainedPackets != 0 {
+      try visitor.visitSingularUInt64Field(value: self.retainedPackets, fieldNumber: 6)
     }
-    if self.rttMs.bitPattern != 0 {
-      try visitor.visitSingularDoubleField(value: self.rttMs, fieldNumber: 7)
+    if self.retainedBytes != 0 {
+      try visitor.visitSingularUInt64Field(value: self.retainedBytes, fieldNumber: 7)
     }
-    if self.lossFraction.bitPattern != 0 {
-      try visitor.visitSingularDoubleField(value: self.lossFraction, fieldNumber: 8)
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Dieter_V1_RemoteDesktopRecoveryDiagnostics, rhs: Dieter_V1_RemoteDesktopRecoveryDiagnostics) -> Bool {
+    if lhs.historyHits != rhs.historyHits {return false}
+    if lhs.historyMisses != rhs.historyMisses {return false}
+    if lhs.capacityEvictions != rhs.capacityEvictions {return false}
+    if lhs.expiredRepairs != rhs.expiredRepairs {return false}
+    if lhs.duplicateRequests != rhs.duplicateRequests {return false}
+    if lhs.retainedPackets != rhs.retainedPackets {return false}
+    if lhs.retainedBytes != rhs.retainedBytes {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Dieter_V1_RemoteDesktopReceiverFeedback: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".RemoteDesktopReceiverFeedback"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}protocol_version\0\u{3}input_epoch\0\u{1}sequence\0\u{3}frames_per_second\0\u{3}decode_ms\0\u{3}jitter_ms\0\u{3}rtt_ms\0\u{3}loss_fraction\0\u{3}input_active\0\u{3}rendered_frames\0\u{3}jitter_buffer_ms\0\u{3}render_ms\0\u{3}measurement_sequence\0\u{3}measurement_age_ms\0\u{3}decoded_references\0\u{3}render_measurement\0\u{3}decoder_implementation\0\u{3}decoder_hardware\0\u{3}decoder_low_latency_accepted\0\u{3}decoder_configuration_reason\0")
+
+  fileprivate class _StorageClass {
+    var _protocolVersion: UInt32 = 0
+    var _inputEpoch: Data = Data()
+    var _sequence: UInt64 = 0
+    var _framesPerSecond: Double = 0
+    var _decodeMs: Double = 0
+    var _jitterMs: Double = 0
+    var _rttMs: Double = 0
+    var _lossFraction: Double = 0
+    var _inputActive: Bool = false
+    var _renderedFrames: UInt32 = 0
+    var _jitterBufferMs: Double = 0
+    var _renderMs: Double = 0
+    var _measurementSequence: UInt64 = 0
+    var _measurementAgeMs: UInt32 = 0
+    var _decodedReferences: [Dieter_V1_RemoteDesktopReference] = []
+    var _renderMeasurement: Dieter_V1_RemoteDesktopRenderMeasurement = .unspecified
+    var _decoderImplementation: String = String()
+    var _decoderHardware: Bool? = nil
+    var _decoderLowLatencyAccepted: Bool? = nil
+    var _decoderConfigurationReason: String = String()
+
+      // This property is used as the initial default value for new instances of the type.
+      // The type itself is protecting the reference to its storage via CoW semantics.
+      // This will force a copy to be made of this reference when the first mutation occurs;
+      // hence, it is safe to mark this as `nonisolated(unsafe)`.
+      static nonisolated(unsafe) let defaultInstance = _StorageClass()
+
+    private init() {}
+
+    init(copying source: _StorageClass) {
+      _protocolVersion = source._protocolVersion
+      _inputEpoch = source._inputEpoch
+      _sequence = source._sequence
+      _framesPerSecond = source._framesPerSecond
+      _decodeMs = source._decodeMs
+      _jitterMs = source._jitterMs
+      _rttMs = source._rttMs
+      _lossFraction = source._lossFraction
+      _inputActive = source._inputActive
+      _renderedFrames = source._renderedFrames
+      _jitterBufferMs = source._jitterBufferMs
+      _renderMs = source._renderMs
+      _measurementSequence = source._measurementSequence
+      _measurementAgeMs = source._measurementAgeMs
+      _decodedReferences = source._decodedReferences
+      _renderMeasurement = source._renderMeasurement
+      _decoderImplementation = source._decoderImplementation
+      _decoderHardware = source._decoderHardware
+      _decoderLowLatencyAccepted = source._decoderLowLatencyAccepted
+      _decoderConfigurationReason = source._decoderConfigurationReason
     }
-    if self.inputActive != false {
-      try visitor.visitSingularBoolField(value: self.inputActive, fieldNumber: 9)
+  }
+
+  fileprivate mutating func _uniqueStorage() -> _StorageClass {
+    if !isKnownUniquelyReferenced(&_storage) {
+      _storage = _StorageClass(copying: _storage)
     }
-    if self.renderedFrames != 0 {
-      try visitor.visitSingularUInt32Field(value: self.renderedFrames, fieldNumber: 10)
+    return _storage
+  }
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    _ = _uniqueStorage()
+    try withExtendedLifetime(_storage) { (_storage: _StorageClass) in
+      while let fieldNumber = try decoder.nextFieldNumber() {
+        // The use of inline closures is to circumvent an issue where the compiler
+        // allocates stack space for every case branch when no optimizations are
+        // enabled. https://github.com/apple/swift-protobuf/issues/1034
+        switch fieldNumber {
+        case 1: try { try decoder.decodeSingularUInt32Field(value: &_storage._protocolVersion) }()
+        case 2: try { try decoder.decodeSingularBytesField(value: &_storage._inputEpoch) }()
+        case 3: try { try decoder.decodeSingularUInt64Field(value: &_storage._sequence) }()
+        case 4: try { try decoder.decodeSingularDoubleField(value: &_storage._framesPerSecond) }()
+        case 5: try { try decoder.decodeSingularDoubleField(value: &_storage._decodeMs) }()
+        case 6: try { try decoder.decodeSingularDoubleField(value: &_storage._jitterMs) }()
+        case 7: try { try decoder.decodeSingularDoubleField(value: &_storage._rttMs) }()
+        case 8: try { try decoder.decodeSingularDoubleField(value: &_storage._lossFraction) }()
+        case 9: try { try decoder.decodeSingularBoolField(value: &_storage._inputActive) }()
+        case 10: try { try decoder.decodeSingularUInt32Field(value: &_storage._renderedFrames) }()
+        case 11: try { try decoder.decodeSingularDoubleField(value: &_storage._jitterBufferMs) }()
+        case 12: try { try decoder.decodeSingularDoubleField(value: &_storage._renderMs) }()
+        case 13: try { try decoder.decodeSingularUInt64Field(value: &_storage._measurementSequence) }()
+        case 14: try { try decoder.decodeSingularUInt32Field(value: &_storage._measurementAgeMs) }()
+        case 15: try { try decoder.decodeRepeatedMessageField(value: &_storage._decodedReferences) }()
+        case 16: try { try decoder.decodeSingularEnumField(value: &_storage._renderMeasurement) }()
+        case 17: try { try decoder.decodeSingularStringField(value: &_storage._decoderImplementation) }()
+        case 18: try { try decoder.decodeSingularBoolField(value: &_storage._decoderHardware) }()
+        case 19: try { try decoder.decodeSingularBoolField(value: &_storage._decoderLowLatencyAccepted) }()
+        case 20: try { try decoder.decodeSingularStringField(value: &_storage._decoderConfigurationReason) }()
+        default: break
+        }
+      }
     }
-    if self.jitterBufferMs.bitPattern != 0 {
-      try visitor.visitSingularDoubleField(value: self.jitterBufferMs, fieldNumber: 11)
-    }
-    if self.renderMs.bitPattern != 0 {
-      try visitor.visitSingularDoubleField(value: self.renderMs, fieldNumber: 12)
-    }
-    if self.measurementSequence != 0 {
-      try visitor.visitSingularUInt64Field(value: self.measurementSequence, fieldNumber: 13)
-    }
-    if self.measurementAgeMs != 0 {
-      try visitor.visitSingularUInt32Field(value: self.measurementAgeMs, fieldNumber: 14)
-    }
-    if !self.decodedReferences.isEmpty {
-      try visitor.visitRepeatedMessageField(value: self.decodedReferences, fieldNumber: 15)
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    try withExtendedLifetime(_storage) { (_storage: _StorageClass) in
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every if/case branch local when no optimizations
+      // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+      // https://github.com/apple/swift-protobuf/issues/1182
+      if _storage._protocolVersion != 0 {
+        try visitor.visitSingularUInt32Field(value: _storage._protocolVersion, fieldNumber: 1)
+      }
+      if !_storage._inputEpoch.isEmpty {
+        try visitor.visitSingularBytesField(value: _storage._inputEpoch, fieldNumber: 2)
+      }
+      if _storage._sequence != 0 {
+        try visitor.visitSingularUInt64Field(value: _storage._sequence, fieldNumber: 3)
+      }
+      if _storage._framesPerSecond.bitPattern != 0 {
+        try visitor.visitSingularDoubleField(value: _storage._framesPerSecond, fieldNumber: 4)
+      }
+      if _storage._decodeMs.bitPattern != 0 {
+        try visitor.visitSingularDoubleField(value: _storage._decodeMs, fieldNumber: 5)
+      }
+      if _storage._jitterMs.bitPattern != 0 {
+        try visitor.visitSingularDoubleField(value: _storage._jitterMs, fieldNumber: 6)
+      }
+      if _storage._rttMs.bitPattern != 0 {
+        try visitor.visitSingularDoubleField(value: _storage._rttMs, fieldNumber: 7)
+      }
+      if _storage._lossFraction.bitPattern != 0 {
+        try visitor.visitSingularDoubleField(value: _storage._lossFraction, fieldNumber: 8)
+      }
+      if _storage._inputActive != false {
+        try visitor.visitSingularBoolField(value: _storage._inputActive, fieldNumber: 9)
+      }
+      if _storage._renderedFrames != 0 {
+        try visitor.visitSingularUInt32Field(value: _storage._renderedFrames, fieldNumber: 10)
+      }
+      if _storage._jitterBufferMs.bitPattern != 0 {
+        try visitor.visitSingularDoubleField(value: _storage._jitterBufferMs, fieldNumber: 11)
+      }
+      if _storage._renderMs.bitPattern != 0 {
+        try visitor.visitSingularDoubleField(value: _storage._renderMs, fieldNumber: 12)
+      }
+      if _storage._measurementSequence != 0 {
+        try visitor.visitSingularUInt64Field(value: _storage._measurementSequence, fieldNumber: 13)
+      }
+      if _storage._measurementAgeMs != 0 {
+        try visitor.visitSingularUInt32Field(value: _storage._measurementAgeMs, fieldNumber: 14)
+      }
+      if !_storage._decodedReferences.isEmpty {
+        try visitor.visitRepeatedMessageField(value: _storage._decodedReferences, fieldNumber: 15)
+      }
+      if _storage._renderMeasurement != .unspecified {
+        try visitor.visitSingularEnumField(value: _storage._renderMeasurement, fieldNumber: 16)
+      }
+      if !_storage._decoderImplementation.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._decoderImplementation, fieldNumber: 17)
+      }
+      try { if let v = _storage._decoderHardware {
+        try visitor.visitSingularBoolField(value: v, fieldNumber: 18)
+      } }()
+      try { if let v = _storage._decoderLowLatencyAccepted {
+        try visitor.visitSingularBoolField(value: v, fieldNumber: 19)
+      } }()
+      if !_storage._decoderConfigurationReason.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._decoderConfigurationReason, fieldNumber: 20)
+      }
     }
     try unknownFields.traverse(visitor: &visitor)
   }
 
   public static func ==(lhs: Dieter_V1_RemoteDesktopReceiverFeedback, rhs: Dieter_V1_RemoteDesktopReceiverFeedback) -> Bool {
-    if lhs.protocolVersion != rhs.protocolVersion {return false}
-    if lhs.inputEpoch != rhs.inputEpoch {return false}
-    if lhs.sequence != rhs.sequence {return false}
-    if lhs.framesPerSecond != rhs.framesPerSecond {return false}
-    if lhs.decodeMs != rhs.decodeMs {return false}
-    if lhs.jitterMs != rhs.jitterMs {return false}
-    if lhs.rttMs != rhs.rttMs {return false}
-    if lhs.lossFraction != rhs.lossFraction {return false}
-    if lhs.inputActive != rhs.inputActive {return false}
-    if lhs.renderedFrames != rhs.renderedFrames {return false}
-    if lhs.jitterBufferMs != rhs.jitterBufferMs {return false}
-    if lhs.renderMs != rhs.renderMs {return false}
-    if lhs.measurementSequence != rhs.measurementSequence {return false}
-    if lhs.measurementAgeMs != rhs.measurementAgeMs {return false}
-    if lhs.decodedReferences != rhs.decodedReferences {return false}
+    if lhs._storage !== rhs._storage {
+      let storagesAreEqual: Bool = withExtendedLifetime((lhs._storage, rhs._storage)) { (_args: (_StorageClass, _StorageClass)) in
+        let _storage = _args.0
+        let rhs_storage = _args.1
+        if _storage._protocolVersion != rhs_storage._protocolVersion {return false}
+        if _storage._inputEpoch != rhs_storage._inputEpoch {return false}
+        if _storage._sequence != rhs_storage._sequence {return false}
+        if _storage._framesPerSecond != rhs_storage._framesPerSecond {return false}
+        if _storage._decodeMs != rhs_storage._decodeMs {return false}
+        if _storage._jitterMs != rhs_storage._jitterMs {return false}
+        if _storage._rttMs != rhs_storage._rttMs {return false}
+        if _storage._lossFraction != rhs_storage._lossFraction {return false}
+        if _storage._inputActive != rhs_storage._inputActive {return false}
+        if _storage._renderedFrames != rhs_storage._renderedFrames {return false}
+        if _storage._jitterBufferMs != rhs_storage._jitterBufferMs {return false}
+        if _storage._renderMs != rhs_storage._renderMs {return false}
+        if _storage._measurementSequence != rhs_storage._measurementSequence {return false}
+        if _storage._measurementAgeMs != rhs_storage._measurementAgeMs {return false}
+        if _storage._decodedReferences != rhs_storage._decodedReferences {return false}
+        if _storage._renderMeasurement != rhs_storage._renderMeasurement {return false}
+        if _storage._decoderImplementation != rhs_storage._decoderImplementation {return false}
+        if _storage._decoderHardware != rhs_storage._decoderHardware {return false}
+        if _storage._decoderLowLatencyAccepted != rhs_storage._decoderLowLatencyAccepted {return false}
+        if _storage._decoderConfigurationReason != rhs_storage._decoderConfigurationReason {return false}
+        return true
+      }
+      if !storagesAreEqual {return false}
+    }
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

@@ -1,0 +1,107 @@
+{
+  "schemaVersion": 1,
+  "id": "native-screen-local-v1",
+  "required": [
+    "native",
+    "mac-motion-h264",
+    "mac-motion-hevc",
+    "mac-input-h264",
+    "mac-recovery",
+    "android-sdk",
+    "android-codec",
+    "android-journey",
+    "android-surface",
+    "android-direct-codec",
+    "android-direct-journey",
+    "android-direct-recovery",
+    "android-recovery"
+  ],
+  "cases": [
+    {
+      "id": "native",
+      "runner": "native"
+    },
+    {
+      "id": "mac-motion-h264",
+      "runner": "mac-latency",
+      "codec": "h264",
+      "capture": "synthetic",
+      "fps": 60,
+      "presentation": "immediate",
+      "samples": 200
+    },
+    {
+      "id": "mac-motion-hevc",
+      "runner": "mac-latency",
+      "codec": "hevc",
+      "capture": "synthetic",
+      "fps": 60,
+      "presentation": "immediate",
+      "samples": 200
+    },
+    {
+      "id": "mac-input-h264",
+      "runner": "mac-latency",
+      "codec": "h264",
+      "capture": "screen",
+      "fps": 60,
+      "presentation": "immediate",
+      "samples": 200
+    },
+    {
+      "id": "mac-recovery",
+      "runner": "mac-recovery"
+    },
+    {
+      "id": "android-sdk",
+      "runner": "android-sdk"
+    },
+    {
+      "id": "android-codec",
+      "runner": "android-codec"
+    },
+    {
+      "id": "android-journey",
+      "runner": "android-journey"
+    },
+    {
+      "id": "android-surface",
+      "runner": "android-codec",
+      "surfaceView": true
+    },
+    {
+      "id": "android-direct-codec",
+      "runner": "android-codec",
+      "directSurface": true
+    },
+    {
+      "id": "android-direct-journey",
+      "runner": "android-journey",
+      "directSurface": true
+    },
+    {
+      "id": "android-direct-recovery",
+      "runner": "android-recovery",
+      "directSurface": true
+    },
+    {
+      "id": "android-recovery",
+      "runner": "android-recovery"
+    },
+    {
+      "id": "two-host-optical",
+      "runner": "external",
+      "reason": "Requires a second physical host, aligned clocks and an optical input/display rig"
+    },
+    {
+      "id": "android-device-matrix",
+      "runner": "external",
+      "reason": "Requires MediaTek and Tensor/Exynos plus lower-end physical devices"
+    },
+    {
+      "id": "codec-quality-wire-power",
+      "runner": "external",
+      "reason": "Matched-quality source/decoded corpus, total wire capture and thermal/power evidence required before codec promotion"
+    }
+  ]
+}

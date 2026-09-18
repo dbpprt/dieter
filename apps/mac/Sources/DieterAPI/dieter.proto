@@ -1929,6 +1929,15 @@ message RemoteDesktopInput {
   uint64 control_generation = 13;
 }
 
+// Render timings end at different platform events. Neither endpoint measures
+// physical scanout. Zero means an older receiver did not identify its endpoint.
+enum RemoteDesktopRenderMeasurement {
+  REMOTE_DESKTOP_RENDER_MEASUREMENT_UNSPECIFIED = 0;
+  REMOTE_DESKTOP_RENDER_MEASUREMENT_METAL_PRESENTED = 1;
+  REMOTE_DESKTOP_RENDER_MEASUREMENT_EGL_SUBMITTED = 2;
+  REMOTE_DESKTOP_RENDER_MEASUREMENT_ANDROID_FRAME_RENDERED = 3;
+}
+
 message RemoteDesktopSessionState {
   string phase = 1;
   string reason = 2;
@@ -1974,6 +1983,34 @@ message RemoteDesktopSessionState {
   uint64 reference_acks = 40;
   uint64 reference_recovery_frames = 41;
   uint64 reference_recoveries = 42; // Recovery frames acknowledged after decoding.
+  RemoteDesktopRenderMeasurement render_measurement = 43;
+  string decoder_implementation = 44;
+  optional bool decoder_hardware = 45;
+  optional bool decoder_low_latency_accepted = 46;
+  string decoder_configuration_reason = 47;
+  // Serialized RTP bytes, including extensions/padding. Excludes SRTP, RTCP,
+  // SCTP, ICE and IP/UDP/TURN overhead; these are not total wire-byte counts.
+  uint64 media_rtp_bytes = 48;
+  uint64 repair_rtp_bytes = 49;
+  uint64 probe_rtp_bytes = 50;
+  uint64 fec_rtp_bytes = 51;
+  string encoder_configuration = 52; // Accepted settings and optional-property fallbacks.
+  optional double content_changed_fraction = 53; // Native capture damage, unknown when absent.
+  uint64 content_measurement_sequence = 54;
+  uint32 content_samples = 55;
+  string content_class = 56; // Applied controller classification, not a visual-quality score.
+  RemoteDesktopRecoveryDiagnostics recovery_diagnostics = 57;
+}
+
+// Session-local history counters, not proof of successful decode repair.
+message RemoteDesktopRecoveryDiagnostics {
+  uint64 history_hits = 1;
+  uint64 history_misses = 2;
+  uint64 capacity_evictions = 3;
+  uint64 expired_repairs = 4;
+  uint64 duplicate_requests = 5;
+  uint64 retained_packets = 6;
+  uint64 retained_bytes = 7; // Serialized RTP headers and payload.
 }
 
 // Encrypted on the authenticated session DataChannel; never persisted.
@@ -1990,7 +2027,8 @@ message RemoteDesktopReceiverFeedback {
   uint32 rendered_frames = 10;
   // Mean residence in WebRTC's jitter buffer, distinct from RTP jitter.
   double jitter_buffer_ms = 11;
-  // Mean decoded-frame arrival to actual Metal presentation in this interval.
+  // Mean decoded-frame arrival to the identified render_measurement endpoint.
+  // Legacy Mac reports presentation; legacy Android reports EGL submission.
   double render_ms = 12;
   // Independent of the heartbeat sequence. Zero is a legacy sender; new senders
   // start at one (an empty sample) and advance only when statistics are collected.
@@ -1999,6 +2037,11 @@ message RemoteDesktopReceiverFeedback {
   uint32 measurement_age_ms = 14;
   // At most eight exact challenges, acknowledged only after decoder output.
   repeated RemoteDesktopReference decoded_references = 15;
+  RemoteDesktopRenderMeasurement render_measurement = 16;
+  string decoder_implementation = 17; // At most 256 UTF-8 bytes.
+  optional bool decoder_hardware = 18; // Absent means unknown, not software.
+  optional bool decoder_low_latency_accepted = 19; // Acceptance is not a latency measurement.
+  string decoder_configuration_reason = 20; // At most 256 UTF-8 bytes.
 }
 message RemoteDesktopCursor {
   string shape_id = 1;

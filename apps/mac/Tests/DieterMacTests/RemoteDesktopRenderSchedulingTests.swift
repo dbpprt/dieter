@@ -79,3 +79,81 @@ private final class RenderThreadProbe: @unchecked Sendable {
     func record(_ value: Bool) { lock.withLock { recorded = value } }
     var value: Bool? { lock.withLock { recorded } }
 }
+
+@Test func remoteDesktopPresentationOwnsGPUAndCompositorIndependently() throws {
+    for presentationFirst in [false, true] {
+        var ledger = RemoteDesktopPresentationLedger(limit: 1)
+        let started = ledger.begin(token: 0, at: 1)
+        let first = try #require(started)
+        #expect(!ledger.canSubmit)
+        if presentationFirst {
+            let presented = ledger.presented(first)
+            #expect(presented != nil)
+            #expect(!ledger.canSubmit, "Presentation must not release GPU ownership")
+            let completed = ledger.completedGPU(first)
+            #expect(completed)
+        } else {
+            let completed = ledger.completedGPU(first)
+            #expect(completed)
+            #expect(!ledger.canSubmit, "GPU completion must not release compositor budget")
+            let presented = ledger.presented(first)
+            #expect(presented != nil)
+        }
+        #expect(ledger.canSubmit)
+        let completedAgain = ledger.completedGPU(first), presentedAgain = ledger.presented(first)
+        #expect(!completedAgain)
+        #expect(presentedAgain == nil)
+        #expect(ledger.entries.isEmpty)
+    }
+}
+
+@Test func remoteDesktopPresentationExpiryAndResetNeverReleaseGPU() throws {
+    var ledger = RemoteDesktopPresentationLedger(limit: 2)
+    let startedFirst = ledger.begin(token: 0, at: 1)
+    let first = try #require(startedFirst)
+    let completedFirst = ledger.completedGPU(first)
+    #expect(completedFirst)
+    let startedSecond = ledger.begin(token: 0, at: 1.05)
+    let second = try #require(startedSecond)
+    let expired = ledger.expire(at: 1.11)
+    #expect(expired == 1)
+    #expect(ledger.gpuOwner == second)
+    ledger.invalidatePresentations()
+    #expect(!ledger.canSubmit)
+    let oldPresentation = ledger.presented(first), completedSecond = ledger.completedGPU(second)
+    #expect(oldPresentation == nil)
+    #expect(completedSecond)
+    let startedReplacement = ledger.begin(token: 1, at: 1.2)
+    let replacement = try #require(startedReplacement)
+    let repeatedCompletion = ledger.completedGPU(second)
+    #expect(!repeatedCompletion)
+    #expect(ledger.gpuOwner == replacement)
+    #expect(ledger.entries.count == 1)
+}
+
+@Test func remoteDesktopRenderTraceBoundsRecordsAndRejectsLateUpdates() {
+    let trace = RemoteDesktopRenderTrace(capacity: 2)
+    for id in 1...1000 {
+        trace.append(RemoteDesktopRenderTraceRecord(submission: UInt64(id), epoch: 1, rtpTimestamp: UInt32(id),
+            decodedAt: 1, drawableRequestedAt: 1, drawableReadyAt: 2, committedAt: 3))
+    }
+    trace.update(1) { $0.presentedAt = 99 }
+    trace.update(1000) { $0.presentedAt = 4 }
+    #expect(trace.snapshot.map(\.submission) == [999, 1000])
+    #expect(trace.snapshot.first?.presentedAt == nil)
+    #expect(trace.snapshot.last?.presentedAt == 4)
+}
+
+@Test func remoteDesktopPresentationCadencePipelinesMotionAndReturnsToIdle() {
+    var cadence = RemoteDesktopPresentationCadence()
+    cadence.observe(timestamp: 1, at: 1)
+    #expect(cadence.budget(at: 1) == 1)
+    cadence.observe(timestamp: 2, at: 1.016)
+    cadence.observe(timestamp: 2, at: 1.02) // redraw is not a fresh decoded frame
+    #expect(cadence.budget(at: 1.02) == 1)
+    cadence.observe(timestamp: 3, at: 1.032)
+    #expect(cadence.budget(at: 1.033) == 2)
+    #expect(cadence.budget(at: 1.2) == 1)
+    cadence.observe(timestamp: 4, at: 2)
+    #expect(cadence.budget(at: 2) == 1)
+}
