@@ -162,13 +162,17 @@ final class RemoteNodeUITests: XCTestCase {
     }
 
     private func assistantTextExists(_ app: XCUIApplication, _ text: String, timeout: TimeInterval = 60) {
-        // Match the small set of transcript text nodes by identifier before
-        // inspecting their labels. A broad StaticText query repeatedly snapshots
-        // the entire iPad split view and can starve the fixture data plane.
-        let label = app.staticTexts.matching(identifier: "ios.message.text.assistant")
-            .matching(NSPredicate(format: "label CONTAINS %@", text)).firstMatch
-        XCTAssertTrue(
-            label.waitForExistence(timeout: timeout),
+        // Let the isolated harness finish its short streamed response before
+        // snapshotting SwiftUI's changing transcript. `waitForExistence` also
+        // captures a full debug hierarchy after each unsuccessful probe, which
+        // can keep the app main thread busy on CI. Poll one exact label through
+        // a predicate expectation instead.
+        Thread.sleep(forTimeInterval: 4)
+        let label = app.staticTexts[text]
+        let response = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "exists == true"), object: label)
+        XCTAssertEqual(
+            XCTWaiter.wait(for: [response], timeout: timeout), .completed,
             "Missing assistant text \(text).\n\(app.debugDescription)")
     }
 
