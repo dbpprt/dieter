@@ -755,28 +755,48 @@ struct QuickTaskPopover: View {
                 Text(error).font(.caption).foregroundStyle(.orange)
             }
 
-            TextField("What should the agent accomplish?", text: $story, axis: .vertical)
-                .textFieldStyle(.plain)
-                .padding(12)
-                .background(.quaternary, in: RoundedRectangle(cornerRadius: 10))
-                .font(.system(size: 13)).lineSpacing(2).lineLimit(4...7)
-                .focused($storyFocused)
-                .overlay {
-                    if attachmentDropTargeted {
-                        RoundedRectangle(cornerRadius: 8).stroke(Color.accentColor, lineWidth: 2)
-                    }
+            ZStack(alignment: .topLeading) {
+                QuickTaskStoryEditor(
+                    text: $story,
+                    focus: $storyFocused,
+                    canPasteAttachment: { store.pasteboardAttachmentInput($0) != nil },
+                    pasteAttachment: { pasteboard in
+                        guard let input = store.pasteboardAttachmentInput(pasteboard) else { return false }
+                        let generation = formDraft.intakeGeneration
+                        Task {
+                            do {
+                                let parts = try await store.attachmentParts(input)
+                                try formDraft.appendAttachments(parts, generation: generation)
+                            } catch { store.show(error) }
+                        }
+                        return true
+                    })
+                if story.isEmpty {
+                    Text("What should the agent accomplish?")
+                        .font(.system(size: 13))
+                        .foregroundStyle(.tertiary)
+                        .allowsHitTesting(false)
                 }
-                .accessibilityIdentifier("quick-task.story")
-                .smokeTarget("quick-task.story")
-                .attachmentDropTarget(isTargeted: $attachmentDropTargeted) { providers in
-                    let generation = formDraft.intakeGeneration
-                    Task {
-                        do {
-                            let parts = try await store.attachmentParts(providers)
-                            try formDraft.appendAttachments(parts, generation: generation)
-                        } catch { store.show(error) }
-                    }
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
+            .background(.quaternary, in: RoundedRectangle(cornerRadius: 10))
+            .overlay {
+                if attachmentDropTargeted {
+                    RoundedRectangle(cornerRadius: 8).stroke(Color.accentColor, lineWidth: 2)
                 }
+            }
+            .accessibilityIdentifier("quick-task.story")
+            .smokeTarget("quick-task.story")
+            .attachmentDropTarget(isTargeted: $attachmentDropTargeted) { providers in
+                let generation = formDraft.intakeGeneration
+                Task {
+                    do {
+                        let parts = try await store.attachmentParts(providers)
+                        try formDraft.appendAttachments(parts, generation: generation)
+                    } catch { store.show(error) }
+                }
+            }
 
             HStack(spacing: 8) {
                 Button {
@@ -904,17 +924,6 @@ struct QuickTaskPopover: View {
         .frame(width: 430)
         .fixedSize(horizontal: false, vertical: true)
         .smokeTarget("quick-task.content")
-        .attachmentPasteCatcher { pasteboard in
-            guard let input = store.pasteboardAttachmentInput(pasteboard) else { return false }
-            let generation = formDraft.intakeGeneration
-            Task {
-                do {
-                    let parts = try await store.attachmentParts(input)
-                    try formDraft.appendAttachments(parts, generation: generation)
-                } catch { store.show(error) }
-            }
-            return true
-        }
         .task {
             if !initialized {
                 if !chooseDestination && (draftProjectID.isEmpty || capturedBrowser) {
