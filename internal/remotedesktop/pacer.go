@@ -11,16 +11,29 @@ import (
 	"github.com/pion/rtp"
 )
 
+const repairDeadlineAttribute = "dieter.repairDeadline"
+const repairGenerationAttribute = "dieter.repairGeneration"
+const fecPacketAttribute = "dieter.fecPacket"
+
+var errRepairExpired = errors.New("repair expired while pacing")
+var errRepairObsolete = errors.New("repair belongs to a retired generation")
+
 // packetPacer applies backpressure instead of accumulating a packet queue. The
 // producer owns at most one encoded access unit and the helper replaces raw
 // pending frames. Whole-frame admission/recovery happens before packetization.
 type packetPacer struct {
+	recoveryMetrics        recoveryMetrics
+	mediaGeneration        atomic.Uint64
 	descriptorID           atomic.Uint32
 	fec                    *fecStream // sendMu; finalized packets, at most 12 retained
 	fecNegotiated          atomic.Bool
 	fecPercent             atomic.Int64
 	fecPackets             atomic.Uint64
 	fecBytes               atomic.Uint64
+	mediaRTPBytes          atomic.Uint64
+	repairRTPBytes         atomic.Uint64
+	probeRTPBytes          atomic.Uint64
+	fecRTPBytes            atomic.Uint64
 	mu                     sync.Mutex
 	sendMu                 sync.Mutex
 	writers                map[uint32]interceptor.RTPWriter
@@ -171,7 +184,7 @@ func (p *packetPacer) Write(header *rtp.Header, payload []byte, attributes inter
 		return n, err
 	}
 	for _, repair := range p.fec.protect(time.Now(), header, payload, int(p.fecPercent.Load())) {
-		if _, err = p.writePacket(&repair.Header, repair.Payload, nil, p.fec.writer); err != nil {
+		if _, err = p.writePacket(&repair.Header, repair.Payload, interceptor.Attributes{fecPacketAttribute: true}, p.fec.writer); err != nil {
 			return n, err
 		}
 		p.fecPackets.Add(1)
@@ -181,6 +194,14 @@ func (p *packetPacer) Write(header *rtp.Header, payload []byte, attributes inter
 }
 
 func (p *packetPacer) writePacket(header *rtp.Header, payload []byte, attributes interceptor.Attributes, writer interceptor.RTPWriter) (int, error) {
+	generation, repair := attributes[repairGenerationAttribute].(uint64)
+	if repair && generation != p.mediaGeneration.Load() {
+		return 0, errRepairObsolete
+	}
+	deadline, _ := attributes[repairDeadlineAttribute].(time.Time)
+	if !deadline.IsZero() && !time.Now().Before(deadline) {
+		return 0, errRepairExpired
+	}
 	p.mu.Lock()
 	next := p.next
 	// Headroom lets a bounded burst (not an unbounded packet queue) carry
@@ -200,6 +221,9 @@ func (p *packetPacer) writePacket(header *rtp.Header, payload []byte, attributes
 		return 0, errors.New("pacer stream not registered")
 	}
 	const burst = 5 * time.Millisecond
+	if !deadline.IsZero() && !next.Add(-burst).Before(deadline) {
+		return 0, errRepairExpired
+	}
 	if delay := time.Until(next.Add(-burst)); delay > 0 {
 		timer := time.NewTimer(delay)
 		select {
@@ -214,6 +238,12 @@ func (p *packetPacer) writePacket(header *rtp.Header, payload []byte, attributes
 		return 0, p.ctx.Err()
 	default:
 	}
+	if repair && generation != p.mediaGeneration.Load() {
+		return 0, errRepairObsolete
+	}
+	if !deadline.IsZero() && !time.Now().Before(deadline) {
+		return 0, errRepairExpired
+	}
 	p.mu.Lock()
 	// Keep the virtual send schedule across timer wakeups. Starting a fresh
 	// per-packet timer loses throughput to scheduler latency on fast LANs.
@@ -227,6 +257,19 @@ func (p *packetPacer) writePacket(header *rtp.Header, payload []byte, attributes
 	p.recordTransport(started, header, size, probe)
 	n, err := writer.Write(header, payload, attributes)
 	p.writeNanoseconds.Add(int64(time.Since(started)))
+	if err == nil {
+		bytes := uint64(header.MarshalSize() + len(payload) + int(header.PaddingSize))
+		switch {
+		case attributes[fecPacketAttribute] == true:
+			p.fecRTPBytes.Add(bytes)
+		case !deadline.IsZero():
+			p.repairRTPBytes.Add(bytes)
+		case header.Padding:
+			p.probeRTPBytes.Add(bytes)
+		default:
+			p.mediaRTPBytes.Add(bytes)
+		}
+	}
 	return n, err
 }
 
@@ -236,7 +279,7 @@ func (p *packetPacer) writePacket(header *rtp.Header, payload []byte, attributes
 func (p *packetPacer) RecoveryDeadline() (time.Duration, time.Duration) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if p.recoveryRTT <= 0 || time.Since(p.recoveryMeasured) > 2*time.Second {
+	if p.recoveryRTT <= 0 || time.Since(p.recoveryMeasured) < 0 || time.Since(p.recoveryMeasured) > 2*time.Second {
 		return retransmissionAge, 0
 	}
 	frame := time.Second / time.Duration(max(1, p.recoveryFPS))

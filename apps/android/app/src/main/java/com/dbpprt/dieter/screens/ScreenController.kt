@@ -25,9 +25,22 @@ data class ScreenState(
     val cursor: RemoteDesktopCursor = RemoteDesktopCursor.getDefaultInstance(),
     val canTransferControl: Boolean = false, val controlTransferPending: Boolean = false, val controlError: String = "",
     val signalingRoute: String = "", val mediaRoute: String = "", val receivedFps: Double = 0.0,
+    val decodedFrames: Long = 0,
 )
 
 class ScreenController(context: Context) : AutoCloseable {
+    // Keep fixture-only until a physical codec advertising this feature has
+    // passed latency and lifecycle qualification (acceptance is insufficient).
+    var lowLatencyDecoding = false
+    // Fixture-only A/B until physical cadence/composition qualification. Both
+    // paths retain the real WebRTC decoded-frame and reference contract.
+    var surfacePresentation = false
+    var directSurfacePresentation = false
+    @Volatile internal var decoderSurface: DecoderSurface? = null
+    private var decoderSurfaceAttached = false
+    private var renderMeasurement = RemoteDesktopRenderMeasurement.REMOTE_DESKTOP_RENDER_MEASUREMENT_UNSPECIFIED
+    @Volatile var decoderStatus: ScreenDecoderStatus? = null
+        private set
     val egl: EglBase = EglBase.create()
     val canvasModel = ScreenCanvasModel()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -36,6 +49,11 @@ class ScreenController(context: Context) : AutoCloseable {
     private val mutable = MutableStateFlow(ScreenState())
     val state = mutable.asStateFlow()
     @Volatile var videoSink: ((VideoFrame, Long) -> Unit)? = null
+    @Volatile internal var decodedOutputObserver: ((Long) -> Unit)? = null
+    var onVideoReset: (() -> Unit)? = null
+    private val videoFrames = ScreenFrameGate<VideoFrame>({ it.timestampNs }, { it.retain() }, { it.release() }) { frame, epoch ->
+        if (authorized && epoch == token) videoSink?.invoke(frame, epoch)
+    }
     @Volatile private var authorized = false
     @Volatile private var token = 0L
     private var disconnecting = false
@@ -143,9 +161,15 @@ class ScreenController(context: Context) : AutoCloseable {
                 referenceReceiver?.stop(); referenceReceiver = references
                 val decoders = ScreenDecoderFactory(egl.eglBaseContext,
                     enableHEVC = effectiveCodec != RemoteDesktopCodecPreference.REMOTE_DESKTOP_CODEC_PREFERENCE_H264,
+                    lowLatency = lowLatencyDecoding,
+                    directSurface = { if (directSurfacePresentation) decoderSurface else null },
+                    outputDecoded = { timestamp ->
+                        references.decoded(timestamp)
+                        if (authorized && token == current) decodedOutputObserver?.invoke(timestamp)
+                    },
+                    configured = { status -> if (current == token) decoderStatus = status },
                     unavailable = { scope.launch { if (current == token) hevcUnavailable() } }) { frame ->
-                    references.decoded(frame.timestampNs)
-                    if (authorized && token == current) videoSink?.invoke(frame, current)
+                    if (authorized && token == current) videoFrames.offer(frame, current)
                 }
                 require(decoders.supportedCodecs.isNotEmpty()) { "This device has no H.264 MediaCodec decoder" }
                 factory = PeerConnectionFactory.builder().setFieldTrials("WebRTC-GenericDescriptorAdvertised/Enabled/").setVideoDecoderFactory(decoders).createPeerConnectionFactory()
@@ -338,6 +362,8 @@ class ScreenController(context: Context) : AutoCloseable {
         var next = value
         if (value.displayGeneration != previous.displayGeneration) {
             releaseInput(); presentedGeneration = 0
+            videoFrames.update(token, value.displayGeneration, 0, 0)
+            onVideoReset?.invoke()
         } else if (value.mediaGeneration < previous.mediaGeneration) {
             next = value.toBuilder().setMediaGeneration(previous.mediaGeneration).setMediaTimestamp(previous.mediaTimestamp).build()
         }
@@ -352,12 +378,29 @@ class ScreenController(context: Context) : AutoCloseable {
             mutable.value = mutable.value.copy(clipboardEnabled = next.clipboardEnabled)
         }
         mutable.value = mutable.value.copy(session = next)
+        videoFrames.update(token, next.displayGeneration, next.mediaGeneration, next.mediaTimestamp)
         lastPresentedTimestamp?.let(::markPresented)
         readiness()
     }
-    /** Called only after EGL has drawn and swapped this decoded frame. */
-    fun presented(timestampNs: Long, sessionToken: Long, renderMs: Double) {
-        scope.launch { if (authorized && token == sessionToken) { framesPresented.incrementAndGet(); totalRenderMs += renderMs; lastPresentedTimestamp = timestampNs; markPresented(timestampNs); readiness() } }
+    /** A presentation endpoint is explicit; EGL swap and MediaCodec callback differ. */
+    fun presented(timestampNs: Long, sessionToken: Long, renderMs: Double,
+        measurement: RemoteDesktopRenderMeasurement = RemoteDesktopRenderMeasurement.REMOTE_DESKTOP_RENDER_MEASUREMENT_EGL_SUBMITTED) {
+        scope.launch { if (authorized && token == sessionToken) {
+            if (measurement != renderMeasurement) { framesPresented.set(0); totalRenderMs = 0.0; renderMeasurement = measurement }
+            framesPresented.incrementAndGet(); totalRenderMs += renderMs
+            lastPresentedTimestamp = timestampNs; markPresented(timestampNs); readiness()
+        } }
+    }
+    internal fun attachDecoderSurface(surface: DecoderSurface) {
+        decoderSurface?.close()
+        decoderSurface = surface
+        val reconnect = decoderSurfaceAttached
+        decoderSurfaceAttached = true
+        if (reconnect && reopen != null) resumeConnection()
+    }
+    internal fun detachDecoderSurface(surface: DecoderSurface) {
+        if (decoderSurface === surface) decoderSurface = null
+        surface.close()
     }
     private fun markPresented(timestampNs: Long) {
         val s = mutable.value.session
@@ -547,17 +590,34 @@ class ScreenController(context: Context) : AutoCloseable {
                         .setFramesPerSecond(fps).setRenderedFrames(framesPresented.get().coerceAtMost(Int.MAX_VALUE.toLong()).toInt())
                         .setDecodeMs(if (delta("framesDecoded") > 0) delta("totalDecodeTime") * 1000 / delta("framesDecoded") else 0.0)
                         .setRenderMs(delta("renderMs") / max(1.0, delta("presented")))
+                        .setRenderMeasurement(renderMeasurement)
                         .setJitterMs(number("jitter") * 1000)
                         .setJitterBufferMs(if (delta("jitterBufferEmittedCount") > 0) delta("jitterBufferDelay") * 1000 / delta("jitterBufferEmittedCount") else 0.0)
                         .setRttMs(((pair["currentRoundTripTime"] as? Number)?.toDouble() ?: 0.0) * 1000)
                         .setLossFraction(delta("packetsLost") / max(1.0, delta("packetsLost") + delta("packetsReceived")))
-                        .setInputActive(focused && mutable.value.control).build()
+                        .setInputActive(focused && mutable.value.control).apply {
+                            decoderStatus?.let {
+                                setDecoderImplementation(it.implementation.take(256))
+                                setDecoderHardware(it.hardware)
+                                setDecoderLowLatencyAccepted(it.lowLatencyAccepted)
+                                setDecoderConfigurationReason(it.reason.take(256))
+                            }
+                        }.build()
                     feedbackPump.update(feedback, measuredAt = measurementStarted)
                     val relayed = listOf("localCandidateId", "remoteCandidateId").any { key ->
                         stats.statsMap[pair[key]]?.members?.get("candidateType") == "relay"
                     }
-                    mutable.value = mutable.value.copy(receivedFps = fps, mediaRoute = if (pair.isEmpty()) "" else if (relayed) "Relayed media" else "Direct media")
+                    mutable.value = mutable.value.copy(receivedFps = fps, decodedFrames = number("framesDecoded").toLong(),
+                        mediaRoute = if (pair.isEmpty()) "" else if (relayed) "Relayed media" else "Direct media")
                     previous = values; previousTime = now
+                    if (framesPresented.get() == 0L && ticks >= 6 && number("framesDecoded") > 0 && decoderSurface?.isOpen == true) {
+                        // Older/vendor codecs may omit frame-render callbacks.
+                        // Retire this optional target once; the next decoder
+                        // uses textures until a genuinely new holder is attached.
+                        decoderSurface?.close()
+                        recover("Direct surface did not report presentation", immediate = true)
+                        return@launch
+                    }
                     if (framesPresented.get() == 0L && ticks == 6) configure(refresh = true)
                     if (framesPresented.get() == 0L && ticks >= 40) {
                         if (mutable.value.session.codec == "H265" && peerConnected && (values["framesReceived"] ?: 0.0) > 0 && (values["framesDecoded"] ?: 0.0) == 0.0)
@@ -604,6 +664,7 @@ class ScreenController(context: Context) : AutoCloseable {
         disconnecting = true
         peerWatchdog?.cancel(); peerWatchdog = null
         releaseInput(); token++; authorized = false
+        videoFrames.clear()
         referenceReceiver?.stop(); referenceReceiver = null; feedbackPump.stop(); leaseRenewal?.cancel(); leaseRenewal = null
         signaling?.cancel(); signaling = null; monitoring?.cancel(); monitoring = null; configuring?.cancel(); configuring = null
         val old = connection; val id = sessionId
@@ -619,6 +680,8 @@ class ScreenController(context: Context) : AutoCloseable {
         binding = null; request = null; answer = null; remoteApplied = false
         localCandidates.clear(); remoteCandidates.clear(); presentedGeneration = 0; lastPresentedTimestamp = null
         pointerSequence = 0; stateSequence = 0; ordinal = 0; lastPointerOrdinal = 0; framesPresented.set(0); totalRenderMs = 0.0
+        decoderStatus = null
+        renderMeasurement = RemoteDesktopRenderMeasurement.REMOTE_DESKTOP_RENDER_MEASUREMENT_UNSPECIFIED
         canvasModel.reset(); canvasModel.cursor(.5f, .5f)
         mutable.value = mutable.value.copy(control = false, canTransferControl = false, controlTransferPending = false, controlError = "")
         disconnecting = false
@@ -647,7 +710,7 @@ class ScreenController(context: Context) : AutoCloseable {
     private fun fail(message: String) { disconnect(); mutable.value = mutable.value.copy(phase = "failed", error = message) }
     override fun close() {
         if (closed) return
-        closed = true; videoSink = null; disconnect(); egl.release()
+        closed = true; videoSink = null; decodedOutputObserver = null; disconnect(); egl.release()
         scope.launch { delay(3500); scope.cancel() }
     }
 

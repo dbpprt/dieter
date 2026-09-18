@@ -1,5 +1,23 @@
 #!/bin/sh
 
+# Device tasks participate in the same per-serial lease as AFA and the native
+# screen fixture launcher, including direct Gradle invocations.
+for dieter_task_arg in "$@"; do
+    case "$dieter_task_arg" in
+        connected*AndroidTest|*:connected*AndroidTest|installDebug|*:installDebug|installScreenFixture|*:installScreenFixture)
+            if [ -z "${ANDROID_SERIAL:-}" ]; then
+                echo 'Set ANDROID_SERIAL explicitly before a device Gradle task.' >&2
+                exit 2
+            fi
+            if [ "${DIETER_SCREEN_DEVICE_LEASE_V2:-}" != "$ANDROID_SERIAL" ]; then
+                dieter_wrapper_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+                exec python3 "$dieter_wrapper_dir/../../scripts/with-android-device-lease.py" "$ANDROID_SERIAL" sh "$dieter_wrapper_dir/gradlew" "$@"
+            fi
+            break
+            ;;
+    esac
+done
+
 #
 # Copyright © 2015 the original authors.
 #

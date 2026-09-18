@@ -118,7 +118,12 @@ func run(helper, kind, ready string, authenticate bool) error {
 	}
 	config.SignedEnvelope = []byte(envelope)
 	loss := newMediaLoss()
-	manager := remotedesktop.New(remotedesktop.Options{MediaInterceptors: []interceptor.Factory{loss}, Identity: remotedesktop.Identity{DaemonID: config.DaemonId, GatewayURL: "http://screens.fixture", Generation: 1, PrivateKey: dk, GatewaySigningPublicKey: pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: publicDER})}, Source: remotedesktop.SourceOptions{ClipboardDirectory: filepath.Join(root, "clipboard"), Kind: kind, HelperPath: helper, ClipboardName: "com.dbpprt.dieter.fixture." + fmt.Sprint(os.Getpid())}})
+	if authenticate {
+		if err := os.Setenv("DIETER_TEST_CAPTURE_RECOVERY_DIAGNOSTICS", "1"); err != nil {
+			return err
+		}
+	}
+	manager := remotedesktop.New(remotedesktop.Options{MediaInterceptors: []interceptor.Factory{loss}, Identity: remotedesktop.Identity{DaemonID: config.DaemonId, GatewayURL: "http://screens.fixture", Generation: 1, PrivateKey: dk, GatewaySigningPublicKey: pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: publicDER})}, Source: remotedesktop.SourceOptions{Logger: slog.Default(), ClipboardDirectory: filepath.Join(root, "clipboard"), Kind: kind, HelperPath: helper, ClipboardName: "com.dbpprt.dieter.fixture." + fmt.Sprint(os.Getpid())}})
 	defer manager.Shutdown(context.Background())
 	api := server.NewWithOptions(data, slog.Default(), server.Options{RemoteDesktop: manager})
 	listener, err := net.Listen("tcp4", "127.0.0.1:0")

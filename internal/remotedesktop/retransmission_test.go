@@ -1,12 +1,74 @@
 package remotedesktop
 
 import (
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/pion/interceptor"
 	"github.com/pion/rtp"
+	"github.com/pion/webrtc/v4"
 )
+
+func TestRepairCannotCrossDisplayGenerationOrResurrectExpiredChain(t *testing.T) {
+	var generation atomic.Uint64
+	generation.Store(1)
+	var refresh atomic.Int32
+	repaired := make(chan uint16, 4)
+	v, err := (retransmissionFactory{generation: generation.Load, refresh: func() { refresh.Add(1) }}).NewInterceptor("test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := v.(*retransmissionInterceptor)
+	defer r.Close()
+	w := r.BindLocalStream(&interceptor.StreamInfo{SSRC: 1}, interceptor.RTPWriterFunc(func(h *rtp.Header, p []byte, a interceptor.Attributes) (int, error) {
+		if _, ok := a[repairGenerationAttribute]; ok {
+			repaired <- h.SequenceNumber
+		}
+		return len(p), nil
+	}))
+	write := func(sequence uint16) {
+		t.Helper()
+		if _, err := w.Write(&rtp.Header{Version: 2, SSRC: 1, SequenceNumber: sequence}, []byte{1}, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(65534)
+	generation.Store(2)
+	write(65535)
+	write(0)
+	r.requests <- retransmissionKey{1, 65534}
+	r.requests <- retransmissionKey{1, 0}
+	select {
+	case sequence := <-repaired:
+		if sequence != 0 || refresh.Load() != 0 {
+			t.Fatal("old generation triggered repair or refresh")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("new generation repair missing at sequence wrap")
+	}
+	// The same generation may emit more than half a sequence space. Its
+	// initial-boundary guard must not reject legitimate wrapped requests.
+	r.mu.Lock()
+	r.streams[1].written = 32768
+	r.mu.Unlock()
+	write(40000)
+	r.requests <- retransmissionKey{1, 40000}
+	select {
+	case sequence := <-repaired:
+		if sequence != 40000 {
+			t.Fatal(sequence)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("long-running generation lost repairs")
+	}
+	p := newPacketPacer(1000000)
+	defer p.Close()
+	p.mediaGeneration.Store(2)
+	if _, err := p.Write(&rtp.Header{SSRC: 1}, []byte{1}, interceptor.Attributes{repairGenerationAttribute: uint64(1)}); err != errRepairObsolete {
+		t.Fatal("pacer accepted obsolete repair", err)
+	}
+}
 
 func TestExpiredProbePaddingDoesNotRequestKeyframe(t *testing.T) {
 	refresh := make(chan struct{}, 2)
@@ -36,6 +98,75 @@ func TestExpiredProbePaddingDoesNotRequestKeyframe(t *testing.T) {
 	case <-refresh:
 	case <-time.After(time.Second):
 		t.Fatal("lost video did not request a keyframe")
+	}
+}
+
+func TestRepairHistoryBoundsBytesAcrossStreamsAndRetainsHighRateWindow(t *testing.T) {
+	r := &retransmissionInterceptor{streams: make(map[uint32]*retransmissionStream)}
+	now := time.Now()
+	for ssrc := uint32(1); ssrc <= 4; ssrc++ {
+		stream := &retransmissionStream{}
+		r.streams[ssrc] = stream
+		for sequence := 0; sequence < 1200; sequence++ {
+			r.retain(stream, &cachedRTP{header: rtp.Header{Version: 2, SSRC: ssrc, SequenceNumber: uint16(sequence)}, payload: make([]byte, 1200), stored: now})
+			if r.bytes > retransmissionBytes || r.history.Len() > retransmissionPackets {
+				t.Fatal("history exceeded the session-wide bound")
+			}
+		}
+	}
+	if r.streams[4].packets[0] == nil {
+		t.Fatal("high-rate history still limited to 512 packets")
+	}
+	r.UnbindLocalStream(&interceptor.StreamInfo{SSRC: 4})
+	for e := r.history.Front(); e != nil; e = e.Next() {
+		if e.Value.(*cachedRTP).header.SSRC == 4 {
+			t.Fatal("unbound stream retained payload")
+		}
+	}
+	stream := r.streams[1]
+	r.retain(stream, &cachedRTP{header: rtp.Header{Version: 2, SSRC: 1, SequenceNumber: 65535}, payload: []byte{1}, stored: now.Add(time.Second)})
+	if r.history.Len() != 1 {
+		t.Fatal("expired payload retained")
+	}
+	r.retain(stream, &cachedRTP{header: rtp.Header{Version: 2, SSRC: 1, SequenceNumber: 0}, payload: []byte{2}, stored: now.Add(time.Second)})
+	if r.history.Len() != 2 || stream.packets[0].payload[0] != 2 {
+		t.Fatal("sequence wrap corrupted history")
+	}
+}
+
+func TestPacerDoesNotTransmitRepairAfterQueueDeadline(t *testing.T) {
+	p := newPacketPacer(100000)
+	defer p.Close()
+	p.next = time.Now().Add(time.Second)
+	wrote := false
+	writer := interceptor.RTPWriterFunc(func(_ *rtp.Header, _ []byte, _ interceptor.Attributes) (int, error) { wrote = true; return 1, nil })
+	_, err := p.writePacket(&rtp.Header{Version: 2}, []byte{1}, interceptor.Attributes{repairDeadlineAttribute: time.Now().Add(10 * time.Millisecond)}, writer)
+	if err != errRepairExpired || wrote {
+		t.Fatalf("obsolete repair transmitted: %v, %v", err, wrote)
+	}
+}
+
+func TestRecoveryRTTUsesFreshNominatedConsentOnly(t *testing.T) {
+	now := time.Now()
+	timestamp := func(at time.Time) webrtc.StatsTimestamp {
+		return webrtc.StatsTimestamp(float64(at.UnixNano()) / float64(time.Millisecond))
+	}
+	pair := webrtc.ICECandidatePairStats{Nominated: true, State: webrtc.StatsICECandidatePairStateSucceeded, CurrentRoundTripTime: .004, LastResponseTimestamp: timestamp(now.Add(-time.Millisecond))}
+	rtt, at := recoveryRTTFromStats(now, webrtc.StatsReport{"pair": pair})
+	if rtt != 4*time.Millisecond || at.IsZero() {
+		t.Fatal("valid consent ignored")
+	}
+	pair.LastResponseTimestamp = timestamp(now.Add(-3 * time.Second))
+	if rtt, _ := recoveryRTTFromStats(now, webrtc.StatsReport{"pair": pair}); rtt != 0 {
+		t.Fatal("stale consent refreshed RTT")
+	}
+	pair.LastResponseTimestamp = timestamp(now.Add(time.Second))
+	if rtt, _ := recoveryRTTFromStats(now, webrtc.StatsReport{"pair": pair}); rtt != 0 {
+		t.Fatal("future consent accepted")
+	}
+	pair.LastResponseTimestamp, pair.Nominated = timestamp(now), false
+	if rtt, _ := recoveryRTTFromStats(now, webrtc.StatsReport{"pair": pair}); rtt != 0 {
+		t.Fatal("unused route affected repair")
 	}
 }
 

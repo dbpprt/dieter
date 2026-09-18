@@ -20,9 +20,12 @@ internal class ScreenReferenceReceiver(
     fun decoded(timestampNs: Long) = synchronized(lock) {
         if (!active) return@synchronized
         val now = clock()
+        val rtp = (timestampNs / 1_000_000L * 90L) and 0xffff_ffffL
         decoded.removeAll { now - it.second >= 2_000 }
-        if (decoded.size >= 128) decoded.removeFirst()
-        decoded.addLast(((timestampNs / 1_000_000L * 90L) and 0xffff_ffffL) to now)
+        if (decoded.none { it.first == rtp }) {
+            if (decoded.size >= 128) decoded.removeFirst()
+            decoded.addLast(rtp to now)
+        }
         deliver(now)
     }
     fun expect(value: RemoteDesktopReference) = synchronized(lock) {

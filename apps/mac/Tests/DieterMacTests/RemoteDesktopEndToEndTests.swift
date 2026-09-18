@@ -18,7 +18,8 @@ private struct ScreenFixtureConnection: Decodable {
     var token: String
 }
 
-@Test @MainActor func remoteDesktopNativeEndToEnd() async throws {
+@Test(.enabled(if: ProcessInfo.processInfo.environment["DIETER_TEST_SCREEN_FIXTURE"] != nil && ProcessInfo.processInfo.environment["DIETER_TEST_CAPTURE_HELPER"] != nil, "Requires the disposable native screen fixture"))
+@MainActor func remoteDesktopNativeEndToEnd() async throws {
     let environment = ProcessInfo.processInfo.environment
     guard let executable = environment["DIETER_TEST_SCREEN_FIXTURE"],
         let helper = environment["DIETER_TEST_CAPTURE_HELPER"]
@@ -82,6 +83,11 @@ private struct ScreenFixtureConnection: Decodable {
             ?? 0
     }
     let controller = RemoteDesktopController()
+    defer {
+        if !controller.renderer.renderTrace.isEmpty {
+            try? JSONEncoder().encode(controller.renderer.renderTrace).write(to: output.appending(path: "render-trace.json"))
+        }
+    }
     controller.codecPreference = environment["DIETER_TEST_SCREEN_CODEC"] == "hevc" ? .hevc : .h264
     let requestedFPS = Int32(environment["DIETER_TEST_SCREEN_FPS"] ?? "60") ?? 60
     controller.preferredMaxFPS = requestedFPS
@@ -311,7 +317,8 @@ private struct ScreenFixtureConnection: Decodable {
         )
         let report: [String: Any] = [
             "measurement": "same-host synthetic capture and input to actual Metal presentation",
-            "requestedFps": requestedFPS, "captureSamples": sortedAges.count,
+            "requestedFps": requestedFPS, "achievedFps": presentedFPS, "captureSamples": sortedAges.count,
+            "width": controller.sessionState.width, "height": controller.sessionState.height,
             "codec": controller.sessionState.codec, "presentationMode": controller.renderer.presentationMode.rawValue,
             "fastBitrate": environment["DIETER_SCREEN_FAST_BITRATE"] != "0",
             "latePresentations": controller.renderer.latePresentations,
@@ -321,6 +328,9 @@ private struct ScreenFixtureConnection: Decodable {
             "encodeMs": controller.sessionState.encodeMs, "sendMs": controller.sessionState.sendMs,
             "jitterBufferMs": controller.sessionState.jitterBufferMs,
             "renderMs": controller.sessionState.renderMs,
+            "schemaVersion": 1, "presentationEndpoint": "metal-presented-time",
+            "maxUnpresented": controller.renderer.maxUnpresented,
+            "presentationTimeouts": controller.renderer.presentationTimeouts,
         ]
         try JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys]).write(
             to: output.appending(path: "latency.json"))
@@ -373,9 +383,15 @@ private struct ScreenFixtureConnection: Decodable {
         }.sorted()
         let responseReport: [String: Any] = [
             "measurement": "owned app input to actual Metal presentation", "samples": responses.count,
+            "inputSamples": responses.count, "inputMedianMs": responses[responses.count / 2],
+            "inputP95Ms": responses[responses.count * 95 / 100], "requestedFps": requestedFPS,
+            "width": controller.sessionState.width, "height": controller.sessionState.height,
             "codec": controller.sessionState.codec, "presentationMode": controller.renderer.presentationMode.rawValue,
             "fastBitrate": environment["DIETER_SCREEN_FAST_BITRATE"] != "0",
             "medianMs": responses[responses.count / 2], "p95Ms": responses[responses.count * 95 / 100],
+            "schemaVersion": 1, "presentationEndpoint": "metal-presented-time",
+            "maxUnpresented": controller.renderer.maxUnpresented,
+            "presentationTimeouts": controller.renderer.presentationTimeouts,
         ]
         print("Owned app input → actual Metal presentation: \(responseReport)")
         try JSONSerialization.data(withJSONObject: responseReport, options: [.prettyPrinted, .sortedKeys]).write(
@@ -718,7 +734,8 @@ private final class ScreenFrameReadiness: @unchecked Sendable {
 
 // Companion for the emulator fixture: it stays connected while Android changes
 // quality, transfers control, expires its own session, and reconnects repeatedly.
-@Test @MainActor func remoteDesktopAndroidCompanion() async throws {
+@Test(.enabled(if: ProcessInfo.processInfo.environment["DIETER_TEST_SCREEN_COMPANION"] != nil, "Requires the concurrent Android fixture"))
+@MainActor func remoteDesktopAndroidCompanion() async throws {
     let environment = ProcessInfo.processInfo.environment
     guard let path = environment["DIETER_TEST_SCREEN_COMPANION"] else { return }
     let root = URL(fileURLWithPath: path).deletingLastPathComponent()
@@ -814,12 +831,13 @@ private final class ScreenFrameReadiness: @unchecked Sendable {
         waiting = nil
     }
     defer { controller.renderer.onPresentationTiming = previous }
-    for index in 0..<24 {
+    let count = max(24, min(1000, Int(ProcessInfo.processInfo.environment["DIETER_TEST_SCREEN_INPUT_SAMPLES"] ?? "24") ?? 24))
+    for index in 0..<count {
         waiting = (index % 2 != 0, CACurrentMediaTime())
         send(index % 2 != 0)
         try await screenWait("input changed presented pixels", timeout: 3) { waiting == nil }
     }
-    #expect(samples.count == 24)
+    #expect(samples.count == count)
     #expect(samples.allSatisfy { $0 >= 0 && $0 < 500 }, "Input response must not build a stale queue")
     return samples
 }
@@ -829,7 +847,8 @@ private final class ScreenFrameReadiness: @unchecked Sendable {
     Thread.sleep(forTimeInterval: 0.25)
 }
 
-@Test @MainActor func remoteDesktopUndockedEndToEnd() async throws {
+@Test(.enabled(if: ProcessInfo.processInfo.environment["DIETER_TEST_SCREEN_FIXTURE"] != nil && ProcessInfo.processInfo.environment["DIETER_TEST_CAPTURE_HELPER"] != nil, "Requires the disposable native screen fixture"))
+@MainActor func remoteDesktopUndockedEndToEnd() async throws {
     let env = ProcessInfo.processInfo.environment
     guard let executable = env["DIETER_TEST_SCREEN_FIXTURE"], let helper = env["DIETER_TEST_CAPTURE_HELPER"] else {
         return

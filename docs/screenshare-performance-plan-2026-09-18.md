@@ -2,6 +2,10 @@
 
 Date: 18 September 2026. Status: planned; no runtime changes are made by this document.
 
+Implementation progress, measured rejected candidates, passing fixtures and
+remaining gates are tracked in the [implementation evidence](screenshare-performance-implementation-2026-09-18.md).
+That report does not mark all P00–P11 qualification gates complete.
+
 Implement the five priorities from the investigation summary end to end, with measured promotion of defaults:
 
 1. **Mac presentation:** remove avoidable decoded-frame/compositor residence.

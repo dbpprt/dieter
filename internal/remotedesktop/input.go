@@ -329,6 +329,7 @@ func (s *Session) receiveFeedback(raw []byte) {
 		return
 	}
 	validStatistics := finiteBound(value.FramesPerSecond, 240) && finiteBound(value.DecodeMs, 10000) && finiteBound(value.JitterMs, 10000) && finiteBound(value.RttMs, 60000) && finiteBound(value.LossFraction, 1) && finiteBound(value.JitterBufferMs, 10000) && finiteBound(value.RenderMs, 10000) && value.JitterBufferMs >= 0 && value.RenderMs >= 0
+	validStatistics = validStatistics && len(value.DecoderImplementation) <= 256 && len(value.DecoderConfigurationReason) <= 256
 	previous := s.feedbackSequence.Load()
 	if value.Sequence <= previous || !s.feedbackSequence.CompareAndSwap(previous, value.Sequence) {
 		return
@@ -367,6 +368,11 @@ func (s *Session) receiveFeedback(raw []byte) {
 			s.status.RttMs = value.RttMs
 			s.status.JitterBufferMs = value.JitterBufferMs
 			s.status.RenderMs = value.RenderMs
+			s.status.RenderMeasurement = value.RenderMeasurement
+			s.status.DecoderImplementation = value.DecoderImplementation
+			s.status.DecoderHardware = value.DecoderHardware
+			s.status.DecoderLowLatencyAccepted = value.DecoderLowLatencyAccepted
+			s.status.DecoderConfigurationReason = value.DecoderConfigurationReason
 		}
 	} else {
 		// The epoch and strictly increasing heartbeat sequence already prove
@@ -383,7 +389,10 @@ func (s *Session) receiveFeedback(raw []byte) {
 	}
 	s.mu.Unlock()
 	if logRejectedStatistics && s.manager != nil && s.manager.options.Logger != nil {
-		s.manager.options.Logger.Warn("remote desktop ignored invalid receiver statistics; heartbeat accepted", "session", s.id, "measurementSequence", value.MeasurementSequence, "measurementAgeMs", value.MeasurementAgeMs)
+		s.manager.options.Logger.Warn("remote desktop ignored invalid receiver statistics; heartbeat accepted", "session", s.id,
+			"measurementSequence", value.MeasurementSequence, "measurementAgeMs", value.MeasurementAgeMs,
+			"fps", value.FramesPerSecond, "decodeMs", value.DecodeMs, "renderMs", value.RenderMs,
+			"jitterMs", value.JitterMs, "jitterBufferMs", value.JitterBufferMs, "rttMs", value.RttMs, "loss", value.LossFraction)
 	}
 	if len(value.DecodedReferences) <= 8 && s.referenceQueue != nil {
 		for _, ack := range value.DecodedReferences {

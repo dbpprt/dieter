@@ -2,6 +2,7 @@ package remotedesktop
 
 import (
 	"math"
+	"os"
 	"time"
 
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
@@ -10,43 +11,60 @@ import (
 // Measurements are consumed once per interval. In particular an idle desktop
 // must not turn one slow keyframe into an unlimited sequence of bad samples.
 type frameMeasurements struct {
-	frames, interFrames, bytes uint64
-	encodeMS, writeMS          float64
+	frames, interFrames, bytes, interBytes uint64
+	encodeMS, writeMS, sendMS              float64
 }
 
 type adaptationSample struct {
-	frames                frameMeasurements
-	feedback              *dieterv1.RemoteDesktopReceiverFeedback
-	feedbackAt            time.Time
-	budget, width, height int
-	drops                 uint64
-	elapsed               time.Duration
-	networkPressure       bool
-	confirmedBudget       int
+	frames                                    frameMeasurements
+	feedback                                  *dieterv1.RemoteDesktopReceiverFeedback
+	feedbackAt                                time.Time
+	budget, width, height                     int
+	drops                                     uint64
+	elapsed                                   time.Duration
+	networkPressure                           bool
+	confirmedBudget                           int
+	changedFraction                           *float64
+	contentAt                                 time.Time
+	contentSequence, generation, inputOrdinal uint64
 }
 
 // Keep the redraw pending across the probe cooldown, even after the encoder
 // reaches its bitrate ceiling and no longer qualifies as degraded.
 type idleRefreshController struct {
-	last    time.Time
-	pending bool
+	last     time.Time
+	pending  bool
+	attempts int
 }
 
 func (c *idleRefreshController) configured(before, after StreamConfiguration, idle bool) {
 	if idle && after.BitrateKbps > before.BitrateKbps {
 		c.pending = true
+		c.attempts = 0
 	}
 }
 
 func (c *idleRefreshController) due(now time.Time, idle, healthy, belowBudget bool) bool {
+	if !idle {
+		c.attempts = 0
+		c.pending = false
+		return false
+	}
+	if !c.pending && c.attempts >= 2 {
+		return false
+	}
 	if !idle || !healthy || (!c.pending && !belowBudget) || now.Sub(c.last) < 3*time.Second {
 		return false
 	}
 	c.last, c.pending = now, false
+	c.attempts++
 	return true
 }
 
 type qualityController struct {
+	content                                             contentController
+	contentEnabled                                      bool
+	bitsPerPixel                                        float64
 	started, lastActive, lastFPS, lastSize, lastBitrate time.Time
 	downSince, upSince, smallerSince, largerSince       time.Time
 	feedbackSequence                                    uint64
@@ -56,7 +74,7 @@ type qualityController struct {
 }
 
 func newQualityController(now time.Time) *qualityController {
-	return &qualityController{started: now, lastFPS: now, lastSize: now, lastBitrate: now}
+	return &qualityController{started: now, lastFPS: now, lastSize: now, lastBitrate: now, contentEnabled: os.Getenv("DIETER_SCREEN_CONTENT_ADAPTATION") == "1"}
 }
 
 func smooth(previous, value, weight float64) float64 {
@@ -108,6 +126,7 @@ func fitVideo(width, height int, aspect float64) (int, int) {
 // rules cannot alternately raise and lower the frame rate.
 func (c *qualityController) next(now time.Time, current StreamConfiguration, limits *dieterv1.RemoteDesktopStreamConfiguration, sample adaptationSample) (StreamConfiguration, string) {
 	desired := current
+	contentClass := c.content.observe(now, sample)
 	sequence := sample.feedback.GetMeasurementSequence()
 	if sequence == 0 {
 		sequence = sample.feedback.GetSequence()
@@ -169,7 +188,9 @@ func (c *qualityController) next(now time.Time, current StreamConfiguration, lim
 	}
 	c.budget = smooth(c.budget, budget, weight)
 	c.encodeMS = smooth(c.encodeMS, sample.frames.encodeMS/float64(sample.frames.interFrames), .25)
-	c.writeMS = smooth(c.writeMS, sample.frames.writeMS/float64(sample.frames.interFrames), .25)
+	// Sending includes pacing because the one-credit pipeline serializes it
+	// behind encode. Never confuse a fast socket write with a fast frame drain.
+	c.writeMS = smooth(c.writeMS, max(sample.frames.writeMS, sample.frames.sendMS)/float64(sample.frames.interFrames), .25)
 	if freshFeedback && sample.feedback.DecodeMs > 0 && sample.feedback.FramesPerSecond > 0 {
 		c.decodeMS = smooth(c.decodeMS, sample.feedback.DecodeMs, .25)
 	}
@@ -177,15 +198,18 @@ func (c *qualityController) next(now time.Time, current StreamConfiguration, lim
 	if freshFeedback {
 		loss = max(0, sample.feedback.LossFraction)
 	}
-	// Pacing is not socket congestion. Only actual downstream writes contribute
-	// to writeMS; jitter-buffer residence time is deliberately not used here.
-	costMS := max(c.encodeMS, c.writeMS)
+	// This is pipeline capacity, not congestion evidence. TWCC/loss still owns
+	// network-pressure decisions. Conservative when overlap is enabled.
+	costMS := c.encodeMS + c.writeMS
 	if freshFeedback && sample.feedback.DecodeMs > 0 && sample.feedback.FramesPerSecond > 0 {
 		costMS = max(costMS, c.decodeMS)
 	}
 	ceiling := int(limits.MaxFps)
 	minFPS := min(15, ceiling)
 	motion := limits.Quality == dieterv1.RemoteDesktopQuality_REMOTE_DESKTOP_QUALITY_MOTION
+	if c.contentEnabled && limits.Quality == dieterv1.RemoteDesktopQuality_REMOTE_DESKTOP_QUALITY_AUTO && contentClass == "motion" {
+		motion = true
+	}
 	if limits.Quality == dieterv1.RemoteDesktopQuality_REMOTE_DESKTOP_QUALITY_DETAIL {
 		ceiling, minFPS = min(30, ceiling), min(10, ceiling)
 	} else if limits.Quality == dieterv1.RemoteDesktopQuality_REMOTE_DESKTOP_QUALITY_MOTION {
@@ -199,7 +223,14 @@ func (c *qualityController) next(now time.Time, current StreamConfiguration, lim
 	if sample.width > 0 && sample.height > 0 {
 		w, h = sample.width, sample.height
 	}
-	const bitsPerPixel = .055
+	bitsPerPixel := .055
+	if c.contentEnabled && sample.frames.interBytes > 0 && sample.frames.interFrames >= 3 && !sample.networkPressure && loss < .02 {
+		observed := float64(sample.frames.interBytes*8) / float64(w*h) / float64(sample.frames.interFrames)
+		c.bitsPerPixel = smooth(c.bitsPerPixel, min(.2, max(.012, observed)), .2)
+	}
+	if c.contentEnabled && c.bitsPerPixel > 0 {
+		bitsPerPixel = c.bitsPerPixel
+	}
 	perFPS := float64(w*h) * bitsPerPixel / 1000
 	mediaKbps := float64(sample.frames.bytes*8) / max(.1, sample.elapsed.Seconds()) / 1000
 	// A low estimate alone is not evidence that a mostly static screen needs

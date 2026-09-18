@@ -92,7 +92,11 @@ func (f *lossInterceptor) BindLocalStream(info *interceptor.StreamInfo, writer i
 					l.held = &heldMedia{header: h.Clone(), payload: append([]byte(nil), p...), writer: writer, attributes: a}
 					hold = true
 					held := l.held
-					held.timer = time.AfterFunc(4*time.Millisecond, func() {
+					// Parity is paced after media. Four milliseconds can expire
+					// before a repair packet is serialized on a reduced bitrate,
+					// making a real protected packet impossible to select. Bound
+					// this one fixture-only packet by the repair-history horizon.
+					held.timer = time.AfterFunc(250*time.Millisecond, func() {
 						l.mu.Lock()
 						valid := l.held == held
 						if valid {

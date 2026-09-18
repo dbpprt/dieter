@@ -4,6 +4,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
+import com.dbpprt.dieter.DieterApplication
 
 /** Keeps the launcher's activity alias (and therefore its icon) aligned with the selected palette. */
 object DieterLauncherIcon {
@@ -23,7 +24,9 @@ object DieterLauncherIcon {
         val manager = appContext.packageManager
         val componentStates = aliases.map { (palette, alias) ->
             Pair(
-                ComponentName(appContext.packageName, "${appContext.packageName}.$alias"),
+                // A build-type applicationIdSuffix changes the installed package,
+                // but relative manifest aliases keep the code namespace.
+                ComponentName(appContext, "${DieterApplication::class.java.packageName}.$alias"),
                 if (palette == selected) {
                     PackageManager.COMPONENT_ENABLED_STATE_ENABLED
                 } else {

@@ -1,5 +1,6 @@
 import com.google.protobuf.gradle.id
 import com.google.protobuf.gradle.proto
+import java.security.MessageDigest
 
 plugins {
     alias(libs.plugins.android.application)
@@ -47,11 +48,22 @@ android {
     }
 
     buildTypes {
+        create("screenFixture") {
+            initWith(getByName("debug"))
+            applicationIdSuffix = ".screenfixture"
+            matchingFallbacks += listOf("debug")
+        }
         getByName("release") {
             if (releaseSigningConfigured) {
                 signingConfig = signingConfigs.getByName("release")
             }
         }
+    }
+
+    // Physical screen tests install a distinct application. Production/debug
+    // credentials and the operator's installed Dieter app are never replaced.
+    testBuildType = providers.gradleProperty("dieter.screenTestBuildType").orElse("debug").get().also {
+        require(it == "debug" || it == "screenFixture") { "Unsupported screen test build type" }
     }
 
     buildFeatures {
@@ -117,7 +129,6 @@ protobuf {
 }
 
 dependencies {
-    implementation(libs.webrtc)
     implementation(libs.bouncycastle)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
@@ -153,4 +164,57 @@ dependencies {
     androidTestImplementation(libs.espresso.core)
     androidTestImplementation(libs.compose.ui.test.junit4)
     debugImplementation(libs.compose.ui.test.manifest)
+    add("screenFixtureImplementation", libs.compose.ui.test.manifest)
 }
+
+// The adapter uses a package-private injection seam. Pin the exact AAR, so an
+// accidental dependency substitution cannot silently change that contract.
+val screenWebRTCArtifact = configurations.create("screenWebRTCArtifact") { isTransitive = false }
+dependencies.add(screenWebRTCArtifact.name, libs.webrtc)
+val verifyScreenWebRTC = tasks.register("verifyScreenWebRTC") {
+    val expected = "0a1627b1a48c2bc17d9a40d62fc47bd45166f44a311e95917f147c402de379b0"
+    val stamp = layout.buildDirectory.file("screen-webrtc/verified.sha256")
+    inputs.files(screenWebRTCArtifact)
+    inputs.property("sha256", expected)
+    outputs.file(stamp)
+    doLast {
+        val digest = MessageDigest.getInstance("SHA-256")
+        screenWebRTCArtifact.singleFile.inputStream().use { input ->
+            val buffer = ByteArray(65536)
+            while (true) { val count = input.read(buffer); if (count < 0) break; digest.update(buffer, 0, count) }
+        }
+        val actual = digest.digest().joinToString("") { "%02x".format(it) }
+        check(actual == expected) { "WebRTC adapter artifact changed; revalidate its codec and callback contract before updating the pin" }
+        stamp.get().asFile.apply { parentFile.mkdirs(); writeText(actual + "\n") }
+    }
+}
+tasks.named("preBuild") { dependsOn(verifyScreenWebRTC) }
+
+// Build the audited Java surface-output contract around the unchanged native
+// SDK. Every runtime class occurs exactly once in the resulting AAR.
+val screenWebRTCAnnotations = configurations.create("screenWebRTCAnnotations") { isTransitive = false }
+dependencies.add(screenWebRTCAnnotations.name, "androidx.annotation:annotation-jvm:1.10.0")
+val patchedScreenWebRTC = layout.buildDirectory.file("screen-webrtc/dieter-webrtc.aar")
+val buildScreenWebRTC = tasks.register("buildScreenWebRTC") {
+    dependsOn(verifyScreenWebRTC)
+    val source = rootProject.file("../../native/android-webrtc")
+    val compiler = file(System.getProperty("java.home") + "/bin/javac")
+    inputs.dir(source)
+    inputs.files(screenWebRTCArtifact, screenWebRTCAnnotations)
+    inputs.files(androidComponents.sdkComponents.bootClasspath)
+    inputs.file(compiler)
+    inputs.property("javaVersion", System.getProperty("java.version"))
+    outputs.file(patchedScreenWebRTC)
+    outputs.file(layout.buildDirectory.file("screen-webrtc/dieter-webrtc.json"))
+    doLast {
+        val process = ProcessBuilder("python3", source.resolve("build_sdk.py").absolutePath,
+            "--aar", screenWebRTCArtifact.singleFile.absolutePath,
+            "--android-jar", androidComponents.sdkComponents.bootClasspath.get().first().asFile.absolutePath,
+            "--annotation", screenWebRTCAnnotations.singleFile.absolutePath,
+            "--javac", compiler.absolutePath,
+            "--output", patchedScreenWebRTC.get().asFile.absolutePath).inheritIO().start()
+        check(process.waitFor() == 0) { "Failed to build the pinned WebRTC Java extension" }
+    }
+}
+dependencies.add("implementation", files(patchedScreenWebRTC).builtBy(buildScreenWebRTC))
+tasks.named("preBuild") { dependsOn(buildScreenWebRTC) }

@@ -3,7 +3,9 @@ package remotedesktop
 import (
 	"context"
 	"errors"
+	"os"
 	"sync"
+	"time"
 
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
 	"github.com/pion/webrtc/v4/pkg/media"
@@ -216,6 +218,7 @@ func (s *nativeRendition) Stream(ctx context.Context, emit func(media.Sample) er
 			return err
 		}
 	}
+	var previousSend time.Duration
 	for {
 		select {
 		case <-ctx.Done():
@@ -226,10 +229,23 @@ func (s *nativeRendition) Stream(ctx context.Context, emit func(media.Sample) er
 			s.mux.mu.Unlock()
 			return err
 		case sample := <-s.frames:
+			metadata := sample.Metadata.(FrameMetadata)
+			s.mux.mu.Lock()
+			config, root := s.config, s.mux.root
+			s.mux.mu.Unlock()
+			if root != nil && root.overlapSupported.Load() && os.Getenv("DIETER_SCREEN_OVERLAP") == "1" {
+				if budget := overlapBudget(sample, config, previousSend); budget > 0 {
+					if err := s.command(ctx, nativeCommand{Kind: "frame_sending", FrameID: metadata.ID, Generation: metadata.NativeGeneration, OverlapBudgetMS: budget}, true); err != nil {
+						return err
+					}
+				}
+			}
+			startedSend := time.Now()
 			if err := emit(sample); err != nil {
 				return err
 			}
-			if err := s.command(ctx, nativeCommand{Kind: "frame_consumed", FrameID: sample.Metadata.(FrameMetadata).ID}, true); err != nil {
+			previousSend = time.Since(startedSend)
+			if err := s.command(ctx, nativeCommand{Kind: "frame_consumed", FrameID: metadata.ID, Generation: metadata.NativeGeneration}, true); err != nil {
 				return err
 			}
 		}

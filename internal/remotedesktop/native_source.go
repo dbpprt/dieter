@@ -32,6 +32,7 @@ const (
 // FrameMetadata preserves the native monotonic media timeline across idle gaps,
 // raw-frame replacement and encoder reconfiguration. ReceivedAt is Go monotonic.
 type FrameMetadata struct {
+	Overlapped                                    bool // Native encode began while the preceding frame still held its send credit.
 	LTRToken, RecoveryReference, NativeGeneration uint64
 	HasLTR                                        bool
 	ID, Generation                                uint64
@@ -82,6 +83,8 @@ type nativeInputPayload struct {
 }
 
 type nativeCommand struct {
+	OverlapBudgetMS   int                  `json:"overlap_budget_ms,omitempty"`
+	RecoveryWindowMS  int                  `json:"recovery_window_ms,omitempty"`
 	ReferenceRecovery bool                 `json:"reference_recovery,omitempty"`
 	Generation        uint64               `json:"generation,omitempty"`
 	LTRToken          uint64               `json:"ltr_token"`
@@ -97,19 +100,29 @@ type nativeCommand struct {
 }
 
 type SourceEvent struct {
+	Content  *nativeContent
 	StreamID uint64
 	Err      error
 	Cursor   *dieterv1.RemoteDesktopCursor
 	State    *dieterv1.RemoteDesktopSessionState
 }
 
+type nativeContent struct {
+	Generation      uint64  `json:"generation"`
+	Sequence        uint64  `json:"sequence"`
+	Samples         uint32  `json:"samples"`
+	ChangedFraction float64 `json:"changed_fraction"`
+}
+
 type nativeEvent struct {
-	StreamID uint64                              `json:"stream_id"`
-	Version  int                                 `json:"version"`
-	Ack      uint64                              `json:"ack"`
-	Error    string                              `json:"error"`
-	Cursor   *dieterv1.RemoteDesktopCursor       `json:"cursor"`
-	State    *dieterv1.RemoteDesktopSessionState `json:"state"`
+	Content               *nativeContent                      `json:"content"`
+	FrameOverlapSupported bool                                `json:"frame_overlap_supported"`
+	StreamID              uint64                              `json:"stream_id"`
+	Version               int                                 `json:"version"`
+	Ack                   uint64                              `json:"ack"`
+	Error                 string                              `json:"error"`
+	Cursor                *dieterv1.RemoteDesktopCursor       `json:"cursor"`
+	State                 *dieterv1.RemoteDesktopSessionState `json:"state"`
 }
 
 type nativeWrite struct {
@@ -118,6 +131,7 @@ type nativeWrite struct {
 }
 
 type nativeHelperSource struct {
+	overlapSupported                        atomic.Bool
 	path, display, profile                  string
 	codec                                   VideoCodec
 	fps, bitrateKbps, maxWidth, maxHeight   int
@@ -427,6 +441,9 @@ func (s *nativeHelperSource) Stream(ctx context.Context, emit func(media.Sample)
 				return
 			}
 			liveness.acknowledge(event.Ack, s.sequence.Load(), time.Now())
+			if event.FrameOverlapSupported {
+				s.overlapSupported.Store(true)
+			}
 			s.mu.Lock()
 			done := s.pending[event.Ack]
 			s.mu.Unlock()
@@ -440,8 +457,8 @@ func (s *nativeHelperSource) Stream(ctx context.Context, emit func(media.Sample)
 				default:
 				}
 			}
-			if event.State != nil || event.Cursor != nil || (event.Ack == 0 && event.Error != "") {
-				value := SourceEvent{Cursor: event.Cursor, State: event.State, StreamID: event.StreamID}
+			if event.State != nil || event.Cursor != nil || event.Content != nil || (event.Ack == 0 && event.Error != "") {
+				value := SourceEvent{Cursor: event.Cursor, State: event.State, Content: event.Content, StreamID: event.StreamID}
 				if event.Ack == 0 && event.Error != "" {
 					value.Err = errors.New(event.Error)
 				}
@@ -499,6 +516,7 @@ func (s *nativeHelperSource) Stream(ctx context.Context, emit func(media.Sample)
 	// Return the single encoder credit only after the whole access unit has
 	// passed transport pacing. The helper keeps the latest raw surface, so no
 	// encoded reference frame is replaced and congestion cannot trigger IDR storms.
+	var previousSend time.Duration
 	for {
 		var streamID uint64
 		if s.multiplex {
@@ -519,14 +537,26 @@ func (s *nativeHelperSource) Stream(ctx context.Context, emit func(media.Sample)
 			meta.StreamID = streamID
 			sample.Metadata = meta
 		}
+		metadata := sample.Metadata.(FrameMetadata)
+		if !s.multiplex && s.overlapSupported.Load() && os.Getenv("DIETER_SCREEN_OVERLAP") == "1" {
+			s.mu.Lock()
+			config = s.currentConfigurationLocked()
+			s.mu.Unlock()
+			if budget := overlapBudget(sample, config, previousSend); budget > 0 {
+				if err = s.send(processCtx, nativeCommand{Kind: "frame_sending", FrameID: metadata.ID, Generation: metadata.NativeGeneration, OverlapBudgetMS: budget}, true); err != nil {
+					return err
+				}
+			}
+		}
+		startedSend := time.Now()
 		if err = emit(sample); err != nil {
 			return err
 		}
+		previousSend = time.Since(startedSend)
 		if s.multiplex {
 			continue
 		}
-		metadata := sample.Metadata.(FrameMetadata)
-		if err = s.send(processCtx, nativeCommand{Kind: "frame_consumed", FrameID: metadata.ID}, true); err != nil {
+		if err = s.send(processCtx, nativeCommand{Kind: "frame_consumed", FrameID: metadata.ID, Generation: metadata.NativeGeneration}, true); err != nil {
 			if ctx.Err() != nil {
 				return nil
 			}
@@ -547,6 +577,7 @@ func readNativeCaptureSample(reader io.Reader, fps int) (media.Sample, int64, ti
 	m := FrameMetadata{KeyFrame: binary.BigEndian.Uint32(header[4:8])&1 != 0, ID: binary.BigEndian.Uint64(header[8:16]), Generation: binary.BigEndian.Uint64(header[16:24]), PTS: time.Duration(binary.BigEndian.Uint64(header[24:32])), EncodeTime: time.Duration(binary.BigEndian.Uint64(header[32:40])), CaptureDelay: time.Duration(binary.BigEndian.Uint64(header[40:48])), Width: int(binary.BigEndian.Uint32(header[48:52])), Height: int(binary.BigEndian.Uint32(header[52:56])), Dropped: binary.BigEndian.Uint64(header[56:64]), ReceivedAt: time.Now()}
 	m.NativeGeneration = m.Generation
 	flags := binary.BigEndian.Uint32(header[4:8])
+	m.Overlapped = flags&8 != 0 // Additive flag; older readers ignore it without changing frame layout.
 	if flags&2 != 0 {
 		var value uint64
 		if err := binary.Read(reader, binary.BigEndian, &value); err != nil {

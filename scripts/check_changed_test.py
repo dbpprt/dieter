@@ -20,8 +20,15 @@ class CheckChangedTests(unittest.TestCase):
     def test_android_screen_changes_run_native_emulator_integration(self):
         for path in ("apps/android/app/src/main/java/com/dbpprt/dieter/screens/ScreenController.kt",
                      "apps/android/app/src/main/java/com/dbpprt/dieter/ui/ScreensScreen.kt",
-                     "scripts/test-android-screens.sh", "scripts/screens-fixture/main.go"):
+                     "scripts/test-android-screens.sh", "scripts/screens-fixture/main.go",
+                     "scripts/test-android-screens-device.sh",
+                     "native/android-webrtc/java/org/webrtc/AndroidVideoDecoder.java",
+                     "apps/android/app/src/main/java/org/webrtc/DieterLowLatencyDecoderFactory.java"):
             self.assertIn(["just", "android", "screens-test"], self.plan(path))
+
+    def test_android_sdk_patch_runs_android_without_mac_or_go_checks(self):
+        self.assertEqual(self.plan("native/android-webrtc/build_sdk.py"),
+                         [["just", "android", "test"], ["just", "android", "connected-test"], ["just", "android", "screens-test"]])
 
     def test_no_changes_or_docs_need_no_checks(self):
         self.assertEqual(self.plan(), [])

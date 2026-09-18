@@ -45,6 +45,51 @@ func TestNativeHelperBaselineUsesLowLatencyHardware(t *testing.T) {
 	}
 }
 
+func TestNativeNegotiatedOverlapAndLegacySingleCredit(t *testing.T) {
+	path := os.Getenv("DIETER_TEST_CAPTURE_HELPER")
+	if path == "" {
+		t.Skip("native helper not configured")
+	}
+	for _, enabled := range []string{"0", "1"} {
+		t.Run(enabled, func(t *testing.T) {
+			t.Setenv("DIETER_SCREEN_OVERLAP", enabled)
+			// Retain a send credit across the next 60 Hz capture, with bounded
+			// fixture delay. Metadata proves a real hardware encode overlapped.
+			t.Setenv("DIETER_TEST_CAPTURE_CREDIT_DELAY_MS", "24")
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			source, err := NewFrameSource(SourceOptions{Kind: "native-synthetic", HelperPath: path, Profile: "high", FPS: 60, MaxWidth: 1280, MaxHeight: 720, Bitrate: 12000})
+			if err != nil {
+				t.Fatal(err)
+			}
+			complete := errors.New("overlap verified")
+			frames, overlapped := 0, 0
+			var previous uint64
+			err = source.Stream(ctx, func(sample media.Sample) error {
+				metadata := sample.Metadata.(FrameMetadata)
+				if metadata.ID <= previous {
+					t.Error("encoded reference order changed")
+				}
+				previous = metadata.ID
+				if metadata.Overlapped {
+					overlapped++
+				}
+				frames++
+				if frames == 24 {
+					return complete
+				}
+				return nil
+			})
+			if !errors.Is(err, complete) {
+				t.Fatalf("overlap capture failed: %v", err)
+			}
+			if (overlapped > 0) != (enabled == "1") {
+				t.Fatalf("enabled=%s, overlapped=%d", enabled, overlapped)
+			}
+		})
+	}
+}
+
 // Runs the real signed helper and hardware VideoToolbox encoder. Synthetic
 // pixels and dry-run injection keep this test independent of desktop permissions.
 func TestNativeHelperHardwareLifecycle(t *testing.T) {
