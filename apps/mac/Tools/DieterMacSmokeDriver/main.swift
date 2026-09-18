@@ -86,7 +86,14 @@ private final class OwnedProcess {
     private let outputHandle: FileHandle
     private let errorHandle: FileHandle
 
-    init(executable: URL, arguments: [String], output: URL, error: URL, directory: URL? = nil) throws {
+    init(
+        executable: URL,
+        arguments: [String],
+        output: URL,
+        error: URL,
+        directory: URL? = nil,
+        environment: [String: String]? = nil
+    ) throws {
         FileManager.default.createFile(atPath: output.path, contents: nil)
         FileManager.default.createFile(atPath: error.path, contents: nil)
         outputHandle = try FileHandle(forWritingTo: output)
@@ -95,6 +102,7 @@ private final class OwnedProcess {
         process.executableURL = executable
         process.arguments = arguments
         process.currentDirectoryURL = directory
+        process.environment = environment
         process.standardOutput = outputHandle
         process.standardError = errorHandle
         try process.run()
@@ -349,12 +357,23 @@ private final class SmokeRun {
         if options.suite == .terminal {
             arguments += ["--daemon-restart-trigger", output.appendingPathComponent("daemon-restart").path]
         }
+        var gatewayEnvironment = ProcessInfo.processInfo.environment
+        let harnessRuntime = repository.appendingPathComponent("internal/harness/runtime", isDirectory: true)
+        if FileManager.default.fileExists(
+            atPath: harnessRuntime.appendingPathComponent("node_modules", isDirectory: true).path)
+        {
+            // CI installs this pinned runtime before native smoke tests. Reuse
+            // it after the fixture replaces HOME so the first mock turn does
+            // not spend its response timeout installing an identical copy.
+            gatewayEnvironment["DIETER_HARNESS_RUNTIME_DIR"] = harnessRuntime.path
+        }
         gateway = try OwnedProcess(
             executable: gatewayExecutable,
             arguments: arguments,
             output: environmentFile,
             error: gatewayLog,
-            directory: repository
+            directory: repository,
+            environment: gatewayEnvironment
         )
 
         let deadline = Date().addingTimeInterval(45)

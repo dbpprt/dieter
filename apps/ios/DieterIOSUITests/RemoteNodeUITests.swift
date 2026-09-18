@@ -19,11 +19,21 @@ final class RemoteNodeUITests: XCTestCase {
     private func enter(_ app: XCUIApplication, _ identifier: String, _ text: String) {
         let field = element(app, identifier)
         XCTAssertTrue(field.waitForExistence(timeout: 10), "Missing \(identifier)")
-        field.tap()
-        dismissKeyboardIntroduction(app)
+        let keyboard = app.keyboards.firstMatch
+        var activated = false
+        for attempt in 0..<2 {
+            field.tap()
+            dismissKeyboardIntroduction(app)
+            if keyboard.waitForExistence(timeout: 5) {
+                activated = true
+                break
+            }
+            // iPad CI can leave a first native text-field tap unconsumed after
+            // the transcript updates. Retry once while the field is hittable.
+            guard attempt == 0, field.isHittable else { break }
+        }
         XCTAssertTrue(
-            app.keyboards.firstMatch.waitForExistence(timeout: 10),
-            "Tapping \(identifier) should activate text input.\n\(app.debugDescription)")
+            activated, "Tapping \(identifier) should activate text input.\n\(app.debugDescription)")
         field.typeText(text)
         dismissKeyboardIntroduction(app)
     }
