@@ -198,7 +198,7 @@ KillMode=mixed
 UMask=0077
 Environment=` + systemdQuote("DIETER_SERVICE_MANAGER=systemd-user") + `
 Environment=` + systemdQuote("PATH="+pathValue) + `
-EnvironmentFile=-` + systemdQuote(filepath.Join(root, "service.env")) + `
+EnvironmentFile=-` + systemdEscapeWord(filepath.Join(root, "service.env")) + `
 StandardOutput=journal
 StandardError=journal
 
@@ -318,6 +318,22 @@ func systemdQuote(value string) string {
 	value = strings.ReplaceAll(value, "\"", "\\\"")
 	value = strings.ReplaceAll(value, "%", "%%")
 	return "\"" + value + "\""
+}
+
+func systemdEscapeWord(value string) string {
+	const hexadecimal = "0123456789abcdef"
+	var escaped strings.Builder
+	for index := 0; index < len(value); index++ {
+		character := value[index]
+		if character >= 'a' && character <= 'z' || character >= 'A' && character <= 'Z' || character >= '0' && character <= '9' || strings.ContainsRune("/._-", rune(character)) {
+			escaped.WriteByte(character)
+			continue
+		}
+		escaped.WriteString("\\x")
+		escaped.WriteByte(hexadecimal[character>>4])
+		escaped.WriteByte(hexadecimal[character&0x0f])
+	}
+	return escaped.String()
 }
 
 func servicePATH(executableDirectory string) string {

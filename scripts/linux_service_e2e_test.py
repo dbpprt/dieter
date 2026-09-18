@@ -71,6 +71,7 @@ class LinuxServiceEndToEndTest(unittest.TestCase):
                 check=False,
             )
             self.assertEqual(verification.returncode, 0, verification.stdout)
+            self.assertNotIn("EnvironmentFile= path is not absolute", verification.stdout)
 
         with socket.socket() as reservation:
             reservation.bind(("127.0.0.1", 0))
