@@ -153,7 +153,9 @@ final class RemoteDesktopMetalRenderer: NSObject, CAMetalDisplayLinkDelegate, @u
                 pauseDisplayLinkIfIdle()
                 return
             }
-            render(drawable: update.drawable, targetPresentation: update.targetPresentationTimestamp, drawableRequestedAt: CACurrentMediaTime())
+            render(
+                drawable: update.drawable, targetPresentation: update.targetPresentationTimestamp,
+                drawableRequestedAt: CACurrentMediaTime())
         }
     }
     private func completeDraw() {
@@ -182,7 +184,9 @@ final class RemoteDesktopMetalRenderer: NSObject, CAMetalDisplayLinkDelegate, @u
                 let expired = self.presentations.expire(at: CACurrentMediaTime())
                 if expired > 0 {
                     let token = self.mailbox.currentToken
-                    if self.statistics.update(token: token, { $0.presentationTimeouts &+= UInt64(expired) }) { self.wakeUI() }
+                    if self.statistics.update(token: token, { $0.presentationTimeouts &+= UInt64(expired) }) {
+                        self.wakeUI()
+                    }
                     self.wake()
                 }
                 self.schedulePresentationWatchdog()
@@ -262,13 +266,17 @@ final class RemoteDesktopMetalRenderer: NSObject, CAMetalDisplayLinkDelegate, @u
         encoder.setFragmentBytes(&range, length: MemoryLayout<SIMD4<Float>>.size, index: 1)
         encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
         encoder.endEncoding()
-        guard mailbox.isCurrent(token), let submissionID = presentations.begin(token: token, at: CACurrentMediaTime()) else {
+        guard mailbox.isCurrent(token), let submissionID = presentations.begin(token: token, at: CACurrentMediaTime())
+        else {
             completeDraw(); return
         }
         let submission = RemoteDesktopMetalSubmission(frame: frame, textures: retained, token: token)
-        trace.append(RemoteDesktopRenderTraceRecord(submission: submissionID, epoch: token,
-            rtpTimestamp: UInt32(bitPattern: frame.timeStamp), decodedAt: arrivedAt,
-            drawableRequestedAt: drawableRequestedAt, drawableReadyAt: drawableReadyAt, committedAt: CACurrentMediaTime()))
+        trace.append(
+            RemoteDesktopRenderTraceRecord(
+                submission: submissionID, epoch: token,
+                rtpTimestamp: UInt32(bitPattern: frame.timeStamp), decodedAt: arrivedAt,
+                drawableRequestedAt: drawableRequestedAt, drawableReadyAt: drawableReadyAt,
+                committedAt: CACurrentMediaTime()))
         drawable.addPresentedHandler { [weak self, submission] drawable in
             guard let self else { return }
             let presentedAt = drawable.presentedTime

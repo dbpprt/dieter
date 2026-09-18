@@ -8,11 +8,19 @@ import Testing
 
 // No window, input injection, screen capture, operator app or live daemon. This
 // proves the pinned native SDK's HEVC RTP receive path against the real Go server.
-@Test(.enabled(if: ProcessInfo.processInfo.environment["DIETER_TEST_SCREEN_FIXTURE"] != nil && ProcessInfo.processInfo.environment["DIETER_TEST_CAPTURE_HELPER"] != nil, "Requires the disposable native screen fixture"))
+@Test(
+    .enabled(
+        if: ProcessInfo.processInfo.environment["DIETER_TEST_SCREEN_FIXTURE"] != nil
+            && ProcessInfo.processInfo.environment["DIETER_TEST_CAPTURE_HELPER"] != nil,
+        "Requires the disposable native screen fixture"))
 @MainActor func remoteDesktopHEVCAuthenticatedTransport() async throws {
     try await exerciseRecoveryTransport(codec: "H265", mode: "clean")
 }
-@Test(.enabled(if: ProcessInfo.processInfo.environment["DIETER_TEST_SCREEN_RECOVERY"] == "1" && ProcessInfo.processInfo.environment["DIETER_TEST_SCREEN_FIXTURE"] != nil, "Requires the explicit native recovery matrix"))
+@Test(
+    .enabled(
+        if: ProcessInfo.processInfo.environment["DIETER_TEST_SCREEN_RECOVERY"] == "1"
+            && ProcessInfo.processInfo.environment["DIETER_TEST_SCREEN_FIXTURE"] != nil,
+        "Requires the explicit native recovery matrix"))
 @MainActor func remoteDesktopRecoveryAuthenticatedTransport() async throws {
     guard ProcessInfo.processInfo.environment["DIETER_TEST_SCREEN_RECOVERY"] == "1" else { return }
     for codec in (envRecovery("DIETER_TEST_RECOVERY_CODECS") ?? ["H264", "H265"]) {

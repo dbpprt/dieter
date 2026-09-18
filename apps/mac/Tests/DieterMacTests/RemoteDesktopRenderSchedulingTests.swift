@@ -134,8 +134,10 @@ private final class RenderThreadProbe: @unchecked Sendable {
 @Test func remoteDesktopRenderTraceBoundsRecordsAndRejectsLateUpdates() {
     let trace = RemoteDesktopRenderTrace(capacity: 2)
     for id in 1...1000 {
-        trace.append(RemoteDesktopRenderTraceRecord(submission: UInt64(id), epoch: 1, rtpTimestamp: UInt32(id),
-            decodedAt: 1, drawableRequestedAt: 1, drawableReadyAt: 2, committedAt: 3))
+        trace.append(
+            RemoteDesktopRenderTraceRecord(
+                submission: UInt64(id), epoch: 1, rtpTimestamp: UInt32(id),
+                decodedAt: 1, drawableRequestedAt: 1, drawableReadyAt: 2, committedAt: 3))
     }
     trace.update(1) { $0.presentedAt = 99 }
     trace.update(1000) { $0.presentedAt = 4 }
@@ -149,7 +151,7 @@ private final class RenderThreadProbe: @unchecked Sendable {
     cadence.observe(timestamp: 1, at: 1)
     #expect(cadence.budget(at: 1) == 1)
     cadence.observe(timestamp: 2, at: 1.016)
-    cadence.observe(timestamp: 2, at: 1.02) // redraw is not a fresh decoded frame
+    cadence.observe(timestamp: 2, at: 1.02)  // redraw is not a fresh decoded frame
     #expect(cadence.budget(at: 1.02) == 1)
     cadence.observe(timestamp: 3, at: 1.032)
     #expect(cadence.budget(at: 1.033) == 2)
