@@ -104,7 +104,8 @@ final class RemoteNodeUITests: XCTestCase {
             mock.tap()
             let providerChanged = XCTNSPredicateExpectation(
                 predicate: NSPredicate(format: "value == 'Mock'"), object: provider)
-            if XCTWaiter.wait(for: [providerChanged], timeout: 5) == .completed {
+            let providerResult = XCTWaiter.wait(for: [providerChanged], timeout: 5)
+            if providerResult == .completed || provider.value as? String == "Mock" {
                 mockSelected = true
                 break
             }
@@ -123,8 +124,9 @@ final class RemoteNodeUITests: XCTestCase {
             let picker = element(app, identifier)
             let selectedMock = XCTNSPredicateExpectation(
                 predicate: NSPredicate(format: "value == 'Mock'"), object: picker)
-            XCTAssertEqual(
-                XCTWaiter.wait(for: [selectedMock], timeout: 5), .completed,
+            let selectionResult = XCTWaiter.wait(for: [selectedMock], timeout: 5)
+            XCTAssertTrue(
+                selectionResult == .completed || picker.value as? String == "Mock",
                 "\(identifier) should select Mock; label=\(picker.label), value=\(String(describing: picker.value)).\n\(app.debugDescription)"
             )
         }
