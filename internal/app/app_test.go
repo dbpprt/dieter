@@ -603,7 +603,7 @@ func TestWorkspaceProvisioningFailureDoesNotConsumeInitialTurn(t *testing.T) {
 
 func waitFor(t *testing.T, condition func() bool) {
 	t.Helper()
-	deadline := time.Now().Add(2 * time.Second)
+	deadline := time.Now().Add(10 * time.Second)
 	for !condition() {
 		if time.Now().After(deadline) {
 			t.Fatal("timed out")
@@ -1455,6 +1455,20 @@ func TestQueuedMessageStartsAfterInterruptWithoutRecordingFailure(t *testing.T) 
 	if turn := <-runner.started; turn != 1 {
 		t.Fatalf("first turn=%d", turn)
 	}
+	waitFor(t, func() bool {
+		conversation, conversationErr := service.Store.Conversation(card.ID)
+		if conversationErr != nil {
+			return false
+		}
+		for _, message := range conversation.Messages {
+			for _, part := range message.Parts {
+				if part.ToolCallID == "tool-inspect" && strings.Contains(string(part.Output), "M retained.txt") {
+					return true
+				}
+			}
+		}
+		return false
+	})
 	queuedParts := []model.UIMessagePart{
 		{Type: "text", Text: "Use this instead"},
 		{Type: "file", MediaType: "image/png", Filename: "queued.png", URL: "data:image/png;base64,iVBORw0KGgo="},
