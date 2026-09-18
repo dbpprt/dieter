@@ -1705,6 +1705,16 @@
             store: DieterStore, projectID: String, boardID: String, window: NSWindow,
             output: URL, results: inout [String: String]
         ) async {
+            let filePaneWidthKey = "DieterFilesPaneWidth"
+            let previousFilePaneWidth = UserDefaults.standard.object(forKey: filePaneWidthKey) as? Double
+            UserDefaults.standard.set(260.0, forKey: filePaneWidthKey)
+            defer {
+                if let previousFilePaneWidth {
+                    UserDefaults.standard.set(previousFilePaneWidth, forKey: filePaneWidthKey)
+                } else {
+                    UserDefaults.standard.removeObject(forKey: filePaneWidthKey)
+                }
+            }
             guard let rpc = store.rpc else {
                 results["files-editor-lifecycle"] = "failed: no RPC"
                 return
@@ -1805,15 +1815,28 @@
                 results["files-markdown-chart-sizing"] =
                     diagramFits() ? "passed" : "failed: native diagram overflowed the rich editor"
                 capture(window, to: output.appending(path: "04a-markdown-rendered.png"))
-                let originalSize = window.contentView?.bounds.size ?? NSSize(width: 1380, height: 870)
                 let originalEditorWidth = defaultRich?.bounds.width ?? 0
-                window.setContentSize(NSSize(width: originalSize.width - 180, height: originalSize.height))
+                // The CI display can constrain the workspace to its 1,080-point
+                // minimum width, so resizing the window itself may be a no-op.
+                // Widen the real file navigator instead, which deterministically
+                // narrows this editor while exercising its production resize path.
+                UserDefaults.standard.set(440.0, forKey: filePaneWidthKey)
                 let diagramsResized = await waitUntil(timeout: 10) {
                     (defaultRich?.bounds.width ?? originalEditorWidth) < originalEditorWidth - 40 && diagramFits()
                 }
+                let resizedEditorWidth = defaultRich?.bounds.width ?? 0
+                let resizedDiagramWidths = nativeDiagramImages(in: defaultRich).map {
+                    String(format: "%.1f", $0.width)
+                }.joined(separator: ",")
+                let resizeDiagnostics =
+                    "editor " + String(format: "%.1f", originalEditorWidth) + " -> "
+                    + String(format: "%.1f", resizedEditorWidth) + ", diagrams [" + resizedDiagramWidths + "]"
                 results["files-markdown-chart-resize"] =
-                    diagramsResized ? "passed" : "failed: native diagrams did not fit the narrower editor"
-                window.setContentSize(originalSize)
+                    diagramsResized
+                    ? "passed"
+                    : "failed: native diagrams did not fit the narrower editor (" + resizeDiagnostics + ")"
+                capture(window, to: output.appending(path: "04b-markdown-narrow-editor.png"))
+                UserDefaults.standard.set(260.0, forKey: filePaneWidthKey)
                 _ = await waitUntil(timeout: 5) { abs((defaultRich?.bounds.width ?? 0) - originalEditorWidth) < 2 }
 
                 let selectedSource = NativeUIAccessibility.selectSegment(

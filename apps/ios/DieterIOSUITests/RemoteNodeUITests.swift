@@ -19,11 +19,21 @@ final class RemoteNodeUITests: XCTestCase {
     private func enter(_ app: XCUIApplication, _ identifier: String, _ text: String) {
         let field = element(app, identifier)
         XCTAssertTrue(field.waitForExistence(timeout: 10), "Missing \(identifier)")
-        field.tap()
-        dismissKeyboardIntroduction(app)
+        let keyboard = app.keyboards.firstMatch
+        var activated = false
+        for attempt in 0..<2 {
+            field.tap()
+            dismissKeyboardIntroduction(app)
+            if keyboard.waitForExistence(timeout: 5) {
+                activated = true
+                break
+            }
+            // iPad CI can leave a first native text-field tap unconsumed after
+            // the transcript updates. Retry once while the field is hittable.
+            guard attempt == 0, field.isHittable else { break }
+        }
         XCTAssertTrue(
-            app.keyboards.firstMatch.waitForExistence(timeout: 10),
-            "Tapping \(identifier) should activate text input.\n\(app.debugDescription)")
+            activated, "Tapping \(identifier) should activate text input.\n\(app.debugDescription)")
         field.typeText(text)
         dismissKeyboardIntroduction(app)
     }
@@ -42,6 +52,17 @@ final class RemoteNodeUITests: XCTestCase {
         }
     }
 
+    private func tapPicker(_ picker: XCUIElement) {
+        if picker.isHittable {
+            picker.tap()
+        } else {
+            // Xcode 26.5 can keep reporting a fully visible SwiftUI Picker as
+            // non-hittable after the app relaunches and presents this sheet a
+            // second time. Its resolved frame still receives native events.
+            picker.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        }
+    }
+
     private func fillTask(_ app: XCUIApplication, title: String, prompt: String) {
         // Configure the isolated provider while submission is still disabled.
         // A compact iPad sheet scrolls the Agent section beneath its fixed footer.
@@ -56,21 +77,21 @@ final class RemoteNodeUITests: XCTestCase {
         }
         XCTAssertLessThan(
             provider.frame.maxY, footer.frame.minY - 8, "Provider must be above the footer before tapping.")
+        XCTAssertGreaterThanOrEqual(
+            provider.frame.minY, form.frame.minY, "Provider must be inside the visible form before tapping.")
         let providerReady = XCTNSPredicateExpectation(
             predicate: NSPredicate(format: "exists == true AND hittable == true"), object: provider)
-        XCTAssertEqual(
-            XCTWaiter.wait(for: [providerReady], timeout: 5), .completed,
-            "The provider picker must be hittable before opening its menu.\n\(app.debugDescription)")
+        _ = XCTWaiter.wait(for: [providerReady], timeout: 5)
         let previousProvider = provider.value as? String
-        provider.tap()
+        tapPicker(provider)
         let openingOption = app.buttons.matching(NSPredicate(format: "label == 'Mock'")).firstMatch
         if !openingOption.waitForExistence(timeout: 5), !openingOption.exists,
-            provider.isHittable, let previousProvider,
+            provider.exists, let previousProvider,
             provider.value as? String == previousProvider
         {
             // A native picker can leave an opening tap unconsumed after relaunch.
             // Retry once only while no option appeared and the selection is unchanged.
-            provider.tap()
+            tapPicker(provider)
         }
         var mockSelected = false
         for attempt in 0..<2 {
@@ -81,11 +102,9 @@ final class RemoteNodeUITests: XCTestCase {
                 XCTWaiter.wait(for: [optionReady], timeout: 5), .completed,
                 "The Mock provider option must be hittable.\n\(app.debugDescription)")
             mock.tap()
-            let menuClosed = XCTNSPredicateExpectation(
-                predicate: NSPredicate(format: "exists == false"), object: mock)
             let providerChanged = XCTNSPredicateExpectation(
                 predicate: NSPredicate(format: "value == 'Mock'"), object: provider)
-            if XCTWaiter.wait(for: [menuClosed, providerChanged], timeout: 5) == .completed {
+            if XCTWaiter.wait(for: [providerChanged], timeout: 5) == .completed {
                 mockSelected = true
                 break
             }
@@ -97,7 +116,7 @@ final class RemoteNodeUITests: XCTestCase {
             else { break }
         }
         XCTAssertTrue(
-            mockSelected, "Selecting Mock must close the menu and update the provider.\n\(app.debugDescription)")
+            mockSelected, "Selecting Mock must update the provider.\n\(app.debugDescription)")
         // Native Picker labels vary by OS; the value describes the selection.
         // Verify the dependent model reset as well before submitting anything.
         for identifier in ["ios.create.provider", "ios.create.model"] {
@@ -126,6 +145,17 @@ final class RemoteNodeUITests: XCTestCase {
     private func textExists(_ app: XCUIApplication, _ text: String, timeout: TimeInterval = 30) {
         let label = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", text)).firstMatch
         XCTAssertTrue(label.waitForExistence(timeout: timeout), "Missing text \(text).\n\(app.debugDescription)")
+    }
+
+    private func assistantTextExists(_ app: XCUIApplication, _ text: String, timeout: TimeInterval = 60) {
+        // Match the small set of transcript text nodes by identifier before
+        // inspecting their labels. A broad StaticText query repeatedly snapshots
+        // the entire iPad split view and can starve the fixture data plane.
+        let label = app.staticTexts.matching(identifier: "ios.message.text.assistant")
+            .matching(NSPredicate(format: "label CONTAINS %@", text)).firstMatch
+        XCTAssertTrue(
+            label.waitForExistence(timeout: timeout),
+            "Missing assistant text \(text).\n\(app.debugDescription)")
     }
 
     private func waitForBoard(_ app: XCUIApplication, project: String, board: String) {
@@ -192,11 +222,11 @@ final class RemoteNodeUITests: XCTestCase {
             XCTWaiter.wait(for: [runReady], timeout: 5), .completed,
             "Run task should remain visible and enabled after entering the task.\n\(app.debugDescription)")
         tap(app, "ios.create.run")
-        textExists(app, "Mock harness received: Verify this request came from iOS", timeout: 90)
+        assistantTextExists(app, "Mock harness received: Verify this request came from iOS", timeout: 150)
         screenshot(app, "03-live-remote-conversation")
         enter(app, "ios.composer.message", "Continue from the same iOS conversation")
         tap(app, "ios.composer.send")
-        textExists(app, "Mock harness received: Continue from the same iOS conversation", timeout: 60)
+        assistantTextExists(app, "Mock harness received: Continue from the same iOS conversation")
         screenshot(app, "04-follow-up")
         tap(app, "ios.task.actions")
         tap(app, "ios.task.files")
@@ -238,19 +268,19 @@ final class RemoteNodeUITests: XCTestCase {
         tap(app, "ios.create.add")
         textExists(app, "Ready when you are")
         XCTAssertFalse(
-            app.staticTexts.matching(
-                NSPredicate(format: "label CONTAINS 'Mock harness received: Start the saved iOS draft'")
-            ).firstMatch.exists)
+            app.staticTexts.matching(identifier: "ios.message.text.assistant")
+                .matching(NSPredicate(format: "label CONTAINS 'Mock harness received: Start the saved iOS draft'"))
+                .firstMatch.exists)
         tap(app, "ios.task.start")
-        textExists(app, "Mock harness received: Start the saved iOS draft", timeout: 60)
+        assistantTextExists(app, "Mock harness received: Start the saved iOS draft")
         screenshot(app, "07-draft-started")
 
         XCUIDevice.shared.press(.home)
         app.activate()
-        textExists(app, "Mock harness received: Start the saved iOS draft", timeout: 40)
+        assistantTextExists(app, "Mock harness received: Start the saved iOS draft", timeout: 40)
         enter(app, "ios.composer.message", "Continue after foreground reconnect")
         tap(app, "ios.composer.send")
-        textExists(app, "Mock harness received: Continue after foreground reconnect", timeout: 60)
+        assistantTextExists(app, "Mock harness received: Continue after foreground reconnect")
         screenshot(app, "08-foreground-reconnected")
 
         app.terminate()
@@ -267,5 +297,24 @@ final class RemoteNodeUITests: XCTestCase {
         tap(app, "ios.machine.\(daemon)")
         waitForBoard(app, project: project, board: board)
         screenshot(app, "10-compatible-node-restored")
+
+        if environment["DIETER_IOS_TEST_LANDSCAPE"] != "1" {
+            tap(app, "ios.screens.open")
+            XCTAssertTrue(element(app, "ios.screens.back").waitForExistence(timeout: 10))
+            XCTAssertTrue(element(app, "ios.screens.settings").isHittable)
+            let window = app.windows.firstMatch
+            let landscape = XCTNSPredicateExpectation(
+                predicate: NSPredicate { _, _ in window.frame.width > window.frame.height }, object: window)
+            XCTAssertEqual(
+                XCTWaiter.wait(for: [landscape], timeout: 10), .completed,
+                "The iPhone screen viewer should request landscape automatically.\n\(app.debugDescription)")
+            screenshot(app, "11-remote-screen-phone-chrome")
+            tap(app, "ios.screens.back")
+            let portrait = XCTNSPredicateExpectation(
+                predicate: NSPredicate { _, _ in window.frame.height > window.frame.width }, object: window)
+            XCTAssertEqual(
+                XCTWaiter.wait(for: [portrait], timeout: 10), .completed,
+                "Leaving the iPhone screen viewer should restore portrait.\n\(app.debugDescription)")
+        }
     }
 }

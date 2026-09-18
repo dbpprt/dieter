@@ -62,6 +62,22 @@ just --yes ios testflight 0.1.0 1.1 --upload
 3. Select an enrolled, compatible node. The app prefers authenticated non-loopback direct routes and falls back to the gateway relay.
 4. Open a project and board, create a task, or continue a conversation.
 
+Select **Screens** in the sidebar to open the selected machine's remote desktop.
+The app negotiates an independently authenticated H.264 WebRTC session over the
+machine's verified direct route or gateway relay. Tap to click, move the pointer
+with one finger, hold and move to drag, scroll with two fingers, and use the
+keyboard and special-key menus for text and HID input. Display, quality, refresh,
+frame-rate, and protocol-3 control handoff are available from the screen toolbar.
+When the host supports protocol 3, Copy Remote Selection and the system Paste
+button provide explicit, foreground-only text clipboard operations; Dieter does
+not poll the iOS pasteboard.
+On iPhone, opening Screens requests landscape automatically, then follows a
+portrait remote display when its dimensions arrive. The viewer replaces the
+navigation bar with floating Back and stream-settings controls; tap the live
+canvas to hide or reveal those controls. iPad keeps its split-view toolbar.
+The session closes when Screens is left, the machine changes, or iOS backgrounds
+the app; returning establishes a new signed binding and input epoch.
+
 The existing `dieter-mac://oauth/callback` redirect is deliberately reused inside ASWebAuthenticationSession, with PKCE. This keeps sign-in compatible with gateways already configured for the Mac client. Tokens are kept in device-only Keychain items, separated by gateway origin. Remote plaintext endpoints are rejected. The Debug-only isolated test gateway accepts a loopback address supplied by the smoke harness; production sign-in always requires HTTPS.
 
 ## Basic workflows
@@ -70,6 +86,7 @@ The existing `dieter-mac://oauth/callback` redirect is deliberately reused insid
 - Create a draft or immediately run a task with provider, model, and reasoning selection.
 - Start a draft, send follow-up messages, stop an active turn, and read live transcript updates and older messages.
 - Read and edit remote text files with revision-checked saves.
+- View and control the selected machine through authenticated remote screen sharing.
 - Suspend observation while the app is in the background and reconnect on return. Transport disconnects do not cancel agent work.
 
 The phone uses stacked navigation; iPad uses sidebar, task list, and conversation columns. All operations remain scoped to the selected gateway, node, and workspace.

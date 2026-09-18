@@ -154,6 +154,33 @@ struct IOSModelTests {
         #expect(!scope.accepts(connection: connection, selection: selection, active: false))
     }
 
+    @Test func remoteDesktopCoordinatesRespectAspectFitLetterboxing() throws {
+        let bounds = CGRect(x: 0, y: 0, width: 300, height: 300)
+        let video = CGSize(width: 300, height: 150)
+        #expect(
+            IOSRemoteDesktopGeometry.contentRect(bounds: bounds, videoSize: video)
+                == CGRect(
+                    x: 0, y: 75, width: 300, height: 150))
+        let center = try #require(
+            IOSRemoteDesktopGeometry.normalized(
+                point: CGPoint(x: 150, y: 150), bounds: bounds, videoSize: video))
+        #expect(center == CGPoint(x: 0.5, y: 0.5))
+        #expect(
+            IOSRemoteDesktopGeometry.normalized(
+                point: CGPoint(x: 150, y: 20), bounds: bounds, videoSize: video) == nil)
+        let clamped = try #require(
+            IOSRemoteDesktopGeometry.normalized(
+                point: CGPoint(x: 400, y: -20), bounds: bounds, videoSize: video, clamp: true))
+        #expect(clamped == CGPoint(x: 1, y: 0))
+    }
+
+    @Test func remoteDesktopOrientationFollowsTheRemoteDisplay() {
+        #expect(IOSRemoteDesktopOrientation.isPortrait(CGSize(width: 1_080, height: 1_920)) == true)
+        #expect(IOSRemoteDesktopOrientation.isPortrait(CGSize(width: 1_920, height: 1_080)) == false)
+        #expect(IOSRemoteDesktopOrientation.isPortrait(CGSize(width: 1_024, height: 1_024)) == false)
+        #expect(IOSRemoteDesktopOrientation.isPortrait(.zero) == nil)
+    }
+
     @Test func mixedFleetSelectionSkipsLegacyAndOfflineNodes() {
         let legacy = machine(id: "legacy", api: "2")
         let offline = machine(id: "offline", api: "3", online: false)
@@ -221,9 +248,12 @@ struct IOSModelTests {
         #expect(transcript.conversation?.messages.count == 240)
         #expect(transcript.conversation?.messages.first?.id == "m160")
         #expect(transcript.page.start == 160)
-        transcript.trimToLatest()
+        let didTrim = transcript.trimToLatest()
+        #expect(didTrim)
         #expect(transcript.conversation?.messages.count == 60)
         #expect(transcript.page.start == 340)
+        let didTrimAgain = transcript.trimToLatest()
+        #expect(!didTrimAgain)
         transcript.reset(snapshot(range: 380..<400, sequence: 11, total: 400))
         #expect(transcript.conversation?.messages.count == 20)
         #expect(transcript.conversation?.lastSeq == 11)

@@ -8,7 +8,10 @@ import Testing
     let factory = RTCPeerConnectionFactory(
         encoderFactory: RTCDefaultVideoEncoderFactory(), decoderFactory: RemoteDesktopDecoderFactory(enableHEVC: true))
     let config = RTCConfiguration(); config.sdpSemantics = .unifiedPlan
-    let peer = try #require(factory.peerConnection(with: config, constraints: RTCMediaConstraints(mandatoryConstraints: nil, optionalConstraints: nil), delegate: nil))
+    let peer = try #require(
+        factory.peerConnection(
+            with: config, constraints: RTCMediaConstraints(mandatoryConstraints: nil, optionalConstraints: nil),
+            delegate: nil))
     defer { peer.close() }
     let transceiver = try #require(peer.addTransceiver(of: .video))
     let names = factory.rtpReceiverCapabilities(forKind: kRTCMediaStreamTrackKindVideo).codecs.map(\.name)

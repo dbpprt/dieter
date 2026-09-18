@@ -96,6 +96,7 @@
     enum IOSWorkspaceDestination: Hashable {
         case allTasks
         case chats
+        case screens
         case project(String)
         case board(String)
     }

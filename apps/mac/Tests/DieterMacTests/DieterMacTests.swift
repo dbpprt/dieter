@@ -1,5 +1,6 @@
 import Testing
 import DieterAPI
+import DieterCore
 import AppKit
 import CryptoKit
 import Foundation

@@ -62,12 +62,14 @@ struct IOSTranscript {
         return true
     }
 
-    mutating func trimToLatest() {
-        guard var current = conversation, current.messages.count > 60 else { return }
+    @discardableResult
+    mutating func trimToLatest() -> Bool {
+        guard var current = conversation, current.messages.count > 60 else { return false }
         current.messages = Array(current.messages.suffix(60))
         conversation = current
         page.start = max(0, page.end - Int32(current.messages.count))
         page.hasMore_p = page.start > 0
+        return true
     }
 
     private mutating func trim() {

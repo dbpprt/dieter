@@ -229,8 +229,16 @@ def main():
         private_gateway_log = evidence / '.gateway-private.log'
         fixture_log = private_gateway_log.open('w+')
         os.chmod(private_gateway_log, 0o600)
+        gateway_environment = dict(os.environ, GIT_CONFIG_COUNT='1',
+                                   GIT_CONFIG_KEY_0='commit.gpgsign', GIT_CONFIG_VALUE_0='false')
+        harness_runtime = ROOT / 'internal/harness/runtime'
+        if (harness_runtime / 'node_modules').is_dir():
+            # CI installs this pinned runtime before the smoke journey. Reuse
+            # it instead of spending the task-response timeout installing an
+            # identical private copy after the fixture replaces HOME.
+            gateway_environment['DIETER_HARNESS_RUNTIME_DIR'] = str(harness_runtime)
         gateway = subprocess.Popen([str(fixture), '--addr', '127.0.0.1:0', '--home', str(evidence / 'fixture'), '--offline-trigger', str(evidence / 'offline')], cwd=ROOT, stdout=fixture_log, stderr=subprocess.STDOUT, start_new_session=True,
-                                   env=dict(os.environ, GIT_CONFIG_COUNT='1', GIT_CONFIG_KEY_0='commit.gpgsign', GIT_CONFIG_VALUE_0='false'))
+                                   env=gateway_environment)
         values = wait_for_gateway(gateway, private_gateway_log)
         stage('Isolated gateway ready; booting owned simulator')
         # Finish first boot before XCTest installs its runner or queries AX.

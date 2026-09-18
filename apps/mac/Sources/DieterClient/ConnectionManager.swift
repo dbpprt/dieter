@@ -203,4 +203,49 @@ private let connectionLogger = Logger(subsystem: "com.dbpprt.dieter.mac", catego
             throw error
         }
     }
+
+    /// Opens an independently owned screen-signaling route. The returned
+    /// connection keeps its direct credential refresh alive and must be shut
+    /// down by the screen session without affecting app observation RPCs.
+    package func remoteDesktopConnection(
+        gateway: DieterRPC,
+        target: DieterEndpoint,
+        gatewayAccessToken: String?,
+        directCandidateScope: DirectCandidateScope = .all,
+        route suppliedRoute: Dieter_Gateway_V1_DaemonRoute? = nil,
+        run: @escaping @MainActor (DieterRPC) -> Task<Void, Never> = ConnectionManager.run
+    ) async throws -> RemoteDesktopSignalingConnection {
+        guard let daemonID = target.daemonID else {
+            throw NSError(
+                domain: "DieterScreens", code: 1,
+                userInfo: [NSLocalizedDescriptionKey: "Select an enrolled Dieter machine."])
+        }
+        guard target.online else {
+            throw NSError(
+                domain: "DieterScreens", code: 2,
+                userInfo: [NSLocalizedDescriptionKey: "\(target.name) is offline."])
+        }
+        let route: Dieter_Gateway_V1_DaemonRoute
+        if let suppliedRoute {
+            route = suppliedRoute
+        } else {
+            route = try await gateway.route(daemonID: daemonID)
+        }
+        let configuration = try await gateway.rtcConfiguration(daemonID: daemonID)
+        let plane = try await selectDataPlane(
+            gateway: gateway,
+            target: target,
+            gatewayAccessToken: gatewayAccessToken,
+            directCandidateScope: directCandidateScope,
+            refreshDirectToken: true,
+            route: route,
+            run: run)
+        return RemoteDesktopSignalingConnection(
+            rpc: plane.rpc,
+            connectionTask: plane.task,
+            rtcConfiguration: configuration,
+            daemonCertificatePEM: route.daemonCertificatePem,
+            routeLabel: plane.connection.route == .local ? "Direct" : "Gateway",
+            credentialRefreshTask: plane.credentialRefreshTask)
+    }
 }
