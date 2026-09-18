@@ -116,7 +116,7 @@ func startHomebrewUpdateWorker(root, brew string) error {
 		return err
 	}
 	logDirectory := filepath.Join(root, "logs")
-	if err := os.MkdirAll(logDirectory, 0o755); err != nil {
+	if err := os.MkdirAll(logDirectory, 0o700); err != nil {
 		return err
 	}
 	logPath := filepath.Join(logDirectory, "update.log")

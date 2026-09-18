@@ -4,25 +4,27 @@ package machine
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os/exec"
+	"strconv"
 	"strings"
 )
 
-func operationCapabilities(ctx context.Context, _ string) []OperationCapability {
+func operationCapabilities(ctx context.Context, root string) []OperationCapability {
 	path, err := exec.LookPath("busctl")
 	if err != nil {
 		reason := "systemd-logind busctl client is unavailable"
 		return []OperationCapability{
 			{Operation: OperationRestart, UnavailableReason: reason},
 			{Operation: OperationShutdown, UnavailableReason: reason},
-			{Operation: OperationUpdate, UnavailableReason: "automatic daemon updates currently require a Homebrew-managed macOS installation"},
+			linuxUpdateCapability(root),
 		}
 	}
 	return []OperationCapability{
 		logindCapability(ctx, path, OperationRestart, "CanReboot"),
 		logindCapability(ctx, path, OperationShutdown, "CanPowerOff"),
-		{Operation: OperationUpdate, UnavailableReason: "automatic daemon updates currently require a Homebrew-managed macOS installation"},
+		linuxUpdateCapability(root),
 	}
 }
 
@@ -31,7 +33,10 @@ func logindCapability(ctx context.Context, path string, operation Operation, met
 	if err != nil {
 		return OperationCapability{Operation: operation, UnavailableReason: "could not query systemd-logind authorization"}
 	}
-	value := strings.Trim(strings.TrimSpace(string(output)), `s "`)
+	value, err := parseBusctlString(output)
+	if err != nil {
+		return OperationCapability{Operation: operation, UnavailableReason: "systemd-logind returned an invalid authorization response"}
+	}
 	switch value {
 	case "yes":
 		return OperationCapability{Operation: operation, Supported: true, Authorized: true}
@@ -44,9 +49,28 @@ func logindCapability(ctx context.Context, path string, operation Operation, met
 	}
 }
 
-func executeOperation(ctx context.Context, _ string, operation Operation) error {
+func parseBusctlString(output []byte) (string, error) {
+	fields := strings.Fields(strings.TrimSpace(string(output)))
+	if len(fields) != 2 || fields[0] != "s" {
+		return "", fmt.Errorf("expected busctl string, got %q", strings.TrimSpace(string(output)))
+	}
+	value, err := strconv.Unquote(fields[1])
+	if err != nil {
+		return "", fmt.Errorf("decode busctl string: %w", err)
+	}
+	return value, nil
+}
+
+func executeOperation(ctx context.Context, root string, operation Operation) error {
 	if operation == OperationUpdate {
-		return ErrOperationUnsupported
+		capability := linuxUpdateCapability(root)
+		if !capability.Supported || !capability.Authorized {
+			if capability.UnavailableReason != "" {
+				return errors.New(capability.UnavailableReason)
+			}
+			return ErrOperationUnsupported
+		}
+		return startLinuxUpdateWorker(root)
 	}
 	path, err := exec.LookPath("busctl")
 	if err != nil {

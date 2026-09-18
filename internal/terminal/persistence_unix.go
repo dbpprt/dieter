@@ -284,7 +284,7 @@ func (b *unixBackend) monitorPersistent(session *unixSession) {
 func (p *tmuxPersistence) create(name, shell, directory string, columns, rows int) error {
 	// Hold the requested shell behind one line of PTY input. This lets Dieter
 	// install pipe-pane first, so the shell's initial prompt is never lost.
-	command := exec.Command(
+	command := persistentServerCommand(
 		p.executable, "-L", p.label, "new-session", "-d", "-s", name,
 		"-x", strconv.Itoa(columns), "-y", strconv.Itoa(rows), "-c", directory,
 		"/bin/sh", "-c", `IFS= read -r _; exec "$1" -l`, "dieter-terminal", shell,

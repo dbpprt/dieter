@@ -66,8 +66,8 @@ Machine restart, shutdown, and daemon update require the exact confirmation
 phrases shown by `--help` and are available only when the target daemon reports
 the matching capability. Linux power control is non-interactive
 systemd-logind/PolicyKit; never attempt to provide sudo or an administrator
-password through Dieter. Automatic daemon update currently supports only a
-Homebrew-managed macOS service:
+password through Dieter. Automatic daemon update supports Homebrew-managed
+macOS services and Dieter-managed Linux systemd user services:
 
 ```sh
 dieter --machine <machine-id> machine update --confirm UPDATE
@@ -76,6 +76,14 @@ dieter --machine <machine-id> machine update --confirm UPDATE
 The update is detached, non-interactive, and logged on the target under
 `DIETER_HOME/logs/update.log`; a transport disconnect does not imply failure
 because the daemon service intentionally restarts and reconnects.
+
+Linux verifies the release workflow's GitHub OIDC Sigstore identity and signed
+SHA-256 manifest, stages the static executable under `DIETER_HOME/service`, and
+restarts from a separate systemd update unit. Listener readiness commits the
+activation; an unacknowledged start rolls back on the next restart. Use
+`dieter doctor` for Node/npm/Git, cosign, systemd, logind, tmux, shell, and
+private-storage diagnostics. Manage the user unit with `dieter daemon service`.
+Never run the Linux daemon as root or edit the unit behind Dieter's CLI.
 
 Homebrew stages signed daemon/helper releases under
 `$(brew --prefix)/var/dieter/service`; the service runs real files at its fixed

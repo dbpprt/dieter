@@ -2,6 +2,8 @@ set default-list
 set shell := ["bash", "-euo", "pipefail", "-c"]
 set working-directory := '..'
 
+platform_artifacts := "Dieter-Android.apk Dieter-macOS-arm64.zip dieter-darwin-arm64.pkg dieter-darwin-arm64.tar.gz dieter-gateway-linux-amd64.tar.gz dieter-gateway-linux-arm64.tar.gz dieter-linux-amd64.tar.gz dieter-linux-arm64.tar.gz"
+
 # List the shared release commands.
 default:
     @just --justfile just/release.just --list
@@ -53,10 +55,44 @@ configure-apple-signing *args:
 
 # Test release packaging, signing configuration, and notarization validation.
 test:
+    just --justfile just/release.just assembly-test
     python3 -m unittest discover -s scripts -p 'homebrew_*_test.py'
+    python3 -m unittest discover -s scripts -p 'install_linux_test.py'
+    python3 -m unittest discover -s scripts -p 'linux_service_e2e_test.py'
     python3 -m unittest discover -s scripts -p '*signing_test.py'
     python3 -m unittest discover -s scripts -p 'macos_*_test.py'
     python3 -m unittest discover -s scripts -p 'ios_release_test.py'
+
+# Exercise release completeness and standalone-installer staging in isolation.
+assembly-test:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    temporary_directory="$(mktemp -d "${RUNNER_TEMP:-/tmp}/dieter-release-assembly.XXXXXX")"
+    trap 'rm -rf "$temporary_directory"' EXIT
+    read -r -a expected <<<"{{ platform_artifacts }}"
+    for artifact in "${expected[@]}"; do
+        install -m 0644 /dev/null "$temporary_directory/$artifact"
+    done
+    just --justfile just/release.just assemble "$temporary_directory"
+    test -x "$temporary_directory/install.sh"
+    rm -f "$temporary_directory/${expected[0]}"
+    if just --justfile just/release.just assemble "$temporary_directory" >/dev/null 2>&1; then
+        echo "Release assembly accepted an incomplete artifact set." >&2
+        exit 1
+    fi
+
+# Verify the complete cross-platform artifact set and add the standalone installer.
+assemble dist_directory="dist":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    dist_directory="{{ dist_directory }}"
+    test -d "$dist_directory"
+    read -r -a expected <<<"{{ platform_artifacts }}"
+    for artifact in "${expected[@]}"; do
+        [[ -f "$dist_directory/$artifact" ]] || { echo "Missing release artifact: $artifact" >&2; exit 1; }
+    done
+    install -m 0755 scripts/install.sh "$dist_directory/install.sh"
+    echo "Assembled ${#expected[@]} platform artifacts and the portable installer."
 
 # Validate all-or-none Apple signing configuration; optionally require an installer identity.
 signing-config installer="false" required="false":
@@ -99,7 +135,7 @@ checksums:
         cd dist
         artifacts=()
         while IFS= read -r artifact; do artifacts+=("$artifact"); done < <(
-            find . -maxdepth 1 -type f ! -name SHA256SUMS -exec basename {} \; | sort
+            find . -maxdepth 1 -type f ! -name 'SHA256SUMS*' -exec basename {} \; | sort
         )
         if command -v sha256sum >/dev/null; then
             sha256sum -- "${artifacts[@]}" >SHA256SUMS
@@ -107,6 +143,16 @@ checksums:
             shasum -a 256 -- "${artifacts[@]}" >SHA256SUMS
         fi
     )
+
+# Sign SHA256SUMS with GitHub's OIDC identity and emit an offline Sigstore bundle.
+sign-checksums:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    [[ "${GITHUB_ACTIONS:-}" == true ]] || { echo "Release signing is CI-only." >&2; exit 1; }
+    [[ "${GITHUB_REF:-}" == refs/heads/main ]] || { echo "Published release manifests must be signed from main." >&2; exit 1; }
+    command -v cosign >/dev/null
+    test -f dist/SHA256SUMS
+    cosign sign-blob --yes --bundle dist/SHA256SUMS.sigstore.json dist/SHA256SUMS
 
 # Publish the assembled GitHub release.
 [confirm]
@@ -190,5 +236,5 @@ homebrew:
 # Remove only locally assembled shared release metadata.
 [confirm]
 clean:
-    rm -f dist/SHA256SUMS
+    rm -f dist/install.sh dist/SHA256SUMS dist/SHA256SUMS.sigstore.json
     rmdir dist stage 2>/dev/null || true

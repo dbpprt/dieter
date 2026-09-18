@@ -76,12 +76,20 @@ dieter schedule edit ...
 Schedule occurrence records are authoritative: Dieter uses deterministic card
 identity and never replays a turn that may already have been dispatched.
 
-## Service management (Homebrew)
+## Service management
 
 ```sh
+# Linux systemd user service
+dieter daemon service status
+dieter daemon service restart
+dieter daemon service uninstall
+
+# macOS Homebrew
 brew services restart dieter
 brew upgrade dieter
 ```
 
 Managed logs live under `$DIETER_HOME/logs` (default `~/.dieter/logs`). A
 Homebrew uninstall removes the service and binary but preserves `DIETER_HOME`.
+Linux service uninstall has the same preservation guarantee. `dieter doctor`
+reports required runtime dependencies and optional degraded capabilities.

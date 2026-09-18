@@ -1,5 +1,9 @@
 # Porting Dieter to Linux (Garuda on box) — assessment
 
+> Superseded by the implemented support contract in
+> [Linux daemon support](linux-support.md). This document is retained as the
+> original bring-up record and is not current installation or security guidance.
+
 Date: 2026-09-16 · Evidence: repo scouting (both repos) + live probes of `box` (Ubuntu 24.04) and `garuda-box` (Garuda Dr460nized, Plasma X11, kernel 6.18.47-1-lts).
 
 ## Headline

@@ -28,9 +28,19 @@ var executables = []string{"dieter", "dieter-capture"}
 
 type Runtime struct {
 	Root string
+	// Executables defaults to the signed macOS daemon/helper pair. Linux's
+	// managed runtime supplies a single dieter executable.
+	Executables []string
 	// Verify is injectable for isolated filesystem tests. Production always
 	// uses Developer ID verification; there is no unsigned-install CLI flag.
 	Verify func(context.Context, string) error
+}
+
+func (r Runtime) executableNames() []string {
+	if len(r.Executables) == 0 {
+		return executables
+	}
+	return r.Executables
 }
 
 type activation struct {
@@ -54,7 +64,7 @@ func (r Runtime) verify(ctx context.Context, dir string) error {
 	if verify == nil {
 		verify = VerifySignedPair
 	}
-	for _, name := range executables {
+	for _, name := range r.executableNames() {
 		info, err := os.Lstat(filepath.Join(dir, name))
 		if err != nil {
 			return err
@@ -102,7 +112,7 @@ func (r Runtime) Stage(ctx context.Context, source string) error {
 		return err
 	}
 	defer os.RemoveAll(tmp)
-	for _, name := range executables {
+	for _, name := range r.executableNames() {
 		if err := copyExecutable(filepath.Join(source, name), filepath.Join(tmp, name)); err != nil {
 			return err
 		}
@@ -124,11 +134,11 @@ func (r Runtime) Stage(ctx context.Context, source string) error {
 	if err := realDir(r.path("bin")); err != nil {
 		return err
 	}
-	current, err := pairHash(r.path("bin"))
+	current, err := r.releaseHash(r.path("bin"))
 	if err != nil {
 		return err
 	}
-	next, err := pairHash(tmp)
+	next, err := r.releaseHash(tmp)
 	if err != nil {
 		return err
 	}
@@ -189,7 +199,7 @@ func (r Runtime) Start(ctx context.Context) (service *Service, reexec bool, err 
 		if err = json.Unmarshal(raw, &state); err != nil {
 			return nil, false, err
 		}
-		current, hashErr := pairHash(r.path("bin"))
+		current, hashErr := r.releaseHash(r.path("bin"))
 		if hashErr != nil {
 			return nil, false, hashErr
 		}
@@ -203,7 +213,7 @@ func (r Runtime) Start(ctx context.Context) (service *Service, reexec bool, err 
 			if err = r.verify(ctx, r.path("candidate")); err != nil {
 				return nil, false, err
 			}
-			previous, hashErr := pairHash(r.path("candidate"))
+			previous, hashErr := r.releaseHash(r.path("candidate"))
 			if hashErr != nil || previous != state.Before {
 				return nil, false, errors.New("rollback pair does not match activation journal")
 			}
@@ -252,11 +262,11 @@ func (r Runtime) Start(ctx context.Context) (service *Service, reexec bool, err 
 	if err = os.Rename(r.path("pending"), r.path("candidate")); err != nil {
 		return nil, false, err
 	}
-	state.Before, err = pairHash(r.path("bin"))
+	state.Before, err = r.releaseHash(r.path("bin"))
 	if err != nil {
 		return nil, false, err
 	}
-	state.After, err = pairHash(r.path("candidate"))
+	state.After, err = r.releaseHash(r.path("candidate"))
 	if err != nil {
 		return nil, false, err
 	}
@@ -331,7 +341,7 @@ func (r Runtime) prepare() error {
 	if !filepath.IsAbs(r.Root) || filepath.Clean(r.Root) != r.Root {
 		return errors.New("service runtime requires a clean absolute path")
 	}
-	if err := os.MkdirAll(r.Root, 0755); err != nil {
+	if err := os.MkdirAll(r.Root, 0o700); err != nil {
 		return err
 	}
 	resolved, err := filepath.EvalSymlinks(r.Root)
@@ -341,7 +351,10 @@ func (r Runtime) prepare() error {
 	if resolved != r.Root {
 		return errors.New("service runtime path must not contain symlinks")
 	}
-	return realDir(r.Root)
+	if err := realDir(r.Root); err != nil {
+		return err
+	}
+	return os.Chmod(r.Root, 0o700)
 }
 
 func realDir(path string) error {
@@ -399,8 +412,16 @@ func copyExecutable(source, target string) error {
 }
 
 func pairHash(dir string) (string, error) {
+	return hashExecutables(dir, executables)
+}
+
+func (r Runtime) releaseHash(dir string) (string, error) {
+	return hashExecutables(dir, r.executableNames())
+}
+
+func hashExecutables(dir string, names []string) (string, error) {
 	h := sha256.New()
-	for _, name := range executables {
+	for _, name := range names {
 		info, err := os.Lstat(filepath.Join(dir, name))
 		if err != nil {
 			return "", err

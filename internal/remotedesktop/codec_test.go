@@ -59,7 +59,7 @@ func TestHEVCPreferenceCompatibilityAndModeLimits(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			config.MaxFps = tt.fps
-			got, err := selectVideoCodec(tt.preference, tt.offer, config, tt.caps, SourceOptions{Kind: "screen"})
+			got, err := selectVideoCodec(tt.preference, tt.offer, config, tt.caps, SourceOptions{Kind: "native-synthetic"})
 			if (err != nil) != tt.fail || got != tt.want {
 				t.Fatalf("got %q, %v", got, err)
 			}

@@ -76,7 +76,7 @@ func TestEveryDaemonCLICommandHasOfflineHelp(t *testing.T) {
 		"schedule", "schedule create", "schedule list", "schedule show", "schedule preview", "schedule update", "schedule run", "schedule pause", "schedule resume", "schedule runs", "schedule delete",
 		"settings", "settings show", "settings options", "settings update",
 		"prompt", "prompt show", "prompt update", "prompt project", "prompt board", "prompt preview",
-		"daemon", "daemon start", "daemon enroll", "daemon unenroll", "daemon status", "daemon logs", "daemon permissions", "setup", "serve",
+		"daemon", "daemon start", "daemon service", "daemon service install", "daemon service start", "daemon service restart", "daemon service stop", "daemon service status", "daemon service uninstall", "daemon enroll", "daemon unenroll", "daemon status", "daemon logs", "daemon permissions", "doctor", "setup", "serve",
 	}
 	for _, path := range paths {
 		t.Run(strings.ReplaceAll(path, " ", "/"), func(t *testing.T) {

@@ -69,15 +69,24 @@ func New(root string) *Store {
 }
 
 func (s *Store) Ensure() error {
+	if err := os.MkdirAll(s.Root, 0o700); err != nil {
+		return err
+	}
+	if err := os.Chmod(s.Root, 0o700); err != nil {
+		return err
+	}
 	for _, dir := range []string{
 		s.projectDir(), s.boardDir(), s.cardDir(), s.archivedCardDir(), s.commentDir(), s.conversationDir(), s.runtimeDir(), s.scheduleDir(), s.scheduleRunDir(), s.authDir(), s.syncDir(),
-		s.workspaceDir(), s.gitOperationDir(), s.pullRequestDir(), s.changeCommentDir(), s.recoveryDir(),
+		s.workspaceDir(), s.gitOperationDir(), s.pullRequestDir(), s.changeCommentDir(), s.recoveryDir(), filepath.Join(s.Root, "logs"), filepath.Join(s.runtimeDir(), "leases"),
 	} {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			return err
+		}
+		if err := os.Chmod(dir, 0o700); err != nil {
 			return err
 		}
 	}
-	if err := os.Chmod(s.authDir(), 0o700); err != nil {
+	if err := s.migratePrivateMetadataPermissions(); err != nil {
 		return err
 	}
 	if _, err := s.ensureSyncEpoch(); err != nil {
@@ -108,7 +117,7 @@ func (s *Store) beginWriteLockContext(ctx context.Context) (func(), error) {
 			writeMu.Unlock()
 		}
 	}()
-	if err := os.MkdirAll(s.Root, 0o755); err != nil {
+	if err := os.MkdirAll(s.Root, 0o700); err != nil {
 		return nil, err
 	}
 	unlockAdmission, err := s.writerAdmission(ctx)
@@ -219,11 +228,11 @@ func newID(prefix string) string {
 }
 
 func atomicWrite(path string, data []byte) error {
-	return atomicWriteMode(path, data, 0o644)
+	return atomicWriteMode(path, data, 0o600)
 }
 
 func atomicWriteMode(path string, data []byte, mode os.FileMode) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
 	tmp, err := os.CreateTemp(filepath.Dir(path), ".dieter-write-*")

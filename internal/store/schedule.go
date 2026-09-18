@@ -146,7 +146,18 @@ func (s *Store) scheduleDatabase() (*sql.DB, error) {
 	if s.scheduleDB != nil {
 		return s.scheduleDB, nil
 	}
-	if err := os.MkdirAll(s.Root, 0o755); err != nil {
+	if err := os.MkdirAll(s.Root, 0o700); err != nil {
+		return nil, err
+	}
+	databaseFile, err := os.OpenFile(s.scheduleDatabasePath(), os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return nil, err
+	}
+	if err = databaseFile.Chmod(0o600); err != nil {
+		_ = databaseFile.Close()
+		return nil, err
+	}
+	if err = databaseFile.Close(); err != nil {
 		return nil, err
 	}
 	database, err := sql.Open("sqlite", s.scheduleDatabasePath())
@@ -201,6 +212,14 @@ CREATE INDEX IF NOT EXISTS schedule_runs_card ON schedule_runs(card_id);
 `); err != nil {
 		_ = database.Close()
 		return nil, err
+	}
+	for _, path := range []string{s.scheduleDatabasePath(), s.scheduleDatabasePath() + "-wal", s.scheduleDatabasePath() + "-shm"} {
+		if info, statErr := os.Lstat(path); statErr == nil && info.Mode().IsRegular() {
+			if chmodErr := os.Chmod(path, 0o600); chmodErr != nil {
+				_ = database.Close()
+				return nil, chmodErr
+			}
+		}
 	}
 	if err = s.migrateLegacySchedules(database); err != nil {
 		_ = database.Close()

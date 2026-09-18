@@ -91,13 +91,18 @@ internal fun ScreenWorkspace(
                 }
                 DropdownMenu(expanded = machineMenu, onDismissRequest = { machineMenu = false }) {
                     machines.forEach { endpoint -> DropdownMenuItem(
-                        text = { Text(endpoint.label + if (!endpoint.online) " · Offline" else "") }, enabled = endpoint.online,
+                        modifier = Modifier.testTag("screen-machine-${endpoint.id}"),
+                        text = { Text(endpoint.label + when {
+                            !endpoint.online -> " · Offline"
+                            !endpoint.remoteDesktopReady -> " · Unavailable"
+                            else -> ""
+                        }) }, enabled = endpoint.online && endpoint.remoteDesktopReady,
                         onClick = { disconnect(); selected = endpoint.id; machineMenu = false },
                     ) }
                 }
             }
             if (active) TextButton(onClick = ::disconnect, modifier = Modifier.testTag("screen-disconnect")) { Text("Disconnect") }
-            else TextButton(enabled = machine?.online == true, onClick = {
+            else TextButton(enabled = machine?.online == true && machine.remoteDesktopReady, onClick = {
                 controller.connect { openConnection(requireNotNull(selected)) }
             }, modifier = Modifier.testTag("screen-connect")) { Text(if (screen.phase == "failed") "Retry" else "Connect") }
             if (active) {
@@ -136,6 +141,10 @@ internal fun ScreenWorkspace(
         if (screen.session.codec.isNotBlank()) Text(screen.session.codec + if (screen.codecFallbackReason.isNotBlank()) " · ${screen.codecFallbackReason}" else "",
             style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(horizontal = 12.dp))
         if (screen.error.isNotBlank()) Text(screen.error, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(12.dp))
+        if (!active && machine?.online == true && !machine.remoteDesktopReady) Text(
+            machine.remoteDesktopReason.ifBlank { "This machine cannot host a screen session." },
+            color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(12.dp),
+        )
         if (machines.isEmpty()) Text("Connect an enrolled machine to view its screen.", modifier = Modifier.padding(16.dp))
         if (!active && screen.error.isBlank()) Text("Use this screen as a trackpad. Move the remote cursor with one finger; zoom and pan with two.",
             style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(16.dp))

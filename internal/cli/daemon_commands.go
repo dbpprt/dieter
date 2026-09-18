@@ -175,12 +175,13 @@ Actions:
   revoke --confirm MACHINE_ID [MACHINE]       Revoke an enrolled machine
   restart --confirm RESTART [MACHINE]
   shutdown --confirm "SHUT DOWN" [MACHINE]
-  update --confirm UPDATE [MACHINE]           Update a Homebrew-managed daemon
+  update --confirm UPDATE [MACHINE]           Update a managed daemon service
   rtc [MACHINE]                              Get signed WebRTC configuration
 
 Pass MACHINE or global --machine to select a remote daemon. Info, restart, and
 shutdown and update target the local daemon when MACHINE is omitted. Update is
-non-interactive and available only to a Homebrew-managed macOS daemon service.
+non-interactive and available to Homebrew-managed macOS services and
+Dieter-managed Linux systemd user services.
 `
 
 func (c *CLI) machineReference(setArguments []string) (string, error) {

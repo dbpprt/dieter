@@ -71,7 +71,7 @@ private enum MachineAction: String, Identifiable {
         case .shutdown:
             "Active Dieter turns will be suspended and the machine will remain offline until somebody turns it on again."
         case .update:
-            "Homebrew will update Dieter without prompting, restart the daemon service, and let this machine reconnect automatically. Active turns will be suspended during the restart."
+            "The machine’s managed service will verify and install the latest Dieter release, restart, and reconnect automatically. Active turns will be suspended during the restart."
         }
     }
 }

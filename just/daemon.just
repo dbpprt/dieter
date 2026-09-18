@@ -82,6 +82,41 @@ package-release:
     tar -C stage -czf "$archive" "$ASSET"
     echo "$archive"
 
+# Execute a packaged Linux daemon on its target architecture.
+smoke-release:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    : "${GOARCH:?GOARCH is required}"
+    : "${ASSET:?ASSET is required}"
+    : "${RELEASE_VERSION:?RELEASE_VERSION is required}"
+    test -f "dist/$ASSET.tar.gz"
+    smoke_dir="$(mktemp -d "${RUNNER_TEMP:-/tmp}/dieter-release-smoke.XXXXXX")"
+    trap 'rm -rf "$smoke_dir"' EXIT
+    tar -xzf "dist/$ASSET.tar.gz" -C "$smoke_dir"
+    test -x "$smoke_dir/$ASSET/dieter"
+    if [[ "$GOARCH" == amd64 ]]; then
+        actual="$($smoke_dir/$ASSET/dieter --version)"
+    else
+        actual="$(docker run --rm --platform linux/arm64 \
+            -v "$smoke_dir/$ASSET:/artifact:ro" alpine:3.22 /artifact/dieter --version)"
+    fi
+    [[ "$actual" == "$RELEASE_VERSION" ]] || { echo "Release version mismatch: $actual" >&2; exit 1; }
+
+# Smoke the static amd64 archive across representative Linux userlands.
+distro-smoke:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    : "${RELEASE_VERSION:?RELEASE_VERSION is required}"
+    archive="dist/dieter-linux-amd64.tar.gz"
+    test -f "$archive"
+    smoke_dir="$(mktemp -d "${RUNNER_TEMP:-/tmp}/dieter-distro-smoke.XXXXXX")"
+    trap 'rm -rf "$smoke_dir"' EXIT
+    tar -xzf "$archive" -C "$smoke_dir"
+    for image in ubuntu:24.04 debian:12 fedora:42 archlinux:base alpine:3.22; do
+        actual="$(docker run --rm -v "$smoke_dir/dieter-linux-amd64:/artifact:ro" "$image" /artifact/dieter --version)"
+        [[ "$actual" == "$RELEASE_VERSION" ]] || { echo "$image returned $actual" >&2; exit 1; }
+    done
+
 # Build the Apple Silicon daemon plus native capture helper for release packaging.
 package-macos:
     #!/usr/bin/env bash

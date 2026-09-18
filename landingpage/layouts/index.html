@@ -236,15 +236,15 @@
   <div class="wrap">
     <div class="section-head section-head--center" data-reveal>
       <span class="eyebrow" style="justify-content:center">Get started</span>
-      <h2>Two commands on Apple Silicon.</h2>
-      <p>Homebrew installs the daemon and the native app.</p>
+      <h2>Run the daemon on macOS or Linux.</h2>
+      <p>Homebrew supports Apple Silicon; signed static releases install a systemd user service on Linux.</p>
     </div>
 
     <div class="install-grid">
       <div class="install-card" data-reveal>
         <div class="install-card__top">{{ partial "icon" "terminal" }}<h3>Daemon</h3></div>
-        <p>The <code>dieter</code> CLI and local daemon.</p>
-        {{ partial "codeblock" (dict "lines" (slice "brew install dbpprt/tap/dieter" "dieter setup ~/Development/my-project")) }}
+        <p>Signed Linux release or managed Apple Silicon Homebrew service.</p>
+        {{ partial "codeblock" (dict "lines" (slice "# Linux (cosign required)" "curl -fsSL https://github.com/dbpprt/dieter/releases/latest/download/install.sh | sh" "# Apple Silicon macOS" "brew install dbpprt/tap/dieter" "dieter setup ~/Development/my-project")) }}
       </div>
       <div class="install-card" data-reveal data-reveal-delay="90">
         <div class="install-card__top">{{ partial "icon" "apple" }}<h3>Mac app</h3></div>

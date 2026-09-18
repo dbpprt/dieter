@@ -393,10 +393,17 @@ private struct NewScreenShareSheet: View {
             }
             Picker("Machine", selection: $machineID) {
                 ForEach(machines) { machine in
-                    Text(machine.online ? machine.name : "\(machine.name) — offline").tag(machine.id)
+                    Text(machineLabel(machine))
+                        .tag(machine.id)
+                        .disabled(!machine.online || !machine.remoteDesktopReady)
                 }
             }
             .accessibilityIdentifier("screens.new.machine")
+            if let machine = selectedMachine, machine.online, !machine.remoteDesktopReady {
+                Text(machine.remoteDesktopReason.isEmpty ? "This machine cannot host a screen session." : machine.remoteDesktopReason)
+                    .font(.caption)
+                    .foregroundStyle(DieterTheme.coral)
+            }
             HStack {
                 Spacer()
                 Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
@@ -410,17 +417,23 @@ private struct NewScreenShareSheet: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .keyboardShortcut(.defaultAction)
-                .disabled(selectedMachine?.online != true)
+                .disabled(selectedMachine?.online != true || selectedMachine?.remoteDesktopReady != true)
                 .accessibilityIdentifier("screens.new.connect")
             }
         }
         .padding(20)
         .frame(width: 430)
         .onAppear {
-            machineID =
-                machines.contains(where: { $0.id == initialMachineID })
-                ? initialMachineID : (machines.first?.id ?? "")
+            machineID = machines.first(where: {
+                $0.id == initialMachineID && $0.online && $0.remoteDesktopReady
+            })?.id ?? machines.first(where: { $0.online && $0.remoteDesktopReady })?.id ?? ""
         }
+    }
+
+    private func machineLabel(_ machine: DieterEndpoint) -> String {
+        if !machine.online { return "\(machine.name) — offline" }
+        if !machine.remoteDesktopReady { return "\(machine.name) — unavailable" }
+        return machine.name
     }
 }
 

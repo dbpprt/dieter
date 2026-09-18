@@ -152,6 +152,9 @@ data class DieterEndpoint(
     val lastSeenAt: String = "",
     val version: String = "",
     val apiVersion: String = "",
+    val remoteDesktopReady: Boolean = true,
+    val remoteDesktopReason: String = "",
+    val remoteDesktopPlatform: String = "",
 ) {
     val address: String get() = "${if (secure) "https" else "http"}://$host:$port"
     val credentialId: String get() = address

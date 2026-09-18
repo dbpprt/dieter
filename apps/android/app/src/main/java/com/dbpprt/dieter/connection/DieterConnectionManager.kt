@@ -120,6 +120,9 @@ data class EndpointConnection(
     val daemonId: String? = null,
     val lastSeenAt: String = "",
     val apiVersion: String = "",
+    val remoteDesktopReady: Boolean = true,
+    val remoteDesktopReason: String = "",
+    val remoteDesktopPlatform: String = "",
 )
 
 data class ProjectHost(
@@ -948,6 +951,9 @@ class DieterConnectionManager(
                 lastSeenAt = daemon.lastSeenAt,
                 version = daemon.version,
                 apiVersion = daemon.apiVersion,
+                remoteDesktopReady = daemon.remoteDesktop.ready,
+                remoteDesktopReason = daemon.remoteDesktop.reason,
+                remoteDesktopPlatform = daemon.remoteDesktop.platform,
             )
         }.sortedWith(
             compareBy<DieterEndpoint> { !it.online }
@@ -2103,6 +2109,9 @@ class DieterConnectionManager(
         daemonId = endpoint.daemonId,
         lastSeenAt = endpoint.lastSeenAt,
         apiVersion = endpoint.apiVersion,
+        remoteDesktopReady = endpoint.remoteDesktopReady,
+        remoteDesktopReason = endpoint.remoteDesktopReason,
+        remoteDesktopPlatform = endpoint.remoteDesktopPlatform,
     )
 
     private fun loadEndpoints(): List<DieterEndpoint> {

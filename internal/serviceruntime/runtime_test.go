@@ -41,6 +41,24 @@ func fixturePair(t *testing.T, version string) string {
 	return dir
 }
 
+func TestRuntimeHardensExistingRoot(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "service")
+	if err := os.Mkdir(root, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	r := Runtime{Root: root}
+	if err := r.prepare(); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := info.Mode().Perm(); got != 0o700 {
+		t.Fatalf("runtime root mode = %04o, want 0700", got)
+	}
+}
+
 func assertPair(t *testing.T, r Runtime, version string) {
 	t.Helper()
 	for _, name := range executables {

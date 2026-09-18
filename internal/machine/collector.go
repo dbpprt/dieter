@@ -107,7 +107,13 @@ func (c *Collector) Collect(ctx context.Context, descriptors []ProcessDescriptor
 	if memory, err := mem.VirtualMemoryWithContext(ctx); err == nil {
 		snapshot.MemoryTotal = memory.Total
 		snapshot.MemoryUsed = memory.Used
-		snapshot.MemoryCached = memory.Cached + memory.Inactive
+		snapshot.MemoryCached = memory.Cached
+		// On Linux Inactive includes inactive file-backed cache and therefore
+		// overlaps Cached. On Darwin, gopsutil exposes inactive pages separately
+		// and the existing UI contract includes them in reclaimable cache.
+		if runtime.GOOS != "linux" {
+			snapshot.MemoryCached += memory.Inactive
+		}
 	}
 	if swap, err := mem.SwapMemoryWithContext(ctx); err == nil {
 		snapshot.SwapUsed = swap.Used

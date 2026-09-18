@@ -53,7 +53,7 @@ route advertised by the daemon.
 
 ## Where to next
 
-- **[Installation](/docs/installation/)** covers Homebrew packages, source builds, and requirements.
-- **[Quick start](/docs/quickstart/)** goes from `brew install` to your first running agent.
+- **[Installation](/docs/installation/)** covers signed Linux services, Homebrew packages, source builds, and requirements.
+- **[Quick start](/docs/quickstart/)** goes from installation on macOS or Linux to your first running agent.
 - **[Architecture](/docs/architecture/)** explains how the daemon, gateway, and clients fit together.
 - **[Security model](/docs/security/)** covers enrollment, assertions, and what the gateway can and cannot see.

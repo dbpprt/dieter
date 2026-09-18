@@ -56,6 +56,36 @@ requests are welcome.
 
 ## Quick start
 
+Published releases support these roles:
+
+| Role | Linux amd64 | Linux arm64 | Apple Silicon macOS | Android 8+ |
+| --- | --- | --- | --- | --- |
+| CLI and daemon host | Yes | Yes | Yes | No |
+| Gateway | Yes | Yes | Build from source | No |
+| Native viewer client | No | No | Yes | Yes |
+| Screen capture/control host | No | No | Yes | No |
+
+### Linux daemon host
+
+On a systemd-based Linux host, install
+[`cosign`](https://docs.sigstore.dev/cosign/system_config/installation/), then
+install the signed amd64/arm64 release and register a Git working tree:
+
+```sh
+curl -fsSL https://github.com/dbpprt/dieter/releases/latest/download/install.sh | sh
+dieter setup ~/Development/my-project
+dieter doctor
+```
+
+The installer verifies the Sigstore-signed release manifest and archive
+checksum, installs atomically, and creates a private systemd user service when a
+user manager is available. Linux daemon hosting is headless: projects, agents,
+schedules, terminals, remote execution, telemetry, power operations, and
+managed updates are supported; native screen capture/control remains
+macOS-only. See the [Linux host guide](docs/linux-support.md).
+
+### macOS daemon and app
+
 On Apple Silicon macOS, install the daemon and register a Git working tree:
 
 ```sh
@@ -190,13 +220,13 @@ payload (including attachments) as JSON:
 dieter card queue remove --message <message-id> <card-id>
 ```
 
-Automatic daemon update is intentionally limited to a running
-Homebrew-managed macOS service. Dieter runs `brew update`, upgrades only
-`dbpprt/tap/dieter`, and restarts that service in a detached worker. The worker
-has no terminal or standard input, disables Homebrew ask mode, bounds every
-step, and records output in `~/.dieter/logs/update.log`. A foreground,
-development, Linux, or otherwise externally managed daemon advertises why the
-operation is unavailable and must be updated by its owner instead.
+Automatic daemon update supports Homebrew-managed macOS services and
+Dieter-managed Linux systemd user services. Linux verifies the GitHub OIDC
+Sigstore signature and SHA-256 manifest, stages the static executable in a
+fixed runtime, restarts through a separate systemd update unit, and commits only
+after listener readiness. An unacknowledged activation rolls back on the next
+service start. Foreground and distro-package-managed daemons report why
+self-update is unavailable.
 
 `dieter status` reports daemon-wide active project, board, card, and chat
 counts in one snapshot, including when the selected machine is remote.
@@ -414,13 +444,30 @@ user install, the script defaults to `/usr/local/bin` when writable and
 otherwise uses `~/.local/bin`:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/dbpprt/dieter/main/scripts/install.sh | sh
+curl -fsSL https://github.com/dbpprt/dieter/releases/latest/download/install.sh | sh
 ```
 
-Set `DIETER_INSTALL_DIR` to choose another destination or `DIETER_VERSION` to
-pin a release. Installing the CLI does not start, stop, or replace a running
-daemon; service lifecycle remains explicit through `dieter setup` or
-`dieter daemon start`.
+The installer requires `cosign` and rejects unsigned manifests, mismatched
+checksums, and unexpected archive paths. It accepts `--version VERSION`,
+`--install-dir DIR`, and `--no-service`; the existing `DIETER_VERSION`,
+`DIETER_INSTALL_DIR`, and `DIETER_NO_SERVICE=1` environment forms remain
+available for automation. On Linux it installs or refreshes the systemd user
+service when a user manager is available. The portable macOS archive installs
+the CLI and capture helper without registering a service; Homebrew remains the
+managed macOS route. For example, this pins a foreground installation:
+
+```sh
+curl -fsSL https://github.com/dbpprt/dieter/releases/latest/download/install.sh \
+  | sh -s -- --version 0.4.123 --install-dir "$HOME/.local/bin" --no-service
+```
+
+Linux service removal preserves all data:
+
+```sh
+dieter daemon service status
+dieter daemon service restart
+dieter daemon service uninstall
+```
 
 Apple Developer ID releases additionally include a notarized, stapled
 `dieter-darwin-arm64.pkg`. It installs a versioned daemon and capture helper
@@ -630,7 +677,11 @@ Apple signing uses credentials dedicated to Dieter, configured through
 [Apple release signing](docs/apple-release-signing.md) for Mac notarization,
 iOS distribution credentials, and the manual TestFlight workflow. The default
 setup platform remains `macos`. `just release test` validates the release tools
-without using real signing credentials or installing a daemon.
+without using real signing credentials or installing a daemon. A published
+release is assembled only when Linux amd64/arm64 daemon and gateway archives,
+the Apple Silicon daemon archive and package, and both native client artifacts
+are present. The release also publishes `install.sh`, a SHA-256 manifest, and
+its GitHub OIDC Sigstore bundle.
 
 Android builds use Android Studio's bundled JBR. If needed, set:
 

@@ -22,7 +22,7 @@ doctor:
     test -x "{{ java }}/bin/java"
     command -v screen
     command -v rg
-    command -v vm_stat
+    if [[ "$(uname -s)" == Darwin ]]; then command -v vm_stat; else command -v free; fi
     "{{ adb }}" version
     "{{ emulator }}" -version
     "{{ emulator }}" -list-avds | rg -x "{{ avd }}"
@@ -50,7 +50,11 @@ emulator-start:
     launched=false
     emulator_dir="$PWD/{{ app_root }}/build/emulator"
     emulator_log="$emulator_dir/screenlog.0"
-    log_start="$(stat -f '%z' "$emulator_log" 2>/dev/null || echo 0)"
+    if [[ "$(uname -s)" == Darwin ]]; then
+        log_start="$(stat -f '%z' "$emulator_log" 2>/dev/null || echo 0)"
+    else
+        log_start="$(stat -c '%s' "$emulator_log" 2>/dev/null || echo 0)"
+    fi
     snapshot_expected=true
     avd_registry="${ANDROID_AVD_HOME:-${ANDROID_USER_HOME:-$HOME/.android}/avd}"
     avd_ini="$avd_registry/{{ avd }}.ini"
@@ -87,16 +91,20 @@ emulator-start:
             echo "An unaccounted-for {{ avd }} process exists without {{ serial }}; refusing another launch." >&2
             exit 1
         fi
-        available_pages="$(vm_stat | awk \
-            '/Pages (free|inactive|speculative|purgeable):/ { gsub(/[.]/, "", $3); total += $3 } END { print total + 0 }')"
-        available_mb=$((available_pages * $(sysctl -n hw.pagesize) / 1024 / 1024))
+        if [[ "$(uname -s)" == Darwin ]]; then
+            available_pages="$(vm_stat | awk \
+                '/Pages (free|inactive|speculative|purgeable):/ { gsub(/[.]/, "", $3); total += $3 } END { print total + 0 }')"
+            available_mb=$((available_pages * $(sysctl -n hw.pagesize) / 1024 / 1024))
+        else
+            available_mb="$(awk '/^MemAvailable:/ { print int($2 / 1024); exit }' /proc/meminfo)"
+        fi
         min_host_renderer_mb=6144
         if (( available_mb < min_host_renderer_mb )); then
             echo "Host renderer preflight found about ${available_mb} MiB reclaimable; {{ avd }} recommended headroom is ${min_host_renderer_mb} MiB." >&2
             echo "Host memory is advisory; the actual renderer health check decides whether this launch is usable." >&2
             echo "Continuing with checked startup; renderer, boot, and UI health remain mandatory." >&2
         fi
-        echo "Starting {{ avd }} with Apple host GLES."
+        echo "Starting {{ avd }} with host GLES."
         (
             cd "$emulator_dir"
             # Loading remains enabled, but shutdown saving is done explicitly
@@ -136,8 +144,8 @@ emulator-start:
             gles_selection="$(rg 'gles_mode_selected:' "$emulator_log" | tail -n 1 || true)"
             graphics_adapter="$(rg 'Graphics Adapter Android Emulator' "$emulator_log" | tail -n 1 || true)"
             if ! rg -q 'gles_mode_selected:host' <<<"$gles_selection" || \
-               ! rg -q 'OpenGL ES Translator \(Apple' <<<"$graphics_adapter"; then
-                echo "{{ serial }} launch log does not prove Apple host GLES; see $emulator_log." >&2
+               ! rg -q 'OpenGL ES Translator \(' <<<"$graphics_adapter"; then
+                echo "{{ serial }} launch log does not prove host GLES; see $emulator_log." >&2
                 exit 1
             fi
             renderer_dump="$("{{ adb }}" -s "{{ serial }}" shell dumpsys SurfaceFlinger 2>/dev/null | \
@@ -206,8 +214,8 @@ emulator-stop:
     gles_selection="$(rg 'gles_mode_selected:' "$emulator_log" | tail -n 1 || true)"
     graphics_adapter="$(rg 'Graphics Adapter Android Emulator' "$emulator_log" | tail -n 1 || true)"
     if ! rg -q 'gles_mode_selected:host' <<<"$gles_selection" || \
-       ! rg -q 'OpenGL ES Translator \(Apple' <<<"$graphics_adapter"; then
-        echo "{{ serial }} launch log does not prove Apple host GLES; refusing to save its snapshot." >&2
+       ! rg -q 'OpenGL ES Translator \(' <<<"$graphics_adapter"; then
+        echo "{{ serial }} launch log does not prove host GLES; refusing to save its snapshot." >&2
         exit 1
     fi
     focus_dump="$("{{ adb }}" -s "{{ serial }}" shell dumpsys window 2>/dev/null | \
@@ -229,7 +237,11 @@ emulator-stop:
         rg 'mCurrentFocus|mFocusedApp|topResumedActivity' || true)"
     rg -q 'NexusLauncherActivity|launcher3' <<<"$focus_dump" || \
         { echo "{{ serial }} did not settle on the launcher; refusing to save its snapshot." >&2; exit 1; }
-    snapshot_log_start="$(stat -f '%z' "$emulator_log" 2>/dev/null || echo 0)"
+    if [[ "$(uname -s)" == Darwin ]]; then
+        snapshot_log_start="$(stat -f '%z' "$emulator_log" 2>/dev/null || echo 0)"
+    else
+        snapshot_log_start="$(stat -c '%s' "$emulator_log" 2>/dev/null || echo 0)"
+    fi
     "{{ adb }}" -s "{{ serial }}" emu avd snapshot save default_boot
     snapshot_list="$("{{ adb }}" -s "{{ serial }}" emu avd snapshot list 2>/dev/null | tr -d '\r' || true)"
     rg -q '(^|[[:space:]])default_boot([[:space:]]|$)' <<<"$snapshot_list" || \

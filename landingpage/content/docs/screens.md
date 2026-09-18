@@ -31,8 +31,11 @@ dieter daemon permissions --check
 | --- | --- |
 | `DIETER_REMOTE_DESKTOP_HELPER` | Select another signed native helper. |
 | `DIETER_REMOTE_DESKTOP_DISPLAY` | Select another capture source (display). |
-| `DIETER_REMOTE_DESKTOP_FFMPEG` | Non-macOS experimental hosts (FFmpeg/libvpx). |
 | `DIETER_REMOTE_DESKTOP_SOURCE=synthetic` | Reserved for isolated transport diagnostics. |
+
+Linux daemons are headless hosts and do not advertise screen displays or
+codecs. The Mac and Android clients keep them visible for machine context but
+disable starting a screen session with the daemon-provided reason.
 
 ## Transport and admission
 

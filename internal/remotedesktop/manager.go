@@ -214,10 +214,10 @@ func (m *Manager) capabilities(enabled, controlEnabled, forceProbe bool) *dieter
 		controlPermission = "unsupported"
 	}
 	ready := enabled && available && permission == "granted" && m.options.Identity.DaemonID != "" && len(m.options.Identity.PrivateKey) == ed25519.PrivateKeySize
-	if !enabled {
-		reason = "Remote desktop is disabled on this machine"
-	} else if !available {
+	if !available {
 		// SourceAvailable already supplied the actionable dependency/session reason.
+	} else if !enabled {
+		reason = "Remote desktop is disabled on this machine"
 	} else if permission != "granted" {
 		if reason == "" {
 			reason = "Screen capture permission has not been verified"
@@ -225,15 +225,20 @@ func (m *Manager) capabilities(enabled, controlEnabled, forceProbe bool) *dieter
 	} else if m.options.Identity.DaemonID == "" {
 		reason = "The daemon is not enrolled"
 	}
-	return &dieterv1.RemoteDesktopCapabilities{
+	value := &dieterv1.RemoteDesktopCapabilities{
 		Platform: runtime.GOOS, GraphicalSessionActive: available, Enabled: enabled,
-		Ready: ready, UnavailableReason: reason, HelperVersion: remoteDesktopHelperVersion(m.options.Source),
+		Ready: ready, UnavailableReason: reason,
 		CapturePermission: permission, ControlPermission: controlPermission,
-		Displays: []*dieterv1.RemoteDesktopDisplay{{Id: "primary", Name: "Primary display", Primary: true, Scale: 1}},
-		Codecs:   []string{string(preferredVideoCodec(m.options.Source))}, HardwareEncoderAvailable: runtime.GOOS == "darwin" && strings.TrimSpace(m.options.Source.Kind) != "synthetic",
 		ControlSupported: controlSupported, ClipboardSupported: false,
 		AudioSupported: false, FileTransferSupported: false, ActiveSession: active,
 	}
+	if available {
+		value.HelperVersion = remoteDesktopHelperVersion(m.options.Source)
+		value.Displays = []*dieterv1.RemoteDesktopDisplay{{Id: "primary", Name: "Primary display", Primary: true, Scale: 1}}
+		value.Codecs = []string{string(preferredVideoCodec(m.options.Source))}
+		value.HardwareEncoderAvailable = runtime.GOOS == "darwin" && strings.TrimSpace(m.options.Source.Kind) != "synthetic"
+	}
+	return value
 }
 
 func (m *Manager) captureReadiness(force bool) (string, string) {
@@ -1098,7 +1103,16 @@ func codecCapability(codec VideoCodec) webrtc.RTPCodecCapability {
 }
 
 func preferredVideoCodec(options SourceOptions) VideoCodec {
-	if strings.TrimSpace(options.Kind) == "synthetic" || runtime.GOOS != "darwin" {
+	kind := strings.TrimSpace(options.Kind)
+	if kind == "synthetic" {
+		return VideoCodecVP8
+	}
+	// native-synthetic is the native helper's test mode and therefore has the
+	// same codec contract on every test runner, including Linux CI.
+	if kind == "native-synthetic" {
+		return VideoCodecH264
+	}
+	if runtime.GOOS != "darwin" {
 		return VideoCodecVP8
 	}
 	return VideoCodecH264

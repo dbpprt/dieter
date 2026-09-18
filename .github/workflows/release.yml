@@ -35,6 +35,34 @@ jobs:
           RUN_NUMBER: ${{ github.run_number }}
         run: just release version
 
+  linux-test:
+    name: Native Linux release gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: internal/harness/runtime/package-lock.json
+      - uses: arduino/setup-protoc@v3
+        with:
+          version: "35.1"
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: extractions/setup-just@v3
+        with:
+          just-version: "1.58.0"
+      - name: Install harness runtime
+        run: just harness install
+      - name: Run native Linux checks
+        run: just check
+
   go-binaries:
     name: ${{ matrix.asset }}
     if: github.event_name != 'workflow_dispatch' || inputs.publish
@@ -83,12 +111,43 @@ jobs:
           COMPONENT: ${{ matrix.component }}
           RELEASE_VERSION: ${{ needs.version.outputs.tag }}
         run: just "${COMPONENT}" package-release
+      - uses: docker/setup-qemu-action@v3
+        if: matrix.component == 'daemon' && matrix.goarch == 'arm64'
+        with:
+          platforms: arm64
+      - name: Execute packaged Linux daemon
+        if: matrix.component == 'daemon'
+        env:
+          GOARCH: ${{ matrix.goarch }}
+          ASSET: ${{ matrix.asset }}
+          RELEASE_VERSION: ${{ needs.version.outputs.tag }}
+        run: just daemon smoke-release
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.asset }}
           path: dist/${{ matrix.asset }}.tar.gz
           if-no-files-found: error
           retention-days: 1
+
+  linux-distros:
+    name: Linux distribution archive smoke
+    needs: [version, go-binaries]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: extractions/setup-just@v3
+        with:
+          just-version: "1.58.0"
+      - uses: actions/download-artifact@v4
+        with:
+          name: dieter-linux-amd64
+          path: dist
+      - name: Execute static daemon across Linux userlands
+        env:
+          RELEASE_VERSION: ${{ needs.version.outputs.tag }}
+        run: just daemon distro-smoke
 
   macos-daemon:
     name: macOS daemon and native capture helper
@@ -269,10 +328,11 @@ jobs:
   release:
     name: Publish release
     if: github.event_name != 'workflow_dispatch' || inputs.publish
-    needs: [version, go-binaries, macos-daemon, android, macos]
+    needs: [version, linux-test, linux-distros, go-binaries, macos-daemon, android, macos]
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      id-token: write
     steps:
       - uses: actions/checkout@v4
         with:
@@ -284,8 +344,13 @@ jobs:
         with:
           path: dist
           merge-multiple: true
+      - name: Verify and assemble cross-platform release
+        run: just release assemble
       - name: Create checksums
         run: just release checksums
+      - uses: sigstore/cosign-installer@v3
+      - name: Sign release manifest
+        run: just release sign-checksums
       - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ github.token }}

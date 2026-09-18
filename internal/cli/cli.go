@@ -74,6 +74,13 @@ func Main(args []string) int {
 		}
 		return 0
 	}
+	if len(args) > 0 && args[0] == "__linux-update-worker" {
+		if err := machine.RunLinuxDaemonUpdateWorker(args[1:], os.Stderr); err != nil {
+			fmt.Fprintln(os.Stderr, "error:", err)
+			return 1
+		}
+		return 0
+	}
 	global := flag.NewFlagSet("dieter", flag.ContinueOnError)
 	global.SetOutput(io.Discard)
 	root := global.String("store", store.DefaultRoot(), "DIETER_HOME data directory")
@@ -141,6 +148,8 @@ func (c *CLI) Run(args []string) error {
 	switch args[0] {
 	case "setup":
 		return c.setup(args[1:])
+	case "doctor":
+		return c.doctor(args[1:])
 	case "serve":
 		return c.daemonStart(args[1:])
 	case "daemon":
@@ -204,6 +213,7 @@ Commands:
   prompt       Inspect, update, scope, and preview prompt templates
   watch        Stream daemon state or sync frames as JSON Lines
   storage      Print the target daemon's central storage path
+  doctor       Check local Linux/macOS runtime and service prerequisites
   setup        Authorize, enroll, and install this local daemon service
   daemon       Start, enroll, inspect, or manage this local daemon service
   serve        Alias for "dieter daemon start"
@@ -356,6 +366,7 @@ func (c *CLI) daemon(args []string) error {
 
 Actions:
   start        Run the local data plane and persistent gateway tunnel
+  service      Install and manage the platform daemon service
   enroll       Enroll this machine with the Dieter gateway
   unenroll     Revoke this machine and remove its local gateway credential
   status       Show service, local API, enrollment, and gateway health
@@ -367,6 +378,8 @@ Actions:
 	switch args[0] {
 	case "start":
 		return c.daemonStart(args[1:])
+	case "service":
+		return c.daemonService(args[1:])
 	case "enroll":
 		return c.daemonEnroll(args[1:])
 	case "unenroll":
@@ -389,8 +402,8 @@ Run the machine-local Dieter data plane and, when enrolled, its persistent
 outbound gateway tunnel. The local API is always loopback-only. An enrolled
 daemon automatically advertises an authenticated loopback route; direct flags
 add an optional LAN, Tailscale, or public route.
-Homebrew supplies --runtime with its fixed executable directory. Service startup
-activates a staged signed release there before workers or capture begin.
+A package manager may supply --runtime with a fixed executable directory.
+Service startup activates a staged verified release there before workers begin.
 `
 	set := flags("daemon start")
 	addr := set.String("addr", "127.0.0.1:4242", "listen address")
@@ -399,12 +412,17 @@ activates a staged signed release there before workers or capture begin.
 	directNetwork := set.String("direct-network", "lan", "direct route kind: loopback, lan, tailscale, or public")
 	envFile := set.String("env-file", "", "environment file (default DIETER_HOME/.env)")
 	serviceMode := set.Bool("service", false, "run as a managed service with bounded file logs")
-	runtimePath := set.String("runtime", "", "Homebrew fixed service runtime; requires --service")
+	runtimePath := set.String("runtime", "", "fixed service runtime; requires --service")
 	verbose := set.Bool("verbose", false, "verbose logs")
 	help, err := parse(set, args, usage, c.Out)
 	if help || err != nil {
 		return err
 	}
+	runtimeLock, err := dieterdaemon.AcquireRuntimeLock(c.Store.Root)
+	if err != nil {
+		return err
+	}
+	defer runtimeLock.Close()
 	var serviceRuntime *serviceruntime.Service
 	if *runtimePath != "" {
 		if !*serviceMode {
@@ -419,7 +437,7 @@ activates a staged signed release there before workers or capture begin.
 		}
 		startupCtx, cancel := context.WithTimeout(context.Background(), time.Minute)
 		var reexec bool
-		serviceRuntime, reexec, err = (serviceruntime.Runtime{Root: *runtimePath}).Start(startupCtx)
+		serviceRuntime, reexec, err = serviceruntime.PlatformRuntime(*runtimePath).Start(startupCtx)
 		cancel()
 		if err != nil {
 			return fmt.Errorf("start fixed service runtime: %w", err)
@@ -471,9 +489,17 @@ activates a staged signed release there before workers or capture begin.
 	if enrolled {
 		gatewayState = dieterdaemon.GatewayConnecting
 	}
+	serviceManager := strings.TrimSpace(os.Getenv("DIETER_SERVICE_MANAGER"))
+	if *serviceMode && serviceManager == "" {
+		if runtime.GOOS == "darwin" && *runtimePath != "" {
+			serviceManager = "homebrew"
+		} else {
+			serviceManager = "managed"
+		}
+	}
 	runtimeStatus := dieterdaemon.RuntimeStatus{
 		PID: os.Getpid(), Version: Version, State: "starting", StartedAt: startedAt,
-		ListenAddress: *addr, ServiceManaged: *serviceMode, LogPath: logPath,
+		ListenAddress: *addr, ServiceManaged: *serviceMode, ServiceManager: serviceManager, LogPath: logPath,
 		Enrolled: enrolled, GatewayState: gatewayState,
 	}
 	if enrolled {
@@ -527,7 +553,13 @@ activates a staged signed release there before workers or capture begin.
 	if err := statusWriter.Update(func(value *dieterdaemon.RuntimeStatus) { value.State = "running" }); err != nil {
 		return err
 	}
-	err = server.ListenDaemonReady(ctx, *addr, c.Store, c.Runner, logger, remoteDesktop, serviceRuntime.Ready)
+	ready := func() error {
+		if err := notifyServiceReady(serviceManager); err != nil {
+			return err
+		}
+		return serviceRuntime.Ready()
+	}
+	err = server.ListenDaemonReady(ctx, *addr, c.Store, c.Runner, logger, remoteDesktop, ready)
 	if errors.Is(err, http.ErrServerClosed) {
 		return nil
 	}

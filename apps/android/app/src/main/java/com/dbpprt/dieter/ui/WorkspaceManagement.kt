@@ -838,7 +838,7 @@ private fun AddProjectManagement(state: DieterUiState, model: DieterViewModel) {
         OutlinedTextField(
             path,
             { path = it },
-            placeholder = { Text("/Users/you/Development/project") },
+            placeholder = { Text("/home/you/Development/project") },
             singleLine = true,
             modifier = Modifier.weight(1f).testTag("new-project-path"),
         )

@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -479,7 +480,15 @@ func resolveShell(requested string) (string, error) {
 		name = filepath.Base(os.Getenv("SHELL"))
 	}
 	if name == "." || name == "" {
-		name = "zsh"
+		name = loginShellName()
+	}
+	if name == "." || name == "" {
+		for _, candidate := range []string{"zsh", "bash", "sh"} {
+			if _, err := exec.LookPath(candidate); err == nil {
+				name = candidate
+				break
+			}
+		}
 	}
 	switch name {
 	case "zsh", "bash", "fish", "sh":
@@ -491,6 +500,21 @@ func resolveShell(requested string) (string, error) {
 		return "", fmt.Errorf("terminal shell %q is unavailable", name)
 	}
 	return path, nil
+}
+
+func loginShellName() string {
+	raw, err := os.ReadFile("/etc/passwd")
+	if err != nil {
+		return ""
+	}
+	uid := strconv.Itoa(os.Getuid())
+	for _, line := range strings.Split(string(raw), "\n") {
+		fields := strings.Split(line, ":")
+		if len(fields) >= 7 && fields[2] == uid {
+			return filepath.Base(strings.TrimSpace(fields[6]))
+		}
+	}
+	return ""
 }
 
 func terminalEnvironment(values []string) []string {

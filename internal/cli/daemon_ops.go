@@ -206,8 +206,15 @@ func (c *CLI) daemonStatus(args []string) error {
 			view.LogPath = runtimeStatus.LogPath
 		}
 		if runtimeStatus.ServiceManaged {
-			view.Service = "homebrew"
-			view.ServiceStatus = homebrewServiceStatus()
+			view.Service = strings.TrimSpace(runtimeStatus.ServiceManager)
+			if view.Service == "" {
+				if runtime.GOOS == "darwin" {
+					view.Service = "homebrew"
+				} else {
+					view.Service = "managed"
+				}
+			}
+			view.ServiceStatus = managedServiceStatus(view.Service)
 		}
 	} else if !dieterdaemon.IsRuntimeStatusMissing(runtimeErr) {
 		return runtimeErr
@@ -330,7 +337,7 @@ func (c *CLI) daemonLogs(args []string) error {
 func streamLog(out io.Writer, path string, lines int, follow bool) error {
 	raw, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("daemon log %q does not exist; start the Homebrew service first", path)
+		return fmt.Errorf("daemon log %q does not exist; start the daemon service first", path)
 	}
 	if err != nil {
 		return err
@@ -391,7 +398,7 @@ func (c *CLI) setup(args []string) error {
 	const usage = `Usage: dieter setup [--gateway URL] [--name NAME] [--no-open] [--no-start] [--skip-screen-sharing] [PROJECT_PATH...]
 
 Authorize this machine with GitHub, register Git projects, and start the
-Homebrew-managed daemon. On macOS, setup also guides and verifies Screen
+platform-managed daemon service. On macOS, setup also guides and verifies Screen
 Recording and Accessibility permissions used by remote desktop. With no path, the
 current Git working tree is used.
 `
@@ -400,7 +407,7 @@ current Git working tree is used.
 	hostname, _ := os.Hostname()
 	name := set.String("name", hostname, "machine display name")
 	noOpen := set.Bool("no-open", false, "do not open the verification URL or System Settings")
-	noStart := set.Bool("no-start", false, "do not start or restart the Homebrew service")
+	noStart := set.Bool("no-start", false, "do not install, start, or restart the daemon service")
 	skipScreenSharing := set.Bool("skip-screen-sharing", false, "skip capture permission onboarding and leave the existing setting unchanged")
 	help, err := parse(set, args, usage, c.Out)
 	if help || err != nil {
@@ -450,7 +457,11 @@ current Git working tree is used.
 
 	fmt.Fprintln(c.Out, "\n3. Daemon service")
 	if *noStart {
-		fmt.Fprintln(c.Out, "Skipped; start it with `brew services start dieter`.")
+		fmt.Fprintln(c.Out, serviceStartHint())
+	} else if runtime.GOOS == "linux" {
+		if err := installAndStartPlatformService(c.Store.Root, c.Out); err != nil {
+			return err
+		}
 	} else {
 		started, startErr := restartHomebrewService(c.Err)
 		if startErr != nil {
@@ -468,7 +479,9 @@ current Git working tree is used.
 		}
 	}
 	fmt.Fprintln(c.Out, "\n4. Screen sharing permission")
-	if *skipScreenSharing {
+	if runtime.GOOS != "darwin" {
+		fmt.Fprintln(c.Out, "Native screen hosting is unavailable on this platform; this daemon runs as a headless agent host.")
+	} else if *skipScreenSharing {
 		fmt.Fprintln(c.Out, "Skipped without changing the existing setting; run `dieter daemon permissions` when this machine should share its screen.")
 	} else if err := c.ensureRemoteDesktopPermissions(false, *noOpen); err != nil {
 		return err

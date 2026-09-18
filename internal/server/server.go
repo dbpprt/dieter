@@ -369,7 +369,10 @@ func run(ctx context.Context, addr string, data *store.Store, application *Serve
 		return err
 	case <-ctx.Done():
 	}
-	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 4*time.Second)
+	// Service managers allow thirty seconds for a graceful stop. Reserve most
+	// of that window for durable suspension and child-manager cleanup before
+	// the service manager escalates to killing remaining processes.
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer shutdownCancel()
 	if err := application.app.SuspendActiveTurns(shutdownCtx); err != nil {
 		logger.Warn("some active agent turns could not be suspended for restart", "error", err)

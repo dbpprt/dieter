@@ -1,14 +1,14 @@
 ---
 title: "Installation"
 linkTitle: "Installation"
-description: "Install the daemon and the native app with Homebrew on Apple Silicon, or build both binaries from source."
+description: "Install a signed Linux daemon service, use Homebrew on Apple Silicon, or build from source."
 group: "Guides"
 weight: 10
 slug: "installation"
 ---
 
-On Apple Silicon macOS, Homebrew installs the daemon and the native app as two
-separate packages.
+Dieter supports headless Linux daemon hosts and Apple Silicon macOS. The native
+viewer clients are available for macOS and Android.
 
 ## Requirements
 
@@ -16,12 +16,30 @@ separate packages.
 - Node.js 22.19 or newer on each daemon host
 - Git working trees for registered projects
 - One configured harness login or API key
-- macOS 15+ or Android 8+ for the official clients
+- macOS 26+ or Android 8+ for the official clients
+- systemd user manager and cosign for managed Linux installation and updates
 
 The first agent turn installs the exact JavaScript harness runtime from
 `internal/harness/runtime/package-lock.json` under `DIETER_HOME`.
 
 ## Install the daemon
+
+On Linux amd64/arm64, install cosign and run:
+
+```sh
+curl -fsSL https://github.com/dbpprt/dieter/releases/latest/download/install.sh | sh
+dieter setup ~/Development/my-project
+dieter doctor
+```
+
+The installer verifies the GitHub OIDC Sigstore signature and archive checksum,
+then installs a private systemd user service when available. Linux hosts support
+agents, projects, schedules, terminals, remote execution, telemetry, power
+operations, and rollback-capable updates. Screen hosting remains macOS-only.
+Use `--version`, `--install-dir`, or `--no-service` when the defaults do not fit
+the host; `install.sh --help` documents their environment-variable equivalents.
+
+On Apple Silicon macOS, Homebrew installs the daemon and app separately:
 
 The formula includes the `dieter` CLI and local daemon:
 
@@ -89,3 +107,7 @@ latest `dbpprt/dieter` GitHub release for `Dieter-Android.apk`. See
 Homebrew uninstall removes the service and binary but intentionally preserves
 `DIETER_HOME`, so your projects, conversations, and schedules survive a
 reinstall.
+
+On Linux, `dieter daemon service uninstall` disables and removes the user unit
+while preserving the same data. Remove the installed CLI separately only after
+the service is gone.

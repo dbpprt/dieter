@@ -7,20 +7,26 @@ weight: 11
 slug: "quickstart"
 ---
 
-This walks from a clean machine to a running agent conversation. It assumes
-Apple Silicon macOS and access to your gateway.
+This walks from a clean macOS or systemd Linux machine to a running agent
+conversation with access to your gateway.
 
 ## 1 · Install and set up the daemon
 
 ```sh
+# Linux (after installing cosign)
+curl -fsSL https://github.com/dbpprt/dieter/releases/latest/download/install.sh | sh
+dieter setup ~/Development/orbit
+
+# Apple Silicon macOS
 brew install dbpprt/tap/dieter
 dieter setup ~/Development/orbit
 ```
 
-`dieter setup` opens the gateway's GitHub authorization page, registers the Git
-working tree by canonical path, guides Screen Recording and Accessibility
-permissions, starts the Homebrew service, and waits for both the local API and
-the gateway tunnel. It never stores a GitHub token on the daemon host.
+`dieter setup` opens the gateway's GitHub authorization page and registers the
+Git working tree by canonical path. On macOS it guides Screen Recording and
+Accessibility permissions and starts Homebrew. On Linux it installs a systemd
+user service and runs as a headless host without those permission steps. It
+never stores a GitHub token on the daemon host.
 
 ## 2 · Install the app and sign in
 

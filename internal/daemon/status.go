@@ -26,6 +26,7 @@ type RuntimeStatus struct {
 	Store              string `json:"store"`
 	ListenAddress      string `json:"listenAddress"`
 	ServiceManaged     bool   `json:"serviceManaged"`
+	ServiceManager     string `json:"serviceManager,omitempty"`
 	LogPath            string `json:"logPath,omitempty"`
 	Enrolled           bool   `json:"enrolled"`
 	DaemonID           string `json:"daemonId,omitempty"`
