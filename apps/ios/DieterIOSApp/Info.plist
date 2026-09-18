@@ -16,6 +16,7 @@
 <key>UISupportedInterfaceOrientations</key><array><string>UIInterfaceOrientationPortrait</string><string>UIInterfaceOrientationLandscapeLeft</string><string>UIInterfaceOrientationLandscapeRight</string></array>
 <key>UISupportedInterfaceOrientations~ipad</key><array><string>UIInterfaceOrientationPortrait</string><string>UIInterfaceOrientationPortraitUpsideDown</string><string>UIInterfaceOrientationLandscapeLeft</string><string>UIInterfaceOrientationLandscapeRight</string></array>
 <key>NSLocalNetworkUsageDescription</key><string>Connect securely to your enrolled Dieter nodes on the local network.</string>
+<key>NSCameraUsageDescription</key><string>Dieter includes camera-capable WebRTC components for remote screen viewing. Dieter does not capture or transmit camera video.</string>
 <key>NSAppTransportSecurity</key><dict><key>NSAllowsLocalNetworking</key><true/></dict>
 <key>CFBundleURLTypes</key><array><dict><key>CFBundleURLName</key><string>com.dbpprt.dieter.ios.oauth</string><key>CFBundleURLSchemes</key><array><string>dieter-mac</string></array></dict></array>
 </dict></plist>
