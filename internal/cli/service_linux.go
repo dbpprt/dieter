@@ -198,7 +198,7 @@ KillMode=mixed
 UMask=0077
 Environment=` + systemdQuote("DIETER_SERVICE_MANAGER=systemd-user") + `
 Environment=` + systemdQuote("PATH="+pathValue) + `
-EnvironmentFile=` + systemdQuote("-"+filepath.Join(root, "service.env")) + `
+EnvironmentFile=-` + systemdQuote(filepath.Join(root, "service.env")) + `
 StandardOutput=journal
 StandardError=journal
 

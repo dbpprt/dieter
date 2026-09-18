@@ -18,6 +18,56 @@ import (
 	"testing"
 )
 
+func TestStartLinuxUpdateWorkerPreservesPATHAndDurableOutput(t *testing.T) {
+	bin := t.TempDir()
+	trace := filepath.Join(t.TempDir(), "systemd-run.log")
+	script := "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$DIETER_TEST_SYSTEMD_RUN_LOG\"\n"
+	if err := os.WriteFile(filepath.Join(bin, "systemd-run"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	pathValue := bin + ":/usr/bin"
+	t.Setenv("PATH", pathValue)
+	t.Setenv("DIETER_TEST_SYSTEMD_RUN_LOG", trace)
+	root := filepath.Join(t.TempDir(), "data with spaces")
+	if err := os.Mkdir(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := startLinuxUpdateWorker(root); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(trace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	arguments := strings.Split(strings.TrimSpace(string(raw)), "\n")
+	logPath := filepath.Join(root, "logs", "update.log")
+	for _, expected := range []string{
+		"--setenv=PATH=" + pathValue,
+		"--property=StandardOutput=append:" + logPath,
+		"--property=StandardError=append:" + logPath,
+	} {
+		if !containsString(arguments, expected) {
+			t.Errorf("systemd-run arguments missing %q: %q", expected, arguments)
+		}
+	}
+	info, err := os.Stat(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Fatalf("update log mode = %o, want 600", info.Mode().Perm())
+	}
+}
+
+func containsString(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
+}
+
 func TestLinuxUpdateWorkerDownloadsVerifiesStagesAndRestarts(t *testing.T) {
 	executable, err := os.Executable()
 	if err != nil {

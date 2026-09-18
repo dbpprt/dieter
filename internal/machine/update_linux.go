@@ -81,13 +81,18 @@ func startLinuxUpdateWorker(root string) error {
 	if err := os.MkdirAll(logDirectory, 0o700); err != nil {
 		return err
 	}
-	logFile, err := os.OpenFile(filepath.Join(logDirectory, "update.log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+	logPath := filepath.Join(logDirectory, "update.log")
+	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 	if err != nil {
 		return err
 	}
 	defer logFile.Close()
 	command := exec.Command(systemdRun,
-		"--user", "--unit=dieter-update", "--collect", "--quiet", "--property=Type=exec", "--",
+		"--user", "--unit=dieter-update", "--collect", "--quiet", "--property=Type=exec",
+		"--setenv=PATH="+os.Getenv("PATH"),
+		"--property=StandardOutput=append:"+logPath,
+		"--property=StandardError=append:"+logPath,
+		"--",
 		executable, "__linux-update-worker", "--root", root,
 	)
 	command.Stdin = nil

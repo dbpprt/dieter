@@ -40,7 +40,7 @@ func TestInstallSystemdUserService(t *testing.T) {
 	for _, expected := range []string{
 		managedSystemdUnitHeader, "Type=notify", "NotifyAccess=main",
 		"Restart=always", "TimeoutStopSec=30s", "KillMode=mixed", "UMask=0077",
-		"DIETER_SERVICE_MANAGER=systemd-user", "EnvironmentFile=\"-" + root + "/service.env\"",
+		"DIETER_SERVICE_MANAGER=systemd-user", "EnvironmentFile=-\"" + root + "/service.env\"",
 		"\"--store\" \"" + root + "\" \"daemon\" \"start\" \"--service\"",
 		"\"--direct-addr\" \"0.0.0.0:4243\" \"--direct-host\" \"host.example.test\" \"--direct-network\" \"tailscale\"",
 	} {
