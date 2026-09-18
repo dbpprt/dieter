@@ -242,6 +242,7 @@
                         .font(.subheadline).foregroundStyle(.secondary)
                     } else if !part.text.isEmpty {
                         IOSMessageText(text: part.text)
+                            .accessibilityIdentifier("ios.message.text.\(message.role)")
                     } else if !part.filename.isEmpty {
                         Label(part.filename, systemImage: part.mediaType.hasPrefix("image/") ? "photo" : "doc")
                             .font(.subheadline).foregroundStyle(.secondary)

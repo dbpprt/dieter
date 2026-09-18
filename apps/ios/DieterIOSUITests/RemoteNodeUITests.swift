@@ -136,6 +136,17 @@ final class RemoteNodeUITests: XCTestCase {
         XCTAssertTrue(label.waitForExistence(timeout: timeout), "Missing text \(text).\n\(app.debugDescription)")
     }
 
+    private func assistantTextExists(_ app: XCUIApplication, _ text: String, timeout: TimeInterval = 60) {
+        // Match the small set of transcript text nodes by identifier before
+        // inspecting their labels. A broad StaticText query repeatedly snapshots
+        // the entire iPad split view and can starve the fixture data plane.
+        let label = app.staticTexts.matching(identifier: "ios.message.text.assistant")
+            .matching(NSPredicate(format: "label CONTAINS %@", text)).firstMatch
+        XCTAssertTrue(
+            label.waitForExistence(timeout: timeout),
+            "Missing assistant text \(text).\n\(app.debugDescription)")
+    }
+
     private func waitForBoard(_ app: XCUIApplication, project: String, board: String) {
         // The machine name appears before its workspace loads. Project links
         // navigate away from the sidebar; board links are their siblings.
@@ -200,11 +211,11 @@ final class RemoteNodeUITests: XCTestCase {
             XCTWaiter.wait(for: [runReady], timeout: 5), .completed,
             "Run task should remain visible and enabled after entering the task.\n\(app.debugDescription)")
         tap(app, "ios.create.run")
-        textExists(app, "Mock harness received: Verify this request came from iOS", timeout: 90)
+        assistantTextExists(app, "Mock harness received: Verify this request came from iOS", timeout: 150)
         screenshot(app, "03-live-remote-conversation")
         enter(app, "ios.composer.message", "Continue from the same iOS conversation")
         tap(app, "ios.composer.send")
-        textExists(app, "Mock harness received: Continue from the same iOS conversation", timeout: 60)
+        assistantTextExists(app, "Mock harness received: Continue from the same iOS conversation")
         screenshot(app, "04-follow-up")
         tap(app, "ios.task.actions")
         tap(app, "ios.task.files")
@@ -246,19 +257,19 @@ final class RemoteNodeUITests: XCTestCase {
         tap(app, "ios.create.add")
         textExists(app, "Ready when you are")
         XCTAssertFalse(
-            app.staticTexts.matching(
-                NSPredicate(format: "label CONTAINS 'Mock harness received: Start the saved iOS draft'")
-            ).firstMatch.exists)
+            app.staticTexts.matching(identifier: "ios.message.text.assistant")
+                .matching(NSPredicate(format: "label CONTAINS 'Mock harness received: Start the saved iOS draft'"))
+                .firstMatch.exists)
         tap(app, "ios.task.start")
-        textExists(app, "Mock harness received: Start the saved iOS draft", timeout: 60)
+        assistantTextExists(app, "Mock harness received: Start the saved iOS draft")
         screenshot(app, "07-draft-started")
 
         XCUIDevice.shared.press(.home)
         app.activate()
-        textExists(app, "Mock harness received: Start the saved iOS draft", timeout: 40)
+        assistantTextExists(app, "Mock harness received: Start the saved iOS draft", timeout: 40)
         enter(app, "ios.composer.message", "Continue after foreground reconnect")
         tap(app, "ios.composer.send")
-        textExists(app, "Mock harness received: Continue after foreground reconnect", timeout: 60)
+        assistantTextExists(app, "Mock harness received: Continue after foreground reconnect")
         screenshot(app, "08-foreground-reconnected")
 
         app.terminate()
