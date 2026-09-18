@@ -21,18 +21,21 @@ struct RemoteDesktopRecovery {
     }
 
     static func retryable(_ error: Error) -> Bool {
-        DieterRPCFailure.isTransient(error) || (error as? RPCError).map {
-            [.notFound, .resourceExhausted, .aborted, .unauthenticated].contains($0.code)
-        } == true
+        DieterRPCFailure.isTransient(error)
+            || (error as? RPCError).map {
+                [.notFound, .resourceExhausted, .aborted, .unauthenticated].contains($0.code)
+            } == true
     }
 
     static func retryableClosure(_ reason: String) -> Bool {
-        ["session lease expired", "signaling observer did not reconnect", "WebRTC peer did not reconnect",
-         "peer connection failed", "peer connection closed", "daemon shutdown",
-         "remote desktop data channel closed", "remote desktop input channel failed",
-         "remote input queue overflow", "remote input delivery failed",
-         "native capture rendition stopped", "native daemon heartbeat expired",
-         "native capture helper unresponsive", "native capture helper stopped"].contains(reason)
+        [
+            "session lease expired", "signaling observer did not reconnect", "WebRTC peer did not reconnect",
+            "peer connection failed", "peer connection closed", "daemon shutdown",
+            "remote desktop data channel closed", "remote desktop input channel failed",
+            "remote input queue overflow", "remote input delivery failed",
+            "native capture rendition stopped", "native daemon heartbeat expired",
+            "native capture helper unresponsive", "native capture helper stopped",
+        ].contains(reason)
     }
 }
 

@@ -15,11 +15,17 @@ final class RemoteDesktopReferenceReceiver: @unchecked Sendable {
     private var generation: UInt64 = 0
     private let acknowledge: @Sendable ([Dieter_V1_RemoteDesktopReference]) -> Void
     private let clock: @Sendable () -> TimeInterval
-    init(clock: @escaping @Sendable () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
-         acknowledge: @escaping @Sendable ([Dieter_V1_RemoteDesktopReference]) -> Void) {
+    init(
+        clock: @escaping @Sendable () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
+        acknowledge: @escaping @Sendable ([Dieter_V1_RemoteDesktopReference]) -> Void
+    ) {
         self.clock = clock; self.acknowledge = acknowledge
     }
-    func stop() { lock.withLock { active = false; decoded.removeAll(); pending.removeAll() } }
+    func stop() {
+        lock.withLock {
+            active = false; decoded.removeAll(); pending.removeAll()
+        }
+    }
     func decoded(timestamp: UInt32) {
         lock.withLock {
             guard active else { return }
@@ -41,7 +47,9 @@ final class RemoteDesktopReferenceReceiver: @unchecked Sendable {
         var ready: [Dieter_V1_RemoteDesktopReference] = []
         pending.removeAll { value, at in
             if now - at >= 2 { return true }
-            if decoded.contains(where: { $0.0 == value.rtpTimestamp && now - $0.1 < 2 }) { ready.append(value); return true }
+            if decoded.contains(where: { $0.0 == value.rtpTimestamp && now - $0.1 < 2 }) {
+                ready.append(value); return true
+            }
             return false
         }
         if !ready.isEmpty { acknowledge(ready) }
@@ -50,7 +58,9 @@ final class RemoteDesktopReferenceReceiver: @unchecked Sendable {
 
 func remoteDesktopEnableReferenceDependencies(_ transceiver: RTCRtpTransceiver) throws -> Bool {
     let extensions = transceiver.headerExtensionsToNegotiate
-    guard let descriptor = extensions.first(where: { $0.uri == remoteDesktopGenericDescriptorURI }) else { return false }
+    guard let descriptor = extensions.first(where: { $0.uri == remoteDesktopGenericDescriptorURI }) else {
+        return false
+    }
     descriptor.direction = .recvOnly
     try transceiver.setHeaderExtensionsToNegotiate(extensions)
     return true
