@@ -808,6 +808,35 @@ The native iOS 18+ SwiftUI client connects to enrolled remote nodes through the 
 
 ### Native screen sharing
 
+In the Mac viewer, **Settings → General → Capture keyboard in fullscreen**
+forwards system shortcuts such as Cmd-Tab while the fullscreen viewer has focus
+and control. Allow Dieter in macOS Accessibility to enable interception. Keep
+**Cmd-Shift-Escape** local to release input; click the video to capture again.
+Cmd-Control-F is forwarded while captured and toggles Dieter's fullscreen window
+after release. Focus loss, control loss, disconnection, or a disabled event tap
+releases capture. Protected system input and hardware/system gestures are not
+included. Ordinary input remains available when capture permission is denied.
+
+**Settings → Experimental → Match remote resolution in fullscreen** is off by
+default. It temporarily changes the selected remote monitor to the closest
+supported desktop size and Retina scale, independently of encoded video ceilings.
+This affects other viewers and anyone using that monitor. Only the controlling
+session may change modes. Fullscreen exit, disabling the option, changing displays,
+control handoff, and session closure restore the original mode. A subsequent local
+mode change takes precedence. macOS also reverts the helper's app-scoped changes
+when it exits; permanent display preferences are never written. Unsupported modes,
+mirrored displays and older helpers leave streaming available with a status message.
+Arbitrary virtual displays are not created.
+
+The daemon CLI exposes the same experimental operations over local, direct TLS,
+and relay routes. Use IDs from a fresh response; stale requests are rejected:
+
+```sh
+dieter screen resolution modes SESSION
+dieter screen resolution set SESSION --display DISPLAY_ID --mode MODE_ID --expected-current CURRENT_MODE_ID
+dieter screen resolution restore SESSION
+```
+
 Native command acknowledgments and heartbeats are independent of encoder
 configuration and downstream cursor/state delivery. Keepalives run at a fixed
 cadence without waiting for an individual reply; other acknowledged commands
@@ -889,8 +918,9 @@ failures retain the last valid shape (or the initial arrow); embedded capture
 remains an explicit compatibility option.
 Physical USB HID keys, left/right modifiers, pointer dragging and precise scrolling
 are supported. Enable local text composition in Screen options for IME input.
-Focus loss releases held input; ⌘⇧Esc releases input locally. macOS-reserved shortcuts
-may be intercepted by the viewer OS before the app receives them.
+Focus loss releases held input; ⌘⇧Esc releases input locally. Fullscreen keyboard
+capture forwards system shortcuts when Accessibility permission is available;
+protected system input and hardware/system gestures remain local.
 
 The CLI works on local, verified direct TLS and authenticated relay routes:
 

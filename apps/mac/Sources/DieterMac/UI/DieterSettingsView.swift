@@ -541,8 +541,21 @@ struct GeneralSettings: View {
                 }
                 SettingsPanel(
                     title: "Screen sharing",
-                    subtitle: "Limit how long an unattended remote desktop connection stays open."
+                    subtitle: "Control fullscreen input and unattended connections."
                 ) {
+                    Toggle(
+                        "Capture keyboard in fullscreen",
+                        isOn: Binding(
+                            get: { store.screensModel.captureFullscreenKeyboard },
+                            set: { store.screensModel.captureFullscreenKeyboard = $0 })
+                    )
+                    .toggleStyle(.switch)
+                    .accessibilityIdentifier("settings.screenShare.captureKeyboard")
+                    .smokeTarget("settings.screenShare.captureKeyboard")
+                    Text("Forward system shortcuts such as ⌘Tab to the remote Mac. Press ⌘⇧Esc to release input.")
+                        .font(.caption).foregroundStyle(DieterTheme.tertiary)
+                    Button("Allow keyboard capture in macOS…") { RemoteDesktopKeyboardCapture.requestPermission() }
+                    Divider().overlay(DieterTheme.border)
                     Toggle(
                         "Disconnect inactive screen shares",
                         isOn: Binding(
@@ -1027,6 +1040,32 @@ struct ExperimentalSettings: View {
     var body: some View {
         SettingsPage {
             VStack(spacing: 14) {
+                SettingsPanel(
+                    title: "Screen sharing resolution",
+                    subtitle: "Match the remote desktop to your fullscreen display."
+                ) {
+                    HStack {
+                        Text("Match remote resolution in fullscreen")
+                            .font(.system(size: 12, weight: .semibold))
+                        Spacer()
+                        Toggle(
+                            "Match remote resolution in fullscreen",
+                            isOn: Binding(
+                                get: { store.screensModel.matchClientResolution },
+                                set: { store.screensModel.matchClientResolution = $0 })
+                        )
+                        .labelsHidden()
+                        .toggleStyle(.switch)
+                        .accessibilityLabel("Match remote resolution in fullscreen")
+                        .accessibilityIdentifier("settings.experimental.screenResolution")
+                        .smokeTarget("settings.experimental.screenResolution")
+                    }
+                    Text(
+                        "Off by default. Temporarily changes the remote monitor for everyone using it, using the closest supported resolution and Retina scale. Restores on fullscreen exit or disconnect. Video quality limits still apply."
+                    )
+                    .font(.caption).foregroundStyle(DieterTheme.tertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+                }
                 SettingsPanel(
                     title: "Conversation workspace",
                     subtitle: "Work with files, web pages, terminals, changes, and processes beside a conversation."

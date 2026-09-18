@@ -61,6 +61,7 @@ type Options struct {
 	// Optional transport instrumentation for isolated fixtures; never set by the daemon CLI.
 	MediaInterceptors []interceptor.Factory
 	ClipboardFactory  func() ClipboardBackend
+	DisplayFactory    func() DisplayBackend
 	Identity          Identity
 	Source            SourceOptions
 	SessionLease      time.Duration
@@ -75,24 +76,27 @@ type Options struct {
 }
 
 type Manager struct {
-	clipboardName      string
-	permissionMu       sync.Mutex
-	capabilityMu       sync.Mutex
-	cachedCapabilities *dieterv1.RemoteDesktopCapabilities
-	capabilitiesAt     time.Time
-	options            Options
-	mu                 sync.Mutex
-	sessions           map[string]*Session
-	admissionMu        sync.Mutex
-	admissions         chan struct{}
-	controlMu          sync.Mutex
-	controller         *Session // protected by controlMu
-	controlGeneration  uint64   // protected by controlMu
-	policyGeneration   uint64   // protected by mu
-	media              *capturePool
-	probeMu            sync.Mutex
-	probe              captureProbeResult
-	controlProbe       captureProbeResult
+	clipboardName       string
+	permissionMu        sync.Mutex
+	capabilityMu        sync.Mutex
+	cachedCapabilities  *dieterv1.RemoteDesktopCapabilities
+	capabilitiesAt      time.Time
+	options             Options
+	mu                  sync.Mutex
+	sessions            map[string]*Session
+	admissionMu         sync.Mutex
+	admissions          chan struct{}
+	controlMu           sync.Mutex
+	controller          *Session       // protected by controlMu
+	displayBackend      DisplayBackend // protected by controlMu
+	displayOwner        *Session
+	displayLeaseDisplay string
+	controlGeneration   uint64 // protected by controlMu
+	policyGeneration    uint64 // protected by mu
+	media               *capturePool
+	probeMu             sync.Mutex
+	probe               captureProbeResult
+	controlProbe        captureProbeResult
 }
 
 type captureProbeResult struct {
@@ -148,6 +152,9 @@ func New(options Options) *Manager {
 		backend := &MemoryClipboard{}
 		m.options.ClipboardFactory = func() ClipboardBackend { return backend }
 	}
+	if options.Source.Kind == "synthetic" && options.DisplayFactory == nil {
+		m.options.DisplayFactory = func() DisplayBackend { return &MemoryDisplayModes{} }
+	}
 	m.media = newCapturePool(func(o SourceOptions) (FrameSource, error) { return m.options.SourceFactory(o) })
 	return m
 }
@@ -157,6 +164,7 @@ func (m *Manager) Capabilities(enabled, controlEnabled bool) *dieterv1.RemoteDes
 	value.DaemonExecutable, value.CaptureExecutable = executableIdentity(m.options.Source)
 	value.ClipboardSupported = runtime.GOOS == "darwin" || m.options.ClipboardFactory != nil
 	value.BinaryClipboardSupported = value.ClipboardSupported
+	value.DisplayModeSwitchingSupported = value.DisplayModeSwitchingSupported || m.options.DisplayFactory != nil
 	value.MaxClients = maxClients
 	value.SupportedInputProtocolVersions = []uint32{2, 3}
 	m.mu.Lock()
@@ -428,10 +436,15 @@ func (m *Manager) clear(session *Session) {
 	m.mu.Unlock()
 	m.controlMu.Lock()
 	if m.controller == session {
+		_, _ = m.restoreDisplayLocked(context.Background())
 		m.controller = nil
 		m.controlGeneration++
 	}
 	m.publishControlLocked()
+	if len(m.allSessions()) == 0 && m.displayBackend != nil {
+		m.displayBackend.Close()
+		m.displayBackend = nil
+	}
 	m.controlMu.Unlock()
 }
 
@@ -527,6 +540,7 @@ type Session struct {
 	peerDetachedAt       time.Time
 	control              bool
 	displayID            string
+	displayModeFence     uint64 // mu: reject old geometry until the native generation advances
 	inputEpoch           []byte
 	pointerInputSequence atomic.Uint64
 	stateInputSequence   atomic.Uint64

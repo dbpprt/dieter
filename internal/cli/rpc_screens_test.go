@@ -101,6 +101,24 @@ func assertScreenSessionCLI(t *testing.T, client *CLI, output *bytes.Buffer, con
 	if id == "" {
 		t.Fatal("missing session")
 	}
+	var modes dieterv1.RemoteDesktopDisplayModes
+	if err := protojson.Unmarshal([]byte(runDaemonCLI(t, client, output, "screen", "resolution", "modes", id)), &modes); err != nil {
+		t.Fatal(err)
+	}
+	if modes.CurrentModeId != "1080" || len(modes.Modes) != 2 {
+		t.Fatalf("display modes: %v", &modes)
+	}
+	changed := runDaemonCLI(t, client, output, "screen", "resolution", "set", id, "--display", modes.DisplayId, "--mode", "720", "--expected-current", "1080")
+	if err := protojson.Unmarshal([]byte(changed), &modes); err != nil || !modes.Temporary || modes.CurrentModeId != "720" {
+		t.Fatalf("set display: %v %v", &modes, err)
+	}
+	if err := client.Run([]string{"screen", "resolution", "set", id, "--display", modes.DisplayId, "--mode", "720", "--expected-current", "1080"}); err == nil {
+		t.Fatal("stale display mode accepted")
+	}
+	restored := runDaemonCLI(t, client, output, "screen", "resolution", "restore", id)
+	if err := protojson.Unmarshal([]byte(restored), &modes); err != nil || modes.Temporary || modes.CurrentModeId != "1080" {
+		t.Fatalf("restore display: %v %v", &modes, err)
+	}
 	var state dieterv1.RemoteDesktopSessionState
 	if err = protojson.Unmarshal([]byte(runDaemonCLI(t, client, output, "screen", "status", id)), &state); err != nil {
 		t.Fatal(err)

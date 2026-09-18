@@ -1178,6 +1178,45 @@ public enum Dieter_V1_DieterService: Sendable {
                 type: .unary
             )
         }
+        /// Namespace for "ListRemoteDesktopDisplayModes" metadata.
+        public enum ListRemoteDesktopDisplayModes: Sendable {
+            /// Request type for "ListRemoteDesktopDisplayModes".
+            public typealias Input = Dieter_V1_RemoteDesktopRef
+            /// Response type for "ListRemoteDesktopDisplayModes".
+            public typealias Output = Dieter_V1_RemoteDesktopDisplayModes
+            /// Descriptor for "ListRemoteDesktopDisplayModes".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.DieterService"),
+                method: "ListRemoteDesktopDisplayModes",
+                type: .unary
+            )
+        }
+        /// Namespace for "SetRemoteDesktopDisplayMode" metadata.
+        public enum SetRemoteDesktopDisplayMode: Sendable {
+            /// Request type for "SetRemoteDesktopDisplayMode".
+            public typealias Input = Dieter_V1_SetRemoteDesktopDisplayModeRequest
+            /// Response type for "SetRemoteDesktopDisplayMode".
+            public typealias Output = Dieter_V1_RemoteDesktopDisplayModes
+            /// Descriptor for "SetRemoteDesktopDisplayMode".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.DieterService"),
+                method: "SetRemoteDesktopDisplayMode",
+                type: .unary
+            )
+        }
+        /// Namespace for "RestoreRemoteDesktopDisplayMode" metadata.
+        public enum RestoreRemoteDesktopDisplayMode: Sendable {
+            /// Request type for "RestoreRemoteDesktopDisplayMode".
+            public typealias Input = Dieter_V1_RemoteDesktopRef
+            /// Response type for "RestoreRemoteDesktopDisplayMode".
+            public typealias Output = Dieter_V1_RemoteDesktopDisplayModes
+            /// Descriptor for "RestoreRemoteDesktopDisplayMode".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.DieterService"),
+                method: "RestoreRemoteDesktopDisplayMode",
+                type: .unary
+            )
+        }
         /// Namespace for "ProbeRemoteDesktopPermissions" metadata.
         public enum ProbeRemoteDesktopPermissions: Sendable {
             /// Request type for "ProbeRemoteDesktopPermissions".
@@ -1516,6 +1555,9 @@ public enum Dieter_V1_DieterService: Sendable {
             CancelExecution.descriptor,
             CloseExecution.descriptor,
             GetRemoteDesktopCapabilities.descriptor,
+            ListRemoteDesktopDisplayModes.descriptor,
+            SetRemoteDesktopDisplayMode.descriptor,
+            RestoreRemoteDesktopDisplayMode.descriptor,
             ProbeRemoteDesktopPermissions.descriptor,
             GetRemoteDesktopSettings.descriptor,
             UpdateRemoteDesktopSettings.descriptor,
@@ -3287,6 +3329,63 @@ extension Dieter_V1_DieterService {
             deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_RemoteDesktopCapabilities>,
             options: GRPCCore.CallOptions,
             onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_RemoteDesktopCapabilities>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "ListRemoteDesktopDisplayModes" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_RemoteDesktopRef` message.
+        ///   - serializer: A serializer for `Dieter_V1_RemoteDesktopRef` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_RemoteDesktopDisplayModes` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func listRemoteDesktopDisplayModes<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_RemoteDesktopRef>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_RemoteDesktopRef>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_RemoteDesktopDisplayModes>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_RemoteDesktopDisplayModes>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "SetRemoteDesktopDisplayMode" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_SetRemoteDesktopDisplayModeRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_SetRemoteDesktopDisplayModeRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_RemoteDesktopDisplayModes` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func setRemoteDesktopDisplayMode<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_SetRemoteDesktopDisplayModeRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_SetRemoteDesktopDisplayModeRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_RemoteDesktopDisplayModes>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_RemoteDesktopDisplayModes>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "RestoreRemoteDesktopDisplayMode" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_RemoteDesktopRef` message.
+        ///   - serializer: A serializer for `Dieter_V1_RemoteDesktopRef` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_RemoteDesktopDisplayModes` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func restoreRemoteDesktopDisplayMode<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_RemoteDesktopRef>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_RemoteDesktopRef>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_RemoteDesktopDisplayModes>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_RemoteDesktopDisplayModes>) async throws -> Result
         ) async throws -> Result where Result: Sendable
 
         /// Call the "ProbeRemoteDesktopPermissions" method.
@@ -6374,6 +6473,96 @@ extension Dieter_V1_DieterService {
             )
         }
 
+        /// Call the "ListRemoteDesktopDisplayModes" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_RemoteDesktopRef` message.
+        ///   - serializer: A serializer for `Dieter_V1_RemoteDesktopRef` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_RemoteDesktopDisplayModes` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func listRemoteDesktopDisplayModes<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_RemoteDesktopRef>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_RemoteDesktopRef>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_RemoteDesktopDisplayModes>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_RemoteDesktopDisplayModes>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Dieter_V1_DieterService.Method.ListRemoteDesktopDisplayModes.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "SetRemoteDesktopDisplayMode" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_SetRemoteDesktopDisplayModeRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_SetRemoteDesktopDisplayModeRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_RemoteDesktopDisplayModes` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func setRemoteDesktopDisplayMode<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_SetRemoteDesktopDisplayModeRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_SetRemoteDesktopDisplayModeRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_RemoteDesktopDisplayModes>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_RemoteDesktopDisplayModes>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Dieter_V1_DieterService.Method.SetRemoteDesktopDisplayMode.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "RestoreRemoteDesktopDisplayMode" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_RemoteDesktopRef` message.
+        ///   - serializer: A serializer for `Dieter_V1_RemoteDesktopRef` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_RemoteDesktopDisplayModes` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func restoreRemoteDesktopDisplayMode<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_RemoteDesktopRef>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_RemoteDesktopRef>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_RemoteDesktopDisplayModes>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_RemoteDesktopDisplayModes>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Dieter_V1_DieterService.Method.RestoreRemoteDesktopDisplayMode.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
         /// Call the "ProbeRemoteDesktopPermissions" method.
         ///
         /// > Source IDL Documentation:
@@ -9204,6 +9393,81 @@ extension Dieter_V1_DieterService.ClientProtocol {
             request: request,
             serializer: GRPCProtobuf.ProtobufSerializer<SwiftProtobuf.Google_Protobuf_Empty>(),
             deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_V1_RemoteDesktopCapabilities>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "ListRemoteDesktopDisplayModes" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Dieter_V1_RemoteDesktopRef` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func listRemoteDesktopDisplayModes<Result>(
+        request: GRPCCore.ClientRequest<Dieter_V1_RemoteDesktopRef>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_RemoteDesktopDisplayModes>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.listRemoteDesktopDisplayModes(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_V1_RemoteDesktopRef>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_V1_RemoteDesktopDisplayModes>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "SetRemoteDesktopDisplayMode" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Dieter_V1_SetRemoteDesktopDisplayModeRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func setRemoteDesktopDisplayMode<Result>(
+        request: GRPCCore.ClientRequest<Dieter_V1_SetRemoteDesktopDisplayModeRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_RemoteDesktopDisplayModes>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.setRemoteDesktopDisplayMode(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_V1_SetRemoteDesktopDisplayModeRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_V1_RemoteDesktopDisplayModes>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "RestoreRemoteDesktopDisplayMode" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Dieter_V1_RemoteDesktopRef` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func restoreRemoteDesktopDisplayMode<Result>(
+        request: GRPCCore.ClientRequest<Dieter_V1_RemoteDesktopRef>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_RemoteDesktopDisplayModes>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.restoreRemoteDesktopDisplayMode(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_V1_RemoteDesktopRef>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_V1_RemoteDesktopDisplayModes>(),
             options: options,
             onResponse: handleResponse
         )
@@ -12298,6 +12562,93 @@ extension Dieter_V1_DieterService.ClientProtocol {
             metadata: metadata
         )
         return try await self.getRemoteDesktopCapabilities(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "ListRemoteDesktopDisplayModes" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func listRemoteDesktopDisplayModes<Result>(
+        _ message: Dieter_V1_RemoteDesktopRef,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_RemoteDesktopDisplayModes>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Dieter_V1_RemoteDesktopRef>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.listRemoteDesktopDisplayModes(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "SetRemoteDesktopDisplayMode" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func setRemoteDesktopDisplayMode<Result>(
+        _ message: Dieter_V1_SetRemoteDesktopDisplayModeRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_RemoteDesktopDisplayModes>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Dieter_V1_SetRemoteDesktopDisplayModeRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.setRemoteDesktopDisplayMode(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "RestoreRemoteDesktopDisplayMode" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func restoreRemoteDesktopDisplayMode<Result>(
+        _ message: Dieter_V1_RemoteDesktopRef,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_RemoteDesktopDisplayModes>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Dieter_V1_RemoteDesktopRef>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.restoreRemoteDesktopDisplayMode(
             request: request,
             options: options,
             onResponse: handleResponse

@@ -90,6 +90,21 @@ func (m *Manager) UpdateSession(ctx context.Context, r *dieterv1.UpdateRemoteDes
 			return nil, errors.New("capture backend does not support live configuration")
 		}
 		s.configurationMu.Lock()
+		s.mu.Lock()
+		displayChanged := s.status.Configuration.GetDisplayId() != config.DisplayId
+		s.mu.Unlock()
+		if displayChanged {
+			m.controlMu.Lock()
+			var restoreErr error
+			if m.displayOwner == s {
+				_, restoreErr = m.restoreDisplayLocked(ctx)
+			}
+			m.controlMu.Unlock()
+			if restoreErr != nil {
+				s.configurationMu.Unlock()
+				return nil, restoreErr
+			}
+		}
 		s.releaseInput()
 		applied := nativeConfiguration(config)
 		if s.pacer != nil {

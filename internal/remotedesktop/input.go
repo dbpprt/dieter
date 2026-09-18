@@ -201,12 +201,16 @@ func (s *Session) deliverInput(sink InputSink, input *dieterv1.RemoteDesktopInpu
 	}
 	s.mu.Lock()
 	generation := s.status.GetDisplayGeneration()
+	modeChanging := s.displayModeFence != 0 && s.displayModeFence == generation
 	expired := s.receiverInputExpired
 	floor := s.expiredStateSequence
 	if input.GetPointerMove() != nil {
 		floor = s.expiredPointerSequence
 	}
 	s.mu.Unlock()
+	if modeChanging && input.GetReleaseAll() == nil {
+		return
+	}
 	if (expired || (floor > 0 && input.Sequence <= floor)) && input.GetReleaseAll() == nil {
 		return
 	}

@@ -224,6 +224,9 @@ func (s *nativeHelperSource) stopError() error {
 func (s *nativeHelperSource) RequestKeyFrame() {
 	_ = s.send(context.Background(), nativeCommand{Kind: "refresh"}, false)
 }
+func (s *nativeHelperSource) DisplayModeChanged(ctx context.Context) error {
+	return s.send(ctx, nativeCommand{Kind: "display_changed"}, true)
+}
 func (s *nativeHelperSource) SetBitrateKbps(bitrate int) {
 	s.mu.Lock()
 	config := s.currentConfigurationLocked()

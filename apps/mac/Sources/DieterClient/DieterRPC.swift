@@ -870,6 +870,24 @@ package final class DieterRPC: Sendable {
         return try await service.setRemoteDesktopControl(request: .init(message: request))
     }
 
+    package func remoteDesktopDisplayModes(sessionID: String) async throws -> Dieter_V1_RemoteDesktopDisplayModes {
+        var request = Dieter_V1_RemoteDesktopRef(); request.sessionID = sessionID
+        return try await service.listRemoteDesktopDisplayModes(
+            request: .init(message: request), options: Self.boundedUnaryCallOptions())
+    }
+    package func setRemoteDesktopDisplayMode(_ request: Dieter_V1_SetRemoteDesktopDisplayModeRequest) async throws
+        -> Dieter_V1_RemoteDesktopDisplayModes
+    {
+        try await service.setRemoteDesktopDisplayMode(
+            request: .init(message: request), options: Self.boundedUnaryCallOptions())
+    }
+    package func restoreRemoteDesktopDisplayMode(sessionID: String) async throws -> Dieter_V1_RemoteDesktopDisplayModes
+    {
+        var request = Dieter_V1_RemoteDesktopRef(); request.sessionID = sessionID
+        return try await service.restoreRemoteDesktopDisplayMode(
+            request: .init(message: request), options: Self.boundedUnaryCallOptions())
+    }
+
     package func closeRemoteDesktop(sessionID: String) async throws {
         var request = Dieter_V1_RemoteDesktopRef()
         request.sessionID = sessionID

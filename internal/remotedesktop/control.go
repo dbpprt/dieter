@@ -35,10 +35,16 @@ func (m *Manager) SetControl(ctx context.Context, id string, take bool) (*dieter
 			if err := m.controller.releaseNativeInput(ctx); err != nil {
 				return nil, err
 			}
+			if _, err := m.restoreDisplayLocked(ctx); err != nil {
+				return nil, err
+			}
 		}
 		m.controller = s
 		m.controlGeneration++
 	} else if !take && m.controller == s {
+		if _, err := m.restoreDisplayLocked(ctx); err != nil {
+			return nil, err
+		}
 		if err := s.releaseNativeInput(ctx); err != nil {
 			return nil, err
 		}

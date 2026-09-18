@@ -128,6 +128,9 @@ service DieterService {
 
   rpc GetRemoteDesktopCapabilities(google.protobuf.Empty)
       returns (RemoteDesktopCapabilities);
+  rpc ListRemoteDesktopDisplayModes(RemoteDesktopRef) returns (RemoteDesktopDisplayModes);
+  rpc SetRemoteDesktopDisplayMode(SetRemoteDesktopDisplayModeRequest) returns (RemoteDesktopDisplayModes);
+  rpc RestoreRemoteDesktopDisplayMode(RemoteDesktopRef) returns (RemoteDesktopDisplayModes);
   // Explicit, bounded permission test performed by the running daemon.
   // Discards one encoded frame and never injects input or changes settings.
   rpc ProbeRemoteDesktopPermissions(ProbeRemoteDesktopPermissionsRequest)
@@ -1682,6 +1685,35 @@ message RemoteDesktopCapabilities {
   bool binary_clipboard_supported = 27;
   // Hardware-verified operating envelopes; missing entries retain legacy H.264.
   repeated RemoteDesktopCodecMode codec_modes = 28;
+  bool display_mode_switching_supported = 29;
+}
+
+// Physical desktop modes, independent of the encoded stream's size limits.
+message RemoteDesktopDisplayMode {
+  string id = 1;
+  int32 logical_width = 2;
+  int32 logical_height = 3;
+  int32 pixel_width = 4;
+  int32 pixel_height = 5;
+  double refresh_rate = 6;
+}
+
+message RemoteDesktopDisplayModes {
+  string display_id = 1;
+  repeated RemoteDesktopDisplayMode modes = 2;
+  string current_mode_id = 3;
+  string original_mode_id = 4;
+  bool temporary = 5;
+  // A local change superseded the lease; do not automatically reapply it.
+  bool superseded = 6;
+}
+
+message SetRemoteDesktopDisplayModeRequest {
+  string session_id = 1;
+  string display_id = 2;
+  string mode_id = 3;
+  // Reject stale mode lists or a display changed locally after discovery.
+  string expected_current_mode_id = 4;
 }
 
 message RemoteDesktopCodecMode {

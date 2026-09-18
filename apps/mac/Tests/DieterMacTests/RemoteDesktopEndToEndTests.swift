@@ -973,6 +973,28 @@ private final class ScreenFrameReadiness: @unchecked Sendable {
         controller.sendText("dieter-latency:\($0 ? 235 : 16)")
     }.sorted()
     capture(detached, "03-fullscreen-active")
+    // Exercise the experimental setting and real RPC/helper/capture generation
+    // path against the disposable display driver, never the operator's monitor.
+    let beforeMode = controller.sessionState.displayGeneration
+    viewer.displayTarget = { _ in .init(width: 1280, height: 720, scale: 1, refresh: 60) }
+    model.matchClientResolution = true
+    var matchingDiagnostic = ""
+    try await screenWait("experimental mode applied and fresh geometry presented", timeout: 15) {
+        let diagnostic =
+            "status=\(controller.displayMatching.status) busy=\(controller.displayMatching.busy) generation=\(controller.sessionState.displayGeneration)/\(beforeMode) control=\(controller.controlActive) supported=\(controller.capabilities.displayModeSwitchingSupported)"
+        if diagnostic != matchingDiagnostic { print("Resolution test: \(diagnostic)"); matchingDiagnostic = diagnostic }
+        return controller.displayMatching.status.hasPrefix("Matched:") && !controller.displayMatching.busy
+            && controller.sessionState.displayGeneration > beforeMode && controller.controlActive
+    }
+    let matchedMode = try await rpc.remoteDesktopDisplayModes(sessionID: sessionID)
+    #expect(matchedMode.temporary && matchedMode.currentModeID == "720")
+    model.matchClientResolution = false
+    try await screenWait("experimental resolution restored", timeout: 15) {
+        controller.displayMatching.status == "Remote resolution restored" && !controller.displayMatching.busy
+            && controller.controlActive
+    }
+    let restoredMode = try await rpc.remoteDesktopDisplayModes(sessionID: sessionID)
+    #expect(!restoredMode.temporary && restoredMode.currentModeID == "1080")
     if let hold = Double(env["DIETER_TEST_SCREEN_UNDOCK_HOLD"] ?? ""), hold > 0 {
         try await Task.sleep(for: .seconds(min(hold, 30)))
     }

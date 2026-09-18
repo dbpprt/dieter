@@ -13,10 +13,13 @@ import (
 // RPC must have an equivalent, documented CLI entry point. Adding an RPC makes
 // this test fail until the feature team wires and documents its CLI operation.
 var rpcCommand = map[string]string{
-	"ProbeRemoteDesktopPermissions": "screen permissions",
-	"PresentConversationContent":    "card present",
-	"UpdateBoardHostnames":          "board hostnames",
-	"Health":                        "status", "GetRuntimeStatus": "status", "GetMachineInformation": "machine info", "PerformMachineOperation": "machine restart",
+	"ListRemoteDesktopDisplayModes":   "screen resolution modes",
+	"SetRemoteDesktopDisplayMode":     "screen resolution set",
+	"RestoreRemoteDesktopDisplayMode": "screen resolution restore",
+	"ProbeRemoteDesktopPermissions":   "screen permissions",
+	"PresentConversationContent":      "card present",
+	"UpdateBoardHostnames":            "board hostnames",
+	"Health":                          "status", "GetRuntimeStatus": "status", "GetMachineInformation": "machine info", "PerformMachineOperation": "machine restart",
 	"GetState": "status", "WatchState": "watch state", "WatchSync": "watch sync", "GetHarnesses": "harness list",
 	"GetSettings": "settings show", "GetSettingsOptions": "settings options", "UpdateSettings": "settings update",
 	"GetPromptSettings": "prompt show", "UpdatePromptSettings": "prompt update", "SetProjectPromptTemplate": "prompt project", "SetBoardPromptTemplate": "prompt board", "PreviewPrompt": "prompt preview",
@@ -56,6 +59,7 @@ func TestEveryDaemonRPCMapsToCLICommand(t *testing.T) {
 
 func TestEveryDaemonCLICommandHasOfflineHelp(t *testing.T) {
 	paths := []string{
+		"screen resolution", "screen resolution modes", "screen resolution set", "screen resolution restore",
 		"card present", "chat present",
 		"auth", "auth login", "auth status", "auth logout",
 		"machine", "machine list", "machine gateway", "machine watch", "machine show", "machine route", "machine info", "machine rename", "machine revoke", "machine restart", "machine shutdown", "machine update", "machine rtc",

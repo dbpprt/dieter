@@ -922,6 +922,24 @@
             }
             let workspacePanelEnabled = await NativeUIAccessibility.pressWhenSettled(
                 "settings.experimental.conversationWorkspacePanel", in: window)
+            let resolutionDefaultOff = !store.screensModel.matchClientResolution
+            let resolutionEnabled = await NativeUIAccessibility.pressWhenSettled(
+                "settings.experimental.screenResolution", in: window)
+            let resolutionStoredOn = await waitUntil(timeout: 5) {
+                store.screensModel.matchClientResolution
+                    && appearanceDefaults.bool(forKey: ScreensModel.resolutionMatchingKey)
+            }
+            let resolutionDisabled = await NativeUIAccessibility.pressWhenSettled(
+                "settings.experimental.screenResolution", in: window)
+            let resolutionStoredOff = await waitUntil(timeout: 5) {
+                !store.screensModel.matchClientResolution
+                    && !appearanceDefaults.bool(forKey: ScreensModel.resolutionMatchingKey)
+            }
+            results["09h-settings-experimental-screen-resolution"] =
+                resolutionDefaultOff && resolutionEnabled && resolutionStoredOn && resolutionDisabled
+                    && resolutionStoredOff
+                ? "passed"
+                : "failed: defaultOff=\(resolutionDefaultOff), enable=\(resolutionEnabled), storedOn=\(resolutionStoredOn), disable=\(resolutionDisabled), storedOff=\(resolutionStoredOff)"
             let workspacePanelStoredOn = await waitUntil(timeout: 5) {
                 store.conversationWorkspacePanelEnabled
                     && ConversationWorkspacePanelPreferences.isEnabled(in: appearanceDefaults)

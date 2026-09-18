@@ -450,6 +450,27 @@ compatibility window. These deadlines do not impose a playback delay.
 All screen commands support global `--machine ID|NAME` with verified direct TLS
 and authenticated relay fallback.
 
+Experimental physical desktop modes are separate from stream width/height ceilings:
+
+```sh
+dieter screen resolution modes SESSION
+dieter screen resolution set SESSION --display DISPLAY_ID --mode MODE_ID --expected-current CURRENT_MODE_ID
+dieter screen resolution restore SESSION
+```
+
+`modes` lists the session's selected display and supported logical/pixel dimensions
+and refresh rates. Use the returned display, mode, and current-mode IDs for `set`;
+stale lists and non-controlling sessions are rejected. This changes the actual
+remote monitor for everyone using it. The temporary mode restores on control
+handoff/release, display selection, session closure, or display-helper exit. A later
+local display change takes precedence. It never writes permanent display preferences
+or creates virtual displays. Mirrored/unsupported displays report an error without
+ending video. Mac users opt in under Settings → Experimental → Match remote
+resolution in fullscreen, which is disabled by default and restores on exit.
+Fullscreen keyboard capture needs local Mac Accessibility permission; Cmd-Shift-Escape
+always releases capture. System shortcuts, including Cmd-Control-F, reach the remote
+while captured. Permission loss, secure local input, or tap interruption releases capture.
+
 Text, image and file clipboard sharing is available on updated Mac and Android viewers. Enable
 **Share clipboard** in Screen options (Mac) or the bottom bar (Android). Mac
 ⌘C/⌘X and remote app menus copy back to the local clipboard; ⌘V transfers the

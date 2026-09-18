@@ -30,6 +30,13 @@ private final class ScreenFixture: ScreenSignalingRPC {
         .init()
     }
     func closeRemoteDesktop(sessionID: String) async throws {}
+    func remoteDesktopDisplayModes(sessionID: String) async throws -> Dieter_V1_RemoteDesktopDisplayModes { .init() }
+    func setRemoteDesktopDisplayMode(_ request: Dieter_V1_SetRemoteDesktopDisplayModeRequest) async throws
+        -> Dieter_V1_RemoteDesktopDisplayModes
+    { .init() }
+    func restoreRemoteDesktopDisplayMode(sessionID: String) async throws -> Dieter_V1_RemoteDesktopDisplayModes {
+        .init()
+    }
     func connection(_ label: String) -> RemoteDesktopSignalingConnection {
         .init(
             rpc: self, connectionTask: Task {}, rtcConfiguration: .init(), daemonCertificatePEM: Data(),
@@ -39,7 +46,9 @@ private final class ScreenFixture: ScreenSignalingRPC {
 
 @Test @MainActor func screenLeaseRenewalDoesNotWaitForTheMainActor() async throws {
     let rpc = ScreenFixture()
-    let renewal = RemoteDesktopLeaseRenewal.start(rpc: rpc, sessionID: "owned-session", interval: .milliseconds(15)) { _ in }
+    let renewal = RemoteDesktopLeaseRenewal.start(rpc: rpc, sessionID: "owned-session", interval: .milliseconds(15)) {
+        _ in
+    }
     // Confirm the detached sender has been scheduled before measuring it while
     // the main actor is blocked. Task startup latency is not part of the lease
     // renewal invariant.
@@ -52,10 +61,13 @@ private final class ScreenFixture: ScreenSignalingRPC {
     // renewing independently, just like the native receiver feedback pump.
     blockUIForLeaseRenewalTest()
     #expect(rpc.leaseSignals.withLock { !$0.isEmpty })
-    #expect(rpc.leaseSignals.withLock { signals in signals.allSatisfy { signal in
-        guard case .leaseHeartbeat = signal.payload else { return false }
-        return signal.sessionID == "owned-session"
-    } })
+    #expect(
+        rpc.leaseSignals.withLock { signals in
+            signals.allSatisfy { signal in
+                guard case .leaseHeartbeat = signal.payload else { return false }
+                return signal.sessionID == "owned-session"
+            }
+        })
     renewal.cancel(); await renewal.value
     let count = rpc.leaseSignals.withLock { $0.count }
     try await Task.sleep(nanoseconds: 50_000_000)
@@ -77,8 +89,10 @@ private final class ScreenFixture: ScreenSignalingRPC {
     recovery.streaming(now: 5)
     #expect(recovery.nextDelay(now: 16) == 0.25)
     #expect(RemoteDesktopRecovery.retryableClosure("session lease expired"))
-    for reason in ["native capture rendition stopped", "native daemon heartbeat expired",
-                   "native capture helper unresponsive", "native capture helper stopped"] {
+    for reason in [
+        "native capture rendition stopped", "native daemon heartbeat expired",
+        "native capture helper unresponsive", "native capture helper stopped",
+    ] {
         #expect(RemoteDesktopRecovery.retryableClosure(reason))
     }
     #expect(!RemoteDesktopRecovery.retryableClosure("remote desktop disabled"))
@@ -205,10 +219,13 @@ private actor TerminalInputFixture: TerminalInputRPC {
 
 @Test @MainActor func screenWakeNotificationReopensOnlyAnIntentionallyOpenTab() async throws {
     let controller = RemoteDesktopController(), rpc = ScreenFixture()
-    let session = ScreenShareSession(machineID: "wake", machineName: "Fixture", controller: controller, monitorsInactivity: false)
+    let session = ScreenShareSession(
+        machineID: "wake", machineName: "Fixture", controller: controller, monitorsInactivity: false)
     session.configureInactivityTimeout(enabled: true, minutes: 1)
     var openings = 0
-    session.connect { openings += 1; return rpc.connection("wake fixture") }
+    session.connect {
+        openings += 1; return rpc.connection("wake fixture")
+    }
     try await waitForSession { openings == 1 }
     NSWorkspace.shared.notificationCenter.post(name: NSWorkspace.willSleepNotification, object: nil)
     #expect(controller.systemSleeping)

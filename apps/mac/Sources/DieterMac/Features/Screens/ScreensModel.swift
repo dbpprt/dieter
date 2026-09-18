@@ -33,6 +33,7 @@ final class ScreenShareSession: Identifiable {
     let machineName: String
     let controller: RemoteDesktopController
     var isDetached = false
+    var matchClientResolution = false
     @ObservationIgnored lazy var videoSurface = RemoteDesktopInputView(
         renderer: controller.renderer, controller: controller)
     @ObservationIgnored private var connectionFactory: (@MainActor () async throws -> RemoteDesktopSignalingConnection)?
@@ -150,6 +151,21 @@ final class ScreensModel {
     var selectedSessionID: String?
     var createScreenSharePresented = false
     @ObservationIgnored private(set) var detachedWindows: [String: ScreenShareWindowController] = [:]
+    static let resolutionMatchingKey = "DieterScreenMatchClientResolutionExperimental"
+    static let keyboardCaptureKey = "DieterScreenCaptureFullscreenKeyboard"
+    var matchClientResolution: Bool {
+        didSet {
+            defaults.set(matchClientResolution, forKey: Self.resolutionMatchingKey)
+            for session in sessions { session.matchClientResolution = matchClientResolution }
+            for window in detachedWindows.values { window.updateDisplayMatching() }
+        }
+    }
+    var captureFullscreenKeyboard: Bool {
+        didSet {
+            defaults.set(captureFullscreenKeyboard, forKey: Self.keyboardCaptureKey)
+            for session in sessions { session.videoSurface.captureKeyboard = captureFullscreenKeyboard }
+        }
+    }
     var inactivityTimeoutEnabled: Bool {
         didSet {
             guard inactivityTimeoutEnabled != oldValue else { return }
@@ -179,6 +195,8 @@ final class ScreensModel {
         let preferences = ScreenShareInactivityPreferences.load(from: defaults)
         inactivityTimeoutEnabled = preferences.enabled
         inactivityTimeoutMinutes = preferences.minutes
+        matchClientResolution = defaults.bool(forKey: Self.resolutionMatchingKey)
+        captureFullscreenKeyboard = defaults.object(forKey: Self.keyboardCaptureKey) as? Bool ?? true
     }
 
     @discardableResult
@@ -187,6 +205,8 @@ final class ScreensModel {
         makeConnection: @escaping @MainActor () async throws -> RemoteDesktopSignalingConnection
     ) -> ScreenShareSession {
         let session = ScreenShareSession(machineID: machineID, machineName: machineName)
+        session.matchClientResolution = matchClientResolution
+        session.videoSurface.captureKeyboard = captureFullscreenKeyboard
         session.configureInactivityTimeout(
             enabled: inactivityTimeoutEnabled, minutes: inactivityTimeoutMinutes)
         sessions.append(session)

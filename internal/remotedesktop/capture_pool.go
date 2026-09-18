@@ -64,6 +64,25 @@ func newCapturePool(factory func(SourceOptions) (FrameSource, error)) *capturePo
 	return &capturePool{factory: factory, variants: make(map[*captureVariant]struct{}), native: newNativeMultiplexer()}
 }
 
+func (p *capturePool) DisplayModeChanged(ctx context.Context, display string) error {
+	p.mu.Lock()
+	var sources []interface{ DisplayModeChanged(context.Context) error }
+	for variant := range p.variants {
+		if variant.state != nil && (variant.state.DisplayId == display || variant.config.DisplayID == display) {
+			if source, ok := variant.source.(interface{ DisplayModeChanged(context.Context) error }); ok {
+				sources = append(sources, source)
+			}
+		}
+	}
+	p.mu.Unlock()
+	for _, source := range sources {
+		if err := source.DisplayModeChanged(ctx); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func sourceConfiguration(o SourceOptions) StreamConfiguration {
 	return StreamConfiguration{DisplayID: normalizedDisplayID(o.Display), MaxWidth: o.MaxWidth, MaxHeight: o.MaxHeight,
 		FPS: o.FPS, BitrateKbps: o.Bitrate, EmbeddedCursor: o.EmbeddedCursor}

@@ -5,7 +5,10 @@ import Foundation
 // Independent of the capture process, so another app's lazy pasteboard provider
 // can never stall video, frame credits, input ACKs or the capture watchdog.
 enum ClipboardService {
-    struct Request: Decodable { var action: Int; var text: String; var knownRevision: String; var items: [ScreenClipboardItem]?; var acceptBinary: Bool? }
+    struct Request: Decodable {
+        var action: Int; var text: String; var knownRevision: String; var items: [ScreenClipboardItem]?;
+        var acceptBinary: Bool?
+    }
     struct Reply: Encodable {
         var revision = ""
         var text = ""
@@ -19,7 +22,10 @@ enum ClipboardService {
         let name = args.firstIndex(of: "--clipboard-name").flatMap { $0 + 1 < args.count ? args[$0 + 1] : nil }
         let dryRun = args.contains("--dry-run") && name?.hasPrefix("com.dbpprt.dieter.fixture.") == true
         let pasteboard = name.map { NSPasteboard(name: .init($0)) } ?? .general
-        let directory = args.firstIndex(of: "--clipboard-directory").flatMap { $0 + 1 < args.count ? URL(fileURLWithPath: args[$0 + 1], isDirectory: true) : nil } ?? ScreenClipboardContent.defaultDirectory
+        let directory =
+            args.firstIndex(of: "--clipboard-directory").flatMap {
+                $0 + 1 < args.count ? URL(fileURLWithPath: args[$0 + 1], isDirectory: true) : nil
+            } ?? ScreenClipboardContent.defaultDirectory
         var buffer = Data()
         var bytes = [UInt8](repeating: 0, count: 65536)
         while true {
@@ -33,14 +39,16 @@ enum ClipboardService {
                 var reply = Reply()
                 do {
                     let request = try JSONDecoder().decode(Request.self, from: line)
-                    let content = ScreenClipboardContent(text: (request.items ?? []).isEmpty ? request.text : nil, items: request.items ?? [])
+                    let content = ScreenClipboardContent(
+                        text: (request.items ?? []).isEmpty ? request.text : nil, items: request.items ?? [])
                     try content.validate()
                     switch request.action {
                     case 0:
                         reply.revision = String(pasteboard.changeCount)
                         reply.changed = request.knownRevision != reply.revision
                         if reply.changed {
-                            let value = try ScreenClipboardContent.read(pasteboard, binary: request.acceptBinary == true)
+                            let value = try ScreenClipboardContent.read(
+                                pasteboard, binary: request.acceptBinary == true)
                             reply.hasText = value.text != nil; reply.text = value.text ?? ""; reply.items = value.items
                         }
                     case 1, 2:
@@ -55,12 +63,16 @@ enum ClipboardService {
                         if !dryRun {
                             try shortcut(request.action == 4 ? 8 : 7)
                             let deadline = DispatchTime.now().uptimeNanoseconds + 500_000_000
-                            while pasteboard.changeCount == previous && DispatchTime.now().uptimeNanoseconds < deadline { usleep(5_000) }
-                            guard pasteboard.changeCount != previous else { throw CaptureError.invalidArgument("remote application did not copy content") }
+                            while pasteboard.changeCount == previous && DispatchTime.now().uptimeNanoseconds < deadline
+                            { usleep(5_000) }
+                            guard pasteboard.changeCount != previous else {
+                                throw CaptureError.invalidArgument("remote application did not copy content")
+                            }
                         }
                         reply.revision = String(pasteboard.changeCount)
                         let value = try ScreenClipboardContent.read(pasteboard, binary: request.acceptBinary == true)
-                        reply.hasText = value.text != nil; reply.text = value.text ?? ""; reply.items = value.items; reply.changed = true
+                        reply.hasText = value.text != nil; reply.text = value.text ?? ""; reply.items = value.items;
+                        reply.changed = true
                     default: throw CaptureError.invalidArgument("clipboard action")
                     }
                 } catch { reply.error = error.localizedDescription }
@@ -71,13 +83,16 @@ enum ClipboardService {
         }
     }
     private static func shortcut(_ code: CGKeyCode) throws {
-        guard CGPreflightPostEventAccess() else { throw CaptureError.invalidArgument("Accessibility permission is required") }
+        guard CGPreflightPostEventAccess() else {
+            throw CaptureError.invalidArgument("Accessibility permission is required")
+        }
         let source = CGEventSource(stateID: .privateState)
         for down in [true, false] {
             guard let event = CGEvent(keyboardEventSource: source, virtualKey: code, keyDown: down) else {
                 throw CaptureError.invalidArgument("clipboard shortcut")
             }
             event.flags = .maskCommand
+            event.setIntegerValueField(.eventSourceUserData, value: 0x444945544552)
             event.post(tap: .cghidEventTap)
         }
     }

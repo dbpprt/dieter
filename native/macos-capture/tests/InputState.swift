@@ -3,12 +3,15 @@ import Foundation
 
 @main struct InputStateTest {
     static func main() async throws {
+        try testDisplayModeLeases()
         let liveness = NativeDaemonLiveness(now: 0)
         precondition(liveness.timeoutDiagnostic(now: 3_000_000_000) == nil)
         liveness.receive("frame_consumed", now: 2_900_000_000)
-        precondition(liveness.timeoutDiagnostic(now: 5_000_000_000) == nil,
+        precondition(
+            liveness.timeoutDiagnostic(now: 5_000_000_000) == nil,
             "Live command traffic must prevent an idle-heartbeat timeout")
-        precondition(liveness.timeoutDiagnostic(now: 6_000_000_000)?.contains("lastCommand=frame_consumed") == true,
+        precondition(
+            liveness.timeoutDiagnostic(now: 6_000_000_000)?.contains("lastCommand=frame_consumed") == true,
             "A silent owner must still expire and retain the last command kind")
         liveness.receive("heartbeat", now: 6_000_000_000)
         precondition(liveness.timeoutDiagnostic(now: 6_100_000_000) == nil)
@@ -73,7 +76,8 @@ import Foundation
         }
         let stoppedRunner = CaptureRunner(options: CaptureOptions())
         await stoppedRunner.stopAndWait()
-        let finalCredit = NativeCommand(version: 2, id: 1, kind: "frame_consumed", input: nil,
+        let finalCredit = NativeCommand(
+            version: 2, id: 1, kind: "frame_consumed", input: nil,
             configuration: nil, frameId: 1, streamId: nil, profile: nil, codec: nil)
         stoppedRunner.enqueue(finalCredit) { error in
             precondition(error == "native capture rendition stopped", "Final frame credit lost shutdown cause")
@@ -82,6 +86,31 @@ import Foundation
             "Native input state: physical key zero, independent Shift sides, drag bounds, release and display generation passed"
         )
     }
+}
+
+private func testDisplayModeLeases() throws {
+    let driver = SyntheticDesktopModeDriver()
+    let lease = DesktopModeLease(driver: driver)
+    let changed = try lease.set("synthetic", mode: "720", expected: "1080")
+    precondition(changed.temporary && changed.originalModeId == "1080")
+    do {
+        _ = try lease.set("synthetic", mode: "1080", expected: "1080")
+        preconditionFailure("Stale modes accepted")
+    } catch {}
+    let restored = try lease.restore("synthetic")
+    precondition(restored.currentModeId == "1080" && !restored.temporary)
+    _ = try lease.set("synthetic", mode: "720", expected: "1080")
+    try driver.apply("synthetic", mode: "local-change")
+    let manual = try lease.restore("synthetic")
+    precondition(manual.currentModeId == "local-change" && manual.superseded)
+    try driver.apply("synthetic", mode: "1080")
+    _ = try lease.set("synthetic", mode: "720", expected: "1080")
+    let original = try lease.set("synthetic", mode: "1080", expected: "720")
+    precondition(!original.temporary)
+    _ = try lease.set("synthetic", mode: "720", expected: "1080")
+    lease.restoreOnExit()
+    let exited = try driver.snapshot("synthetic")
+    precondition(exited.currentModeId == "1080")
 }
 
 private actor CommandTestGate {

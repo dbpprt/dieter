@@ -16,6 +16,11 @@ final class RemoteDesktopInputView: NSView, @preconcurrency NSTextInputClient, @
     private let focusObserverBag = RemoteDesktopFocusObservers()
     private let hostCursorView = NSImageView()
     var onToggleFullScreen: (@MainActor () -> Void)?
+    var fullScreenActive = false { didSet { refreshKeyboardCapture() } }
+    var captureKeyboard = true { didSet { refreshKeyboardCapture() } }
+    private let keyboardCapture: any RemoteDesktopKeyboardCapturing
+    private var forwardingCapturedKey = false
+    var keyboardCaptured: Bool { keyboardCapture.active }
     // The native integration fixture has no NSApplication.run loop; packaged
     // UI tests exercise the default AppKit activation predicate independently.
     var windowIsActive: @MainActor (NSWindow?) -> Bool = { $0?.isKeyWindow == true && NSApp.isActive }
@@ -26,9 +31,13 @@ final class RemoteDesktopInputView: NSView, @preconcurrency NSTextInputClient, @
     private static let invisibleCursor = NSCursor(
         image: NSImage(size: NSSize(width: 16, height: 16), flipped: false) { _ in true }, hotSpot: .zero)
 
-    init(renderer: RemoteDesktopMetalView, controller: RemoteDesktopController) {
+    init(
+        renderer: RemoteDesktopMetalView, controller: RemoteDesktopController,
+        keyboardCapture: any RemoteDesktopKeyboardCapturing = RemoteDesktopKeyboardCapture()
+    ) {
         self.renderer = renderer
         self.controller = controller
+        self.keyboardCapture = keyboardCapture
         super.init(frame: .zero)
         wantsLayer = true
         layer?.backgroundColor = NSColor.black.cgColor
@@ -38,6 +47,8 @@ final class RemoteDesktopInputView: NSView, @preconcurrency NSTextInputClient, @
         addSubview(hostCursorView)
         hostCursorView.isHidden = true
         controller.onCursorChange = { [weak self] in self?.refreshCursor() }
+        keyboardCapture.receive = { [weak self] event in self?.receiveCapturedKey(event) ?? false }
+        keyboardCapture.interrupted = { [weak self] in self?.suspendInput() }
     }
 
     required init?(coder: NSCoder) { nil }
@@ -76,6 +87,7 @@ final class RemoteDesktopInputView: NSView, @preconcurrency NSTextInputClient, @
         return super.becomeFirstResponder()
     }
     func releaseFocus() {
+        keyboardCapture.stop()
         controller?.inputFocused = false
         controller?.releaseAllInput()
         buttonsDown.removeAll(); modifierKeysDown.removeAll(); physicalKeysDown.removeAll()
@@ -84,6 +96,7 @@ final class RemoteDesktopInputView: NSView, @preconcurrency NSTextInputClient, @
     }
     func refreshCursor(at point: CGPoint? = nil) {
         guard let controller else { return }
+        refreshKeyboardCapture()
         let rect = RemoteDesktopInputGeometry.contentRect(bounds: bounds, videoSize: videoSize)
         let location =
             point ?? window.map { convert($0.mouseLocationOutsideOfEventStream, from: nil) } ?? CGPoint(x: -1, y: -1)
@@ -157,16 +170,19 @@ final class RemoteDesktopInputView: NSView, @preconcurrency NSTextInputClient, @
 
     override func mouseDown(with event: NSEvent) {
         window?.makeFirstResponder(self)
+        resumeInput()
         sendButton(.left, down: true, event: event)
     }
     override func mouseUp(with event: NSEvent) { sendButton(.left, down: false, event: event) }
     override func rightMouseDown(with event: NSEvent) {
         window?.makeFirstResponder(self)
+        resumeInput()
         sendButton(.right, down: true, event: event)
     }
     override func rightMouseUp(with event: NSEvent) { sendButton(.right, down: false, event: event) }
     override func otherMouseDown(with event: NSEvent) {
         window?.makeFirstResponder(self)
+        resumeInput()
         sendButton(button(event.buttonNumber), down: true, event: event)
     }
     override func otherMouseUp(with event: NSEvent) {
@@ -182,8 +198,9 @@ final class RemoteDesktopInputView: NSView, @preconcurrency NSTextInputClient, @
     }
 
     override func keyDown(with event: NSEvent) {
+        guard !isInjectedKey(event) else { return }
         let modifiers = event.modifierFlags.intersection([.command, .control, .option, .shift])
-        if event.keyCode == 3 && modifiers == [.command, .control] {
+        if !keyboardCaptured && !forwardingCapturedKey && event.keyCode == 3 && modifiers == [.command, .control] {
             if !event.isARepeat { releaseFocus(); onToggleFullScreen?() }
             return
         }
@@ -201,9 +218,7 @@ final class RemoteDesktopInputView: NSView, @preconcurrency NSTextInputClient, @
             return
         }
         if event.keyCode == 53 && event.modifierFlags.contains([.command, .shift]) {
-            inputSuspended = true
-            releaseFocus()
-            window?.makeFirstResponder(nil)
+            suspendInput()
             return
         }
         if controller?.textInputMode == true, !event.modifierFlags.contains(.command),
@@ -218,11 +233,13 @@ final class RemoteDesktopInputView: NSView, @preconcurrency NSTextInputClient, @
             modifiers: event.modifierFlags)
     }
     override func keyUp(with event: NSEvent) {
+        guard !isInjectedKey(event) else { return }
         guard physicalKeysDown.remove(event.keyCode) != nil else { return }
         controller?.sendKey(
             code: event.keyCode, down: false, repeat: false, modifiers: event.modifierFlags)
     }
     override func flagsChanged(with event: NSEvent) {
+        guard !isInjectedKey(event) else { return }
         let down: Bool
         if event.keyCode == 57 {
             down = event.modifierFlags.contains(.capsLock)
@@ -240,7 +257,58 @@ final class RemoteDesktopInputView: NSView, @preconcurrency NSTextInputClient, @
         return super.resignFirstResponder()
     }
 
+    private var canCaptureKeyboard: Bool {
+        captureKeyboard && fullScreenActive && !inputSuspended && windowIsActive(window)
+            && window?.firstResponder === self && controller?.inputFocused == true && controller?.controlActive == true
+    }
+
+    func refreshKeyboardCapture() {
+        if controller?.controlActive != true {
+            modifierKeysDown.removeAll(); physicalKeysDown.removeAll(); buttonsDown.removeAll()
+        }
+        guard canCaptureKeyboard else {
+            keyboardCapture.stop()
+            setKeyboardCaptureStatus("")
+            return
+        }
+        setKeyboardCaptureStatus(
+            keyboardCapture.start()
+                ? "Keyboard captured · ⌘⇧Esc releases input"
+                : "Enable Accessibility to capture system shortcuts")
+    }
+
+    private func setKeyboardCaptureStatus(_ status: String) {
+        guard controller?.keyboardCaptureStatus != status else { return }
+        controller?.keyboardCaptureStatus = status
+    }
+
+    func receiveCapturedKey(_ event: NSEvent) -> Bool {
+        guard canCaptureKeyboard else { keyboardCapture.stop(); return false }
+        forwardingCapturedKey = true
+        defer { forwardingCapturedKey = false }
+        switch event.type {
+        case .keyDown: keyDown(with: event)
+        case .keyUp: keyUp(with: event)
+        case .flagsChanged: flagsChanged(with: event)
+        default: return false
+        }
+        return true
+    }
+
+    func suspendInput() {
+        inputSuspended = true
+        releaseFocus()
+        window?.makeFirstResponder(nil)
+    }
+
+    func resumeInput() {
+        inputSuspended = false
+        controller?.inputFocused = true
+        refreshKeyboardCapture()
+    }
+
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        if isInjectedKey(event) { return true }
         let togglesFullScreen =
             event.keyCode == 3
             && event.modifierFlags.intersection([.command, .control, .option, .shift]) == [.command, .control]
@@ -256,6 +324,10 @@ final class RemoteDesktopInputView: NSView, @preconcurrency NSTextInputClient, @
         guard let point = normalizedPoint(event, clamp: !buttonsDown.isEmpty) else { return }
         guard !inputSuspended, windowIsActive(window) else { return }
         controller?.sendPointerMove(x: point.x, y: point.y)
+    }
+
+    private func isInjectedKey(_ event: NSEvent) -> Bool {
+        event.cgEvent?.getIntegerValueField(.eventSourceUserData) == RemoteDesktopKeyboardCapture.injectedEventTag
     }
 
     private func sendButton(

@@ -28,6 +28,28 @@
                     && session.controller.clipboardWindow === detached
                 ? "passed" : "failed: undocking replaced the renderer or left clipboard in the main window"
             let active = await wait { NSApp.isActive && detached.isKeyWindow }
+            let keyboardTap = RemoteDesktopKeyboardCapture()
+            var capturedTab = 0
+            keyboardTap.receive = { event in
+                if event.keyCode == 48 && event.modifierFlags.contains(.command) { capturedTab += 1 }
+                return true
+            }
+            if CGPreflightPostEventAccess(), keyboardTap.start() {
+                for down in [true, false] {
+                    let key = CGEvent(keyboardEventSource: nil, virtualKey: 48, keyDown: down)
+                    key?.flags = .maskCommand
+                    key?.post(tap: .cghidEventTap)
+                }
+                let received = await wait { capturedTab == 2 }
+                keyboardTap.stop()
+                results["01a-screen-system-shortcut-capture"] =
+                    received && detached.isKeyWindow && NSApp.isActive
+                    ? "passed" : "failed: Cmd-Tab was not captured exactly once in each direction"
+            } else {
+                results["01a-screen-system-shortcut-capture"] =
+                    "skipped: packaged app needs local Accessibility permission"
+            }
+            keyboardTap.stop()
             detached.makeFirstResponder(nil)
             // This fixture deliberately has no peer. Test real AppKit activation
             // and cursor presentation without sending input to an unowned host.

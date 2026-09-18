@@ -92,7 +92,8 @@ private final class FrameContext {
     let generation: UInt64
     let recoveryReference: UInt64
     init(
-        runner: CaptureRunner, capturedAtNanoseconds: Int64, encodeStartedAt: UInt64, generation: UInt64, recoveryReference: UInt64
+        runner: CaptureRunner, capturedAtNanoseconds: Int64, encodeStartedAt: UInt64, generation: UInt64,
+        recoveryReference: UInt64
     ) {
         self.runner = runner
         self.generation = generation
@@ -402,7 +403,8 @@ final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
             try stateQueue.sync {
                 if let encoder {
                     if old.bitrateKbps != config.bitrateKbps {
-                        try set(encoder, kVTCompressionPropertyKey_AverageBitRate, (config.bitrateKbps * 1000) as CFNumber)
+                        try set(
+                            encoder, kVTCompressionPropertyKey_AverageBitRate, (config.bitrateKbps * 1000) as CFNumber)
                         _ = VTSessionSetProperty(
                             encoder, key: kVTCompressionPropertyKey_DataRateLimits,
                             value: [config.bitrateKbps * 125, 1] as CFArray)
@@ -591,8 +593,9 @@ final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
             // mode if it cannot create Apple's low-latency encoder variant.
             if options.codec == "H265" && options.referenceRecovery {
                 if let encoder { VTCompressionSessionInvalidate(encoder) }; encoder = nil
-                do { try initializeEncoder(width: width, height: height, lowLatencyHEVC: false); return }
-                catch { throw CaptureError.hevcUnavailable(error.localizedDescription) }
+                do { try initializeEncoder(width: width, height: height, lowLatencyHEVC: false); return } catch {
+                    throw CaptureError.hevcUnavailable(error.localizedDescription)
+                }
             }
             if options.codec == "H265" { throw CaptureError.hevcUnavailable(error.localizedDescription) }; throw error
         }
@@ -642,8 +645,12 @@ final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
         guard status == noErr, let session else { throw CaptureError.encoder(status) }
         encoder = session
         ltrTokens.removeAll(); ltrAnchor = nil; forceLTR = false; ltrRecoveryPending = false; lastRecoveryFrame = 0
-        ltrEnabled = options.referenceRecovery && VTSessionSetProperty(session, key: kVTCompressionPropertyKey_EnableLTR, value: kCFBooleanTrue) == noErr
-        if options.referenceRecovery { writeDiagnostic("reference recovery codec=\(options.codec) enabled=\(ltrEnabled)") }
+        ltrEnabled =
+            options.referenceRecovery
+            && VTSessionSetProperty(session, key: kVTCompressionPropertyKey_EnableLTR, value: kCFBooleanTrue) == noErr
+        if options.referenceRecovery {
+            writeDiagnostic("reference recovery codec=\(options.codec) enabled=\(ltrEnabled)")
+        }
         if let transfer { VTPixelTransferSessionInvalidate(transfer) }
         transfer = nil
         pixelPool = nil
@@ -720,9 +727,14 @@ final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
             recoveryReference: forceLTR && !forceKeyFrame ? (ltrAnchor?.frame ?? 0) : 0
         )
         var properties: [String: Any] = [:]
-        if ltrEnabled, let anchor = ltrAnchor { properties[kVTEncodeFrameOptionKey_AcknowledgedLTRTokens as String] = [anchor.token] }
-        if forceKeyFrame { properties[kVTEncodeFrameOptionKey_ForceKeyFrame as String] = true; forceKeyFrame = false }
-        else if forceLTR { properties[kVTEncodeFrameOptionKey_ForceLTRRefresh as String] = true }
+        if ltrEnabled, let anchor = ltrAnchor {
+            properties[kVTEncodeFrameOptionKey_AcknowledgedLTRTokens as String] = [anchor.token]
+        }
+        if forceKeyFrame {
+            properties[kVTEncodeFrameOptionKey_ForceKeyFrame as String] = true; forceKeyFrame = false
+        } else if forceLTR {
+            properties[kVTEncodeFrameOptionKey_ForceLTRRefresh as String] = true
+        }
         forceLTR = false
         let status = VTCompressionSessionEncodeFrame(
             encoder,
@@ -756,8 +768,12 @@ final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
             let keyFrame = isKeyFrame(sampleBuffer)
             if context.recoveryReference != 0 && !keyFrame { lastRecoveryFrame = frameID + 1 }
             if keyFrame { lastRecoveryFrame = 0; ltrAnchor = nil; ltrTokens.removeAll(); ltrRecoveryPending = false }
-            let attachments = CMSampleBufferGetSampleAttachmentsArray(sampleBuffer, createIfNecessary: false) as? [[String: Any]]
-            let ltrToken = ltrEnabled ? attachments?.first?[kVTSampleAttachmentKey_RequireLTRAcknowledgementToken as String] as? NSNumber : nil
+            let attachments =
+                CMSampleBufferGetSampleAttachmentsArray(sampleBuffer, createIfNecessary: false) as? [[String: Any]]
+            let ltrToken =
+                ltrEnabled
+                ? attachments?.first?[kVTSampleAttachmentKey_RequireLTRAcknowledgementToken as String] as? NSNumber
+                : nil
             if let ltrToken {
                 ltrTokens[frameID + 1] = ltrToken
                 for id in ltrTokens.keys.sorted().dropLast(256) { ltrTokens.removeValue(forKey: id) }
@@ -768,7 +784,8 @@ final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
                 accessUnit,
                 keyFrame: keyFrame,
                 captureNanoseconds: context.capturedAtNanoseconds,
-                encodeNanoseconds: encodeDuration, ltrToken: ltrToken, recoveryReference: keyFrame ? 0 : context.recoveryReference
+                encodeNanoseconds: encodeDuration, ltrToken: ltrToken,
+                recoveryReference: keyFrame ? 0 : context.recoveryReference
             )
         } catch {
             writeDiagnostic("encode output failed: \(error.localizedDescription)")
@@ -858,7 +875,8 @@ final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
         var header = Data()
         if options.multiplex { header.appendBigEndian(options.streamID) }
         header.appendBigEndian(UInt32(payload.count))
-        header.appendBigEndian(UInt32((keyFrame ? 1 : 0) | (ltrToken != nil ? 2 : 0) | (recoveryReference != 0 ? 4 : 0)))
+        header.appendBigEndian(
+            UInt32((keyFrame ? 1 : 0) | (ltrToken != nil ? 2 : 0) | (recoveryReference != 0 ? 4 : 0)))
         header.appendBigEndian(frameID)
         header.appendBigEndian(generation)
         header.appendBigEndian(UInt64(bitPattern: captureNanoseconds))
@@ -924,7 +942,9 @@ final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
     }
 
     func enqueue(_ command: NativeCommand, reply: @escaping (String?) -> Void) {
-        let queue = command.kind == "configure" ? configurations : (command.kind == "input" ? inputs : commands)
+        let queue =
+            ["configure", "display_changed"].contains(command.kind)
+            ? configurations : (command.kind == "input" ? inputs : commands)
         if !queue.submit({
             do { try await self.handle(command); reply(nil) } catch { reply(error.localizedDescription) }
         }) {
@@ -970,6 +990,8 @@ final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
                 throw CaptureError.invalidArgument("configuration")
             }
             try await self.reconfigure(config)
+        case "display_changed":
+            try await self.reconfigure(nil, force: true)
         case "frame_consumed":
             if options.synthetic, let raw = ProcessInfo.processInfo.environment["DIETER_TEST_CAPTURE_CREDIT_DELAY_MS"],
                 let delay = UInt64(raw), delay <= 5000
@@ -984,13 +1006,15 @@ final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
             }
         case "ack_recovery":
             try self.stateQueue.sync {
-                guard command.generation == generation, command.frameId == lastRecoveryFrame, lastRecoveryFrame != 0 else { throw CaptureError.invalidArgument("recovery acknowledgment") }
+                guard command.generation == generation, command.frameId == lastRecoveryFrame, lastRecoveryFrame != 0
+                else { throw CaptureError.invalidArgument("recovery acknowledgment") }
                 ltrRecoveryPending = false; lastRecoveryFrame = 0
             }
         case "ack_reference":
             try self.stateQueue.sync {
                 guard ltrEnabled, command.generation == generation, let id = command.frameId,
-                    let token = ltrTokens[id], token.uint64Value == command.ltrToken else { throw CaptureError.invalidArgument("reference acknowledgment") }
+                    let token = ltrTokens[id], token.uint64Value == command.ltrToken
+                else { throw CaptureError.invalidArgument("reference acknowledgment") }
                 // One anchor per keyframe interval. The dependency descriptor can
                 // name the exact reference even if the hardware retains old LTRs.
                 if ltrAnchor == nil { ltrAnchor = (id, token) }
@@ -1010,7 +1034,9 @@ final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
         lastRefresh = now
         if recover, ltrEnabled, let anchor = ltrAnchor, frameID - anchor.frame < 8000, !ltrRecoveryPending {
             forceLTR = true; ltrRecoveryPending = true
-        } else { forceKeyFrame = true; forceLTR = false }
+        } else {
+            forceKeyFrame = true; forceLTR = false
+        }
         if let lastFrame {
             // A refresh is a new presentation of retained pixels, not an old RTP time.
             let time = Int64(CMClockGetTime(CMClockGetHostTimeClock()).seconds * 1_000_000_000)
@@ -1108,9 +1134,13 @@ final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
         let candidate = NSCursor.currentSystem ?? lastSystemCursor
         let cursor: NSCursor
         let png: Data
-        if let encoded = cursorPNG(candidate) { cursor = candidate; png = encoded; lastSystemCursor = candidate }
-        else if let encoded = cursorPNG(lastSystemCursor) { cursor = lastSystemCursor; png = encoded }
-        else { return }
+        if let encoded = cursorPNG(candidate) {
+            cursor = candidate; png = encoded; lastSystemCursor = candidate
+        } else if let encoded = cursorPNG(lastSystemCursor) {
+            cursor = lastSystemCursor; png = encoded
+        } else {
+            return
+        }
         let shape = SHA256.hash(data: png).map { String(format: "%02x", $0) }.joined()
         let point = CGEvent(source: nil)?.location ?? .zero
         let now = DispatchTime.now().uptimeNanoseconds
@@ -1182,6 +1212,11 @@ func hardwareEncoderAvailable(_ codec: CMVideoCodecType = kCMVideoCodecType_H264
     private struct DieterCapture {
         static func main() async {
             do {
+                if CommandLine.arguments.contains("--display-service") {
+                    let dryRun = CommandLine.arguments.contains("--dry-run")
+                    await Task.detached { DisplayModeService.run(dryRun: dryRun) }.value
+                    return
+                }
                 if CommandLine.arguments.contains("--clipboard-service") {
                     await Task.detached { ClipboardService.run() }.value
                     return
@@ -1216,6 +1251,7 @@ func hardwareEncoderAvailable(_ codec: CMVideoCodecType = kCMVideoCodecType_H264
                             ] : [],
                         "hardware_encoder_available": hardwareEncoderAvailable(), "control_supported": true,
                         "adaptive_supported": true, "cursor_supported": true, "input_protocol_version": 2,
+                        "display_mode_switching_supported": true,
                         "max_fps": 120, "encoder": "VideoToolbox H.264",
                     ]
                     FileHandle.standardOutput.write(try JSONSerialization.data(withJSONObject: value))

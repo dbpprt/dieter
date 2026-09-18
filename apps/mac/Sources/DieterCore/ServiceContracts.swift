@@ -93,6 +93,10 @@ package protocol ScreenSignalingRPC: AnyObject, Sendable {
         -> Dieter_V1_RemoteDesktopSessionState
     func setRemoteDesktopControl(sessionID: String, take: Bool) async throws -> Dieter_V1_RemoteDesktopSessionState
     func closeRemoteDesktop(sessionID: String) async throws
+    func remoteDesktopDisplayModes(sessionID: String) async throws -> Dieter_V1_RemoteDesktopDisplayModes
+    func setRemoteDesktopDisplayMode(_ request: Dieter_V1_SetRemoteDesktopDisplayModeRequest) async throws
+        -> Dieter_V1_RemoteDesktopDisplayModes
+    func restoreRemoteDesktopDisplayMode(sessionID: String) async throws -> Dieter_V1_RemoteDesktopDisplayModes
     func shutdown()
 }
 

@@ -128,7 +128,10 @@ final class InputInjector: @unchecked Sendable {
             event.flags = flags(); post(event)
         }
     }
-    private func post(_ event: CGEvent) { if !dryRun { event.post(tap: .cgSessionEventTap) } }
+    private func post(_ event: CGEvent) {
+        event.setIntegerValueField(.eventSourceUserData, value: 0x444945544552)
+        if !dryRun { event.post(tap: .cghidEventTap) }
+    }
     private func flags() -> CGEventFlags {
         var result: CGEventFlags = []
         for (mask, flag): (UInt32, CGEventFlags) in [

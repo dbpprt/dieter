@@ -270,6 +270,9 @@ func (s *nativeRendition) SendInput(ctx context.Context, input *dieterv1.RemoteD
 	}
 	return s.command(ctx, nativeCommand{Kind: "input", Input: payload}, true)
 }
+func (s *nativeRendition) DisplayModeChanged(ctx context.Context) error {
+	return s.command(ctx, nativeCommand{Kind: "display_changed"}, true)
+}
 func (s *nativeRendition) ReleaseInput(ctx context.Context) { _ = s.ReleaseInputChecked(ctx) }
 func (s *nativeRendition) ReleaseInputChecked(ctx context.Context) error {
 	return s.command(ctx, nativeCommand{Kind: "input", Input: &nativeInputPayload{Kind: "release_all"}}, true)

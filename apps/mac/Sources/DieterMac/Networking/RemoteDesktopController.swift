@@ -193,6 +193,9 @@ final class RemoteDesktopController {
     private var previousStatisticsTime = Date()
     var controlActive = false { didSet { if oldValue != controlActive { onCursorChange() } } }
     var controlUnavailableReason = ""
+    var keyboardCaptureStatus = ""
+    let displayMatching = RemoteDesktopDisplayMatching()
+    private var displayMatchingTarget: RemoteDesktopDisplayTarget?
     @ObservationIgnored var onCursorChange: @MainActor () -> Void = {}
     @ObservationIgnored var onUserActivity: @MainActor () -> Void = {}
 
@@ -367,6 +370,7 @@ final class RemoteDesktopController {
     }
 
     private func stopSession() {
+        displayMatching.update(nil)
         generation &+= 1
         peerWatchdog?.cancel(); peerWatchdog = nil
         connectTask?.cancel(); connectTask = nil
@@ -1045,6 +1049,7 @@ final class RemoteDesktopController {
     }
 
     fileprivate func updateControlReadiness() {
+        refreshDisplayMatching()
         if phase == .streaming { recovery.streaming(now: ProcessInfo.processInfo.systemUptime) }
         controlActive =
             binding?.controlGranted == true && (binding?.inputProtocolVersion != 3 || sessionState.controlActive)
@@ -1055,6 +1060,25 @@ final class RemoteDesktopController {
     }
 
     var canTransferControl: Bool { binding?.inputProtocolVersion == 3 && binding?.controlGranted == true }
+    func setDisplayMatchingTarget(_ target: RemoteDesktopDisplayTarget?) {
+        displayMatchingTarget = target
+        refreshDisplayMatching()
+    }
+
+    private func refreshDisplayMatching() {
+        displayMatching.beforeChange = { [weak self] in self?.releaseAllInput() }
+        guard let target = displayMatchingTarget, let connection, !sessionID.isEmpty,
+            binding?.controlGranted == true, sessionState.controlActive
+        else { displayMatching.update(nil); return }
+        guard capabilities.displayModeSwitchingSupported else {
+            displayMatching.update(nil, unavailable: "Update the remote daemon to match desktop resolution")
+            return
+        }
+        displayMatching.update(
+            .init(
+                rpc: connection.rpc, sessionID: sessionID,
+                displayID: sessionState.configuration.displayID, target: target))
+    }
     var controlTransferPending = false
     var controlTransferError = ""
 

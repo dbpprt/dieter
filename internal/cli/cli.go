@@ -198,7 +198,7 @@ Commands:
   file         Browse and edit project/workspace files with revision checks
   terminal     Create, attach, control, and close daemon-host PTYs
   remote       Run resumable commands and native shells on a daemon host
-  screen       Share screens/clipboard, choose codec/recovery, and tune quality
+  screen       Share screens/clipboard, capture control, tune quality/resolution
   schedule     Create, preview, dispatch, pause, and inspect schedules
   settings     Inspect and update parallel-session admission limits
   prompt       Inspect, update, scope, and preview prompt templates

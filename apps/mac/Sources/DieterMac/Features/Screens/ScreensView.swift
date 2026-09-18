@@ -443,6 +443,9 @@ struct ScreenShareOptions: View {
                 Button(display.name) { controller.configure(displayID: display.id) }
             }
             Divider()
+            Button("Enable fullscreen keyboard capture…") { RemoteDesktopKeyboardCapture.requestPermission() }
+            if !controller.keyboardCaptureStatus.isEmpty { Text(controller.keyboardCaptureStatus) }
+            if !controller.displayMatching.status.isEmpty { Text(controller.displayMatching.status) }
             Button("Automatic quality") { controller.configure(quality: .auto) }
             Button("Prefer sharp text") { controller.configure(quality: .detail) }
             Button("Prefer responsive motion") { controller.configure(quality: .motion) }
