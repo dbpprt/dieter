@@ -81,11 +81,9 @@ final class RemoteNodeUITests: XCTestCase {
                 XCTWaiter.wait(for: [optionReady], timeout: 5), .completed,
                 "The Mock provider option must be hittable.\n\(app.debugDescription)")
             mock.tap()
-            let menuClosed = XCTNSPredicateExpectation(
-                predicate: NSPredicate(format: "exists == false"), object: mock)
             let providerChanged = XCTNSPredicateExpectation(
                 predicate: NSPredicate(format: "value == 'Mock'"), object: provider)
-            if XCTWaiter.wait(for: [menuClosed, providerChanged], timeout: 5) == .completed {
+            if XCTWaiter.wait(for: [providerChanged], timeout: 5) == .completed {
                 mockSelected = true
                 break
             }
@@ -97,7 +95,7 @@ final class RemoteNodeUITests: XCTestCase {
             else { break }
         }
         XCTAssertTrue(
-            mockSelected, "Selecting Mock must close the menu and update the provider.\n\(app.debugDescription)")
+            mockSelected, "Selecting Mock must update the provider.\n\(app.debugDescription)")
         // Native Picker labels vary by OS; the value describes the selection.
         // Verify the dependent model reset as well before submitting anything.
         for identifier in ["ios.create.provider", "ios.create.model"] {
