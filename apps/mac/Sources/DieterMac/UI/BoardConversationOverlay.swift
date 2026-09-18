@@ -100,6 +100,7 @@ final class BoardConversationSplitController: NSSplitViewController {
     private let defaults: UserDefaults
     private var regularWidth: CGFloat
     private var restoreWidthOnLayout = true
+    private var regularWidthRestoreScheduled = false
     private var widthBeforeDividerDrag: CGFloat?
     private var requestedMaximizeFromDrag = false
     var onRequestMaximize: () -> Void = {}
@@ -185,12 +186,32 @@ final class BoardConversationSplitController: NSSplitViewController {
             boardBackground.addSubview(boardHost, positioned: .above, relativeTo: nil)
         }
         updateMaximumThickness()
+        scheduleRegularWidthRestore()
+    }
+
+    private func scheduleRegularWidthRestore() {
         guard presented, restoreWidthOnLayout, !maximized,
-            splitView.bounds.width >= BoardConversationSizing.minimumWidth
+            splitView.bounds.width >= BoardConversationSizing.minimumWidth,
+            !regularWidthRestoreScheduled
         else { return }
-        restoreWidthOnLayout = false
-        let width = min(regularWidth, splitView.bounds.width)
-        splitView.setPosition(width, ofDividerAt: 0)
+        regularWidthRestoreScheduled = true
+        // setPosition performs an immediate AppKit layout. Calling it from
+        // viewDidLayout re-enters the hosting view while SwiftUI is flushing
+        // its graph, which produces AttributeGraph cycles and sustained CPU.
+        // Move the one-shot restore to the next main-run-loop turn.
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.regularWidthRestoreScheduled = false
+            guard self.presented, self.restoreWidthOnLayout, !self.maximized,
+                self.splitView.bounds.width >= BoardConversationSizing.minimumWidth
+            else { return }
+            self.restoreWidthOnLayout = false
+            let width = min(self.regularWidth, self.splitView.bounds.width)
+            if abs(self.conversationFrame.width - width) > 0.5 {
+                self.splitView.setPosition(width, ofDividerAt: 0)
+                self.view.layoutSubtreeIfNeeded()
+            }
+        }
     }
 
     func setPresentation(presented: Bool, maximized: Bool) {
@@ -223,6 +244,10 @@ final class BoardConversationSplitController: NSSplitViewController {
         conversationItem.isCollapsed = !presented
         restoreWidthOnLayout = presented && !maximized
         view.needsLayout = true
+        // State updates can arrive before AppKit schedules another layout
+        // pass. Queue the restore now as well as from viewDidLayout so the pane
+        // has its stable width before the next SwiftUI frame is presented.
+        scheduleRegularWidthRestore()
     }
 
     private func updateMaximumThickness() {

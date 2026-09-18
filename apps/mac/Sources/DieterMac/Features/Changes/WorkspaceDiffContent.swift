@@ -1,6 +1,17 @@
 import AppKit
 import DieterAPI
+import Observation
 import SwiftUI
+
+@MainActor @Observable
+final class DiffHorizontalScrollState {
+    private(set) var offset: CGFloat = 0
+
+    func update(_ value: CGFloat) {
+        guard abs(value - offset) > 0.25 else { return }
+        offset = value
+    }
+}
 
 struct DiffScrollOffsetObserver: NSViewRepresentable {
     var onChange: (CGFloat) -> Void
@@ -9,16 +20,27 @@ struct DiffScrollOffsetObserver: NSViewRepresentable {
         var onChange: (CGFloat) -> Void = { _ in }
         private weak var clip: NSClipView?
         private var lastOffset: CGFloat = -1
+        private var connectionScheduled = false
+        private var deliveryScheduled = false
+        private var pendingOffset: CGFloat?
+        private var active = true
 
         override func hitTest(_ point: NSPoint) -> NSView? { nil }
         override func viewDidMoveToSuperview() { super.viewDidMoveToSuperview(); scheduleConnection() }
         override func viewDidMoveToWindow() { super.viewDidMoveToWindow(); scheduleConnection() }
 
         func scheduleConnection() {
-            DispatchQueue.main.async { [weak self] in self?.connect() }
+            guard active, !connectionScheduled else { return }
+            connectionScheduled = true
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.connectionScheduled = false
+                self.connect()
+            }
         }
 
         private func connect() {
+            guard active else { return }
             guard let next = enclosingScrollView?.contentView, next !== clip else { return }
             detach()
             clip = next
@@ -32,19 +54,34 @@ struct DiffScrollOffsetObserver: NSViewRepresentable {
             let offset = max(0, clip?.bounds.minX ?? 0)
             guard abs(offset - lastOffset) > 0.25 else { return }
             lastOffset = offset
-            DispatchQueue.main.async { [weak self] in self?.onChange(offset) }
+            pendingOffset = offset
+            guard !deliveryScheduled else { return }
+            deliveryScheduled = true
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.deliveryScheduled = false
+                guard let pendingOffset = self.pendingOffset else { return }
+                self.pendingOffset = nil
+                self.onChange(pendingOffset)
+            }
         }
 
         func detach() {
             NotificationCenter.default.removeObserver(self)
             clip = nil
             lastOffset = -1
+            pendingOffset = nil
+        }
+
+        func dismantle() {
+            active = false
+            detach()
         }
     }
 
     func makeNSView(context: Context) -> Anchor { let view = Anchor(); view.onChange = onChange; return view }
     func updateNSView(_ view: Anchor, context: Context) { view.onChange = onChange; view.scheduleConnection() }
-    static func dismantleNSView(_ view: Anchor, coordinator: ()) { view.detach() }
+    static func dismantleNSView(_ view: Anchor, coordinator: ()) { view.dismantle() }
 }
 
 struct WorkspaceDiffContent: View {
@@ -59,7 +96,7 @@ struct WorkspaceDiffContent: View {
 
     @State private var projection = WorkspaceDiffProjection()
     @State private var builtKey = ""
-    @State private var horizontalOffset: CGFloat = 0
+    @State private var horizontalScroll = DiffHorizontalScrollState()
     @State private var expandedFolds: Set<Int> = []
 
     private var buildKey: String {
@@ -78,9 +115,14 @@ struct WorkspaceDiffContent: View {
             ScrollView([.horizontal, .vertical]) {
                 LazyVStack(alignment: .leading, spacing: 0) {
                     ForEach(projection.rows) { row in
-                        diffRow(row, viewportWidth: max(0, viewport.size.width))
+                        WorkspaceDiffPositionedRow(split: split, scroll: horizontalScroll) {
+                            diffRow(
+                                row,
+                                viewportWidth: max(0, viewport.size.width),
+                                horizontalScroll: horizontalScroll
+                            )
                             .frame(width: split ? viewport.size.width : nil, alignment: .leading)
-                            .offset(x: split ? horizontalOffset : 0)
+                        }
                     }
                     if diff.truncated {
                         Button("Load the rest of this diff") { loadMore() }
@@ -93,7 +135,7 @@ struct WorkspaceDiffContent: View {
                     minHeight: max(0, viewport.size.height),
                     alignment: .topLeading
                 )
-                .background(DiffScrollOffsetObserver { horizontalOffset = $0 })
+                .background(DiffScrollOffsetObserver { horizontalScroll.update($0) })
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
@@ -137,7 +179,11 @@ struct WorkspaceDiffContent: View {
         }
     }
 
-    @ViewBuilder private func diffRow(_ row: WorkspaceDiffRow, viewportWidth: CGFloat) -> some View {
+    @ViewBuilder private func diffRow(
+        _ row: WorkspaceDiffRow,
+        viewportWidth: CGFloat,
+        horizontalScroll: DiffHorizontalScrollState
+    ) -> some View {
         switch row {
         case .line(let line):
             WorkspaceDiffLineRow(
@@ -148,7 +194,7 @@ struct WorkspaceDiffContent: View {
                 addComment: { addComment(line) }
             )
         case .pair(let pair):
-            WorkspaceSplitPairRow(pair: pair, width: viewportWidth, horizontalOffset: horizontalOffset)
+            WorkspaceSplitPairRow(pair: pair, width: viewportWidth, horizontalScroll: horizontalScroll)
         case .file(let id, let path):
             HStack(spacing: 7) {
                 Image(systemName: "doc.text").font(.system(size: 9, weight: .semibold)).foregroundStyle(
@@ -208,7 +254,7 @@ struct WorkspaceDiffContent: View {
                     foldButton(id: id, count: count, expanded: true, width: viewportWidth)
                     if split {
                         ForEach(pairs) { pair in
-                            WorkspaceSplitPairRow(pair: pair, width: viewportWidth, horizontalOffset: horizontalOffset)
+                            WorkspaceSplitPairRow(pair: pair, width: viewportWidth, horizontalScroll: horizontalScroll)
                         }
                     } else {
                         ForEach(lines) { line in
@@ -253,6 +299,22 @@ struct WorkspaceDiffContent: View {
     }
 }
 
+private struct WorkspaceDiffPositionedRow<Content: View>: View {
+    let split: Bool
+    let scroll: DiffHorizontalScrollState
+    let content: Content
+
+    init(split: Bool, scroll: DiffHorizontalScrollState, @ViewBuilder content: () -> Content) {
+        self.split = split
+        self.scroll = scroll
+        self.content = content()
+    }
+
+    var body: some View {
+        content.offset(x: split ? scroll.offset : 0)
+    }
+}
+
 struct WorkspaceUnchangedSeparator: View {
     let count: Int
     let width: CGFloat
@@ -272,7 +334,7 @@ struct WorkspaceUnchangedSeparator: View {
 struct WorkspaceSplitPairRow: View {
     let pair: WorkspaceSplitPair
     let width: CGFloat
-    var horizontalOffset: CGFloat = 0
+    let horizontalScroll: DiffHorizontalScrollState
 
     var body: some View {
         HStack(alignment: .top, spacing: 0) {
@@ -298,7 +360,7 @@ struct WorkspaceSplitPairRow: View {
                 .fixedSize(horizontal: true, vertical: false)
                 .foregroundStyle(foreground(line))
                 .padding(.leading, 6).padding(.trailing, 8)
-                .offset(x: -horizontalOffset)
+                .offset(x: -horizontalScroll.offset)
                 .frame(width: max(0, (width - 1) / 2 - 62), alignment: .topLeading)
                 .clipped()
         }

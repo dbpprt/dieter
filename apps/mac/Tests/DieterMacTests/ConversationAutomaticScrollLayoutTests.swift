@@ -171,6 +171,78 @@ import Testing
         "Downward wheel intent at a bounded page's bottom must make the true latest message reachable")
 }
 
+@Test @MainActor func automaticLongConversationScrollNeverReversesItsRenderWindow() async throws {
+    let store = DieterStore(restoreSync: false)
+    let context = store.conversationContext
+    var snapshot = automaticScrollSnapshot(start: 0, end: 120)
+    for index in snapshot.conversation.messages.indices {
+        snapshot.conversation.messages[index].parts[0].text =
+            "Automatic scroll message \(index).\n"
+            + String(
+                repeating: "Long transcript content keeps each bounded render window deliberately small.\n",
+                count: 10)
+    }
+    snapshot.page.hasMore_p = false
+    store.state.chats = [snapshot.detail.card]
+    store.chats = [snapshot.detail.card]
+    store.selectedChatID = snapshot.detail.card.id
+    store.conversation = snapshot
+    store.selectedDetail = snapshot.detail
+    context.model.resetConversationHistory(from: snapshot)
+    context.onLoadEarlierMessages = { false }
+
+    let root = NSHostingView(
+        rootView: ConversationTimeline().environment(store).environment(context))
+    root.sizingOptions = []
+    let window = NSWindow(
+        contentRect: NSRect(x: 0, y: 0, width: 700, height: 600),
+        styleMask: [.borderless], backing: .buffered, defer: false)
+    window.isReleasedWhenClosed = false
+    window.contentView = root
+    defer { window.close() }
+
+    await settleAutomaticScroll(root, milliseconds: 350)
+    let scroll = try #require(
+        automaticScrollViews(in: root).compactMap { $0 as? NSScrollView }.first {
+            ($0.documentView?.bounds.height ?? 0) > 1_000
+        })
+    var windows: [ClosedRange<Int>] = []
+    var visibleMessages: [Int] = []
+
+    for index in 0..<140 {
+        try automaticScrollWheel(scroll, window: window, pixels: 160, phase: index == 0 ? 1 : 2)
+        await settleAutomaticScroll(root, milliseconds: 10)
+        let ids = automaticScrollRenderedMessageIDs(in: scroll)
+        if let lower = ids.min(), let upper = ids.max() {
+            let range = lower...upper
+            if windows.last != range { windows.append(range) }
+        }
+        if let visible = automaticScrollVisibleMessageID(in: scroll), visibleMessages.last != visible {
+            visibleMessages.append(visible)
+        }
+        if windows.last?.lowerBound == 0 { break }
+    }
+    try automaticScrollWheel(scroll, window: window, pixels: 0, phase: 4)
+    await settleAutomaticScroll(root, milliseconds: 160)
+
+    try #require(windows.count >= 3, "The fixture must traverse multiple bounded render windows: \(windows)")
+    for (previous, current) in zip(windows, windows.dropFirst()) {
+        #expect(
+            current.lowerBound <= previous.lowerBound,
+            "Earlier-only wheel input paged later: \(windows)")
+    }
+    for (previous, current) in zip(visibleMessages, visibleMessages.dropFirst()) {
+        #expect(
+            current <= previous,
+            "Earlier-only wheel input moved the visible transcript forward: \(visibleMessages)")
+    }
+    let firstWindow = try #require(windows.first)
+    let lastWindow = try #require(windows.last)
+    #expect(
+        lastWindow.lowerBound <= firstWindow.lowerBound - 24,
+        "The gesture must make substantial progress through the long transcript: \(windows)")
+}
+
 private actor AutomaticScrollLayoutRPC: ConversationRPC {
     private var pending: CheckedContinuation<Dieter_V1_ConversationSnapshot, Never>?
     private var requestedBefore = 0
@@ -272,6 +344,14 @@ private func automaticScrollSnapshot(start: Int, end: Int) -> Dieter_V1_Conversa
             else { return nil }
             return Int(lastWord)
         })
+}
+
+@MainActor private func automaticScrollVisibleMessageID(in scroll: NSScrollView) -> Int? {
+    guard let reading = automaticScrollReadingPosition(in: scroll),
+        let firstSentence = reading.text.split(separator: ".", maxSplits: 1).first,
+        let lastWord = firstSentence.split(separator: " ").last
+    else { return nil }
+    return Int(lastWord)
 }
 
 @MainActor private func automaticScrollViews(in root: NSView) -> [NSView] {

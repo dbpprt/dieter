@@ -19,7 +19,7 @@ test('Codex bootstrap links the locked runtime SDK offline without changing the 
   const sdk = JSON.parse(await readFile(join(sdkPath, 'package.json'), 'utf8'));
   const runtime = JSON.parse(await readFile(join(runtimeRoot, 'package.json'), 'utf8'));
   assert.equal(sdk.version, runtime.dependencies['@openai/codex-sdk']);
-  assert.equal(sdk.dependencies['@openai/codex'], '0.154.0');
+  assert.equal(sdk.dependencies['@openai/codex'], '0.155.0');
   assert.match(manifest.dependencies.ws, /^file:/);
   assert.match(recipe.commands[0].command, /--offline/);
   assert.match(recipe.commands[0].command, /--ignore-scripts/);
@@ -96,7 +96,7 @@ test('bundled Codex streams Astra Ultra and resumes the same session with the ne
     const text = await readFile(join(codexHome, 'sessions', file), 'utf8');
     records.push(...text.trim().split('\n').map(line => JSON.parse(line)));
   }
-  assert(records.some(record => record.type === 'session_meta' && record.payload.cli_version === '0.154.0'));
+  assert(records.some(record => record.type === 'session_meta' && record.payload.cli_version === '0.155.0'));
   const turns = records.filter(record => record.type === 'turn_context').map(record => record.payload);
   // Ultra is recorded by Codex itself. Its wire effort is an implementation
   // detail of that orchestration mode, not an API enum Dieter should translate.

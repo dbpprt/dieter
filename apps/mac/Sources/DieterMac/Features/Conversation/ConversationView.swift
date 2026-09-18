@@ -108,7 +108,7 @@ struct ConversationView: View {
 
             Group {
                 if context.conversationLoading {
-                    LoadFeedback(title: "Loading conversation…")
+                    DeferredConversationLoadFeedback()
                 } else if let error = context.conversationError, context.conversation == nil {
                     LoadFeedback(
                         title: "Conversation", error: error,
@@ -199,6 +199,29 @@ struct ConversationView: View {
         // onPasteCommand here too can append the same clipboard image twice.
         .attachmentPasteCatcher { pasteboard in
             context.attachPasteboard(pasteboard)
+        }
+    }
+}
+
+private struct DeferredConversationLoadFeedback: View {
+    @State private var visible = false
+
+    var body: some View {
+        ZStack {
+            Color.clear
+            if visible {
+                LoadFeedback(title: "Loading conversation…")
+                    .transition(.opacity)
+            }
+        }
+        .task {
+            do {
+                try await Task.sleep(for: .milliseconds(180))
+            } catch {
+                return
+            }
+            guard !Task.isCancelled else { return }
+            visible = true
         }
     }
 }

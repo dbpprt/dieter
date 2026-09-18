@@ -176,4 +176,24 @@ struct DieterTransparencyTests {
         #expect(window.backgroundColor == fallback)
         #expect(window.contentView === content)
     }
+
+    @Test @MainActor func nativeBackdropSkipsRepeatedSwiftUIColorResolutionAndWindowWrites() {
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 320, height: 200),
+            styleMask: [.titled, .fullSizeContentView], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+        let backdrop = DieterWindowBackdropView(frame: window.contentView?.bounds ?? .zero)
+        window.contentView?.addSubview(backdrop)
+
+        backdrop.configure(transparencyEnabled: true, solidColor: Color.black)
+        let resolutions = backdrop.resolvedColorCount
+        let applications = backdrop.appliedConfigurationCount
+        let mutations = backdrop.windowStyleMutationCount
+        backdrop.configure(transparencyEnabled: true, solidColor: Color.black)
+
+        #expect(backdrop.resolvedColorCount == resolutions)
+        #expect(backdrop.appliedConfigurationCount == applications)
+        #expect(backdrop.windowStyleMutationCount == mutations)
+    }
 }

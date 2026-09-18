@@ -204,13 +204,49 @@ enum ConversationRenderWindow {
         anchor: Int,
         requiredIndex: Int
     ) -> Range<Int> {
-        let idealStart = max(
-            0,
-            min(anchor - maximumMessages / 2, messages.count - maximumMessages)
-        )
-        let ideal = forwardRange(messages: messages, start: idealStart, minimumMessages: 2)
-        if ideal.contains(anchor), ideal.contains(requiredIndex) { return ideal }
-        return forwardRange(messages: messages, start: min(anchor, requiredIndex), minimumMessages: 2)
+        var lower = min(anchor, requiredIndex)
+        var upper = max(anchor, requiredIndex) + 1
+        var bytes = 0
+        var parts = 0
+        for index in lower..<upper {
+            bytes += messageTextCost(messages[index])
+            parts += messages[index].parts.count
+        }
+
+        // Expand around the retained overlap instead of choosing an ideal
+        // index distance and then falling back to only two messages. With
+        // large rows, the old fallback advanced one message per page and
+        // rebuilt/restored the viewport continuously while the user scrolled.
+        var preferEarlier = requiredIndex < anchor
+        while upper - lower < maximumMessages {
+            let candidates = preferEarlier ? [lower - 1, upper] : [upper, lower - 1]
+            var added = false
+            for index in candidates where messages.indices.contains(index) {
+                let cost = messageTextCost(messages[index])
+                let partCount = messages[index].parts.count
+                guard bytes + cost <= maximumTextBytes,
+                    parts + partCount <= maximumParts
+                else { continue }
+                if index < lower {
+                    lower = index
+                } else {
+                    upper = index + 1
+                }
+                bytes += cost
+                parts += partCount
+                preferEarlier.toggle()
+                added = true
+                break
+            }
+            if !added { break }
+        }
+        return lower..<upper
+    }
+
+    private static func messageTextCost(_ message: Dieter_V1_UiMessage) -> Int {
+        message.parts.reduce(0) {
+            $0 + min($1.text.utf8.count, ConversationRenderCache.maximumPreviewCharacters)
+        }
     }
 
     private static func forwardRange(

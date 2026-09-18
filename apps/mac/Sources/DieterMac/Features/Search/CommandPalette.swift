@@ -30,23 +30,7 @@ struct CommandPalette: View {
         ]
     }
 
-    private var documents: [TaskSearchIndex.Document] {
-        let projects = store.projectDirectory.merging(
-            Dictionary(store.state.projects.map { ($0.id, $0) }, uniquingKeysWith: { _, new in new }),
-            uniquingKeysWith: { _, new in new })
-        let boards = Dictionary(
-            (store.navigationBoards.values.flatMap { $0 } + store.state.boards).map { ($0.id, $0.name) },
-            uniquingKeysWith: { _, new in new })
-        return (store.navigationCards.values.flatMap { $0 } + store.state.cards + store.chats + store.state.chats)
-            .map { card in
-                TaskSearchIndex.Document(
-                    id: card.id, title: card.title,
-                    text: card.initialPrompt + " " + card.summary,
-                    location: [projects[card.projectID]?.name, boards[card.boardID]].compactMap { $0 }.joined(
-                        separator: " · "),
-                    updatedAt: card.updatedAt, archived: card.archived, isChat: card.scope == "chat")
-            }.sorted { $0.id == $1.id ? $0.updatedAt < $1.updatedAt : $0.id < $1.id }
-    }
+    private var catalogRevision: UInt64 { store.replica.commandSearchRevision }
 
     private struct Result: Identifiable {
         let id: String
@@ -143,7 +127,7 @@ struct CommandPalette: View {
         .dieterGlass(.regular, in: RoundedRectangle(cornerRadius: 22))
         .presentationBackground(.clear)
         .background(SheetOutsideClickDismissal(enabled: true) { dismiss() })
-        .onChange(of: documents, initial: true) { _, value in index = TaskSearchIndex(documents: value) }
+        .task(id: catalogRevision) { await rebuildIndex() }
         .onChange(of: query) { _, _ in selection = 0 }
         .onChange(of: rows.map(\.id)) { _, _ in selection = 0 }
         .onAppear { searchFocused = true }
@@ -154,5 +138,37 @@ struct CommandPalette: View {
         .onKeyPress(.upArrow) {
             selection = max(selection - 1, 0); return .handled
         }
+    }
+
+    private func rebuildIndex() async {
+        let projects = Array(store.projectDirectory.values) + store.state.projects
+        let boards = store.navigationBoards.values.flatMap { $0 } + store.state.boards
+        let cards = store.synchronizedCardValues()
+        guard
+            let next = try? await BackgroundPreparation.run({
+                TaskSearchIndex(
+                    documents: CommandPaletteCatalog.documents(
+                        projects: projects, boards: boards, cards: cards))
+            }), !Task.isCancelled
+        else { return }
+        index = next
+    }
+}
+
+enum CommandPaletteCatalog {
+    static func documents(
+        projects: [Dieter_V1_Project],
+        boards: [Dieter_V1_Board],
+        cards: [Dieter_V1_Card]
+    ) -> [TaskSearchIndex.Document] {
+        let projects = Dictionary(projects.map { ($0.id, $0.name) }, uniquingKeysWith: { _, new in new })
+        let boards = Dictionary(boards.map { ($0.id, $0.name) }, uniquingKeysWith: { _, new in new })
+        return cards.map { card in
+            TaskSearchIndex.Document(
+                id: card.id, title: card.title,
+                text: card.initialPrompt + " " + card.summary,
+                location: [projects[card.projectID], boards[card.boardID]].compactMap { $0 }.joined(separator: " · "),
+                updatedAt: card.updatedAt, archived: card.archived, isChat: card.scope == "chat")
+        }.sorted { $0.id == $1.id ? $0.updatedAt < $1.updatedAt : $0.id < $1.id }
     }
 }

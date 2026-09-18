@@ -139,12 +139,20 @@ struct ConversationTimeline: View {
     private var showsJumpToLatest: Bool {
         ConversationScrollBehavior.showsJumpToLatest(viewportMode: viewportMode)
     }
+    private var timelineReadyForDisplay: Bool {
+        ConversationTimelinePresentation.isReady(
+            messageCount: messages.count,
+            conversationID: conversationID,
+            projectionConversationID: projectionConversationID,
+            viewportMode: viewportMode
+        )
+    }
     private var viewportObservation: ConversationViewportObservation {
         ConversationViewportObservation(
             conversationID: conversationID,
             isAtLatest: isAtLatest,
             followsLatest: ConversationScrollBehavior.followsLatest(viewportMode),
-            initialPositionComplete: viewportMode != .awaitingInitial(conversationID: conversationID)
+            initialPositionComplete: ConversationScrollBehavior.initialPositionComplete(viewportMode)
         )
     }
 
@@ -238,7 +246,15 @@ struct ConversationTimeline: View {
                     Color.clear.frame(height: 17).id(ConversationScrollBehavior.bottomID)
                 }
                 .padding(.horizontal, 18).padding(.top, 17)
+                // The first projection is laid out at the scroll view's default
+                // origin before ScrollViewProxy can move it to the tail. Keep
+                // that intermediate top-of-history frame mounted for layout but
+                // invisible until the native viewport confirms its final edge.
+                .opacity(timelineReadyForDisplay ? 1 : 0)
+                .accessibilityHidden(!timelineReadyForDisplay)
+                .allowsHitTesting(timelineReadyForDisplay)
             }
+            .defaultScrollAnchor(.bottom, for: .initialOffset)
             // Growing messages must not move the reading position after a user
             // scrolls away. Live following is driven explicitly by tail requests.
             .defaultScrollAnchor(.top, for: .sizeChanges)
@@ -254,6 +270,12 @@ struct ConversationTimeline: View {
             } action: { previous, current in
                 isAtRenderedEnd = current.atEnd
                 contentCanScroll = current.canScroll
+                if current.atEnd,
+                    projectionConversationID == conversationID,
+                    viewportMode == .awaitingInitial(conversationID: conversationID)
+                {
+                    viewportMode = .followingLatest
+                }
                 if let restoringOffset {
                     if abs(current.offset - restoringOffset) < 2 { self.restoringOffset = nil }
                     return
@@ -411,7 +433,17 @@ struct ConversationTimeline: View {
                 else { return }
                 scrollToLatest(proxy)
                 if viewportMode == .awaitingInitial(conversationID: conversationID) {
-                    viewportMode = .followingLatest
+                    // ScrollViewProxy schedules the native clip-view movement.
+                    // Do not reveal the transcript until that movement has
+                    // landed; otherwise one frame of the history's top leaks.
+                    await Task.yield()
+                    guard projectionConversationID == conversationID,
+                        viewportMode == .awaitingInitial(conversationID: conversationID),
+                        !userScrollInProgress
+                    else { return }
+                    if scrollAnchors.isAtEdge(earlier: false) || !contentCanScroll {
+                        viewportMode = .followingLatest
+                    }
                 }
             }
         }

@@ -5,6 +5,25 @@ import SwiftUI
 import Testing
 @testable import DieterMac
 
+@Test @MainActor func messageTextResolvesSwiftUIColorOnlyWhenTheThemeColorChanges() {
+    let view = MessageTextView()
+    view.update(source: "First", swiftUIColor: Color.primary)
+    #expect(view.resolvedColorCount == 1)
+    #expect(view.appliedUpdateCount == 1)
+
+    view.update(source: "First", swiftUIColor: Color.primary)
+    #expect(view.resolvedColorCount == 1)
+    #expect(view.appliedUpdateCount == 1)
+
+    view.update(source: "Second", swiftUIColor: Color.primary)
+    #expect(view.resolvedColorCount == 1)
+    #expect(view.appliedUpdateCount == 2)
+
+    view.update(source: "Second", swiftUIColor: Color.secondary)
+    #expect(view.resolvedColorCount == 2)
+    #expect(view.appliedUpdateCount == 3)
+}
+
 @Test @MainActor func messageSelectionSpansParagraphsAndCopiesTheWholeResponse() throws {
     let view = MessageTextView()
     view.update(source: "First **paragraph**.\n\nSecond paragraph with `code`.\n\nFinal paragraph.", color: .labelColor)

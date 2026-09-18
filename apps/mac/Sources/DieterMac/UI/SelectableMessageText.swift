@@ -91,7 +91,7 @@ struct SelectableMessageText: NSViewRepresentable {
     func updateNSView(_ view: MessageTextView, context: Context) {
         view.linkDelegate.handler = linkHandler
         view.linkDelegate.externalResolver = externalResolver
-        view.update(source: source, color: NSColor(color))
+        view.update(source: source, swiftUIColor: color)
     }
 
     func sizeThatFits(_ proposal: ProposedViewSize, nsView: MessageTextView, context: Context) -> CGSize? {
@@ -103,6 +103,9 @@ final class MessageTextView: NSTextView {
     let linkDelegate = ConversationTextLinkDelegate()
     private var renderedSource: String?
     private var renderedColor: NSColor?
+    private var configuredColor: Color?
+    private(set) var resolvedColorCount = 0
+    private(set) var appliedUpdateCount = 0
     private let measurementStorage = NSTextStorage()
     private let measurementLayout = NSLayoutManager()
     private let measurementContainer = NSTextContainer(containerSize: .zero)
@@ -140,8 +143,28 @@ final class MessageTextView: NSTextView {
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
+    func update(source: String, swiftUIColor color: Color) {
+        guard source != renderedSource || color != configuredColor else { return }
+        let resolved: NSColor
+        if color == configuredColor, let renderedColor {
+            resolved = renderedColor
+        } else {
+            resolved = NSColor(color)
+            resolvedColorCount += 1
+        }
+        configuredColor = color
+        apply(source: source, color: resolved)
+    }
+
+    /// Native callers and focused AppKit tests can bypass SwiftUI color
+    /// resolution while retaining the same idempotent text update behavior.
     func update(source: String, color: NSColor) {
         guard source != renderedSource || color != renderedColor else { return }
+        configuredColor = nil
+        apply(source: source, color: color)
+    }
+
+    private func apply(source: String, color: NSColor) {
         let selection = selectedRange()
         let previousText = string
         let content = Self.attributedText(source: source, color: color)
@@ -155,6 +178,7 @@ final class MessageTextView: NSTextView {
         }
         renderedSource = source
         renderedColor = color
+        appliedUpdateCount += 1
         // NSViewRepresentable.sizeThatFits owns this view's SwiftUI size.
         // Invalidating AppKit's intrinsic size from updateNSView can re-enter
         // NSHostingView layout while SwiftUI is still rendering the update;

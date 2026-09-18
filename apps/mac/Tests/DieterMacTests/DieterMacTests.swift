@@ -1065,11 +1065,16 @@ private func historyTextMessage(_ id: String, role: String = "assistant") -> Die
     let awaiting = ConversationViewportMode.awaitingInitial(conversationID: "chat-one")
     #expect(ConversationScrollBehavior.followsLatest(awaiting))
     #expect(!ConversationScrollBehavior.showsJumpToLatest(viewportMode: awaiting))
+    #expect(!ConversationScrollBehavior.initialPositionComplete(awaiting))
+    #expect(
+        !ConversationScrollBehavior.initialPositionComplete(
+            .awaitingInitial(conversationID: "a previous conversation")))
 
     let following = ConversationScrollBehavior.afterUserScroll(isAtLatest: true)
     #expect(following == .followingLatest)
     #expect(ConversationScrollBehavior.followsLatest(following))
     #expect(!ConversationScrollBehavior.showsJumpToLatest(viewportMode: following))
+    #expect(ConversationScrollBehavior.initialPositionComplete(following))
 
     let detached = ConversationScrollBehavior.afterUserScroll(isAtLatest: false)
     #expect(detached == .detached)
@@ -1095,6 +1100,34 @@ private func historyTextMessage(_ id: String, role: String = "assistant") -> Die
             renderedThroughLatest: false
         )
     )
+}
+
+@Test func conversationTimelineStaysHiddenUntilItsInitialTailPositionLands() {
+    let conversationID = "chat-one"
+    #expect(
+        ConversationTimelinePresentation.isReady(
+            messageCount: 0,
+            conversationID: conversationID,
+            projectionConversationID: "",
+            viewportMode: .awaitingInitial(conversationID: conversationID)))
+    #expect(
+        !ConversationTimelinePresentation.isReady(
+            messageCount: 20,
+            conversationID: conversationID,
+            projectionConversationID: "chat-two",
+            viewportMode: .followingLatest))
+    #expect(
+        !ConversationTimelinePresentation.isReady(
+            messageCount: 20,
+            conversationID: conversationID,
+            projectionConversationID: conversationID,
+            viewportMode: .awaitingInitial(conversationID: conversationID)))
+    #expect(
+        ConversationTimelinePresentation.isReady(
+            messageCount: 20,
+            conversationID: conversationID,
+            projectionConversationID: conversationID,
+            viewportMode: .followingLatest))
 }
 
 @Test func conversationProjectionIdentityIncludesTheSelectedConversation() {
@@ -1211,6 +1244,31 @@ private func historyTextMessage(_ id: String, role: String = "assistant") -> Die
     )
     #expect(String(decoding: replayed.data, as: UTF8.self) == "fresh")
     #expect(replayed.resetRevision == 3)
+}
+
+@Test func terminalScreenReducerRetainsBoundedChunksWithoutFlatteningEveryAppend() {
+    var screen = TerminalScreenState()
+    let segment = Data(repeating: 0x61, count: 48 * 1_024)
+    for _ in 0..<6 { screen.append(segment, limit: 192 * 1_024) }
+
+    #expect(screen.byteCount == 192 * 1_024)
+    #expect(screen.chunks.count >= 3)
+    #expect(screen.chunks.allSatisfy { !$0.isEmpty && $0.count <= 64 * 1_024 })
+    #expect(screen.data.count == screen.byteCount)
+}
+
+@Test @MainActor func remoteTerminalPaletteAssignmentsAreIdempotent() {
+    let view = RemoteTerminalView(frame: .zero, font: .monospacedSystemFont(ofSize: 13, weight: .regular))
+    let foreground = NSColor.systemGreen
+    let background = NSColor.black
+    let caret = NSColor.white
+    view.applyPalette(foreground: foreground, background: background, caret: caret)
+    let mutations = view.paletteMutationCount
+    view.applyPalette(foreground: foreground, background: background, caret: caret)
+    #expect(view.paletteMutationCount == mutations)
+
+    view.applyPalette(foreground: .systemYellow, background: background, caret: caret)
+    #expect(view.paletteMutationCount == mutations + 1)
 }
 
 @Test @MainActor func remoteTerminalRendererMovesTheVisibleCaretWithOutputAndReplayResets() async throws {

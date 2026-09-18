@@ -459,6 +459,7 @@ struct DieterThemePerformanceTests {
         for pinnedIndex in 0..<8 {
             var chat = Dieter_V1_Card()
             chat.id = "pinned-chat-\(pinnedIndex)"
+            chat.projectID = "project-\(pinnedIndex % 10)"
             chat.scope = "chat"
             chat.title = "Pinned conversation \(pinnedIndex)"
             chat.pinned = true
@@ -471,6 +472,7 @@ struct DieterThemePerformanceTests {
             project.id = "project-\(projectIndex)"
             project.name = "Project \(projectIndex)"
             store.projectDirectory[project.id] = project
+            store.projectEndpointIDs[project.id] = store.endpoint.id
 
             for chatIndex in 0..<5 {
                 var chat = Dieter_V1_Card()

@@ -609,6 +609,13 @@ struct ChatRow: View {
 
     private var unread: Bool { store.isChatUnread(card) }
     private var running: Bool { ChatRuntimePresentation.isActive(card.runtime) }
+    private var pinnedMachine: DieterEndpoint? {
+        guard showsPinnedDragHandle else { return nil }
+        return store.machine(forProjectID: card.projectID)
+    }
+    private var pinnedMachineOnline: Bool {
+        pinnedMachine.map(store.machineIsAvailable) == true
+    }
 
     init(card: Dieter_V1_Card, showsPinnedDragHandle: Bool = false) {
         self.card = card
@@ -637,20 +644,40 @@ struct ChatRow: View {
                 }
                 .frame(width: 15, height: 15)
                 .padding(.top, 3)
-                VStack(alignment: .leading, spacing: 3) {
-                    HStack {
-                        Text(card.title.isEmpty ? "Untitled chat" : card.title)
-                            .font(.system(size: 12.5, weight: unread ? .semibold : .medium))
-                            .lineLimit(1)
-                        if card.pinned {
-                            Image(systemName: "pin.fill").font(.system(size: 8)).foregroundStyle(
-                                DieterTheme.shell)
+                HStack(alignment: .top, spacing: 6) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        HStack(spacing: 5) {
+                            Text(card.title.isEmpty ? "Untitled chat" : card.title)
+                                .font(.system(size: 12.5, weight: unread ? .semibold : .medium))
+                                .lineLimit(1)
+                            if card.pinned {
+                                Image(systemName: "pin.fill").font(.system(size: 8)).foregroundStyle(
+                                    DieterTheme.shell)
+                            }
+                            if card.archived {
+                                Image(systemName: "archivebox.fill").font(.system(size: 8)).foregroundStyle(
+                                    DieterTheme.tertiary)
+                            }
                         }
-                        if card.archived {
-                            Image(systemName: "archivebox.fill").font(.system(size: 8)).foregroundStyle(
-                                DieterTheme.tertiary)
+                        HStack(spacing: 6) {
+                            if running {
+                                Text("Running")
+                                    .fontWeight(.semibold)
+                                    .foregroundStyle(DieterTheme.primary)
+                            } else if !card.summary.isEmpty {
+                                Text(card.summary).lineLimit(1)
+                            }
+                            if !card.workspaceMode.isEmpty { WorkspaceSummaryBadge(card: card, compact: true) }
+                            if !card.activeSubagents.isEmpty {
+                                Text(
+                                    "· \(card.activeSubagents.count) subagent\(card.activeSubagents.count == 1 ? "" : "s")"
+                                ).foregroundStyle(DieterTheme.subtle)
+                            }
                         }
-                        Spacer()
+                        .font(.system(size: 10)).foregroundStyle(DieterTheme.tertiary)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    VStack(alignment: .trailing, spacing: 3) {
                         HStack(spacing: 5) {
                             if unread {
                                 Circle().fill(DieterTheme.primary).frame(width: 6.5, height: 6.5)
@@ -671,23 +698,18 @@ struct ChatRow: View {
                         }
                         .font(.system(size: 10, weight: unread ? .semibold : .medium))
                         .foregroundStyle(unread ? DieterTheme.primary : DieterTheme.tertiary)
-                    }
-                    HStack(spacing: 6) {
-                        if running {
-                            Text("Running")
-                                .fontWeight(.semibold)
-                                .foregroundStyle(DieterTheme.primary)
-                        } else if !card.summary.isEmpty {
-                            Text(card.summary).lineLimit(1)
-                        }
-                        if !card.workspaceMode.isEmpty { WorkspaceSummaryBadge(card: card, compact: true) }
-                        if !card.activeSubagents.isEmpty {
-                            Text(
-                                "· \(card.activeSubagents.count) subagent\(card.activeSubagents.count == 1 ? "" : "s")"
-                            ).foregroundStyle(DieterTheme.subtle)
+                        if let pinnedMachine {
+                            ProjectMachineBadge(
+                                machine: pinnedMachine,
+                                online: pinnedMachineOnline,
+                                compact: true
+                            )
+                            .frame(maxWidth: 72, alignment: .trailing)
+                            .accessibilityIdentifier("chat.\(card.id).machine")
+                            .smokeTarget(
+                                "chat.\(card.id).machine.\(pinnedMachineOnline ? "online" : "offline")")
                         }
                     }
-                    .font(.system(size: 10)).foregroundStyle(DieterTheme.tertiary)
                 }
             }
             .padding(.horizontal, 8).padding(.vertical, 7)

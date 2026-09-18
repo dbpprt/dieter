@@ -1,4 +1,5 @@
 import AppKit
+import CryptoKit
 import DieterAPI
 import SwiftUI
 import UniformTypeIdentifiers
@@ -338,8 +339,8 @@ enum AttachmentImagePayload {
     static func image(from part: Dieter_V1_MessagePart) -> NSImage? {
         let key = cacheKey(for: part)
         if let cached = cache.values.object(forKey: key) { return cached }
-        let image = data(from: part).flatMap(NSImage.init(data:))
-        if let image { cache.values.setObject(image, forKey: key, cost: max(1, part.data.count)) }
+        guard let payload = data(from: part), let image = NSImage(data: payload) else { return nil }
+        cache.values.setObject(image, forKey: key, cost: cacheCost(image: image, encodedByteCount: payload.count))
         return image
     }
 
@@ -349,10 +350,29 @@ enum AttachmentImagePayload {
         return Data(base64Encoded: String(part.url[marker.upperBound...]))
     }
 
-    private static func cacheKey(for part: Dieter_V1_MessagePart) -> NSString {
-        let prefix = part.data.prefix(16).base64EncodedString()
-        let suffix = part.data.suffix(16).base64EncodedString()
-        return "\(part.filename)|\(part.payloadRevision)|\(part.data.count)|\(prefix)|\(suffix)|\(part.url)" as NSString
+    static func cacheKey(for part: Dieter_V1_MessagePart) -> NSString {
+        let identity: String
+        if !part.payloadRevision.isEmpty {
+            identity = "revision:\(part.payloadRevision)"
+        } else {
+            // Keep the key bounded even for legacy inline data URLs. Embedding the
+            // complete URL here duplicated every base64 payload in NSCache's keys.
+            let payload = part.data.isEmpty ? Data(part.url.utf8) : part.data
+            identity = SHA256.hash(data: payload).map { String(format: "%02x", $0) }.joined()
+        }
+        return "\(part.filename)|\(part.mediaType)|\(identity)" as NSString
+    }
+
+    static func cacheCost(image: NSImage, encodedByteCount: Int) -> Int {
+        let decodedBytes = image.representations.reduce(0) { largest, representation in
+            let width = max(0, representation.pixelsWide)
+            let height = max(0, representation.pixelsHigh)
+            let pixels = width.multipliedReportingOverflow(by: height)
+            guard !pixels.overflow else { return Int.max }
+            let bytes = pixels.partialValue.multipliedReportingOverflow(by: 4)
+            return bytes.overflow ? Int.max : max(largest, bytes.partialValue)
+        }
+        return max(1, encodedByteCount, decodedBytes)
     }
 }
 

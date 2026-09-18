@@ -113,6 +113,11 @@ enum ConversationScrollBehavior {
         viewportMode == .detached
     }
 
+    static func initialPositionComplete(_ viewportMode: ConversationViewportMode) -> Bool {
+        if case .awaitingInitial = viewportMode { return false }
+        return true
+    }
+
     static func afterUserScroll(isAtLatest: Bool) -> ConversationViewportMode {
         isAtLatest ? .followingLatest : .detached
     }
@@ -131,6 +136,20 @@ enum ConversationViewportMode: Equatable {
     case awaitingInitial(conversationID: String)
     case followingLatest
     case detached
+}
+
+enum ConversationTimelinePresentation {
+    static func isReady(
+        messageCount: Int,
+        conversationID: String,
+        projectionConversationID: String,
+        viewportMode: ConversationViewportMode
+    ) -> Bool {
+        guard messageCount > 0 else { return true }
+        guard projectionConversationID == conversationID else { return false }
+        if case .awaitingInitial = viewportMode { return false }
+        return true
+    }
 }
 
 struct ConversationViewportObservation: Equatable {

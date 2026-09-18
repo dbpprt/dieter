@@ -38,15 +38,15 @@ import Testing
         ) == .offline)
 }
 
-@Test func refreshingWorkspaceStaysReadableAndInteractive() {
-    let refreshing = WorkspaceSurfaceTreatment.resolve(
+@Test func backgroundSynchronizationDoesNotInsertATransientWorkspaceBanner() {
+    let syncing = WorkspaceSurfaceTreatment.resolve(
         showsSynchronizedWorkspace: true,
         hasCachedWorkspace: true,
         freshness: .syncing
     )
-    #expect(refreshing == .refreshing)
-    #expect(refreshing.showsNotice)
-    #expect(!refreshing.blocksInteraction)
+    #expect(syncing == .current)
+    #expect(!syncing.showsNotice)
+    #expect(!syncing.blocksInteraction)
 }
 
 @Test func unavailableWorkspaceKeepsCachedNavigationInteractive() {

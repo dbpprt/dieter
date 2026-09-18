@@ -10,7 +10,7 @@ const sdkRoot = dirname(dirname(fileURLToPath(import.meta.resolve('@openai/codex
 const websocketRoot = dirname(fileURLToPath(import.meta.resolve('ws/package.json')));
 
 export function createLocalCodex(settings = {}) {
-  // Ultra is a CLI orchestration mode, not a Responses API effort. Codex 0.154
+  // Ultra is a CLI orchestration mode, not a Responses API effort. Codex 0.155
   // advertises it, but this adapter's protocol enum stops at max. Its supported
   // arbitrary config channel reaches the same CLI setting without narrowing it.
   const harness = createCodex(settings.reasoningEffort === 'ultra' ? {

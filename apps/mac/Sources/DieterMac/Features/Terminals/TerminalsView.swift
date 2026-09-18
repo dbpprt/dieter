@@ -669,7 +669,10 @@ struct RemoteTerminalSurface: NSViewRepresentable {
         context.coordinator.active = active
         context.coordinator.acceptsInput = acceptsInput
         view.terminalDelegate = context.coordinator
-        applyPalette(to: view)
+        view.applyPalette(
+            foreground: DieterTheme.terminalForegroundColor,
+            background: DieterTheme.terminalBackgroundColor,
+            caret: DieterTheme.terminalCaretColor)
         context.coordinator.apply(screen, to: view)
         context.coordinator.active = active
         context.coordinator.acceptsInput = acceptsInput
@@ -689,15 +692,11 @@ struct RemoteTerminalSurface: NSViewRepresentable {
         context.coordinator.acceptsInput = acceptsInput
         context.coordinator.active = active
         view.acceptsRemoteInput = acceptsInput
-        applyPalette(to: view)
+        view.applyPalette(
+            foreground: DieterTheme.terminalForegroundColor,
+            background: DieterTheme.terminalBackgroundColor,
+            caret: DieterTheme.terminalCaretColor)
         context.coordinator.apply(screen, to: view)
-    }
-
-    private func applyPalette(to view: SwiftTerm.TerminalView) {
-        view.nativeForegroundColor = DieterTheme.terminalForegroundColor
-        view.nativeBackgroundColor = DieterTheme.terminalBackgroundColor
-        view.caretColor = DieterTheme.terminalCaretColor
-        view.layer?.backgroundColor = DieterTheme.terminalBackgroundColor.cgColor
     }
 
     @MainActor
@@ -764,6 +763,7 @@ final class RemoteTerminalView: SwiftTerm.TerminalView {
     }
 
     var acceptsRemoteInput = true
+    private(set) var paletteMutationCount = 0
     private var selectionAnchorEvent: NSEvent?
     private let editCommandMonitor = MonitorBox()
 
@@ -778,6 +778,23 @@ final class RemoteTerminalView: SwiftTerm.TerminalView {
     }
 
     deinit { editCommandMonitor.remove() }
+
+    func applyPalette(foreground: NSColor, background: NSColor, caret: NSColor) {
+        if nativeForegroundColor != foreground {
+            nativeForegroundColor = foreground
+            paletteMutationCount += 1
+        }
+        if nativeBackgroundColor != background {
+            // SwiftTerm's setter also updates its backing layer. Reassigning it
+            // for every output frame needlessly propagates through the emulator.
+            nativeBackgroundColor = background
+            paletteMutationCount += 1
+        }
+        if caretColor != caret {
+            caretColor = caret
+            paletteMutationCount += 1
+        }
+    }
 
     override func setFrameSize(_ newSize: NSSize) {
         super.setFrameSize(newSize)
@@ -923,17 +940,25 @@ final class RemoteTerminalScreenRenderer {
     private var resetRevision = -1
 
     func apply(_ screen: TerminalScreenState, to view: SwiftTerm.TerminalView) {
-        let needsReset = resetRevision != screen.resetRevision || consumedBytes > screen.data.count
+        let needsReset = resetRevision != screen.resetRevision || consumedBytes > screen.byteCount
         if needsReset {
             view.terminal.resetToInitialState()
             consumedBytes = 0
             resetRevision = screen.resetRevision
         }
 
-        if screen.data.count > consumedBytes {
-            let bytes = [UInt8](screen.data[consumedBytes...])
-            consumedBytes = screen.data.count
-            view.feed(byteArray: bytes[...])
+        if screen.byteCount > consumedBytes {
+            var skipped = consumedBytes
+            for chunk in screen.chunks {
+                if skipped >= chunk.count {
+                    skipped -= chunk.count
+                    continue
+                }
+                let bytes = [UInt8](chunk.dropFirst(skipped))
+                skipped = 0
+                if !bytes.isEmpty { view.feed(byteArray: bytes[...]) }
+            }
+            consumedBytes = screen.byteCount
         } else if needsReset {
             // The reset dirties the whole terminal even when the replay is empty.
             // An empty view-level feed schedules SwiftTerm's caret and display pass.

@@ -594,7 +594,7 @@ scheduled task templates, while the CLI accepts
 mode. Turning it off explicitly selects the standard service tier for that
 conversation.
 
-Dieter pins Codex SDK/CLI 0.154.0 and links its harness bridge to that same
+Dieter pins Codex SDK/CLI 0.155.0 and links its harness bridge to that same
 runtime; updating a separate global `codex` command does not update Dieter's
 bundled CLI. Astra, Sol, and Terra support Max and Ultra; Luna supports Max.
 Ultra is Codex's native mode with automatic task delegation, rather than an

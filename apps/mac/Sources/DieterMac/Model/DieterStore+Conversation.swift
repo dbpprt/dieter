@@ -104,15 +104,6 @@ extension DieterStore {
         }
 
         conversationLoading = true
-        // Give SwiftUI one executor turn to paint the selected row and loading
-        // state before a cached transcript mounts its native text views. The
-        // in-memory projection below can otherwise complete synchronously and
-        // fold selection, teardown, hydration, and initial scrolling into one
-        // expensive main-actor transaction.
-        await Task.yield()
-        guard selectionGeneration == conversationSelectionGeneration,
-            (selectedCardID ?? selectedChatID) == cardID
-        else { return }
         let cached = await projectedConversation(cardID: cardID, endpointID: endpointID)
         guard selectionGeneration == conversationSelectionGeneration else { return }
         if let cached {
@@ -124,7 +115,14 @@ extension DieterStore {
             )
             conversationLoading = false
         } else {
+            // Only yield a visible loading transaction when there is no local
+            // transcript to mount. Cached chat switches stay atomic and avoid a
+            // one-frame loading flash.
             conversationLoading = true
+            await Task.yield()
+            guard selectionGeneration == conversationSelectionGeneration,
+                (selectedCardID ?? selectedChatID) == cardID
+            else { return }
         }
         guard selectionGeneration == conversationSelectionGeneration else { return }
         conversationSyncing = true

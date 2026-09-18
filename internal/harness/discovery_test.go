@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -194,6 +195,55 @@ func TestLiveProviderDiscovery(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestDiscoverCodexModelsIncludesVisibleAstra(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("CODEX_HOME", root)
+	cache := `{
+  "models": [
+    {
+      "slug": "gpt-6-astra",
+      "display_name": "GPT-6-Astra",
+      "visibility": "list",
+      "supported_in_api": true,
+      "context_window": 272000,
+      "default_reasoning_level": "medium",
+      "supported_reasoning_levels": [
+        {"effort": "low"},
+        {"effort": "medium"},
+        {"effort": "high"},
+        {"effort": "xhigh"},
+        {"effort": "max"},
+        {"effort": "ultra"}
+      ]
+    },
+    {
+      "slug": "internal-only",
+      "display_name": "Internal only",
+      "visibility": "hide",
+      "context_window": 1
+    }
+  ]
+}`
+	if err := os.WriteFile(filepath.Join(root, "models_cache.json"), []byte(cache), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	models, err := discoverCodexModels()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(models) != 1 {
+		t.Fatalf("models=%#v, want only visible Astra", models)
+	}
+	astra := models[0]
+	if astra.ID != "gpt-6-astra" || astra.Name != "GPT-6-Astra" || astra.ContextWindow != 272000 || astra.DefaultEffort != "medium" {
+		t.Fatalf("Astra=%#v", astra)
+	}
+	if got, want := strings.Join(astra.Efforts, ","), "low,medium,high,xhigh,max,ultra"; got != want {
+		t.Fatalf("Astra efforts=%q want %q", got, want)
 	}
 }
 

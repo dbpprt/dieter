@@ -15,7 +15,10 @@ enum WorkspaceSurfaceTreatment: Equatable {
         guard showsSynchronizedWorkspace, hasCachedWorkspace else { return .current }
         switch freshness {
         case .live: return .current
-        case .syncing: return .refreshing
+        // A live WatchSync resubscription does not make the cached workspace
+        // unavailable. Keep its compact status in the sidebar without inserting
+        // a transient banner that shifts every open surface.
+        case .syncing: return .current
         case .reconnecting, .offline: return .unavailable
         }
     }
@@ -145,7 +148,7 @@ struct DieterRootView: View {
         .background {
             DieterWindowBackdrop(
                 transparencyEnabled: DieterTheme.usesTransparency,
-                solidColor: NSColor(DieterTheme.opaqueSurface)
+                solidColor: DieterTheme.opaqueSurface
             )
             .ignoresSafeArea()
             .allowsHitTesting(false)

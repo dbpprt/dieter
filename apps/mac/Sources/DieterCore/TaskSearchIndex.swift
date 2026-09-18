@@ -1,7 +1,7 @@
 import Foundation
 
 /// Rebuildable in-memory index of synchronized task metadata, never transcripts.
-public struct TaskSearchIndex {
+public struct TaskSearchIndex: Sendable {
     public struct Document: Equatable, Sendable, Identifiable {
         public let id: String
         public let title: String
@@ -22,6 +22,7 @@ public struct TaskSearchIndex {
 
     private var documents: [String: Document] = [:]
     private var postings: [String: Set<String>] = [:]
+    private var vocabulary: [String] = []
 
     public init(documents: [Document] = []) {
         for document in documents {
@@ -35,6 +36,7 @@ public struct TaskSearchIndex {
                 postings[word, default: []].insert(document.id)
             }
         }
+        vocabulary = postings.keys.sorted()
     }
 
     public func search(_ query: String, limit: Int = 30) -> [Document] {
@@ -42,8 +44,11 @@ public struct TaskSearchIndex {
         guard !terms.isEmpty, limit > 0 else { return [] }
         var candidates: Set<String>?
         for term in terms {
-            let matches = postings.filter { $0.key.hasPrefix(term) }.values.reduce(into: Set<String>()) {
-                $0.formUnion($1)
+            var matches = Set<String>()
+            var index = vocabulary.partitioningIndex { $0 >= term }
+            while index < vocabulary.count, vocabulary[index].hasPrefix(term) {
+                if let ids = postings[vocabulary[index]] { matches.formUnion(ids) }
+                index += 1
             }
             candidates = candidates.map { $0.intersection(matches) } ?? matches
             if candidates?.isEmpty == true { return [] }
@@ -55,13 +60,13 @@ public struct TaskSearchIndex {
             if title.hasPrefix(phrase) { return 2 }
             return terms.allSatisfy { term in Self.words(title).contains { $0.hasPrefix(term) } } ? 1 : 0
         }
+        let scored = (candidates ?? []).compactMap { documents[$0] }.map { ($0, score($0)) }
         return Array(
-            (candidates ?? []).compactMap { documents[$0] }.sorted {
-                let lhs = score($0), rhs = score($1)
-                if lhs != rhs { return lhs > rhs }
-                if $0.updatedAt != $1.updatedAt { return $0.updatedAt > $1.updatedAt }
-                return $0.id < $1.id
-            }.prefix(limit))
+            scored.sorted {
+                if $0.1 != $1.1 { return $0.1 > $1.1 }
+                if $0.0.updatedAt != $1.0.updatedAt { return $0.0.updatedAt > $1.0.updatedAt }
+                return $0.0.id < $1.0.id
+            }.prefix(limit).map(\.0))
     }
 
     private static func normalize(_ value: String) -> String {
@@ -70,5 +75,21 @@ public struct TaskSearchIndex {
 
     private static func words(_ value: String) -> [String] {
         normalize(value).components(separatedBy: CharacterSet.alphanumerics.inverted).filter { !$0.isEmpty }
+    }
+}
+
+private extension Array where Element == String {
+    func partitioningIndex(where predicate: (String) -> Bool) -> Int {
+        var lower = startIndex
+        var upper = endIndex
+        while lower < upper {
+            let middle = lower + (upper - lower) / 2
+            if predicate(self[middle]) {
+                upper = middle
+            } else {
+                lower = middle + 1
+            }
+        }
+        return lower
     }
 }

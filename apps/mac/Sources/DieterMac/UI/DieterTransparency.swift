@@ -38,7 +38,7 @@ final class DieterTransparencyAccessibility {
 
 struct DieterWindowBackdrop: NSViewRepresentable {
     let transparencyEnabled: Bool
-    let solidColor: NSColor
+    let solidColor: Color
 
     func makeNSView(context: Context) -> DieterWindowBackdropView {
         let view = DieterWindowBackdropView()
@@ -61,8 +61,13 @@ struct DieterWindowBackdrop: NSViewRepresentable {
 final class DieterWindowBackdropView: NSVisualEffectView {
     private var transparencyEnabled = false
     private var solidColor = NSColor.windowBackgroundColor
+    private var configuredColor: Color?
+    private var hasConfiguration = false
     private weak var configuredWindow: NSWindow?
     private var originalWindowStyle: (opaque: Bool, background: NSColor?, transparentTitlebar: Bool)?
+    private(set) var resolvedColorCount = 0
+    private(set) var appliedConfigurationCount = 0
+    private(set) var windowStyleMutationCount = 0
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -74,10 +79,33 @@ final class DieterWindowBackdropView: NSVisualEffectView {
 
     required init?(coder: NSCoder) { nil }
 
+    func configure(transparencyEnabled: Bool, solidColor: Color) {
+        let colorChanged = configuredColor != solidColor
+        let modeChanged = !hasConfiguration || self.transparencyEnabled != transparencyEnabled
+        guard colorChanged || modeChanged else { return }
+        if colorChanged || !hasConfiguration {
+            configuredColor = solidColor
+            self.solidColor = NSColor(solidColor)
+            resolvedColorCount += 1
+        }
+        applyConfiguration(transparencyEnabled: transparencyEnabled)
+    }
+
     func configure(transparencyEnabled: Bool, solidColor: NSColor) {
-        self.transparencyEnabled = transparencyEnabled
+        let colorChanged = self.solidColor != solidColor || configuredColor != nil
+        let modeChanged = !hasConfiguration || self.transparencyEnabled != transparencyEnabled
+        guard colorChanged || modeChanged else { return }
+        configuredColor = nil
         self.solidColor = solidColor
-        isHidden = !transparencyEnabled
+        applyConfiguration(transparencyEnabled: transparencyEnabled)
+    }
+
+    private func applyConfiguration(transparencyEnabled: Bool) {
+        self.transparencyEnabled = transparencyEnabled
+        let hidden = !transparencyEnabled
+        if isHidden != hidden { isHidden = hidden }
+        hasConfiguration = true
+        appliedConfigurationCount += 1
         applyWindowStyle()
     }
 
@@ -97,9 +125,21 @@ final class DieterWindowBackdropView: NSVisualEffectView {
 
     private func applyWindowStyle() {
         guard let window = configuredWindow else { return }
-        window.isOpaque = !transparencyEnabled
-        window.backgroundColor = transparencyEnabled ? .clear : solidColor
-        window.titlebarAppearsTransparent = transparencyEnabled || (originalWindowStyle?.transparentTitlebar ?? false)
+        let opaque = !transparencyEnabled
+        let background: NSColor = transparencyEnabled ? .clear : solidColor
+        let transparentTitlebar = transparencyEnabled || (originalWindowStyle?.transparentTitlebar ?? false)
+        if window.isOpaque != opaque {
+            window.isOpaque = opaque
+            windowStyleMutationCount += 1
+        }
+        if window.backgroundColor != background {
+            window.backgroundColor = background
+            windowStyleMutationCount += 1
+        }
+        if window.titlebarAppearsTransparent != transparentTitlebar {
+            window.titlebarAppearsTransparent = transparentTitlebar
+            windowStyleMutationCount += 1
+        }
     }
 
     func restoreWindow() {

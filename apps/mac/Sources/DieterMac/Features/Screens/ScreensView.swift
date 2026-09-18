@@ -195,6 +195,15 @@ struct ScreensView: View {
                         "· \(controller.sessionState.width)×\(controller.sessionState.height) · \(controller.sessionState.fps) fps"
                     )
                 }
+                Text("·")
+                Text(networkLatencyLabel(controller))
+                    .monospacedDigit()
+                    .fixedSize()
+                    .help(
+                        "Network round-trip latency to the remote Mac. Does not include capture, encoding, decoding or display delay. A dash means no current measurement is available."
+                    )
+                    .accessibilityLabel("Network round-trip latency: \(networkLatencyLabel(controller))")
+                    .accessibilityIdentifier("screens.latency")
             }
             .font(.system(size: 10, weight: .medium))
             .foregroundStyle(DieterTheme.tertiary)
@@ -282,6 +291,13 @@ struct ScreensView: View {
         case .failed: DieterTheme.coral
         default: DieterTheme.tertiary
         }
+    }
+
+    private func networkLatencyLabel(_ controller: RemoteDesktopController) -> String {
+        let milliseconds = controller.sessionState.rttMs
+        guard controller.phase == .streaming, milliseconds.isFinite, milliseconds > 0 else { return "— ms RTT" }
+        if milliseconds < 1 { return "<1 ms RTT" }
+        return "\(milliseconds.formatted(.number.precision(.fractionLength(0)))) ms RTT"
     }
 
     private func emptyState<Accessory: View>(

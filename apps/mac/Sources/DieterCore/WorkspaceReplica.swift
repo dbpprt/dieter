@@ -27,17 +27,42 @@ package final class WorkspaceReplica {
     }
 
     package var state = Dieter_V1_State() {
-        didSet { if state.projects != oldValue.projects { sortedProjectsCache = nil } }
+        didSet {
+            if state.projects != oldValue.projects { sortedProjectsCache = nil }
+            if state.projects != oldValue.projects || state.boards != oldValue.boards
+                || state.cards != oldValue.cards || state.chats != oldValue.chats
+            {
+                commandSearchRevision &+= 1
+            }
+        }
     }
     package var projectDirectory: [String: Dieter_V1_Project] = [:] {
-        didSet { if projectDirectory != oldValue { sortedProjectsCache = nil } }
+        didSet {
+            if projectDirectory != oldValue {
+                sortedProjectsCache = nil
+                commandSearchRevision &+= 1
+            }
+        }
     }
     package var projectEndpointIDs: [String: String] = [:]
-    package var navigationBoards: [String: [Dieter_V1_Board]] = [:]
-    package var navigationCards: [String: [Dieter_V1_Card]] = [:]
-    package var chats: [Dieter_V1_Card] = [] { didSet { if chats != oldValue { chatRevision &+= 1; chatCache = nil } } }
+    package var navigationBoards: [String: [Dieter_V1_Board]] = [:] {
+        didSet { if navigationBoards != oldValue { commandSearchRevision &+= 1 } }
+    }
+    package var navigationCards: [String: [Dieter_V1_Card]] = [:] {
+        didSet { if navigationCards != oldValue { commandSearchRevision &+= 1 } }
+    }
+    package var chats: [Dieter_V1_Card] = [] {
+        didSet {
+            if chats != oldValue {
+                chatRevision &+= 1
+                commandSearchRevision &+= 1
+                chatCache = nil
+            }
+        }
+    }
     package var chatProjects: [Dieter_V1_Project] = []
     private(set) var chatRevision: UInt64 = 0
+    package private(set) var commandSearchRevision: UInt64 = 0
     @ObservationIgnored private var sortedProjectsCache: [Dieter_V1_Project]?
     @ObservationIgnored private var chatCache:
         (revision: UInt64, archived: Bool, search: String, order: [String], projection: ChatListProjection)?

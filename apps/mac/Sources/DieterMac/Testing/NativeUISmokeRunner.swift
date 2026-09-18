@@ -1177,9 +1177,24 @@
                     if pinned {
                         store.closeConversation()
                         try? await DieterTaskSleep.milliseconds(500)
+                        let machineBadge = await waitUntil(timeout: 5, intervalMilliseconds: 25) {
+                            ["online", "offline"].contains { state in
+                                (NativeUISmokeTargets.frames["chat.\(chatID).machine.\(state)"] ?? [])
+                                    .contains { entry in
+                                        guard let view = entry.view else { return false }
+                                        return view.window === window && !view.isHiddenOrHasHiddenAncestor
+                                    }
+                            }
+                        }
+                        results["13e-pinned-chat-machine-badge"] =
+                            machineBadge
+                            ? "passed"
+                            : "failed: pinned All Chats row did not mount its project machine badge"
                         await captureAppearances(window, named: "13e-standalone-chat-pinned.png", in: output)
                         results["13e-pinned-chat-ui"] = "passed"
                     } else {
+                        results["13e-pinned-chat-machine-badge"] =
+                            "failed: pinned chat was unavailable for badge verification"
                         results["13e-pinned-chat-ui"] =
                             "failed: pinned chat was unavailable for rendered verification"
                     }
