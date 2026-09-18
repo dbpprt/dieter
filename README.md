@@ -6,7 +6,7 @@
 
 <p align="center">
   <strong>Many agents, many machines, one interface.</strong><br>
-  Run coding agents wherever the code lives, and control them from macOS or Android.
+  Run coding agents wherever the code lives, and control them from macOS, iOS, or Android.
 </p>
 
 <p align="center">
@@ -40,8 +40,9 @@ them together in one native workspace.
 - **Steer without losing your place.** Follow-ups wait visibly behind the
   active turn and can be steered next, removed, or returned to the composer for
   editing before they run.
-- **Use native clients.** The macOS and Android apps automatically route each
-  project to the machine that owns it.
+- **Use native clients.** The macOS, iOS, and Android apps automatically route
+  each project to the machine that owns it. The iPhone and iPad app is
+  currently in beta.
 - **Bring your existing agent setup.** Dieter uses each harness's normal local
   configuration and supports per-card model and effort settings.
 
@@ -56,14 +57,14 @@ requests are welcome.
 
 ## Quick start
 
-Published releases support these roles:
+Supported releases and beta builds cover these roles:
 
-| Role | Linux amd64 | Linux arm64 | Apple Silicon macOS | Android 8+ |
-| --- | --- | --- | --- | --- |
-| CLI and daemon host | Yes | Yes | Yes | No |
-| Gateway | Yes | Yes | Build from source | No |
-| Native viewer client | No | No | Yes | Yes |
-| Screen capture/control host | No | No | Yes | No |
+| Role | Linux amd64 | Linux arm64 | Apple Silicon macOS | iOS 18+ | Android 8+ |
+| --- | --- | --- | --- | --- | --- |
+| CLI and daemon host | Yes | Yes | Yes | No | No |
+| Gateway | Yes | Yes | Build from source | No | No |
+| Native viewer client | No | No | Yes | Beta | Yes |
+| Screen capture/control host | No | No | Yes | No | No |
 
 ### Linux daemon host
 
@@ -136,8 +137,9 @@ open -a Dieter
 
 Sign in to the configured gateway. Projects from every enrolled machine appear
 in one workspace; Dieter selects the correct daemon automatically. See the
-[macOS](apps/mac/README.md) and [Android](apps/android/README.md) guides for
-source builds and platform-specific details.
+[macOS](apps/mac/README.md), [iOS](apps/ios/README.md), and
+[Android](apps/android/README.md) guides for source builds and platform-specific
+details.
 
 The Mac workspace uses native blurred glass. For solid surfaces, turn off
 **Window transparency** under **Settings → General → Appearance**. The setting
@@ -300,7 +302,7 @@ dieter workspace run --project PROJECT_ID --kind commit \
 
 ```mermaid
 flowchart LR
-    clients["macOS + Android"]
+    clients["macOS + iOS + Android"]
     gateway["Gateway<br/>auth + bounded relay"]
     work["Dieter daemon<br/>workstation"]
     home["Dieter daemon<br/>home server"]
@@ -417,7 +419,7 @@ uses a light appearance and paginated A4 pages; HTML is a standalone document.
 - Git working trees for registered projects
 - a configured Codex, Claude Code, Pi, Oh My Pi, or DeepSeek Harness
   installation
-- macOS 26+ or Android 8+ for the official clients
+- macOS 26+, iOS 18+, or Android 8+ for the native clients
 
 Build the CLI/daemon and gateway:
 
@@ -651,6 +653,7 @@ Run the native client test suites separately:
 
 ```sh
 just mac test
+just ios smoke
 just android test
 ```
 
@@ -855,7 +858,13 @@ same normalization, matching rules, and 64-entry limit apply.
 
 ## iPhone and iPad client
 
-The native iOS 18+ SwiftUI client connects to enrolled remote nodes through the authenticated gateway and verified direct TLS routes. Open `apps/ios/DieterIOS.xcodeproj`, or use `just ios build` and `just ios smoke`. See [iOS setup and remote workflows](apps/ios/README.md).
+The native iOS 18+ SwiftUI client is currently in beta. Install it from a
+TestFlight invitation or compile it yourself by opening
+`apps/ios/DieterIOS.xcodeproj` in Xcode. Use `just ios build` and
+`just ios smoke` for command-line development and validation. The app connects
+to enrolled remote nodes through the authenticated gateway and verified direct
+TLS routes. See [iOS setup, signing, TestFlight, and remote
+workflows](apps/ios/README.md).
 
 ### Native screen sharing
 
