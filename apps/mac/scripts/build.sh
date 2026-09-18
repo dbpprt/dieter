@@ -13,6 +13,14 @@ APP_BUNDLE="$OUTPUT_ROOT/Dieter.app"
 BUNDLE_MANIFEST="$OUTPUT_ROOT/.Dieter.bundle-inputs"
 BUNDLE_OUTPUT_MANIFEST="$OUTPUT_ROOT/.Dieter.bundle-outputs"
 
+bundle_resource_root() {
+    if [ -d "$1/Contents/Resources" ]; then
+        printf '%s\n' "$1/Contents/Resources"
+    else
+        printf '%s\n' "$1"
+    fi
+}
+
 "$SCRIPT_DIR/sync-proto.sh" >&2
 swift build \
     --package-path "$APP_ROOT" \
@@ -35,19 +43,26 @@ if [ ! -x "$WEBRTC_BINARY" ] || [ ! -f "$WEBRTC_INFO_PLIST" ]; then
     exit 1
 fi
 MARKDOWN_BUNDLE="$SWIFT_SCRATCH_PATH/$CONFIGURATION/DieterMac_DieterMac.bundle"
-if [ ! -f "$MARKDOWN_BUNDLE/MarkdownPreview/index.html" ] || \
-    [ ! -f "$MARKDOWN_BUNDLE/MarkdownPreview/app.js" ] || \
-    [ ! -f "$MARKDOWN_BUNDLE/MarkdownPreview/app.css" ] || \
-    [ ! -f "$MARKDOWN_BUNDLE/MarkdownPreview/LICENSES.txt" ]; then
+MARKDOWN_RESOURCES=$(bundle_resource_root "$MARKDOWN_BUNDLE")
+if [ ! -f "$MARKDOWN_RESOURCES/MarkdownPreview/index.html" ] || \
+    [ ! -f "$MARKDOWN_RESOURCES/MarkdownPreview/app.js" ] || \
+    [ ! -f "$MARKDOWN_RESOURCES/MarkdownPreview/app.css" ] || \
+    [ ! -f "$MARKDOWN_RESOURCES/MarkdownPreview/LICENSES.txt" ]; then
     echo "The bundled Markdown renderer was not produced alongside DieterMac" >&2
     exit 1
 fi
 
 HIGHLIGHTER_BUNDLE="$SWIFT_SCRATCH_PATH/$CONFIGURATION/Highlighter_Highlighter.bundle"
-if [ ! -f "$HIGHLIGHTER_BUNDLE/highlight.min.js" ]; then
+HIGHLIGHTER_RESOURCES=$(bundle_resource_root "$HIGHLIGHTER_BUNDLE")
+if [ ! -f "$HIGHLIGHTER_RESOURCES/highlight.min.js" ]; then
     echo "The native Markdown highlighter bundle was not produced" >&2
     exit 1
 fi
+
+APP_MARKDOWN_BUNDLE="$APP_BUNDLE/Contents/Resources/DieterMac_DieterMac.bundle"
+APP_MARKDOWN_RESOURCES=$(bundle_resource_root "$APP_MARKDOWN_BUNDLE")
+APP_HIGHLIGHTER_BUNDLE="$APP_BUNDLE/Contents/Resources/Highlighter_Highlighter.bundle"
+APP_HIGHLIGHTER_RESOURCES=$(bundle_resource_root "$APP_HIGHLIGHTER_BUNDLE")
 
 mkdir -p "$OUTPUT_ROOT"
 NEW_BUNDLE_MANIFEST=$(mktemp "${TMPDIR:-/tmp}/dieter-mac-bundle.XXXXXX")
@@ -72,11 +87,11 @@ if [ -f "$APP_BUNDLE/Contents/Info.plist" ] && \
     [ -f "$APP_BUNDLE/Contents/Resources/DieterFavicon.png" ] && \
     [ -d "$APP_BUNDLE/Contents/Resources/PaletteIcons" ] && \
     [ -f "$APP_BUNDLE/Contents/Resources/Fonts/Sora-Variable.ttf" ] && \
-    [ -f "$APP_BUNDLE/Contents/Resources/DieterMac_DieterMac.bundle/MarkdownPreview/index.html" ] && \
-    [ -f "$APP_BUNDLE/Contents/Resources/DieterMac_DieterMac.bundle/MarkdownPreview/app.js" ] && \
-    [ -f "$APP_BUNDLE/Contents/Resources/DieterMac_DieterMac.bundle/MarkdownPreview/app.css" ] && \
-    [ -f "$APP_BUNDLE/Contents/Resources/DieterMac_DieterMac.bundle/MarkdownPreview/LICENSES.txt" ] && \
-    [ -f "$APP_BUNDLE/Contents/Resources/Highlighter_Highlighter.bundle/highlight.min.js" ] && \
+    [ -f "$APP_MARKDOWN_RESOURCES/MarkdownPreview/index.html" ] && \
+    [ -f "$APP_MARKDOWN_RESOURCES/MarkdownPreview/app.js" ] && \
+    [ -f "$APP_MARKDOWN_RESOURCES/MarkdownPreview/app.css" ] && \
+    [ -f "$APP_MARKDOWN_RESOURCES/MarkdownPreview/LICENSES.txt" ] && \
+    [ -f "$APP_HIGHLIGHTER_RESOURCES/highlight.min.js" ] && \
     [ -x "$APP_BUNDLE/Contents/MacOS/DieterMac" ] && \
     [ -x "$APP_BUNDLE/Contents/Frameworks/WebRTC.framework/Versions/A/WebRTC" ] && \
     [ -f "$APP_BUNDLE/Contents/Frameworks/WebRTC.framework/Versions/A/Resources/Info.plist" ]; then
@@ -108,11 +123,11 @@ if [ ! -f "$BUNDLE_MANIFEST" ] || \
     cp "$BRAND_ROOT/assets/fonts/Sora-Variable.ttf" "$APP_BUNDLE/Contents/Resources/Fonts/Sora-Variable.ttf"
     cp "$PALETTE_ICON_ROOT"/*.png "$APP_BUNDLE/Contents/Resources/PaletteIcons/"
     cp "$DIETER_BINARY" "$APP_BUNDLE/Contents/MacOS/DieterMac"
-    rm -rf "$APP_BUNDLE/Contents/Resources/DieterMac_DieterMac.bundle"
-    ditto "$MARKDOWN_BUNDLE" "$APP_BUNDLE/Contents/Resources/DieterMac_DieterMac.bundle"
-    rm -rf "$APP_BUNDLE/Contents/Resources/Highlighter_Highlighter.bundle"
+    rm -rf "$APP_MARKDOWN_BUNDLE"
+    ditto "$MARKDOWN_BUNDLE" "$APP_MARKDOWN_BUNDLE"
+    rm -rf "$APP_HIGHLIGHTER_BUNDLE"
     rm -rf "$APP_BUNDLE/Highlighter_Highlighter.bundle"
-    ditto "$HIGHLIGHTER_BUNDLE" "$APP_BUNDLE/Contents/Resources/Highlighter_Highlighter.bundle"
+    ditto "$HIGHLIGHTER_BUNDLE" "$APP_HIGHLIGHTER_BUNDLE"
     rm -rf "$APP_BUNDLE/Contents/Frameworks/WebRTC.framework"
     ditto "$WEBRTC_FRAMEWORK" "$APP_BUNDLE/Contents/Frameworks/WebRTC.framework"
 fi

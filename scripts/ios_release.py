@@ -29,6 +29,10 @@ import configure_apple_signing as signing
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_BUNDLE_ID = "com.dbpprt.dieter.ios"
+CAMERA_USAGE_DESCRIPTION = (
+    "Dieter includes camera-capable WebRTC components for remote screen viewing. "
+    "Dieter does not capture or transmit camera video."
+)
 SECRET_NAMES = (
     "IOS_DISTRIBUTION_CERTIFICATE_BASE64", "IOS_DISTRIBUTION_CERTIFICATE_PASSWORD",
     "IOS_PROVISIONING_PROFILE_BASE64", "IOS_APP_STORE_CONNECT_KEY_BASE64",
@@ -288,11 +292,14 @@ def archive_command(root, archive, version, build, bundle_id):
     ]
 
 
-def validate_info(info, version, build, bundle_id):
+def validate_info(info, version, build, bundle_id, *, require_camera_usage=True):
     if not isinstance(info, dict) or any(info.get(key) != value for key, value in (
-        ("CFBundleIdentifier", bundle_id), ("CFBundleShortVersionString", version), ("CFBundleVersion", build)
+        ("CFBundleIdentifier", bundle_id), ("CFBundleShortVersionString", version),
+        ("CFBundleVersion", build),
     )):
         raise ReleaseError("The built app's bundle ID, version, or build number does not match the requested release.")
+    if require_camera_usage and info.get("NSCameraUsageDescription") != CAMERA_USAGE_DESCRIPTION:
+        raise ReleaseError("The built app is missing its camera usage description.")
 
 
 def validate_archive(archive, version, build, bundle_id, *, signed):
@@ -304,7 +311,7 @@ def validate_archive(archive, version, build, bundle_id, *, signed):
         raise ReleaseError("The iOS archive is missing valid application metadata.") from None
     validate_info(info, version, build, bundle_id)
     properties = archive_info.get("ApplicationProperties", {}) if isinstance(archive_info, dict) else {}
-    validate_info(properties, version, build, bundle_id)
+    validate_info(properties, version, build, bundle_id, require_camera_usage=False)
     if properties.get("ApplicationPath") != "Applications/Dieter.app":
         raise ReleaseError("The archive does not contain the expected Dieter iOS application.")
     executable = info.get("CFBundleExecutable", "")

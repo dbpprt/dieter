@@ -18,7 +18,11 @@ private struct ScreenFixtureConnection: Decodable {
     var token: String
 }
 
-@Test(.enabled(if: ProcessInfo.processInfo.environment["DIETER_TEST_SCREEN_FIXTURE"] != nil && ProcessInfo.processInfo.environment["DIETER_TEST_CAPTURE_HELPER"] != nil, "Requires the disposable native screen fixture"))
+@Test(
+    .enabled(
+        if: ProcessInfo.processInfo.environment["DIETER_TEST_SCREEN_FIXTURE"] != nil
+            && ProcessInfo.processInfo.environment["DIETER_TEST_CAPTURE_HELPER"] != nil,
+        "Requires the disposable native screen fixture"))
 @MainActor func remoteDesktopNativeEndToEnd() async throws {
     let environment = ProcessInfo.processInfo.environment
     guard let executable = environment["DIETER_TEST_SCREEN_FIXTURE"],
@@ -85,7 +89,8 @@ private struct ScreenFixtureConnection: Decodable {
     let controller = RemoteDesktopController()
     defer {
         if !controller.renderer.renderTrace.isEmpty {
-            try? JSONEncoder().encode(controller.renderer.renderTrace).write(to: output.appending(path: "render-trace.json"))
+            try? JSONEncoder().encode(controller.renderer.renderTrace).write(
+                to: output.appending(path: "render-trace.json"))
         }
     }
     controller.codecPreference = environment["DIETER_TEST_SCREEN_CODEC"] == "hevc" ? .hevc : .h264
@@ -734,7 +739,10 @@ private final class ScreenFrameReadiness: @unchecked Sendable {
 
 // Companion for the emulator fixture: it stays connected while Android changes
 // quality, transfers control, expires its own session, and reconnects repeatedly.
-@Test(.enabled(if: ProcessInfo.processInfo.environment["DIETER_TEST_SCREEN_COMPANION"] != nil, "Requires the concurrent Android fixture"))
+@Test(
+    .enabled(
+        if: ProcessInfo.processInfo.environment["DIETER_TEST_SCREEN_COMPANION"] != nil,
+        "Requires the concurrent Android fixture"))
 @MainActor func remoteDesktopAndroidCompanion() async throws {
     let environment = ProcessInfo.processInfo.environment
     guard let path = environment["DIETER_TEST_SCREEN_COMPANION"] else { return }
@@ -831,7 +839,8 @@ private final class ScreenFrameReadiness: @unchecked Sendable {
         waiting = nil
     }
     defer { controller.renderer.onPresentationTiming = previous }
-    let count = max(24, min(1000, Int(ProcessInfo.processInfo.environment["DIETER_TEST_SCREEN_INPUT_SAMPLES"] ?? "24") ?? 24))
+    let count = max(
+        24, min(1000, Int(ProcessInfo.processInfo.environment["DIETER_TEST_SCREEN_INPUT_SAMPLES"] ?? "24") ?? 24))
     for index in 0..<count {
         waiting = (index % 2 != 0, CACurrentMediaTime())
         send(index % 2 != 0)
@@ -847,7 +856,11 @@ private final class ScreenFrameReadiness: @unchecked Sendable {
     Thread.sleep(forTimeInterval: 0.25)
 }
 
-@Test(.enabled(if: ProcessInfo.processInfo.environment["DIETER_TEST_SCREEN_FIXTURE"] != nil && ProcessInfo.processInfo.environment["DIETER_TEST_CAPTURE_HELPER"] != nil, "Requires the disposable native screen fixture"))
+@Test(
+    .enabled(
+        if: ProcessInfo.processInfo.environment["DIETER_TEST_SCREEN_FIXTURE"] != nil
+            && ProcessInfo.processInfo.environment["DIETER_TEST_CAPTURE_HELPER"] != nil,
+        "Requires the disposable native screen fixture"))
 @MainActor func remoteDesktopUndockedEndToEnd() async throws {
     let env = ProcessInfo.processInfo.environment
     guard let executable = env["DIETER_TEST_SCREEN_FIXTURE"], let helper = env["DIETER_TEST_CAPTURE_HELPER"] else {

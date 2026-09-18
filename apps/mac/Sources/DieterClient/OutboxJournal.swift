@@ -71,7 +71,12 @@ package actor OutboxJournal {
         try FileManager.default.createDirectory(
             at: directory, withIntermediateDirectories: true,
             attributes: [.posixPermissions: 0o700])
-        try data.write(to: url, options: [.atomic, .completeFileProtectionUnlessOpen])
+        #if os(iOS)
+            let options: Data.WritingOptions = [.atomic, .completeFileProtectionUnlessOpen]
+        #else
+            let options: Data.WritingOptions = [.atomic]
+        #endif
+        try data.write(to: url, options: options)
         try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
     }
 }

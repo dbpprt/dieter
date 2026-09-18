@@ -49,10 +49,14 @@ def create_archive(path, version="1.2.3", build="42", bundle_id=META["bundle_id"
     (framework / "DieterIOS").write_bytes(b"framework fixture")
     (app / "Dieter").write_bytes(b"app fixture")
     info = {"CFBundleIdentifier": bundle_id, "CFBundleShortVersionString": version,
-            "CFBundleVersion": build, "CFBundleExecutable": "Dieter"}
+            "CFBundleVersion": build, "CFBundleExecutable": "Dieter",
+            "NSCameraUsageDescription": release.CAMERA_USAGE_DESCRIPTION}
     (app / "Info.plist").write_bytes(plistlib.dumps(info))
     (path / "Info.plist").write_bytes(plistlib.dumps({
-        "ApplicationProperties": dict(info, ApplicationPath="Applications/Dieter.app")
+        "ApplicationProperties": {
+            "CFBundleIdentifier": bundle_id, "CFBundleShortVersionString": version,
+            "CFBundleVersion": build, "ApplicationPath": "Applications/Dieter.app",
+        }
     }))
 
 
@@ -363,14 +367,15 @@ class ReleaseTests(unittest.TestCase):
         self.assertEqual(list(self.runner.iterdir()), [])
 
     def test_archive_mismatch_missing_binary_and_missing_framework_block_export(self):
-        for defect in ("version", "build", "bundle", "executable", "framework", "archive"):
+        for defect in ("version", "build", "bundle", "camera", "executable", "framework", "archive"):
             with self.subTest(defect=defect):
                 archive = self.root / defect / "Dieter.xcarchive"
                 create_archive(archive)
                 app = archive / "Products/Applications/Dieter.app"
-                if defect in ("version", "build", "bundle"):
+                if defect in ("version", "build", "bundle", "camera"):
                     info = plistlib.loads((app / "Info.plist").read_bytes())
-                    key = {"version": "CFBundleShortVersionString", "build": "CFBundleVersion", "bundle": "CFBundleIdentifier"}[defect]
+                    key = {"version": "CFBundleShortVersionString", "build": "CFBundleVersion",
+                           "bundle": "CFBundleIdentifier", "camera": "NSCameraUsageDescription"}[defect]
                     info[key] = "wrong"
                     (app / "Info.plist").write_bytes(plistlib.dumps(info))
                 elif defect == "executable":
@@ -401,7 +406,8 @@ class ReleaseTests(unittest.TestCase):
                 elif defect != "missing":
                     with zipfile.ZipFile(directory / "Dieter.ipa", "w") as ipa:
                         info = {"CFBundleIdentifier": META["bundle_id"], "CFBundleShortVersionString": "1.2.3",
-                                "CFBundleVersion": "wrong" if defect == "metadata" else "42"}
+                                "CFBundleVersion": "wrong" if defect == "metadata" else "42",
+                                "NSCameraUsageDescription": release.CAMERA_USAGE_DESCRIPTION}
                         ipa.writestr("Payload/Dieter.app/Info.plist", plistlib.dumps(info))
                         if defect != "framework":
                             ipa.writestr("Payload/Dieter.app/Frameworks/DieterIOS.framework/DieterIOS", b"framework")

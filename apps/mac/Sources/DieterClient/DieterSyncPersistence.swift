@@ -189,7 +189,12 @@ package actor DieterSyncPersistence {
         let directory = fileURL.deletingLastPathComponent()
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let data = try JSONEncoder().encode(value)
-        try data.write(to: fileURL, options: [.atomic, .completeFileProtectionUnlessOpen])
+        #if os(iOS)
+            let options: Data.WritingOptions = [.atomic, .completeFileProtectionUnlessOpen]
+        #else
+            let options: Data.WritingOptions = [.atomic]
+        #endif
+        try data.write(to: fileURL, options: options)
         return data.count
     }
 }

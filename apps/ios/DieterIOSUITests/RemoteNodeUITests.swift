@@ -11,7 +11,15 @@ final class RemoteNodeUITests: XCTestCase {
     }
 
     private func tap(_ app: XCUIApplication, _ identifier: String, timeout: TimeInterval = 20) {
-        let control = element(app, identifier)
+        let button = app.buttons.matching(identifier: identifier).firstMatch
+        if button.exists {
+            // Keyboard accessory buttons can disappear between two consecutive
+            // accessibility snapshots on iPad. Tap the resolved button before
+            // asking XCTest for another snapshot.
+            button.tap()
+            return
+        }
+        let control = app.descendants(matching: .any).matching(identifier: identifier).firstMatch
         XCTAssertTrue(control.waitForExistence(timeout: timeout), "Missing \(identifier).\n\(app.debugDescription)")
         control.tap()
     }
@@ -104,7 +112,8 @@ final class RemoteNodeUITests: XCTestCase {
             mock.tap()
             let providerChanged = XCTNSPredicateExpectation(
                 predicate: NSPredicate(format: "value == 'Mock'"), object: provider)
-            if XCTWaiter.wait(for: [providerChanged], timeout: 5) == .completed {
+            let providerResult = XCTWaiter.wait(for: [providerChanged], timeout: 5)
+            if providerResult == .completed || provider.value as? String == "Mock" {
                 mockSelected = true
                 break
             }
@@ -123,8 +132,9 @@ final class RemoteNodeUITests: XCTestCase {
             let picker = element(app, identifier)
             let selectedMock = XCTNSPredicateExpectation(
                 predicate: NSPredicate(format: "value == 'Mock'"), object: picker)
-            XCTAssertEqual(
-                XCTWaiter.wait(for: [selectedMock], timeout: 5), .completed,
+            let selectionResult = XCTWaiter.wait(for: [selectedMock], timeout: 5)
+            XCTAssertTrue(
+                selectionResult == .completed || picker.value as? String == "Mock",
                 "\(identifier) should select Mock; label=\(picker.label), value=\(String(describing: picker.value)).\n\(app.debugDescription)"
             )
         }

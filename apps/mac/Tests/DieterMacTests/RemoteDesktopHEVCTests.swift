@@ -22,7 +22,10 @@ import VideoToolbox
         factory.supportedCodecs().contains { $0.name == "H265" } == VTIsHardwareDecodeSupported(kCMVideoCodecType_HEVC))
 }
 
-@Test(.enabled(if: ProcessInfo.processInfo.environment["DIETER_TEST_HEVC_FRAMES"] != nil, "Requires captured HEVC access units"))
+@Test(
+    .enabled(
+        if: ProcessInfo.processInfo.environment["DIETER_TEST_HEVC_FRAMES"] != nil, "Requires captured HEVC access units"
+    ))
 func remoteDesktopHEVCHardwareDecodeAndRecovery() throws {
     guard let path = ProcessInfo.processInfo.environment["DIETER_TEST_HEVC_FRAMES"] else { return }
     let data = try Data(contentsOf: URL(fileURLWithPath: path))
