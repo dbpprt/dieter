@@ -416,9 +416,12 @@ private struct NewScreenShareSheet: View {
             }
             .accessibilityIdentifier("screens.new.machine")
             if let machine = selectedMachine, machine.online, !machine.remoteDesktopReady {
-                Text(machine.remoteDesktopReason.isEmpty ? "This machine cannot host a screen session." : machine.remoteDesktopReason)
-                    .font(.caption)
-                    .foregroundStyle(DieterTheme.coral)
+                Text(
+                    machine.remoteDesktopReason.isEmpty
+                        ? "This machine cannot host a screen session." : machine.remoteDesktopReason
+                )
+                .font(.caption)
+                .foregroundStyle(DieterTheme.coral)
             }
             HStack {
                 Spacer()
@@ -440,9 +443,10 @@ private struct NewScreenShareSheet: View {
         .padding(20)
         .frame(width: 430)
         .onAppear {
-            machineID = machines.first(where: {
-                $0.id == initialMachineID && $0.online && $0.remoteDesktopReady
-            })?.id ?? machines.first(where: { $0.online && $0.remoteDesktopReady })?.id ?? ""
+            machineID =
+                machines.first(where: {
+                    $0.id == initialMachineID && $0.online && $0.remoteDesktopReady
+                })?.id ?? machines.first(where: { $0.online && $0.remoteDesktopReady })?.id ?? ""
         }
     }
 
