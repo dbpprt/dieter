@@ -92,7 +92,10 @@ struct ChatsView: View {
                     .accessibilityIdentifier("chats.load-feedback")
                 }
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 12) {
+                    // The daemon returns bounded pages, so eager layout is
+                    // affordable and avoids the macOS LazyVStack placement
+                    // cycle that can trap AttributeGraph in one transaction.
+                    VStack(alignment: .leading, spacing: 12) {
                         let pinned = projection.pinned
                         if !pinned.isEmpty {
                             VStack(alignment: .leading, spacing: 5) {
@@ -785,7 +788,7 @@ struct ChatRunningIndicator: NSViewRepresentable {
     }
 
     func updateNSView(_ view: ChatRunningIndicatorView, context: Context) {
-        view.configure(color: NSColor(color), animates: !reduceMotion)
+        view.configure(color: color, animates: !reduceMotion)
     }
 
     static func dismantleNSView(_ view: ChatRunningIndicatorView, coordinator: Void) {
@@ -802,7 +805,11 @@ final class ChatRunningIndicatorView: NSView {
     private let pulseLayer = CAShapeLayer()
     private let orbitLayer = CAShapeLayer()
     private let coreLayer = CAShapeLayer()
+    private var configuredColor: Color?
+    private var resolvedColor: NSColor?
+    private var hasConfiguration = false
     private var animates = false
+    private(set) var appliedConfigurationCount = 0
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -833,25 +840,37 @@ final class ChatRunningIndicatorView: NSView {
         CATransaction.commit()
     }
 
-    func configure(color: NSColor, animates: Bool) {
-        let resolved = color.usingColorSpace(.deviceRGB) ?? color
+    func configure(color: Color, animates: Bool) {
+        let colorChanged = configuredColor != color
+        let animationChanged = !hasConfiguration || self.animates != animates
+        guard colorChanged || animationChanged else { return }
+
+        if colorChanged || resolvedColor == nil {
+            configuredColor = color
+            let appKitColor = NSColor(color)
+            resolvedColor = appKitColor.usingColorSpace(.deviceRGB) ?? appKitColor
+        }
+        guard let resolvedColor else { return }
+
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        pulseLayer.fillColor = resolved.withAlphaComponent(animates ? 0.45 : 0.18).cgColor
+        pulseLayer.fillColor = resolvedColor.withAlphaComponent(animates ? 0.45 : 0.18).cgColor
         orbitLayer.fillColor = nil
-        orbitLayer.strokeColor = resolved.withAlphaComponent(animates ? 0.82 : 0.38).cgColor
+        orbitLayer.strokeColor = resolvedColor.withAlphaComponent(animates ? 0.82 : 0.38).cgColor
         orbitLayer.lineWidth = 1.25
         orbitLayer.lineCap = .round
         orbitLayer.strokeStart = animates ? 0.08 : 0
         orbitLayer.strokeEnd = animates ? 0.67 : 1
-        coreLayer.fillColor = resolved.cgColor
-        coreLayer.shadowColor = resolved.cgColor
+        coreLayer.fillColor = resolvedColor.cgColor
+        coreLayer.shadowColor = resolvedColor.cgColor
         coreLayer.shadowOpacity = animates ? 0.55 : 0
         coreLayer.shadowRadius = animates ? 3 : 0
         coreLayer.shadowOffset = .zero
         CATransaction.commit()
+        hasConfiguration = true
+        appliedConfigurationCount += 1
 
-        guard self.animates != animates else { return }
+        guard animationChanged else { return }
         if animates {
             self.animates = true
             startAnimating()

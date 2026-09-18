@@ -16,17 +16,22 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
@@ -35,6 +40,7 @@ import androidx.compose.material.icons.outlined.ArrowUpward
 import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.ChevronRight
+import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.DragHandle
 import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
@@ -56,7 +62,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SheetValue
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -70,6 +78,7 @@ import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -83,9 +92,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.semantics.contentDescription
@@ -97,8 +107,6 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Popup
-import androidx.compose.ui.window.PopupProperties
 import com.dbpprt.dieter.connection.ProjectHost
 import androidx.compose.ui.zIndex
 import androidx.core.graphics.toColorInt
@@ -817,6 +825,7 @@ internal fun plural(count: Int, word: String): String = if (count == 1) word els
 internal fun BoardList(state: DieterUiState, model: DieterViewModel, modifier: Modifier = Modifier) {
     var switcherOpen by remember { mutableStateOf(false) }
     var quickTaskOpen by remember(state.selectedBoardId) { mutableStateOf(false) }
+    var quickTaskStory by rememberSaveable(state.selectedBoardId) { mutableStateOf("") }
     var searchOpen by remember { mutableStateOf(false) }
     var query by remember(state.selectedBoardId) { mutableStateOf("") }
     var selectedLabelId by remember(state.selectedBoardId) { mutableStateOf("") }
@@ -909,6 +918,8 @@ internal fun BoardList(state: DieterUiState, model: DieterViewModel, modifier: M
         QuickTaskPopover(
             state = state,
             defaults = resolveConversationCreationPreferences(model.conversationCreationPreferences, state.harnesses),
+            story = quickTaskStory,
+            onStoryChange = { quickTaskStory = it },
             onDismiss = { quickTaskOpen = false },
             onOpenFull = {
                 quickTaskOpen = false
@@ -916,6 +927,7 @@ internal fun BoardList(state: DieterUiState, model: DieterViewModel, modifier: M
             },
             onCreate = { story ->
                 quickTaskOpen = false
+                quickTaskStory = ""
                 model.createQuickTask(story)
             },
         )
@@ -926,16 +938,33 @@ internal fun BoardList(state: DieterUiState, model: DieterViewModel, modifier: M
 internal fun QuickTaskPopover(
     state: DieterUiState,
     defaults: ResolvedConversationCreationPreferences,
+    story: String,
+    onStoryChange: (String) -> Unit,
     onDismiss: () -> Unit,
     onOpenFull: () -> Unit,
     onCreate: (String) -> Unit,
 ) {
-    var story by remember(state.selectedBoardId) { mutableStateOf("") }
     val cleanStory = story.trim()
     val harness = state.harnesses.firstOrNull { it.id == defaults.provider }
     val selectedModel = harness?.modelsList?.firstOrNull { it.id == defaults.model }
     val lane = state.board?.lanesList?.firstOrNull()
-    val width = (LocalConfiguration.current.screenWidthDp.dp - 32.dp).coerceAtMost(380.dp)
+    val density = LocalDensity.current
+    val focusManager = LocalFocusManager.current
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val imeVisible = WindowInsets.ime.getBottom(density) > 0
+    val currentImeVisible by rememberUpdatedState(imeVisible)
+    val sheetState = rememberModalBottomSheetState(
+        skipPartiallyExpanded = true,
+        confirmValueChange = { nextValue ->
+            if (nextValue == SheetValue.Hidden && currentImeVisible) {
+                focusManager.clearFocus()
+                keyboardController?.hide()
+                false
+            } else {
+                true
+            }
+        },
+    )
     val summary = buildString {
         append(lane?.name ?: "Todo")
         append(" · ").append(defaults.workspaceMode.title)
@@ -946,63 +975,62 @@ internal fun QuickTaskPopover(
         }
     }
 
-    Popup(
-        alignment = Alignment.BottomEnd,
-        offset = IntOffset(-20, -88),
+    ModalBottomSheet(
         onDismissRequest = onDismiss,
-        properties = PopupProperties(focusable = true),
+        sheetState = sheetState,
+        containerColor = DieterSurfaceHigh,
     ) {
-        Surface(
-            modifier = Modifier.width(width).testTag("quick-task-popover"),
-            shape = RoundedCornerShape(20.dp),
-            color = DieterSurfaceHigh,
-            border = androidx.compose.foundation.BorderStroke(1.dp, DieterOutline),
-            shadowElevation = 14.dp,
+        Column(
+            Modifier.fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .imePadding()
+                .navigationBarsPadding()
+                .padding(start = 18.dp, end = 18.dp, bottom = 22.dp)
+                .testTag("quick-task-popover"),
+            verticalArrangement = Arrangement.spacedBy(13.dp),
         ) {
-            Column(
-                Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(13.dp),
-            ) {
-                Row(verticalAlignment = Alignment.Top) {
-                    Surface(
-                        shape = RoundedCornerShape(10.dp),
-                        color = DieterShellTint,
-                    ) {
-                        Icon(
-                            Icons.Outlined.Bolt,
-                            contentDescription = null,
-                            tint = DieterShell,
-                            modifier = Modifier.padding(8.dp).size(18.dp),
-                        )
-                    }
-                    Spacer(Modifier.width(10.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text("Quick task", fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
-                        Text("Enter the story. GPT Spark writes a 4–6 word title.", color = DieterMuted, fontSize = 11.sp)
-                    }
+            Row(verticalAlignment = Alignment.Top) {
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = DieterShellTint,
+                ) {
+                    Icon(
+                        Icons.Outlined.Bolt,
+                        contentDescription = null,
+                        tint = DieterShell,
+                        modifier = Modifier.padding(8.dp).size(18.dp),
+                    )
                 }
-                OutlinedTextField(
-                    value = story,
-                    onValueChange = { story = it },
-                    label = { Text("Task story") },
-                    placeholder = { Text("What should the agent accomplish?") },
-                    minLines = 3,
-                    maxLines = 6,
-                    modifier = Modifier.fillMaxWidth().testTag("quick-task-story"),
-                )
-                Text(summary, color = DieterMuted, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    TextButton(onClick = onOpenFull) { Text("More options") }
-                    Spacer(Modifier.weight(1f))
-                    Button(
-                        onClick = { onCreate(cleanStory) },
-                        enabled = cleanStory.isNotEmpty() && !state.working && state.project != null && state.board != null,
-                        modifier = Modifier.testTag("quick-task-create"),
-                    ) {
-                        Icon(Icons.Outlined.Bolt, contentDescription = null, modifier = Modifier.size(17.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text("Add task")
-                    }
+                Spacer(Modifier.width(10.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("Quick task", fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
+                    Text("Enter the story. GPT Spark writes a 4–6 word title.", color = DieterMuted, fontSize = 11.sp)
+                }
+                IconButton(onClick = onDismiss) {
+                    Icon(Icons.Outlined.Close, contentDescription = "Close quick task", tint = DieterMuted)
+                }
+            }
+            OutlinedTextField(
+                value = story,
+                onValueChange = onStoryChange,
+                label = { Text("Task story") },
+                placeholder = { Text("What should the agent accomplish?") },
+                minLines = 3,
+                maxLines = 6,
+                modifier = Modifier.fillMaxWidth().testTag("quick-task-story"),
+            )
+            Text(summary, color = DieterMuted, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                TextButton(onClick = onOpenFull) { Text("More options") }
+                Spacer(Modifier.weight(1f))
+                Button(
+                    onClick = { onCreate(cleanStory) },
+                    enabled = cleanStory.isNotEmpty() && !state.working && state.project != null && state.board != null,
+                    modifier = Modifier.testTag("quick-task-create"),
+                ) {
+                    Icon(Icons.Outlined.Bolt, contentDescription = null, modifier = Modifier.size(17.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Add task")
                 }
             }
         }

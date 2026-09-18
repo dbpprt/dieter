@@ -1,3 +1,4 @@
+import AppKit
 import DieterCore
 import Foundation
 import Observation
@@ -31,6 +32,10 @@ final class ScreenShareSession: Identifiable {
     let machineID: String
     let machineName: String
     let controller: RemoteDesktopController
+    var isDetached = false
+    @ObservationIgnored lazy var videoSurface = RemoteDesktopInputView(
+        renderer: controller.renderer, controller: controller)
+    @ObservationIgnored private var connectionFactory: (@MainActor () async throws -> RemoteDesktopSignalingConnection)?
     private(set) var inactivityMessage: String?
     @ObservationIgnored private var timeoutMinutes: Int?
     @ObservationIgnored private var lastActivityAt = Date()
@@ -63,11 +68,14 @@ final class ScreenShareSession: Identifiable {
     func connect(
         makeConnection: @escaping @MainActor () async throws -> RemoteDesktopSignalingConnection
     ) {
+        connectionFactory = makeConnection
         inactivityMessage = nil
         lastActivityAt = Date()
         _ = controller.connect(machineName: machineName, makeConnection: makeConnection)
         startInactivityMonitorIfNeeded()
     }
+
+    func reconnect() { if let connectionFactory { connect(makeConnection: connectionFactory) } }
 
     func disconnect() {
         cancelInactivityMonitor()
@@ -141,6 +149,7 @@ final class ScreensModel {
     var sessions: [ScreenShareSession] = []
     var selectedSessionID: String?
     var createScreenSharePresented = false
+    @ObservationIgnored private(set) var detachedWindows: [String: ScreenShareWindowController] = [:]
     var inactivityTimeoutEnabled: Bool {
         didSet {
             guard inactivityTimeoutEnabled != oldValue else { return }
@@ -200,10 +209,32 @@ final class ScreensModel {
             guard wasSelected, sessions.count > 1 else { return nil }
             return sessions[index == sessions.count - 1 ? index - 1 : index + 1].id
         }()
+        detachedWindows.removeValue(forKey: id)?.dispose()
+        sessions[index].isDetached = false
         sessions[index].disconnect()
         sessions.remove(at: index)
         if wasSelected { selectedSessionID = replacementID }
     }
+
+    func undock(_ id: String, fullScreen: Bool = true, showInDieter: @escaping @MainActor () -> Void = {}) {
+        guard let session = sessions.first(where: { $0.id == id }) else { return }
+        if let existing = detachedWindows[id] { existing.present(fullScreen: fullScreen); return }
+        session.recordActivity()
+        let origin = session.videoSurface.window ?? NSApp.keyWindow
+        session.isDetached = true
+        let viewer = ScreenShareWindowController(session: session) { [weak self, weak origin] in
+            guard let self else { return }
+            self.detachedWindows.removeValue(forKey: id)?.dispose()
+            session.isDetached = false
+            self.selectedSessionID = id
+            showInDieter()
+            origin?.makeKeyAndOrderFront(nil)
+        }
+        detachedWindows[id] = viewer
+        viewer.present(fullScreen: fullScreen)
+    }
+
+    func dock(_ id: String) { detachedWindows[id]?.returnToDieter() }
 
     private func savePreferencesAndApply() {
         let preferences = ScreenShareInactivityPreferences(

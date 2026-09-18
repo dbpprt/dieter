@@ -66,6 +66,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import com.dbpprt.dieter.connection.ProjectHost
 import com.dbpprt.dieter.ui.theme.DieterAbyss
 import com.dbpprt.dieter.ui.theme.DieterShell
 import com.dbpprt.dieter.ui.theme.DieterCoral
@@ -434,7 +435,6 @@ private fun NewTerminalSheet(state: DieterUiState, model: DieterViewModel) {
     var name by remember(state.terminalCreateVisible) { mutableStateOf("android") }
     var shell by remember(state.terminalCreateVisible) { mutableStateOf("zsh") }
     var workingDirectory by remember(state.terminalCreateVisible) { mutableStateOf(initialProject?.path.orEmpty()) }
-    var projectMenuVisible by remember { mutableStateOf(false) }
     val project = state.projects.firstOrNull { it.id == projectId }
 
     LaunchedEffect(projectId) {
@@ -459,31 +459,12 @@ private fun NewTerminalSheet(state: DieterUiState, model: DieterViewModel) {
                     Text("Persistent on the daemon, streamed to Android", color = DieterMuted, fontSize = 11.sp)
                 }
             }
-            Box {
-                OutlinedButton(
-                    onClick = { projectMenuVisible = true },
-                    modifier = Modifier.fillMaxWidth().height(56.dp).testTag("terminal-project-picker"),
-                    contentPadding = PaddingValues(horizontal = 14.dp),
-                ) {
-                    Column(Modifier.weight(1f), horizontalAlignment = Alignment.Start) {
-                        Text(project?.name ?: "Choose project", color = DieterText, fontWeight = FontWeight.SemiBold)
-                        Text(project?.path.orEmpty(), color = DieterMuted, fontFamily = FontFamily.Monospace, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    }
-                }
-                DropdownMenu(expanded = projectMenuVisible, onDismissRequest = { projectMenuVisible = false }) {
-                    state.projects.forEach { candidate ->
-                        DropdownMenuItem(
-                            text = {
-                                Column {
-                                    Text(candidate.name)
-                                    Text(candidate.path, color = DieterMuted, fontFamily = FontFamily.Monospace, fontSize = 10.sp, maxLines = 1)
-                                }
-                            },
-                            onClick = { projectId = candidate.id; projectMenuVisible = false },
-                        )
-                    }
-                }
-            }
+            TerminalProjectPicker(
+                projects = state.projects,
+                projectHosts = state.presentedProjectHosts,
+                selectedProjectId = projectId,
+                onProjectChange = { projectId = it },
+            )
             OutlinedTextField(
                 value = name,
                 onValueChange = { name = it },
@@ -523,6 +504,68 @@ private fun NewTerminalSheet(state: DieterUiState, model: DieterViewModel) {
             }
         }
     }
+}
+
+@Composable
+internal fun TerminalProjectPicker(
+    projects: List<Project>,
+    projectHosts: Map<String, ProjectHost>,
+    selectedProjectId: String,
+    onProjectChange: (String) -> Unit,
+) {
+    var menuVisible by remember { mutableStateOf(false) }
+    val selectedProject = projects.firstOrNull { it.id == selectedProjectId }
+    Box {
+        OutlinedButton(
+            onClick = { menuVisible = true },
+            modifier = Modifier.fillMaxWidth().height(60.dp).testTag("terminal-project-picker"),
+            contentPadding = PaddingValues(horizontal = 14.dp),
+        ) {
+            Column(Modifier.weight(1f), horizontalAlignment = Alignment.Start) {
+                Text(selectedProject?.name ?: "Choose project", color = DieterText, fontWeight = FontWeight.SemiBold)
+                Text(
+                    selectedProject?.let { terminalProjectDetails(it, projectHosts[it.id]) }.orEmpty(),
+                    color = DieterMuted,
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 10.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+        DropdownMenu(expanded = menuVisible, onDismissRequest = { menuVisible = false }) {
+            projects.forEach { candidate ->
+                DropdownMenuItem(
+                    text = {
+                        Column {
+                            Text(candidate.name)
+                            Text(
+                                terminalProjectDetails(candidate, projectHosts[candidate.id]),
+                                color = DieterMuted,
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 10.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    },
+                    onClick = {
+                        onProjectChange(candidate.id)
+                        menuVisible = false
+                    },
+                    modifier = Modifier.testTag("terminal-project-${candidate.id}"),
+                )
+            }
+        }
+    }
+}
+
+internal fun terminalProjectDetails(project: Project, host: ProjectHost?): String {
+    val machine = host?.hostname?.takeIf(String::isNotBlank) ?: "Unknown machine"
+    val availability = if (host?.online == false) "$machine (offline)" else machine
+    return listOf(availability, compactProjectPath(project.path).takeIf(String::isNotBlank))
+        .filterNotNull()
+        .joinToString(" · ")
 }
 
 @Composable

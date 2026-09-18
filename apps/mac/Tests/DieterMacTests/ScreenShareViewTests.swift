@@ -39,6 +39,44 @@ struct ScreenShareViewTests {
         #expect(fixture.first.controller.phase == .streaming)
     }
 
+    @Test func undockingMovesOneSurfaceAndClosingTheWindowReturnsItWithoutDisconnecting() async throws {
+        let fixture = try ScreenShareViewFixture()
+        defer { fixture.close() }
+        await fixture.settle()
+        let surface = try #require(fixture.surface)
+        fixture.model.undock(fixture.first.id, fullScreen: false)
+        await fixture.settle()
+        let viewer = try #require(fixture.model.detachedWindows[fixture.first.id])
+        #expect(fixture.first.isDetached)
+        #expect(fixture.surface == nil)
+        #expect(fixture.first.videoSurface === surface)
+        #expect(surface.window === viewer.window)
+        #expect(surface.renderer === fixture.first.controller.renderer)
+        #expect(fixture.first.controller.clipboardWindow === viewer.window)
+        fixture.model.undock(fixture.first.id, fullScreen: false)
+        #expect(fixture.model.detachedWindows.count == 1)
+        fixture.model.selectSession(fixture.second.id)
+        await fixture.settle()
+        #expect(fixture.surface?.controller === fixture.second.controller)
+        #expect(surface.window === viewer.window)
+        viewer.window?.performClose(nil)
+        await fixture.settle()
+        #expect(fixture.model.detachedWindows.isEmpty)
+        #expect(!fixture.first.isDetached)
+        #expect(fixture.surface === surface)
+        #expect(fixture.first.controller.clipboardWindow === fixture.window)
+        #expect(fixture.first.controller.phase == .streaming)
+        #expect(fixture.second.controller.phase == .streaming)
+        fixture.model.undock(fixture.first.id, fullScreen: false)
+        await fixture.settle()
+        let detached = fixture.model.detachedWindows[fixture.first.id]?.window
+        fixture.model.closeSession(fixture.first.id)
+        await fixture.settle()
+        #expect(detached?.isVisible == false)
+        #expect(fixture.model.detachedWindows.isEmpty)
+        #expect(fixture.second.controller.phase == .streaming)
+    }
+
     @Test func reattachingInputGetsTheRetainedVideoDimensionsWithoutAnotherFrame() async {
         let renderer = RemoteDesktopMetalView(frame: .zero)
         let first = ScreenSizeObserver()
@@ -54,6 +92,25 @@ struct ScreenShareViewTests {
         renderer.delegate = third
         #expect(third.size == nil)
     }
+
+    @Test func viewOnlyFullScreenShortcutBelongsToTheViewer() async throws {
+        let fixture = try ScreenShareViewFixture()
+        defer { fixture.close() }
+        await fixture.settle()
+        let surface = try #require(fixture.surface)
+        #expect(!fixture.first.controller.controlActive)
+        #expect(fixture.window.makeFirstResponder(surface))
+        var toggled = false
+        surface.onToggleFullScreen = { toggled = true }
+        let event = try #require(
+            NSEvent.keyEvent(
+                with: .keyDown, location: .zero, modifierFlags: [.control, .command], timestamp: 0,
+                windowNumber: fixture.window.windowNumber, context: nil, characters: "f",
+                charactersIgnoringModifiers: "f", isARepeat: false, keyCode: 3))
+        #expect(surface.performKeyEquivalent(with: event))
+        #expect(toggled, "View-only mode must not send the shortcut to the main app's fullscreen menu")
+        #expect(fixture.first.controller.eventOrdinal == 0)
+    }
 }
 
 @MainActor
@@ -67,7 +124,8 @@ private final class ScreenShareViewFixture {
     let defaults: UserDefaults
     let suite = "dieter-screen-view-" + UUID().uuidString
     let model: ScreensModel
-    let first = ScreenShareSession(id: "view-alpha", machineID: "alpha", machineName: "Alpha", monitorsInactivity: false)
+    let first = ScreenShareSession(
+        id: "view-alpha", machineID: "alpha", machineName: "Alpha", monitorsInactivity: false)
     let second = ScreenShareSession(id: "view-beta", machineID: "beta", machineName: "Beta", monitorsInactivity: false)
     let root: NSView
     let window: NSWindow
@@ -79,9 +137,10 @@ private final class ScreenShareViewFixture {
         model.selectedSessionID = first.id
         first.controller.phase = .streaming
         second.controller.phase = .streaming
-        let host = NSHostingView(rootView: ScreensView(
-            model: model, machines: [], initialMachineID: "alpha",
-            makeConnection: { _ in throw CancellationError() }))
+        let host = NSHostingView(
+            rootView: ScreensView(
+                model: model, machines: [], initialMachineID: "alpha",
+                makeConnection: { _ in throw CancellationError() }))
         host.sizingOptions = []
         root = host
         window = NSWindow(
@@ -104,12 +163,38 @@ private final class ScreenShareViewFixture {
     func close() {
         window.contentView = nil
         window.close()
-        first.disconnect()
-        second.disconnect()
+        model.closeSession(first.id)
+        model.closeSession(second.id)
         defaults.removePersistentDomain(forName: suite)
     }
 
     private func descendants(_ view: NSView) -> [NSView] {
         [view] + view.subviews.flatMap(descendants)
     }
+}
+
+@Test func screenCursorOwnershipHasOnePointerWithoutWaitingForRemoteMotion() {
+    // Keyboard focus is deliberately absent from the policy. Hover movement
+    // controls the host immediately and must never show its delayed overlay.
+    #expect(
+        RemoteDesktopCursorPresentation.resolve(
+            controlling: true, active: true, inside: true, embedded: false, remoteVisible: true) == .local)
+    #expect(
+        RemoteDesktopCursorPresentation.resolve(
+            controlling: true, active: true, inside: true, embedded: false, remoteVisible: false) == .local)
+    #expect(
+        RemoteDesktopCursorPresentation.resolve(
+            controlling: false, active: true, inside: true, embedded: false, remoteVisible: true) == .remote)
+    #expect(
+        RemoteDesktopCursorPresentation.resolve(
+            controlling: true, active: false, inside: true, embedded: false, remoteVisible: true) == .remote)
+    #expect(
+        RemoteDesktopCursorPresentation.resolve(
+            controlling: true, active: true, inside: false, embedded: false, remoteVisible: true) == .remote)
+    #expect(
+        RemoteDesktopCursorPresentation.resolve(
+            controlling: true, active: true, inside: true, embedded: true, remoteVisible: true) == .embedded)
+    #expect(
+        RemoteDesktopCursorPresentation.resolve(
+            controlling: false, active: true, inside: true, embedded: false, remoteVisible: false) == .local)
 }

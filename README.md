@@ -884,7 +884,9 @@ capacity; loss or sustained queue growth revokes it. The daemon
 log records quality changes, sample age, delivered rate, queue growth and GCC state.
 Screen options select a display,
 prefer sharp text or smooth motion, or request an idle-screen refresh. Cursor shape,
-hotspot and position travel separately from video, with embedded-cursor fallback.
+hotspot and position travel separately from video. Temporary cursor-shape lookup
+failures retain the last valid shape (or the initial arrow); embedded capture
+remains an explicit compatibility option.
 Physical USB HID keys, left/right modifiers, pointer dragging and precise scrolling
 are supported. Enable local text composition in Screen options for IME input.
 Focus loss releases held input; ⌘⇧Esc releases input locally. macOS-reserved shortcuts
@@ -1085,3 +1087,30 @@ runs the native H.264/HEVC recovery matrix. Android coverage uses
 `DIETER_SCREEN_TEST_CLASS=com.dbpprt.dieter.screens.ScreenRecoveryEndToEndTest just android screens-test`.
 Both use authenticated disposable fixtures and targeted packet loss, without
 altering saved credentials or system network configuration.
+
+### Mac screen-share windows
+
+The expand button in Screens undocks the selected live share into its own native
+macOS full-screen window. The same media session, decoder, Metal surface, and
+clipboard connection move with it. Other tabs and shares remain usable. Move the
+pointer to the top of full screen to reveal the native toolbar, with screen
+options, control handoff, **Return to Dieter**, and the full-screen toggle.
+**Control–Command–F** enters/exits full screen from the viewer; ordinary Escape
+continues to reach the remote application. Exiting full screen leaves a movable,
+resizable window; closing that window returns the share to Dieter. Closing its
+Screens tab disconnects and closes its separate window.
+
+A controlling Mac viewer uses the local system pointer with the host's cursor
+shape and hotspot. Pointer motion does not wait for video or network feedback,
+and hovering over the video hides the delayed remote-position overlay even
+before keyboard focus is acquired. View-only and explicitly embedded-cursor
+sessions show the remote cursor and suppress the local pointer only inside the
+video. Letterboxing, toolbar areas, and other windows keep the normal Mac cursor.
+**Command–Shift–Escape** releases held input and pauses pointer forwarding until
+the viewer is focused again. Window and application focus changes release held
+keys and buttons.
+
+`DIETER_TEST_SCREEN_UNDOCK=1 just mac screens-test` runs the authenticated,
+isolated native full-screen journey, verifies session continuity and input,
+and records docked/full-screen input-to-Metal timing and screenshots. It never
+replaces or restarts the operator daemon.

@@ -6,6 +6,7 @@ import Foundation
 import GRPCCore
 import CryptoKit
 import Testing
+import SwiftUI
 @preconcurrency import WebRTC
 @testable import DieterMac
 
@@ -59,7 +60,9 @@ private struct ScreenFixtureConnection: Decodable {
     var unavailableRoutes = 0
     func openRoute() throws -> RemoteDesktopSignalingConnection {
         routeOpenings += 1
-        if unavailableRoutes > 0 { unavailableRoutes -= 1; throw RPCError(code: .unavailable, message: "Injected sleeping laptop network") }
+        if unavailableRoutes > 0 {
+            unavailableRoutes -= 1; throw RPCError(code: .unavailable, message: "Injected sleeping laptop network")
+        }
         let rpc = try DieterRPC(endpoint: endpoint, accessToken: fixture.token)
         let rpcTask = Task<Void, Never> { try? await rpc.run() }
         return RemoteDesktopSignalingConnection(
@@ -72,8 +75,10 @@ private struct ScreenFixtureConnection: Decodable {
         request.setValue("Bearer " + fixture.token, forHTTPHeaderField: "Authorization")
         let (_, response) = try await URLSession.shared.data(for: request)
         #expect((response as? HTTPURLResponse)?.statusCode == 204)
-        return Int((response as? HTTPURLResponse)?.value(forHTTPHeaderField: "X-Dieter-Test-Rejected-Signals")
-            ?? (response as? HTTPURLResponse)?.value(forHTTPHeaderField: "X-Dieter-Test-Interrupted-Signals") ?? "0")
+        return Int(
+            (response as? HTTPURLResponse)?.value(forHTTPHeaderField: "X-Dieter-Test-Rejected-Signals")
+                ?? (response as? HTTPURLResponse)?.value(forHTTPHeaderField: "X-Dieter-Test-Interrupted-Signals") ?? "0"
+        )
             ?? 0
     }
     let controller = RemoteDesktopController()
@@ -155,22 +160,34 @@ private struct ScreenFixtureConnection: Decodable {
             let received = try await controller.clipboard.exchange(.read)
             #expect(received.text == payload || !received.changed)
         }
-        let png = try #require(Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aCWQAAAAASUVORK5CYII="))
+        let png = try #require(
+            Data(
+                base64Encoded:
+                    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aCWQAAAAASUVORK5CYII="))
         let fileBytes = Data(repeating: 0xa7, count: 2 * 1024 * 1024)
         let copiedFile = output.appending(path: "copied.bin"), emptyFile = output.appending(path: "empty.txt")
         try fileBytes.write(to: copiedFile); try Data().write(to: emptyFile)
         for image in [true, false] {
             clientClipboard.clearContents()
-            if image { clientClipboard.setData(png, forType: .png) }
-            else { clientClipboard.writeObjects([copiedFile, emptyFile] as [NSURL]) }
+            if image {
+                clientClipboard.setData(png, forType: .png)
+            } else {
+                clientClipboard.writeObjects([copiedFile, emptyFile] as [NSURL])
+            }
             let before = controller.clipboard.completedOperations
             controller.clipboard.paste()
-            try await screenWait("native binary clipboard paste", timeout: 15) { controller.clipboard.completedOperations > before || !controller.clipboardError.isEmpty }
+            try await screenWait("native binary clipboard paste", timeout: 15) {
+                controller.clipboard.completedOperations > before || !controller.clipboardError.isEmpty
+            }
             try #require(controller.clipboardError.isEmpty, "\(controller.clipboardError)")
-            if image { #expect(hostClipboard.data(forType: .png) == png) }
-            else {
-                let urls = try #require(hostClipboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL])
-                #expect(urls.count == 2); #expect(try Data(contentsOf: urls[0]) == fileBytes); #expect(try Data(contentsOf: urls[1]).isEmpty)
+            if image {
+                #expect(hostClipboard.data(forType: .png) == png)
+            } else {
+                let urls = try #require(
+                    hostClipboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true])
+                        as? [URL])
+                #expect(urls.count == 2); #expect(try Data(contentsOf: urls[0]) == fileBytes);
+                #expect(try Data(contentsOf: urls[1]).isEmpty)
                 #expect(urls[0] != copiedFile, "Host must stage transferred bytes, not reuse the source path")
             }
             let copied = controller.clipboard.completedOperations
@@ -179,11 +196,16 @@ private struct ScreenFixtureConnection: Decodable {
             clientClipboard.clearContents()
             controller.clipboard.enabled = true
             controller.clipboard.copySelection()
-            try await screenWait("native binary clipboard copy", timeout: 15) { controller.clipboard.completedOperations > copied || !controller.clipboardError.isEmpty }
+            try await screenWait("native binary clipboard copy", timeout: 15) {
+                controller.clipboard.completedOperations > copied || !controller.clipboardError.isEmpty
+            }
             try #require(controller.clipboardError.isEmpty, "\(controller.clipboardError)")
-            if image { #expect(clientClipboard.data(forType: .png) == png) }
-            else {
-                let urls = try #require(clientClipboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL])
+            if image {
+                #expect(clientClipboard.data(forType: .png) == png)
+            } else {
+                let urls = try #require(
+                    clientClipboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true])
+                        as? [URL])
                 #expect(try Data(contentsOf: urls[0]) == fileBytes)
                 #expect(try Data(contentsOf: urls[1]).isEmpty)
             }
@@ -420,16 +442,24 @@ private struct ScreenFixtureConnection: Decodable {
         let cut = try await controller.clipboard.exchange(.cut)
         try await screenWait("native app cut consumed selection", timeout: 4) { (report()["text"] as? String) == "" }
         #expect(cut.text.contains(pasted))
-        let png = try #require(Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aCWQAAAAASUVORK5CYII="))
-        for item in [ScreenClipboardItem(kind: 1, name: "pixel.png", mimeType: "image/png", data: png),
-                     ScreenClipboardItem(kind: 0, name: "copied.bin", mimeType: "application/octet-stream", data: Data(repeating: 0xa5, count: 2 * 1024 * 1024))] {
+        let png = try #require(
+            Data(
+                base64Encoded:
+                    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aCWQAAAAASUVORK5CYII="))
+        for item in [
+            ScreenClipboardItem(kind: 1, name: "pixel.png", mimeType: "image/png", data: png),
+            ScreenClipboardItem(
+                kind: 0, name: "copied.bin", mimeType: "application/octet-stream",
+                data: Data(repeating: 0xa5, count: 2 * 1024 * 1024)),
+        ] {
             _ = try await controller.clipboard.exchange(.paste, items: [item])
             let digest = SHA256.hash(data: item.data).map { String(format: "%02x", $0) }.joined()
             try await screenWait("owned native app consumed binary paste", timeout: 5) {
                 (report()["pastedBinary"] as? [[String: Any]])?.first?["sha256"] as? String == digest
             }
             let returned = try await controller.clipboard.exchange(.copy)
-            #expect(returned.items.first?.data == item.data, "Native application copy must return the same binary bytes")
+            #expect(
+                returned.items.first?.data == item.data, "Native application copy must return the same binary bytes")
         }
         print("Real native app clipboard copy, cut, paste and copy completion after focus loss passed")
         target.terminate()
@@ -502,11 +532,18 @@ private struct ScreenFixtureConnection: Decodable {
         try await Task.sleep(for: .milliseconds(300))
         hostClipboard.clearContents(); hostClipboard.setString("Preserve clipboard on interruption", forType: .string)
         let partial = Task {
-            try await controller.clipboard.exchange(.paste, items: [.init(kind: 0, name: "partial.bin", mimeType: "application/octet-stream", data: Data(repeating: 0x5a, count: 8 * 1024 * 1024))])
+            try await controller.clipboard.exchange(
+                .paste,
+                items: [
+                    .init(
+                        kind: 0, name: "partial.bin", mimeType: "application/octet-stream",
+                        data: Data(repeating: 0x5a, count: 8 * 1024 * 1024))
+                ])
         }
         try await Task.sleep(for: .milliseconds(20))
         controller.disconnect()
-        do { _ = try await partial.value; Issue.record("Interrupted clipboard operation unexpectedly completed") } catch { }
+        do { _ = try await partial.value; Issue.record("Interrupted clipboard operation unexpectedly completed") } catch
+        {}
         try await Task.sleep(for: .milliseconds(300))
         #expect(hostClipboard.string(forType: .string) == "Preserve clipboard on interruption")
         print(
@@ -790,4 +827,183 @@ private final class ScreenFrameReadiness: @unchecked Sendable {
 // Intentional synchronous UI work models AppKit/layout contention.
 @MainActor private func blockScreenUIForSchedulingTest() {
     Thread.sleep(forTimeInterval: 0.25)
+}
+
+@Test @MainActor func remoteDesktopUndockedEndToEnd() async throws {
+    let env = ProcessInfo.processInfo.environment
+    guard let executable = env["DIETER_TEST_SCREEN_FIXTURE"], let helper = env["DIETER_TEST_CAPTURE_HELPER"] else {
+        return
+    }
+    let output = FileManager.default.temporaryDirectory.appending(path: "dieter-undocked-\(UUID())")
+    try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
+    let ready = output.appending(path: "ready.json"), log = output.appending(path: "fixture.log")
+    FileManager.default.createFile(atPath: log.path, contents: nil)
+    let handle = try FileHandle(forWritingTo: log)
+    let process = Process(); process.executableURL = URL(fileURLWithPath: executable)
+    process.arguments = ["--helper", helper, "--source", "native-synthetic", "--authenticate", "--ready", ready.path]
+    var environment = env; environment["DIETER_TEST_CAPTURE_INPUT_PATTERN"] = "1"
+    process.environment = environment; process.standardOutput = handle; process.standardError = handle
+    try process.run()
+    defer {
+        if process.isRunning { process.terminate(); process.waitUntilExit() }; try? handle.close();
+        print("Undocked screen evidence: \(output.path)")
+    }
+    try await screenWait("undocked fixture readiness", timeout: 10) {
+        FileManager.default.fileExists(atPath: ready.path)
+    }
+    let fixture = try JSONDecoder().decode(ScreenFixtureConnection.self, from: Data(contentsOf: ready))
+    let rpc = try DieterRPC(endpoint: #require(DieterEndpoint.parse(fixture.url)), accessToken: fixture.token)
+    let rpcTask = Task { try? await rpc.run() }; defer { rpcTask.cancel() }
+    let suite = "dieter-undocked-" + UUID().uuidString
+    let defaults = try #require(UserDefaults(suiteName: suite));
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let model = ScreensModel(defaults: defaults)
+    let session = ScreenShareSession(machineID: "fixture", machineName: "Studio Mac", monitorsInactivity: false)
+    model.sessions = [session]; model.selectedSessionID = session.id
+    let controller = session.controller
+    let surface = session.videoSurface
+    let application = NSApplication.shared; application.setActivationPolicy(.regular)
+    let window = NSWindow(
+        contentRect: NSRect(x: 80, y: 80, width: 1100, height: 800), styleMask: [.titled, .closable, .resizable],
+        backing: .buffered, defer: false)
+    window.isReleasedWhenClosed = false; window.title = "Dieter — Undock Integration"
+    let root = NSHostingView(
+        rootView: ScreensView(
+            model: model, machines: [], initialMachineID: "fixture", makeConnection: { _ in throw CancellationError() })
+    )
+    root.sizingOptions = []; window.contentView = root
+    window.makeKeyAndOrderFront(nil); application.activate(ignoringOtherApps: true)
+    defer { model.closeSession(session.id); window.contentView = nil; window.close() }
+    session.connect {
+        let connection = try DieterRPC(
+            endpoint: #require(DieterEndpoint.parse(fixture.url)), accessToken: fixture.token)
+        return RemoteDesktopSignalingConnection(
+            rpc: connection, connectionTask: Task { try? await connection.run() },
+            rtcConfiguration: try Dieter_Gateway_V1_RTCConfiguration(serializedBytes: fixture.rtc),
+            daemonCertificatePEM: fixture.certificate, routeLabel: "Isolated fixture")
+    }
+    try await screenWait("docked hardware video", timeout: 20) {
+        controller.controlActive && controller.renderer.framesPresented > 5
+    }
+    let original = try await rpc.remoteDesktopSessions()
+    let sessionID = try #require(original.sessions.first?.sessionID)
+    func capture(_ window: NSWindow, _ name: String) {
+        let shot = Process(); shot.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
+        shot.arguments = ["-x", "-o", "-l", String(window.windowNumber), output.appending(path: name + ".png").path]
+        try? shot.run(); shot.waitUntilExit()
+    }
+    capture(window, "01-docked")
+    let docked = try await measureScreenInputResponse(controller, x: 0.01, y: 0.01) {
+        controller.sendText("dieter-latency:\($0 ? 235 : 16)")
+    }.sorted()
+    let framesBefore = controller.renderer.framesPresented
+    model.undock(session.id)
+    let viewer = try #require(model.detachedWindows[session.id])
+    let detached = try #require(viewer.window)
+    try await screenWait("native macOS fullscreen entered", timeout: 12) {
+        detached.styleMask.contains(.fullScreen) && !viewer.transitioning
+    }
+    try await screenWait("fullscreen hardware presentation", timeout: 15) {
+        surface.window === detached && controller.controlActive
+            && controller.renderer.framesPresented > framesBefore + 5
+    }
+    #expect(session.videoSurface === surface)
+    #expect(controller.clipboardWindow === detached)
+    #expect(controller.renderer.superview === surface)
+    capture(detached, "02-fullscreen")
+
+    // Hover before acquiring keyboard focus: a single local cursor changes
+    // immediately, before any network acknowledgement could arrive.
+    // SwiftPM does not run NSApplication's event loop. Supply the focused
+    // window here; ScreenShareUISmoke validates real application/key activation.
+    surface.windowIsActive = { [weak detached] in $0 != nil && $0 === detached }
+    detached.makeFirstResponder(nil)
+    controller.remoteCursorState.visible = true
+    controller.remoteCursorState.normalizedX = 100_000
+    controller.remoteCursorState.normalizedY = 100_000
+    controller.remoteCursor = .crosshair
+    let center = CGPoint(x: surface.bounds.midX, y: surface.bounds.midY)
+    let move = try #require(
+        NSEvent.mouseEvent(
+            with: .mouseMoved, location: surface.convert(center, to: nil), modifierFlags: [], timestamp: 0,
+            windowNumber: detached.windowNumber, context: nil, eventNumber: 1, clickCount: 0, pressure: 0))
+    let beforeAck = controller.sessionState.lastInputOrdinal
+    let beforeMove = controller.eventOrdinal
+    let began = CACurrentMediaTime()
+    surface.mouseMoved(with: move)
+    let cursorMS = (CACurrentMediaTime() - began) * 1000
+    #expect(!controller.inputFocused)
+    #expect(surface.cursorPresentation == .local)
+    #expect(!surface.hostCursorVisible)
+    #expect(NSCursor.current === controller.remoteCursor)
+    #expect(controller.sessionState.lastInputOrdinal == beforeAck)
+    try await screenWait("fullscreen pointer reaches host", timeout: 3) {
+        controller.eventOrdinal > beforeMove && controller.sessionState.lastInputOrdinal >= controller.eventOrdinal
+    }
+
+    // A remote pointer or an old host's baked cursor gets one cursor too.
+    controller.transferControl(take: false)
+    try await screenWait("view-only cursor", timeout: 4) {
+        !controller.controlActive && !controller.controlTransferPending
+    }
+    surface.refreshCursor(at: center)
+    #expect(surface.cursorPresentation == .remote && surface.hostCursorVisible)
+    controller.sessionState.embeddedCursor = true
+    surface.refreshCursor(at: center)
+    #expect(surface.cursorPresentation == .embedded && !surface.hostCursorVisible)
+    controller.sessionState.embeddedCursor = false
+    controller.transferControl(take: true)
+    try await screenWait("control restored", timeout: 4) { controller.controlActive }
+    detached.makeFirstResponder(surface)
+    let release = try #require(
+        NSEvent.keyEvent(
+            with: .keyDown, location: .zero, modifierFlags: [.command, .shift], timestamp: 0,
+            windowNumber: detached.windowNumber, context: nil, characters: "", charactersIgnoringModifiers: "",
+            isARepeat: false, keyCode: 53))
+    surface.keyDown(with: release)
+    #expect(!controller.inputFocused)
+    let releasedOrdinal = controller.eventOrdinal
+    surface.mouseMoved(with: move)
+    let scroll = try #require(
+        CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 1, wheel1: 10, wheel2: 0, wheel3: 0))
+    surface.scrollWheel(with: try #require(NSEvent(cgEvent: scroll)))
+    #expect(controller.eventOrdinal == releasedOrdinal, "Release shortcut must pause pointer input until clicked")
+    detached.makeFirstResponder(surface)
+    let fullscreen = try await measureScreenInputResponse(controller, x: 0.01, y: 0.01) {
+        controller.sendText("dieter-latency:\($0 ? 235 : 16)")
+    }.sorted()
+    capture(detached, "03-fullscreen-active")
+    if let hold = Double(env["DIETER_TEST_SCREEN_UNDOCK_HOLD"] ?? ""), hold > 0 {
+        try await Task.sleep(for: .seconds(min(hold, 30)))
+    }
+    model.dock(session.id)
+    try await screenWait("redocked live viewer", timeout: 12) { !session.isDetached && surface.window === window }
+    try await screenWait("redocked input readiness", timeout: 10) { controller.controlActive }
+    let final = try await rpc.remoteDesktopSessions()
+    #expect(final.sessions.count == 1 && final.sessions.first?.sessionID == sessionID)
+    #expect(controller.clipboardWindow === window)
+    #expect(controller.phase == .streaming)
+    capture(window, "04-redocked")
+    // Closing an ordinary undocked window docks it; closing a tab ends it.
+    model.undock(session.id, fullScreen: false)
+    let floating = try #require(model.detachedWindows[session.id]?.window)
+    try await screenWait("floating viewer", timeout: 3) { surface.window === floating }
+    capture(floating, "05-floating")
+    floating.performClose(nil)
+    try await screenWait("close returns viewer", timeout: 3) { !session.isDetached && surface.window === window }
+    model.undock(session.id, fullScreen: false)
+    let closing = model.detachedWindows[session.id]?.window
+    model.closeSession(session.id)
+    #expect(closing?.isVisible == false && model.detachedWindows.isEmpty)
+    #expect(controller.phase == .idle)
+    let report: [String: Any] = [
+        "sameSession": sessionID, "cursorEventMs": cursorMS,
+        "dockedInputMedianMs": docked[docked.count / 2], "dockedInputP95Ms": docked[docked.count * 95 / 100],
+        "fullscreenInputMedianMs": fullscreen[fullscreen.count / 2],
+        "fullscreenInputP95Ms": fullscreen[fullscreen.count * 95 / 100],
+        "inputSamplesPerMode": docked.count, "measurement": "same-host synthetic input to actual Metal presentation",
+    ]
+    try JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys]).write(
+        to: output.appending(path: "results.json"))
+    print("Undocked screen result: \(report)")
 }

@@ -1,13 +1,14 @@
 import AppKit
 import DieterAPI
 import SwiftUI
-@preconcurrency import WebRTC
 
 struct ScreensView: View {
     @Bindable var model: ScreensModel
     let machines: [DieterEndpoint]
     let initialMachineID: String
     let makeConnection: @MainActor (String) async throws -> RemoteDesktopSignalingConnection
+
+    var showInDieter: @MainActor () -> Void = {}
 
     private var selectedSession: ScreenShareSession? { model.selectedSession }
 
@@ -27,7 +28,18 @@ struct ScreensView: View {
                     )
                     Spacer()
                     if let selectedSession {
-                        screenOptions(selectedSession.controller)
+                        if selectedSession.keepsConnectionOpen {
+                            Button {
+                                model.undock(selectedSession.id, showInDieter: showInDieter)
+                            } label: {
+                                Image(systemName: "arrow.up.left.and.arrow.down.right")
+                            }
+                            .help("Open screen share in full screen")
+                            .accessibilityLabel("Undock screen share in full screen")
+                            .accessibilityIdentifier("screens.undock")
+                            .smokeTarget("screens.undock")
+                        }
+                        ScreenShareOptions(controller: selectedSession.controller)
                     }
                     if let selectedSession { primaryAction(selectedSession) }
                     Button {
@@ -57,10 +69,23 @@ struct ScreensView: View {
                 Divider().overlay(DieterTheme.border)
             }
             if let selectedSession {
-                screenWorkspace(selectedSession)
-                    // The native surface owns this session's renderer and input.
-                    // Reusing it would route input to a different machine's video.
-                    .id(selectedSession.id)
+                if selectedSession.isDetached {
+                    emptyState(
+                        title: selectedSession.machineName, detail: "This screen share is open in its own window.",
+                        symbol: "macwindow.on.rectangle"
+                    ) {
+                        HStack {
+                            Button("Show window") { model.undock(selectedSession.id, fullScreen: false) }
+                            Button("Return to Dieter") { model.dock(selectedSession.id) }
+                                .accessibilityIdentifier("screens.dock")
+                        }
+                    }
+                } else {
+                    screenWorkspace(selectedSession)
+                        // The native surface owns this session's renderer and input.
+                        // Reusing it would route input to a different machine's video.
+                        .id(selectedSession.id)
+                }
             } else {
                 emptyState(
                     title: "No open screen shares",
@@ -101,66 +126,6 @@ struct ScreensView: View {
         }
         .frame(height: 38)
         .background(DieterTheme.sidebar)
-    }
-
-    @ViewBuilder private func screenOptions(_ controller: RemoteDesktopController) -> some View {
-        if controller.canTransferControl {
-            Button(controller.sessionState.controlActive ? "Release Control" : "Take Control") {
-                controller.transferControl(take: !controller.sessionState.controlActive)
-            }
-            .disabled(controller.controlTransferPending)
-            .accessibilityIdentifier("screens.control")
-            .smokeTarget("screens.control")
-            .help(
-                controller.controlTransferError.isEmpty
-                    ? "One client controls the machine at a time" : controller.controlTransferError)
-        }
-        Menu {
-            ForEach(controller.capabilities.displays, id: \.id) { display in
-                Button(display.name) { controller.configure(displayID: display.id) }
-            }
-            Divider()
-            Button("Automatic quality") { controller.configure(quality: .auto) }
-            Button("Prefer sharp text") { controller.configure(quality: .detail) }
-            Button("Prefer responsive motion") { controller.configure(quality: .motion) }
-            Menu("Frame rate") {
-                ForEach(controller.availableFrameRates, id: \.self) { rate in
-                    Button("Up to \(rate) fps") { controller.configure(maxFPS: rate) }
-                }
-            }
-            Divider()
-            Toggle(
-                "Compose text locally (IME)",
-                isOn: Binding(
-                    get: { controller.textInputMode },
-                    set: { controller.textInputMode = $0 }))
-            if controller.capabilities.clipboardSupported {
-                Toggle(
-                    "Share clipboard",
-                    isOn: Binding(
-                        get: { controller.clipboardEnabled },
-                        set: {
-                            controller.clipboardEnabled = $0; controller.clipboard.setEnabled($0)
-                        })
-                ).disabled(!controller.controlActive)
-                Button("Copy from remote") { controller.clipboard.copySelection() }.disabled(
-                    !controller.controlActive || !controller.clipboardEnabled || controller.clipboardBusy)
-                Button("Paste to remote") { controller.clipboard.paste() }.disabled(
-                    !controller.controlActive || !controller.clipboardEnabled || controller.clipboardBusy)
-                if !controller.clipboardError.isEmpty { Text(controller.clipboardError) }
-            }
-            Menu("Video codec") {
-                Button("Automatic (HEVC when supported)") { controller.selectCodec(.auto) }
-                Button("H.264 compatibility") { controller.selectCodec(.h264) }
-                Button("HEVC — up to 1080p60") { controller.selectCodec(.hevc) }
-            }
-            if !controller.sessionState.codec.isEmpty { Text("Codec: \(controller.sessionState.codec)") }
-            if !controller.codecFallbackReason.isEmpty { Text(controller.codecFallbackReason) }
-            Button("Refresh screen") { controller.configure(refresh: true) }
-        } label: {
-            Image(systemName: "slider.horizontal.3")
-        }
-        .accessibilityLabel("Screen options")
     }
 
     @ViewBuilder private func primaryAction(_ session: ScreenShareSession) -> some View {
@@ -238,9 +203,9 @@ struct ScreensView: View {
             .background(DieterTheme.sidebar)
         }
         .onAppear {
-            session.recordActivity(); controller.clipboardVisible = true
+            session.recordActivity()
         }
-        .onDisappear { controller.clipboardVisible = false }
+
     }
 
     @ViewBuilder private func content(_ session: ScreenShareSession) -> some View {
@@ -249,8 +214,10 @@ struct ScreensView: View {
         case .streaming, .connecting, .reconnecting:
             ZStack {
                 Color.black
-                RemoteDesktopVideoSurface(controller: controller)
-                    .padding(18)
+                RemoteDesktopVideoSurface(
+                    session: session, toggleFullScreen: { model.undock(session.id, showInDieter: showInDieter) }
+                )
+                .padding(18)
                 if controller.phase != .streaming {
                     VStack(spacing: 10) {
                         ProgressView().controlSize(.small)
@@ -457,318 +424,66 @@ private struct NewScreenShareSheet: View {
     }
 }
 
-private struct RemoteDesktopVideoSurface: NSViewRepresentable {
+struct ScreenShareOptions: View {
     let controller: RemoteDesktopController
-
-    func makeNSView(context: Context) -> RemoteDesktopInputView {
-        RemoteDesktopInputView(renderer: controller.renderer, controller: controller)
-    }
-    func updateNSView(_ nsView: RemoteDesktopInputView, context: Context) {
-        nsView.refreshCursor()
-    }
-}
-
-@MainActor
-final class RemoteDesktopInputView: NSView, @preconcurrency NSTextInputClient, @preconcurrency RTCVideoViewDelegate {
-    let renderer: RemoteDesktopMetalView
-    private(set) weak var controller: RemoteDesktopController?
-    private var videoSize = CGSize(width: 16, height: 9)
-    private var trackingAreaReference: NSTrackingArea?
-    private var buttonsDown = Set<Int>()
-    private var modifierKeysDown = Set<UInt16>()
-    private var physicalKeysDown = Set<UInt16>()
-    private var markedText = NSAttributedString(string: "")
-    private var markedSelection = NSRange(location: NSNotFound, length: 0)
-    private let focusObserverBag = RemoteDesktopFocusObservers()
-    private let hostCursorView = NSImageView()
-
-    init(renderer: RemoteDesktopMetalView, controller: RemoteDesktopController) {
-        self.renderer = renderer
-        self.controller = controller
-        super.init(frame: .zero)
-        wantsLayer = true
-        layer?.backgroundColor = NSColor.black.cgColor
-        renderer.delegate = self
-        addSubview(renderer)
-        hostCursorView.imageScaling = .scaleProportionallyUpOrDown
-        addSubview(hostCursorView)
-    }
-
-    required init?(coder: NSCoder) { nil }
-    override var acceptsFirstResponder: Bool { true }
-    override func viewDidMoveToWindow() {
-        super.viewDidMoveToWindow()
-        controller?.clipboardWindow = window
-        focusObserverBag.tokens.forEach(NotificationCenter.default.removeObserver)
-        focusObserverBag.tokens.removeAll()
-        for (name, object) in [
-            (NSApplication.didResignActiveNotification, NSApp as AnyObject?),
-            (NSWindow.didResignKeyNotification, window as AnyObject?),
-        ] {
-            focusObserverBag.tokens.append(
-                NotificationCenter.default.addObserver(forName: name, object: object, queue: .main) { [weak self] _ in
-                    MainActor.assumeIsolated { self?.releaseFocus() }
-                })
+    @ViewBuilder var body: some View {
+        if controller.canTransferControl {
+            Button(controller.sessionState.controlActive ? "Release Control" : "Take Control") {
+                controller.transferControl(take: !controller.sessionState.controlActive)
+            }
+            .disabled(controller.controlTransferPending)
+            .accessibilityIdentifier("screens.control")
+            .smokeTarget("screens.control")
+            .help(
+                controller.controlTransferError.isEmpty
+                    ? "One client controls the machine at a time" : controller.controlTransferError)
         }
-        if window == nil { releaseFocus() }
-    }
-    override func becomeFirstResponder() -> Bool {
-        controller?.inputFocused = true
-        return super.becomeFirstResponder()
-    }
-    private func releaseFocus() {
-        controller?.inputFocused = false
-        controller?.releaseAllInput()
-        buttonsDown.removeAll(); modifierKeysDown.removeAll(); physicalKeysDown.removeAll()
-        unmarkText()
-    }
-    func refreshCursor() {
-        guard let controller else { return }
-        window?.invalidateCursorRects(for: self)
-        let state = controller.remoteCursorState
-        hostCursorView.isHidden =
-            controller.sessionState.embeddedCursor || !state.visible
-            || (controller.controlActive && controller.inputFocused)
-        guard !hostCursorView.isHidden else { return }
-        let rect = RemoteDesktopInputGeometry.contentRect(bounds: bounds, videoSize: videoSize)
-        let cursor = controller.remoteCursor
-        hostCursorView.image = cursor.image
-        hostCursorView.frame = NSRect(
-            x: rect.minX + rect.width * Double(state.normalizedX) / 1_000_000 - cursor.hotSpot.x,
-            y: rect.maxY - rect.height * Double(state.normalizedY) / 1_000_000 - cursor.image.size.height
-                + cursor.hotSpot.y,
-            width: cursor.image.size.width, height: cursor.image.size.height)
-    }
-    override func resetCursorRects() {
-        super.resetCursorRects()
-        if let controller, controller.controlActive, !controller.sessionState.embeddedCursor {
-            addCursorRect(
-                RemoteDesktopInputGeometry.contentRect(bounds: bounds, videoSize: videoSize),
-                cursor: controller.remoteCursor)
-        }
-    }
-    override func layout() {
-        super.layout()
-        renderer.frame = bounds
-        controller?.setViewport(bounds.size, scale: window?.backingScaleFactor ?? 1)
-        refreshCursor()
-    }
-
-    override func viewDidChangeBackingProperties() {
-        super.viewDidChangeBackingProperties()
-        controller?.setViewport(bounds.size, scale: window?.backingScaleFactor ?? 1)
-    }
-
-    override func updateTrackingAreas() {
-        if let trackingAreaReference { removeTrackingArea(trackingAreaReference) }
-        let area = NSTrackingArea(
-            rect: bounds, options: [.activeInKeyWindow, .mouseMoved, .mouseEnteredAndExited, .inVisibleRect],
-            owner: self)
-        addTrackingArea(area)
-        trackingAreaReference = area
-        super.updateTrackingAreas()
-    }
-
-    func videoView(_ videoView: any RTCVideoRenderer, didChangeVideoSize size: CGSize) {
-        videoSize = size.width > 0 && size.height > 0 ? size : videoSize
-    }
-
-    override func mouseMoved(with event: NSEvent) { sendMove(event) }
-    override func mouseDragged(with event: NSEvent) { sendMove(event) }
-    override func rightMouseDragged(with event: NSEvent) { sendMove(event) }
-    override func otherMouseDragged(with event: NSEvent) { sendMove(event) }
-
-    override func mouseDown(with event: NSEvent) {
-        window?.makeFirstResponder(self)
-        sendButton(.left, down: true, event: event)
-    }
-    override func mouseUp(with event: NSEvent) { sendButton(.left, down: false, event: event) }
-    override func rightMouseDown(with event: NSEvent) {
-        window?.makeFirstResponder(self)
-        sendButton(.right, down: true, event: event)
-    }
-    override func rightMouseUp(with event: NSEvent) { sendButton(.right, down: false, event: event) }
-    override func otherMouseDown(with event: NSEvent) {
-        window?.makeFirstResponder(self)
-        sendButton(button(event.buttonNumber), down: true, event: event)
-    }
-    override func otherMouseUp(with event: NSEvent) {
-        sendButton(button(event.buttonNumber), down: false, event: event)
-    }
-
-    override func scrollWheel(with event: NSEvent) {
-        controller?.sendScroll(
-            deltaX: event.scrollingDeltaX, deltaY: event.scrollingDeltaY,
-            precise: event.hasPreciseScrollingDeltas, modifiers: event.modifierFlags, phase: event.phase,
-            momentumPhase: event.momentumPhase)
-    }
-
-    override func keyDown(with event: NSEvent) {
-        if [7, 8, 9].contains(event.keyCode),
-            event.modifierFlags.intersection([.command, .control, .option, .shift]) == .command,
-            controller?.capabilities.clipboardSupported == true, controller?.clipboardEnabled == true
-        {
-            if !event.isARepeat {
-                switch event.keyCode {
-                case 7: controller?.clipboard.cut()
-                case 8: controller?.clipboard.copySelection()
-                default: controller?.clipboard.paste()
+        Menu {
+            ForEach(controller.capabilities.displays, id: \.id) { display in
+                Button(display.name) { controller.configure(displayID: display.id) }
+            }
+            Divider()
+            Button("Automatic quality") { controller.configure(quality: .auto) }
+            Button("Prefer sharp text") { controller.configure(quality: .detail) }
+            Button("Prefer responsive motion") { controller.configure(quality: .motion) }
+            Menu("Frame rate") {
+                ForEach(controller.availableFrameRates, id: \.self) { rate in
+                    Button("Up to \(rate) fps") { controller.configure(maxFPS: rate) }
                 }
             }
-            return
+            Divider()
+            Toggle(
+                "Compose text locally (IME)",
+                isOn: Binding(
+                    get: { controller.textInputMode },
+                    set: { controller.textInputMode = $0 }))
+            if controller.capabilities.clipboardSupported {
+                Toggle(
+                    "Share clipboard",
+                    isOn: Binding(
+                        get: { controller.clipboardEnabled },
+                        set: {
+                            controller.clipboardEnabled = $0; controller.clipboard.setEnabled($0)
+                        })
+                ).disabled(!controller.controlActive)
+                Button("Copy from remote") { controller.clipboard.copySelection() }.disabled(
+                    !controller.controlActive || !controller.clipboardEnabled || controller.clipboardBusy)
+                Button("Paste to remote") { controller.clipboard.paste() }.disabled(
+                    !controller.controlActive || !controller.clipboardEnabled || controller.clipboardBusy)
+                if !controller.clipboardError.isEmpty { Text(controller.clipboardError) }
+            }
+            Menu("Video codec") {
+                Button("Automatic (HEVC when supported)") { controller.selectCodec(.auto) }
+                Button("H.264 compatibility") { controller.selectCodec(.h264) }
+                Button("HEVC — up to 1080p60") { controller.selectCodec(.hevc) }
+            }
+            if !controller.sessionState.codec.isEmpty { Text("Codec: \(controller.sessionState.codec)") }
+            if !controller.codecFallbackReason.isEmpty { Text(controller.codecFallbackReason) }
+            Button("Refresh screen") { controller.configure(refresh: true) }
+        } label: {
+            Image(systemName: "slider.horizontal.3")
         }
-        if event.keyCode == 53 && event.modifierFlags.contains([.command, .shift]) {
-            controller?.releaseAllInput()
-            window?.makeFirstResponder(nil)
-            return
-        }
-        if controller?.textInputMode == true, !event.modifierFlags.contains(.command),
-            !event.modifierFlags.contains(.control)
-        {
-            interpretKeyEvents([event])
-            return
-        }
-        physicalKeysDown.insert(event.keyCode)
-        controller?.sendKey(
-            code: event.keyCode, down: true, repeat: event.isARepeat,
-            modifiers: event.modifierFlags)
-    }
-    override func keyUp(with event: NSEvent) {
-        guard physicalKeysDown.remove(event.keyCode) != nil else { return }
-        controller?.sendKey(
-            code: event.keyCode, down: false, repeat: false, modifiers: event.modifierFlags)
-    }
-    override func flagsChanged(with event: NSEvent) {
-        let down: Bool
-        if event.keyCode == 57 {
-            down = event.modifierFlags.contains(.capsLock)
-        } else {
-            down =
-                !modifierKeysDown.contains(event.keyCode)
-                && modifierIsDown(keyCode: event.keyCode, flags: event.modifierFlags)
-        }
-        if down { modifierKeysDown.insert(event.keyCode) } else { modifierKeysDown.remove(event.keyCode) }
-        controller?.sendKey(
-            code: event.keyCode, down: down, repeat: false, modifiers: event.modifierFlags)
-    }
-    override func resignFirstResponder() -> Bool {
-        releaseFocus()
-        return super.resignFirstResponder()
+        .accessibilityLabel("Screen options")
     }
 
-    override func performKeyEquivalent(with event: NSEvent) -> Bool {
-        guard window?.firstResponder === self, controller?.controlActive == true else {
-            return super.performKeyEquivalent(with: event)
-        }
-        keyDown(with: event)
-        return true
-    }
-
-    private func sendMove(_ event: NSEvent) {
-        guard let point = normalizedPoint(event, clamp: !buttonsDown.isEmpty) else { return }
-        if controller?.sessionState.embeddedCursor == false { controller?.remoteCursor.set() }
-        controller?.sendPointerMove(x: point.x, y: point.y)
-    }
-
-    private func sendButton(
-        _ button: Dieter_V1_RemoteDesktopPointerButton.Button, down: Bool, event: NSEvent
-    ) {
-        guard down || buttonsDown.contains(event.buttonNumber), let point = normalizedPoint(event, clamp: !down) else {
-            return
-        }
-        if down { buttonsDown.insert(event.buttonNumber) } else { buttonsDown.remove(event.buttonNumber) }
-        controller?.sendPointerButton(
-            button, down: down, clickCount: event.clickCount, x: point.x, y: point.y,
-            modifiers: event.modifierFlags)
-    }
-
-    private func normalizedPoint(_ event: NSEvent, clamp: Bool = false) -> CGPoint? {
-        let point = convert(event.locationInWindow, from: nil)
-        return RemoteDesktopInputGeometry.normalized(point: point, bounds: bounds, videoSize: videoSize, clamp: clamp)
-    }
-
-    private func button(_ number: Int) -> Dieter_V1_RemoteDesktopPointerButton.Button {
-        switch number {
-        case 2: .middle
-        case 3: .back
-        case 4: .forward
-        default: .middle
-        }
-    }
-
-    private func modifierIsDown(keyCode: UInt16, flags: NSEvent.ModifierFlags) -> Bool {
-        switch keyCode {
-        case 54, 55: flags.contains(.command)
-        case 56, 60: flags.contains(.shift)
-        case 57: flags.contains(.capsLock)
-        case 58, 61: flags.contains(.option)
-        case 59, 62: flags.contains(.control)
-        case 63: flags.contains(.function)
-        default: false
-        }
-    }
-    func insertText(_ string: Any, replacementRange: NSRange) {
-        let text = (string as? NSAttributedString)?.string ?? (string as? String ?? "")
-        controller?.sendText(text); unmarkText()
-    }
-    func setMarkedText(_ string: Any, selectedRange: NSRange, replacementRange: NSRange) {
-        markedText = (string as? NSAttributedString) ?? NSAttributedString(string: string as? String ?? "")
-        markedSelection = selectedRange
-    }
-    func unmarkText() {
-        markedText = NSAttributedString(string: ""); markedSelection = NSRange(location: NSNotFound, length: 0)
-    }
-    func selectedRange() -> NSRange { markedSelection }
-    func markedRange() -> NSRange {
-        hasMarkedText() ? NSRange(location: 0, length: markedText.length) : NSRange(location: NSNotFound, length: 0)
-    }
-    func hasMarkedText() -> Bool { markedText.length > 0 }
-    func attributedSubstring(forProposedRange range: NSRange, actualRange: NSRangePointer?) -> NSAttributedString? {
-        guard range.location != NSNotFound, NSMaxRange(range) <= markedText.length else { return nil }
-        actualRange?.pointee = range; return markedText.attributedSubstring(from: range)
-    }
-    func validAttributesForMarkedText() -> [NSAttributedString.Key] { [] }
-    func firstRect(forCharacterRange range: NSRange, actualRange: NSRangePointer?) -> NSRect {
-        actualRange?.pointee = markedRange()
-        return window?.convertToScreen(convert(NSRect(x: bounds.midX, y: bounds.midY, width: 1, height: 20), to: nil))
-            ?? .zero
-    }
-    func characterIndex(for point: NSPoint) -> Int { 0 }
-    override func doCommand(by selector: Selector) {
-        // Commands produced by the local input method (arrows, delete, return).
-        let keys: [String: UInt16] = [
-            "insertNewline:": 36, "insertTab:": 48, "deleteBackward:": 51, "deleteForward:": 117,
-            "moveLeft:": 123, "moveRight:": 124, "moveDown:": 125, "moveUp:": 126, "cancelOperation:": 53,
-        ]
-        if let code = keys[NSStringFromSelector(selector)] {
-            controller?.sendKey(code: code, down: true, repeat: false, modifiers: [])
-            controller?.sendKey(code: code, down: false, repeat: false, modifiers: [])
-        }
-    }
-
-}
-
-enum RemoteDesktopInputGeometry {
-    static func normalized(point: CGPoint, bounds: CGRect, videoSize: CGSize, clamp: Bool = false) -> CGPoint? {
-        guard bounds.width > 0, bounds.height > 0, videoSize.width > 0, videoSize.height > 0 else {
-            return nil
-        }
-        let content = contentRect(bounds: bounds, videoSize: videoSize)
-        guard clamp || content.contains(point) else { return nil }
-        return CGPoint(
-            x: max(0, min(1, (point.x - content.minX) / content.width)),
-            y: max(0, min(1, 1 - (point.y - content.minY) / content.height)))
-    }
-    static func contentRect(bounds: CGRect, videoSize: CGSize) -> CGRect {
-        guard videoSize.width > 0, videoSize.height > 0 else { return .zero }
-        let scale = min(bounds.width / videoSize.width, bounds.height / videoSize.height)
-        let size = CGSize(width: videoSize.width * scale, height: videoSize.height * scale)
-        return CGRect(
-            x: bounds.midX - size.width / 2, y: bounds.midY - size.height / 2, width: size.width, height: size.height)
-    }
-}
-
-private final class RemoteDesktopFocusObservers {
-    var tokens: [NSObjectProtocol] = []
-    deinit { tokens.forEach(NotificationCenter.default.removeObserver) }
 }

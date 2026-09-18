@@ -182,6 +182,7 @@ internal fun BoardLabelFilters(
 @Composable
 internal fun LaneTabs(state: DieterUiState, model: DieterViewModel, visibleCards: List<BoardCard>) {
     val board = state.board ?: return
+    if (board.lanesCount == 0) return
     val selectedIndex = board.lanesList.indexOfFirst { it.id == state.selectedLane }.coerceAtLeast(0)
     PrimaryScrollableTabRow(
         selectedTabIndex = selectedIndex,

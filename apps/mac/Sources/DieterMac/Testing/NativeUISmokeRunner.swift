@@ -649,7 +649,8 @@
                 let switched = await waitUntil(timeout: 3) {
                     store.screensModel.selectedSessionID == session.id
                         && session.controller.renderer.window === window
-                        && (session.controller.renderer.superview as? RemoteDesktopInputView)?.controller === session.controller
+                        && (session.controller.renderer.superview as? RemoteDesktopInputView)?.controller
+                            === session.controller
                         && session.controller.clipboardVisible
                 }
                 screenSwitchesPassed = screenSwitchesPassed && clicked && switched
@@ -665,8 +666,12 @@
                     && store.screensModel.connectedCount == 1
                     && otherScreen.controller.phase == .idle
             }
-            results["01a-screen-tab-close"] = closedScreen && restoredScreen
+            results["01a-screen-tab-close"] =
+                closedScreen && restoredScreen
                 ? "passed" : "failed: closing the selected tab did not restore the other screen"
+            results.merge(
+                await ScreenShareUISmoke.run(store: store, session: retainedScreen, window: window, output: output)
+            ) { _, new in new }
             await store.openBoard(board.id, projectID: project.id)
             try? await DieterTaskSleep.milliseconds(500)
             results["01b-screen-navigation-retention"] =
@@ -677,7 +682,8 @@
             try? await DieterTaskSleep.milliseconds(700)
             let earlyScreenTimeoutVisible = await waitUntil(timeout: 3) {
                 NativeUIAccessibility.find("settings.screenShare.inactivityTimeoutEnabled", in: window) != nil
-                    && ((NativeUIAccessibility.find("settings.screenShare.inactivityTimeoutMinutes", in: window) != nil) == store.screensModel.inactivityTimeoutEnabled)
+                    && ((NativeUIAccessibility.find("settings.screenShare.inactivityTimeoutMinutes", in: window) != nil)
+                        == store.screensModel.inactivityTimeoutEnabled)
             }
             results["01b-screen-timeout-settings"] =
                 earlyScreenTimeoutVisible ? "passed" : "failed: screen-share inactivity controls were missing"
@@ -857,7 +863,8 @@
                 store.section == .settings ? "passed" : "failed: settings did not open"
             let screenTimeoutVisible = await waitUntil(timeout: 3) {
                 NativeUIAccessibility.find("settings.screenShare.inactivityTimeoutEnabled", in: window) != nil
-                    && ((NativeUIAccessibility.find("settings.screenShare.inactivityTimeoutMinutes", in: window) != nil) == store.screensModel.inactivityTimeoutEnabled)
+                    && ((NativeUIAccessibility.find("settings.screenShare.inactivityTimeoutMinutes", in: window) != nil)
+                        == store.screensModel.inactivityTimeoutEnabled)
             }
             results["09a-settings-screen-timeout"] =
                 screenTimeoutVisible ? "passed" : "failed: screen-share inactivity controls were missing"

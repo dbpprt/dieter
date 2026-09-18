@@ -191,8 +191,9 @@ final class RemoteDesktopController {
     private(set) var eventOrdinal: UInt64 = 0
     private var previousStatistics: [String: Double] = [:]
     private var previousStatisticsTime = Date()
-    var controlActive = false
+    var controlActive = false { didSet { if oldValue != controlActive { onCursorChange() } } }
     var controlUnavailableReason = ""
+    @ObservationIgnored var onCursorChange: @MainActor () -> Void = {}
     @ObservationIgnored var onUserActivity: @MainActor () -> Void = {}
 
     let renderer = RemoteDesktopMetalView(frame: .zero)
@@ -462,7 +463,9 @@ final class RemoteDesktopController {
         let factory = RTCPeerConnectionFactory(
             encoderFactory: RTCDefaultVideoEncoderFactory(),
             decoderFactory: RemoteDesktopDecoderFactory(
-                onDecodedFrame: { frame in references.decoded(timestamp: UInt32(bitPattern: frame.timeStamp)); render(frame) }, enableHEVC: effectiveCodec != .h264,
+                onDecodedFrame: { frame in
+                    references.decoded(timestamp: UInt32(bitPattern: frame.timeStamp)); render(frame)
+                }, enableHEVC: effectiveCodec != .h264,
                 onHEVCUnavailable: { [weak self] in
                     Task { @MainActor [weak self] in
                         guard let self, self.owns(token) else { return }; self.hevcUnavailable()
@@ -543,7 +546,8 @@ final class RemoteDesktopController {
                 if codec.name.caseInsensitiveCompare("H265") == .orderedSame {
                     return effectiveCodec != .h264 && canHEVC
                 }
-                return codec.name.caseInsensitiveCompare("flexfec-03") == .orderedSame || (effectiveCodec != .hevc && codec.name.caseInsensitiveCompare("H264") == .orderedSame)
+                return codec.name.caseInsensitiveCompare("flexfec-03") == .orderedSame
+                    || (effectiveCodec != .hevc && codec.name.caseInsensitiveCompare("H264") == .orderedSame)
             }.sorted { $0.name == "H265" && $1.name != "H265" }
         guard !h264.isEmpty else {
             throw NSError(
@@ -1000,6 +1004,7 @@ final class RemoteDesktopController {
             }
             if let value = cursorCache[cursor.shapeID] { remoteCursor = value }
             remoteCursorState = cursor
+            onCursorChange()
         case .reference(let reference): referenceReceiver?.expect(reference)
         case .inputAck(let ordinal): sessionState.lastInputOrdinal = ordinal
         case nil: break
@@ -1036,6 +1041,7 @@ final class RemoteDesktopController {
                 token: generation, generation: state.mediaGeneration, timestamp: state.mediaTimestamp)
         }
         updateControlReadiness()
+        onCursorChange()
     }
 
     fileprivate func updateControlReadiness() {

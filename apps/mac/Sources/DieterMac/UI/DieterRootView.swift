@@ -105,6 +105,10 @@ struct DieterRootView: View {
                             makeConnection: { [weak store] machineID in
                                 guard let store else { throw CancellationError() }
                                 return try await store.remoteDesktopConnection(machineID: machineID)
+                            },
+                            showInDieter: { [weak store] in
+                                store?.section = .screens
+                                store?.reopenWorkspaceWindow()
                             })
                     case .files: FilesView(model: store.filesModel)
                     case .changes: ProjectChangesView()

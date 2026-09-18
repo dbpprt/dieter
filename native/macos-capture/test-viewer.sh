@@ -27,7 +27,9 @@ codesign --force --sign - "$SCREEN_TEST_ROOT/InputTarget.app"
 export DIETER_TEST_CAPTURE_HELPER="$SCREEN_TEST_ROOT/dieter-capture"
 export DIETER_TEST_SCREEN_FIXTURE="$SCREEN_TEST_ROOT/screens-fixture"
 export DIETER_TEST_INPUT_TARGET="$SCREEN_TEST_ROOT/InputTarget.app"
-if [ "${DIETER_TEST_SCREEN_RECOVERY:-0}" = "1" ]; then
+if [ "${DIETER_TEST_SCREEN_UNDOCK:-0}" = "1" ]; then
+  just mac test remoteDesktopUndockedEndToEnd
+elif [ "${DIETER_TEST_SCREEN_RECOVERY:-0}" = "1" ]; then
   just mac test remoteDesktopRecoveryAuthenticatedTransport
 elif [ "${DIETER_TEST_SCREEN_LATENCY_MATRIX:-0}" = "1" ]; then
   export DIETER_TEST_SCREEN_LATENCY_ONLY=1

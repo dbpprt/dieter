@@ -163,8 +163,7 @@ final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
     private var signals: [DispatchSourceSignal] = []
     private var actualEmbeddedCursor = false
     private var forceEmbeddedCursor = false  // stateQueue
-    private var cursorFallbackPending = false
-    private var cursorUnavailableSamples = 0
+    private var lastSystemCursor = NSCursor.arrow
     private var lastCursorGeneration: UInt64 = 0
     private var lastCursorShape = ""
     private var lastCursorPoint = CGPoint(x: -1, y: -1)
@@ -1103,15 +1102,15 @@ final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
             )
         }
         guard !config.0, !config.2 else { return }
-        guard let cursor = NSCursor.currentSystem, let png = cursorPNG(cursor) else {
-            cursorUnavailableSamples += 1
-            if cursorUnavailableSamples >= 3, !cursorFallbackPending {
-                cursorFallbackPending = true
-                Task { do { try await self.reconfigure(nil, embedCursor: true) } catch { self.stop() } }
-            }
-            return
-        }
-        cursorUnavailableSamples = 0
+        // A transiently unavailable system shape must not burn a second cursor
+        // into the video. Retain the last valid shape (initially the arrow), so
+        // clients keep moving their local hardware cursor without a round trip.
+        let candidate = NSCursor.currentSystem ?? lastSystemCursor
+        let cursor: NSCursor
+        let png: Data
+        if let encoded = cursorPNG(candidate) { cursor = candidate; png = encoded; lastSystemCursor = candidate }
+        else if let encoded = cursorPNG(lastSystemCursor) { cursor = lastSystemCursor; png = encoded }
+        else { return }
         let shape = SHA256.hash(data: png).map { String(format: "%02x", $0) }.joined()
         let point = CGEvent(source: nil)?.location ?? .zero
         let now = DispatchTime.now().uptimeNanoseconds

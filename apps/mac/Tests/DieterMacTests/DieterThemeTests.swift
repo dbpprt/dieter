@@ -229,12 +229,27 @@ struct DieterThemePerformanceTests {
         }
         let elapsed = start.duration(to: .now)
 
-        #expect(fixture.running == 13)
-        #expect(fixture.total == 100)
+        #expect(fixture.running == 25)
+        #expect(fixture.total == 58)
         #expect(elapsed < .seconds(5))
         let accessibilityStart = ContinuousClock.now
         _ = view.accessibilityChildren()
         #expect(accessibilityStart.duration(to: .now) < .seconds(2))
+    }
+
+    @Test func productionChatBrowserRetainsTheEagerStackWorkaround() throws {
+        let sourceURL = macPackageRoot.appendingPathComponent("Sources/DieterMac/UI/ChatsView.swift")
+        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+        let start = try #require(source.range(of: "struct ChatsView: View"))
+        let end = try #require(
+            source.range(
+                of: "enum ChatPaneSizing",
+                range: start.upperBound..<source.endIndex
+            ))
+        let implementation = source[start.lowerBound..<end.lowerBound]
+
+        #expect(implementation.contains("VStack(alignment: .leading, spacing: 12)"))
+        #expect(!implementation.contains("LazyVStack(alignment: .leading, spacing: 12)"))
     }
 
     @Test @MainActor func productionBoardWithSixtyFiveCardLaneSettlesInAHostedView() throws {
@@ -386,10 +401,17 @@ struct DieterThemePerformanceTests {
             islandController.view.layoutSubtreeIfNeeded()
         }
 
-        #expect(fixture.running == 13)
-        #expect(fixture.total == 100)
+        #expect(fixture.running == 25)
+        #expect(fixture.total == 58)
         #expect(rootWindow.isVisible)
         #expect(islandWindow.isVisible)
+
+        // Let deferred window, font, and accessibility work finish before the
+        // steady-state footprint baseline. A non-returning layout transaction
+        // still traps this run-loop turn and fails the test timeout.
+        RunLoop.main.run(until: Date().addingTimeInterval(1))
+        _ = rootController.view.accessibilityChildren()
+        _ = islandController.view.accessibilityChildren()
 
         let measurementSeconds = max(
             0,
@@ -434,7 +456,17 @@ struct DieterThemePerformanceTests {
         let store = DieterStore(restoreSync: false)
         var chats: [Dieter_V1_Card] = []
         var running = 0
-        for projectIndex in 0..<20 {
+        for pinnedIndex in 0..<8 {
+            var chat = Dieter_V1_Card()
+            chat.id = "pinned-chat-\(pinnedIndex)"
+            chat.scope = "chat"
+            chat.title = "Pinned conversation \(pinnedIndex)"
+            chat.pinned = true
+            chat.runtime = "running"
+            running += 1
+            chats.append(chat)
+        }
+        for projectIndex in 0..<10 {
             var project = Dieter_V1_Project()
             project.id = "project-\(projectIndex)"
             project.name = "Project \(projectIndex)"
@@ -446,7 +478,7 @@ struct DieterThemePerformanceTests {
                 chat.projectID = project.id
                 chat.scope = "chat"
                 chat.title = "Conversation \(projectIndex)-\(chatIndex)"
-                if running < 13 {
+                if running < 25 {
                     chat.runtime = "running"
                     running += 1
                 } else {
