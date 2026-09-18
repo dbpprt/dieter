@@ -11,7 +11,15 @@ final class RemoteNodeUITests: XCTestCase {
     }
 
     private func tap(_ app: XCUIApplication, _ identifier: String, timeout: TimeInterval = 20) {
-        let control = element(app, identifier)
+        let button = app.buttons.matching(identifier: identifier).firstMatch
+        if button.exists {
+            // Keyboard accessory buttons can disappear between two consecutive
+            // accessibility snapshots on iPad. Tap the resolved button before
+            // asking XCTest for another snapshot.
+            button.tap()
+            return
+        }
+        let control = app.descendants(matching: .any).matching(identifier: identifier).firstMatch
         XCTAssertTrue(control.waitForExistence(timeout: timeout), "Missing \(identifier).\n\(app.debugDescription)")
         control.tap()
     }
