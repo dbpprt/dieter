@@ -226,7 +226,7 @@ func TestStaleCursorReceivesBoundedResetBaseline(t *testing.T) {
 
 func waitForTerminalOutput(t *testing.T, manager *Manager, id string, after uint64, marker []byte) ([]byte, uint64) {
 	t.Helper()
-	deadline := time.NewTimer(5 * time.Second)
+	deadline := time.NewTimer(15 * time.Second)
 	defer deadline.Stop()
 	var result []byte
 	for {

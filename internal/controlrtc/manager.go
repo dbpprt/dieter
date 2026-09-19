@@ -225,8 +225,12 @@ func (m *Manager) Get(id, owner string) (*dieterv1.ControlConnection, error) {
 	if s == nil || (owner != "" && s.owner != owner) {
 		return nil, status.Error(codes.NotFound, "control connection not found")
 	}
-	result := &dieterv1.ControlConnection{SessionId: id, AnswerSdp: s.answer, ExpiresAt: s.expires.UTC().Format(time.RFC3339Nano), State: s.pc.ConnectionState().String(), Mode: "unknown"}
-	if s.pc.SCTP() != nil && s.pc.SCTP().Transport() != nil {
+	connectionState := s.pc.ConnectionState()
+	result := &dieterv1.ControlConnection{SessionId: id, AnswerSdp: s.answer, ExpiresAt: s.expires.UTC().Format(time.RFC3339Nano), State: connectionState.String(), Mode: "unknown"}
+	// Pion starts its ICE transport asynchronously from SetRemoteDescription.
+	// Reading the selected pair before the peer reaches connected can race with
+	// that initialization; the pair is meaningful only after connection anyway.
+	if connectionState == webrtc.PeerConnectionStateConnected && s.pc.SCTP() != nil && s.pc.SCTP().Transport() != nil {
 		pair, err := s.pc.SCTP().Transport().ICETransport().GetSelectedCandidatePair()
 		if err == nil && pair != nil {
 			result.LocalCandidateType = pair.Local.Typ.String()
