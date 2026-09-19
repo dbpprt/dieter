@@ -479,8 +479,8 @@ mark, window label, and bar; then collapse both providers into one quota button
 before allowing the strip to collide with the existing header controls. In the
 compact board conversation, put that button in `sidebarActions`. The collapsed
 button shows the most constrained provider and opens the same details. Android
-uses the equivalent trailing app-bar control; tap opens a sheet because hover
-does not exist.
+and iOS use the equivalent trailing app-bar control; tap opens a native sheet
+because hover does not exist.
 
 ### Hover, focus, and account details
 
@@ -607,15 +607,15 @@ row, and either daemon can refresh it after the other disconnects.
 Exit: a signed-in CLI sees fresh and stale snapshots correctly without choosing
 a machine.
 
-### 4. Mac and Android UI
+### 4. Mac, iOS, and Android UI
 
-- Add gateway-scoped quota state and recovery to both clients.
+- Add gateway-scoped quota state and recovery to all three native clients.
 - Add blue OpenAI and orange Claude quota chips to the trailing conversation
   header, with conservative summary bars, responsive collapse, and anchored
   hover/focus/click details on Mac.
-- Add the Android app-bar/tap-sheet equivalent and adaptive full account-usage
-  panels on both clients, including refresh actions, stale states, and provider
-  links.
+- Add the iOS and Android app-bar/tap-sheet equivalents and adaptive full
+  account-usage panels on all clients, including refresh actions, stale states,
+  and provider links.
 - Hide the panel for old gateways and keep cached values through daemon loss.
 
 Exit: native UI tests cover the header bars and details in fresh, refreshing,

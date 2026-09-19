@@ -99,6 +99,30 @@
                     }
                     .disabled(store.busy)
                 }
+                if !store.providerQuotaGroups.isEmpty || store.providerQuotasLoading {
+                    Section("Provider quotas") {
+                        ForEach(store.providerQuotaGroups, id: \.provider.rawValue) { group in
+                            HStack {
+                                Label(
+                                    group.provider == .openaiCodex ? "OpenAI" : "Claude",
+                                    systemImage: group.provider == .openaiCodex ? "sparkles" : "brain.head.profile")
+                                Spacer()
+                                if group.hasSummary, group.summary.hasRemainingPercent {
+                                    Text("\(group.summary.remainingPercent)%")
+                                        .monospacedDigit()
+                                        .foregroundStyle(group.provider == .openaiCodex ? .blue : .orange)
+                                }
+                                Text("\(group.summary.includedAccountCount)/\(group.summary.totalAccountCount)")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        Button("Refresh quotas", systemImage: "arrow.clockwise") {
+                            Task { await store.loadProviderQuotas(requestRefresh: true) }
+                        }
+                        .disabled(store.providerQuotasLoading)
+                    }
+                }
                 Section {
                     Button("Sign out", role: .destructive) { signOutPresented = true }
                         .accessibilityIdentifier("ios.settings.sign-out")

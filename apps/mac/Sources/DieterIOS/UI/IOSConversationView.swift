@@ -46,6 +46,7 @@
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItemGroup(placement: .topBarTrailing) {
+                    IOSProviderQuotaCompactView(store: store)
                     if isRunning {
                         Button("Stop task", systemImage: "stop.circle") { Task { await store.cancelTask() } }
                             .disabled(!store.phase.isConnected || store.busy)

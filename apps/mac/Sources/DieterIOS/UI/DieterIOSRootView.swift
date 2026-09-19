@@ -19,7 +19,26 @@
 
         public init() {}
 
+        #if DEBUG
+            private var quotaPreviewMode: String? {
+                ProcessInfo.processInfo.environment["DIETER_IOS_QUOTA_PREVIEW"]
+            }
+        #endif
+
+        @ViewBuilder
         public var body: some View {
+            #if DEBUG
+                if let quotaPreviewMode {
+                    IOSProviderQuotaPreviewScreen(showDetails: quotaPreviewMode == "details")
+                } else {
+                    connectedContent
+                }
+            #else
+                connectedContent
+            #endif
+        }
+
+        private var connectedContent: some View {
             Group {
                 if store.isAuthenticated {
                     workspace
