@@ -11,18 +11,23 @@
         let browseFiles: () -> Void
         @State private var sending = false
         @State private var followsLatest = true
-        @State private var bottomVisible = false
+        @State private var isAtLatest = false
+        @State private var contentCanScroll = false
         @State private var userScrolling = false
-        @State private var scrollPosition = ScrollPosition(edge: .bottom)
+        @State private var timelineReadyCardID: String?
+        @State private var pageAnchorToRestore: String?
+        @State private var pageRestoreRequest = 0
         @State private var attachmentError: String?
         @State private var photoItems: [PhotosPickerItem] = []
         @State private var fileImporterPresented = false
         @FocusState private var composerFocused: Bool
 
         private var card: Dieter_V1_Card? {
-            guard store.selectedCard?.card.id == cardID else { return nil }
-            return store.selectedCard?.card
+            if store.selectedCard?.card.id == cardID { return store.selectedCard?.card }
+            return (store.cards + store.chats).first { $0.id == cardID }
         }
+
+        private var timelineReady: Bool { timelineReadyCardID == cardID }
 
         private var messages: [Dieter_V1_UiMessage] {
             guard store.conversation?.cardID == cardID else { return [] }
@@ -41,13 +46,13 @@
 
         var body: some View {
             Group {
-                if let card {
+                if let card, store.conversation?.cardID == cardID {
                     transcript(card)
                 } else {
-                    ProgressView("Opening task…").frame(maxWidth: .infinity, maxHeight: .infinity)
+                    IOSConversationLoadingView(isChat: card?.scope == "chat")
                 }
             }
-            .navigationTitle(card?.title ?? "Task")
+            .navigationTitle(card?.title ?? "Conversation")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItemGroup(placement: .topBarTrailing) {
@@ -80,7 +85,16 @@
                     .disabled(card == nil || !store.phase.isConnected)
                 }
             }
-            .task(id: cardID) { await store.selectCard(id: cardID) }
+            .task(id: cardID) {
+                timelineReadyCardID = nil
+                followsLatest = true
+                isAtLatest = false
+                contentCanScroll = false
+                userScrolling = false
+                pageAnchorToRestore = nil
+                pageRestoreRequest = 0
+                await store.selectCard(id: cardID)
+            }
             .fileImporter(
                 isPresented: $fileImporterPresented,
                 allowedContentTypes: [.item],
@@ -119,94 +133,187 @@
         }
 
         private func transcript(_ card: Dieter_V1_Card) -> some View {
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 22) {
-                    HStack {
-                        IOSStatusBadge(state: card.runtime)
-                        Spacer()
-                        Text(card.model).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                    }
-                    if store.hasOlderMessages {
-                        Button {
-                            let previousFirst = messages.first?.id
-                            followsLatest = false
-                            Task {
-                                await store.loadOlderMessages()
-                                if let previousFirst { scrollPosition.scrollTo(id: previousFirst, anchor: .top) }
+            ScrollViewReader { proxy in
+                ZStack {
+                    ScrollView {
+                        // The transcript is bounded to 240 messages. An eager stack keeps every explicit
+                        // scroll target alive while pages are prepended or the retained tail is compacted.
+                        VStack(alignment: .leading, spacing: 22) {
+                            HStack(spacing: 10) {
+                                IOSStatusBadge(state: card.runtime)
+                                Spacer(minLength: 12)
+                                Label(card.model, systemImage: "sparkles")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
                             }
-                        } label: {
-                            HStack {
-                                if store.loadingOlder { ProgressView() }
-                                Text(store.loadingOlder ? "Loading earlier messages…" : "Load earlier messages")
-                            }.frame(maxWidth: .infinity)
+                            .padding(.horizontal, 12)
+                            .frame(minHeight: 36)
+                            .background(.thinMaterial, in: Capsule())
+
+                            if store.hasOlderMessages {
+                                Button {
+                                    loadOlderMessages(keeping: messages.first?.id)
+                                } label: {
+                                    HStack(spacing: 8) {
+                                        if store.loadingOlder { ProgressView().controlSize(.small) }
+                                        Text(
+                                            store.loadingOlder
+                                                ? "Loading earlier messages…" : "Load earlier messages")
+                                    }
+                                    .frame(maxWidth: .infinity)
+                                }
+                                .buttonStyle(.bordered)
+                                .disabled(store.loadingOlder || !store.phase.isConnected)
+                                .accessibilityIdentifier("ios.conversation.earlier")
+                            }
+
+                            if messages.isEmpty {
+                                ContentUnavailableView(
+                                    "Ready when you are", systemImage: "bubble.left.and.bubble.right",
+                                    description: Text(
+                                        card.initialPrompt.isEmpty ? "Send a message to begin." : card.initialPrompt)
+                                )
+                                .padding(.vertical, 32)
+                            }
+
+                            ForEach(IOSConversationPresentation.timelineItems(messages)) { item in
+                                if item.isActivity {
+                                    IOSConversationActivityDisclosure(steps: item.steps, identifier: item.id)
+                                        .id(item.id)
+                                } else if let message = item.messages.first {
+                                    IOSConversationMessage(message: message)
+                                        .id(item.id)
+                                }
+                            }
+
+                            if isRunning {
+                                IOSConversationTurnIndicator(
+                                    startedAt: IOSConversationPresentation.turnStart(
+                                        messages: messages, runtimeUpdatedAt: card.runtimeUpdatedAt),
+                                    stopping: card.runtime.lowercased() == "cancelling"
+                                )
+                                .id("ios.conversation.agent-working")
+                            }
+
+                            Color.clear.frame(height: 1).id(IOSConversationScrollBehavior.bottomID)
                         }
-                        .disabled(store.loadingOlder || !store.phase.isConnected)
-                        .accessibilityIdentifier("ios.conversation.earlier")
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 20)
+                        .frame(maxWidth: 900)
+                        .frame(maxWidth: .infinity)
                     }
-                    if messages.isEmpty {
-                        ContentUnavailableView(
-                            "Ready when you are", systemImage: "bubble.left",
-                            description: Text(
-                                card.initialPrompt.isEmpty ? "Send a message to begin." : card.initialPrompt))
-                    }
-                    ForEach(IOSConversationPresentation.timelineItems(messages)) { item in
-                        if item.isActivity {
-                            IOSConversationActivityDisclosure(steps: item.steps, identifier: item.id)
-                                .id(item.id)
-                        } else if let message = item.messages.first {
-                            IOSConversationMessage(message: message)
-                                .id(message.id)
+                    .opacity(timelineReady ? 1 : 0)
+                    .accessibilityHidden(!timelineReady)
+                    .allowsHitTesting(timelineReady)
+                    .accessibilityIdentifier("ios.conversation.transcript")
+                    .scrollDismissesKeyboard(.interactively)
+                    .defaultScrollAnchor(.bottom, for: .initialOffset)
+                    .defaultScrollAnchor(.top, for: .sizeChanges)
+                    .onScrollGeometryChange(for: IOSConversationScrollSample.self) { geometry in
+                        IOSConversationScrollSample(geometry)
+                    } action: { previous, current in
+                        isAtLatest = current.atEnd
+                        contentCanScroll = current.canScroll
+                        if userScrolling { followsLatest = current.atEnd }
+                        if !timelineReady, current.atEnd { timelineReadyCardID = cardID }
+                        if !userScrolling, followsLatest, !current.atEnd, current.layout != previous.layout {
+                            requestLatestScroll(proxy)
                         }
                     }
-                    Color.clear.frame(height: 1)
-                        .onAppear {
-                            bottomVisible = true
-                            followsLatest = true
+                    .onScrollPhaseChange { oldPhase, newPhase in
+                        let wasUserScrolling = oldPhase == .interacting || oldPhase == .decelerating
+                        let isUserScrolling = newPhase == .interacting || newPhase == .decelerating
+                        userScrolling = isUserScrolling
+                        if isUserScrolling {
+                            followsLatest = isAtLatest
+                        } else if wasUserScrolling {
+                            followsLatest = isAtLatest
+                            if isAtLatest, !store.loadingOlder, store.trimHistoryAtBottom() {
+                                requestLatestScroll(proxy)
+                            }
                         }
-                        .onDisappear {
-                            bottomVisible = false
-                            if userScrolling { followsLatest = false }
+                    }
+                    .onChange(of: store.conversation?.lastSeq) { _, _ in
+                        if followsLatest { requestLatestScroll(proxy) }
+                    }
+                    .onChange(of: pageRestoreRequest) { _, _ in
+                        guard let anchor = pageAnchorToRestore else { return }
+                        Task { @MainActor in
+                            await Task.yield()
+                            scroll(proxy, to: anchor, anchor: .top)
+                            pageAnchorToRestore = nil
                         }
+                    }
+                    .overlay(alignment: .bottom) {
+                        if timelineReady, contentCanScroll, !isAtLatest, !messages.isEmpty {
+                            Button("Jump to latest", systemImage: "arrow.down") {
+                                jumpToLatest(proxy)
+                            }
+                            .font(.subheadline.weight(.semibold))
+                            .padding(.horizontal, 14).padding(.vertical, 10)
+                            .modifier(IOSFloatingGlassModifier(shape: Capsule()))
+                            .buttonStyle(.plain)
+                            .padding(.bottom, 10)
+                            .accessibilityIdentifier("ios.conversation.latest")
+                        }
+                    }
+                    .background(Color(uiColor: .systemBackground))
+
+                    if !timelineReady {
+                        IOSConversationLoadingView(isChat: card.scope == "chat", preparingTimeline: true)
+                            .allowsHitTesting(false)
+                    }
                 }
-                .scrollTargetLayout()
-                .padding(.horizontal, 20)
-                .padding(.vertical, 20)
-                .frame(maxWidth: 900)
-                .frame(maxWidth: .infinity)
-            }
-            .accessibilityIdentifier("ios.conversation.transcript")
-            .scrollDismissesKeyboard(.interactively)
-            .scrollPosition($scrollPosition)
-            .onScrollPhaseChange { _, phase in
-                userScrolling = phase == .interacting || phase == .decelerating
-                if phase == .idle {
-                    followsLatest = bottomVisible
-                    if bottomVisible, !store.loadingOlder, store.trimHistoryAtBottom() {
-                        scrollPosition.scrollTo(edge: .bottom)
+                .task(id: cardID) {
+                    // Give the eager stack more than one layout pass before revealing it. If a proxy request
+                    // arrives before its target is mounted, the next pass repeats it and geometry still keeps
+                    // the recovery button honest instead of claiming that an offset viewport is at the tail.
+                    for _ in 0..<3 {
+                        await Task.yield()
+                        scroll(proxy, to: IOSConversationScrollBehavior.bottomID, anchor: .bottom)
                     }
+                    await Task.yield()
+                    timelineReadyCardID = cardID
                 }
+                .safeAreaInset(edge: .bottom, spacing: 0) { composer }
             }
-            .defaultScrollAnchor(.bottom, for: .initialOffset)
-            .onChange(of: store.conversation?.lastSeq) { _, _ in
-                if followsLatest { scrollPosition.scrollTo(edge: .bottom) }
-            }
-            .overlay(alignment: .bottom) {
-                if !bottomVisible, !messages.isEmpty {
-                    Button("Jump to latest", systemImage: "arrow.down") {
-                        followsLatest = true
-                        // Compact first, then pin the real edge of the shorter lazy stack. Retaining the old
-                        // sentinel offset can leave the viewport below the content as an empty dark screen.
-                        if !store.loadingOlder { store.trimHistoryAtBottom() }
-                        scrollPosition.scrollTo(edge: .bottom)
-                    }
-                    .font(.subheadline.weight(.semibold))
-                    .padding(.horizontal, 14).padding(.vertical, 10)
-                    .background(.regularMaterial, in: Capsule())
-                    .padding(.bottom, 10)
-                    .accessibilityIdentifier("ios.conversation.latest")
+        }
+
+        private func loadOlderMessages(keeping anchor: String?) {
+            guard let anchor else { return }
+            followsLatest = false
+            Task { @MainActor in
+                let previousFirst = messages.first?.id
+                await store.loadOlderMessages()
+                guard previousFirst != messages.first?.id else {
+                    return
                 }
+                pageAnchorToRestore = IOSConversationPresentation.anchorItem(
+                    containing: anchor,
+                    in: IOSConversationPresentation.timelineItems(messages))
+                guard pageAnchorToRestore != nil else { return }
+                pageRestoreRequest &+= 1
             }
-            .safeAreaInset(edge: .bottom, spacing: 0) { composer }
+        }
+
+        private func jumpToLatest(_ proxy: ScrollViewProxy) {
+            followsLatest = true
+            if !store.loadingOlder { store.trimHistoryAtBottom() }
+            requestLatestScroll(proxy)
+        }
+
+        private func requestLatestScroll(_ proxy: ScrollViewProxy) {
+            Task { @MainActor in
+                await Task.yield()
+                scroll(proxy, to: IOSConversationScrollBehavior.bottomID, anchor: .bottom)
+            }
+        }
+
+        private func scroll(_ proxy: ScrollViewProxy, to id: String, anchor: UnitPoint) {
+            var transaction = Transaction(animation: nil)
+            transaction.disablesAnimations = true
+            withTransaction(transaction) { proxy.scrollTo(id, anchor: anchor) }
         }
 
         private var composer: some View {
@@ -239,7 +346,7 @@
                                 }
                                 .font(.caption)
                                 .padding(.horizontal, 10).padding(.vertical, 7)
-                                .background(Color(uiColor: .secondarySystemGroupedBackground), in: Capsule())
+                                .modifier(IOSFloatingGlassModifier(shape: Capsule()))
                             }
                         }
                     }
@@ -254,86 +361,114 @@
                         .frame(maxWidth: 900, alignment: .leading)
                         .accessibilityIdentifier("ios.composer.attachment-error")
                 }
-                HStack(alignment: .bottom, spacing: 10) {
-                    PhotosPicker(
-                        selection: $photoItems,
-                        maxSelectionCount: max(
-                            1, IOSAttachmentLoader.maximumCount - draft.attachments.count),
-                        matching: .images
-                    ) {
-                        Image(systemName: "photo")
-                            .frame(width: 32, height: 42)
-                    }
-                    .disabled(draft.attachments.count >= IOSAttachmentLoader.maximumCount)
-                    .accessibilityLabel("Attach photos")
-                    .accessibilityIdentifier("ios.composer.attach-photos")
-                    Button {
-                        composerFocused = false
-                        fileImporterPresented = true
-                    } label: {
-                        Image(systemName: "paperclip")
-                            .frame(width: 32, height: 42)
-                    }
-                    .disabled(draft.attachments.count >= IOSAttachmentLoader.maximumCount)
-                    .accessibilityLabel("Attach files")
-                    .accessibilityIdentifier("ios.composer.attach-files")
-                    IOSAttachmentTextEditor(
-                        text: $draft.text,
-                        isFocused: Binding(
-                            get: { composerFocused },
-                            set: { composerFocused = $0 }
-                        ),
-                        placeholder: "Message the agent…",
-                        minimumLines: 1,
-                        maximumLines: 8,
-                        accessibilityIdentifier: "ios.composer.message",
-                        pastedImages: appendPastedImages,
-                        pasteFailed: showAttachmentError
-                    )
-                    .padding(12)
-                    .background(
-                        Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 18)
-                    )
-                    .contentShape(Rectangle())
-                    .simultaneousGesture(TapGesture().onEnded { composerFocused = true })
-                    Button {
-                        let message = draft
-                        sending = true
-                        Task {
-                            let accepted = await store.sendMessage(
-                                text: message.text, attachments: message.attachments, selection: message.selection)
-                            if accepted, draft.text == message.text,
-                                IOSConversationPresentation.attachmentIdentity(draft.attachments)
-                                    == IOSConversationPresentation.attachmentIdentity(message.attachments),
-                                draft.selection == message.selection
-                            {
-                                draft = IOSConversationDraft()
-                            }
-                            sending = false
-                            followsLatest = true
-                        }
-                    } label: {
-                        Group {
-                            if sending {
-                                ProgressView().tint(.white)
-                            } else {
-                                Image(systemName: "arrow.up").font(.headline)
-                            }
-                        }
-                        .frame(width: 42, height: 42)
-                    }
-                    .buttonStyle(.borderedProminent).buttonBorderShape(.circle)
-                    .disabled(
-                        sending || draft.isEmpty || !store.phase.isConnected
-                    )
-                    .accessibilityLabel("Send message")
-                    .accessibilityIdentifier("ios.composer.send")
-                }
-                .frame(maxWidth: 900)
+                composerInput
+                    .frame(maxWidth: 900)
             }
             .padding(.horizontal, 12).padding(.vertical, 10)
             .frame(maxWidth: .infinity)
-            .background(.bar)
+            .background {
+                LinearGradient(
+                    colors: [.clear, Color(uiColor: .systemBackground).opacity(0.92)],
+                    startPoint: .top,
+                    endPoint: .center
+                )
+                .ignoresSafeArea()
+            }
+        }
+
+        @ViewBuilder private var composerInput: some View {
+            let shape = RoundedRectangle(cornerRadius: 26, style: .continuous)
+            if #available(iOS 26.0, *) {
+                composerControls
+                    .padding(6)
+                    .glassEffect(.regular.interactive(), in: shape)
+            } else {
+                composerControls
+                    .padding(6)
+                    .background(.ultraThinMaterial, in: shape)
+                    .overlay(shape.stroke(Color.secondary.opacity(0.2), lineWidth: 0.75))
+                    .shadow(color: .black.opacity(0.08), radius: 12, y: 5)
+            }
+        }
+
+        private var composerControls: some View {
+            HStack(alignment: .bottom, spacing: 6) {
+                PhotosPicker(
+                    selection: $photoItems,
+                    maxSelectionCount: max(
+                        1, IOSAttachmentLoader.maximumCount - draft.attachments.count),
+                    matching: .images
+                ) {
+                    Image(systemName: "photo")
+                        .frame(width: 38, height: 42)
+                }
+                .modifier(IOSComposerAccessoryStyle())
+                .disabled(draft.attachments.count >= IOSAttachmentLoader.maximumCount)
+                .accessibilityLabel("Attach photos")
+                .accessibilityIdentifier("ios.composer.attach-photos")
+
+                Button {
+                    composerFocused = false
+                    fileImporterPresented = true
+                } label: {
+                    Image(systemName: "paperclip")
+                        .frame(width: 38, height: 42)
+                }
+                .modifier(IOSComposerAccessoryStyle())
+                .disabled(draft.attachments.count >= IOSAttachmentLoader.maximumCount)
+                .accessibilityLabel("Attach files")
+                .accessibilityIdentifier("ios.composer.attach-files")
+
+                IOSAttachmentTextEditor(
+                    text: $draft.text,
+                    isFocused: Binding(
+                        get: { composerFocused },
+                        set: { composerFocused = $0 }
+                    ),
+                    placeholder: "Message Dieter…",
+                    minimumLines: 1,
+                    maximumLines: 8,
+                    accessibilityIdentifier: "ios.composer.message",
+                    pastedImages: appendPastedImages,
+                    pasteFailed: showAttachmentError
+                )
+                .padding(.horizontal, 8).padding(.vertical, 4)
+                .contentShape(Rectangle())
+                .simultaneousGesture(TapGesture().onEnded { composerFocused = true })
+
+                Button(action: sendDraft) {
+                    Group {
+                        if sending {
+                            ProgressView().tint(.white)
+                        } else {
+                            Image(systemName: "arrow.up").font(.headline)
+                        }
+                    }
+                    .frame(width: 42, height: 42)
+                }
+                .modifier(IOSComposerSendStyle())
+                .disabled(sending || draft.isEmpty || !store.phase.isConnected)
+                .accessibilityLabel("Send message")
+                .accessibilityIdentifier("ios.composer.send")
+            }
+        }
+
+        private func sendDraft() {
+            let message = draft
+            followsLatest = true
+            sending = true
+            Task { @MainActor in
+                let accepted = await store.sendMessage(
+                    text: message.text, attachments: message.attachments, selection: message.selection)
+                if accepted, draft.text == message.text,
+                    IOSConversationPresentation.attachmentIdentity(draft.attachments)
+                        == IOSConversationPresentation.attachmentIdentity(message.attachments),
+                    draft.selection == message.selection
+                {
+                    draft = IOSConversationDraft()
+                }
+                sending = false
+            }
         }
 
         private func appendPastedImages(_ payloads: [IOSAttachmentPayload]) {
@@ -354,13 +489,206 @@
         }
     }
 
+    private struct IOSConversationLoadingView: View {
+        let isChat: Bool
+        var preparingTimeline = false
+
+        var body: some View {
+            VStack(spacing: 20) {
+                IOSDieterActivityGlyph(size: 82)
+                VStack(spacing: 6) {
+                    Text(
+                        preparingTimeline ? "Finishing the conversation…" : (isChat ? "Opening chat…" : "Opening task…")
+                    )
+                    .font(.headline)
+                    Text("Dieter is setting the table")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .padding(32)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background {
+                RadialGradient(
+                    colors: [Color.accentColor.opacity(0.08), .clear],
+                    center: .center,
+                    startRadius: 0,
+                    endRadius: 220)
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier("ios.conversation.loading")
+        }
+    }
+
+    private struct IOSDieterActivityGlyph: View {
+        let size: CGFloat
+        @Environment(\.accessibilityReduceMotion) private var reduceMotion
+        @State private var rotation = Angle.zero
+        @State private var breathing = false
+
+        var body: some View {
+            ZStack {
+                Circle()
+                    .fill(Color.accentColor.opacity(0.16))
+                    .frame(width: size * 1.18, height: size * 1.18)
+                    .blur(radius: size * 0.17)
+                    .scaleEffect(breathing ? 1.08 : 0.92)
+                Circle()
+                    .stroke(Color.accentColor.opacity(0.14), lineWidth: max(1, size * 0.025))
+                    .frame(width: size, height: size)
+                Circle()
+                    .trim(from: 0.08, to: 0.73)
+                    .stroke(
+                        AngularGradient(
+                            colors: [.clear, Color.accentColor.opacity(0.35), .accentColor, .clear],
+                            center: .center),
+                        style: StrokeStyle(lineWidth: max(2, size * 0.055), lineCap: .round)
+                    )
+                    .frame(width: size, height: size)
+                    .rotationEffect(rotation)
+                Circle()
+                    .fill(.ultraThinMaterial)
+                    .frame(width: size * 0.67, height: size * 0.67)
+                    .overlay(Circle().stroke(.white.opacity(0.22), lineWidth: 0.75))
+                Image(systemName: "fork.knife")
+                    .font(.system(size: size * 0.27, weight: .semibold, design: .rounded))
+                    .foregroundStyle(Color.accentColor)
+            }
+            .frame(width: size * 1.25, height: size * 1.25)
+            .onAppear {
+                guard !reduceMotion else { return }
+                withAnimation(.linear(duration: 1.7).repeatForever(autoreverses: false)) {
+                    rotation = .degrees(360)
+                }
+                withAnimation(.easeInOut(duration: 1.15).repeatForever(autoreverses: true)) {
+                    breathing = true
+                }
+            }
+            .accessibilityHidden(true)
+        }
+    }
+
+    private struct IOSConversationTurnIndicator: View {
+        let startedAt: Date?
+        let stopping: Bool
+        @Environment(\.accessibilityReduceMotion) private var reduceMotion
+        @State private var shimmer = false
+
+        private var label: String { stopping ? "Dieter is stopping…" : "Dieter is working…" }
+
+        var body: some View {
+            HStack(spacing: 9) {
+                IOSDieterActivityGlyph(size: 16)
+                Text(label)
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.secondary)
+                    .overlay {
+                        if !reduceMotion {
+                            GeometryReader { geometry in
+                                LinearGradient(
+                                    colors: [.clear, .primary.opacity(0.8), .clear],
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                )
+                                .frame(width: geometry.size.width)
+                                .offset(x: shimmer ? geometry.size.width : -geometry.size.width)
+                            }
+                            .mask(Text(label).font(.caption.weight(.medium)))
+                            .allowsHitTesting(false)
+                            .accessibilityHidden(true)
+                        }
+                    }
+                    .lineLimit(1)
+                Spacer(minLength: 8)
+                if let startedAt {
+                    Text(startedAt, style: .timer)
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                        .fixedSize()
+                        .accessibilityLabel("Elapsed turn time")
+                }
+            }
+            .padding(.horizontal, 12)
+            .frame(minHeight: 38)
+            .modifier(IOSFloatingGlassModifier(shape: Capsule()))
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier("ios.conversation.agent-working")
+            .onAppear {
+                guard !reduceMotion else { return }
+                withAnimation(.linear(duration: 2).repeatForever(autoreverses: false)) { shimmer = true }
+            }
+        }
+    }
+
+    private struct IOSConversationScrollLayout: Equatable {
+        let contentHeight: CGFloat
+        let viewportHeight: CGFloat
+        let bottomInset: CGFloat
+    }
+
+    private struct IOSConversationScrollSample: Equatable {
+        let layout: IOSConversationScrollLayout
+        let atEnd: Bool
+        let canScroll: Bool
+
+        init(_ geometry: ScrollGeometry) {
+            layout = IOSConversationScrollLayout(
+                contentHeight: geometry.contentSize.height,
+                viewportHeight: geometry.visibleRect.height,
+                bottomInset: geometry.contentInsets.bottom)
+            atEnd = IOSConversationScrollBehavior.isAtLatest(
+                visibleMaxY: geometry.visibleRect.maxY,
+                contentHeight: geometry.contentSize.height,
+                bottomInset: geometry.contentInsets.bottom)
+            canScroll = geometry.contentSize.height > geometry.visibleRect.height - geometry.contentInsets.bottom + 2
+        }
+    }
+
+    private struct IOSFloatingGlassModifier<GlassShape: Shape>: ViewModifier {
+        let shape: GlassShape
+
+        @ViewBuilder func body(content: Content) -> some View {
+            if #available(iOS 26.0, *) {
+                content.glassEffect(.regular.interactive(), in: shape)
+            } else {
+                content
+                    .background(.ultraThinMaterial, in: shape)
+                    .overlay(shape.stroke(Color.secondary.opacity(0.18), lineWidth: 0.75))
+            }
+        }
+    }
+
+    private struct IOSComposerAccessoryStyle: ViewModifier {
+        @ViewBuilder func body(content: Content) -> some View {
+            if #available(iOS 26.0, *) {
+                content.buttonStyle(.glass).buttonBorderShape(.circle)
+            } else {
+                content.buttonStyle(.plain).foregroundStyle(Color.accentColor)
+            }
+        }
+    }
+
+    private struct IOSComposerSendStyle: ViewModifier {
+        @ViewBuilder func body(content: Content) -> some View {
+            if #available(iOS 26.0, *) {
+                content.buttonStyle(.glassProminent).buttonBorderShape(.circle)
+            } else {
+                content.buttonStyle(.borderedProminent).buttonBorderShape(.circle)
+            }
+        }
+    }
+
     private struct IOSConversationMessage: View {
         let message: Dieter_V1_UiMessage
 
+        private var isUser: Bool { ["user", "human"].contains(message.role.lowercased()) }
+
         var body: some View {
             VStack(alignment: .leading, spacing: 10) {
-                Text(message.role == "user" ? "You" : message.role.capitalized)
-                    .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                Label(isUser ? "You" : "Dieter", systemImage: isUser ? "person.fill" : "sparkles")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(isUser ? Color.accentColor : Color.secondary)
                 ForEach(IOSConversationPresentation.partGroups(in: message)) { group in
                     if group.isActivity {
                         IOSConversationActivityDisclosure(steps: group.steps, identifier: group.id)
@@ -371,13 +699,19 @@
                     }
                 }
             }
-            .padding(message.role == "user" ? 14 : 0)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(isUser ? 14 : 0)
             .background {
-                if message.role == "user" {
-                    RoundedRectangle(cornerRadius: 18).fill(Color(uiColor: .secondarySystemBackground))
+                if isUser {
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .fill(Color.accentColor.opacity(0.10))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                                .stroke(Color.accentColor.opacity(0.16), lineWidth: 0.75)
+                        }
                 }
             }
+            .padding(.leading, isUser ? 34 : 0)
+            .frame(maxWidth: .infinity, alignment: isUser ? .trailing : .leading)
         }
     }
 
@@ -404,10 +738,11 @@
                     .padding(.top, 6)
                 }
             } label: {
-                Text(IOSConversationActivitySummary(steps: steps).title)
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(.secondary)
+                Label(IOSConversationActivitySummary(steps: steps).title, systemImage: "waveform.path.ecg")
+                    .font(.caption.weight(.medium)).foregroundStyle(.secondary)
             }
+            .padding(.horizontal, 12).padding(.vertical, 9)
+            .background(Color.secondary.opacity(0.07), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
             .accessibilityIdentifier("ios.conversation.activity.\(identifier)")
             .accessibilityValue(expanded ? "Expanded" : "Collapsed")
         }

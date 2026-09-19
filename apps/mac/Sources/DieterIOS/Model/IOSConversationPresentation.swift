@@ -1,4 +1,5 @@
 import DieterAPI
+import DieterCore
 import Foundation
 
 struct IOSConversationDraft {
@@ -88,6 +89,17 @@ enum IOSConversationPresentation {
         }
     }
 
+    static func turnStart(messages: [Dieter_V1_UiMessage], runtimeUpdatedAt: String) -> Date? {
+        if let user = messages.last(where: { isUser($0) }),
+            let metadata = try? JSONSerialization.jsonObject(with: user.metadataJson) as? [String: Any],
+            let createdAt = metadata["createdAt"] as? String,
+            let date = DieterTimestamp.date(from: createdAt)
+        {
+            return date
+        }
+        return DieterTimestamp.date(from: runtimeUpdatedAt)
+    }
+
     static func timelineItems(_ messages: [Dieter_V1_UiMessage]) -> [IOSConversationTimelineItem] {
         var result: [IOSConversationTimelineItem] = []
         for (position, message) in messages.enumerated() {
@@ -108,6 +120,14 @@ enum IOSConversationPresentation {
             }
         }
         return result
+    }
+
+    static func anchorItem(
+        containing messageID: String,
+        in items: [IOSConversationTimelineItem]
+    ) -> String? {
+        guard !messageID.isEmpty else { return nil }
+        return items.first { item in item.messages.contains { $0.id == messageID } }?.id
     }
 
     static func partGroups(in message: Dieter_V1_UiMessage) -> [IOSConversationPartGroup] {
@@ -213,5 +233,18 @@ enum IOSConversationPresentation {
 
     private static func isUser(_ message: Dieter_V1_UiMessage) -> Bool {
         ["user", "human"].contains(message.role.lowercased())
+    }
+}
+
+enum IOSConversationScrollBehavior {
+    static let bottomID = "ios.conversation.bottom"
+    private static let latestTolerance: CGFloat = 2
+
+    static func isAtLatest(
+        visibleMaxY: CGFloat,
+        contentHeight: CGFloat,
+        bottomInset: CGFloat = 0
+    ) -> Bool {
+        visibleMaxY - bottomInset >= contentHeight - latestTolerance
     }
 }

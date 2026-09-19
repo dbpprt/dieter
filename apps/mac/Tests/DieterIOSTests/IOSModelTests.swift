@@ -355,6 +355,7 @@ struct IOSModelTests {
         #expect(items.map(\.isActivity) == [false, true, false])
         #expect(items[1].messages.map(\.id) == ["reasoning", "command", "edit"])
         #expect(IOSConversationActivitySummary(steps: items[1].steps).title == "Reasoning · 1 edit · 1 command")
+        #expect(IOSConversationPresentation.anchorItem(containing: "command", in: items) == items[1].id)
     }
 
     @Test func queuedSteeringRecognizesProviderWorkingStatuses() {
@@ -362,6 +363,33 @@ struct IOSModelTests {
         #expect(IOSConversationPresentation.isAgentWorking(conversationStatus: "", cardRuntime: "working"))
         #expect(!IOSConversationPresentation.isAgentWorking(conversationStatus: "idle", cardRuntime: "stopped"))
         #expect(!IOSConversationPresentation.isAgentWorking(conversationStatus: "queued", cardRuntime: "waiting"))
+    }
+
+    @Test func runningTurnTimeUsesTheLatestUserMessageAndFallsBackToRuntimeTime() throws {
+        var first = conversationMessage("first", role: "user", parts: [conversationPart("text", text: "First")])
+        first.metadataJson = Data(#"{"createdAt":"2026-09-10T10:00:00Z"}"#.utf8)
+        var latest = conversationMessage("latest", role: "human", parts: [conversationPart("text", text: "Latest")])
+        latest.metadataJson = Data(#"{"createdAt":"2026-09-10T10:04:00Z"}"#.utf8)
+        let assistant = conversationMessage("assistant", parts: [conversationPart("text", text: "Working")])
+
+        #expect(
+            IOSConversationPresentation.turnStart(
+                messages: [first, latest, assistant], runtimeUpdatedAt: "2026-09-10T10:05:00Z")
+                == DieterTimestamp.date(from: "2026-09-10T10:04:00Z"))
+        latest.metadataJson = Data(#"{"createdAt":"invalid"}"#.utf8)
+        #expect(
+            IOSConversationPresentation.turnStart(
+                messages: [latest, assistant], runtimeUpdatedAt: "2026-09-10T10:05:00Z")
+                == DieterTimestamp.date(from: "2026-09-10T10:05:00Z"))
+    }
+
+    @Test func conversationBottomDetectionAccountsForTheComposerInset() {
+        #expect(
+            IOSConversationScrollBehavior.isAtLatest(
+                visibleMaxY: 1_120, contentHeight: 1_000, bottomInset: 120))
+        #expect(
+            !IOSConversationScrollBehavior.isAtLatest(
+                visibleMaxY: 1_117, contentHeight: 1_000, bottomInset: 120))
     }
 
     @Test func mixedMessagesCollapseOnlyTheirRoutineActivityAndKeepFailuresVisible() {
