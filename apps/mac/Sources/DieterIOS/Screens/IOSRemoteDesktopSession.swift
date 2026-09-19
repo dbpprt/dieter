@@ -13,6 +13,7 @@
         case loading
         case disabled(String)
         case connecting
+        case waitingForHostApproval
         case streaming
         case reconnecting
         case failed(String)
@@ -23,6 +24,7 @@
             case .loading: "Checking machine…"
             case .disabled: "Screen sharing is off"
             case .connecting: "Connecting…"
+            case .waitingForHostApproval: "Waiting for approval on Linux host…"
             case .streaming: "Live"
             case .reconnecting: "Reconnecting…"
             case .failed: "Connection failed"
@@ -186,7 +188,9 @@
 
         private func startPeer(generation token: UInt64) async throws {
             guard owns(token), let connection else { throw CancellationError() }
-            phase = .connecting
+            phase =
+                capabilities.platform == "linux" && capabilities.capturePermission == "not_requested"
+                ? .waitingForHostApproval : .connecting
             let rtcConfiguration = RTCConfiguration()
             rtcConfiguration.sdpSemantics = .unifiedPlan
             rtcConfiguration.continualGatheringPolicy = .gatherContinually
@@ -266,13 +270,18 @@
             request.maxWidth = desiredConfiguration.maxWidth > 0 ? desiredConfiguration.maxWidth : 1_920
             request.maxHeight = desiredConfiguration.maxHeight > 0 ? desiredConfiguration.maxHeight : 1_080
             request.quality = quality
+            let portalCanRequestControl =
+                capabilities.platform == "linux" && capabilities.controlPermission == "not_requested"
             request.control =
                 settings.controlEnabled && capabilities.controlSupported
-                && capabilities.controlPermission == "granted"
+                && (capabilities.controlPermission == "granted" || portalCanRequestControl)
+            request.embeddedCursor = !capabilities.cursorSupported
             request.clipboard = false
             controlUnavailableReason =
                 settings.controlEnabled && !request.control
-                ? "Accessibility permission is required on the host" : ""
+                ? (capabilities.platform == "linux"
+                    ? "Remote-control permission is required from the Linux desktop portal"
+                    : "Accessibility permission is required on the host") : ""
             var description = Dieter_V1_RemoteDesktopSessionDescription()
             description.type = "offer"
             description.sdp = offer.sdp
@@ -284,6 +293,7 @@
             desiredConfiguration.maxFps = request.maxFps
             desiredConfiguration.maxBitrateKbps = request.maxBitrateKbps
             desiredConfiguration.quality = request.quality
+            desiredConfiguration.embeddedCursor = request.embeddedCursor
             startSignaling(connection: connection, request: request)
             startWatchdog(token: token)
         }
@@ -321,6 +331,10 @@
             peerWatchdog = Task { [weak self] in
                 try? await DieterTaskSleep.seconds(20)
                 guard let self, self.owns(token), self.phase != .streaming else { return }
+                if self.capabilities.platform == "linux" {
+                    try? await DieterTaskSleep.seconds(150)
+                    guard self.owns(token), self.phase != .streaming else { return }
+                }
                 self.recover()
             }
         }

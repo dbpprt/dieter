@@ -18,6 +18,9 @@ func recoverableCaptureFailure(err error) bool {
 	if strings.HasPrefix(err.Error(), "macOS Screen & System Audio Recording permission") {
 		return false
 	}
+	if strings.HasPrefix(err.Error(), "Linux screen capture requires approval") {
+		return false
+	}
 	if errors.Is(err, errNativeHelperStopped) || errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
 		return true
 	}

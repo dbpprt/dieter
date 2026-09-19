@@ -42,8 +42,10 @@ commit, its next service start restores the previous verified pair using the
 journal. Failures after this startup boundary are ordinary daemon failures, not
 automatic application/data rollback. Never roll back user data.
 
-The atomic directory exchange is implemented separately for macOS and Linux;
-Developer ID installation and native capture currently support macOS only.
+The atomic directory exchange is implemented separately for macOS and Linux.
+Developer ID verification remains macOS-specific; Linux verifies the signed
+release manifest and ELF architecture, and its managed runtime stages the daemon
+and native capture helper as one pair.
 The runtime holds at most an active pair, pending pair, and activation candidate
 during a normal update. The next staging operation reclaims interrupted private
 temporary directories while holding the installation lock.

@@ -29,6 +29,13 @@ class LinuxServiceEndToEndTest(unittest.TestCase):
             cwd=ROOT,
             check=True,
         )
+        self.capture_executable = self.temporary / "dieter-capture"
+        subprocess.run(
+            [str(ROOT / "native" / "linux-capture" / "build.sh"), str(self.capture_executable)],
+            cwd=ROOT,
+            check=True,
+            stdout=subprocess.DEVNULL,
+        )
         systemctl = self.bin / "systemctl"
         systemctl.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
         systemctl.chmod(0o755)
@@ -60,6 +67,7 @@ class LinuxServiceEndToEndTest(unittest.TestCase):
         self.assertEqual(install.returncode, 0, install.stdout)
         managed = self.root / "service" / "bin" / "dieter"
         self.assertTrue(os.access(managed, os.X_OK))
+        self.assertTrue(os.access(self.root / "service" / "bin" / "dieter-capture", os.X_OK))
         self.assertEqual((self.root.stat().st_mode & 0o777), 0o700)
         unit = self.config / "systemd" / "user" / "dieter.service"
         if systemd_analyze := shutil.which("systemd-analyze"):

@@ -24,6 +24,7 @@ import (
 	dieterdaemon "github.com/dbpprt/dieter/internal/daemon"
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
 	"github.com/dbpprt/dieter/internal/model"
+	"google.golang.org/protobuf/types/known/emptypb"
 )
 
 const (
@@ -479,16 +480,40 @@ current Git working tree is used.
 		}
 	}
 	fmt.Fprintln(c.Out, "\n4. Screen sharing permission")
-	if runtime.GOOS != "darwin" {
+	if runtime.GOOS != "darwin" && runtime.GOOS != "linux" {
 		fmt.Fprintln(c.Out, "Native screen hosting is unavailable on this platform; this daemon runs as a headless agent host.")
 	} else if *skipScreenSharing {
 		fmt.Fprintln(c.Out, "Skipped without changing the existing setting; run `dieter daemon permissions` when this machine should share its screen.")
+	} else if runtime.GOOS == "linux" {
+		capabilities, capabilityErr := c.remoteDesktopCapabilities()
+		if capabilityErr != nil {
+			return capabilityErr
+		}
+		if !capabilities.GetGraphicalSessionActive() || len(capabilities.GetDisplays()) == 0 || len(capabilities.GetCodecs()) == 0 {
+			reason := capabilities.GetUnavailableReason()
+			if reason == "" {
+				reason = "no active graphical session or compatible encoder"
+			}
+			fmt.Fprintf(c.Out, "Skipped screen onboarding: %s. The headless daemon remains available; run `dieter daemon permissions` after installing desktop dependencies.\n", reason)
+		} else if err := c.ensureRemoteDesktopPermissions(false, *noOpen); err != nil {
+			return err
+		}
 	} else if err := c.ensureRemoteDesktopPermissions(false, *noOpen); err != nil {
 		return err
 	}
 
 	fmt.Fprintln(c.Out)
 	return c.daemonStatus(nil)
+}
+
+func (c *CLI) remoteDesktopCapabilities() (*dieterv1.RemoteDesktopCapabilities, error) {
+	ctx, cancel := c.commandContext()
+	defer cancel()
+	client, rpcCtx, err := c.rpc(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return client.GetRemoteDesktopCapabilities(rpcCtx, &emptypb.Empty{})
 }
 
 func (c *CLI) daemonPermissions(args []string) error {
@@ -527,7 +552,11 @@ func (c *CLI) runRemoteDesktopPermissionGuide(checkOnly, noOpen bool) error {
 		fmt.Fprintf(c.Out, "Daemon: %s\nCapture helper: %s\n", value.GetDaemonExecutable(), value.GetCaptureExecutable())
 		if value.GetCaptureVerified() && value.GetControlVerified() {
 			fmt.Fprintln(c.Out, "Screen capture verified by the running daemon with a disposable encoded frame; no image was saved.")
-			fmt.Fprintln(c.Out, "Input permission verified; no click, keystroke, or cursor movement was injected.")
+			if value.GetPlatform() == "linux" {
+				fmt.Fprintln(c.Out, "Linux input backend verified without injecting input; a Wayland portal may request its device grant when a remote session starts.")
+			} else {
+				fmt.Fprintln(c.Out, "Input permission verified; no click, keystroke, or cursor movement was injected.")
+			}
 			if checkOnly {
 				return nil
 			}
@@ -547,7 +576,11 @@ func (c *CLI) runRemoteDesktopPermissionGuide(checkOnly, noOpen bool) error {
 		if checkOnly || attempt == 2 {
 			return fmt.Errorf("daemon screen sharing is not ready: %s", reason)
 		}
-		fmt.Fprintf(c.Out, "Screen sharing is not ready: %s\nGrant the running daemon (%s) access on its Mac.\n", reason, value.GetDaemonExecutable())
+		if value.GetPlatform() == "linux" {
+			fmt.Fprintf(c.Out, "Screen sharing is not ready: %s\nApprove the desktop portal prompt in the active Linux login, or verify the documented GStreamer/X11 dependencies.\n", reason)
+		} else {
+			fmt.Fprintf(c.Out, "Screen sharing is not ready: %s\nGrant the running daemon (%s) access on its Mac.\n", reason, value.GetDaemonExecutable())
+		}
 		for _, permission := range []struct {
 			verified    bool
 			title, pane string
@@ -555,7 +588,7 @@ func (c *CLI) runRemoteDesktopPermissionGuide(checkOnly, noOpen bool) error {
 			{value.GetCaptureVerified(), "Screen & System Audio Recording", "Privacy_ScreenCapture"},
 			{value.GetControlVerified(), "Accessibility", "Privacy_Accessibility"},
 		} {
-			if permission.verified {
+			if permission.verified || value.GetPlatform() != "darwin" {
 				continue
 			}
 			fmt.Fprintf(c.Out, "Privacy & Security → %s\n", permission.title)
@@ -577,7 +610,11 @@ func (c *CLI) runRemoteDesktopPermissionGuide(checkOnly, noOpen bool) error {
 }
 
 func (c *CLI) probeRemoteDesktopPermissions(requestControl bool) (*dieterv1.RemoteDesktopPermissionProbe, error) {
-	ctx, cancel := c.commandContext()
+	timeout := c.connectionTimeout()
+	if runtime.GOOS == "linux" && c.Timeout <= 0 {
+		timeout = 170 * time.Second
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	client, rpcCtx, err := c.rpc(ctx)
 	if err != nil {

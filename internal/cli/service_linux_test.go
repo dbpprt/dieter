@@ -12,6 +12,10 @@ import (
 )
 
 func TestInstallSystemdUserService(t *testing.T) {
+	testExecutable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
 	root := filepath.Join(t.TempDir(), "data with spaces")
 	config := filepath.Join(t.TempDir(), "config")
 	bin := t.TempDir()
@@ -27,7 +31,7 @@ func TestInstallSystemdUserService(t *testing.T) {
 	var output strings.Builder
 	if err := installSystemdUserService(root, linuxServiceInstallOptions{
 		start: true, address: "127.0.0.1:4242", directAddress: "0.0.0.0:4243",
-		directHost: "host.example.test", directNetwork: "tailscale",
+		directHost: "host.example.test", directNetwork: "tailscale", captureExecutable: testExecutable,
 	}, &output); err != nil {
 		t.Fatal(err)
 	}
@@ -60,7 +64,7 @@ func TestInstallSystemdUserService(t *testing.T) {
 		t.Fatalf("systemctl calls = %q", got)
 	}
 	if err := installSystemdUserService(root, linuxServiceInstallOptions{
-		start: true, address: "127.0.0.1:4242", directNetwork: "lan", preserveRoute: true,
+		start: true, address: "127.0.0.1:4242", directNetwork: "lan", preserveRoute: true, captureExecutable: testExecutable,
 	}, &output); err != nil {
 		t.Fatal(err)
 	}

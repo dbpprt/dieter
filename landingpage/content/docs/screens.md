@@ -1,7 +1,7 @@
 ---
 title: "Screens (remote desktop)"
 linkTitle: "Screens"
-description: "View and control an enrolled machine over peer-to-peer WebRTC with hardware H.264 or opt-in HEVC. Media never touches the gateway."
+description: "View and control an enrolled macOS or Linux machine over peer-to-peer WebRTC. Media never touches the gateway."
 group: "Guides"
 weight: 14
 slug: "screens"
@@ -25,17 +25,33 @@ dieter daemon permissions        # reopen the permission guide
 dieter daemon permissions --check
 ```
 
+## Capture on Linux
+
+Linux releases ship a matching unprivileged `dieter-capture` helper. X11 uses
+GStreamer XImage/XDamage capture, XRandR monitor geometry, and XTest input.
+Wayland uses the desktop's ScreenCast/RemoteDesktop portals and PipeWire; source
+selection and control consent therefore appear locally on the host. The helper
+prefers qualified VA-API, NVENC, or V4L2 H.264 and falls back to bounded x264 or
+OpenH264 when installed. Raw desktop pixels remain in the helper.
+
+An active graphical login, the distro's GStreamer plugins, and the appropriate
+portal backend are required. A headless Linux daemon remains fully usable for
+agents, terminals, and remote execution while screen hosting reports an
+actionable degraded reason. See the **[Linux host guide](https://github.com/dbpprt/dieter/blob/main/docs/linux-support.md)**
+for distro packages, systemd graphical-session behavior, and current feature
+limits.
+
 ## Selecting a source
 
 | Variable | Effect |
 | --- | --- |
-| `DIETER_REMOTE_DESKTOP_HELPER` | Select another signed native helper. |
+| `DIETER_REMOTE_DESKTOP_HELPER` | Select another native helper for development or isolated diagnostics. |
 | `DIETER_REMOTE_DESKTOP_DISPLAY` | Select another capture source (display). |
 | `DIETER_REMOTE_DESKTOP_SOURCE=synthetic` | Reserved for isolated transport diagnostics. |
 
-Linux daemons are headless hosts and do not advertise screen displays or
-codecs. The Mac and Android clients keep them visible for machine context but
-disable starting a screen session with the daemon-provided reason.
+Wayland portal sources can be represented as a locally approved selection
+rather than a passively enumerable monitor. A viewer shows “waiting for approval
+on Linux host” while that bounded local prompt is open.
 
 ## Transport and admission
 
@@ -43,12 +59,12 @@ The daemon hosts an H.264 or HEVC peer with Pion. Media and bounded remote input
 directly over ICE/DTLS/SRTP or through a separately configured TURN server,
 never through the Dieter gateway.
 
-The Mac verifies an Ed25519 binding between the offer, daemon DTLS fingerprint,
+Native clients verify an Ed25519 binding between the offer, daemon DTLS fingerprint,
 session, nonce, lease, control grant, display, and input epoch before applying
 the answer. Pointer motion uses an unordered no-retransmit DataChannel while
 keys, buttons, scrolling, and release-all use a reliable channel. The signed
-native helper owns macOS capture and event-posting permissions and releases
-every held input immediately on disconnect.
+macOS helper or release-verified Linux helper owns platform capture and input
+permission and releases every held input immediately on disconnect.
 
 {{< callout type="note" title="Capture is lazy" >}}
 Screen capture starts only after WebRTC connects and stops when its renewable
@@ -77,6 +93,8 @@ H.264 is the compatibility default. HEVC is opt-in, hardware encoded and decoded
 SDR Main 4:2:0, up to 1080p60. Automatic codec selection retains a bounded H.264
 fallback when HEVC initialization or first-frame decoding fails. H.264 supports
 up to 4K60 or 1080p120 when both endpoints and the network sustain it.
+Linux hosts currently advertise H.264 only; hardware ceilings and software
+fallbacks are capability-detected, and Linux HEVC is intentionally unavailable.
 
 Use `dieter screen status SESSION` to inspect actual stream size/rate, decoder
 identity, encoder configuration, timing endpoint and bounded recovery counters.

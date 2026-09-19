@@ -469,6 +469,9 @@ Service startup activates a staged verified release there before workers begin.
 	enrolled := identityErr == nil && identity.Enrolled()
 	remoteDesktopOptions := remotedesktop.Options{Logger: logger, Source: remoteDesktopSourceOptions(logger)}
 	remoteDesktopOptions.Source.ClipboardDirectory = filepath.Join(c.Store.Root, "clipboard")
+	if runtime.GOOS == "linux" {
+		remoteDesktopOptions.Source.PortalStatePath = filepath.Join(c.Store.Root, "screen", "linux-portal-token")
+	}
 	if enrolled {
 		remoteDesktopOptions.Identity = remotedesktop.Identity{
 			DaemonID: identity.ID, GatewayURL: identity.GatewayURL, Generation: identity.Generation,

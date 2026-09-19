@@ -64,13 +64,18 @@ Supported releases and beta builds cover these roles:
 | CLI and daemon host | Yes | Yes | Yes | No | No |
 | Gateway | Yes | Yes | Build from source | No | No |
 | Native viewer client | No | No | Yes | Beta | Yes |
-| Screen capture/control host | No | No | Yes | No | No |
+| Screen capture/control host | Yes¹ | Yes¹ | Yes | No | No |
+
+¹ Linux hosting requires an active X11 or Wayland desktop plus the feature-scoped
+GStreamer/portal packages in the [Linux host guide](docs/linux-support.md).
 
 ### Linux daemon host
 
-On a systemd-based Linux host, install
-[`cosign`](https://docs.sigstore.dev/cosign/system_config/installation/), then
-install the signed amd64/arm64 release and register a Git working tree:
+On a systemd-based Linux host, install Node.js 22.19 or newer, npm, Git,
+[`cosign`](https://docs.sigstore.dev/cosign/system_config/installation/), and
+`tmux`. Screen hosts additionally need GStreamer and the desktop portal/X11
+packages listed below. Then install the signed amd64/arm64 release and register
+a Git working tree:
 
 ```sh
 curl -fsSL https://github.com/dbpprt/dieter/releases/latest/download/install.sh | sh
@@ -79,11 +84,17 @@ dieter doctor
 ```
 
 The installer verifies the Sigstore-signed release manifest and archive
-checksum, installs atomically, and creates a private systemd user service when a
-user manager is available. Linux daemon hosting is headless: projects, agents,
-schedules, terminals, remote execution, telemetry, power operations, and
-managed updates are supported; native screen capture/control remains
-macOS-only. See the [Linux host guide](docs/linux-support.md).
+checksum, replaces each executable by atomic rename, and creates a private
+systemd user service when a user manager is available. The release and managed updater stage the daemon and
+`dieter-capture` helper as one verified pair. Linux hosts support X11 capture and
+XTest control, plus Wayland capture/control through the XDG ScreenCast and
+RemoteDesktop portals with PipeWire. Missing desktop/media packages degrade only
+screen hosting; projects, agents, schedules, terminals, remote execution,
+telemetry, power operations, and managed updates continue to work. `tmux` is
+required only for terminals to survive daemon restarts, but is recommended on
+every daemon host. See the
+[Linux host guide](docs/linux-support.md) for distro commands and the complete
+feature-scoped dependency list.
 
 ### macOS daemon and app
 
@@ -413,6 +424,11 @@ uses a light appearance and paginated A4 pages; HTML is a standalone document.
 
 ### Requirements
 
+These are source-development requirements. Published daemon releases do not
+require Go or `just`; their runtime and optional feature dependencies are
+documented in the [Linux host guide](docs/linux-support.md) and the platform app
+guides.
+
 - Go 1.26.8 or newer
 - Node.js 22.19 or newer on daemon hosts
 - [just](https://just.systems/) 1.58 or newer for development commands
@@ -430,15 +446,24 @@ just daemon build
 just gateway build
 ```
 
-The binaries are written to `bin/dieter` and `bin/dieter-gateway`. A normal
-agent machine needs only `dieter`; the public host needs only
-`dieter-gateway`.
+The Go binaries are written to `bin/dieter` and `bin/dieter-gateway`. Linux
+screen-host development builds `dieter-capture` with
+`native/linux-capture/build.sh`; published Linux daemon archives already include
+the helper. A headless source-built agent needs only `dieter`; the public host
+needs only `dieter-gateway`.
 
 Install a source build into a directory already on `PATH` (override `PREFIX` or
-`DESTDIR` for packaging):
+`DESTDIR` for packaging). Linux and macOS install the matching capture helper by
+default and therefore require the platform build dependencies:
 
 ```sh
 just install "$HOME/.local"
+```
+
+For a deliberately headless source installation, omit the helper explicitly:
+
+```sh
+just install "$HOME/.local" "" false
 ```
 
 Published macOS and Linux archives also contain `install.sh`. For a one-command
@@ -453,10 +478,12 @@ The installer requires `cosign` and rejects unsigned manifests, mismatched
 checksums, and unexpected archive paths. It accepts `--version VERSION`,
 `--install-dir DIR`, and `--no-service`; the existing `DIETER_VERSION`,
 `DIETER_INSTALL_DIR`, and `DIETER_NO_SERVICE=1` environment forms remain
-available for automation. On Linux it installs or refreshes the systemd user
-service when a user manager is available. The portable macOS archive installs
-the CLI and capture helper without registering a service; Homebrew remains the
-managed macOS route. For example, this pins a foreground installation:
+available for automation. On Linux it atomically replaces each CLI/helper
+executable and installs or refreshes the systemd user service, whose fixed runtime
+activates the verified pair together, when a user manager is available.
+The portable macOS archive installs the CLI and capture helper without registering
+a service; Homebrew remains the managed macOS route. For example, this pins a
+foreground installation:
 
 ```sh
 curl -fsSL https://github.com/dbpprt/dieter/releases/latest/download/install.sh \
@@ -912,11 +939,15 @@ video. Detaching or revoking signaling still ends the share after its bounded
 grace period. Mac renewal runs independently of the UI thread; recoverable session
 expiry opens a fresh authenticated route with at most three backoff attempts.
 
-Mac screen sharing uses ScreenCaptureKit, NV12 pixel buffers, hardware VideoToolbox
-H.264 or opt-in HEVC, and the Mac client's native WebRTC/Metal renderer. No FFmpeg executable or
-library is used. Capture, input injection and display enumeration live in the
-platform backend; the bounded media/session protocol can accommodate a Linux
-backend later. Linux capture is currently reported as unsupported.
+Mac hosting uses ScreenCaptureKit and VideoToolbox H.264 or opt-in HEVC. Linux
+hosting uses the companion native helper with in-process GStreamer: portal-selected
+PipeWire capture on Wayland, XImage/XDamage capture on X11, H.264 hardware
+encoders when qualified, and bounded x264/OpenH264 fallback. X11 control uses
+XTest; Wayland control uses the standard RemoteDesktop portal notification API.
+The helper never runs as root, uses `/dev/uinput`, or sends raw desktop pixels to
+the daemon. Portal source selection remains locally user-mediated. Linux text,
+image/file clipboard transfer, separate cursor metadata, HEVC, and physical mode
+switching are not advertised until their backend-specific contracts qualify.
 
 On Android, one finger moves the remote cursor like a trackpad. Two fingers
 continuously zoom and pan the desktop canvas in both axes, including below its

@@ -173,8 +173,8 @@ if [ -e "${temporary_directory}/${asset}/dieter-capture" ]; then
     test -f "${temporary_directory}/${asset}/dieter-capture"
     test ! -L "${temporary_directory}/${asset}/dieter-capture"
     test -x "${temporary_directory}/${asset}/dieter-capture"
-elif [ "$operating_system" = "darwin" ]; then
-    echo "The macOS release is missing its native capture helper." >&2
+elif [ "$operating_system" = "darwin" ] || [ "$operating_system" = "linux" ]; then
+    echo "The ${operating_system} release is missing its native capture helper." >&2
     exit 1
 fi
 
@@ -188,7 +188,11 @@ if [ -x "${temporary_directory}/${asset}/dieter-capture" ]; then
     mv -f "$capture_temp" "${install_directory}/dieter-capture"
 fi
 
-echo "Installed Dieter CLI to ${install_directory}/dieter"
+if [ -x "${install_directory}/dieter-capture" ]; then
+    echo "Installed Dieter CLI and capture helper to ${install_directory}"
+else
+    echo "Installed Dieter CLI to ${install_directory}/dieter"
+fi
 case ":${PATH}:" in
     *":${install_directory}:"*) ;;
     *) echo "Add ${install_directory} to PATH before invoking dieter." ;;

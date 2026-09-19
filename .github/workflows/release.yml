@@ -58,6 +58,8 @@ jobs:
       - uses: extractions/setup-just@v3
         with:
           just-version: "1.58.0"
+      - name: Install Linux screen helper build and runtime dependencies
+        run: just daemon linux-ci-dependencies
       - name: Install harness runtime
         run: just harness install
       - name: Run native Linux checks
@@ -67,7 +69,7 @@ jobs:
     name: ${{ matrix.asset }}
     if: github.event_name != 'workflow_dispatch' || inputs.publish
     needs: version
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
       matrix:
@@ -76,18 +78,22 @@ jobs:
             component: daemon
             goos: linux
             goarch: amd64
+            runner: ubuntu-latest
           - asset: dieter-linux-arm64
             component: daemon
             goos: linux
             goarch: arm64
+            runner: ubuntu-24.04-arm
           - asset: dieter-gateway-linux-amd64
             component: gateway
             goos: linux
             goarch: amd64
+            runner: ubuntu-latest
           - asset: dieter-gateway-linux-arm64
             component: gateway
             goos: linux
             goarch: arm64
+            runner: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v4
         with:
@@ -99,6 +105,9 @@ jobs:
       - uses: extractions/setup-just@v3
         with:
           just-version: "1.58.0"
+      - name: Install Linux screen helper build dependencies
+        if: matrix.component == 'daemon'
+        run: just daemon linux-ci-dependencies
       - name: Check component vulnerabilities before packaging
         env:
           COMPONENT: ${{ matrix.component }}
@@ -111,10 +120,6 @@ jobs:
           COMPONENT: ${{ matrix.component }}
           RELEASE_VERSION: ${{ needs.version.outputs.tag }}
         run: just "${COMPONENT}" package-release
-      - uses: docker/setup-qemu-action@v3
-        if: matrix.component == 'daemon' && matrix.goarch == 'arm64'
-        with:
-          platforms: arm64
       - name: Execute packaged Linux daemon
         if: matrix.component == 'daemon'
         env:

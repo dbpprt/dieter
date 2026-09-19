@@ -56,6 +56,7 @@ type SourceOptions struct {
 	// Optional named pasteboard for isolated native fixtures; empty uses the system clipboard.
 	ClipboardDirectory string
 	ClipboardName      string
+	PortalStatePath    string // Linux portal restore token; always under DIETER_HOME.
 	Kind               string
 	HelperPath         string
 	Display            string
@@ -70,7 +71,12 @@ type SourceOptions struct {
 	Control            bool
 }
 
-const captureProbeTimeout = 15 * time.Second
+var captureProbeTimeout = func() time.Duration {
+	if runtime.GOOS == "linux" {
+		return 150 * time.Second
+	}
+	return 15 * time.Second
+}()
 
 var errCaptureProbeComplete = errors.New("capture probe completed")
 
@@ -134,7 +140,7 @@ func NewFrameSource(options SourceOptions) (FrameSource, error) {
 	}
 	switch strings.TrimSpace(options.Kind) {
 	case "", "screen", "native-synthetic":
-		if runtime.GOOS == "darwin" {
+		if runtime.GOOS == "darwin" || runtime.GOOS == "linux" {
 			helper, err := resolveCaptureHelper(options.HelperPath)
 			if err != nil {
 				return nil, err
@@ -143,11 +149,11 @@ func NewFrameSource(options SourceOptions) (FrameSource, error) {
 				path: helper, display: options.Display, fps: options.FPS,
 				bitrateKbps: options.Bitrate, maxWidth: options.MaxWidth,
 				maxHeight: options.MaxHeight, logger: options.Logger,
-				profile: options.Profile, codec: options.Codec, referenceRecovery: options.RecoveryID != "", synthetic: options.Kind == "native-synthetic",
+				profile: options.Profile, codec: options.Codec, referenceRecovery: options.RecoveryID != "", synthetic: options.Kind == "native-synthetic", portalStatePath: options.PortalStatePath,
 				embeddedCursor: options.EmbeddedCursor, inputAllowed: options.Control,
 			}, nil
 		}
-		return nil, errors.New("native screen sharing is currently supported on macOS only")
+		return nil, errors.New("native screen sharing is unavailable on this platform")
 	case "synthetic":
 		return &syntheticSource{interval: time.Second / time.Duration(options.FPS)}, nil
 	default:
@@ -159,24 +165,24 @@ func SourceAvailable(options SourceOptions) (bool, string) {
 	if strings.TrimSpace(options.Kind) == "synthetic" {
 		return true, ""
 	}
-	if runtime.GOOS == "darwin" {
+	if runtime.GOOS == "darwin" || runtime.GOOS == "linux" {
 		if _, err := resolveCaptureHelper(options.HelperPath); err != nil {
 			return false, "Dieter native screen-capture helper is unavailable"
 		}
 		return true, ""
 	}
-	return false, "Native screen sharing is currently supported on macOS only"
+	return false, "Native screen sharing is unavailable on this platform"
 }
 
 func CaptureExecutable(options SourceOptions) (path, label string, err error) {
 	if strings.TrimSpace(options.Kind) == "synthetic" {
 		return "synthetic", "synthetic test source", nil
 	}
-	if runtime.GOOS == "darwin" {
+	if runtime.GOOS == "darwin" || runtime.GOOS == "linux" {
 		path, err = resolveCaptureHelper(options.HelperPath)
 		return path, "Dieter capture helper", err
 	}
-	return "", "", errors.New("native screen sharing is currently supported on macOS only")
+	return "", "", errors.New("native screen sharing is unavailable on this platform")
 }
 
 // ProbeControl verifies the event-posting permission of the exact helper used
@@ -185,8 +191,8 @@ func ProbeControl(ctx context.Context, options SourceOptions, request bool) erro
 	if strings.TrimSpace(options.Kind) == "synthetic" {
 		return nil
 	}
-	if runtime.GOOS != "darwin" {
-		return errors.New("remote desktop control is currently supported on macOS only")
+	if runtime.GOOS != "darwin" && runtime.GOOS != "linux" {
+		return errors.New("remote desktop control is unavailable on this platform")
 	}
 	helper, err := resolveCaptureHelper(options.HelperPath)
 	if err != nil {
@@ -196,12 +202,19 @@ func ProbeControl(ctx context.Context, options SourceOptions, request bool) erro
 	if request {
 		argument = "--request-control"
 	}
-	command := exec.CommandContext(ctx, helper, argument)
+	args := []string{argument}
+	if options.PortalStatePath != "" {
+		args = append(args, "--portal-state", options.PortalStatePath)
+	}
+	command := exec.CommandContext(ctx, helper, args...)
 	configureCaptureCommand(command)
 	if output, err := command.CombinedOutput(); err != nil {
 		message := strings.TrimSpace(string(output))
 		if message == "" {
 			message = err.Error()
+		}
+		if runtime.GOOS == "linux" {
+			return fmt.Errorf("Linux desktop input is unavailable in the running Dieter daemon's graphical session: %s", message)
 		}
 		return fmt.Errorf("macOS Accessibility permission is not granted in the running Dieter daemon's capture context: %s", message)
 	}
@@ -274,6 +287,10 @@ func nativeCaptureFailure(err error, diagnostic string) error {
 		return err
 	}
 	lower := strings.ToLower(diagnostic)
+	if runtime.GOOS == "linux" && (strings.Contains(lower, "portal") || strings.Contains(lower, "permission") ||
+		strings.Contains(lower, "denied") || strings.Contains(lower, "cancelled")) {
+		return fmt.Errorf("Linux screen capture requires approval in the active graphical session; run `dieter daemon permissions`: %w", err)
+	}
 	if strings.Contains(lower, "not authorized") || strings.Contains(lower, "permission") ||
 		strings.Contains(lower, "denied") || strings.Contains(lower, "user declined") ||
 		strings.Contains(lower, "-3801") {

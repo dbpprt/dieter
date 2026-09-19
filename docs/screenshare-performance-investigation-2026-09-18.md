@@ -77,7 +77,14 @@ Source entry points: [native capture](/Users/dbpprt/Development/dieter/native/ma
 
 The September 13 assessment is historical. Recommendations to first add hardware encoding, separate cursor handling, TWCC, HEVC, immediate decode presentation, LTR, or FEC would duplicate completed work. The September 17 latency document's statement that FEC was not enabled predates the later recovery implementation.
 
-Production host capture currently supports macOS only; synthetic transport fixtures are not other-platform capture backends. The [public screen guide](/Users/dbpprt/Development/dieter/landingpage/content/docs/screens.md:28) still advertises an FFmpeg source and one viewer, which conflict with the current implementation. Update that guide alongside the next screen release so operational tuning starts from accurate capabilities.
+Production host capture now supports macOS plus Linux X11 and Wayland portal
+backends; synthetic transport fixtures remain test-only. The performance table
+above describes the macOS hardware path. Linux uses in-process GStreamer H.264
+with capability-detected hardware/software encoders and the same bounded WebRTC
+transport; its qualification matrix is tracked in the
+[Linux screen-sharing plan](linux-screen-sharing-plan-2026-09-18.md). The
+[public screen guide](../landingpage/content/docs/screens.md) documents the
+current host and viewer behavior.
 
 ## What the comparison products teach us
 

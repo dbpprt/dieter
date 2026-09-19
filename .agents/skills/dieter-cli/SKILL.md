@@ -78,11 +78,11 @@ The update is detached, non-interactive, and logged on the target under
 because the daemon service intentionally restarts and reconnects.
 
 Linux verifies the release workflow's GitHub OIDC Sigstore identity and signed
-SHA-256 manifest, stages the static executable under `DIETER_HOME/service`, and
+SHA-256 manifest, stages the daemon/capture-helper pair under `DIETER_HOME/service`, and
 restarts from a separate systemd update unit. Listener readiness commits the
 activation; an unacknowledged start rolls back on the next restart. Use
 `dieter doctor` for Node/npm/Git, cosign, systemd, logind, tmux, shell, and
-private-storage diagnostics. Manage the user unit with `dieter daemon service`.
+private-storage and optional Linux screen-backend diagnostics. Manage the user unit with `dieter daemon service`.
 Never run the Linux daemon as root or edit the unit behind Dieter's CLI.
 
 Homebrew stages signed daemon/helper releases under
@@ -424,7 +424,9 @@ accepts 1–120; values above 60 clamp the requested geometry to 1920×1080. Che
 `screen capabilities` for the target's `maxFps` before requesting high refresh.
 Motion policy trades resolution before cadence under sustained congestion;
 automatic/detail policies retain their cadence-first behavior. Screen media uses native macOS
-capture and hardware H.264 or opt-in HEVC. Signed input protocol v3 supports control handoff;
+capture with hardware H.264 or opt-in HEVC, or Linux X11/portal capture with H.264.
+Linux requires the documented GStreamer and desktop-session dependencies; Wayland
+source selection remains locally portal-mediated. Signed input protocol v3 supports control handoff;
 clients retain v2 compatibility with older daemons.
 Adaptation preserves idle-screen geometry and recovery evidence across quiet
 intervals, reduces cadence before resolution, and requires fresh congestion
@@ -546,8 +548,8 @@ delete data without explicit authorization.
 For authorized permission diagnostics, `dieter screen permissions` returns JSON
 with the actual daemon/helper paths, capture verification, and input permission.
 It discards one encoded frame and never injects input. Exit is nonzero if either
-check fails. `--request-control` explicitly allows an Accessibility prompt on the
-daemon host. `dieter daemon permissions --check` provides the same service-side
+check fails. `--request-control` explicitly allows an Accessibility prompt on macOS
+or verifies the active Linux XTest/RemoteDesktop portal path. `dieter daemon permissions --check` provides the same service-side
 check as text. Both support global `--machine ID|NAME` and never fall back to a
 helper launched by the CLI. Interactive `dieter daemon permissions` guides the
 user and enables viewing/control via RPC only after verification. It does not

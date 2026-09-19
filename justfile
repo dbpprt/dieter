@@ -55,6 +55,7 @@ vet:
 # Run the complete platform-neutral repository validation.
 check: justfile-check workflow-check proto-core test-race vet build
     just harness test
+    just daemon linux-capture-test
 
 # Run the platform-neutral checks and both native client test suites.
 check-all: check
@@ -92,9 +93,9 @@ pre-commit:
     command -v pre-commit >/dev/null || { echo "pre-commit is required; install it with: brew install pre-commit" >&2; exit 1; }
     pre-commit run --all-files
 
-# Install the Dieter CLI. PREFIX defaults to /usr/local.
-install prefix="/usr/local" destdir="":
-    just daemon install "{{ prefix }}" "{{ destdir }}"
+# Install the Dieter CLI/helper pair. Set capture=false for a headless host.
+install prefix="/usr/local" destdir="" capture="true":
+    just daemon install "{{ prefix }}" "{{ destdir }}" "{{ capture }}"
 
 # Remove only repository-level generated binaries.
 [confirm]

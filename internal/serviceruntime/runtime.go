@@ -28,8 +28,8 @@ var executables = []string{"dieter", "dieter-capture"}
 
 type Runtime struct {
 	Root string
-	// Executables defaults to the signed macOS daemon/helper pair. Linux's
-	// managed runtime supplies a single dieter executable.
+	// Executables defaults to the signed daemon/helper pair. Platform runtimes
+	// may supply an explicit list when their verification policy differs.
 	Executables []string
 	// Verify is injectable for isolated filesystem tests. Production always
 	// uses Developer ID verification; there is no unsigned-install CLI flag.

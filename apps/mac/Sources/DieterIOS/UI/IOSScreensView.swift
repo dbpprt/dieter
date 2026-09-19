@@ -71,7 +71,7 @@ import CoreGraphics
 
         @ViewBuilder private var screenContent: some View {
             switch session.phase {
-            case .streaming, .connecting, .reconnecting:
+            case .streaming, .connecting, .waitingForHostApproval, .reconnecting:
                 ZStack {
                     Color.black
                     IOSRemoteDesktopSurface(session: session) {
@@ -336,7 +336,7 @@ import CoreGraphics
 
         private var isConnected: Bool {
             switch session.phase {
-            case .loading, .connecting, .streaming, .reconnecting: true
+            case .loading, .connecting, .waitingForHostApproval, .streaming, .reconnecting: true
             default: false
             }
         }
@@ -344,7 +344,7 @@ import CoreGraphics
         private var statusColor: Color {
             switch session.phase {
             case .streaming: .green
-            case .loading, .connecting, .reconnecting: .orange
+            case .loading, .connecting, .waitingForHostApproval, .reconnecting: .orange
             case .failed: .red
             default: .secondary
             }

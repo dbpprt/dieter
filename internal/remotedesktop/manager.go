@@ -162,7 +162,7 @@ func New(options Options) *Manager {
 func (m *Manager) Capabilities(enabled, controlEnabled bool) *dieterv1.RemoteDesktopCapabilities {
 	value := m.capabilities(enabled, controlEnabled, false)
 	value.DaemonExecutable, value.CaptureExecutable = executableIdentity(m.options.Source)
-	value.ClipboardSupported = runtime.GOOS == "darwin" || m.options.ClipboardFactory != nil
+	value.ClipboardSupported = value.ClipboardSupported || runtime.GOOS == "darwin" || m.options.ClipboardFactory != nil
 	value.BinaryClipboardSupported = value.ClipboardSupported
 	value.DisplayModeSwitchingSupported = value.DisplayModeSwitchingSupported || m.options.DisplayFactory != nil
 	value.MaxClients = maxClients
@@ -185,16 +185,18 @@ func (m *Manager) capabilities(enabled, controlEnabled, forceProbe bool) *dieter
 		}
 		value.Enabled = enabled
 		value.ActiveSession = active
-		value.Ready = enabled && value.GraphicalSessionActive && value.CapturePermission == "granted" && value.HardwareEncoderAvailable && m.options.Identity.DaemonID != "" && len(m.options.Identity.PrivateKey) == ed25519.PrivateKeySize
+		captureReady := value.CapturePermission == "granted" || runtime.GOOS == "linux" && value.CapturePermission == "not_requested"
+		encoderReady := value.HardwareEncoderAvailable
+		value.Ready = enabled && value.GraphicalSessionActive && captureReady && encoderReady && m.options.Identity.DaemonID != "" && len(m.options.Identity.PrivateKey) == ed25519.PrivateKeySize
 		switch {
 		case !enabled:
 			value.UnavailableReason = "Remote desktop is disabled on this machine"
-		case value.CapturePermission != "granted":
-			value.UnavailableReason = "Screen Recording permission is required for the running Dieter daemon; run `dieter daemon permissions` on that machine"
+		case !captureReady:
+			value.UnavailableReason = "Screen capture permission is required for the running Dieter daemon; run `dieter daemon permissions` on that machine"
 		case !value.GraphicalSessionActive:
 			value.UnavailableReason = "No graphical session is active"
-		case !value.HardwareEncoderAvailable:
-			value.UnavailableReason = "A native hardware encoder is unavailable"
+		case !encoderReady:
+			value.UnavailableReason = "A compatible native H.264 encoder is unavailable"
 		case m.options.Identity.DaemonID == "":
 			value.UnavailableReason = "The daemon is not enrolled"
 		}
@@ -206,7 +208,7 @@ func (m *Manager) capabilities(enabled, controlEnabled, forceProbe bool) *dieter
 	} else if enabled && available {
 		permission, reason = m.captureReadiness(forceProbe)
 	}
-	controlSupported := runtime.GOOS == "darwin" || strings.TrimSpace(m.options.Source.Kind) == "synthetic"
+	controlSupported := runtime.GOOS == "darwin" || runtime.GOOS == "linux" || strings.TrimSpace(m.options.Source.Kind) == "synthetic"
 	controlPermission := "not_requested"
 	if controlEnabled && controlSupported {
 		controlPermission, _ = m.controlReadiness(false)
@@ -236,7 +238,7 @@ func (m *Manager) capabilities(enabled, controlEnabled, forceProbe bool) *dieter
 		value.HelperVersion = remoteDesktopHelperVersion(m.options.Source)
 		value.Displays = []*dieterv1.RemoteDesktopDisplay{{Id: "primary", Name: "Primary display", Primary: true, Scale: 1}}
 		value.Codecs = []string{string(preferredVideoCodec(m.options.Source))}
-		value.HardwareEncoderAvailable = runtime.GOOS == "darwin" && strings.TrimSpace(m.options.Source.Kind) != "synthetic"
+		value.HardwareEncoderAvailable = (runtime.GOOS == "darwin" || runtime.GOOS == "linux") && strings.TrimSpace(m.options.Source.Kind) != "synthetic"
 	}
 	return value
 }
@@ -337,13 +339,13 @@ func (m *Manager) Start(request *dieterv1.StartRemoteDesktopRequest, enabled, co
 		controlPermission, _ = m.controlReadiness(true)
 	}
 	if request.GetControl() && (!capabilities.GetControlSupported() || controlPermission != "granted") {
-		return nil, errors.New("remote desktop control requires macOS Accessibility permission; run `dieter daemon permissions`")
+		return nil, errors.New("remote desktop control permission is unavailable; run `dieter daemon permissions` on the host")
 	}
 	if _, err := m.verifyRTCConfiguration(request.GetRtcConfiguration(), operatorSubject); err != nil {
 		return nil, err
 	}
 
-	session, err := newSession(m, request, operatorSubject, capabilities)
+	session, err := newSession(m, request, operatorSubject, capabilities, controlEnabled)
 	if err != nil {
 		return nil, err
 	}
@@ -412,6 +414,12 @@ func (m *Manager) CloseActive(reason string) {
 }
 
 func (m *Manager) CloseControlActive(reason string) {
+	if runtime.GOOS == "linux" {
+		// Linux portal device grants belong to the shared helper process, so a
+		// host policy change must retire even view-only sessions that share it.
+		m.CloseActive(reason)
+		return
+	}
 	m.mu.Lock()
 	m.policyGeneration++
 	m.mu.Unlock()
@@ -564,7 +572,7 @@ func (s *Session) active() bool {
 	return !s.closed
 }
 
-func newSession(manager *Manager, request *dieterv1.StartRemoteDesktopRequest, operatorSubject string, capabilities *dieterv1.RemoteDesktopCapabilities) (*Session, error) {
+func newSession(manager *Manager, request *dieterv1.StartRemoteDesktopRequest, operatorSubject string, capabilities *dieterv1.RemoteDesktopCapabilities, controlEnabled bool) (*Session, error) {
 	config, configErr := normalizeConfiguration(requestConfiguration(request))
 	if configErr != nil {
 		return nil, configErr
@@ -580,6 +588,12 @@ func newSession(manager *Manager, request *dieterv1.StartRemoteDesktopRequest, o
 		sourceOptions.Profile = "high"
 	}
 	sourceOptions.Control = request.GetControl()
+	if runtime.GOOS == "linux" {
+		// A shared portal session cannot add input devices after Start. Bind the
+		// helper's portal privilege to the host control setting; the manager still
+		// admits input only from the signed current controller.
+		sourceOptions.Control = controlEnabled && capabilities.GetControlSupported()
+	}
 	sourceOptions.EmbeddedCursor = request.GetEmbeddedCursor()
 	if request.GetDisplayId() != "" {
 		sourceOptions.Display = request.GetDisplayId()
@@ -1114,7 +1128,7 @@ func preferredVideoCodec(options SourceOptions) VideoCodec {
 	if kind == "native-synthetic" {
 		return VideoCodecH264
 	}
-	if runtime.GOOS != "darwin" {
+	if runtime.GOOS != "darwin" && runtime.GOOS != "linux" {
 		return VideoCodecVP8
 	}
 	return VideoCodecH264

@@ -28,6 +28,18 @@ data class ScreenState(
     val decodedFrames: Long = 0,
 )
 
+internal fun shouldRequestScreenControl(enabled: Boolean, capabilities: RemoteDesktopCapabilities): Boolean {
+    val portalCanRequestControl = capabilities.platform == "linux" && capabilities.controlPermission == "not_requested"
+    return enabled && capabilities.controlSupported && (capabilities.controlPermission == "granted" || portalCanRequestControl)
+}
+
+internal fun shouldEmbedScreenCursor(capabilities: RemoteDesktopCapabilities) = !capabilities.cursorSupported
+
+internal fun screenConnectionPhase(capabilities: RemoteDesktopCapabilities) =
+    if (capabilities.platform == "linux" && capabilities.capturePermission == "not_requested")
+        "waiting for approval on Linux host"
+    else "connecting"
+
 class ScreenController(context: Context) : AutoCloseable {
     // Keep fixture-only until a physical codec advertising this feature has
     // passed latency and lifecycle qualification (acceptance is insufficient).
@@ -204,12 +216,15 @@ class ScreenController(context: Context) : AutoCloseable {
                 val start = StartRemoteDesktopRequest.newBuilder().setReferenceRecovery(offer.description.contains(SCREEN_GENERIC_DESCRIPTOR_URI)).setCodecPreference(effectiveCodec).setClipboard(caps.clipboardSupported && clipboard.enabled).setClientNonce(UUID.randomUUID().toString())
                     .setRtcConfiguration(route.rtc).setDisplayId(display.id)
                     .setInputProtocolVersion(if (caps.supportedInputProtocolVersionsList.contains(3)) 3 else 2).setClientName("Android")
-                    .setControl(settings.controlEnabled && caps.controlSupported && caps.controlPermission == "granted")
+                    .setControl(shouldRequestScreenControl(settings.controlEnabled, caps))
+                    .setEmbeddedCursor(shouldEmbedScreenCursor(caps))
                     .setMaxWidth(1920).setMaxHeight(1080).setMaxFps(minOf(preferredMaxFPS, caps.maxFps.takeIf { it > 0 } ?: 60)).setMaxBitrateKbps(12000).setQuality(configuration.quality)
                     .setOffer(RemoteDesktopSessionDescription.newBuilder().setType("offer").setSdp(offer.description)).build()
                 request = start
+                mutable.value = mutable.value.copy(phase = screenConnectionPhase(caps))
                 configuration = RemoteDesktopStreamConfiguration.newBuilder().setDisplayId(display.id)
-                    .setMaxWidth(start.maxWidth).setMaxHeight(start.maxHeight).setMaxFps(start.maxFps).setMaxBitrateKbps(12000).setQuality(start.quality).build()
+                    .setMaxWidth(start.maxWidth).setMaxHeight(start.maxHeight).setMaxFps(start.maxFps).setMaxBitrateKbps(12000)
+                    .setQuality(start.quality).setEmbeddedCursor(start.embeddedCursor).build()
                 while (isActive && current == token) {
                     val sourceRoute = requireNotNull(connection)
                     try {

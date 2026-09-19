@@ -19,7 +19,7 @@ class ScreenCapabilityPickerTest {
     val compose = createComposeRule()
 
     @Test
-    fun unsupportedLinuxHostIsVisibleButCannotStartScreenSession() {
+    fun unavailableLinuxHostIsVisibleButCannotStartScreenSession() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val machines = listOf(
             EndpointConnection(
@@ -28,7 +28,7 @@ class ScreenCapabilityPickerTest {
                 address = "isolated",
                 daemonId = "daemon-linux",
                 remoteDesktopReady = false,
-                remoteDesktopReason = "Native screen sharing is currently supported on macOS only",
+                remoteDesktopReason = "No supported graphical login session is active",
                 remoteDesktopPlatform = "linux",
             ),
             EndpointConnection(

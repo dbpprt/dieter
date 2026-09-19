@@ -131,7 +131,7 @@ struct ScreensView: View {
     @ViewBuilder private func primaryAction(_ session: ScreenShareSession) -> some View {
         let controller = session.controller
         switch controller.phase {
-        case .streaming, .connecting, .reconnecting, .loading:
+        case .streaming, .connecting, .waitingForHostApproval, .reconnecting, .loading:
             Button("Disconnect") { session.disconnect() }
                 .buttonStyle(DieterSecondaryButtonStyle())
                 .accessibilityIdentifier("screens.disconnect")
@@ -220,7 +220,7 @@ struct ScreensView: View {
     @ViewBuilder private func content(_ session: ScreenShareSession) -> some View {
         let controller = session.controller
         switch controller.phase {
-        case .streaming, .connecting, .reconnecting:
+        case .streaming, .connecting, .waitingForHostApproval, .reconnecting:
             ZStack {
                 Color.black
                 RemoteDesktopVideoSurface(
@@ -287,7 +287,7 @@ struct ScreensView: View {
     private func statusColor(_ phase: RemoteDesktopPhase) -> Color {
         switch phase {
         case .streaming: DieterTheme.eyes
-        case .loading, .connecting, .reconnecting: DieterTheme.amber
+        case .loading, .connecting, .waitingForHostApproval, .reconnecting: DieterTheme.amber
         case .failed: DieterTheme.coral
         default: DieterTheme.tertiary
         }

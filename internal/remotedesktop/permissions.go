@@ -29,16 +29,27 @@ func (m *Manager) ProbePermissions(ctx context.Context, requestControl bool) (*d
 		return nil, ErrBusy
 	}
 	defer m.permissionMu.Unlock()
-	ctx, cancel := context.WithTimeout(ctx, 25*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, captureProbeTimeout+10*time.Second)
 	defer cancel()
 	daemon, helper := executableIdentity(m.options.Source)
 	result := &dieterv1.RemoteDesktopPermissionProbe{Platform: runtime.GOOS, DaemonExecutable: daemon, CaptureExecutable: helper}
-	if err := m.options.CaptureProbe(ctx, m.options.Source); err != nil {
+	probeSource := m.options.Source
+	if runtime.GOOS == "linux" && requestControl {
+		// One RemoteDesktop portal session verifies both the selected source and
+		// the granted pointer/keyboard devices without injecting any input.
+		probeSource.Control = true
+	}
+	if err := m.options.CaptureProbe(ctx, probeSource); err != nil {
 		result.CaptureError = err.Error()
 	} else {
 		result.CaptureVerified = true
 	}
-	if err := m.options.ControlProbe(ctx, m.options.Source, requestControl); err != nil {
+	controlRequest := requestControl
+	if runtime.GOOS == "linux" {
+		// The capture probe above owns the single interactive portal request.
+		controlRequest = false
+	}
+	if err := m.options.ControlProbe(ctx, probeSource, controlRequest); err != nil {
 		result.ControlError = err.Error()
 	} else {
 		result.ControlVerified = true

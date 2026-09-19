@@ -16,6 +16,23 @@ doctor:
     command -v install
     go version
 
+# Install the native Linux capture build/runtime matrix on an Ubuntu CI runner.
+linux-ci-dependencies:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    [[ "${GITHUB_ACTIONS:-}" == true && "$(uname -s)" == Linux ]] || {
+        echo "Linux CI dependency installation is restricted to GitHub Actions." >&2
+        exit 1
+    }
+    sudo apt-get update
+    sudo apt-get install -y --no-install-recommends \
+        build-essential pkg-config libglib2.0-dev libgstreamer1.0-dev \
+        libgstreamer-plugins-base1.0-dev libjson-glib-dev libx11-dev \
+        libxtst-dev libxrandr-dev gstreamer1.0-tools gstreamer1.0-x \
+        gstreamer1.0-pipewire gstreamer1.0-plugins-base \
+        gstreamer1.0-plugins-good gstreamer1.0-plugins-bad \
+        gstreamer1.0-plugins-ugly xvfb x11-utils
+
 # Build the daemon and CLI, optionally embedding a release tag.
 build version="":
     #!/usr/bin/env bash
@@ -39,6 +56,47 @@ test:
     )
     go test "${packages[@]}"
 
+# Build the Linux native helper and run its bounded protocol/lifecycle matrix.
+linux-capture-test:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [[ "$(uname -s)" != Linux ]]; then
+        echo "Linux capture tests skipped on $(uname -s)."
+        exit 0
+    fi
+    temporary="$(mktemp -d "${TMPDIR:-/tmp}/dieter-linux-capture.XXXXXX")"
+    xvfb_pid=""
+    cleanup() {
+        if [[ -n "$xvfb_pid" ]]; then
+            kill "$xvfb_pid" >/dev/null 2>&1 || true
+            wait "$xvfb_pid" >/dev/null 2>&1 || true
+        fi
+        rm -rf "$temporary"
+    }
+    trap cleanup EXIT
+    native/linux-capture/build.sh "$temporary/dieter-capture" >/dev/null
+    cc -std=c17 -O2 -Wall -Wextra -Werror native/linux-capture/x11-test-target.c \
+        $(pkg-config --cflags --libs x11) -o "$temporary/x11-test-target"
+    "$temporary/dieter-capture" --capabilities --synthetic true | python3 -m json.tool >/dev/null
+    DIETER_TEST_CAPTURE_HELPER="$temporary/dieter-capture" go test ./internal/remotedesktop -count=1 -run \
+        '^(TestLinuxNativeHelperCapabilities|TestLinuxNativeStartupAllowsPortalConsentDelay|TestNativeHelperBaselineUsesLowLatencyHardware|TestNativeHelperHardwareLifecycle|TestNativeHelperKeepsInputResponsiveUnderMediaBackpressure|TestNativeHelperWatchdogExitsWithoutDaemonHeartbeat|TestNativeMultiplexSharesEncoderAndIsolatesRenditions|TestNativeFourIndependentHardwareRenditions|TestNativeCancelledLifecyclePreservesExistingViewer|TestNativeConfigurationAndSlowEventsPreserveHeartbeat|TestNativeDelayedHeartbeatReplyPreservesActiveCapture|TestNativeHelperShutdownDuringFrameCreditsIsRecoverable|TestNativeHelperHighRefreshHardware)$$'
+    xvfb="${DIETER_TEST_XVFB:-$(command -v Xvfb || true)}"
+    if [[ -n "$xvfb" ]]; then
+        display_number=93
+        while [[ -e "/tmp/.X11-unix/X$display_number" ]]; do display_number=$((display_number + 1)); done
+        "$xvfb" ":$display_number" -screen 0 1024x768x24 -nolisten tcp -ac >"$temporary/xvfb.log" 2>&1 &
+        xvfb_pid=$!
+        for _ in $(seq 1 50); do
+            DISPLAY=":$display_number" xdpyinfo >/dev/null 2>&1 && break
+            sleep 0.1
+        done
+        DISPLAY=":$display_number" XDG_SESSION_TYPE=x11 XAUTHORITY= \
+            DIETER_TEST_CAPTURE_HELPER="$temporary/dieter-capture" DIETER_TEST_X11_TARGET="$temporary/x11-test-target" \
+            go test ./internal/remotedesktop -count=1 -run '^TestLinuxNativeX11CaptureAndControl$$'
+    else
+        echo "Xvfb unavailable; isolated real X11 capture/control test skipped."
+    fi
+
 # Scan daemon/CLI dependencies with the release's pinned Go toolchain.
 vulncheck:
     #!/usr/bin/env bash
@@ -56,10 +114,25 @@ run:
     fi
     go run "{{ target }}" serve
 
-# Install the daemon/CLI binary. PREFIX defaults to /usr/local.
-install prefix="/usr/local" destdir="": build
-    install -d "{{ destdir }}{{ prefix }}/bin"
-    install -m 0755 "{{ binary }}" "{{ destdir }}{{ prefix }}/bin/dieter"
+# Install the daemon/CLI and native capture helper. Set capture=false for a
+# deliberately headless source installation. PREFIX defaults to /usr/local.
+install prefix="/usr/local" destdir="" capture="true": build
+    #!/usr/bin/env bash
+    set -euo pipefail
+    [[ "{{ capture }}" == true || "{{ capture }}" == false ]] || { echo "capture must be true or false" >&2; exit 1; }
+    destination="{{ destdir }}{{ prefix }}/bin"
+    install -d "$destination"
+    install -m 0755 "{{ binary }}" "$destination/dieter"
+    if [[ "{{ capture }}" == true ]]; then
+        temporary="$(mktemp -d "${TMPDIR:-/tmp}/dieter-source-install.XXXXXX")"
+        trap 'rm -rf "$temporary"' EXIT
+        case "$(uname -s)" in
+            Linux) native/linux-capture/build.sh "$temporary/dieter-capture" >/dev/null ;;
+            Darwin) native/macos-capture/build.sh "$temporary/dieter-capture" >/dev/null ;;
+            *) echo "No native capture helper is available on $(uname -s)." >&2; exit 1 ;;
+        esac
+        install -m 0755 "$temporary/dieter-capture" "$destination/dieter-capture"
+    fi
 
 # Cross-compile and archive one release target using GOOS, GOARCH, ASSET, and RELEASE_VERSION.
 package-release:
@@ -77,6 +150,9 @@ package-release:
     CGO_ENABLED=0 go build -trimpath \
         -ldflags "-s -w -X github.com/dbpprt/dieter/internal/buildinfo.ReleaseVersion=$RELEASE_VERSION" \
         -o "$package/dieter" "{{ target }}"
+    if [[ "$GOOS" == linux ]]; then
+        GOARCH="$GOARCH" native/linux-capture/build-release.sh "$package/dieter-capture"
+    fi
     cp LICENSE "$package/LICENSE"
     cp scripts/install.sh "$package/install.sh"
     tar -C stage -czf "$archive" "$ASSET"
@@ -94,7 +170,12 @@ smoke-release:
     trap 'rm -rf "$smoke_dir"' EXIT
     tar -xzf "dist/$ASSET.tar.gz" -C "$smoke_dir"
     test -x "$smoke_dir/$ASSET/dieter"
-    if [[ "$GOARCH" == amd64 ]]; then
+    test -x "$smoke_dir/$ASSET/dieter-capture"
+    native_arch="$(uname -m)"
+    if [[ "$GOARCH" == amd64 && "$native_arch" == x86_64 ]] || \
+       [[ "$GOARCH" == arm64 && ("$native_arch" == aarch64 || "$native_arch" == arm64) ]]; then
+        capabilities="$("$smoke_dir/$ASSET/dieter-capture" --capabilities --synthetic true)"
+        rg -q '"H264"' <<<"$capabilities"
         actual="$($smoke_dir/$ASSET/dieter --version)"
     else
         actual="$(docker run --rm --platform linux/arm64 \

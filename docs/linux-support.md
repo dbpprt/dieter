@@ -1,32 +1,102 @@
 # Linux daemon support
 
-Dieter supports Linux as an unprivileged, headless daemon host on amd64 and
-arm64. The supported managed configuration is a modern systemd distribution
+Dieter supports Linux as an unprivileged daemon and remote-screen host on amd64
+and arm64. The supported managed configuration is a modern systemd distribution
 with a user manager. Foreground operation is available on non-systemd systems,
 WSL, and containers, but managed startup, rollback updates, power operations,
-and restart-durable terminals may be unavailable there.
+restart-durable terminals, and graphical-session discovery may be unavailable.
 
-Official viewer clients remain macOS and Android. Linux hosts do not advertise
-screen displays or codecs: native screen capture, input control, and clipboard
-hosting remain macOS-only. Clients show the daemon's unavailable reason and
-prevent starting an unsupported screen session.
+Official viewer clients remain macOS, iOS, and Android; there is no native Linux
+viewer yet. Linux can host H.264 screen sessions through the release's companion
+`dieter-capture` helper. X11 uses XImage/XDamage capture and XTest input. Wayland
+uses the standard ScreenCast/RemoteDesktop portals and PipeWire, including a
+local source/permission prompt. Screen hosting degrades independently when its
+optional dependencies or a graphical login are absent.
+
+The assessed path to general Wayland, X11, hardware/software encoder, and
+headless-virtual support is documented in the
+[Linux screen-sharing plan](linux-screen-sharing-plan-2026-09-18.md).
 
 ## Requirements
 
-- Node.js 22.19 or newer and npm
-- Git
-- `cosign` for signed installation and managed updates
-- systemd user manager for the supported managed service
-- `tmux` for terminal sessions that survive daemon restarts
-- `busctl` plus systemd-logind for restart/shutdown operations
-- a configured harness login or API key
+Dependencies are feature-scoped. The daemon continues to run when an optional
+integration is absent, and `dieter doctor` reports the resulting degraded
+feature.
 
-Run `dieter doctor` to see required failures and optional degraded features.
+| Dependency | Needed for |
+| --- | --- |
+| Node.js 22.19 or newer and npm | Bundled AI SDK Harness runtime |
+| Git | Registered projects and worktree operations |
+| A configured harness login or API key | Starting agent turns |
+| `curl`, `tar`, `awk`, `install`, `mktemp`, and `sha256sum` or `shasum` | Portable signed installer |
+| `cosign` | Portable signed installation and managed daemon updates |
+| systemd user manager with `systemctl` and `systemd-run` | Supported managed service, rollback updates, and keeping durable terminals outside the service cgroup |
+| `tmux` | Terminal sessions that survive daemon restarts; ordinary reconnectable terminals still work without it |
+| `busctl` and systemd-logind | Remote restart and shutdown operations |
+| `xdg-open` | Opening browser authentication from the CLI; a printed URL remains available without it |
+| `dieter-capture` from the same release | Linux screen hosting; staged and activated with the daemon as one verified managed-service pair |
+| GStreamer core, app/video base libraries, tools, H.264 parser, conversion, X11/PipeWire sources, and at least one H.264 encoder | Linux capture and encoding |
+| `json-glib`, X11, XRandR, and XTest runtime libraries | Helper protocol, X11 monitor enumeration, and X11 control |
+| `xdg-desktop-portal`, a desktop portal backend, PipeWire, and WirePlumber | Wayland capture/control and local consent |
+
+Install the common host packages with the distribution package manager. For
+example:
+
+```sh
+# Arch Linux / Garuda (daemon plus X11/Wayland screen hosting)
+sudo pacman -S --needed curl git nodejs npm tmux json-glib libxtst libxrandr \
+  gstreamer gst-plugins-base gst-plugins-good gst-plugins-bad gst-plugins-ugly \
+  gst-plugin-pipewire pipewire wireplumber xdg-desktop-portal
+# Add the portal backend for the desktop, for example:
+sudo pacman -S --needed xdg-desktop-portal-kde
+
+# Debian / Ubuntu (choose the GNOME or KDE portal backend for the desktop)
+sudo apt-get update
+sudo apt-get install -y ca-certificates curl git nodejs npm tmux \
+  libjson-glib-1.0-0 libxtst6 libxrandr2 gstreamer1.0-tools \
+  gstreamer1.0-x gstreamer1.0-pipewire gstreamer1.0-plugins-base \
+  gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly \
+  pipewire wireplumber xdg-desktop-portal xdg-desktop-portal-gnome
+
+# Fedora (encoder availability varies with enabled repositories)
+sudo dnf install -y ca-certificates curl git nodejs npm tmux json-glib \
+  libXtst libXrandr gstreamer1 gstreamer1-plugins-base \
+  gstreamer1-plugins-good gstreamer1-plugins-bad-free gstreamer1-vaapi \
+  pipewire pipewire-gstreamer wireplumber xdg-desktop-portal xdg-desktop-portal-gnome
+```
+
+Confirm that the distribution's Node.js package is version 22.19 or newer;
+otherwise install a current Node.js 22 release from a trusted package source.
+Install `cosign` using
+[Sigstore's documented method](https://docs.sigstore.dev/cosign/system_config/installation/).
+The Dieter installer deliberately does not invoke a package manager or `sudo`.
+
+Published archives already contain `dieter-capture`. A source install with
+`just install` builds it locally and additionally needs a C compiler, `pkg-config`,
+and development headers. Install `base-devel pkgconf glib2 gstreamer
+gst-plugins-base-libs json-glib libx11 libxtst libxrandr` on Arch;
+`build-essential pkg-config libglib2.0-dev libgstreamer1.0-dev
+libgstreamer-plugins-base1.0-dev libjson-glib-dev libx11-dev libxtst-dev
+libxrandr-dev` on Debian/Ubuntu; or `gcc make pkgconf-pkg-config glib2-devel
+gstreamer1-devel gstreamer1-plugins-base-devel json-glib-devel libX11-devel
+libXtst-devel libXrandr-devel` on Fedora. Use `just install "$HOME/.local" "" false`
+only for an intentionally headless source installation.
+
+Install `tmux` before starting the daemon when possible. If it is added while
+the daemon is already running, finish active agent turns and then run
+`dieter daemon service restart`; newly created terminals will then use the
+restart-durable backend. Never run the Dieter service itself as root.
+
+Headless machines may omit every screen-only package. A screen host needs at
+least one encoder reported by `gst-inspect-1.0`: `vah264enc`, `nvh264enc`,
+`v4l2h264enc`, `x264enc`, or `openh264enc`. Hardware encoders are preferred;
+software encoding is bounded by host capacity. Run `dieter doctor` to see the
+installed helper, active session, displays, encoder, and other optional degraded
+features.
 
 ## Install
 
-Install cosign using the distribution package or Sigstore's documented package,
-then run:
+After the dependencies above are available, run:
 
 ```sh
 curl -fsSL https://github.com/dbpprt/dieter/releases/latest/download/install.sh | sh
@@ -35,8 +105,8 @@ dieter setup /absolute/path/to/project
 
 The installer verifies `SHA256SUMS.sigstore.json` against the GitHub Actions
 OIDC identity of `.github/workflows/release.yml` on `main`, verifies the selected
-archive's SHA-256 digest, validates archive paths, and atomically installs the
-binary. On systemd it also stages a fixed runtime under
+archive's SHA-256 digest, validates archive paths, and replaces each executable
+by atomic rename. On systemd it also stages the verified pair under
 `$DIETER_HOME/service/bin` and installs `dieter.service` under the user's systemd
 configuration directory.
 
@@ -87,6 +157,38 @@ lifetime lock per `DIETER_HOME`. Durable tmux servers start in their own
 transient user scopes so a daemon restart cannot reap them with the service
 cgroup.
 
+The service may start before the desktop login and intentionally does not rely on
+one global `$DISPLAY`. Each helper launch discovers only allow-listed variables
+from a same-user graphical process. If the account has multiple simultaneous
+seats/sessions, set `DISPLAY`, `WAYLAND_DISPLAY`, `XAUTHORITY`,
+`XDG_RUNTIME_DIR`, `DBUS_SESSION_BUS_ADDRESS`, and `XDG_SESSION_TYPE` explicitly
+in `$DIETER_HOME/service.env` to select the intended session, then restart the
+service after active work finishes.
+
+## Screen permissions and limits
+
+```sh
+dieter daemon permissions --check
+dieter screen capabilities
+```
+
+On X11, the check captures and discards one encoded frame and verifies XTest
+without injecting input. On Wayland, the desktop portal owns source selection and
+permission UI. Dieter stores only the opaque restore token under `DIETER_HOME`
+with private permissions; the compositor may ignore/revoke it or prompt again.
+Declining a prompt leaves the daemon and other features running.
+
+Linux currently advertises H.264 video, adaptive bitrate/geometry, pointer,
+buttons, scrolling, and physical-key input. Wayland uses the portal's bounded
+Notify methods; X11 uses XTest and releases held state on control loss or helper
+exit. Committed Unicode text, clipboard text/images/files, separate cursor-shape
+metadata, HEVC, audio, physical display-mode switching, and virtual/headless
+desktops remain unavailable and are not silently emulated. Embedded cursor is
+available when the selected backend supplies it.
+
+Disabling host control retires active Linux screen sessions so the helper drops
+its portal device grant immediately; viewers can reconnect in view-only mode.
+
 ## Updates and rollback
 
 The remote `machine update --confirm UPDATE` operation is available only when
@@ -125,8 +227,11 @@ at their registered paths and need their normal independent backup policy.
 ## Support tiers
 
 - Supported: systemd user service on Linux amd64/arm64 with a local filesystem.
+- Screen host: active X11 with XImage/XTest, or Wayland with current
+  ScreenCast/RemoteDesktop portals and PipeWire; exact encoder/backend is
+  capability-detected.
 - Degraded: foreground operation on non-systemd distributions and WSL.
 - Best effort: containers; graphical session, logind, and user-systemd features
   are commonly absent.
-- Not supported on Linux: hosting remote screen/keyboard/clipboard sessions or
-  a native Linux viewer app.
+- Not supported on Linux: native viewer app, hosted clipboard/file transfer,
+  system audio, physical mode switching, or implicit DRM/KMS/uinput access.

@@ -93,7 +93,9 @@ func (c *CLI) rpcScreenPermissions(args []string) error {
 Ask the running daemon to discard one captured frame and check event-posting
 permission. Prints the daemon/helper paths and both results as JSON. Does not
 inject input or change settings. --request-control explicitly allows a macOS
-Accessibility prompt on the daemon host. Supports --machine ID|NAME.
+Accessibility prompt or verifies the Linux XTest/RemoteDesktop portal path on
+the daemon host. A Linux portal prompt can remain open for up to two minutes.
+Supports --machine ID|NAME.
 `
 	set := flags("screen permissions")
 	request := set.Bool("request-control", false, "allow a control-permission prompt on the daemon host")

@@ -61,7 +61,7 @@ final class ScreenShareSession: Identifiable {
 
     var keepsConnectionOpen: Bool {
         switch controller.phase {
-        case .loading, .disabled, .connecting, .streaming, .reconnecting: true
+        case .loading, .disabled, .connecting, .waitingForHostApproval, .streaming, .reconnecting: true
         case .idle, .failed: false
         }
     }

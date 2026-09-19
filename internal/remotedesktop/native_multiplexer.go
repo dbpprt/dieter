@@ -77,7 +77,8 @@ func (m *nativeMultiplexer) process(ctx context.Context, template *nativeHelperS
 	}
 	root := &nativeHelperSource{path: template.path, display: template.display, profile: template.profile, codec: template.codec,
 		fps: template.fps, bitrateKbps: template.bitrateKbps, maxWidth: template.maxWidth, maxHeight: template.maxHeight,
-		synthetic: template.synthetic, inputAllowed: true, logger: template.logger, multiplex: true, ready: make(chan struct{})}
+		synthetic: template.synthetic, inputAllowed: template.inputAllowed, logger: template.logger, multiplex: true,
+		portalStatePath: template.portalStatePath, ready: make(chan struct{})}
 	processCtx, cancel := context.WithCancel(context.Background())
 	m.root, m.cancel = root, cancel
 	finished := make(chan struct{})

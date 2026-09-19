@@ -168,6 +168,8 @@ def plan_checks(root, paths, packages=None):
         add("python3", "-m", "unittest", "discover", "-s", "scripts", "-p", "qualify_screens_test.py")
     if any(p == "justfile" or p.startswith("just/") for p in code):
         add("just", "justfile-check")
+    if any(p.startswith("native/linux-capture/") for p in code):
+        add("just", "daemon", "linux-capture-test")
     if any(p.startswith(".github/workflows/") or p == "just/release.just" for p in code):
         add("just", "workflow-check")
     if any(p.startswith(("scripts/homebrew_", "scripts/macos_daemon_installer", "scripts/macos_notary_submit",

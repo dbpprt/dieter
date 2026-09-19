@@ -303,7 +303,7 @@ func TestManagerCapabilityRequiresRealCaptureProbe(t *testing.T) {
 		return errors.New("macOS Screen Recording permission is not granted to Dieter's capture helper")
 	}
 	capabilities := manager.Capabilities(true, false)
-	if runtime.GOOS != "darwin" {
+	if runtime.GOOS != "darwin" && runtime.GOOS != "linux" {
 		if capabilities.GetReady() || capabilities.GetCapturePermission() != "unknown" || !strings.Contains(capabilities.GetUnavailableReason(), "macOS only") {
 			t.Fatalf("unsupported native backend: %#v", capabilities)
 		}

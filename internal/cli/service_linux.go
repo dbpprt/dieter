@@ -28,6 +28,9 @@ type linuxServiceInstallOptions struct {
 	directHost    string
 	directNetwork string
 	preserveRoute bool
+	// Isolated tests may supply a known ELF. Production resolves the helper
+	// beside the invoking Dieter executable, matching release installation.
+	captureExecutable string
 }
 
 func platformServiceCommand(c *CLI, action string, args []string) error {
@@ -159,6 +162,13 @@ func installSystemdUserService(root string, options linuxServiceInstallOptions, 
 	defer os.RemoveAll(stageDirectory)
 	if err := copyServiceExecutable(executable, filepath.Join(stageDirectory, "dieter")); err != nil {
 		return err
+	}
+	captureExecutable := options.captureExecutable
+	if captureExecutable == "" {
+		captureExecutable = filepath.Join(filepath.Dir(executable), "dieter-capture")
+	}
+	if err := copyServiceExecutable(captureExecutable, filepath.Join(stageDirectory, "dieter-capture")); err != nil {
+		return fmt.Errorf("stage Linux capture helper %s: %w; reinstall the complete Dieter release", captureExecutable, err)
 	}
 	stageCtx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	err = serviceruntime.PlatformRuntime(runtimeRoot).Stage(stageCtx, stageDirectory)

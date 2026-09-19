@@ -117,6 +117,10 @@ func TestLinuxUpdateWorkerDownloadsVerifiesStagesAndRestarts(t *testing.T) {
 	if got := sha256.Sum256(installed); got != sha256.Sum256(binary) {
 		t.Fatal("staged Linux runtime differs from verified release")
 	}
+	helper, err := os.ReadFile(filepath.Join(root, "service", "bin", "dieter-capture"))
+	if err != nil || sha256.Sum256(helper) != sha256.Sum256(binary) {
+		t.Fatalf("staged Linux capture helper differs from verified release: %v", err)
+	}
 	commands, err := os.ReadFile(systemctlLog)
 	if err != nil {
 		t.Fatal(err)
@@ -168,6 +172,15 @@ func linuxUpdateArchive(t *testing.T, name string, body []byte) []byte {
 	}
 	if _, err := tarWriter.Write(body); err != nil {
 		t.Fatal(err)
+	}
+	if strings.HasSuffix(name, "/dieter") {
+		helperName := strings.TrimSuffix(name, "/dieter") + "/dieter-capture"
+		if err := tarWriter.WriteHeader(&tar.Header{Name: helperName, Typeflag: tar.TypeReg, Mode: 0o755, Size: int64(len(body))}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := tarWriter.Write(body); err != nil {
+			t.Fatal(err)
+		}
 	}
 	if err := tarWriter.Close(); err != nil {
 		t.Fatal(err)

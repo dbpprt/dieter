@@ -11,7 +11,9 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
+	"runtime"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -26,8 +28,17 @@ const (
 	maxEncodedFrameBytes    = 16 << 20
 	nativeCommandTimeout    = 750 * time.Millisecond
 	nativeLivenessTimeout   = 3 * time.Second
-	nativeStartupTimeout    = 10 * time.Second
 )
+
+var nativeStartupTimeout = func() time.Duration {
+	if runtime.GOOS == "linux" {
+		// Portal source selection is deliberately human-mediated. The helper's
+		// command and frame bounds still apply after local authorization. Leave
+		// bounded time after the portal's two-minute limit for encoder fallback.
+		return 150 * time.Second
+	}
+	return 10 * time.Second
+}()
 
 // FrameMetadata preserves the native monotonic media timeline across idle gaps,
 // raw-frame replacement and encoder reconfiguration. ReceivedAt is Go monotonic.
@@ -132,7 +143,8 @@ type nativeWrite struct {
 
 type nativeHelperSource struct {
 	overlapSupported                        atomic.Bool
-	path, display, profile                  string
+	longCommands                            atomic.Int32
+	path, display, profile, portalStatePath string
 	codec                                   VideoCodec
 	fps, bitrateKbps, maxWidth, maxHeight   int
 	logger                                  *slog.Logger
@@ -152,6 +164,9 @@ type nativeHelperSource struct {
 }
 
 func (s *nativeHelperSource) Description() string {
+	if runtime.GOOS == "linux" {
+		return "Linux GStreamer native " + string(s.Codec())
+	}
 	return "ScreenCaptureKit / VideoToolbox hardware " + string(s.Codec())
 }
 func (s *nativeHelperSource) Codec() VideoCodec {
@@ -184,6 +199,11 @@ func (s *nativeHelperSource) send(ctx context.Context, command nativeCommand, ac
 		// A scheduling stall must not have a shorter lifetime than the native
 		// watchdog. Interactive input keeps its independent, short deadline.
 		timeout = nativeLivenessTimeout
+	}
+	longCommand := runtime.GOOS == "linux" && (command.Kind == "create" || command.Kind == "remove" || command.Kind == "configure")
+	if longCommand {
+		s.longCommands.Add(1)
+		defer s.longCommands.Add(-1)
 	}
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
@@ -332,6 +352,9 @@ func (s *nativeHelperSource) Stream(ctx context.Context, emit func(media.Sample)
 	if s.synthetic {
 		args = append(args, "--synthetic", "true")
 	}
+	if s.portalStatePath != "" {
+		args = append(args, "--portal-state", s.portalStatePath)
+	}
 	processCtx, cancelCause := context.WithCancelCause(ctx)
 	cancel := func() { cancelCause(context.Canceled) }
 	defer cancel()
@@ -423,6 +446,7 @@ func (s *nativeHelperSource) Stream(ctx context.Context, emit func(media.Sample)
 	}()
 	mailbox := newNativeEventMailbox()
 	liveness := &nativeLiveness{at: time.Now()}
+	var startupComplete atomic.Bool
 	go mailbox.run(processCtx, func(event SourceEvent) {
 		s.mu.Lock()
 		handler := s.onEvent
@@ -488,7 +512,14 @@ func (s *nativeHelperSource) Stream(ctx context.Context, emit func(media.Sample)
 					cancelCause(fmt.Errorf("native helper heartbeat enqueue: %w", err))
 					return
 				}
-				if ack, age := liveness.snapshot(time.Now()); age > nativeLivenessTimeout {
+				limit := nativeLivenessTimeout
+				if runtime.GOOS == "linux" && (!startupComplete.Load() || s.longCommands.Load() > 0) {
+					// A first Wayland stream may be blocked in the local portal
+					// chooser, and encoder lifecycle operations are synchronous in
+					// the helper. Restore the strict watchdog between those bounds.
+					limit = nativeStartupTimeout
+				}
+				if ack, age := liveness.snapshot(time.Now()); age > limit {
 					if s.logger != nil {
 						s.logger.Warn("native helper IPC stalled", "pid", command.Process.Pid, "lastAck", ack,
 							"ackAgeMs", age.Milliseconds(), "issuedCommands", s.sequence.Load(), "queuedCommands", len(writes))
@@ -531,6 +562,7 @@ func (s *nativeHelperSource) Stream(ctx context.Context, emit func(media.Sample)
 			}
 			return nativeCaptureFailure(readErr, stderr.String())
 		}
+		startupComplete.Store(true)
 		first.Stop()
 		if s.multiplex {
 			meta := sample.Metadata.(FrameMetadata)
@@ -611,12 +643,20 @@ func ProbeCapabilities(ctx context.Context, options SourceOptions) (*dieterv1.Re
 	if options.Kind == "native-synthetic" {
 		args = append(args, "--synthetic", "true")
 	}
+	if options.PortalStatePath != "" {
+		args = append(args, "--portal-state", options.PortalStatePath)
+	}
 	command := exec.CommandContext(ctx, helper, args...)
 	configureCaptureCommand(command)
 	var output limitedCaptureOutput
 	command.Stdout = &output
+	stderr := &limitedCaptureOutput{}
+	command.Stderr = stderr
 	if err = command.Run(); err != nil {
-		return nil, err
+		if message := strings.TrimSpace(string(stderr.raw)); message != "" {
+			return nil, fmt.Errorf("probe native capture helper: %w: %s", err, message)
+		}
+		return nil, fmt.Errorf("probe native capture helper: %w", err)
 	}
 	var value dieterv1.RemoteDesktopCapabilities
 	if err = json.Unmarshal(output.raw, &value); err != nil {

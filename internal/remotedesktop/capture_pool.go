@@ -3,6 +3,8 @@ package remotedesktop
 import (
 	"context"
 	"errors"
+	"runtime"
+	"strings"
 	"sync"
 	"time"
 
@@ -14,11 +16,12 @@ import (
 // Capture and encoders belong to the machine, not to a peer. Encoded payloads
 // are immutable and shared; every subscriber retains its own transport worker.
 type capturePool struct {
-	mu       sync.Mutex
-	factory  func(SourceOptions) (FrameSource, error)
-	variants map[*captureVariant]struct{}
-	closed   bool
-	native   *nativeMultiplexer
+	mu             sync.Mutex
+	factory        func(SourceOptions) (FrameSource, error)
+	variants       map[*captureVariant]struct{}
+	closed         bool
+	native         *nativeMultiplexer
+	nativeViewOnly *nativeMultiplexer
 }
 
 type captureVariant struct {
@@ -61,7 +64,19 @@ type sharedSource struct {
 }
 
 func newCapturePool(factory func(SourceOptions) (FrameSource, error)) *capturePool {
-	return &capturePool{factory: factory, variants: make(map[*captureVariant]struct{}), native: newNativeMultiplexer()}
+	return &capturePool{
+		factory: factory, variants: make(map[*captureVariant]struct{}),
+		native: newNativeMultiplexer(), nativeViewOnly: newNativeMultiplexer(),
+	}
+}
+
+func linuxProductionCapture(options SourceOptions) bool {
+	kind := strings.TrimSpace(options.Kind)
+	return runtime.GOOS == "linux" && (kind == "" || kind == "screen")
+}
+
+func sameCapturePrivilege(existing, requested SourceOptions) bool {
+	return !linuxProductionCapture(requested) || existing.Control == requested.Control
 }
 
 func (p *capturePool) DisplayModeChanged(ctx context.Context, display string) error {
@@ -119,7 +134,7 @@ func (p *capturePool) Subscribe(options SourceOptions) (FrameSource, error) {
 
 func (p *capturePool) variantLocked(options SourceOptions, config StreamConfiguration) (*captureVariant, error) {
 	for v := range p.variants {
-		if !v.changing && v.config == config && v.options.Profile == options.Profile && v.options.Codec == options.Codec && v.options.RecoveryID == options.RecoveryID {
+		if !v.changing && v.config == config && v.options.Profile == options.Profile && v.options.Codec == options.Codec && v.options.RecoveryID == options.RecoveryID && sameCapturePrivilege(v.options, options) {
 			return v, nil
 		}
 	}
@@ -129,14 +144,21 @@ func (p *capturePool) variantLocked(options SourceOptions, config StreamConfigur
 	options.Display, options.MaxWidth, options.MaxHeight = config.DisplayID, config.MaxWidth, config.MaxHeight
 	options.FPS, options.Bitrate, options.EmbeddedCursor = config.FPS, config.BitrateKbps, config.EmbeddedCursor
 	// The manager is the sole input authority. Sharing with a viewer never grants
-	// it input, and the helper does not need replacement when the owner changes.
-	options.Control = true
+	// it input. A production Linux portal must also honor the host's explicit
+	// control setting because its device grant is fixed when capture starts.
+	if !linuxProductionCapture(options) {
+		options.Control = true
+	}
 	source, err := p.factory(options)
 	if err != nil {
 		return nil, err
 	}
 	if native, ok := source.(*nativeHelperSource); ok {
-		source, err = p.native.Source(native)
+		multiplexer := p.native
+		if linuxProductionCapture(options) && !options.Control {
+			multiplexer = p.nativeViewOnly
+		}
+		source, err = multiplexer.Source(native)
 		if err != nil {
 			return nil, err
 		}
@@ -395,7 +417,7 @@ func (s *sharedSource) Configure(ctx context.Context, config StreamConfiguration
 	// into a separate rendition so another viewer's ceilings are never changed.
 	var next *captureVariant
 	for v := range p.variants {
-		if v != old && !v.changing && v.config == config && v.options.Profile == s.options.Profile && v.options.Codec == s.options.Codec && v.options.RecoveryID == s.options.RecoveryID {
+		if v != old && !v.changing && v.config == config && v.options.Profile == s.options.Profile && v.options.Codec == s.options.Codec && v.options.RecoveryID == s.options.RecoveryID && sameCapturePrivilege(v.options, s.options) {
 			next = v
 			break
 		}
@@ -555,4 +577,5 @@ func (p *capturePool) Close() {
 	}
 	p.mu.Unlock()
 	p.native.Close()
+	p.nativeViewOnly.Close()
 }

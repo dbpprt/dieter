@@ -24,7 +24,7 @@ class ReleaseInstallerTest(unittest.TestCase):
         self.install = self.temporary / "install"
         self.assets.mkdir()
         self.bin.mkdir()
-        self._create_asset("linux", "amd64", include_capture=False)
+        self._create_asset("linux", "amd64", include_capture=True)
         self._create_asset("darwin", "arm64", include_capture=True)
         self._write_manifest()
         self._write_executable(
@@ -143,6 +143,9 @@ cp "$DIETER_TEST_ASSETS/${url##*/}" "$destination"
         installed = self.install / "dieter"
         self.assertTrue(installed.is_file())
         self.assertTrue(os.access(installed, os.X_OK))
+        capture = self.install / "dieter-capture"
+        self.assertTrue(capture.is_file())
+        self.assertTrue(os.access(capture, os.X_OK))
         invocation = (self.temporary / "cosign.log").read_text(encoding="utf-8")
         self.assertIn("verify-blob", invocation)
         self.assertIn("SHA256SUMS.sigstore.json", invocation)
@@ -153,6 +156,18 @@ cp "$DIETER_TEST_ASSETS/${url##*/}" "$destination"
         self.assertEqual(result.returncode, 0, result.stdout)
         invocation = (self.temporary / "daemon.log").read_text(encoding="utf-8")
         self.assertEqual(invocation, "daemon service install\n")
+
+    def test_linux_release_requires_capture_helper(self):
+        package = self.temporary / "dieter-linux-amd64"
+        archive = self.assets / "dieter-linux-amd64.tar.gz"
+        with tarfile.open(archive, "w:gz") as output:
+            for name in ("dieter", "LICENSE"):
+                output.add(package / name, arcname=f"{package.name}/{name}")
+        self._write_manifest()
+        result = self.run_installer()
+        self.assertNotEqual(result.returncode, 0, result.stdout)
+        self.assertIn("linux release is missing its native capture helper", result.stdout)
+        self.assertFalse((self.install / "dieter").exists())
 
     def test_apple_silicon_installs_capture_helper_without_linux_service(self):
         result = self.run_installer(

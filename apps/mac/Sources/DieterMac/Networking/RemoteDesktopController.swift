@@ -12,6 +12,7 @@ enum RemoteDesktopPhase: Equatable, Sendable {
     case loading
     case disabled(String)
     case connecting
+    case waitingForHostApproval
     case streaming
     case reconnecting
     case failed(String)
@@ -22,11 +23,29 @@ enum RemoteDesktopPhase: Equatable, Sendable {
         case .loading: "Checking machine…"
         case .disabled: "Screen sharing is off"
         case .connecting: "Connecting…"
+        case .waitingForHostApproval: "Waiting for approval on Linux host…"
         case .streaming: "Live"
         case .reconnecting: "Reconnecting…"
         case .failed: "Connection failed"
         }
     }
+}
+
+func remoteDesktopShouldRequestControl(
+    enabled: Bool, capabilities: Dieter_V1_RemoteDesktopCapabilities
+) -> Bool {
+    let portalCanRequestControl =
+        capabilities.platform == "linux" && capabilities.controlPermission == "not_requested"
+    return enabled && capabilities.controlSupported
+        && (capabilities.controlPermission == "granted" || portalCanRequestControl)
+}
+
+func remoteDesktopShouldEmbedCursor(_ capabilities: Dieter_V1_RemoteDesktopCapabilities) -> Bool {
+    !capabilities.cursorSupported
+}
+
+func remoteDesktopNeedsHostApproval(_ capabilities: Dieter_V1_RemoteDesktopCapabilities) -> Bool {
+    capabilities.platform == "linux" && capabilities.capturePermission == "not_requested"
 }
 
 @MainActor
@@ -204,9 +223,19 @@ final class RemoteDesktopController {
         peerWatchdog?.cancel()
         peerWatchdog = Task { [weak self] in
             try? await DieterTaskSleep.seconds(20)
-            guard let self, self.owns(token), [.loading, .connecting, .reconnecting].contains(self.phase),
+            guard let self, self.owns(token),
+                [.loading, .connecting, .waitingForHostApproval, .reconnecting].contains(self.phase),
                 self.peerConnection?.connectionState != .connected
             else { return }
+            if self.capabilities.platform == "linux" {
+                // A local Wayland source/permission prompt is intentionally
+                // human-mediated and may remain open for up to two minutes.
+                try? await DieterTaskSleep.seconds(150)
+                guard self.owns(token),
+                    [.loading, .connecting, .waitingForHostApproval, .reconnecting].contains(self.phase),
+                    self.peerConnection?.connectionState != .connected
+                else { return }
+            }
             self.recover(message: "Screen connection attempt timed out")
         }
         return task
@@ -331,7 +360,7 @@ final class RemoteDesktopController {
             )
         }
         guard let connection else { return }
-        phase = .connecting
+        phase = remoteDesktopNeedsHostApproval(capabilities) ? .waitingForHostApproval : .connecting
         let configuration = RTCConfiguration()
         configuration.sdpSemantics = .unifiedPlan
         configuration.continualGatheringPolicy = .gatherContinually
@@ -469,12 +498,16 @@ final class RemoteDesktopController {
         request.maxWidth = Int32(viewport.width)
         request.maxHeight = Int32(viewport.height)
         request.quality = quality
-        request.control =
-            settings.controlEnabled && capabilities.controlSupported
-            && capabilities.controlPermission == "granted"
+        // Linux portals grant capture/control while the session is starting,
+        // so "not_requested" is actionable there rather than a denial.
+        request.control = remoteDesktopShouldRequestControl(
+            enabled: settings.controlEnabled, capabilities: capabilities)
+        request.embeddedCursor = remoteDesktopShouldEmbedCursor(capabilities)
         controlUnavailableReason =
             settings.controlEnabled && !request.control
-            ? "Accessibility permission is required on the host" : ""
+            ? (capabilities.platform == "linux"
+                ? "Remote-control permission is required from the Linux desktop portal"
+                : "Accessibility permission is required on the host") : ""
         var description = Dieter_V1_RemoteDesktopSessionDescription()
         description.type = "offer"
         description.sdp = offer.sdp
@@ -484,7 +517,7 @@ final class RemoteDesktopController {
         desiredConfiguration.displayID = request.displayID
         desiredConfiguration.maxWidth = request.maxWidth; desiredConfiguration.maxHeight = request.maxHeight
         desiredConfiguration.maxFps = request.maxFps; desiredConfiguration.maxBitrateKbps = request.maxBitrateKbps
-        desiredConfiguration.quality = request.quality
+        desiredConfiguration.quality = request.quality; desiredConfiguration.embeddedCursor = request.embeddedCursor
         startSignaling(connection: connection, request: request)
     }
 
