@@ -40,8 +40,17 @@ func remoteDesktopShouldRequestControl(
         && (capabilities.controlPermission == "granted" || portalCanRequestControl)
 }
 
-func remoteDesktopShouldEmbedCursor(_ capabilities: Dieter_V1_RemoteDesktopCapabilities) -> Bool {
-    !capabilities.cursorSupported
+func remoteDesktopShouldEmbedCursor(
+    _ capabilities: Dieter_V1_RemoteDesktopCapabilities, requestingControl: Bool
+) -> Bool {
+    // Linux currently has no separate cursor metadata. A controlling Mac can
+    // still draw its own pointer immediately, which avoids making pointer
+    // feedback wait for capture, encode, transport, and decode. View-only
+    // sessions keep the compositor/X11 cursor embedded in the video.
+    if capabilities.platform == "linux" && requestingControl {
+        return false
+    }
+    return !capabilities.cursorSupported
 }
 
 func remoteDesktopNeedsHostApproval(_ capabilities: Dieter_V1_RemoteDesktopCapabilities) -> Bool {
@@ -502,7 +511,8 @@ final class RemoteDesktopController {
         // so "not_requested" is actionable there rather than a denial.
         request.control = remoteDesktopShouldRequestControl(
             enabled: settings.controlEnabled, capabilities: capabilities)
-        request.embeddedCursor = remoteDesktopShouldEmbedCursor(capabilities)
+        request.embeddedCursor = remoteDesktopShouldEmbedCursor(
+            capabilities, requestingControl: request.control)
         controlUnavailableReason =
             settings.controlEnabled && !request.control
             ? (capabilities.platform == "linux"

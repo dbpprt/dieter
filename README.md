@@ -967,6 +967,9 @@ hosting uses the companion native helper with in-process GStreamer: portal-selec
 PipeWire capture on Wayland, XImage/XDamage capture on X11, H.264 hardware
 encoders when qualified, and bounded x264/OpenH264 fallback. X11 control uses
 XTest; Wayland control uses the standard RemoteDesktop portal notification API.
+On a controlling Mac, the Linux capture stream hides its baked-in pointer and
+the viewer draws the pointer locally, so mouse feedback does not wait for the
+video round trip. View-only and touch-client sessions retain an embedded pointer.
 The helper never runs as root, uses `/dev/uinput`, or sends raw desktop pixels to
 the daemon. Portal source selection remains locally user-mediated. Linux text,
 image/file clipboard transfer, separate cursor metadata, HEVC, and physical mode

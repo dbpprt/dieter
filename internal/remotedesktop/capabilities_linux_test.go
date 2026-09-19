@@ -192,13 +192,24 @@ func TestLinuxNativeX11CaptureAndControl(t *testing.T) {
 		t.Fatalf("X11 target did not become ready: %s", stderr.String())
 	}
 
-	source, err := NewFrameSource(SourceOptions{Kind: "screen", HelperPath: helper, Control: true, FPS: 30, MaxWidth: 640, MaxHeight: 360, Bitrate: 1500})
+	pool := newCapturePool(NewFrameSource)
+	defer pool.Close()
+	source, err := pool.Subscribe(SourceOptions{Kind: "screen", HelperPath: helper, Control: true, EmbeddedCursor: false, FPS: 30, MaxWidth: 640, MaxHeight: 360, Bitrate: 1500})
 	if err != nil {
 		t.Fatal(err)
 	}
 	streamCtx, stopStream := context.WithCancel(ctx)
 	done := make(chan error, 1)
 	frames := make(chan FrameMetadata, 1)
+	states := make(chan *dieterv1.RemoteDesktopSessionState, 1)
+	source.(AdaptiveFrameSource).SetEventHandler(func(event SourceEvent) {
+		if event.State != nil {
+			select {
+			case states <- event.State:
+			default:
+			}
+		}
+	})
 	go func() {
 		done <- source.Stream(streamCtx, func(sample media.Sample) error {
 			metadata := sample.Metadata.(FrameMetadata)
@@ -216,6 +227,16 @@ func TestLinuxNativeX11CaptureAndControl(t *testing.T) {
 		t.Fatalf("X11 capture stopped: %v", err)
 	case <-ctx.Done():
 		t.Fatal("X11 capture frame timed out")
+	}
+	select {
+	case state := <-states:
+		if state.GetEmbeddedCursor() {
+			t.Fatal("X11 helper ignored the requested local-cursor mode")
+		}
+	case err = <-done:
+		t.Fatalf("X11 capture stopped before state: %v", err)
+	case <-ctx.Done():
+		t.Fatal("X11 capture state timed out")
 	}
 	sink := source.(InputSink)
 	inputs := []*dieterv1.RemoteDesktopInput{

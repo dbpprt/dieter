@@ -16,12 +16,17 @@ import (
 // Capture and encoders belong to the machine, not to a peer. Encoded payloads
 // are immutable and shared; every subscriber retains its own transport worker.
 type capturePool struct {
-	mu             sync.Mutex
-	factory        func(SourceOptions) (FrameSource, error)
-	variants       map[*captureVariant]struct{}
-	closed         bool
-	native         *nativeMultiplexer
-	nativeViewOnly *nativeMultiplexer
+	mu          sync.Mutex
+	factory     func(SourceOptions) (FrameSource, error)
+	variants    map[*captureVariant]struct{}
+	closed      bool
+	native      *nativeMultiplexer
+	linuxNative map[linuxNativeProcessKey]*nativeMultiplexer
+}
+
+type linuxNativeProcessKey struct {
+	control        bool
+	embeddedCursor bool
 }
 
 type captureVariant struct {
@@ -66,7 +71,7 @@ type sharedSource struct {
 func newCapturePool(factory func(SourceOptions) (FrameSource, error)) *capturePool {
 	return &capturePool{
 		factory: factory, variants: make(map[*captureVariant]struct{}),
-		native: newNativeMultiplexer(), nativeViewOnly: newNativeMultiplexer(),
+		native: newNativeMultiplexer(), linuxNative: make(map[linuxNativeProcessKey]*nativeMultiplexer),
 	}
 }
 
@@ -155,8 +160,17 @@ func (p *capturePool) variantLocked(options SourceOptions, config StreamConfigur
 	}
 	if native, ok := source.(*nativeHelperSource); ok {
 		multiplexer := p.native
-		if linuxProductionCapture(options) && !options.Control {
-			multiplexer = p.nativeViewOnly
+		if linuxProductionCapture(options) {
+			// A Wayland portal fixes both device privilege and cursor mode when
+			// its session is created. Keep every combination in a distinct
+			// helper so a mobile viewer with an embedded cursor cannot change a
+			// controlling Mac's immediate local-cursor path (or vice versa).
+			key := linuxNativeProcessKey{control: options.Control, embeddedCursor: options.EmbeddedCursor}
+			multiplexer = p.linuxNative[key]
+			if multiplexer == nil {
+				multiplexer = newNativeMultiplexer()
+				p.linuxNative[key] = multiplexer
+			}
 		}
 		source, err = multiplexer.Source(native)
 		if err != nil {
@@ -422,7 +436,8 @@ func (s *sharedSource) Configure(ctx context.Context, config StreamConfiguration
 			break
 		}
 	}
-	if len(old.subscribers) == 1 && next == nil {
+	processChange := linuxProductionCapture(s.options) && old.config.EmbeddedCursor != config.EmbeddedCursor
+	if len(old.subscribers) == 1 && next == nil && !processChange {
 		old.changing = true
 		// Locking across native configuration would deadlock its state callback.
 		p.mu.Unlock()
@@ -577,5 +592,7 @@ func (p *capturePool) Close() {
 	}
 	p.mu.Unlock()
 	p.native.Close()
-	p.nativeViewOnly.Close()
+	for _, multiplexer := range p.linuxNative {
+		multiplexer.Close()
+	}
 }

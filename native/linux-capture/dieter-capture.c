@@ -78,6 +78,7 @@ struct PortalState {
     guint32 node_id, devices;
     gint pipewire_fd;
     gint width, height;
+    gboolean embedded_cursor;
 };
 
 struct CaptureApp {
@@ -426,7 +427,8 @@ static int print_capabilities(const Options *options) {
     BOOL_MEMBER("audio_supported", FALSE);
     BOOL_MEMBER("file_transfer_supported", FALSE);
     BOOL_MEMBER("adaptive_supported", TRUE);
-    /* The initial Linux backend uses compositor/XImage embedded cursors. */
+    /* Linux does not yet emit separate cursor metadata. Streams may still hide
+     * the host cursor when a controlling viewer renders its own pointer. */
     BOOL_MEMBER("cursor_supported", FALSE);
     INT_MEMBER("input_protocol_version", 3);
     INT_MEMBER("max_fps", hardware ? 120 : 30);
@@ -616,9 +618,14 @@ static void save_restore_token(const gchar *path, const gchar *token) {
 
 static void portal_close(PortalState *portal);
 
-static gboolean portal_start(CaptureApp *app, GError **error) {
+static gboolean portal_start(CaptureApp *app, gboolean embedded_cursor, GError **error) {
     PortalState *portal = &app->portal;
-    if (portal->session_path != NULL) return TRUE;
+    if (portal->session_path != NULL) {
+        if (portal->embedded_cursor == embedded_cursor) return TRUE;
+        g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_INVALID_ARGUMENT,
+            "portal cursor mode cannot change inside an active helper");
+        return FALSE;
+    }
     portal->bus = g_bus_get_sync(G_BUS_TYPE_SESSION, NULL, error);
     if (portal->bus == NULL) return FALSE;
     const gchar *owner = app->allow_input ? "org.freedesktop.portal.RemoteDesktop" : "org.freedesktop.portal.ScreenCast";
@@ -658,7 +665,9 @@ static gboolean portal_start(CaptureApp *app, GError **error) {
     variant_option(&options, "handle_token", g_variant_new_string(token));
     variant_option(&options, "types", g_variant_new_uint32(1));
     variant_option(&options, "multiple", g_variant_new_boolean(FALSE));
-    variant_option(&options, "cursor_mode", g_variant_new_uint32(2));
+    /* ScreenCast cursor modes: hidden=1, embedded=2. Controlling Mac clients
+     * request hidden and render their local cursor without a video round trip. */
+    variant_option(&options, "cursor_mode", g_variant_new_uint32(embedded_cursor ? 2U : 1U));
     variant_option(&options, "persist_mode", g_variant_new_uint32(2));
     gchar *restore = load_restore_token(portal->state_path);
     if (restore != NULL) variant_option(&options, "restore_token", g_variant_new_string(restore));
@@ -721,6 +730,7 @@ static gboolean portal_start(CaptureApp *app, GError **error) {
     portal->pipewire_fd = g_unix_fd_list_get(fds, handle, error);
     g_variant_unref(remote); g_object_unref(fds);
     if (portal->pipewire_fd < 0) goto failed;
+    portal->embedded_cursor = embedded_cursor;
     g_free(nonce); g_free(session_token);
     return TRUE;
 
@@ -743,6 +753,7 @@ static void portal_close(PortalState *portal) {
     g_clear_pointer(&portal->session_path, g_free);
     g_clear_object(&portal->bus);
     portal->pipewire_fd = -1;
+    portal->embedded_cursor = FALSE;
 }
 
 static void emit_event(CaptureApp *app, guint64 stream_id, guint64 ack, const gchar *error,
@@ -974,7 +985,7 @@ static gboolean start_pipeline(CaptureStream *stream, GError **error) {
         source = g_strdup("videotestsrc is-live=true pattern=ball");
         stream->source_width = 1920; stream->source_height = 1080;
     } else if (g_str_equal(app->session_type, "wayland")) {
-        if (!portal_start(app, error)) return FALSE;
+        if (!portal_start(app, stream->config.embedded_cursor, error)) return FALSE;
         gint fd = dup(app->portal.pipewire_fd);
         if (fd < 0) { g_set_error(error, G_IO_ERROR, g_io_error_from_errno(errno), "duplicate PipeWire fd: %s", g_strerror(errno)); return FALSE; }
         source = g_strdup_printf("pipewiresrc fd=%d path=%u do-timestamp=true", fd, app->portal.node_id);
@@ -1260,7 +1271,6 @@ static gboolean handle_command(CaptureApp *app, JsonObject *command) {
             if (configuration == NULL || !parse_config(configuration, &stream->config, &error)) {
                 capture_stream_free(stream); stream = NULL;
             } else {
-                if (!app->synthetic) stream->config.embedded_cursor = TRUE;
                 if (!start_pipeline(stream, &error)) {
                     capture_stream_free(stream); stream = NULL;
                 } else {
@@ -1283,7 +1293,6 @@ static gboolean handle_command(CaptureApp *app, JsonObject *command) {
         StreamConfig next;
         if (configuration == NULL || !parse_config(configuration, &next, &error)) {
         } else {
-            if (!app->synthetic) next.embedded_cursor = TRUE;
             if (next.max_width == stream->config.max_width && next.max_height == stream->config.max_height &&
                    next.embedded_cursor == stream->config.embedded_cursor &&
                    g_str_equal(next.display_id, stream->config.display_id)) {
@@ -1426,7 +1435,6 @@ static gboolean initialize_direct_stream(CaptureApp *app, const Options *options
     stream->config.max_width = options->max_width; stream->config.max_height = options->max_height;
     stream->config.fps = options->fps; stream->config.bitrate_kbps = options->bitrate_kbps;
     stream->config.embedded_cursor = options->embedded_cursor;
-    if (!app->synthetic) stream->config.embedded_cursor = TRUE;
     if (!start_pipeline(stream, error)) { capture_stream_free(stream); return FALSE; }
     guint64 *key = g_new(guint64, 1); *key = 1;
     g_hash_table_insert(app->streams, key, stream);

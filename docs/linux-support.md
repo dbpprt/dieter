@@ -13,6 +13,11 @@ uses the standard ScreenCast/RemoteDesktop portals and PipeWire, including a
 local source/permission prompt. Screen hosting degrades independently when its
 optional dependencies or a graphical login are absent.
 
+Controlling Mac sessions use an immediate viewer-side cursor while the Linux
+capture backend hides its embedded cursor. This keeps pointer feedback off the
+capture/encode/network/decode path. View-only sessions and touch clients keep an
+embedded host cursor because Linux does not yet publish separate cursor metadata.
+
 The assessed path to general Wayland, X11, hardware/software encoder, and
 headless-virtual support is documented in the
 [Linux screen-sharing plan](linux-screen-sharing-plan-2026-09-18.md).
