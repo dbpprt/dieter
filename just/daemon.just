@@ -26,7 +26,7 @@ linux-ci-dependencies:
     }
     sudo apt-get update
     sudo apt-get install -y --no-install-recommends \
-        build-essential pkg-config libglib2.0-dev libgstreamer1.0-dev \
+        build-essential pkg-config ripgrep libglib2.0-dev libgstreamer1.0-dev \
         libgstreamer-plugins-base1.0-dev libjson-glib-dev libx11-dev \
         libxtst-dev libxrandr-dev gstreamer1.0-tools gstreamer1.0-x \
         gstreamer1.0-pipewire gstreamer1.0-plugins-base \
