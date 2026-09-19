@@ -6,8 +6,13 @@ import UniformTypeIdentifiers
 final class ShareViewController: UIViewController {
     private let statusLabel = UILabel()
     private let spinner = UIActivityIndicatorView(style: .medium)
+    private let destinationStack = UIStackView()
+    private let newTaskButton = UIButton(type: .system)
+    private let taskButton = UIButton(type: .system)
+    private let chatButton = UIButton(type: .system)
     private let closeButton = UIButton(type: .system)
     private var started = false
+    private var stagedID: String?
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -17,18 +22,34 @@ final class ShareViewController: UIViewController {
         statusLabel.textAlignment = .center
         statusLabel.numberOfLines = 0
         spinner.startAnimating()
-        closeButton.setTitle("Close", for: .normal)
-        closeButton.isHidden = true
+
+        configure(
+            newTaskButton, title: "New Task", subtitle: "Create a task with this attachment",
+            image: "square.and.pencil", action: #selector(openNewTask))
+        configure(
+            taskButton, title: "Add to Task", subtitle: "Choose an existing board task",
+            image: "checklist", action: #selector(openTask))
+        configure(
+            chatButton, title: "Use in Chat", subtitle: "Choose an existing chat",
+            image: "bubble.left.and.bubble.right", action: #selector(openChat))
+        destinationStack.axis = .vertical
+        destinationStack.alignment = .fill
+        destinationStack.spacing = 10
+        destinationStack.isHidden = true
+        [newTaskButton, taskButton, chatButton].forEach(destinationStack.addArrangedSubview)
+
+        closeButton.setTitle("Cancel", for: .normal)
         closeButton.addTarget(self, action: #selector(close), for: .touchUpInside)
-        let stack = UIStackView(arrangedSubviews: [spinner, statusLabel, closeButton])
+        let stack = UIStackView(arrangedSubviews: [spinner, statusLabel, destinationStack, closeButton])
         stack.axis = .vertical
-        stack.alignment = .center
+        stack.alignment = .fill
         stack.spacing = 16
         stack.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(stack)
         NSLayoutConstraint.activate([
             stack.leadingAnchor.constraint(greaterThanOrEqualTo: view.leadingAnchor, constant: 24),
             stack.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor, constant: -24),
+            stack.widthAnchor.constraint(lessThanOrEqualToConstant: 420),
             stack.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             stack.centerYAnchor.constraint(equalTo: view.centerYAnchor),
         ])
@@ -38,38 +59,98 @@ final class ShareViewController: UIViewController {
         super.viewDidAppear(animated)
         guard !started else { return }
         started = true
-        Task { await handOffToDieter() }
+        Task { await prepareShare() }
     }
 
-    private func handOffToDieter() async {
+    private func configure(
+        _ button: UIButton, title: String, subtitle: String, image: String, action: Selector
+    ) {
+        var configuration = UIButton.Configuration.tinted()
+        configuration.title = title
+        configuration.subtitle = subtitle
+        configuration.image = UIImage(systemName: image)
+        configuration.imagePadding = 12
+        configuration.imagePlacement = .leading
+        configuration.titleAlignment = .leading
+        configuration.cornerStyle = .large
+        configuration.contentInsets = NSDirectionalEdgeInsets(top: 12, leading: 16, bottom: 12, trailing: 16)
+        button.configuration = configuration
+        button.contentHorizontalAlignment = .fill
+        button.addTarget(self, action: action, for: .touchUpInside)
+    }
+
+    private func prepareShare() async {
         do {
             let providers =
                 extensionContext?.inputItems
                 .compactMap { $0 as? NSExtensionItem }
                 .flatMap { $0.attachments ?? [] } ?? []
             let id = try await SharePayloadWriter.stage(providers: providers)
-            guard let url = URL(string: "dieter-mac://share?id=\(id)") else {
-                throw SharePayloadError.couldNotOpen
-            }
-            guard let extensionContext else { throw SharePayloadError.couldNotOpen }
-            statusLabel.text = "Opening Dieter…"
-            let opened = await withCheckedContinuation { continuation in
-                extensionContext.open(url) { continuation.resume(returning: $0) }
-            }
-            guard opened else { throw SharePayloadError.couldNotOpen }
-            extensionContext.completeRequest(returningItems: nil)
+            stagedID = id
+            spinner.stopAnimating()
+            statusLabel.text = "Where should this go?"
+            destinationStack.isHidden = false
         } catch {
             spinner.stopAnimating()
             statusLabel.text = error.localizedDescription
-            closeButton.isHidden = false
+            destinationStack.isHidden = true
+            closeButton.setTitle("Close", for: .normal)
         }
+    }
+
+    @objc private func openNewTask() { openDieter(destination: "new-task") }
+
+    @objc private func openTask() { openDieter(destination: "task") }
+
+    @objc private func openChat() { openDieter(destination: "chat") }
+
+    private func openDieter(destination: String) {
+        guard let stagedID, let extensionContext else {
+            statusLabel.text = SharePayloadError.couldNotOpen.localizedDescription
+            return
+        }
+        var components = URLComponents()
+        components.scheme = "dieter-mac"
+        components.host = "share"
+        components.queryItems = [
+            URLQueryItem(name: "id", value: stagedID),
+            URLQueryItem(name: "destination", value: destination),
+        ]
+        guard let url = components.url else {
+            statusLabel.text = SharePayloadError.couldNotOpen.localizedDescription
+            return
+        }
+        spinner.startAnimating()
+        statusLabel.text = "Opening Dieter…"
+        setDestinationButtonsEnabled(false)
+        extensionContext.open(url) { [weak self] opened in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                if opened {
+                    self.extensionContext?.completeRequest(returningItems: nil)
+                } else {
+                    self.spinner.stopAnimating()
+                    self.statusLabel.text =
+                        "iOS couldn’t open Dieter. Make sure the app is installed, then try again."
+                    self.setDestinationButtonsEnabled(true)
+                }
+            }
+        }
+    }
+
+    private func setDestinationButtonsEnabled(_ enabled: Bool) {
+        newTaskButton.isEnabled = enabled
+        taskButton.isEnabled = enabled
+        chatButton.isEnabled = enabled
     }
 
     @objc private func close() {
         extensionContext?.cancelRequest(
             withError: NSError(
                 domain: "DieterShare", code: 1,
-                userInfo: [NSLocalizedDescriptionKey: statusLabel.text ?? "The share could not be completed."]))
+                userInfo: [
+                    NSLocalizedDescriptionKey: statusLabel.text ?? "The share could not be completed."
+                ]))
     }
 }
 
@@ -132,7 +213,8 @@ private enum SharePayloadWriter {
         guard payloads.reduce(0, { $0 + $1.data.count }) <= maximumTotalBytes else {
             throw SharePayloadError.totalTooLarge
         }
-        guard let group = Bundle.main.object(forInfoDictionaryKey: "DieterAppGroupIdentifier") as? String,
+        guard
+            let group = Bundle.main.object(forInfoDictionaryKey: "DieterAppGroupIdentifier") as? String,
             let container = FileManager.default.containerURL(
                 forSecurityApplicationGroupIdentifier: group)
         else { throw SharePayloadError.unavailable }
@@ -148,12 +230,14 @@ private enum SharePayloadWriter {
                 let suffix = URL(fileURLWithPath: payload.filename).pathExtension
                 let storedName = suffix.isEmpty ? "attachment-\(index)" : "attachment-\(index).\(suffix)"
                 try payload.data.write(
-                    to: directory.appendingPathComponent(storedName), options: [.atomic, .completeFileProtection])
+                    to: directory.appendingPathComponent(storedName),
+                    options: [.atomic, .completeFileProtection])
                 items.append(
                     .init(storedName: storedName, filename: payload.filename, mediaType: payload.mediaType))
             }
             try JSONEncoder().encode(Manifest(items: items)).write(
-                to: directory.appendingPathComponent("manifest.json"), options: [.atomic, .completeFileProtection])
+                to: directory.appendingPathComponent("manifest.json"),
+                options: [.atomic, .completeFileProtection])
             return id
         } catch {
             try? FileManager.default.removeItem(at: directory)
@@ -200,7 +284,9 @@ private enum SharePayloadWriter {
     ) throws -> Payload {
         let suggested = suggestedName?.trimmingCharacters(in: .whitespacesAndNewlines)
         var filename = suggested.flatMap { $0.isEmpty ? nil : $0 } ?? fallback
-        if URL(fileURLWithPath: filename).pathExtension.isEmpty, let suffix = type?.preferredFilenameExtension {
+        if URL(fileURLWithPath: filename).pathExtension.isEmpty,
+            let suffix = type?.preferredFilenameExtension
+        {
             filename += ".\(suffix)"
         }
         let safeName = URL(fileURLWithPath: filename).lastPathComponent
@@ -209,7 +295,8 @@ private enum SharePayloadWriter {
         return Payload(
             data: data, filename: safeName,
             mediaType: type?.preferredMIMEType
-                ?? UTType(filenameExtension: URL(fileURLWithPath: safeName).pathExtension)?.preferredMIMEType
+                ?? UTType(filenameExtension: URL(fileURLWithPath: safeName).pathExtension)?
+                .preferredMIMEType
                 ?? "application/octet-stream")
     }
 
@@ -243,8 +330,8 @@ private enum SharePayloadWriter {
 }
 
 @MainActor
-private extension NSItemProvider {
-    func loadDataRepresentation(forTypeIdentifier identifier: String) async throws -> Data {
+extension NSItemProvider {
+    fileprivate func loadDataRepresentation(forTypeIdentifier identifier: String) async throws -> Data {
         try await withCheckedThrowingContinuation { continuation in
             loadDataRepresentation(forTypeIdentifier: identifier) { data, error in
                 if let error {
@@ -258,7 +345,7 @@ private extension NSItemProvider {
         }
     }
 
-    func loadSharedFileRepresentation() async throws -> SharedFileRepresentation {
+    fileprivate func loadSharedFileRepresentation() async throws -> SharedFileRepresentation {
         let suggestedName = suggestedName
         return try await withCheckedThrowingContinuation {
             (continuation: CheckedContinuation<SharedFileRepresentation, Error>) in

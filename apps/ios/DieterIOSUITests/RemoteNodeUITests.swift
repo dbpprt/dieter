@@ -25,10 +25,12 @@ final class RemoteNodeUITests: XCTestCase {
     }
 
     private func enter(_ app: XCUIApplication, _ identifier: String, _ text: String) {
-        // All editable journey fields are native text fields. Query that small
-        // type directly: a descendant `.any` lookup can stall while snapshotting
-        // the complete iPad split view and then falsely report the field missing.
-        let field = app.textFields.matching(identifier: identifier).firstMatch
+        // Query the two native editable types directly: a descendant `.any`
+        // lookup can stall while snapshotting the complete iPad split view.
+        // Multiline fields use UITextView so they can intercept pasted images.
+        let textField = app.textFields.matching(identifier: identifier).firstMatch
+        let textView = app.textViews.matching(identifier: identifier).firstMatch
+        let field = textField.exists ? textField : textView
         XCTAssertTrue(field.waitForExistence(timeout: 10), "Missing \(identifier)")
         let keyboard = app.keyboards.firstMatch
         var activated = false
@@ -154,7 +156,12 @@ final class RemoteNodeUITests: XCTestCase {
         }
         enter(app, "ios.create.title", title)
         enter(app, "ios.create.prompt", prompt)
-        tap(app, "ios.create.keyboard-done")
+        let keyboardDone = app.buttons.matching(identifier: "ios.create.keyboard-done").firstMatch
+        if keyboardDone.waitForExistence(timeout: 3) {
+            keyboardDone.tap()
+        } else {
+            form.swipeDown()
+        }
         let keyboardGone = XCTNSPredicateExpectation(
             predicate: NSPredicate(format: "exists == false"), object: app.keyboards.firstMatch)
         XCTAssertEqual(XCTWaiter.wait(for: [keyboardGone], timeout: 5), .completed, app.debugDescription)
@@ -341,13 +348,18 @@ final class RemoteNodeUITests: XCTestCase {
         if environment["DIETER_IOS_TEST_LANDSCAPE"] != "1" {
             tap(app, "ios.screens.open")
             XCTAssertTrue(element(app, "ios.screens.back").waitForExistence(timeout: 10))
-            XCTAssertTrue(element(app, "ios.screens.settings").isHittable)
             let window = app.windows.firstMatch
             let landscape = XCTNSPredicateExpectation(
                 predicate: NSPredicate { _, _ in window.frame.width > window.frame.height }, object: window)
             XCTAssertEqual(
                 XCTWaiter.wait(for: [landscape], timeout: 10), .completed,
                 "The iPhone screen viewer should request landscape automatically.\n\(app.debugDescription)")
+            let settingsReady = XCTNSPredicateExpectation(
+                predicate: NSPredicate(format: "exists == true AND hittable == true"),
+                object: element(app, "ios.screens.settings"))
+            XCTAssertEqual(
+                XCTWaiter.wait(for: [settingsReady], timeout: 10), .completed,
+                "Screen settings should be usable after the landscape transition.\n\(app.debugDescription)")
             screenshot(app, "11-remote-screen-phone-chrome")
             tap(app, "ios.screens.back")
             let portrait = XCTNSPredicateExpectation(

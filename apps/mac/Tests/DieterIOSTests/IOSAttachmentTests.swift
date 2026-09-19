@@ -41,6 +41,44 @@ struct IOSAttachmentTests {
         }
     }
 
+    @Test func pastedScreenshotPayloadsBecomePortableImageAttachments() async throws {
+        let first = IOSAttachmentPayload(
+            data: Data([0x89, 0x50, 0x4E, 0x47]),
+            filename: "Pasted Screenshot.png",
+            mediaType: "image/png")
+        let second = IOSAttachmentPayload(
+            data: Data([0x89, 0x50, 0x4E, 0x47, 0x02]),
+            filename: "../Pasted Screenshot 2.png",
+            mediaType: "IMAGE/PNG; charset=binary")
+
+        let parts = try await IOSAttachmentLoader().parts(payloads: [first, second])
+
+        #expect(parts.map(\.type) == ["file", "file"])
+        #expect(parts.map(\.filename) == ["Pasted Screenshot.png", "Pasted Screenshot 2.png"])
+        #expect(parts.map(\.mediaType) == ["image/png", "image/png"])
+        #expect(parts.map(\.data) == [first.data, second.data])
+    }
+
+    @Test func pastedScreenshotLimitsIncludeExistingAttachments() async throws {
+        var existing: [Dieter_V1_MessagePart] = []
+        for index in 0..<4 {
+            var part = Dieter_V1_MessagePart()
+            part.type = "file"
+            part.filename = "\(index).png"
+            part.mediaType = "image/png"
+            part.data = Data([UInt8(index)])
+            existing.append(part)
+        }
+        let pasted = IOSAttachmentPayload(
+            data: Data([0x89, 0x50, 0x4E, 0x47]),
+            filename: "Pasted Screenshot.png",
+            mediaType: "image/png")
+
+        await #expect(throws: IOSAttachmentError.self) {
+            try await IOSAttachmentLoader().parts(payloads: [pasted], appendingTo: existing)
+        }
+    }
+
     @Test func fileAndCombinedByteLimitsAreEnforced() async throws {
         let directory = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -66,9 +104,45 @@ struct IOSAttachmentTests {
         let id = UUID()
         let valid = try #require(URL(string: "dieter-mac://share?id=\(id.uuidString)"))
         #expect(IOSShareInbox.shareID(from: valid) == id.uuidString.lowercased())
+        #expect(IOSShareInbox.request(from: valid)?.destination == .newTask)
+        for destination in [
+            IOSShareInbox.Destination.newTask, .task, .chat,
+        ] {
+            let routed = try #require(
+                URL(string: "dieter-mac://share?id=\(id.uuidString)&destination=\(destination.rawValue)"))
+            #expect(
+                IOSShareInbox.request(from: routed)
+                    == IOSShareInbox.Request(id: id.uuidString.lowercased(), destination: destination))
+        }
         #expect(IOSShareInbox.shareID(from: URL(string: "https://share?id=\(id)")!) == nil)
         #expect(IOSShareInbox.shareID(from: URL(string: "dieter-mac://share?id=../escape")!) == nil)
+        #expect(
+            IOSShareInbox.request(
+                from: URL(string: "dieter-mac://share?id=\(id)&destination=unknown")!) == nil)
         #expect(IOSShareInbox.shareID(from: URL(string: "dieter-mac://oauth/callback?id=\(id)")!) == nil)
+    }
+
+    @Test func sharedAttachmentsRespectAnExistingComposerDraft() throws {
+        var existing = Dieter_V1_MessagePart()
+        existing.type = "file"
+        existing.filename = "existing.png"
+        existing.mediaType = "image/png"
+        existing.data = Data([1])
+        var shared = Dieter_V1_MessagePart()
+        shared.type = "file"
+        shared.filename = "shared.png"
+        shared.mediaType = "image/png"
+        shared.data = Data([2])
+
+        let combined = try IOSAttachmentLoader.appending([shared], to: [existing])
+
+        #expect(combined.map(\.filename) == ["existing.png", "shared.png"])
+        #expect(combined.map(\.data) == [Data([1]), Data([2])])
+
+        #expect(throws: IOSAttachmentError.self) {
+            try IOSAttachmentLoader.appending(
+                Array(repeating: shared, count: IOSAttachmentLoader.maximumCount), to: [existing])
+        }
     }
 
     @Test func stagedShareBecomesAttachmentsAndIsConsumedOnce() async throws {
