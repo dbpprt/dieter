@@ -180,9 +180,15 @@ final class RemoteNodeUITests: XCTestCase {
         } else {
             form.swipeDown()
         }
-        let keyboardGone = XCTNSPredicateExpectation(
-            predicate: NSPredicate(format: "exists == false"), object: app.keyboards.firstMatch)
-        XCTAssertEqual(XCTWaiter.wait(for: [keyboardGone], timeout: 5), .completed, app.debugDescription)
+        // On iPad, XCTest can spend its full animation-idle timeout trying to
+        // snapshot the disappearing system keyboard. Observe the app-owned
+        // footer instead; it is the user-visible state needed to submit.
+        let submissionReady = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "exists == true AND hittable == true"),
+            object: element(app, "ios.create.run"))
+        XCTAssertEqual(
+            XCTWaiter.wait(for: [submissionReady], timeout: 10), .completed,
+            "The task form must be ready after dismissing the keyboard.\n\(app.debugDescription)")
     }
 
     private func textExists(_ app: XCUIApplication, _ text: String, timeout: TimeInterval = 30) {
@@ -435,7 +441,7 @@ final class RemoteNodeUITests: XCTestCase {
             thumbnailCount, 0,
             "The imported screenshot must appear in Photos.\n\(photos.debugDescription)")
         guard thumbnailCount > 0 else { return }
-        let photo = thumbnails.element(boundBy: thumbnailCount - 1)
+        var photo = thumbnails.element(boundBy: thumbnailCount - 1)
         XCTAssertTrue(
             photo.waitForExistence(timeout: 10),
             "The imported screenshot must appear in Photos.\n\(photos.debugDescription)")
@@ -443,13 +449,24 @@ final class RemoteNodeUITests: XCTestCase {
             // A slow simulator can finish presenting onboarding while the
             // library snapshot above is being resolved.
             dismissPhotosOnboarding(photos, timeout: 5)
+            // Re-resolve after Photos replaces its library hierarchy.
+            photo = photos.images.matching(identifier: "PXGGridLayout-Info")
+                .element(boundBy: thumbnailCount - 1)
         }
         let photoReady = XCTNSPredicateExpectation(
             predicate: NSPredicate(format: "exists == true AND hittable == true"), object: photo)
-        XCTAssertEqual(
-            XCTWaiter.wait(for: [photoReady], timeout: 10), .completed,
-            "The imported screenshot must be tappable after Photos onboarding.\n\(photos.debugDescription)")
-        photo.tap()
+        if XCTWaiter.wait(for: [photoReady], timeout: 10) == .completed {
+            photo.tap()
+        } else {
+            // Photos 26 can expose a visible grid image as non-hittable after
+            // dismissing onboarding. Its resolved frame still accepts the
+            // same user tap; the share-action assertion below verifies that
+            // the screenshot actually opened.
+            XCTAssertTrue(
+                photo.exists && !photo.frame.isEmpty,
+                "The imported screenshot must remain visible after Photos onboarding.\n\(photos.debugDescription)")
+            photo.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        }
         let share = photos.buttons.matching(
             NSPredicate(format: "label CONTAINS[c] 'share' OR label CONTAINS[c] 'teilen'")
         )

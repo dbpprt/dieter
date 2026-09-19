@@ -472,13 +472,14 @@ private fun ConversationImageLightbox(path: String, model: DieterViewModel, onDi
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
     ) {
+        val displayedBitmap = bitmap
         Box(
             Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color.Black)
                 .testTag("conversation-image-lightbox"),
         ) {
             when {
-                bitmap != null -> Image(
-                    bitmap = bitmap,
+                displayedBitmap != null -> Image(
+                    bitmap = displayedBitmap,
                     contentDescription = document?.name ?: path.substringAfterLast('/'),
                     contentScale = ContentScale.Fit,
                     modifier = Modifier.fillMaxSize().padding(12.dp),
