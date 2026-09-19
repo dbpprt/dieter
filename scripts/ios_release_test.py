@@ -221,7 +221,8 @@ class ReleaseTests(unittest.TestCase):
         archive = next(argv for argv, _ in commands.calls if "archive" in argv)
         for value in (
             f"DIETER_IOS_TEAM_ID={META['team_id']}", "DIETER_IOS_SIGN_STYLE=Automatic",
-            "DIETER_IOS_SIGN_IDENTITY=", "-allowProvisioningUpdates", "-authenticationKeyPath",
+            "DIETER_IOS_SIGN_IDENTITY=Apple Distribution", "-allowProvisioningUpdates",
+            "-authenticationKeyPath",
             "-authenticationKeyID", "-authenticationKeyIssuerID",
         ):
             self.assertIn(value, archive)

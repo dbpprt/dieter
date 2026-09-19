@@ -445,7 +445,7 @@ def testflight(root, version, build, env, *, upload=False):
         ]
         if automatic:
             archive_arguments += [
-                "DIETER_IOS_SIGN_STYLE=Automatic", "DIETER_IOS_SIGN_IDENTITY=",
+                "DIETER_IOS_SIGN_STYLE=Automatic", "DIETER_IOS_SIGN_IDENTITY=Apple Distribution",
                 *authentication,
             ]
         else:
