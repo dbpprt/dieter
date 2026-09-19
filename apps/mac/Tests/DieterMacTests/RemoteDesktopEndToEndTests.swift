@@ -118,7 +118,9 @@ private struct ScreenFixtureConnection: Decodable {
     try await verifyNativeScreenRenderer(controller.renderer)
     var presentationAges: [Double] = [], resumedAges: [Double] = []
     var previousPresentation: Double?
+    var presentedSize = CGSize.zero
     controller.renderer.onPresentationTiming = { frame, presentedAt in
+        presentedSize = CGSize(width: Int(frame.width), height: Int(frame.height))
         // This fixture captures and presents on the SAME Mac. Its RTP timeline
         // is the host clock at 90 kHz; modular subtraction also tests RTP wrap.
         // Never apply this subtraction to unrelated clocks on remote machines.
@@ -349,16 +351,18 @@ private struct ScreenFixtureConnection: Decodable {
         try await screenWait("60 fps live configuration", timeout: 8) {
             controller.sessionState.configuration.maxFps == 60
         }
-        // Canceled resize tasks must not submit intermediate geometries.
-        for width in [640, 1120, 1280, 800] {
+        // Canceled resize tasks must not submit intermediate geometries. The
+        // settled size is deliberately outside the old 160×90 size buckets.
+        for width in [640, 1120, 1280, 832] {
             let scale = window.backingScaleFactor
             window.setContentSize(CGSize(width: CGFloat(width) / scale, height: CGFloat(width) * 9 / 16 / scale))
             surface.layoutSubtreeIfNeeded(); surface.layout()
             await Task.yield()
         }
         try await screenWait("coalesced viewport resize", timeout: 5) {
-            controller.sessionState.configuration.maxWidth == 800
-                && controller.sessionState.width == 800
+            controller.sessionState.configuration.maxWidth == 832
+                && controller.sessionState.width == 832
+                && presentedSize == CGSize(width: 832, height: 468)
         }
         #expect(controller.sessionState.displayGeneration == firstGeneration + 1)
     }

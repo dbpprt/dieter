@@ -28,6 +28,7 @@ final class RemoteDesktopInputView: NSView, @preconcurrency NSTextInputClient, @
     private var lastAppliedCursor: NSCursor?
     private(set) var cursorPresentation = RemoteDesktopCursorPresentation.local
     var hostCursorVisible: Bool { !hostCursorView.isHidden }
+    var videoContentRect: CGRect { convert(renderer.contentRect(videoSize: videoSize), from: renderer) }
     private static let invisibleCursor = NSCursor(
         image: NSImage(size: NSSize(width: 16, height: 16), flipped: false) { _ in true }, hotSpot: .zero)
 
@@ -97,7 +98,7 @@ final class RemoteDesktopInputView: NSView, @preconcurrency NSTextInputClient, @
     func refreshCursor(at point: CGPoint? = nil) {
         guard let controller else { return }
         refreshKeyboardCapture()
-        let rect = RemoteDesktopInputGeometry.contentRect(bounds: bounds, videoSize: videoSize)
+        let rect = videoContentRect
         let location =
             point ?? window.map { convert($0.mouseLocationOutsideOfEventStream, from: nil) } ?? CGPoint(x: -1, y: -1)
         let inside = rect.contains(location)
@@ -130,19 +131,22 @@ final class RemoteDesktopInputView: NSView, @preconcurrency NSTextInputClient, @
     }
     override func resetCursorRects() {
         super.resetCursorRects()
-        let rect = RemoteDesktopInputGeometry.contentRect(bounds: bounds, videoSize: videoSize)
+        let rect = videoContentRect
         if !rect.isEmpty { addCursorRect(rect, cursor: lastAppliedCursor ?? .arrow) }
     }
     override func layout() {
         super.layout()
         renderer.frame = bounds
-        controller?.setViewport(bounds.size, scale: window?.backingScaleFactor ?? 1)
+        renderer.layout()
+        controller?.setViewport(renderer.drawablePixelSize, scale: 1)
         refreshCursor()
     }
 
     override func viewDidChangeBackingProperties() {
         super.viewDidChangeBackingProperties()
-        controller?.setViewport(bounds.size, scale: window?.backingScaleFactor ?? 1)
+        renderer.layout()
+        controller?.setViewport(renderer.drawablePixelSize, scale: 1)
+        refreshCursor()
     }
 
     override func updateTrackingAreas() {
@@ -345,7 +349,7 @@ final class RemoteDesktopInputView: NSView, @preconcurrency NSTextInputClient, @
 
     private func normalizedPoint(_ event: NSEvent, clamp: Bool = false) -> CGPoint? {
         let point = convert(event.locationInWindow, from: nil)
-        return RemoteDesktopInputGeometry.normalized(point: point, bounds: bounds, videoSize: videoSize, clamp: clamp)
+        return RemoteDesktopInputGeometry.normalized(point: point, content: videoContentRect, clamp: clamp)
     }
 
     private func button(_ number: Int) -> Dieter_V1_RemoteDesktopPointerButton.Button {
@@ -415,6 +419,10 @@ enum RemoteDesktopInputGeometry {
             return nil
         }
         let content = contentRect(bounds: bounds, videoSize: videoSize)
+        return normalized(point: point, content: content, clamp: clamp)
+    }
+    static func normalized(point: CGPoint, content: CGRect, clamp: Bool = false) -> CGPoint? {
+        guard content.width > 0, content.height > 0 else { return nil }
         guard clamp || content.contains(point) else { return nil }
         return CGPoint(
             x: max(0, min(1, (point.x - content.minX) / content.width)),

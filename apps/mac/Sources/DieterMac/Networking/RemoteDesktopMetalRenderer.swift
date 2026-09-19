@@ -110,12 +110,12 @@ final class RemoteDesktopMetalRenderer: NSObject, CAMetalDisplayLinkDelegate, @u
             if !gpuBusy { executor.stop() }
         }
     }
-    func resize(_ size: CGSize, scale: CGFloat, attached: Bool) {
+    func resize(pixelSize: CGSize, scale: CGFloat, attached: Bool) {
         executor.perform { [weak self] in
             guard let self, !self.stopped else { return }
-            let pixels = CGSize(width: max(1, size.width * scale), height: max(1, size.height * scale))
-            let changed = self.size != size || self.layer.drawableSize != pixels || self.attached != attached
-            self.size = size; self.attached = attached
+            let pixels = CGSize(width: max(1, pixelSize.width.rounded()), height: max(1, pixelSize.height.rounded()))
+            let changed = self.size != pixelSize || self.layer.drawableSize != pixels || self.attached != attached
+            self.size = pixelSize; self.attached = attached
             self.layer.drawableSize = pixels
             self.layer.contentsScale = scale
             if changed, attached, !self.mailbox.hasPending, let (frame, token) = self.lastFrame {
@@ -247,10 +247,13 @@ final class RemoteDesktopMetalRenderer: NSObject, CAMetalDisplayLinkDelegate, @u
         guard !isNV12 || chroma != nil, let encoder = command.makeRenderCommandEncoder(descriptor: descriptor) else {
             completeDraw(); fail("The screen texture could not be rendered.", token: token); return
         }
-        let aspect = videoSize.width / videoSize.height, surfaceAspect = size.width / size.height
-        var geometry = SIMD4<Float>(
-            Float(min(1, aspect / surfaceAspect)), Float(min(1, surfaceAspect / aspect)),
-            Float(frame.rotation.rawValue / 90), 0)
+        // Use the actual drawable, including during resize, and share the same
+        // integer pixel rectangle with hit testing and cursor placement.
+        let pixels = CGSize(width: drawable.texture.width, height: drawable.texture.height)
+        let content = RemoteDesktopVideoGeometry.contentRect(pixelSize: pixels, videoSize: videoSize)
+        encoder.setViewport(MTLViewport(originX: content.minX, originY: pixels.height - content.maxY,
+            width: content.width, height: content.height, znear: 0, zfar: 1))
+        var geometry = SIMD4<Float>(1, 1, Float(frame.rotation.rawValue / 90), 0)
         let matrix = CVBufferCopyAttachment(pixel, kCVImageBufferYCbCrMatrixKey, nil) as? String
         var coefficients =
             matrix == (kCVImageBufferYCbCrMatrix_ITU_R_601_4 as String)

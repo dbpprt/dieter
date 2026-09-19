@@ -15,6 +15,8 @@
         // These chats belong only to the rendered fixture. Keep selection local
         // so row clicks never try the synthetic machines' placeholder ports.
         private static let chatIDs = ["local_sidebar_one", "local_sidebar_two", "local_sidebar_three"]
+        private static let projectFolderID = "folder_sidebar_projects"
+        private static let chatFolderID = "folder_sidebar_chats"
         private static let longMachineName = "Zulu-workstation-with-a-long-hostname"
         private static let expectedMachineNames = ["alpha", "Beta", longMachineName]
 
@@ -176,6 +178,10 @@
                 results["resize-native-divider"] = "failed: navigation split view unavailable"
             }
 
+            installProjectFolder(store)
+            let projectFolderRendered = await NativeUIAccessibility.wait(timeout: 3) {
+                NativeUIAccessibility.find("sidebar.project-folder.\(projectFolderID)", in: window) != nil
+            }
             await showChats(store: store, window: window)
             recordNavigationBoundaries(in: window, results: &results)
             await switchChatsWithCompanion(store: store, window: window, results: &results)
@@ -189,9 +195,32 @@
                 chatWasVisible && NativeUIAccessibility.find("chat.\(chatIDs[0])", in: window) == nil
                 ? "passed"
                 : "failed: project chat rows did not collapse"
+
+            installChatFolder(store)
+            let chatFolderRendered = await NativeUIAccessibility.wait(timeout: 3) {
+                NativeUIAccessibility.find("chats.folder.\(chatFolderID)", in: window) != nil
+                    && NativeUIAccessibility.find("chat.\(chatIDs[1])", in: window) != nil
+            }
+            results["folders-rendered"] =
+                projectFolderRendered && chatFolderRendered ? "passed" : "failed"
         }
 
         private static func verify(store: DieterStore, window: NSWindow, results: inout [String: String]) async {
+            let projectFolderRendered = await NativeUIAccessibility.wait(timeout: 3) {
+                NativeUIAccessibility.find("sidebar.project-folder.\(projectFolderID)", in: window) != nil
+            }
+            results["folders-restored"] =
+                store.sidebarProjectFolders.folder(containing: projectIDs[1])?.id == projectFolderID
+                    && store.allChatsFolders.folder(containing: chatIDs[1])?.id == chatFolderID
+                    && projectFolderRendered
+                ? "passed"
+                : "failed"
+            store.sidebarProjectFolders = NavigationFolderPreferences()
+            store.allChatsFolders = NavigationFolderPreferences()
+            _ = await NativeUIAccessibility.wait {
+                NativeUIAccessibility.find("sidebar.project-folder.\(projectFolderID)", in: window) == nil
+            }
+
             let restored = loadPreferences()
             results["restored-order"] =
                 restored.orderedIDs(from: projectIDs) == [projectIDs[2], projectIDs[0], projectIDs[1]]
@@ -208,11 +237,13 @@
                 widthRestored ? "passed" : "failed: expected \(expectedWidth), restored \(persistedSidebarWidth())"
 
             // Verify the rendered order before expanding the first row.
-            let first = NativeUIAccessibility.find("sidebar.project.\(projectIDs[2]).toggle", in: window)
-            let second = NativeUIAccessibility.find("sidebar.project.\(projectIDs[0]).toggle", in: window)
-            let firstFrame = first?.recordedFrame ?? first?.frame ?? .zero
-            let secondFrame = second?.recordedFrame ?? second?.frame ?? .zero
-            let renderedOrder = firstFrame.width > 0 && secondFrame.width > 0 && firstFrame.minY > secondFrame.maxY
+            let renderedOrder = await NativeUIAccessibility.wait(timeout: 3) {
+                let first = NativeUIAccessibility.find("sidebar.project.\(projectIDs[2]).toggle", in: window)
+                let second = NativeUIAccessibility.find("sidebar.project.\(projectIDs[0]).toggle", in: window)
+                let firstFrame = first?.recordedFrame ?? first?.frame ?? .zero
+                let secondFrame = second?.recordedFrame ?? second?.frame ?? .zero
+                return firstFrame.width > 0 && secondFrame.width > 0 && firstFrame.minY > secondFrame.maxY
+            }
             NativeUIAccessibility.click("sidebar.project.\(projectIDs[2]).toggle", in: window)
             try? await DieterTaskSleep.milliseconds(350)
             var interacted = loadPreferences()
@@ -248,6 +279,32 @@
                 ? "passed" : "failed: saved expanded project was not rendered second"
             NativeUIAccessibility.click("sidebar.project.\(projectIDs[0]).toggle", in: window)
             _ = await NativeUIAccessibility.wait { loadPreferences().isExpanded(projectIDs[0]) }
+
+            installChatFolder(store)
+            let chatFolderRendered = await NativeUIAccessibility.wait(timeout: 3) {
+                NativeUIAccessibility.find("chats.folder.\(chatFolderID)", in: window) != nil
+            }
+            results["folders-in-relaunched-ui"] = chatFolderRendered ? "passed" : "failed"
+        }
+
+        private static func installProjectFolder(_ store: DieterStore) {
+            store.sidebarProjectFolders = NavigationFolderPreferences(folders: [
+                NavigationFolder(
+                    id: projectFolderID,
+                    name: "Client work",
+                    itemIDs: [projectIDs[1]]
+                )
+            ])
+        }
+
+        private static func installChatFolder(_ store: DieterStore) {
+            store.allChatsFolders = NavigationFolderPreferences(folders: [
+                NavigationFolder(
+                    id: chatFolderID,
+                    name: "Research",
+                    itemIDs: [chatIDs[1]]
+                )
+            ])
         }
 
         private static func switchChatsWithCompanion(

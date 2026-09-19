@@ -54,8 +54,20 @@ final class RemoteDesktopMetalView: NSView, RTCVideoRenderer {
     override func viewDidChangeBackingProperties() { super.viewDidChangeBackingProperties(); updateSurface() }
 
     private func updateSurface() {
-        surface.frame = bounds
-        renderer.resize(bounds.size, scale: window?.backingScaleFactor ?? 1, attached: window != nil)
+        surface.frame = backingAlignedRect(bounds, options: .alignAllEdgesNearest)
+        renderer.resize(pixelSize: drawablePixelSize, scale: window?.backingScaleFactor ?? 1, attached: window != nil)
+    }
+
+    var drawablePixelSize: CGSize {
+        let backing = surface.convertToBacking(surface.bounds)
+        return CGSize(width: backing.width.rounded(), height: backing.height.rounded())
+    }
+
+    func contentRect(videoSize: CGSize) -> CGRect {
+        let backing = surface.convertToBacking(surface.bounds)
+        let pixels = RemoteDesktopVideoGeometry.contentRect(pixelSize: drawablePixelSize, videoSize: videoSize)
+            .offsetBy(dx: backing.minX, dy: backing.minY)
+        return convert(surface.convertFromBacking(pixels), from: surface)
     }
 
     func reset() {

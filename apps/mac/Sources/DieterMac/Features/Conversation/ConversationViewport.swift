@@ -317,7 +317,14 @@ struct ConversationScrollAnchorProbe: NSViewRepresentable {
     }
 }
 
+struct ConversationScrollLayout: Equatable {
+    let contentHeight: CGFloat
+    let viewportHeight: CGFloat
+    let bottomInset: CGFloat
+}
+
 struct ConversationScrollSample: Equatable {
+    let layout: ConversationScrollLayout
     let offset: CGFloat
     let nearStart: Bool
     let nearEnd: Bool
@@ -325,6 +332,10 @@ struct ConversationScrollSample: Equatable {
     let canScroll: Bool
 
     init(_ geometry: ScrollGeometry) {
+        layout = ConversationScrollLayout(
+            contentHeight: geometry.contentSize.height,
+            viewportHeight: geometry.visibleRect.height,
+            bottomInset: geometry.contentInsets.bottom)
         offset = geometry.visibleRect.minY
         canScroll = geometry.contentSize.height > geometry.visibleRect.height - geometry.contentInsets.bottom + 2
         nearStart = offset <= 160

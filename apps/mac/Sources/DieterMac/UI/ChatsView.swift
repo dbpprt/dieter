@@ -14,6 +14,8 @@ struct ChatsView: View {
     @State private var pinnedChatNavigation = PinnedChatNavigationPreferences.load(
         from: DieterAppearance.applicationDefaults()
     )
+    @State private var folderEditor: NavigationFolderEditor?
+    @State private var unfiledDropTargeted = false
 
     private var activePinnedChats: [Dieter_V1_Card] {
         store.chats
@@ -35,6 +37,7 @@ struct ChatsView: View {
     }
 
     var body: some View {
+        let chatFolders = store.allChatsFolders
         let projection = store.replica.chatProjection(
             showArchived: showArchived,
             search: search,
@@ -43,8 +46,13 @@ struct ChatsView: View {
         let pinnedPage = LaneCardPage.resolve(
             total: projection.pinned.count, requestedPage: pinnedPageIndex)
         let displayedPinned = Array(projection.pinned[pinnedPage.lowerBound..<pinnedPage.upperBound])
-        let displayedProjects = orderedProjects.filter {
-            search.isEmpty || !(projection.byProject[$0.id] ?? []).isEmpty
+        let visibleChatsByID = Dictionary(uniqueKeysWithValues: projection.visible.map { ($0.id, $0) })
+        let filedChatIDs = Set(chatFolders.folders.flatMap(\.itemIDs))
+        let displayedProjects = orderedProjects.filter { project in
+            let chats = projection.byProject[project.id] ?? []
+            let unfiledChats = chats.filter { !filedChatIDs.contains($0.id) }
+            if chatFolders.folders.isEmpty { return search.isEmpty || !chats.isEmpty }
+            return !unfiledChats.isEmpty
         }
         let displayedProjectIDs = displayedProjects.map(\.id)
         ChatPaneSplit {
@@ -69,6 +77,16 @@ struct ChatsView: View {
                         .tint(showArchived ? DieterTheme.shell : nil)
                         .help(
                             showArchived ? "Show active chats" : "Show archived chats")
+                        Button {
+                            folderEditor = .create(title: "New chat folder")
+                        } label: {
+                            Image(systemName: "folder.badge.plus")
+                        }
+                        .buttonStyle(DieterGlassButtonStyle())
+                        .buttonBorderShape(.circle)
+                        .controlSize(.small)
+                        .help("New chat folder")
+                        .accessibilityIdentifier("chats.folder.new")
                         Button {
                             store.beginStandaloneChat()
                         } label: {
@@ -116,14 +134,52 @@ struct ChatsView: View {
                             }
                         }
 
+                        if !chatFolders.folders.isEmpty {
+                            VStack(alignment: .leading, spacing: 7) {
+                                Text("FOLDERS")
+                                    .font(DieterFont.sectionLabel).tracking(0.8)
+                                    .foregroundStyle(DieterTheme.tertiary)
+                                    .padding(.horizontal, 8)
+
+                                ForEach(chatFolders.folders) { folder in
+                                    let folderChats = folder.itemIDs.compactMap { visibleChatsByID[$0] }
+                                    if search.isEmpty || !folderChats.isEmpty {
+                                        ChatNavigationFolderGroup(
+                                            folder: folder,
+                                            chats: folderChats,
+                                            toggleExpanded: { toggleChatFolder(folder.id) },
+                                            moveChatHere: { moveChatToFolder($0, folderID: folder.id) },
+                                            rename: { folderEditor = .rename(folder) },
+                                            delete: { deleteChatFolder(folder.id) }
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
                         Text(showArchived ? "ARCHIVED PROJECTS" : "PROJECTS")
                             .font(DieterFont.sectionLabel).tracking(0.8).foregroundStyle(DieterTheme.tertiary)
-                            .padding(
-                                .horizontal, 8
-                            ).padding(.top, 3)
+                            .padding(.horizontal, 8).padding(.top, 3)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(
+                                unfiledDropTargeted ? DieterTheme.shellDeep.opacity(0.14) : .clear,
+                                in: RoundedRectangle(cornerRadius: 7, style: .continuous)
+                            )
+                            .dropDestination(for: String.self) { values, _ in
+                                guard !chatFolders.folders.isEmpty,
+                                    let value = values.first,
+                                    let payload = PinnedChatDragPayload(value)
+                                else { return false }
+                                moveChatToFolder(payload.chatID, folderID: nil)
+                                return true
+                            } isTargeted: {
+                                unfiledDropTargeted = !chatFolders.folders.isEmpty && $0
+                            }
 
                         ForEach(displayedProjects, id: \.id) { project in
-                            let projectChats = projection.byProject[project.id] ?? []
+                            let projectChats = (projection.byProject[project.id] ?? []).filter {
+                                chatFolders.folders.isEmpty || !filedChatIDs.contains($0.id)
+                            }
                             ChatProjectGroup(
                                 project: project,
                                 projectIDs: displayedProjectIDs,
@@ -184,6 +240,13 @@ struct ChatsView: View {
         .task { await store.refreshChats() }
         .task(id: pinnedChatMembership) { initializePinnedChatOrderIfNeeded() }
         .onChange(of: projection.pinned.count) { _, _ in pinnedPageIndex = pinnedPage.page }
+        .sheet(item: $folderEditor) { editor in
+            NavigationFolderNameSheet(
+                editor: editor,
+                existingNames: store.allChatsFolders.folders.filter { $0.id != editor.folderID }.map(\.name),
+                save: { saveChatFolder(editor: editor, name: $0) }
+            )
+        }
     }
 
     private func toggleExpanded(_ projectID: String) {
@@ -214,6 +277,34 @@ struct ChatsView: View {
             return
         }
         store.sidebarProjectNavigation = navigation
+    }
+
+    private func saveChatFolder(editor: NavigationFolderEditor, name: String) {
+        var chatFolders = store.allChatsFolders
+        if let folderID = editor.folderID {
+            guard chatFolders.renameFolder(folderID, to: name) else { return }
+        } else {
+            guard chatFolders.createFolder(named: name) != nil else { return }
+        }
+        store.allChatsFolders = chatFolders
+    }
+
+    private func toggleChatFolder(_ folderID: String) {
+        var chatFolders = store.allChatsFolders
+        guard chatFolders.toggleExpanded(folderID) else { return }
+        store.allChatsFolders = chatFolders
+    }
+
+    private func moveChatToFolder(_ chatID: String, folderID: String?) {
+        var chatFolders = store.allChatsFolders
+        guard chatFolders.moveItem(chatID, to: folderID) else { return }
+        store.allChatsFolders = chatFolders
+    }
+
+    private func deleteChatFolder(_ folderID: String) {
+        var chatFolders = store.allChatsFolders
+        guard chatFolders.deleteFolder(folderID) else { return }
+        store.allChatsFolders = chatFolders
     }
 }
 
@@ -524,6 +615,105 @@ private struct ChatProjectGroup: View {
     }
 }
 
+private struct ChatNavigationFolderGroup: View {
+    let folder: NavigationFolder
+    let chats: [Dieter_V1_Card]
+    let toggleExpanded: () -> Void
+    let moveChatHere: (String) -> Void
+    let rename: () -> Void
+    let delete: () -> Void
+    @State private var dropTargeted = false
+    @State private var hovering = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            HStack(spacing: 7) {
+                Button(action: toggleExpanded) {
+                    HStack(spacing: 7) {
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 8, weight: .bold))
+                            .rotationEffect(.degrees(folder.isExpanded ? 90 : 0))
+                        Image(systemName: dropTargeted ? "folder.fill.badge.plus" : "folder.fill")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(dropTargeted ? DieterTheme.shell : DieterTheme.subtle)
+                        Text(folder.name)
+                            .font(.system(size: 11.5, weight: .semibold))
+                            .lineLimit(1)
+                        Text("\(chats.count)")
+                            .font(.system(size: 9.5, weight: .semibold))
+                            .foregroundStyle(DieterTheme.tertiary)
+                            .padding(.horizontal, 5).padding(.vertical, 1)
+                            .background(DieterTheme.surface, in: Capsule())
+                        Spacer(minLength: 0)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+
+                if hovering {
+                    Menu {
+                        Button("Rename folder…", systemImage: "pencil", action: rename)
+                        Divider()
+                        Button("Delete folder", systemImage: "trash", role: .destructive, action: delete)
+                    } label: {
+                        Image(systemName: "ellipsis").frame(width: 18, height: 20)
+                    }
+                    .menuStyle(.borderlessButton)
+                    .menuIndicator(.hidden)
+                    .fixedSize()
+                    .help("Folder options")
+                }
+            }
+            .padding(.horizontal, 8)
+            .frame(height: 30)
+            .foregroundStyle(DieterTheme.subtle)
+            .background(
+                dropTargeted
+                    ? DieterTheme.shellDeep.opacity(0.18)
+                    : (hovering ? DieterTheme.surface.opacity(0.72) : DieterTheme.surface.opacity(0.42)),
+                in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .stroke(dropTargeted ? DieterTheme.shell.opacity(0.55) : DieterTheme.border.opacity(0.6))
+            )
+            .contentShape(Rectangle())
+            .onHover { hovering = $0 }
+            .dropDestination(for: String.self) { values, _ in
+                guard let value = values.first, let payload = PinnedChatDragPayload(value) else { return false }
+                moveChatHere(payload.chatID)
+                return true
+            } isTargeted: {
+                dropTargeted = $0
+            }
+            .contextMenu {
+                Button("Rename folder…", systemImage: "pencil", action: rename)
+                Button("Delete folder", systemImage: "trash", role: .destructive, action: delete)
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("\(folder.name), \(chats.count) chats")
+            .accessibilityIdentifier("chats.folder.\(folder.id)")
+            .smokeTarget("chats.folder.\(folder.id)")
+
+            if folder.isExpanded {
+                if chats.isEmpty {
+                    HStack(spacing: 7) {
+                        Image(systemName: "arrow.down.to.line.compact")
+                        Text("Drop chats here")
+                    }
+                    .font(.system(size: 10.5, weight: .medium))
+                    .foregroundStyle(DieterTheme.tertiary)
+                    .padding(.leading, 28).padding(.vertical, 6)
+                } else {
+                    ChatGroupCard(chats: chats).padding(.leading, 14)
+                }
+            }
+        }
+        .animation(.snappy(duration: 0.18), value: folder.isExpanded)
+        .animation(.easeOut(duration: 0.12), value: dropTargeted)
+    }
+}
+
 private struct ChatPageControls: View {
     let page: LaneCardPage
     let previous: () -> Void
@@ -736,6 +926,9 @@ struct ChatRow: View {
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
+        .draggable(PinnedChatDragPayload(chatID: card.id).encoded) {
+            PinnedChatDragPreview(card: card)
+        }
         .contextMenu {
             if store.isFailedOutboxItem(card.id) {
                 Button("Retry queued creation") { Task { await store.retryOutboxItem(card.id) } }
@@ -749,6 +942,27 @@ struct ChatRow: View {
             } else {
                 Button(card.pinned ? "Unpin" : "Pin") {
                     Task { await store.pin(card, pinned: !card.pinned) }
+                }
+            }
+            if !store.allChatsFolders.folders.isEmpty {
+                Menu("Move to folder", systemImage: "folder") {
+                    ForEach(store.allChatsFolders.folders) { folder in
+                        Button {
+                            moveChat(to: folder.id)
+                        } label: {
+                            if folder.itemIDs.contains(card.id) {
+                                Label(folder.name, systemImage: "checkmark")
+                            } else {
+                                Text(folder.name)
+                            }
+                        }
+                    }
+                    if store.allChatsFolders.folder(containing: card.id) != nil {
+                        Divider()
+                        Button("No folder", systemImage: "arrow.up.backward") {
+                            moveChat(to: nil)
+                        }
+                    }
                 }
             }
             Button("Rename…", systemImage: "pencil") {
@@ -787,6 +1001,12 @@ struct ChatRow: View {
         guard !title.isEmpty else { return }
         Task { await store.rename(card, title: title) }
         renamePresented = false
+    }
+
+    private func moveChat(to folderID: String?) {
+        var preferences = store.allChatsFolders
+        guard preferences.moveItem(card.id, to: folderID) else { return }
+        store.allChatsFolders = preferences
     }
 }
 
@@ -943,9 +1163,6 @@ private struct PinnedChatRow: View {
                     .stroke(dropTargeted ? DieterTheme.shell : .clear, lineWidth: 1.5)
                     .padding(.horizontal, 1)
                     .allowsHitTesting(false)
-            }
-            .draggable(PinnedChatDragPayload(chatID: card.id).encoded) {
-                PinnedChatDragPreview(card: card)
             }
             .dropDestination(for: String.self) { values, _ in
                 guard let value = values.first,

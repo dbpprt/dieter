@@ -291,7 +291,7 @@ private func automaticScrollSnapshot(start: Int, end: Int) -> Dieter_V1_Conversa
 }
 
 @MainActor private func automaticScrollWheel(
-    _ scroll: NSScrollView, window: NSWindow, pixels: Int32, phase: Int64
+    _ scroll: NSScrollView, window: NSWindow, pixels: Int32, phase: Int64, momentum: Int64 = 0
 ) throws {
     let event = try #require(
         CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 1, wheel1: pixels, wheel2: 0, wheel3: 0))
@@ -302,6 +302,7 @@ private func automaticScrollSnapshot(start: Int, end: Int) -> Dieter_V1_Conversa
         .mouseEventWindowUnderMousePointerThatCanHandleThisEvent, value: Int64(window.windowNumber))
     event.setIntegerValueField(.scrollWheelEventIsContinuous, value: 1)
     event.setIntegerValueField(.scrollWheelEventScrollPhase, value: phase)
+    event.setIntegerValueField(.scrollWheelEventMomentumPhase, value: momentum)
     let nativeEvent = try #require(NSEvent(cgEvent: event))
     if let content = window.contentView {
         for monitor in automaticScrollViews(in: content).compactMap({ $0 as? ConversationScrollIntentProbe.MonitorView }
@@ -362,4 +363,158 @@ private func automaticScrollSnapshot(start: Int, end: Int) -> Dieter_V1_Conversa
     root.layoutSubtreeIfNeeded()
     try? await DieterTaskSleep.milliseconds(milliseconds)
     root.layoutSubtreeIfNeeded()
+}
+
+@Test @MainActor func automaticTailWheelAndMomentumDoNotScheduleCorrections() async throws {
+    let fixture = TailGestureFixture()
+    defer { fixture.window.close() }
+    await settleAutomaticScroll(fixture.root, milliseconds: 350)
+    let scroll = try fixture.scroll()
+    let initialCorrections = fixture.tailCorrections
+    for index in 0..<20 {
+        try automaticScrollWheel(scroll, window: fixture.window, pixels: -12, phase: index == 0 ? 1 : 2)
+        await settleAutomaticScroll(fixture.root, milliseconds: 10)
+    }
+    try automaticScrollWheel(scroll, window: fixture.window, pixels: 0, phase: 4)
+    for index in 0..<12 {
+        try automaticScrollWheel(
+            scroll, window: fixture.window, pixels: -4, phase: 0, momentum: index == 0 ? 1 : 2)
+        await settleAutomaticScroll(fixture.root, milliseconds: 10)
+    }
+    try automaticScrollWheel(scroll, window: fixture.window, pixels: 0, phase: 0, momentum: 4)
+    await settleAutomaticScroll(fixture.root, milliseconds: 120)
+    #expect(fixture.tailCorrections == initialCorrections, "Native bottom bounce must not trigger tail corrections")
+    #expect(!fixture.jumpVisible)
+    #expect(fixture.detachTransitions == 0, "Bottom input must never flash Jump to latest")
+    #expect(
+        abs(
+            scroll.documentVisibleRect.maxY - scroll.contentInsets.bottom
+                - (scroll.documentView?.bounds.maxY ?? 0)) < 2)
+}
+
+@Test @MainActor func automaticUpwardIntentWinsOverStreamingAndMomentum() async throws {
+    let fixture = TailGestureFixture()
+    defer { fixture.window.close() }
+    await settleAutomaticScroll(fixture.root, milliseconds: 350)
+    let scroll = try fixture.scroll()
+    let initialCorrections = fixture.tailCorrections
+    // Queue content growth immediately before input, without allowing the tail
+    // task to settle first. The event monitor must invalidate that pending work.
+    fixture.appendText()
+    try automaticScrollWheel(scroll, window: fixture.window, pixels: 1, phase: 1)
+    await settleAutomaticScroll(fixture.root, milliseconds: 20)
+    #expect(fixture.jumpVisible, "Even a small upward gesture relinquishes tail following")
+    var previous = scroll.contentView.bounds.minY
+    for index in 0..<12 {
+        fixture.appendText()
+        try automaticScrollWheel(
+            scroll, window: fixture.window, pixels: 12, phase: index < 6 ? 2 : 0,
+            momentum: index < 6 ? 0 : (index == 6 ? 1 : 2))
+        await settleAutomaticScroll(fixture.root, milliseconds: 20)
+        let current = scroll.contentView.bounds.minY
+        #expect(current <= previous + 2, "Upward input must not snap toward newer content")
+        previous = current
+    }
+    try automaticScrollWheel(scroll, window: fixture.window, pixels: 0, phase: 4, momentum: 4)
+    await settleAutomaticScroll(fixture.root, milliseconds: 120)
+    let reading = try #require(automaticScrollReadingPosition(in: scroll))
+    fixture.appendText()
+    await settleAutomaticScroll(fixture.root, milliseconds: 120)
+    let position = try #require(automaticScrollTextPosition(reading.text, in: scroll))
+    #expect(abs(position - reading.offset) < 2)
+    #expect(fixture.tailCorrections == initialCorrections)
+    #expect(fixture.jumpVisible)
+}
+
+@MainActor private final class TailGestureFixture {
+    let store = DieterStore(restoreSync: false)
+    let window: NSWindow
+    var root: NSView { window.contentView! }
+    var tailCorrections = 0
+    var jumpVisible = false
+    var detachTransitions = 0
+
+    init() {
+        var snapshot = automaticScrollSnapshot(start: 0, end: 30)
+        snapshot.page.hasMore_p = false
+        store.state.chats = [snapshot.detail.card]
+        store.chats = [snapshot.detail.card]
+        store.selectedChatID = snapshot.detail.card.id
+        store.conversation = snapshot
+        store.selectedDetail = snapshot.detail
+        store.conversationContext.model.resetConversationHistory(from: snapshot)
+        window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 700, height: 600),
+            styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        let root = NSHostingView(
+            rootView:
+                ConversationTimeline(
+                    onTailScroll: { [weak self] in self?.tailCorrections += 1 },
+                    onViewportObservation: { [weak self] observation in
+                        guard let self else { return }
+                        if !observation.followsLatest && !jumpVisible { detachTransitions += 1 }
+                        jumpVisible = !observation.followsLatest
+                    }
+                )
+                .safeAreaInset(edge: .bottom, spacing: 0) { Color.clear.frame(height: 100) }
+                .environment(store).environment(store.conversationContext))
+        root.sizingOptions = []
+        window.contentView = root
+    }
+
+    func scroll() throws -> NSScrollView {
+        try #require(
+            automaticScrollViews(in: root).compactMap { $0 as? NSScrollView }.first {
+                ($0.documentView?.bounds.height ?? 0) > 1_000
+            })
+    }
+
+    func appendText() {
+        var snapshot = store.conversation!
+        snapshot.conversation.messages[29].parts[0].text += "\nStreaming content grows at the tail."
+        store.conversation = snapshot
+    }
+}
+
+@Test @MainActor func automaticFollowingSurvivesContentGrowthAndViewportResize() async throws {
+    let fixture = TailGestureFixture()
+    defer { fixture.window.close() }
+    await settleAutomaticScroll(fixture.root, milliseconds: 350)
+    let scroll = try fixture.scroll()
+    fixture.appendText()
+    await settleAutomaticScroll(fixture.root, milliseconds: 150)
+    #expect(
+        abs(
+            scroll.documentVisibleRect.maxY - scroll.contentInsets.bottom
+                - (scroll.documentView?.bounds.maxY ?? 0)) < 2)
+    fixture.window.setContentSize(NSSize(width: 560, height: 420))
+    await settleAutomaticScroll(fixture.root, milliseconds: 150)
+    #expect(
+        abs(
+            scroll.documentVisibleRect.maxY - scroll.contentInsets.bottom
+                - (scroll.documentView?.bounds.maxY ?? 0)) < 2)
+    #expect(!fixture.jumpVisible)
+}
+
+@Test @MainActor func automaticPhaselessWheelDetachesAndCanRejoinLatest() async throws {
+    let fixture = TailGestureFixture()
+    defer { fixture.window.close() }
+    await settleAutomaticScroll(fixture.root, milliseconds: 350)
+    let scroll = try fixture.scroll()
+    let bottom = scroll.contentView.bounds.minY
+    try automaticScrollWheel(scroll, window: fixture.window, pixels: 100, phase: 0)
+    await settleAutomaticScroll(fixture.root, milliseconds: 80)
+    #expect(scroll.contentView.bounds.minY < bottom - 2)
+    #expect(fixture.jumpVisible)
+    for _ in 0..<10 {
+        try automaticScrollWheel(scroll, window: fixture.window, pixels: -100, phase: 0)
+        await settleAutomaticScroll(fixture.root, milliseconds: 20)
+    }
+    await settleAutomaticScroll(fixture.root, milliseconds: 80)
+    #expect(!fixture.jumpVisible)
+    #expect(
+        abs(
+            scroll.documentVisibleRect.maxY - scroll.contentInsets.bottom
+                - (scroll.documentView?.bounds.maxY ?? 0)) < 2)
 }

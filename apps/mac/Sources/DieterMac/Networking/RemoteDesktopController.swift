@@ -999,10 +999,7 @@ final class RemoteDesktopController {
     }
 
     func setViewport(_ size: CGSize, scale: CGFloat) {
-        guard size.width > 0, size.height > 0 else { return }
-        let value = CGSize(
-            width: max(640, min(3840, ceil(size.width * scale / 160) * 160)),
-            height: max(360, min(2160, ceil(size.height * scale / 90) * 90)))
+        guard let value = RemoteDesktopVideoGeometry.requestedSize(points: size, scale: scale) else { return }
         guard value != viewport else { return }
         viewport = value
         viewportTask?.cancel()

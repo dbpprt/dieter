@@ -363,6 +363,8 @@ enum SidebarMachineOrdering {
 
 struct AppSidebar: View {
     @Environment(DieterStore.self) private var store
+    @State private var folderEditor: NavigationFolderEditor?
+    @State private var unfiledDropTargeted = false
 
     private var visibleProjects: [Dieter_V1_Project] {
         let projects = store.projects.filter { !$0.archived }
@@ -388,6 +390,13 @@ struct AppSidebar: View {
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("sidebar.main-pane")
         .smokeTarget("sidebar.main-pane")
+        .sheet(item: $folderEditor) { editor in
+            NavigationFolderNameSheet(
+                editor: editor,
+                existingNames: store.sidebarProjectFolders.folders.filter { $0.id != editor.folderID }.map(\.name),
+                save: { saveProjectFolder(editor: editor, name: $0) }
+            )
+        }
     }
 
     private var sidebarHeader: some View {
@@ -458,6 +467,9 @@ struct AppSidebar: View {
     private var expandedProjects: some View {
         let projects = visibleProjects
         let projectIDs = projects.map(\.id)
+        let projectsByID = Dictionary(uniqueKeysWithValues: projects.map { ($0.id, $0) })
+        let folders = store.sidebarProjectFolders.folders
+        let unfiledProjects = store.sidebarProjectFolders.unfiledIDs(from: projectIDs).compactMap { projectsByID[$0] }
         return VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 6) {
                 Text("PROJECTS").font(DieterFont.sectionLabel).tracking(0.8).foregroundStyle(DieterTheme.tertiary)
@@ -467,6 +479,15 @@ struct AppSidebar: View {
                 }
                 Spacer()
                 Button {
+                    folderEditor = .create(title: "New project folder")
+                } label: {
+                    Image(systemName: "folder.badge.plus").font(.system(size: 10, weight: .semibold))
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(DieterTheme.tertiary)
+                .help("New project folder")
+                .accessibilityIdentifier("sidebar.project-folder.new")
+                Button {
                     store.createProjectPresented = true
                 } label: {
                     Image(systemName: "plus").font(.system(size: 10, weight: .bold))
@@ -474,16 +495,45 @@ struct AppSidebar: View {
                 .buttonStyle(.plain).foregroundStyle(DieterTheme.tertiary).help("Add Git project")
             }
             .padding(.horizontal, 12).padding(.top, 2).padding(.bottom, 4)
+            .background(
+                unfiledDropTargeted ? DieterTheme.shellDeep.opacity(0.14) : .clear,
+                in: RoundedRectangle(cornerRadius: 7, style: .continuous)
+            )
+            .dropDestination(for: String.self) { values, _ in
+                guard !folders.isEmpty,
+                    let value = values.first,
+                    let payload = SidebarProjectDragPayload(value)
+                else { return false }
+                moveProjectToFolder(payload.projectID, folderID: nil)
+                return true
+            } isTargeted: {
+                unfiledDropTargeted = !folders.isEmpty && $0
+            }
 
-            ForEach(projects, id: \.id) { project in
-                SidebarProjectInsertionTarget(beforeProjectID: project.id) { moveProject($0, before: project.id) }
-                SidebarProjectRow(
-                    project: project,
-                    projectIDs: projectIDs,
-                    expanded: store.sidebarProjectNavigation.isExpanded(project.id),
-                    toggleExpanded: { toggleProject(project.id) },
-                    moveProject: moveProject
-                )
+            if folders.isEmpty {
+                ForEach(projects, id: \.id) { project in
+                    projectNavigationRow(project, projectIDs: projectIDs)
+                }
+            } else {
+                ForEach(folders) { folder in
+                    let folderProjects = folder.itemIDs.compactMap { projectsByID[$0] }
+                    SidebarProjectFolderGroup(
+                        folder: folder,
+                        visibleCount: folderProjects.count,
+                        toggleExpanded: { toggleProjectFolder(folder.id) },
+                        moveProjectHere: { moveProjectToFolder($0, folderID: folder.id) },
+                        rename: { folderEditor = .rename(folder) },
+                        delete: { deleteProjectFolder(folder.id) }
+                    ) {
+                        ForEach(folderProjects, id: \.id) { project in
+                            projectNavigationRow(project, projectIDs: projectIDs)
+                        }
+                    }
+                }
+
+                ForEach(unfiledProjects, id: \.id) { project in
+                    projectNavigationRow(project, projectIDs: projectIDs)
+                }
             }
             SidebarProjectInsertionTarget(beforeProjectID: nil) { moveProject($0, before: nil) }
         }
@@ -564,6 +614,46 @@ struct AppSidebar: View {
         store.sidebarProjectNavigation = navigation
     }
 
+    @ViewBuilder
+    private func projectNavigationRow(_ project: Dieter_V1_Project, projectIDs: [String]) -> some View {
+        SidebarProjectInsertionTarget(beforeProjectID: project.id) { moveProject($0, before: project.id) }
+        SidebarProjectRow(
+            project: project,
+            projectIDs: projectIDs,
+            expanded: store.sidebarProjectNavigation.isExpanded(project.id),
+            toggleExpanded: { toggleProject(project.id) },
+            moveProject: moveProject
+        )
+    }
+
+    private func saveProjectFolder(editor: NavigationFolderEditor, name: String) {
+        var preferences = store.sidebarProjectFolders
+        if let folderID = editor.folderID {
+            guard preferences.renameFolder(folderID, to: name) else { return }
+        } else {
+            guard preferences.createFolder(named: name) != nil else { return }
+        }
+        store.sidebarProjectFolders = preferences
+    }
+
+    private func toggleProjectFolder(_ folderID: String) {
+        var preferences = store.sidebarProjectFolders
+        guard preferences.toggleExpanded(folderID) else { return }
+        store.sidebarProjectFolders = preferences
+    }
+
+    private func moveProjectToFolder(_ projectID: String, folderID: String?) {
+        var preferences = store.sidebarProjectFolders
+        guard preferences.moveItem(projectID, to: folderID) else { return }
+        store.sidebarProjectFolders = preferences
+    }
+
+    private func deleteProjectFolder(_ folderID: String) {
+        var preferences = store.sidebarProjectFolders
+        guard preferences.deleteFolder(folderID) else { return }
+        store.sidebarProjectFolders = preferences
+    }
+
     private func machineDetail(_ machine: DieterEndpoint) -> String {
         if let incompatibility = machine.incompatibilityDescription { return incompatibility }
         if let connectionError = store.machineConnectionErrors[machine.id] { return connectionError }
@@ -586,6 +676,98 @@ struct AppSidebar: View {
         store.machineIsAvailable(machine)
     }
 
+}
+
+private struct SidebarProjectFolderGroup<Content: View>: View {
+    let folder: NavigationFolder
+    let visibleCount: Int
+    let toggleExpanded: () -> Void
+    let moveProjectHere: (String) -> Void
+    let rename: () -> Void
+    let delete: () -> Void
+    @ViewBuilder let content: Content
+    @State private var dropTargeted = false
+    @State private var hovering = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 1) {
+            HStack(spacing: 7) {
+                Button(action: toggleExpanded) {
+                    HStack(spacing: 7) {
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 8, weight: .bold))
+                            .rotationEffect(.degrees(folder.isExpanded ? 90 : 0))
+                        Image(systemName: dropTargeted ? "folder.fill.badge.plus" : "folder.fill")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(dropTargeted ? DieterTheme.shell : DieterTheme.subtle)
+                        Text(folder.name)
+                            .font(.system(size: 11.5, weight: .semibold))
+                            .lineLimit(1)
+                        Text("\(visibleCount)")
+                            .font(.system(size: 9.5, weight: .semibold))
+                            .foregroundStyle(DieterTheme.tertiary)
+                            .padding(.horizontal, 5).padding(.vertical, 1)
+                            .background(DieterTheme.surface, in: Capsule())
+                        Spacer(minLength: 0)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+
+                if hovering {
+                    Menu {
+                        Button("Rename folder…", systemImage: "pencil", action: rename)
+                        Divider()
+                        Button("Delete folder", systemImage: "trash", role: .destructive, action: delete)
+                    } label: {
+                        Image(systemName: "ellipsis").frame(width: 18, height: 20)
+                    }
+                    .menuStyle(.borderlessButton)
+                    .menuIndicator(.hidden)
+                    .fixedSize()
+                    .help("Folder options")
+                }
+            }
+            .padding(.horizontal, 8)
+            .frame(height: 30)
+            .foregroundStyle(DieterTheme.subtle)
+            .background(
+                dropTargeted
+                    ? DieterTheme.shellDeep.opacity(0.18)
+                    : (hovering ? DieterTheme.surface.opacity(0.65) : DieterTheme.surface.opacity(0.34)),
+                in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .stroke(dropTargeted ? DieterTheme.shell.opacity(0.55) : DieterTheme.border.opacity(0.55))
+            )
+            .contentShape(Rectangle())
+            .onHover { hovering = $0 }
+            .dropDestination(for: String.self) { values, _ in
+                guard let value = values.first, let payload = SidebarProjectDragPayload(value) else { return false }
+                moveProjectHere(payload.projectID)
+                return true
+            } isTargeted: {
+                dropTargeted = $0
+            }
+            .contextMenu {
+                Button("Rename folder…", systemImage: "pencil", action: rename)
+                Button("Delete folder", systemImage: "trash", role: .destructive, action: delete)
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("\(folder.name), \(visibleCount) projects")
+            .accessibilityIdentifier("sidebar.project-folder.\(folder.id)")
+            .smokeTarget("sidebar.project-folder.\(folder.id)")
+
+            if folder.isExpanded {
+                VStack(alignment: .leading, spacing: 0) { content }
+                    .padding(.leading, 8)
+            }
+        }
+        .padding(.vertical, 2)
+        .animation(.snappy(duration: 0.18), value: folder.isExpanded)
+        .animation(.easeOut(duration: 0.12), value: dropTargeted)
+    }
 }
 /// Compressed project row (default): initials avatar + name. Tapping the row body
 /// opens a quick-nav popover (boards · files · schedules); the trailing chevron
@@ -817,6 +999,28 @@ private struct ProjectContextMenuModifier: ViewModifier {
                     store.presentNewBoard(projectID: project.id)
                 }
                 .disabled(!store.projectIsAvailable(project.id))
+                if !store.sidebarProjectFolders.folders.isEmpty {
+                    Divider()
+                    Menu("Move to folder", systemImage: "folder") {
+                        ForEach(store.sidebarProjectFolders.folders) { folder in
+                            Button {
+                                moveProject(to: folder.id)
+                            } label: {
+                                if folder.itemIDs.contains(project.id) {
+                                    Label(folder.name, systemImage: "checkmark")
+                                } else {
+                                    Text(folder.name)
+                                }
+                            }
+                        }
+                        if store.sidebarProjectFolders.folder(containing: project.id) != nil {
+                            Divider()
+                            Button("No folder", systemImage: "arrow.up.backward") {
+                                moveProject(to: nil)
+                            }
+                        }
+                    }
+                }
                 Divider()
                 Button("Delete project…", systemImage: "trash", role: .destructive) {
                     deleteConfirmationPresented = true
@@ -836,6 +1040,12 @@ private struct ProjectContextMenuModifier: ViewModifier {
                     "This removes the project from the sidebar without deleting its Git working tree. You can restore it from Archive."
                 )
             }
+    }
+
+    private func moveProject(to folderID: String?) {
+        var preferences = store.sidebarProjectFolders
+        guard preferences.moveItem(project.id, to: folderID) else { return }
+        store.sidebarProjectFolders = preferences
     }
 }
 

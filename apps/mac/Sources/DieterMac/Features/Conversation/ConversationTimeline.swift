@@ -63,6 +63,9 @@ struct ConversationTimeline: View {
     @Environment(ConversationContext.self) private var context
     // The native sidebar supplies its own adaptive glass behind the transcript.
     var background: Color = DieterTheme.background
+    // Optional instrumentation for isolated native scroll regression fixtures.
+    var onTailScroll: (() -> Void)?
+    var onViewportObservation: ((ConversationViewportObservation) -> Void)?
     @State private var historyLoadInFlight = false
     @State private var loadingEarlier = true
     @State private var contentCanScroll = true
@@ -70,6 +73,8 @@ struct ConversationTimeline: View {
     @State private var restoringOffset: CGFloat?
     @State private var isAtRenderedEnd = true
     @State private var userScrollInProgress = false
+    @State private var earlierScrollIntent: Bool?
+    @State private var scrollInputGeneration = 0
     @State private var viewportMode = ConversationViewportMode.awaitingInitial(conversationID: "")
     @State private var presentedFailureLog: String?
     @State private var retryingFailureLog: String?
@@ -283,12 +288,14 @@ struct ConversationTimeline: View {
                 guard !windowChangeInFlight, !historyLoadInFlight else { return }
                 if userScrollInProgress {
                     updateViewportAfterUserScroll()
-                    if current.offset < previous.offset, current.nearStart {
+                    if current.offset < previous.offset, earlierScrollIntent != false, current.nearStart {
                         showEarlierMessages()
-                    } else if current.offset > previous.offset, current.nearEnd {
+                    } else if current.offset > previous.offset, earlierScrollIntent != true, current.nearEnd {
                         showLaterMessages()
                     }
-                } else if !current.atEnd, ConversationScrollBehavior.followsLatest(viewportMode) {
+                } else if !current.atEnd, current.layout != previous.layout,
+                    ConversationScrollBehavior.followsLatest(viewportMode)
+                {
                     requestTailScroll()
                 }
             }
@@ -296,6 +303,8 @@ struct ConversationTimeline: View {
                 let wasUserDriven = ConversationScrollBehavior.isUserDriven(oldPhase)
                 let isUserDriven = ConversationScrollBehavior.isUserDriven(newPhase)
                 userScrollInProgress = isUserDriven
+                defer { if !isUserDriven { earlierScrollIntent = nil } }
+                if isUserDriven && !wasUserDriven { scrollInputGeneration &+= 1 }
                 if !isUserDriven || !wasUserDriven { restoringOffset = nil }
                 guard !windowChangeInFlight, !historyLoadInFlight else { return }
                 if isUserDriven, !isAtLatest {
@@ -331,6 +340,7 @@ struct ConversationTimeline: View {
                 #endif
             }
             .onChange(of: viewportObservation, initial: true) { _, observation in
+                onViewportObservation?(observation)
                 #if DIETER_UI_SMOKE
                     ConversationUISmokeRunner.recordViewportObservation(
                         conversationID: observation.conversationID,
@@ -358,6 +368,8 @@ struct ConversationTimeline: View {
                 viewportMode = .awaitingInitial(conversationID: selectedID)
                 isAtRenderedEnd = false
                 userScrollInProgress = false
+                earlierScrollIntent = nil
+                scrollInputGeneration &+= 1
             }
             .task(id: projectionKey) {
                 let key = projectionKey
@@ -390,6 +402,21 @@ struct ConversationTimeline: View {
                     key == projectionKey,
                     key.conversationID == conversationID
                 else { return }
+                // Preparation leaves the old rows mounted. Capture where the
+                // reader is now, not where the paging request began.
+                if windowChangeInFlight, pendingWindowAnchor != nil,
+                    let current = scrollAnchors.capture(preferBottom: !loadingEarlier)
+                {
+                    if !source.contains(where: { $0.id == current.messageID }),
+                        let index = messages.firstIndex(where: { $0.id == current.messageID })
+                    {
+                        pendingWindowAnchor = current
+                        renderWindowPosition = loadingEarlier ? .pagingEarlier(from: index) : .pagingLater(from: index)
+                        return
+                    }
+                    pendingWindowAnchor = current
+                }
+                let inputGeneration = scrollInputGeneration
                 projection = next
                 projectionConversationID = key.conversationID
                 if windowChangeInFlight {
@@ -397,14 +424,15 @@ struct ConversationTimeline: View {
                     renderWindowPosition = renderWindowPosition.afterUserScroll(
                         isAtLatest: false, renderedRange: range)
                     await Task.yield()
-                    guard key == projectionKey, key.conversationID == conversationID else { return }
-                    if let anchor, scrollAnchors.restore(anchor) {
+                    guard !Task.isCancelled, key == projectionKey, key.conversationID == conversationID else { return }
+                    if inputGeneration == scrollInputGeneration, let anchor, scrollAnchors.restore(anchor) {
                         restoringOffset = scrollAnchors.lastRestoredOffset
                     }
                     await Task.yield()
-                    guard key == projectionKey, key.conversationID == conversationID else { return }
+                    guard !Task.isCancelled, key == projectionKey, key.conversationID == conversationID else { return }
                     pendingWindowAnchor = nil
                     windowChangeInFlight = false
+                    restoringOffset = nil
                 }
                 if ConversationScrollBehavior.followsLatest(viewportMode) {
                     requestTailScroll()
@@ -417,6 +445,7 @@ struct ConversationTimeline: View {
                 )
             ) {
                 let request = tailScrollRequest
+                let inputGeneration = scrollInputGeneration
                 defer {
                     if request == tailScrollRequest {
                         tailScrollRequestPending = false
@@ -427,7 +456,9 @@ struct ConversationTimeline: View {
                     ConversationScrollBehavior.followsLatest(viewportMode)
                 else { return }
                 await Task.yield()
-                guard projectionConversationID == conversationID,
+                guard !Task.isCancelled, request == tailScrollRequest,
+                    inputGeneration == scrollInputGeneration,
+                    projectionConversationID == conversationID,
                     ConversationScrollBehavior.followsLatest(viewportMode),
                     !userScrollInProgress
                 else { return }
@@ -437,7 +468,9 @@ struct ConversationTimeline: View {
                     // Do not reveal the transcript until that movement has
                     // landed; otherwise one frame of the history's top leaks.
                     await Task.yield()
-                    guard projectionConversationID == conversationID,
+                    guard !Task.isCancelled, request == tailScrollRequest,
+                        inputGeneration == scrollInputGeneration,
+                        projectionConversationID == conversationID,
                         viewportMode == .awaitingInitial(conversationID: conversationID),
                         !userScrollInProgress
                     else { return }
@@ -458,15 +491,18 @@ struct ConversationTimeline: View {
     }
 
     private func scrollToLatest(_ proxy: ScrollViewProxy) {
+        guard !scrollAnchors.isAtEdge(earlier: false) else { return }
+        onTailScroll?()
         proxy.scrollTo(ConversationScrollBehavior.bottomID, anchor: .bottom)
     }
 
     private func updateViewportAfterUserScroll() {
         guard !windowChangeInFlight, !historyLoadInFlight else { return }
-        if isAtLatest {
+        if isAtLatest, earlierScrollIntent != true {
             returnToLatest()
             return
         }
+        guard !isAtLatest else { return }
         viewportMode = ConversationScrollBehavior.afterUserScroll(isAtLatest: isAtLatest)
         renderWindowPosition = renderWindowPosition.afterUserScroll(
             isAtLatest: isAtLatest, renderedRange: renderRange)
@@ -483,6 +519,11 @@ struct ConversationTimeline: View {
     }
 
     private func returnToLatest() {
+        guard
+            viewportMode != .followingLatest || renderWindowPosition != .latest
+                || context.model.browsingEarlierHistory || !context.model.olderConversationMessages.isEmpty
+        else { return }
+        earlierScrollIntent = nil
         historyRequestID = nil
         historyLoadInFlight = false
         blockedHistoryEdge = nil
@@ -533,8 +574,19 @@ struct ConversationTimeline: View {
     }
 
     private func handleUserScrollIntent(_ delta: CGFloat) {
-        guard !windowChangeInFlight, !historyLoadInFlight else { return }
         let earlier = delta > 0
+        earlierScrollIntent = earlier
+        scrollInputGeneration &+= 1
+        // The native monitor runs before AppKit moves the clip view. Relinquish
+        // the tail now, before a queued SwiftUI task can undo this gesture.
+        if earlier, contentCanScroll {
+            viewportMode = .detached
+            if !windowChangeInFlight {
+                renderWindowPosition = renderWindowPosition.afterUserScroll(
+                    isAtLatest: false, renderedRange: renderRange)
+            }
+        }
+        guard !windowChangeInFlight, !historyLoadInFlight else { return }
         guard scrollAnchors.isAtEdge(earlier: earlier) else { return }
         restoringOffset = nil
         if earlier {
@@ -580,6 +632,7 @@ struct ConversationTimeline: View {
             return
         }
         blockedHistoryEdge = nil
+        loadingEarlier = earlier
         viewportMode = .detached
         pendingWindowAnchor = anchor
         windowChangeInFlight = true

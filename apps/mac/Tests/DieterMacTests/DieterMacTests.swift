@@ -3260,6 +3260,56 @@ private func dragCard(_ id: String, position: Int64) -> Dieter_V1_Card {
     #expect(SidebarProjectDragPayload("dieter:sidebar-project:") == nil)
 }
 
+@Test func navigationFoldersCreateMoveRenameCollapseDeleteAndPersist() throws {
+    let suite = "dieter-navigation-folders-\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+
+    var preferences = NavigationFolderPreferences()
+    let createdWorkID = preferences.createFolder(named: "Work")
+    let workID = try #require(createdWorkID)
+    let createdPersonalID = preferences.createFolder(named: "Personal")
+    let personalID = try #require(createdPersonalID)
+    let duplicateID = preferences.createFolder(named: " work ")
+    #expect(duplicateID == nil)
+
+    let movedFirstToWork = preferences.moveItem("item_one", to: workID)
+    let movedSecondToWork = preferences.moveItem("item_two", to: workID)
+    let movedFirstToPersonal = preferences.moveItem("item_one", to: personalID)
+    #expect(movedFirstToWork)
+    #expect(movedSecondToWork)
+    #expect(movedFirstToPersonal)
+    #expect(preferences.folder(containing: "item_one")?.id == personalID)
+    #expect(preferences.folder(containing: "item_two")?.id == workID)
+    #expect(preferences.unfiledIDs(from: ["item_one", "item_two", "item_three"]) == ["item_three"])
+
+    let renamed = preferences.renameFolder(workID, to: "Client work")
+    let collapsed = preferences.toggleExpanded(personalID)
+    #expect(renamed)
+    #expect(collapsed)
+    preferences.save(scope: .projects, to: defaults)
+
+    var restored = NavigationFolderPreferences.load(scope: .projects, from: defaults)
+    #expect(restored == preferences)
+    #expect(restored.folders.first(where: { $0.id == personalID })?.isExpanded == false)
+    let removedFromFolder = restored.moveItem("item_one", to: nil)
+    #expect(removedFromFolder)
+    #expect(restored.folder(containing: "item_one") == nil)
+    let deleted = restored.deleteFolder(workID)
+    #expect(deleted)
+    #expect(restored.unfiledIDs(from: ["item_one", "item_two"]) == ["item_one", "item_two"])
+}
+
+@Test func navigationFoldersRepairDuplicateMembershipWhenLoading() {
+    let preferences = NavigationFolderPreferences(folders: [
+        NavigationFolder(id: "first", name: "First", itemIDs: ["shared", "one"]),
+        NavigationFolder(id: "second", name: "Second", itemIDs: ["shared", "two"]),
+    ])
+
+    #expect(preferences.folders[0].itemIDs == ["shared", "one"])
+    #expect(preferences.folders[1].itemIDs == ["two"])
+}
+
 @Test func pinnedChatsKeepSavedLocationsAndAppendNewPinsDeterministically() {
     var first = Dieter_V1_Card()
     first.id = "c_first"

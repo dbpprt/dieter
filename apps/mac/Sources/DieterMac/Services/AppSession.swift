@@ -81,6 +81,18 @@ final class AppSession {
             sidebarProjectNavigation.save(to: environment.defaults)
         }
     }
+    var sidebarProjectFolders: NavigationFolderPreferences {
+        didSet {
+            guard sidebarProjectFolders != oldValue else { return }
+            sidebarProjectFolders.save(scope: .projects, to: environment.defaults)
+        }
+    }
+    var allChatsFolders: NavigationFolderPreferences {
+        didSet {
+            guard allChatsFolders != oldValue else { return }
+            allChatsFolders.save(scope: .chats, to: environment.defaults)
+        }
+    }
 
     let conversationModel = ConversationModel()
     @ObservationIgnored var onConversationContentConnectionChanged: @MainActor () -> Void = {}
@@ -292,6 +304,8 @@ final class AppSession {
         terminalsModel = TerminalsModel(selectionDefaults: environment.defaults)
         screensModel = ScreensModel(defaults: environment.defaults)
         sidebarProjectNavigation = SidebarProjectNavigationPreferences.load(from: environment.defaults)
+        sidebarProjectFolders = NavigationFolderPreferences.load(scope: .projects, from: environment.defaults)
+        allChatsFolders = NavigationFolderPreferences.load(scope: .chats, from: environment.defaults)
         connections = ConnectionManager(factory: environment.clients, clock: environment.clock)
         authentication = DieterAuthentication(
             defaults: environment.defaults, credentials: environment.credentials, clock: environment.clock)
