@@ -161,9 +161,9 @@ struct RenameMachineSheet: View {
         guard !normalized.isEmpty else { return }
         saving = true
         Task {
-            await store.renameMachine(machine, name: normalized)
+            let succeeded = await store.renameMachine(machine, name: normalized)
             saving = false
-            dismiss()
+            if succeeded { dismiss() }
         }
     }
 }

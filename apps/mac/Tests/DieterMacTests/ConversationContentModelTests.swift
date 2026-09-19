@@ -666,3 +666,28 @@ private actor ConversationContentProjectReviewFixture: ProjectChangesRPC {
         throw CocoaError(.coderValueNotFound)
     }
 }
+
+@Test @MainActor func externalRemoteDocumentFetchUsesTheOwningWorkspaceAndRejectsStaleReplies() async throws {
+    let client = ConversationContentFilesFixture()
+    let target = WorkspaceTarget(endpointID: "remote-host", projectID: "remote-project", conversationID: "remote-card")
+    let copies = RemoteDocumentCopies()
+    let file = try await copies.fetch(client: client, target: target, path: "docs/remote.md", isCurrent: { true })
+    let requests = await client.reads
+    #expect(requests.count == 1)
+    #expect(requests[0].projectID == "remote-project" && requests[0].cardID == "remote-card")
+    #expect(requests[0].path == "docs/remote.md")
+    #expect(try String(contentsOf: file, encoding: .utf8) == "Original remote-card/docs/remote.md")
+
+    let delayed = ConversationContentFilesFixture(holdFirstRead: true)
+    var current = true
+    let pending = Task {
+        try await copies.fetch(client: delayed, target: target, path: "report.md", isCurrent: { current })
+    }
+    for _ in 0..<100 {
+        if !(await delayed.reads).isEmpty { break }
+        try await Task.sleep(for: .milliseconds(10))
+    }
+    current = false
+    await delayed.finishFirstRead()
+    await #expect(throws: CancellationError.self) { try await pending.value }
+}

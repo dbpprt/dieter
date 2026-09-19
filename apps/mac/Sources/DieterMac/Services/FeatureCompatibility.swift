@@ -386,7 +386,10 @@ extension AppSession {
     }
     var createConversationPresented: Bool {
         get { window.createConversationPresented }
-        set { window.createConversationPresented = newValue }
+        set {
+            window.createConversationPresented = newValue
+            if !newValue { window.newCardLaneID = nil }
+        }
     }
     var createProjectPresented: Bool {
         get { window.createProjectPresented }

@@ -185,3 +185,31 @@ just mac smoke-all
 Swift formatting applies to handwritten sources, tests and tools, excluding
 Generated and Vendor. CI runs core/navigation smoke on pull requests and full
 native qualification on scheduled/manual runs, retaining reports and screenshots.
+### Board creation, remote documents, and connection feedback
+
+Double-click unused space in any board lane to open the new-card form with that
+lane selected. The lane's plus button uses the same destination. Existing card
+clicks, drag targets, and sorting keep their normal behavior. Creating directly
+in Running follows the existing start-immediately behavior; other lanes create a
+draft.
+
+Conversation file links use the owning daemon's workspace and authenticated
+ReadFile API. With the optional workspace pane disabled, clicking a document
+opens a private temporary local copy in its default Mac application. Command-click
+and the Open local copy in menu use the same path. With the pane enabled, a normal
+click still opens the built-in preview. Copies retain their filename and extension;
+editing a copy does not save back to the remote machine. At most 16 copies of up
+to 32 MiB each are retained for the Dieter session. Workspace containment and
+machine/selection checks remain enforced; files outside the workspace are not
+made accessible by this change.
+
+Delivery progress and retry/cancel actions appear inside the current conversation's
+composer, scoped to that conversation. Reconnection notices float above the
+workspace after 750 ms instead of inserting a row that shifts its content.
+
+Machine details include Rename and Remove actions, also available in Connection
+settings. Both use the authenticated gateway directory even if the target daemon
+is offline. Removal revokes enrollment and clears that machine's cached directory;
+it does not delete projects, conversations, or files from its disk. Enroll the
+machine again to restore access. Existing CLI operations remain `dieter machine
+rename` and `dieter machine revoke`; no new protocol operation is required.

@@ -727,15 +727,17 @@ struct ConnectionSettings: View {
         }
         .sheet(item: $pendingRename) { machine in RenameMachineSheet(machine: machine).environment(store) }
         .confirmationDialog(
-            "Revoke \(pendingRevoke?.name ?? "machine")?",
+            "Remove \(pendingRevoke?.name ?? "machine")?",
             isPresented: Binding(get: { pendingRevoke != nil }, set: { if !$0 { pendingRevoke = nil } })
         ) {
-            Button("Revoke machine", role: .destructive) {
+            Button("Remove machine", role: .destructive) {
                 if let endpoint = pendingRevoke { Task { await store.revokeDaemon(endpoint) } }
                 pendingRevoke = nil
             }
         } message: {
-            Text("This machine will lose gateway and direct access until it is enrolled again.")
+            Text(
+                "Removes this machine from the gateway. Its files and conversations stay on the machine. To connect again, enroll it again."
+            )
         }
         .confirmationDialog("Start a clean sync?", isPresented: $pendingCleanSync) {
             Button("Clean sync", role: .destructive) {
@@ -877,7 +879,7 @@ struct ConnectionSettings: View {
                         pendingRevoke = machine
                     } label: {
                         Image(systemName: "trash")
-                    }.buttonStyle(.plain).help("Revoke machine")
+                    }.buttonStyle(.plain).help("Remove machine")
                 }
                 if machine.id != store.machines.last?.id { Divider().overlay(DieterTheme.border) }
             }

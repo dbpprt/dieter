@@ -58,7 +58,7 @@ struct ConversationComposer: View {
             }
             ComposerSurface(focused: composerFocused, dropTargeted: attachmentDropTargeted) {
                 ComposerTextInput(
-                    placeholder: "Message the local agent…", text: $context.composerText, focus: $composerFocused
+                    placeholder: "Message the agent…", text: $context.composerText, focus: $composerFocused
                 )
                 .accessibilityIdentifier("conversation.composer")
                 .smokeTarget("conversation.composer")
@@ -83,6 +83,8 @@ struct ConversationComposer: View {
                     navigation.observeTextChange(text)
                     historyNavigation = navigation
                 }
+
+                ComposerDeliveryStatusView()
 
                 if !context.composerAttachments.isEmpty {
                     AttachmentPreviewStrip(attachments: $context.composerAttachments)

@@ -796,36 +796,85 @@ extension DieterStore {
         persistEndpoints()
     }
 
-    func revokeDaemon(_ endpoint: DieterEndpoint) async {
-        guard let daemonID = endpoint.daemonID, let rpc else { return }
-        do {
-            try await rpc.revokeDaemon(daemonID: daemonID)
-            endpoints.removeAll { $0.daemonID == daemonID }
-            projectEndpointIDs = projectEndpointIDs.filter { $0.value != endpoint.id }
-            projectDirectory = projectDirectory.filter { projectEndpointIDs[$0.key] != nil }
-            persistEndpoints()
-            await connect(to: endpoints.first(where: \.online) ?? gatewayOrigins[0])
-        } catch { show(error) }
+    /// Directory changes belong to the gateway, even when the selected host is offline.
+    func withMachineDirectoryClient<T>(
+        for machine: DieterEndpoint, operation: (DieterRPC) async throws -> T
+    ) async throws -> T {
+        let origin = gatewayOrigins.first { $0.credentialID == machine.credentialID } ?? machine.gatewayEndpoint
+        let client = try environment.clients.client(
+            endpoint: origin, accessToken: await accessToken(for: origin))
+        let runner = Task { try? await client.run() }
+        defer { runner.cancel(); client.shutdown() }
+        return try await operation(client)
     }
 
-    func renameMachine(_ endpoint: DieterEndpoint, name: String) async {
-        let normalized = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let daemonID = endpoint.daemonID, !normalized.isEmpty else { return }
-        let origin =
-            gatewayOrigins.first(where: { $0.credentialID == endpoint.credentialID })
-            ?? endpoint.gatewayEndpoint
+    @discardableResult
+    func revokeDaemon(_ machine: DieterEndpoint) async -> Bool {
+        guard let daemonID = machine.daemonID else { return false }
         do {
-            let client = try environment.clients.client(
-                endpoint: origin, accessToken: await accessToken(for: origin))
-            let runner = Task { try? await client.run() }
-            defer {
-                runner.cancel()
-                client.shutdown()
+            try await withMachineDirectoryClient(for: machine) { try await $0.revokeDaemon(daemonID: daemonID) }
+            guard activeGateway.credentialID == machine.credentialID else { return true }
+            machineDirectoryRevision &+= 1
+            let wasActive = endpoint.id == machine.id
+            forgetMachineFromDirectory(machine)
+            if wasActive {
+                disconnect()
+                syncSnapshot = nil
+                syncProjection = .empty
+                syncDiskState.snapshot = nil
+                syncDiskState.cursor = nil
+                let next = endpoints.first(where: \.online) ?? machine.gatewayEndpoint
+                await connect(to: next)
             }
-            _ = try await client.renameDaemon(daemonID: daemonID, name: normalized)
-            await refreshDaemonPresence()
+            guard activeGateway.credentialID == machine.credentialID else { return true }
+            syncDiskState.projections.removeValue(forKey: machine.id)
+            syncDiskState.conversationRefreshedAt.removeValue(forKey: machine.id)
+            try await saveSyncPersistence()
             persistEndpoints()
-        } catch { show(error) }
+            return true
+        } catch { show(error); return false }
+    }
+
+    func forgetMachineFromDirectory(_ machine: DieterEndpoint) {
+        let projects = Set(projectEndpointIDs.filter { $0.value == machine.id }.keys)
+        endpoints.removeAll { $0.id == machine.id }
+        for id in projects {
+            projectEndpointIDs.removeValue(forKey: id)
+            projectDirectory.removeValue(forKey: id)
+            navigationBoards.removeValue(forKey: id)
+            navigationCards.removeValue(forKey: id)
+        }
+        chats.removeAll { projects.contains($0.projectID) }
+        chatProjects.removeAll { projects.contains($0.id) }
+        state.projects.removeAll { projects.contains($0.id) }
+        harnessCatalogsByEndpoint.removeValue(forKey: machine.id)
+        machineInformation.removeValue(forKey: machine.id)
+        machineConnectionStatuses.removeValue(forKey: machine.id)
+        machineConnectionErrors.removeValue(forKey: machine.id)
+        if selectedMachineID == machine.id { dismissMachinePopover() }
+        if projects.contains(selectedProjectID) {
+            closeConversation()
+            selectedProjectID = projectDirectory.keys.sorted().first ?? ""
+            selectedBoardID = ""
+        }
+        updateSelectedState()
+    }
+
+    @discardableResult
+    func renameMachine(_ machine: DieterEndpoint, name: String) async -> Bool {
+        let normalized = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let daemonID = machine.daemonID, !normalized.isEmpty else { return false }
+        do {
+            let renamed = try await withMachineDirectoryClient(for: machine) {
+                try await $0.renameDaemon(daemonID: daemonID, name: normalized)
+            }
+            guard activeGateway.credentialID == machine.credentialID else { return true }
+            machineDirectoryRevision &+= 1
+            if let index = endpoints.firstIndex(where: { $0.id == machine.id }) { endpoints[index].name = renamed.name }
+            if endpoint.id == machine.id { endpoint.name = renamed.name }
+            persistEndpoints()
+            return true
+        } catch { show(error); return false }
     }
 
     func persistEndpoints() {
@@ -934,6 +983,7 @@ extension DieterStore {
 
     func refreshMachineDirectory(includeArchivedChats: Bool = false) async {
         let generation = connectionGeneration
+        let directoryRevision = machineDirectoryRevision
         let origin = activeGateway.credentialID
         // The active machine is owned by WatchSync. Polling it here used to
         // replace the live snapshot while retaining its cursor, so later
@@ -966,18 +1016,21 @@ extension DieterStore {
             return snapshots
         }
         guard !Task.isCancelled, generation == connectionGeneration,
+            directoryRevision == machineDirectoryRevision,
             origin == activeGateway.credentialID,
             !snapshots.isEmpty
         else { return }
 
         var persistenceChanged = false
         for snapshot in snapshots {
+            guard endpoints.contains(where: { $0.id == snapshot.endpoint.id }) else { continue }
             if machineConnectionStatuses[snapshot.endpoint.id] != snapshot.connection {
                 machineConnectionStatuses[snapshot.endpoint.id] = snapshot.connection
             }
             if !snapshot.unchanged {
                 persistenceChanged = await persistInactiveMachineSnapshot(snapshot) || persistenceChanged
                 guard !Task.isCancelled, generation == connectionGeneration,
+                    directoryRevision == machineDirectoryRevision,
                     origin == activeGateway.credentialID
                 else {
                     return
@@ -985,7 +1038,9 @@ extension DieterStore {
             }
         }
 
-        let changedSnapshots = snapshots.filter { !$0.unchanged }
+        let changedSnapshots = snapshots.filter { snapshot in
+            !snapshot.unchanged && endpoints.contains(where: { $0.id == snapshot.endpoint.id })
+        }
         guard !changedSnapshots.isEmpty else { return }
 
         let current = MachineDirectoryProjection(
@@ -1010,6 +1065,7 @@ extension DieterStore {
     func persistInactiveMachineSnapshot(_ machine: MachineSnapshot) async -> Bool {
         guard machine.endpoint.id != endpoint.id else { return false }
         let generation = connectionGeneration
+        let directoryRevision = machineDirectoryRevision
         let origin = activeGateway.credentialID
         let current = syncDiskState.projections[machine.endpoint.id] ?? .empty
         let next = await Task.detached(priority: .utility) {
@@ -1023,6 +1079,7 @@ extension DieterStore {
             )
         }.value
         guard !Task.isCancelled, generation == connectionGeneration,
+            directoryRevision == machineDirectoryRevision,
             origin == activeGateway.credentialID,
             machine.endpoint.id != endpoint.id,
             syncDiskState.projections[machine.endpoint.id]?.cursor == current.cursor,
@@ -1121,6 +1178,7 @@ extension DieterStore {
 
     func refreshDaemonPresence() async {
         let generation = connectionGeneration
+        let directoryRevision = machineDirectoryRevision
         guard let origin = gatewayOrigins.first(where: { $0.credentialID == endpoint.credentialID })
         else { return }
         do {
@@ -1133,6 +1191,7 @@ extension DieterStore {
             }
             let directory = try await client.daemons()
             guard !Task.isCancelled, generation == connectionGeneration,
+                directoryRevision == machineDirectoryRevision,
                 origin.credentialID == activeGateway.credentialID
             else { return }
             if directory.hasGatewayInformation {
