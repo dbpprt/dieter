@@ -83,6 +83,25 @@ dieter setup ~/Development/my-project
 dieter doctor
 ```
 
+Remote desktop is deliberately opt-in. Installing the helper and detecting a
+display do not enable screen access. Run the interactive service-side check to
+verify capture and input, then enable viewing and control:
+
+```sh
+dieter daemon permissions
+dieter screen settings
+dieter screen capabilities
+```
+
+The final capability response should contain `"enabled": true` and
+`"ready": true`. For view-only hosting, run `dieter screen permissions` and
+then `dieter screen update --enabled=true --control=false`. An authorized
+non-interactive control setup can use `dieter screen permissions
+--request-control` followed by `dieter screen update --enabled=true
+--control=true`. Disable all screen access with `dieter screen update
+--enabled=false --control=false`. These commands also accept the global
+`--machine ID|NAME` selector.
+
 The installer verifies the Sigstore-signed release manifest and archive
 checksum, replaces each executable by atomic rename, and creates a private
 systemd user service when a user manager is available. The release and managed updater stage the daemon and

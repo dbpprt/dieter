@@ -550,6 +550,20 @@ Screen sharing uses explicit daemon policy plus WebRTC signaling. Check
 or control, start a session, restart/shut down a machine, revoke enrollment, or
 delete data without explicit authorization.
 
+With explicit authorization, enable both viewing and control only after the
+service-side permission flow succeeds:
+
+```sh
+dieter daemon permissions
+dieter screen update --enabled=true --control=true
+```
+
+Use `dieter screen permissions` followed by `dieter screen update
+--enabled=true --control=false` for view-only hosting. Disable both with `dieter
+screen update --enabled=false --control=false`. Installation, capability
+detection, and `permissions --check` never enable policy implicitly. An enabled,
+ready host reports `enabled: true` and `ready: true` from `screen capabilities`.
+
 For authorized permission diagnostics, `dieter screen permissions` returns JSON
 with the actual daemon/helper paths, capture verification, and input permission.
 It discards one encoded frame and never injects input. Exit is nonzero if either
