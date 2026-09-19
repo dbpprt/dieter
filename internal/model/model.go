@@ -157,6 +157,7 @@ type Card struct {
 	InitialPromptSentAt string              `json:"initialPromptSentAt,omitempty" yaml:"initial_prompt_sent_at,omitempty"`
 	PhaseChangedAt      string              `json:"phaseChangedAt" yaml:"phase_changed_at"`
 	Provider            string              `json:"provider,omitempty" yaml:"provider_cache,omitempty"`
+	ProviderAccountKey  string              `json:"providerAccountKey,omitempty" yaml:"provider_account_key_cache,omitempty"`
 	Model               string              `json:"model,omitempty" yaml:"model_cache,omitempty"`
 	Effort              string              `json:"effort,omitempty" yaml:"effort_cache,omitempty"`
 	ProviderOptions     map[string]string   `json:"providerOptions,omitempty" yaml:"provider_options_cache,omitempty"`

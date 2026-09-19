@@ -40,9 +40,11 @@ and a daemon can advertise several locally configured accounts at once. The
 gateway deduplicates copies of the same provider account seen on several
 daemons, but never combines different accounts merely because they have the
 same plan. Public responses group the complete account list by provider and
-include one deterministic provider summary for the compact header bar; the
-popover preserves the independent quota, reset, credit, availability, source,
-and freshness state of every account.
+include one deterministic provider summary for API and CLI consumers. Native
+app headers render one compact chip per enabled account instead of collapsing
+accounts into that summary. The popover preserves the independent quota,
+reset, credit, availability, source-machine, and freshness state of every
+account.
 
 This deliberately changes one existing gateway invariant: the gateway will
 store a small amount of provider-account metadata. It still will not store
@@ -119,30 +121,20 @@ For the separate API-account case, see [rate-limit response headers](https://dev
 
 ### Claude Code
 
-The pinned Claude harness currently uses Claude Code 2.1.245. Official Claude
-Code documentation says interactive `/usage` shows subscription-plan bars,
-activity, usage breakdown, and usage-credit spend. It also says Claude Code
-falls back to a locally cached usage snapshot no older than 60 minutes when
-the usage endpoint is throttled. Claude documents rolling five-hour and weekly
-seat windows for Team and Enterprise plans. See [Claude Code cost and usage tracking](https://code.claude.com/docs/en/costs#using-the-usage-command)
+Claude Code's structured OAuth usage endpoint returns the same plan-usage data
+shown by interactive `/usage` without submitting a model prompt or consuming
+tokens. The daemon adapter reads the locally authenticated Claude profile,
+requests that endpoint, and normalizes the current five-hour, weekly, model,
+and optional spend windows behind the same provider-neutral contract as
+Codex. A stable organization-and-email identity is HMACed before it leaves the
+daemon.
+
+The adapter never parses terminal output. Claude OAuth credentials and raw
+usage responses remain on the daemon; neither is stored or processed by the
+gateway. Official Claude documentation describes the corresponding `/usage`
+display, cached fallback behavior, and rolling five-hour and weekly windows.
+See [Claude Code cost and usage tracking](https://code.claude.com/docs/en/costs#using-the-usage-command)
 and [Claude subscription windows](https://code.claude.com/docs/en/costs#claude-for-teams-and-enterprise).
-
-Unlike Codex app-server, the currently integrated Claude harness does not
-expose a documented structured quota operation to Dieter. Make this the first
-implementation gate:
-
-1. Prove that the pinned Claude bridge or supported SDK can request the same
-   plan-usage data as `/usage` without submitting a model prompt or consuming
-   tokens.
-2. Capture a sanitized structured fixture and identify a stable account
-   identifier suitable for correlation.
-3. Put that call behind the same provider-neutral adapter contract as Codex.
-
-Do not ship terminal-screen scraping, reverse-engineered HTTP calls using raw
-OAuth tokens, or direct reads of provider credential files in gateway code. If
-the pinned Claude integration has no stable structured seam, land the common
-protocol and OpenAI adapter first, keep Claude explicitly `unsupported`, and
-finish Claude only after adding or upstreaming a supported bridge operation.
 
 ## Normalized model
 
@@ -507,14 +499,13 @@ The popover lists each account for that provider. For every account show:
   clear stale reason; and
 - a refresh button plus a link to the provider's official usage page.
 
-Start the popover with a compact explanation such as “Showing the lowest
-remaining limit across 3 accounts.” Put the account/window currently driving
-the header summary first and mark it “Header summary”; order the remaining
-accounts by the stable privacy-safe suffix so live refreshes do not reshuffle
-them. Each refresh action targets that account; an additional provider-level
-action refreshes all visible accounts using the existing per-account
-coalescing and rate limits. Removing or losing one account removes only its
-row and immediately recomputes the header summary.
+The global header renders a separate compact chip for every enabled account;
+each chip shows that account's most constrained reported window. The popover
+orders accounts by their stable privacy-safe suffix so live refreshes do not
+reshuffle them and lists every enrolled machine where each account is present.
+Each refresh action targets that account; an additional provider-level action
+refreshes all visible accounts using the existing per-account coalescing and
+rate limits. Removing or losing one account removes only its chip and row.
 
 The compact chip is also a button: click toggles the popover, keyboard focus
 shows the same information on activation, Escape dismisses it, and Android tap
@@ -610,9 +601,10 @@ a machine.
 ### 4. Mac, iOS, and Android UI
 
 - Add gateway-scoped quota state and recovery to all three native clients.
-- Add blue OpenAI and orange Claude quota chips to the trailing conversation
-  header, with conservative summary bars, responsive collapse, and anchored
-  hover/focus/click details on Mac.
+- Add blue OpenAI and orange Claude quota chips to the persistent app header,
+  one chip per enabled account, with responsive collapse and anchored
+  hover/focus/click details on Mac. In a conversation, show only the exact
+  account recorded when that turn started.
 - Add the iOS and Android app-bar/tap-sheet equivalents and adaptive full
   account-usage panels on all clients, including refresh actions, stale states,
   and provider links.
@@ -684,31 +676,29 @@ must confirm that no provider request consumes model usage.
   eligible daemon triggers an immediate refresh and restarts the cadence.
 - With every daemon offline, the last successful snapshot remains visible and
   is clearly stale.
-- The upper-right conversation header shows a blue OpenAI bar and orange Claude
-  bar when those accounts exist. Each fill means remaining quota and names the
-  window it summarizes; color is never the only provider or status cue.
-- Each provider gets one header bar. It selects the most constrained returned
-  account/window without adding or averaging quotas, shows the provider's total
-  account count when greater than one, and signals any accounts without usable
-  data. Hover, focus/click, and Android tap expose a separate stable row for
-  every account and every returned window, including each account's five-hour
-  limit and next planned reset.
+- The persistent app header shows one compact blue OpenAI or orange Claude chip
+  for every enabled account. Each fill means that account's remaining quota;
+  accounts are never added, averaged, or collapsed into one provider bar.
+- A conversation stores the opaque provider-account key chosen when its turn
+  starts and shows only that account's chip. Hover, focus/click, and Android tap
+  expose every returned window, including the five-hour limit and next planned
+  reset, plus the machines where that exact account is available.
 - The quota controls collapse before colliding with existing conversation
   controls and remain operable with keyboard navigation, VoiceOver, TalkBack,
   narrow layouts, and Reduce Motion.
 - OpenAI shows all returned windows, reset times, credit state, available reset
   count, and expiry without exposing redemption IDs.
-- OpenAI quota bars stay blue. The header uses the conservative minimum across
-  accounts whose gateway-owned `summary_included` preference is enabled; the
-  popover keeps excluded accounts visible and offers an immediate inclusion
-  toggle.
+- OpenAI quota bars stay blue. Each enabled account gets its own header chip,
+  while the popover keeps excluded accounts visible and offers an immediate
+  inclusion toggle.
 - An authenticated user can consume one OpenAI reset credit for an exact
   account after confirmation. The gateway preserves a UUID idempotency key and
   routes the request only to an online capability-advertising daemon that has
   that account; the daemon consumes through the structured app-server API and
   returns a refreshed normalized snapshot.
-- Claude shows provider-authoritative plan windows through a structured,
-  token-free integration; terminal parsing is not accepted.
+- Claude shows provider-authoritative plan windows through a structured local
+  adapter. Its OAuth credential never leaves the daemon and terminal parsing is
+  not accepted.
 - When supplied by either provider, the five-hour window has a dedicated row
   with used/remaining percentage and its authoritative reset time.
 - The account summary shows the next planned reset and names its window; when
@@ -725,8 +715,7 @@ must confirm that no provider request consumes model usage.
 
 ## Main implementation risk
 
-OpenAI is ready for a structured implementation with the pinned app-server
-contract. Claude is the only material feasibility risk: `/usage` proves the
-data exists, but not that Dieter's pinned harness exposes a supported structured
-read. Resolve that in phase 0. Do not compensate for a missing interface by
-moving Claude credentials to the gateway or scraping its interactive terminal.
+Both providers now have structured daemon-side adapters. The remaining
+compatibility risk is provider schema drift, so sanitized fixtures and bounded
+normalization tests must fail closed. Provider credentials and raw responses
+must never move to the gateway, and terminal-screen parsing remains prohibited.

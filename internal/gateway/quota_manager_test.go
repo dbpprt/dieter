@@ -108,6 +108,18 @@ func TestValidateProviderQuotaSnapshotRejectsInconsistentPercentages(t *testing.
 	}
 }
 
+func TestValidateProviderQuotaSnapshotRejectsDaemonSuppliedMachines(t *testing.T) {
+	snapshot := &gatewayv1.ProviderQuotaSnapshot{
+		Provider:     gatewayv1.ProviderQuotaProvider_PROVIDER_QUOTA_PROVIDER_OPENAI_CODEX,
+		AccountKey:   "account_key_aaaaaaaaaaaaaaaaaaaa",
+		Availability: gatewayv1.ProviderQuotaAvailability_PROVIDER_QUOTA_AVAILABILITY_AVAILABLE,
+		Machines:     []*gatewayv1.ProviderQuotaMachine{{DaemonId: "untrusted"}},
+	}
+	if err := validateProviderQuotaSnapshot(snapshot); err == nil {
+		t.Fatal("daemon-supplied machine metadata was accepted")
+	}
+}
+
 func TestStartResetRoutesExactAccountAndIdempotencyKey(t *testing.T) {
 	store, err := OpenStore(t.TempDir())
 	if err != nil {

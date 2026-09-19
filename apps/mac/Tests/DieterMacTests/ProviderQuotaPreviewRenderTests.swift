@@ -37,6 +37,7 @@ private func quotaPreviewWindow(
 }
 
 private func availableQuotaPreviewAccount(
+    provider: Dieter_Gateway_V1_ProviderQuotaProvider = .openaiCodex,
     key: String,
     email: String,
     plan: String,
@@ -44,7 +45,7 @@ private func availableQuotaPreviewAccount(
     weeklyRemaining: UInt32
 ) -> Dieter_Gateway_V1_ProviderQuotaSnapshot {
     var account = Dieter_Gateway_V1_ProviderQuotaSnapshot()
-    account.provider = .openaiCodex
+    account.provider = provider
     account.accountKey = key
     account.displayEmail = email
     account.includedInSummary = true
@@ -75,6 +76,19 @@ private func availableQuotaPreviewAccount(
     account.refreshState = .idle
     account.onlineSourceCount = 1
     account.statusCode = "available"
+    var laptop = Dieter_Gateway_V1_ProviderQuotaMachine()
+    laptop.daemonID = "d_local_mac"
+    laptop.name = "Michael’s MacBook Pro"
+    laptop.online = true
+    laptop.availability = .available
+    laptop.lastSeenAt = quotaPreviewDate(hoursFromNow: -0.01)
+    var buildMachine = Dieter_Gateway_V1_ProviderQuotaMachine()
+    buildMachine.daemonID = "d_build_mac"
+    buildMachine.name = "Build Mac"
+    buildMachine.online = false
+    buildMachine.availability = .temporarilyUnavailable
+    buildMachine.lastSeenAt = quotaPreviewDate(hoursFromNow: -1)
+    account.machines = [laptop, buildMachine]
     return account
 }
 
@@ -140,6 +154,35 @@ private func quotaPreviewGroup() -> Dieter_Gateway_V1_ProviderQuotaGroup {
     return group
 }
 
+private func claudeQuotaPreviewGroup() -> Dieter_Gateway_V1_ProviderQuotaGroup {
+    let account = availableQuotaPreviewAccount(
+        provider: .anthropicClaude,
+        key: "claude_acct_617f9a8e",
+        email: "claude@example.com",
+        plan: "max",
+        fiveHourRemaining: 83,
+        weeklyRemaining: 74
+    )
+
+    var summary = Dieter_Gateway_V1_ProviderQuotaSummary()
+    summary.totalAccountCount = 1
+    summary.numericAccountCount = 1
+    summary.remainingPercent = 74
+    summary.summaryAccountKey = account.accountKey
+    summary.summaryWindowID = account.windows[1].id
+    summary.summaryWindowKind = .weekly
+    summary.summaryWindowLabel = "Weekly"
+    summary.resetsAt = account.windows[1].resetsAt
+    summary.freshness = .fresh
+    summary.includedAccountCount = 1
+
+    var group = Dieter_Gateway_V1_ProviderQuotaGroup()
+    group.provider = .anthropicClaude
+    group.accounts = [account]
+    group.summary = summary
+    return group
+}
+
 @MainActor private func renderQuotaPreview<Content: View>(_ content: Content, to url: URL) throws {
     let hostingView = NSHostingView(rootView: content)
     hostingView.appearance = NSAppearance(named: .darkAqua)
@@ -173,21 +216,27 @@ private func quotaPreviewGroup() -> Dieter_Gateway_V1_ProviderQuotaGroup {
     defer { DieterTheme.install(palette: .monochrome, colorScheme: .light) }
 
     let store = DieterStore(restoreSync: false)
-    store.providerQuotaGroups = [quotaPreviewGroup()]
+    store.providerQuotaGroups = [quotaPreviewGroup(), claudeQuotaPreviewGroup()]
 
-    let compact = HStack(spacing: 12) {
+    var card = Dieter_V1_Card()
+    card.provider = "codex"
+    card.providerAccountKey = "acct_8d9c1a2b3c4d"
+
+    let compact = HStack(spacing: 16) {
         VStack(alignment: .leading, spacing: 2) {
-            Text("Quota-aware conversation")
-                .font(.headline)
-            Text("Three OpenAI accounts")
-                .font(.caption)
-                .foregroundStyle(DieterTheme.tertiary)
+            Text("Global")
+                .font(.caption).foregroundStyle(DieterTheme.tertiary)
+            ProviderQuotaCompactView().environment(store)
         }
         Spacer()
-        ProviderQuotaCompactView().environment(store)
+        VStack(alignment: .leading, spacing: 2) {
+            Text("This chat")
+                .font(.caption).foregroundStyle(DieterTheme.tertiary)
+            ConversationProviderQuotaView(card: card).environment(store)
+        }
     }
     .padding(.horizontal, 16)
-    .frame(width: 620, height: 58)
+    .frame(width: 760, height: 62)
     .background(DieterTheme.background)
     .foregroundStyle(DieterTheme.text)
     .environment(\.colorScheme, .dark)
@@ -215,6 +264,30 @@ private func quotaPreviewGroup() -> Dieter_Gateway_V1_ProviderQuotaGroup {
     .foregroundStyle(DieterTheme.text)
     .environment(\.colorScheme, .dark)
 
+    let claudeDetails = VStack(spacing: -1) {
+        ProviderQuotaDetailsView(accountKey: "claude_acct_617f9a8e")
+            .environment(store)
+            .padding(16)
+            .frame(width: 422)
+            .background(
+                DieterTheme.background,
+                in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(DieterTheme.border)
+            )
+            .shadow(color: .black.opacity(0.42), radius: 20, y: 10)
+        QuotaPopoverPointer()
+            .fill(DieterTheme.background)
+            .frame(width: 26, height: 13)
+    }
+    .padding(30)
+    .background(Color(red: 0.055, green: 0.061, blue: 0.075))
+    .foregroundStyle(DieterTheme.text)
+    .environment(\.colorScheme, .dark)
+
     try renderQuotaPreview(compact, to: outputDirectory.appending(path: "macos-compact.png"))
     try renderQuotaPreview(details, to: outputDirectory.appending(path: "macos-details.png"))
+    try renderQuotaPreview(claudeDetails, to: outputDirectory.appending(path: "macos-claude-details.png"))
 }

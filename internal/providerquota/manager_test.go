@@ -21,13 +21,48 @@ func TestConfiguredCodexProfilesSupportsSeveralExplicitAccounts(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("DIETER_CODEX_ACCOUNT_HOMES", first+string(os.PathListSeparator)+second+string(os.PathListSeparator)+first)
-	t.Setenv("CODEX_HOME", "")
+	t.Setenv("CODEX_HOME", first)
 	profiles, err := configuredCodexProfiles()
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got, want := len(profiles), 2; got != want {
 		t.Fatalf("profiles = %v, want %d distinct entries", profiles, want)
+	}
+}
+
+func TestActiveAccountKeyUsesTheHarnessCodexProfile(t *testing.T) {
+	active, other := t.TempDir(), t.TempDir()
+	t.Setenv("CODEX_HOME", active)
+	manager := New(t.TempDir(), nil)
+	manager.handles["active-account-key"] = accountHandle{
+		provider: gatewayv1.ProviderQuotaProvider_PROVIDER_QUOTA_PROVIDER_OPENAI_CODEX, profileRoot: active,
+	}
+	manager.handles["other-account-key"] = accountHandle{
+		provider: gatewayv1.ProviderQuotaProvider_PROVIDER_QUOTA_PROVIDER_OPENAI_CODEX, profileRoot: other,
+	}
+
+	if got, want := manager.ActiveAccountKey("codex"), "active-account-key"; got != want {
+		t.Fatalf("active account key = %q, want %q", got, want)
+	}
+	manager.handles["claude-account-key"] = accountHandle{
+		provider: gatewayv1.ProviderQuotaProvider_PROVIDER_QUOTA_PROVIDER_ANTHROPIC_CLAUDE,
+	}
+	if got, want := manager.ActiveAccountKey("claude-code"), "claude-account-key"; got != want {
+		t.Fatalf("Claude account key = %q, want %q", got, want)
+	}
+}
+
+func TestConfiguredClaudeProfilesPreservesTheUnsetDefaultProfile(t *testing.T) {
+	t.Setenv("CLAUDE_CONFIG_DIR", "")
+	other := t.TempDir()
+	t.Setenv("DIETER_CLAUDE_ACCOUNT_HOMES", other)
+	profiles, err := configuredClaudeProfiles()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(profiles) != 2 || profiles[0] != "" || profiles[1] != other {
+		t.Fatalf("Claude profiles = %#v, want default plus %q", profiles, other)
 	}
 }
 
@@ -56,7 +91,10 @@ func TestNormalizeSnapshotPreservesMultipleWindows(t *testing.T) {
 			{ID: "weekly", Label: "Weekly", Kind: "weekly", RemainingPercent: proto.Uint32(62), ResetsAt: now.Add(48 * time.Hour).Format(time.RFC3339)},
 		},
 	}
-	snapshot := normalizeSnapshot("account_key_aaaaaaaaaaaaaaaaaaaa", result, now)
+	snapshot := normalizeSnapshot(
+		gatewayv1.ProviderQuotaProvider_PROVIDER_QUOTA_PROVIDER_OPENAI_CODEX,
+		"account_key_aaaaaaaaaaaaaaaaaaaa", result, now,
+	)
 	if got, want := len(snapshot.GetWindows()), 2; got != want {
 		t.Fatalf("windows = %d, want %d", got, want)
 	}
@@ -96,6 +134,7 @@ func TestRefreshDoesNotExtendDiscoveryCacheWithoutAProbe(t *testing.T) {
 	manager := New(t.TempDir(), nil)
 	manager.now = func() time.Time { return discoveredAt.Add(30 * time.Second) }
 	manager.handles[accountKey] = accountHandle{
+		provider:        gatewayv1.ProviderQuotaProvider_PROVIDER_QUOTA_PROVIDER_OPENAI_CODEX,
 		profileRoot:     t.TempDir(),
 		stableAccountID: "account-1",
 		lastProbe: probeResult{

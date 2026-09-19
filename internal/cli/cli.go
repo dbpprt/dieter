@@ -517,8 +517,10 @@ Service startup activates a staged verified release there before workers begin.
 	}
 	defer func() { _ = statusWriter.Stop() }()
 	go runStatusHeartbeat(ctx, statusWriter)
+	var quotaSource *providerquota.Manager
 
 	if enrolled {
+		quotaSource = providerquota.New(c.Store.Root, logger)
 		var routes []*gatewayv1.DirectCandidate
 		loopback, loopbackErr := newDaemonDirectRoute(identity, *addr, "loopback", "127.0.0.1:0", "127.0.0.1", "loopback", 1000)
 		if loopbackErr != nil {
@@ -540,7 +542,6 @@ Service startup activates a staged verified release there before workers begin.
 			serveDaemonDirectRoute(ctx, cancel, logger, direct)
 		}
 		go func() {
-			quotaSource := providerquota.New(c.Store.Root, logger)
 			client := &dieterdaemon.GatewayClient{
 				Identity: identity, LocalTarget: *addr, Version: Version, APIVersion: server.APIVersion, Routes: routes,
 				Log: logger, OnStatus: statusWriter.Gateway, OnAcknowledged: statusWriter.GatewayAcknowledged,
@@ -565,7 +566,11 @@ Service startup activates a staged verified release there before workers begin.
 		}
 		return serviceRuntime.Ready()
 	}
-	err = server.ListenDaemonReady(ctx, *addr, c.Store, c.Runner, logger, remoteDesktop, ready)
+	var providerAccountKey func(string) string
+	if quotaSource != nil {
+		providerAccountKey = quotaSource.ActiveAccountKey
+	}
+	err = server.ListenDaemonReady(ctx, *addr, c.Store, c.Runner, logger, remoteDesktop, ready, providerAccountKey)
 	if errors.Is(err, http.ErrServerClosed) {
 		return nil
 	}

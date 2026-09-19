@@ -1188,6 +1188,7 @@ type CardCacheInput struct {
 	Title, Provider, Model, Runtime, Summary string
 	Effort                                   *string
 	ProviderOptions                          map[string]string
+	ProviderAccountKey                       *string
 }
 
 func (s *Store) UpdateCardCache(ref string, input CardCacheInput) (model.Card, error) {
@@ -1205,6 +1206,7 @@ func (s *Store) UpdateCardCache(ref string, input CardCacheInput) (model.Card, e
 		title = input.Title
 	}
 	provider, modelName, effort, runtime, summary := item.Provider, item.Model, item.Effort, item.Runtime, item.Summary
+	providerAccountKey := item.ProviderAccountKey
 	providerOptions := item.ProviderOptions
 	if input.Provider != "" {
 		provider = input.Provider
@@ -1218,20 +1220,23 @@ func (s *Store) UpdateCardCache(ref string, input CardCacheInput) (model.Card, e
 	if input.ProviderOptions != nil {
 		providerOptions = cloneStringMap(input.ProviderOptions)
 	}
+	if input.ProviderAccountKey != nil {
+		providerAccountKey = strings.TrimSpace(*input.ProviderAccountKey)
+	}
 	if input.Runtime != "" {
 		runtime = input.Runtime
 	}
 	if input.Summary != "" {
 		summary = input.Summary
 	}
-	if title == item.Title && provider == item.Provider && modelName == item.Model && effort == item.Effort && stringMapsEqual(providerOptions, item.ProviderOptions) && runtime == item.Runtime && summary == item.Summary {
+	if title == item.Title && provider == item.Provider && providerAccountKey == item.ProviderAccountKey && modelName == item.Model && effort == item.Effort && stringMapsEqual(providerOptions, item.ProviderOptions) && runtime == item.Runtime && summary == item.Summary {
 		return item, nil
 	}
 	if item.Title != title {
 		item.TitleRevision++
 	}
 	item.Title = title
-	item.Provider, item.Model, item.Effort, item.ProviderOptions, item.Runtime, item.Summary = provider, modelName, effort, providerOptions, runtime, summary
+	item.Provider, item.ProviderAccountKey, item.Model, item.Effort, item.ProviderOptions, item.Runtime, item.Summary = provider, providerAccountKey, modelName, effort, providerOptions, runtime, summary
 	item.RuntimeUpdatedAt, item.UpdatedAt = timestamp(), timestamp()
 	return item, s.writeCard(item)
 }

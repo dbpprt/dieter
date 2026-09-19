@@ -25,6 +25,7 @@ const (
 	maxProviderAccountsPerDaemon   = 8
 	maxProviderQuotaWindows        = 16
 	maxProviderResetCreditDetails  = 32
+	maxProviderQuotaMachines       = 32
 	maxProviderLabelBytes          = 128
 	maxProviderStatusCodeBytes     = 64
 	maxProviderEmailBytes          = 320
@@ -174,6 +175,9 @@ func validateProviderQuotaSnapshot(snapshot *gatewayv1.ProviderQuotaSnapshot) er
 	if len(snapshot.GetDisplayEmail()) > maxProviderEmailBytes || !utf8.ValidString(snapshot.GetDisplayEmail()) ||
 		strings.ContainsAny(snapshot.GetDisplayEmail(), "\r\n") {
 		return errors.New("provider quota display email is invalid")
+	}
+	if len(snapshot.GetMachines()) != 0 {
+		return errors.New("provider quota machines are gateway-owned")
 	}
 	seen := map[string]struct{}{}
 	for _, window := range snapshot.GetWindows() {
@@ -575,6 +579,14 @@ func (m *QuotaManager) Catalog(githubID int64, provider gatewayv1.ProviderQuotaP
 	if err != nil {
 		return nil, err
 	}
+	daemons, err := m.store.ListDaemons(githubID)
+	if err != nil {
+		return nil, err
+	}
+	daemonNames := make(map[string]string, len(daemons))
+	for _, daemon := range daemons {
+		daemonNames[daemon.ID] = daemon.Name
+	}
 	now := m.now().UTC()
 	grouped := map[gatewayv1.ProviderQuotaProvider][]*gatewayv1.ProviderQuotaSnapshot{}
 	for _, record := range records {
@@ -595,12 +607,38 @@ func (m *QuotaManager) Catalog(githubID int64, provider gatewayv1.ProviderQuotaP
 		snapshot.Plan = record.Account.GetPlan()
 		snapshot.Availability = record.Account.GetAvailability()
 		snapshot.IncludedInSummary = proto.Bool(record.SummaryIncluded)
+		snapshot.Machines = nil
 		online := 0
 		for _, source := range record.Sources {
-			if source.RefreshSupported && source.Availability == gatewayv1.ProviderQuotaAvailability_PROVIDER_QUOTA_AVAILABILITY_AVAILABLE &&
-				m.hub.SupportsProviderQuotas(source.DaemonID) {
+			available := source.RefreshSupported && source.Availability == gatewayv1.ProviderQuotaAvailability_PROVIDER_QUOTA_AVAILABILITY_AVAILABLE &&
+				m.hub.SupportsProviderQuotas(source.DaemonID)
+			if available {
 				online++
 			}
+			name := strings.TrimSpace(daemonNames[source.DaemonID])
+			if name == "" {
+				name = source.DaemonID
+			}
+			machine := &gatewayv1.ProviderQuotaMachine{
+				DaemonId: source.DaemonID, Name: name, Online: available, Availability: source.Availability,
+			}
+			if !source.LastSeenAt.IsZero() {
+				machine.LastSeenAt = source.LastSeenAt.UTC().Format(time.RFC3339Nano)
+			}
+			snapshot.Machines = append(snapshot.Machines, machine)
+		}
+		sort.SliceStable(snapshot.Machines, func(i, j int) bool {
+			if snapshot.Machines[i].GetOnline() != snapshot.Machines[j].GetOnline() {
+				return snapshot.Machines[i].GetOnline()
+			}
+			left, right := strings.ToLower(snapshot.Machines[i].GetName()), strings.ToLower(snapshot.Machines[j].GetName())
+			if left != right {
+				return left < right
+			}
+			return snapshot.Machines[i].GetDaemonId() < snapshot.Machines[j].GetDaemonId()
+		})
+		if len(snapshot.Machines) > maxProviderQuotaMachines {
+			snapshot.Machines = snapshot.Machines[:maxProviderQuotaMachines]
 		}
 		snapshot.OnlineSourceCount = uint32(online)
 		index := providerAccountIndex(githubID, snapshot.GetProvider(), snapshot.GetAccountKey())

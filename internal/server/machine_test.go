@@ -74,7 +74,7 @@ func TestDaemonUpdateRejectsAnUnsupportedInstallation(t *testing.T) {
 	_, err := (&grpcAPI{server: application}).PerformMachineOperation(context.Background(), &dieterv1.MachineOperationRequest{
 		Action: dieterv1.MachineOperationAction_MACHINE_OPERATION_ACTION_UPDATE_DAEMON, Confirmation: "UPDATE",
 	})
-	if status.Code(err) != codes.FailedPrecondition || !strings.Contains(err.Error(), "automatic update") {
+	if status.Code(err) != codes.FailedPrecondition || !strings.Contains(err.Error(), "automatic daemon update") {
 		t.Fatalf("unsupported update error=%v", err)
 	}
 }

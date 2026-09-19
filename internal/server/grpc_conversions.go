@@ -93,7 +93,7 @@ func protoCard(value model.Card) *dieterv1.Card {
 		Title: value.Title, InitialPrompt: value.InitialPrompt,
 		InitialPromptSentAt: value.InitialPromptSentAt, PhaseChangedAt: value.PhaseChangedAt,
 		MergedIntoCardId: value.MergedIntoCardID,
-		Provider:         value.Provider, Model: value.Model, Effort: value.Effort,
+		Provider:         value.Provider, ProviderAccountKey: value.ProviderAccountKey, Model: value.Model, Effort: value.Effort,
 		ProviderOptions: cloneProtoStringMap(value.ProviderOptions),
 		Runtime:         value.Runtime, Summary: value.Summary,
 		RuntimeUpdatedAt: value.RuntimeUpdatedAt, LastActivityAt: value.LastActivityAt,

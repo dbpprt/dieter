@@ -874,6 +874,12 @@ func TestNormalizeQuickTaskTitleRemovesModelFormattingAndBoundsLength(t *testing
 
 func TestCreateRunningCardCanDeferStartToStreamingClient(t *testing.T) {
 	service, fake, project, board := appSetup(t)
+	service.ProviderAccountKey = func(provider string) string {
+		if provider == "codex" {
+			return "owner_scoped_account_key"
+		}
+		return ""
+	}
 	card, err := service.CreateCard(context.Background(), CardInput{
 		Project: project.ID, Board: board.ID, Lane: model.LaneRunning,
 		Title: "Implement", Prompt: "Ship it", Provider: "codex", Model: "gpt-5.6-sol",
@@ -903,7 +909,7 @@ func TestCreateRunningCardCanDeferStartToStreamingClient(t *testing.T) {
 		t.Fatalf("request=%#v", request)
 	}
 	stored, _ := service.Store.ResolveCard(card.ID)
-	if stored.InitialPromptSentAt == "" || stored.Runtime != "idle" {
+	if stored.InitialPromptSentAt == "" || stored.Runtime != "idle" || stored.ProviderAccountKey != "owner_scoped_account_key" {
 		t.Fatalf("started card=%#v", stored)
 	}
 	conversation, err = service.Store.Conversation(card.ID)

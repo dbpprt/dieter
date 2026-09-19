@@ -272,6 +272,17 @@ message ProviderResetCredits {
   repeated ProviderResetCredit details = 2;
 }
 
+// ProviderQuotaMachine is gateway-owned presence metadata for an enrolled
+// machine that advertised this exact provider account. Daemons never populate
+// this field in quota results.
+message ProviderQuotaMachine {
+  string daemon_id = 1;
+  string name = 2;
+  bool online = 3;
+  ProviderQuotaAvailability availability = 4;
+  string last_seen_at = 5;
+}
+
 // ProviderQuotaSnapshot is normalized provider data for exactly one account.
 // account_key is an opaque, gateway-account-scoped HMAC and is not a provider
 // account identifier or credential. display_email is optional display-only
@@ -298,11 +309,13 @@ message ProviderQuotaSnapshot {
   string status_code = 19;
   string display_email = 20;
   optional bool included_in_summary = 21;
+  repeated ProviderQuotaMachine machines = 22;
 }
 
-// ProviderQuotaSummary drives the one compact bar shown for a provider. The
-// selected percentage is the lowest remaining value across distinct accounts
-// and windows; separate account quotas are never summed or averaged.
+// ProviderQuotaSummary is the deterministic provider-level API/CLI summary.
+// Native clients may instead render each account independently. The selected
+// percentage is the lowest remaining value across distinct accounts and
+// windows; separate account quotas are never summed or averaged.
 message ProviderQuotaSummary {
   uint32 total_account_count = 1;
   uint32 numeric_account_count = 2;

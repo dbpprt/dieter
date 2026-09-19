@@ -290,12 +290,15 @@ func ListenDaemon(ctx context.Context, addr string, data *store.Store, runner ha
 
 // ListenDaemonReady acknowledges a runtime activation only after initialization
 // and successful listener binding, before any scheduled work is dispatched.
-func ListenDaemonReady(ctx context.Context, addr string, data *store.Store, runner harness.Runner, logger *slog.Logger, remoteDesktop *remotedesktop.Manager, ready func() error) error {
+func ListenDaemonReady(ctx context.Context, addr string, data *store.Store, runner harness.Runner, logger *slog.Logger, remoteDesktop *remotedesktop.Manager, ready func() error, providerAccountKey ...func(string) string) error {
 	manager, err := newAuthManager(authConfig{}, data)
 	if err != nil {
 		return err
 	}
 	application := newWithAuth(data, logger, runner, manager)
+	if len(providerAccountKey) > 0 {
+		application.app.ProviderAccountKey = providerAccountKey[0]
+	}
 	if remoteDesktop != nil {
 		application.remoteDesktop = remoteDesktop
 	}
