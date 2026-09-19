@@ -79,15 +79,98 @@
         }
     }
 
+    struct IOSConversationProviderQuotaView: View {
+        @Bindable var store: IOSStore
+        let card: Dieter_V1_Card
+        @State private var presented = false
+
+        private var selection: IOSProviderQuotaAccountSelection? {
+            IOSProviderQuotaSelection.account(for: card, in: store.providerQuotaGroups)
+        }
+
+        var body: some View {
+            if let selection {
+                Button {
+                    presented = true
+                } label: {
+                    IOSProviderQuotaAccountCompactLabel(
+                        provider: selection.provider,
+                        account: selection.account
+                    )
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(
+                    "Quota for this conversation's \(IOSProviderQuotaPresentation.accountLabel(selection.account)) account"
+                )
+                .accessibilityIdentifier("ios.conversation.provider-account-quota")
+                .sheet(isPresented: $presented) {
+                    IOSProviderQuotaDetailsView(
+                        store: store,
+                        accountKey: selection.account.accountKey
+                    )
+                    .presentationDetents([.medium, .large])
+                    .presentationDragIndicator(.visible)
+                }
+            }
+        }
+    }
+
+    private struct IOSProviderQuotaAccountCompactLabel: View {
+        let provider: Dieter_Gateway_V1_ProviderQuotaProvider
+        let account: Dieter_Gateway_V1_ProviderQuotaSnapshot
+
+        private var remaining: UInt32? {
+            IOSProviderQuotaPresentation.remainingPercent(account)
+        }
+
+        var body: some View {
+            HStack(spacing: 5) {
+                Image(systemName: IOSProviderQuotaPresentation.symbol(provider))
+                    .font(.system(size: 10, weight: .semibold))
+                if let remaining {
+                    Text("\(remaining)%")
+                        .font(.system(size: 10, weight: .semibold, design: .rounded))
+                        .monospacedDigit()
+                    ProgressView(value: Double(remaining), total: 100)
+                        .progressViewStyle(.linear)
+                        .frame(width: 28)
+                } else {
+                    Text("—").font(.caption2)
+                }
+                if account.availability != .available {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 8, weight: .semibold))
+                        .foregroundStyle(.orange)
+                }
+            }
+            .foregroundStyle(IOSProviderQuotaPresentation.tint(provider))
+            .tint(IOSProviderQuotaPresentation.tint(provider))
+            .padding(.horizontal, 7)
+            .frame(height: 28)
+            .background(.thinMaterial, in: Capsule())
+        }
+    }
+
     struct IOSProviderQuotaDetailsView: View {
         @Environment(\.dismiss) private var dismiss
         @Bindable var store: IOSStore
+        var accountKey: String? = nil
         @State private var resetConfirmationAccountKey: String?
+
+        private var groups: [Dieter_Gateway_V1_ProviderQuotaGroup] {
+            guard let accountKey else { return store.providerQuotaGroups }
+            return store.providerQuotaGroups.compactMap { group in
+                var filtered = group
+                filtered.accounts = group.accounts.filter { $0.accountKey == accountKey }
+                return filtered.accounts.isEmpty ? nil : filtered
+            }
+        }
 
         var body: some View {
             NavigationStack {
                 IOSProviderQuotaDetailsContent(
-                    groups: store.providerQuotaGroups,
+                    groups: groups,
+                    showsProviderSummary: accountKey == nil,
                     loading: store.providerQuotasLoading,
                     error: store.providerQuotaError,
                     mutatingAccounts: store.providerQuotaMutatingAccounts,
@@ -100,7 +183,7 @@
                     },
                     useReset: { resetConfirmationAccountKey = $0 }
                 )
-                .navigationTitle("Provider quotas")
+                .navigationTitle(accountKey == nil ? "Provider quotas" : "Conversation quota")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) {
@@ -133,6 +216,7 @@
 
     private struct IOSProviderQuotaDetailsContent: View {
         let groups: [Dieter_Gateway_V1_ProviderQuotaGroup]
+        let showsProviderSummary: Bool
         let loading: Bool
         let error: String?
         let mutatingAccounts: Set<String>
@@ -143,9 +227,13 @@
         var body: some View {
             List {
                 Section {
-                    Text("The header summarizes included accounts. Every account and quota window stays separate here.")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                    Text(
+                        showsProviderSummary
+                            ? "The header summarizes included accounts. Every account and quota window stays separate here."
+                            : "Usage for the exact provider account assigned to this conversation."
+                    )
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
                     if let error, !error.isEmpty {
                         Label(error, systemImage: "exclamationmark.triangle.fill")
                             .font(.footnote)
@@ -178,7 +266,7 @@
 
         private func providerSection(_ group: Dieter_Gateway_V1_ProviderQuotaGroup) -> some View {
             Section {
-                if group.hasSummary, group.summary.hasRemainingPercent {
+                if showsProviderSummary, group.hasSummary, group.summary.hasRemainingPercent {
                     VStack(alignment: .leading, spacing: 7) {
                         HStack {
                             Text("Included-account summary")
@@ -337,6 +425,21 @@
             provider == .openaiCodex ? openAI : .orange
         }
 
+        static func remainingPercent(
+            _ account: Dieter_Gateway_V1_ProviderQuotaSnapshot
+        ) -> UInt32? {
+            account.windows.compactMap { $0.hasRemainingPercent ? $0.remainingPercent : nil }.min()
+        }
+
+        static func accountLabel(_ account: Dieter_Gateway_V1_ProviderQuotaSnapshot) -> String {
+            if !account.displayEmail.isEmpty {
+                let local = account.displayEmail.split(separator: "@", maxSplits: 1).first.map(String.init) ?? ""
+                if !local.isEmpty { return local }
+            }
+            if !account.plan.isEmpty { return account.plan.capitalized }
+            return "••\(account.accountKey.suffix(4))"
+        }
+
         static func availability(_ value: Dieter_Gateway_V1_ProviderQuotaAvailability) -> String {
             switch value {
             case .available: "Available"
@@ -413,6 +516,7 @@
                         NavigationStack {
                             IOSProviderQuotaDetailsContent(
                                 groups: groups,
+                                showsProviderSummary: true,
                                 loading: false,
                                 error: nil,
                                 mutatingAccounts: [],

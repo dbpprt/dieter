@@ -495,6 +495,7 @@
             }
             .listStyle(.plain)
             .navigationTitle(title)
+            .navigationBarTitleDisplayMode(.inline)
             .searchable(text: $search, prompt: "Search tasks")
             .accessibilityIdentifier("ios.task-list")
             .overlay {
