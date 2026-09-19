@@ -91,7 +91,8 @@ package final class DieterRPC: Sendable {
     ) throws {
         self.controlBridge = controlBridge
         self.endpoint = endpoint
-        isLoopbackDataPlane = controlBridge == nil && Self.isLoopbackDataPlane(endpoint: endpoint, route: route, directHost: direct?.host)
+        isLoopbackDataPlane =
+            controlBridge == nil && Self.isLoopbackDataPlane(endpoint: endpoint, route: route, directHost: direct?.host)
         let host = direct?.host ?? endpoint.host
         let port = direct?.port ?? endpoint.port
         let security: HTTP2ClientTransport.Posix.TransportSecurity

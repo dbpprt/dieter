@@ -205,7 +205,9 @@ struct MachinePopover: View {
                     Label("\(status.route.rawValue) · \(status.latencyMilliseconds) ms", systemImage: "network")
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(DieterTheme.subtle)
-                        .accessibilityLabel("Connection: \(status.route.rawValue), \(status.latencyMilliseconds) milliseconds")
+                        .accessibilityLabel(
+                            "Connection: \(status.route.rawValue), \(status.latencyMilliseconds) milliseconds"
+                        )
                         .accessibilityIdentifier("machine.connection-mode")
                 }
             }

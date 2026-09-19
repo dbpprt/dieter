@@ -16,6 +16,7 @@ import CoreGraphics
         @State private var session = IOSRemoteDesktopSession()
         @State private var phoneChromeVisible = true
         @State private var phoneSettingsPresented = false
+        @State private var showKeyboardAfterSettingsDismissal = false
         @State private var manuallyDisconnected = false
         @State private var clickMode = IOSRemoteDesktopClickMode()
 
@@ -45,11 +46,11 @@ import CoreGraphics
             }
             .onAppear {
                 phoneChromeVisible = true
-                requestPhoneOrientation(.landscape)
+                requestPhoneOrientation(.allButUpsideDown)
             }
             .onDisappear {
                 session.disconnect()
-                requestPhoneOrientation(.portrait)
+                requestPhoneOrientation(.allButUpsideDown)
             }
             .onChange(of: scenePhase) { _, phase in
                 if phase == .active { connectIfPossible() } else { session.disconnect() }
@@ -63,17 +64,9 @@ import CoreGraphics
                     session.showKeyboard(false)
                 }
             }
-            .onChange(
-                of: CGSize(
-                    width: CGFloat(session.sessionState.width),
-                    height: CGFloat(session.sessionState.height))
-            ) { _, remoteSize in
-                followRemoteOrientation(remoteSize)
+            .sheet(isPresented: $phoneSettingsPresented, onDismiss: showDeferredKeyboard) {
+                phoneSettingsSheet
             }
-            .onChange(of: session.videoSize) { _, videoSize in
-                followRemoteOrientation(videoSize)
-            }
-            .sheet(isPresented: $phoneSettingsPresented) { phoneSettingsSheet }
             .privacySensitive()
         }
 
@@ -292,7 +285,10 @@ import CoreGraphics
                         .disabled(!isConnected)
                     if session.controlActive {
                         Section("Input") {
-                            Button("Show Keyboard", systemImage: "keyboard") { session.showKeyboard(true) }
+                            Button("Show Keyboard", systemImage: "keyboard") {
+                                showKeyboardAfterSettingsDismissal = true
+                                phoneSettingsPresented = false
+                            }
                             inputMenu
                         }
                     }
@@ -453,9 +449,14 @@ import CoreGraphics
                 .setNeedsUpdateOfSupportedInterfaceOrientations()
         }
 
-        private func followRemoteOrientation(_ remoteSize: CGSize) {
-            guard let portrait = IOSRemoteDesktopOrientation.isPortrait(remoteSize) else { return }
-            requestPhoneOrientation(portrait ? .portrait : .landscape)
+        private func showDeferredKeyboard() {
+            guard showKeyboardAfterSettingsDismissal else { return }
+            showKeyboardAfterSettingsDismissal = false
+            guard session.controlActive else { return }
+            Task { @MainActor in
+                await Task.yield()
+                session.showKeyboard(true)
+            }
         }
 
         private func progressCard(_ title: String) -> some View {
@@ -544,6 +545,7 @@ import CoreGraphics
         private var pinchStartScale: CGFloat = 1
         private var pinchAnchor = CGPoint.zero
         private var inputMode = IOSRemoteDesktopInputMode.pointer
+        private var inputActivation = 0
         private lazy var suppressedSoftwareKeyboard = UIView(frame: .zero)
         var rightClickArmed: Bool
         var clickSent: () -> Void
@@ -639,6 +641,7 @@ import CoreGraphics
         override func resignFirstResponder() -> Bool {
             let resigned = super.resignFirstResponder()
             if resigned {
+                inputActivation &+= 1
                 inputMode = .pointer
                 session?.keyboardVisibilityChanged(false)
             }
@@ -646,19 +649,37 @@ import CoreGraphics
         }
 
         private func setTextInputActive(_ active: Bool) {
+            inputActivation &+= 1
+            let activation = inputActivation
             let nextMode = IOSRemoteDesktopInputMode(textInputActive: active)
             let changed = nextMode != inputMode
             inputMode = nextMode
             if active {
                 if isFirstResponder {
                     if changed { reloadInputViews() }
+                    session?.keyboardVisibilityChanged(true)
                 } else {
-                    becomeFirstResponder()
+                    // A SwiftUI button or a dismissing sheet can restore its own focus
+                    // at the end of the current event. Claim input on the next actor turn
+                    // so that transient focus restoration cannot immediately hide it.
+                    Task { @MainActor [weak self] in
+                        await Task.yield()
+                        guard let self, self.inputActivation == activation,
+                            self.inputMode.presentsSoftwareKeyboard
+                        else { return }
+                        let focused = self.becomeFirstResponder()
+                        if focused, changed { self.reloadInputViews() }
+                        self.session?.keyboardVisibilityChanged(focused && self.isFirstResponder)
+                    }
                 }
-            } else if !resignFirstResponder(), changed {
-                reloadInputViews()
+            } else {
+                if isFirstResponder {
+                    _ = resignFirstResponder()
+                } else {
+                    if changed { reloadInputViews() }
+                    session?.keyboardVisibilityChanged(false)
+                }
             }
-            session?.keyboardVisibilityChanged(active && isFirstResponder)
         }
 
         override func layoutSubviews() {
@@ -729,7 +750,6 @@ import CoreGraphics
             guard let session, session.controlActive,
                 let point = normalized(gesture.location(in: self))
             else { return }
-            becomeFirstResponder()
             let button: Dieter_V1_RemoteDesktopPointerButton.Button = rightClickArmed ? .right : .left
             session.pointer(x: point.x, y: point.y)
             session.button(button, down: true, x: point.x, y: point.y, clickCount: 1)
@@ -742,7 +762,6 @@ import CoreGraphics
             guard let session, session.controlActive,
                 let point = normalized(gesture.location(in: self))
             else { return }
-            becomeFirstResponder()
             let button: Dieter_V1_RemoteDesktopPointerButton.Button = rightClickArmed ? .right : .left
             let clickCount = rightClickArmed ? 1 : 2
             session.pointer(x: point.x, y: point.y)
@@ -753,7 +772,6 @@ import CoreGraphics
 
         @objc private func pointerMoved(_ gesture: UIPanGestureRecognizer) {
             guard let point = normalized(gesture.location(in: self), clamp: true) else { return }
-            if gesture.state == .began { becomeFirstResponder() }
             if gesture.state == .began || gesture.state == .changed {
                 session?.pointer(x: point.x, y: point.y)
             }
@@ -763,7 +781,6 @@ import CoreGraphics
             guard let point = normalized(gesture.location(in: self), clamp: true) else { return }
             switch gesture.state {
             case .began:
-                becomeFirstResponder()
                 dragging = true
                 session?.pointer(x: point.x, y: point.y)
                 session?.button(.left, down: true, x: point.x, y: point.y)
@@ -842,10 +859,13 @@ import CoreGraphics
         }
 
         private func normalized(_ point: CGPoint, clamp: Bool = false) -> CGPoint? {
-            let unzoomed = IOSRemoteDesktopGeometry.unzoomed(
-                point: point, bounds: bounds, zoomScale: zoomScale, zoomOffset: zoomOffset)
-            return IOSRemoteDesktopGeometry.normalized(
-                point: unzoomed, bounds: bounds, videoSize: videoSize, clamp: clamp)
+            IOSRemoteDesktopGeometry.normalizedDisplayedPoint(
+                point,
+                bounds: bounds,
+                videoSize: videoSize,
+                zoomScale: zoomScale,
+                zoomOffset: zoomOffset,
+                clamp: clamp)
         }
 
         private func sendHardwareKeys(_ presses: Set<UIPress>, down: Bool) -> Bool {
@@ -905,13 +925,6 @@ import CoreGraphics
     }
 
 #endif
-
-enum IOSRemoteDesktopOrientation {
-    static func isPortrait(_ remoteSize: CGSize) -> Bool? {
-        guard remoteSize.width > 0, remoteSize.height > 0 else { return nil }
-        return remoteSize.height > remoteSize.width
-    }
-}
 
 enum IOSRemoteDesktopInputMode: Equatable {
     case pointer
@@ -988,6 +1001,25 @@ enum IOSRemoteDesktopGeometry {
         return CGPoint(
             x: bounds.midX + (point.x - bounds.midX - zoomOffset.x) / scale,
             y: bounds.midY + (point.y - bounds.midY - zoomOffset.y) / scale)
+    }
+
+    static func normalizedDisplayedPoint(
+        _ point: CGPoint,
+        bounds: CGRect,
+        videoSize: CGSize,
+        zoomScale: CGFloat,
+        zoomOffset: CGPoint,
+        clamp: Bool = false
+    ) -> CGPoint? {
+        normalized(
+            point: unzoomed(
+                point: point,
+                bounds: bounds,
+                zoomScale: zoomScale,
+                zoomOffset: zoomOffset),
+            bounds: bounds,
+            videoSize: videoSize,
+            clamp: clamp)
     }
 
     static func zoomOffset(

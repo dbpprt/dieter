@@ -230,11 +230,42 @@ struct IOSModelTests {
                 == CGPoint(x: 150, y: 0))
     }
 
-    @Test func remoteDesktopOrientationFollowsTheRemoteDisplay() {
-        #expect(IOSRemoteDesktopOrientation.isPortrait(CGSize(width: 1_080, height: 1_920)) == true)
-        #expect(IOSRemoteDesktopOrientation.isPortrait(CGSize(width: 1_920, height: 1_080)) == false)
-        #expect(IOSRemoteDesktopOrientation.isPortrait(CGSize(width: 1_024, height: 1_024)) == false)
-        #expect(IOSRemoteDesktopOrientation.isPortrait(.zero) == nil)
+    @Test func remoteDesktopZoomedClicksMapToTheVisibleRemotePoint() throws {
+        let bounds = CGRect(x: 0, y: 0, width: 300, height: 300)
+        let video = CGSize(width: 300, height: 150)
+        let centered = try #require(
+            IOSRemoteDesktopGeometry.normalizedDisplayedPoint(
+                CGPoint(x: 150, y: 150),
+                bounds: bounds,
+                videoSize: video,
+                zoomScale: 2,
+                zoomOffset: CGPoint(x: 150, y: 0)))
+        #expect(centered == CGPoint(x: 0.25, y: 0.5))
+
+        let oppositePan = try #require(
+            IOSRemoteDesktopGeometry.normalizedDisplayedPoint(
+                CGPoint(x: 150, y: 150),
+                bounds: bounds,
+                videoSize: video,
+                zoomScale: 2,
+                zoomOffset: CGPoint(x: -150, y: 0)))
+        #expect(oppositePan == CGPoint(x: 0.75, y: 0.5))
+    }
+
+    @Test func remoteDesktopReceiverHeartbeatRetainsItsEpochAndAdvances() {
+        let epoch = Data(repeating: 7, count: 16)
+        var heartbeat = IOSRemoteDesktopFeedbackHeartbeat(inputEpoch: epoch)
+        let first = heartbeat.next(inputActive: false)
+        let second = heartbeat.next(inputActive: true)
+
+        #expect(first.protocolVersion == 2)
+        #expect(first.inputEpoch == epoch)
+        #expect(first.sequence == 1)
+        #expect(!first.inputActive)
+        #expect(second.protocolVersion == 2)
+        #expect(second.inputEpoch == epoch)
+        #expect(second.sequence == 2)
+        #expect(second.inputActive)
     }
 
     @Test func remoteDesktopOnlyPresentsSoftwareKeyboardForTextInput() {

@@ -69,6 +69,8 @@
         @ObservationIgnored private var viewportTask: Task<Void, Never>?
         @ObservationIgnored private var keyboardHandler: ((Bool) -> Void)?
         @ObservationIgnored private var cursorHandler: ((Dieter_V1_RemoteDesktopCursor) -> Void)?
+        @ObservationIgnored private let feedbackPump = IOSRemoteDesktopFeedbackPump()
+        @ObservationIgnored private var pointerFlushTask: Task<Void, Never>?
 
         private var generation: UInt64 = 0
         private var recoveryAttempts = 0
@@ -93,10 +95,13 @@
         private var videoTrack: RTCVideoTrack?
         private var videoRelay: IOSRemoteDesktopVideoRelay!
         private var presentedGeneration: UInt64 = 0
+        private var receiverFeedbackStarted = false
         private var pointerSequence: UInt64 = 0
         private var stateSequence: UInt64 = 0
         private var eventOrdinal: UInt64 = 0
         private var lastPointer = CGPoint(x: 0.5, y: 0.5)
+        private var pendingPointer: CGPoint?
+        private var pointerLastSent: TimeInterval = -.infinity
         private var desiredConfiguration = Dieter_V1_RemoteDesktopStreamConfiguration()
 
         init() {
@@ -414,6 +419,7 @@
             remoteCandidates.removeAll()
             for candidate in candidates { try await addIceCandidate(candidate) }
             updateControlReadiness()
+            startReceiverFeedbackIfPossible()
         }
 
         private func startLease(token: UInt64) {
@@ -478,9 +484,11 @@
                 peerWatchdog?.cancel()
                 peerWatchdog = nil
                 phase = presentedGeneration > 0 ? .streaming : .connecting
+                startReceiverFeedbackIfPossible()
             case .disconnected:
                 releaseAllInput()
                 controlActive = false
+                feedbackPump.input(active: false)
                 phase = .reconnecting
                 let token = generation
                 peerWatchdog?.cancel()
@@ -558,6 +566,16 @@
                 && stateChannel?.readyState == .open && hostChannel?.readyState == .open
                 && sessionState.displayGeneration > 0
                 && presentedGeneration == sessionState.displayGeneration
+            feedbackPump.input(active: controlActive)
+        }
+
+        private func startReceiverFeedbackIfPossible() {
+            guard !receiverFeedbackStarted, peerConnection?.connectionState == .connected,
+                let binding, binding.inputEpoch.count == 16, let hostChannel
+            else { return }
+            receiverFeedbackStarted = true
+            feedbackPump.start(channel: hostChannel, inputEpoch: binding.inputEpoch)
+            feedbackPump.input(active: controlActive)
         }
 
         func attach(renderer: any RTCVideoRenderer) {
@@ -575,8 +593,15 @@
 
         func setKeyboardHandler(_ handler: ((Bool) -> Void)?) { keyboardHandler = handler }
         func showKeyboard(_ show: Bool) {
-            keyboardVisible = show
-            keyboardHandler?(show)
+            guard !show || controlActive else {
+                keyboardVisible = false
+                return
+            }
+            guard let keyboardHandler else {
+                keyboardVisible = false
+                return
+            }
+            keyboardHandler(show)
         }
         func keyboardVisibilityChanged(_ visible: Bool) { keyboardVisible = visible }
         func setCursorHandler(_ handler: ((Dieter_V1_RemoteDesktopCursor) -> Void)?) {
@@ -588,6 +613,28 @@
             let point = CGPoint(x: max(0, min(1, x)), y: max(0, min(1, y)))
             lastPointer = point
             guard controlActive else { return }
+            pendingPointer = point
+            guard pointerFlushTask == nil else { return }
+            let delay = max(0, 0.004 - (ProcessInfo.processInfo.systemUptime - pointerLastSent))
+            if delay == 0 {
+                flushPointer()
+                return
+            }
+            pointerFlushTask = Task { [weak self] in
+                try? await DieterTaskSleep.seconds(delay)
+                guard !Task.isCancelled, let self else { return }
+                self.pointerFlushTask = nil
+                self.flushPointer()
+            }
+        }
+
+        private func flushPointer() {
+            guard controlActive, let point = pendingPointer else {
+                pendingPointer = nil
+                return
+            }
+            pendingPointer = nil
+            pointerLastSent = ProcessInfo.processInfo.systemUptime
             var value = Dieter_V1_RemoteDesktopPointerMove()
             value.normalizedX = normalized(point.x)
             value.normalizedY = normalized(point.y)
@@ -665,6 +712,10 @@
         }
 
         func releaseAllInput() {
+            pendingPointer = nil
+            pointerFlushTask?.cancel()
+            pointerFlushTask = nil
+            pointerLastSent = -.infinity
             guard controlActive else { return }
             sendState(.releaseAll(Dieter_V1_RemoteDesktopReleaseAll()), failOnError: false)
         }
@@ -684,6 +735,7 @@
             guard controlActive, let channel = stateChannel, channel.readyState == .open,
                 channel.bufferedAmount < 65_536, let binding
             else { return }
+            pendingPointer = nil
             stateSequence &+= 1
             send(
                 payload, sequence: stateSequence, binding: binding, channel: channel,
@@ -708,7 +760,9 @@
             input.displayGeneration = sessionState.displayGeneration
             input.payload = payload
             guard let data = try? input.serializedData(), data.count <= 4_096 else { return }
-            if !channel.sendData(RTCDataBuffer(data: data, isBinary: true)), failOnError {
+            if !channel.sendData(RTCDataBuffer(data: data, isBinary: true)), failOnError,
+                channel === stateChannel
+            {
                 controlActive = false
                 recover()
             }
@@ -820,6 +874,8 @@
             peerWatchdog?.cancel(); peerWatchdog = nil
             viewportTask?.cancel(); viewportTask = nil
             releaseAllInput()
+            feedbackPump.stop()
+            receiverFeedbackStarted = false
             let previousConnection = connection
             let previousSessionID = sessionID
             videoTrack?.remove(videoRelay)
@@ -835,6 +891,7 @@
             sessionID = ""; remoteDescriptionApplied = false; authorized = false
             localCandidates.removeAll(); remoteCandidates.removeAll()
             presentedGeneration = 0; pointerSequence = 0; stateSequence = 0; eventOrdinal = 0
+            pendingPointer = nil; pointerLastSent = -.infinity
             sessionState = .init(); cursor = .init(); controlActive = false
             keyboardVisible = false; keyboardModifiers = 0
             controlTransferPending = false; controlTransferError = ""

@@ -68,10 +68,10 @@ machine's verified direct route or gateway relay. Tap to click, move the pointer
 with one finger, hold and move to drag, scroll with two fingers, and use the
 keyboard and special-key menus for text and HID input. Display, quality, refresh,
 frame-rate, and protocol-3 control handoff are available from the screen toolbar.
-On iPhone, opening Screens requests landscape automatically, then follows a
-portrait remote display when its dimensions arrive. The viewer replaces the
-navigation bar with floating Back and stream-settings controls; tap the live
-canvas to hide or reveal those controls. iPad keeps its split-view toolbar.
+On iPhone, the viewer follows the device orientation chosen by the user and
+supports both portrait and landscape. It replaces the navigation bar with
+floating Back and stream-settings controls; tap the live canvas to hide or
+reveal those controls. iPad keeps its split-view toolbar.
 The session closes when Screens is left, the machine changes, or iOS backgrounds
 the app; returning establishes a new signed binding and input epoch.
 

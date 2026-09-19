@@ -374,11 +374,16 @@ final class RemoteNodeUITests: XCTestCase {
             tap(app, "ios.screens.open")
             XCTAssertTrue(element(app, "ios.screens.back").waitForExistence(timeout: 10))
             let window = app.windows.firstMatch
+            XCTAssertGreaterThan(
+                window.frame.height, window.frame.width,
+                "Opening the iPhone screen viewer should preserve the user's portrait orientation.\n"
+                    + app.debugDescription)
+            XCUIDevice.shared.orientation = .landscapeLeft
             let landscape = XCTNSPredicateExpectation(
                 predicate: NSPredicate { _, _ in window.frame.width > window.frame.height }, object: window)
             XCTAssertEqual(
                 XCTWaiter.wait(for: [landscape], timeout: 10), .completed,
-                "The iPhone screen viewer should request landscape automatically.\n\(app.debugDescription)")
+                "The iPhone screen viewer should allow the user to rotate to landscape.\n\(app.debugDescription)")
             let settingsReady = XCTNSPredicateExpectation(
                 predicate: NSPredicate(format: "exists == true AND hittable == true"),
                 object: element(app, "ios.screens.settings"))
@@ -386,12 +391,13 @@ final class RemoteNodeUITests: XCTestCase {
                 XCTWaiter.wait(for: [settingsReady], timeout: 10), .completed,
                 "Screen settings should be usable after the landscape transition.\n\(app.debugDescription)")
             screenshot(app, "11-remote-screen-phone-chrome")
-            tap(app, "ios.screens.back")
+            XCUIDevice.shared.orientation = .portrait
             let portrait = XCTNSPredicateExpectation(
                 predicate: NSPredicate { _, _ in window.frame.height > window.frame.width }, object: window)
             XCTAssertEqual(
                 XCTWaiter.wait(for: [portrait], timeout: 10), .completed,
-                "Leaving the iPhone screen viewer should restore portrait.\n\(app.debugDescription)")
+                "The iPhone screen viewer should allow the user to rotate back to portrait.\n\(app.debugDescription)")
+            tap(app, "ios.screens.back")
         }
     }
 

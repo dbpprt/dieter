@@ -157,7 +157,8 @@ private let connectionLogger = Logger(subsystem: "com.dbpprt.dieter.mac", catego
                             rpc: direct,
                             task: directTask,
                             connection: .init(
-                                route: candidate.network.caseInsensitiveCompare("loopback") == .orderedSame ? .local : .directTLS,
+                                route: candidate.network.caseInsensitiveCompare("loopback") == .orderedSame
+                                    ? .local : .directTLS,
                                 latencyMilliseconds: Self.latencyMilliseconds(since: started)),
                             directTokenExpiresAt: token.expiresAt,
                             directCredential: direct.directCredential,
@@ -181,7 +182,9 @@ private let connectionLogger = Logger(subsystem: "com.dbpprt.dieter.mac", catego
         try Task.checkCancellation()
         if route.controlWebrtc && route.relayAvailable {
             do {
-                return try await controlConnection(gateway: gateway, target: target, gatewayAccessToken: gatewayAccessToken, route: route, refreshDirectToken: refreshDirectToken, run: run)
+                return try await controlConnection(
+                    gateway: gateway, target: target, gatewayAccessToken: gatewayAccessToken, route: route,
+                    refreshDirectToken: refreshDirectToken, run: run)
             } catch {
                 try Task.checkCancellation()
                 connectionLogger.debug("WebRTC control route failed: \(error.localizedDescription, privacy: .public)")
