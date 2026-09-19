@@ -6,7 +6,13 @@ import com.dbpprt.dieter.gateway.v1.DaemonPresenceUpdate
 import com.dbpprt.dieter.gateway.v1.ExchangeDaemonTokenRequest
 import com.dbpprt.dieter.gateway.v1.GatewayServiceGrpcKt
 import com.dbpprt.dieter.gateway.v1.ListDaemonsResponse
+import com.dbpprt.dieter.gateway.v1.ListProviderQuotasRequest
+import com.dbpprt.dieter.gateway.v1.ListProviderQuotasResponse
+import com.dbpprt.dieter.gateway.v1.ProviderQuotaUpdate
+import com.dbpprt.dieter.gateway.v1.RefreshProviderQuotasRequest
+import com.dbpprt.dieter.gateway.v1.RefreshProviderQuotasResponse
 import com.dbpprt.dieter.gateway.v1.WatchDaemonsRequest
+import com.dbpprt.dieter.gateway.v1.WatchProviderQuotasRequest
 import com.dbpprt.dieter.v1.AddCommentRequest
 import com.dbpprt.dieter.v1.ArchiveCardRequest
 import com.dbpprt.dieter.v1.ArchiveProjectRequest
@@ -206,7 +212,10 @@ interface DieterRepository {
     fun selectEndpoint(endpoint: DieterEndpoint)
     fun setAccessToken(endpoint: DieterEndpoint, token: String?)
     suspend fun daemons(): ListDaemonsResponse
+    suspend fun providerQuotas(): ListProviderQuotasResponse
+    suspend fun refreshProviderQuotas(): RefreshProviderQuotasResponse
     fun watchDaemons(): Flow<DaemonPresenceUpdate>
+    fun watchProviderQuotas(): Flow<ProviderQuotaUpdate>
     suspend fun relayState(endpoint: DieterEndpoint, filter: GetStateRequest = GetStateRequest.getDefaultInstance()): State
     suspend fun relayChats(endpoint: DieterEndpoint, includeArchived: Boolean = false): ChatsResponse
     suspend fun openScreenConnection(endpointId: String): com.dbpprt.dieter.screens.ScreenConnection =
@@ -428,9 +437,23 @@ class GrpcDieterRepository(context: Context) : DieterRepository {
 
     override suspend fun daemons(): ListDaemonsResponse = gatewayStub().listDaemons(Empty.getDefaultInstance())
 
+    override suspend fun providerQuotas(): ListProviderQuotasResponse = gatewayStub().listProviderQuotas(
+        ListProviderQuotasRequest.getDefaultInstance(),
+    )
+
+    override suspend fun refreshProviderQuotas(): RefreshProviderQuotasResponse = gatewayStub().refreshProviderQuotas(
+        RefreshProviderQuotasRequest.getDefaultInstance(),
+    )
+
     override fun watchDaemons(): Flow<DaemonPresenceUpdate> = flow {
         gatewayStreamingStub().watchDaemons(
             WatchDaemonsRequest.newBuilder().setHeartbeatSeconds(15).build(),
+        ).collect(::emit)
+    }
+
+    override fun watchProviderQuotas(): Flow<ProviderQuotaUpdate> = flow {
+        gatewayStreamingStub().watchProviderQuotas(
+            WatchProviderQuotasRequest.newBuilder().setHeartbeatSeconds(15).build(),
         ).collect(::emit)
     }
 

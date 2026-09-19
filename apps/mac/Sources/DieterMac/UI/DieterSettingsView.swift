@@ -719,6 +719,7 @@ struct ConnectionSettings: View {
             VStack(spacing: 14) {
                 connectionExplanation
                 activeConnection
+                providerQuotas
                 gatewayList
                 machineList
                 addGateway
@@ -745,6 +746,15 @@ struct ConnectionSettings: View {
             Text(
                 "Dieter will remove all cached workspace data on this Mac, keep your sign-in and pending changes, then download fresh snapshots. Content may briefly disappear."
             )
+        }
+    }
+
+    private var providerQuotas: some View {
+        SettingsPanel(
+            title: "Provider quotas",
+            subtitle: "Usage limits discovered across all online enrolled machines."
+        ) {
+            ProviderQuotaDetailsView()
         }
     }
 

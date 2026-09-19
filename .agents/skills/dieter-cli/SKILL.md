@@ -46,8 +46,9 @@ and Git-operation watches renew direct credentials and resume from the last
 delivered sequence or complete sync projection. Transient failures allow five
 retries between delivered frames; revocation and permanent errors stop recovery.
 Mutations, process starts, and stdin writes are never replayed by this recovery.
-The gateway routes requests but does not
-store projects, transcripts, files, schedules, or harness credentials. Use
+The gateway routes requests and stores only control-plane state plus normalized,
+credential-free provider quota snapshots. It does not store projects,
+transcripts, files, schedules, provider credentials, or harness credentials. Use
 `dieter machine show <machine-id>` and `dieter machine route <machine-id>` to
 inspect presence and advertised routes. Directory output includes the daemon's
 release `version` and compatibility `apiVersion`; use the latter when deciding
@@ -61,6 +62,22 @@ Use `dieter machine gateway` for the running gateway build identity and
 `dieter --machine <machine-id> machine info` for live CPU, memory, process, and
 optional Apple/NVIDIA/AMD GPU telemetry. Optional GPU fields are omitted when a
 driver cannot provide them; zero remains a real measurement.
+
+Provider quotas are scoped to the signed-in gateway account, not one daemon.
+Do not pass global `--machine`:
+
+```sh
+dieter quota list
+dieter quota list openai --format json
+dieter quota watch --count 3
+dieter quota refresh openai
+```
+
+The table abbreviates opaque account keys. JSON retains the opaque key so it
+can be passed to `quota refresh --account KEY`; it is an owner-scoped HMAC, not
+an email address or provider account ID. Provider summaries choose the lowest
+remaining percentage across all account windows and never sum or average
+separate account allowances.
 
 Machine restart, shutdown, and daemon update require the exact confirmation
 phrases shown by `--help` and are available only when the target daemon reports

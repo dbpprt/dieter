@@ -63,6 +63,8 @@ func (c *CLI) runDaemonCommand(args []string) (bool, error) {
 		return true, c.auth(args[1:])
 	case "machine", "machines":
 		return true, c.machineCommand(args[1:])
+	case "quota", "quotas":
+		return true, c.quotaCommand(args[1:])
 	case "status":
 		return true, c.daemonBackedStatus(args[1:])
 	case "storage":

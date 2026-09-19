@@ -21,9 +21,10 @@ Android clients. Every card is one durable local AI SDK Harness conversation.
   advertises a separate authenticated loopback TLS route; remote access goes
   through the gateway tunnel or an explicitly enabled additional direct TLS
   route.
-- The gateway stores only account sessions, daemon identities, presence, and
-  route metadata. Never put Dieter projects, transcripts, or harness credentials
-  on the gateway.
+- The gateway stores only account sessions, daemon identities, presence, route
+  metadata, and normalized credential-free provider quota snapshots. Never put
+  Dieter projects, transcripts, provider credentials, raw provider responses,
+  or harness credentials on the gateway.
 - A daemon proves possession of its enrolled Ed25519 key on every tunnel
   connection. Client sessions have binary full access or no access; do not add
   scopes or accept a daemon ID without cryptographic proof.

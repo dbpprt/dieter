@@ -65,6 +65,33 @@ func TestGatewayRejectsUnauthenticatedRPCBeforeReadingBody(t *testing.T) {
 	}
 }
 
+func TestGatewayRejectsUnauthenticatedProviderQuotaRPCsBeforeReadingBody(t *testing.T) {
+	store, err := OpenStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	server, err := NewServer(Config{}, store, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer server.APIGRPC.Stop()
+	defer server.RelayGRPC.Stop()
+	for _, method := range []string{"ListProviderQuotas", "WatchProviderQuotas", "RefreshProviderQuotas"} {
+		t.Run(method, func(t *testing.T) {
+			body := &repeatedBody{}
+			request := httptest.NewRequest(http.MethodPost, "https://gateway.example/dieter.gateway.v1.GatewayService/"+method, body)
+			request.ProtoMajor = 2
+			request.Header.Set("Content-Type", "application/grpc")
+			response := httptest.NewRecorder()
+			server.HTTPHandler.ServeHTTP(response, request)
+			if response.Header().Get("Grpc-Status") != "16" || body.read != 0 {
+				t.Fatalf("unauthenticated response=%v body bytes read=%d", response.Header(), body.read)
+			}
+		})
+	}
+}
+
 func TestGatewayBoundsHTTP1BodiesBeforeRouting(t *testing.T) {
 	store, err := OpenStore(t.TempDir())
 	if err != nil {

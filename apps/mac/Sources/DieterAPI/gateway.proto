@@ -9,9 +9,10 @@ option java_package = "com.dbpprt.dieter.gateway.v1";
 
 import "google/protobuf/empty.proto";
 
-// GatewayService is Dieter's account and machine directory. Dieter domain data
-// never enters this service; clients target one enrolled daemon for all
-// project, conversation, schedule, and file operations.
+// GatewayService is Dieter's account and machine directory. Project,
+// conversation, schedule, file, and provider credential data never enters this
+// service. The gateway may cache normalized, credential-free provider quota
+// snapshots for the authenticated account.
 service GatewayService {
   rpc GetAccount(google.protobuf.Empty) returns (Account);
   rpc ListDaemons(google.protobuf.Empty) returns (ListDaemonsResponse);
@@ -27,6 +28,9 @@ service GatewayService {
   // The signed envelope is verified by the daemon before a desktop session is
   // admitted; the gateway never participates in the WebRTC media path.
   rpc GetRTCConfiguration(DaemonRef) returns (RTCConfiguration);
+  rpc ListProviderQuotas(ListProviderQuotasRequest) returns (ListProviderQuotasResponse);
+  rpc WatchProviderQuotas(WatchProviderQuotasRequest) returns (stream ProviderQuotaUpdate);
+  rpc RefreshProviderQuotas(RefreshProviderQuotasRequest) returns (RefreshProviderQuotasResponse);
 }
 
 // DaemonLinkService is a persistent daemon-initiated reverse tunnel. Every
@@ -185,6 +189,190 @@ message RTCConfiguration {
   string issued_at = 8;
 }
 
+enum ProviderQuotaProvider {
+  PROVIDER_QUOTA_PROVIDER_UNSPECIFIED = 0;
+  PROVIDER_QUOTA_PROVIDER_OPENAI_CODEX = 1;
+  PROVIDER_QUOTA_PROVIDER_ANTHROPIC_CLAUDE = 2;
+}
+
+enum ProviderAccountKind {
+  PROVIDER_ACCOUNT_KIND_UNSPECIFIED = 0;
+  PROVIDER_ACCOUNT_KIND_SUBSCRIPTION = 1;
+  PROVIDER_ACCOUNT_KIND_API = 2;
+}
+
+enum ProviderQuotaAvailability {
+  PROVIDER_QUOTA_AVAILABILITY_UNSPECIFIED = 0;
+  PROVIDER_QUOTA_AVAILABILITY_AVAILABLE = 1;
+  PROVIDER_QUOTA_AVAILABILITY_SIGNED_OUT = 2;
+  PROVIDER_QUOTA_AVAILABILITY_UNSUPPORTED = 3;
+  PROVIDER_QUOTA_AVAILABILITY_TEMPORARILY_UNAVAILABLE = 4;
+  PROVIDER_QUOTA_AVAILABILITY_PERMISSION_DENIED = 5;
+}
+
+enum ProviderQuotaWindowKind {
+  PROVIDER_QUOTA_WINDOW_KIND_UNSPECIFIED = 0;
+  PROVIDER_QUOTA_WINDOW_KIND_FIVE_HOUR = 1;
+  PROVIDER_QUOTA_WINDOW_KIND_WEEKLY = 2;
+  PROVIDER_QUOTA_WINDOW_KIND_MONTHLY = 3;
+  PROVIDER_QUOTA_WINDOW_KIND_MODEL = 4;
+  PROVIDER_QUOTA_WINDOW_KIND_OTHER = 5;
+}
+
+enum ProviderQuotaRefreshState {
+  PROVIDER_QUOTA_REFRESH_STATE_UNSPECIFIED = 0;
+  PROVIDER_QUOTA_REFRESH_STATE_IDLE = 1;
+  PROVIDER_QUOTA_REFRESH_STATE_REFRESHING = 2;
+  PROVIDER_QUOTA_REFRESH_STATE_THROTTLED = 3;
+  PROVIDER_QUOTA_REFRESH_STATE_FAILED = 4;
+}
+
+enum ProviderQuotaFreshness {
+  PROVIDER_QUOTA_FRESHNESS_UNSPECIFIED = 0;
+  PROVIDER_QUOTA_FRESHNESS_FRESH = 1;
+  PROVIDER_QUOTA_FRESHNESS_STALE = 2;
+}
+
+message ProviderQuotaWindow {
+  string id = 1;
+  string label = 2;
+  ProviderQuotaWindowKind kind = 3;
+  optional uint32 used_percent = 4;
+  optional uint32 remaining_percent = 5;
+  optional uint32 duration_minutes = 6;
+  string resets_at = 7;
+}
+
+message ProviderCreditBalance {
+  string balance = 1;
+  optional bool has_credits = 2;
+  bool unlimited = 3;
+}
+
+message ProviderSpendAllowance {
+  string used = 1;
+  string limit = 2;
+  string currency = 3;
+  optional uint32 remaining_percent = 4;
+  string resets_at = 5;
+}
+
+message ProviderResetCredit {
+  string title = 1;
+  string kind = 2;
+  string status = 3;
+  string granted_at = 4;
+  string expires_at = 5;
+}
+
+message ProviderResetCredits {
+  uint32 available_count = 1;
+  repeated ProviderResetCredit details = 2;
+}
+
+// ProviderQuotaSnapshot is normalized provider data for exactly one account.
+// account_key is an opaque, gateway-account-scoped HMAC and is not a provider
+// account identifier, email address, credential, or display name.
+message ProviderQuotaSnapshot {
+  ProviderQuotaProvider provider = 1;
+  string account_key = 2;
+  ProviderAccountKind account_kind = 3;
+  string plan = 4;
+  ProviderQuotaAvailability availability = 5;
+  repeated ProviderQuotaWindow windows = 6;
+  string next_reset_at = 7;
+  string next_reset_window_id = 8;
+  ProviderCreditBalance credits = 9;
+  ProviderSpendAllowance spend_allowance = 10;
+  ProviderResetCredits reset_credits = 11;
+  optional bool ordinary_usage_allowed = 12;
+  string refreshed_at = 13;
+  string next_refresh_at = 14;
+  string fresh_until = 15;
+  string last_success_at = 16;
+  ProviderQuotaRefreshState refresh_state = 17;
+  uint32 online_source_count = 18;
+  string status_code = 19;
+}
+
+// ProviderQuotaSummary drives the one compact bar shown for a provider. The
+// selected percentage is the lowest remaining value across distinct accounts
+// and windows; separate account quotas are never summed or averaged.
+message ProviderQuotaSummary {
+  uint32 total_account_count = 1;
+  uint32 numeric_account_count = 2;
+  uint32 unavailable_account_count = 3;
+  optional uint32 remaining_percent = 4;
+  string summary_account_key = 5;
+  string summary_window_id = 6;
+  ProviderQuotaWindowKind summary_window_kind = 7;
+  string summary_window_label = 8;
+  string resets_at = 9;
+  ProviderQuotaFreshness freshness = 10;
+}
+
+message ProviderQuotaGroup {
+  ProviderQuotaProvider provider = 1;
+  repeated ProviderQuotaSnapshot accounts = 2;
+  ProviderQuotaSummary summary = 3;
+}
+
+message ListProviderQuotasRequest {
+  ProviderQuotaProvider provider = 1;
+}
+
+message ListProviderQuotasResponse {
+  repeated ProviderQuotaGroup groups = 1;
+  uint64 revision = 2;
+  GatewayInformation gateway_information = 3;
+}
+
+message WatchProviderQuotasRequest {
+  uint32 heartbeat_seconds = 1;
+  ProviderQuotaProvider provider = 2;
+}
+
+message ProviderQuotaUpdate {
+  repeated ProviderQuotaGroup groups = 1;
+  uint64 revision = 2;
+  bool heartbeat = 3;
+}
+
+message RefreshProviderQuotasRequest {
+  ProviderQuotaProvider provider = 1;
+  string account_key = 2;
+}
+
+message RefreshProviderQuotasResponse {
+  repeated ProviderQuotaGroup groups = 1;
+  uint64 revision = 2;
+  bool accepted = 3;
+}
+
+message ProviderAccountPresence {
+  ProviderQuotaProvider provider = 1;
+  string account_key = 2;
+  ProviderAccountKind account_kind = 3;
+  string plan = 4;
+  ProviderQuotaAvailability availability = 5;
+  bool refresh_supported = 6;
+}
+
+message ProviderAccountsPresence {
+  repeated ProviderAccountPresence accounts = 1;
+}
+
+message ProviderQuotaRefreshRequest {
+  ProviderQuotaProvider provider = 1;
+  string account_key = 2;
+}
+
+message ProviderQuotaRefreshResult {
+  ProviderQuotaSnapshot snapshot = 1;
+  string error_code = 2;
+  uint32 retry_after_seconds = 3;
+}
+
 enum DaemonLinkFrameKind {
   DAEMON_LINK_FRAME_KIND_UNSPECIFIED = 0;
   DAEMON_LINK_FRAME_KIND_HELLO = 1;
@@ -202,6 +390,9 @@ enum DaemonLinkFrameKind {
   DAEMON_LINK_FRAME_KIND_WINDOW_UPDATE = 13;
   DAEMON_LINK_FRAME_KIND_PING = 14;
   DAEMON_LINK_FRAME_KIND_PONG = 15;
+  DAEMON_LINK_FRAME_KIND_PROVIDER_ACCOUNTS = 16;
+  DAEMON_LINK_FRAME_KIND_PROVIDER_QUOTA_REFRESH_REQUEST = 17;
+  DAEMON_LINK_FRAME_KIND_PROVIDER_QUOTA_REFRESH_RESULT = 18;
 }
 
 message DaemonLinkFrame {
@@ -224,4 +415,8 @@ message DaemonLinkFrame {
   RemoteDesktopPresence remote_desktop = 17;
   string api_version = 18;
   repeated string capabilities = 19;
+  bytes provider_account_correlation_key = 20;
+  ProviderAccountsPresence provider_accounts = 21;
+  ProviderQuotaRefreshRequest provider_quota_refresh_request = 22;
+  ProviderQuotaRefreshResult provider_quota_refresh_result = 23;
 }

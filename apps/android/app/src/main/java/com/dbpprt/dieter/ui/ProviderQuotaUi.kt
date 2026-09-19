@@ -1,0 +1,325 @@
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+
+package com.dbpprt.dieter.ui
+
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.dbpprt.dieter.gateway.v1.ProviderQuotaAvailability
+import com.dbpprt.dieter.gateway.v1.ProviderQuotaFreshness
+import com.dbpprt.dieter.gateway.v1.ProviderQuotaGroup
+import com.dbpprt.dieter.gateway.v1.ProviderQuotaProvider
+import com.dbpprt.dieter.gateway.v1.ProviderQuotaSnapshot
+import com.dbpprt.dieter.gateway.v1.ProviderQuotaWindow
+import com.dbpprt.dieter.ui.theme.DieterAmber
+import com.dbpprt.dieter.ui.theme.DieterEyes
+import com.dbpprt.dieter.ui.theme.DieterMuted
+import com.dbpprt.dieter.ui.theme.DieterOutline
+import com.dbpprt.dieter.ui.theme.DieterRunning
+import com.dbpprt.dieter.ui.theme.DieterSurfaceHigh
+import java.time.Duration
+import java.time.Instant
+
+@Composable
+internal fun ProviderQuotaCompactButton(state: DieterUiState, onClick: () -> Unit) {
+    val groups = state.providerQuotaGroups.filter { it.accountsCount > 0 }
+    if (groups.isEmpty() && !state.providerQuotasLoading) return
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(18.dp),
+        color = DieterSurfaceHigh,
+        border = BorderStroke(1.dp, DieterOutline),
+        modifier = Modifier.testTag("conversation-provider-quotas").semantics {
+            contentDescription = "Provider quotas"
+        },
+    ) {
+        Row(
+            Modifier.padding(horizontal = 9.dp, vertical = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (groups.isEmpty()) {
+                CircularProgressIndicator(strokeWidth = 2.dp, modifier = Modifier.width(14.dp))
+            } else {
+                groups.forEach { group ->
+                    Text(quotaProviderShortName(group.provider), fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
+                    Text(
+                        if (group.hasSummary() && group.summary.hasRemainingPercent()) {
+                            "${group.summary.remainingPercent}%"
+                        } else {
+                            "—"
+                        },
+                        color = if (group.hasSummary() && group.summary.hasRemainingPercent()) {
+                            quotaTint(group.summary.remainingPercent)
+                        } else {
+                            DieterMuted
+                        },
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    if (group.hasSummary() && group.summary.hasRemainingPercent()) {
+                        LinearProgressIndicator(
+                            progress = { group.summary.remainingPercent / 100f },
+                            modifier = Modifier.width(30.dp),
+                            color = quotaTint(group.summary.remainingPercent),
+                        )
+                    }
+                    if (group.accountsCount > 1) {
+                        Text("${group.accountsCount}", color = DieterMuted, fontSize = 9.sp)
+                    }
+                    if (group.hasSummary() && group.summary.unavailableAccountCount > 0) {
+                        Text(
+                            "!",
+                            color = DieterAmber,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.semantics {
+                                contentDescription =
+                                    "${group.summary.unavailableAccountCount} account" +
+                                    if (group.summary.unavailableAccountCount == 1) " unavailable" else "s unavailable"
+                            },
+                        )
+                    }
+                    if (group.hasSummary() &&
+                        group.summary.freshness == ProviderQuotaFreshness.PROVIDER_QUOTA_FRESHNESS_STALE
+                    ) {
+                        Text("•", color = DieterAmber, fontSize = 10.sp)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+internal fun ProviderQuotaSheet(state: DieterUiState, model: DieterViewModel, onDismiss: () -> Unit) {
+    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = MaterialTheme.colorScheme.background) {
+        ProviderQuotaDetails(
+            state = state,
+            onRefresh = { model.refreshProviderQuotas() },
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 28.dp),
+        )
+    }
+}
+
+@Composable
+internal fun ProviderQuotaDetails(
+    state: DieterUiState,
+    onRefresh: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("Provider quotas", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+                Text(
+                    "Accounts stay separate. Each provider summary shows its lowest remaining window.",
+                    color = DieterMuted,
+                    fontSize = 12.sp,
+                )
+            }
+            Spacer(Modifier.width(12.dp))
+            TextButton(
+                onClick = onRefresh,
+                enabled = !state.providerQuotasLoading,
+                modifier = Modifier.testTag("provider-quotas-refresh"),
+            ) {
+                if (state.providerQuotasLoading) {
+                    CircularProgressIndicator(strokeWidth = 2.dp, modifier = Modifier.width(18.dp))
+                } else {
+                    Text("Refresh")
+                }
+            }
+        }
+        if (state.providerQuotaGroups.isEmpty()) {
+            Column(
+                Modifier.fillMaxWidth().padding(vertical = 32.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Text("No provider accounts", fontWeight = FontWeight.SemiBold)
+                Text(
+                    state.providerQuotaError ?: "Sign in to a supported provider on an online Dieter machine.",
+                    color = DieterMuted,
+                    fontSize = 12.sp,
+                )
+            }
+        } else {
+            LazyColumn(
+                Modifier.fillMaxWidth().heightIn(max = 560.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                items(state.providerQuotaGroups, key = { it.providerValue }) { group ->
+                    ProviderQuotaGroupView(group)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ProviderQuotaGroupView(group: ProviderQuotaGroup) {
+    Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(quotaProviderName(group.provider), fontWeight = FontWeight.SemiBold)
+            Spacer(Modifier.weight(1f))
+            Text(
+                "${group.accountsCount} account${if (group.accountsCount == 1) "" else "s"}",
+                color = DieterMuted,
+                fontSize = 11.sp,
+            )
+        }
+        if (group.hasSummary() && group.summary.hasRemainingPercent()) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(9.dp)) {
+                LinearProgressIndicator(
+                    progress = { group.summary.remainingPercent / 100f },
+                    modifier = Modifier.weight(1f),
+                    color = quotaTint(group.summary.remainingPercent),
+                )
+                Text("${group.summary.remainingPercent}%", fontFamily = FontFamily.Monospace, fontSize = 12.sp)
+            }
+        }
+        group.accountsList.forEach { ProviderQuotaAccountView(it) }
+    }
+}
+
+@Composable
+private fun ProviderQuotaAccountView(account: ProviderQuotaSnapshot) {
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        color = DieterSurfaceHigh,
+        border = BorderStroke(1.dp, DieterOutline),
+    ) {
+        Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    account.plan.ifBlank { "Account" }.replaceFirstChar { it.uppercase() },
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 13.sp,
+                )
+                Spacer(Modifier.width(7.dp))
+                Text("••${account.accountKey.takeLast(6)}", color = DieterMuted, fontFamily = FontFamily.Monospace, fontSize = 10.sp)
+                Spacer(Modifier.weight(1f))
+                Text(
+                    quotaAvailability(account.availability),
+                    color = if (account.availability == ProviderQuotaAvailability.PROVIDER_QUOTA_AVAILABILITY_AVAILABLE) DieterEyes else DieterAmber,
+                    fontSize = 10.sp,
+                )
+            }
+            account.windowsList.forEach { ProviderQuotaWindowView(it) }
+            if (account.hasCredits()) {
+                ProviderQuotaMetadata(
+                    "Credits",
+                    if (account.credits.unlimited) "Unlimited" else account.credits.balance.ifBlank { "Available" },
+                )
+            }
+            if (account.hasSpendAllowance()) {
+                ProviderQuotaMetadata(
+                    "Spend",
+                    listOf(account.spendAllowance.used, account.spendAllowance.limit)
+                        .filter { it.isNotBlank() }.joinToString(" / ").ifBlank { "Reported" },
+                )
+            }
+            if (account.hasResetCredits()) {
+                ProviderQuotaMetadata("Reset credits", "${account.resetCredits.availableCount} available")
+            }
+            if (account.windowsCount == 0) {
+                Text(account.statusCode.ifBlank { "No numeric limit reported" }.replace('_', ' '), color = DieterMuted, fontSize = 11.sp)
+            }
+        }
+    }
+}
+
+@Composable
+private fun ProviderQuotaMetadata(label: String, value: String) {
+    Row(Modifier.fillMaxWidth()) {
+        Text(label, color = DieterMuted, fontSize = 10.sp)
+        Spacer(Modifier.weight(1f))
+        Text(value, fontFamily = FontFamily.Monospace, fontSize = 10.sp)
+    }
+}
+
+@Composable
+private fun ProviderQuotaWindowView(window: ProviderQuotaWindow) {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(window.label.ifBlank { "Quota" }, fontSize = 11.sp, modifier = Modifier.width(76.dp))
+        if (window.hasRemainingPercent()) {
+            LinearProgressIndicator(
+                progress = { window.remainingPercent / 100f },
+                modifier = Modifier.weight(1f),
+                color = quotaTint(window.remainingPercent),
+            )
+            Text("${window.remainingPercent}%", fontFamily = FontFamily.Monospace, fontSize = 11.sp)
+        } else {
+            Text("Not reported", color = DieterMuted, fontSize = 11.sp, modifier = Modifier.weight(1f))
+        }
+        if (window.resetsAt.isNotBlank()) {
+            Text(quotaResetText(window.resetsAt), color = DieterMuted, fontSize = 9.sp)
+        }
+    }
+}
+
+private fun quotaProviderName(provider: ProviderQuotaProvider): String = when (provider) {
+    ProviderQuotaProvider.PROVIDER_QUOTA_PROVIDER_OPENAI_CODEX -> "OpenAI Codex"
+    ProviderQuotaProvider.PROVIDER_QUOTA_PROVIDER_ANTHROPIC_CLAUDE -> "Anthropic Claude"
+    else -> "Provider"
+}
+
+private fun quotaProviderShortName(provider: ProviderQuotaProvider): String = when (provider) {
+    ProviderQuotaProvider.PROVIDER_QUOTA_PROVIDER_OPENAI_CODEX -> "OA"
+    ProviderQuotaProvider.PROVIDER_QUOTA_PROVIDER_ANTHROPIC_CLAUDE -> "CL"
+    else -> "Q"
+}
+
+private fun quotaAvailability(value: ProviderQuotaAvailability): String = when (value) {
+    ProviderQuotaAvailability.PROVIDER_QUOTA_AVAILABILITY_AVAILABLE -> "Available"
+    ProviderQuotaAvailability.PROVIDER_QUOTA_AVAILABILITY_SIGNED_OUT -> "Signed out"
+    ProviderQuotaAvailability.PROVIDER_QUOTA_AVAILABILITY_UNSUPPORTED -> "Unsupported"
+    ProviderQuotaAvailability.PROVIDER_QUOTA_AVAILABILITY_PERMISSION_DENIED -> "Permission denied"
+    ProviderQuotaAvailability.PROVIDER_QUOTA_AVAILABILITY_TEMPORARILY_UNAVAILABLE -> "Unavailable"
+    else -> "Unknown"
+}
+
+@Composable
+private fun quotaTint(remaining: Int): Color = when {
+    remaining <= 10 -> MaterialTheme.colorScheme.error
+    remaining <= 30 -> DieterAmber
+    else -> DieterRunning
+}
+
+private fun quotaResetText(value: String): String = runCatching {
+    val duration = Duration.between(Instant.now(), Instant.parse(value))
+    when {
+        duration.isNegative -> "reset due"
+        duration.toHours() >= 24 -> "${duration.toDays()}d"
+        duration.toHours() >= 1 -> "${duration.toHours()}h"
+        else -> "${duration.toMinutes().coerceAtLeast(1)}m"
+    }
+}.getOrDefault(value)

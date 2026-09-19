@@ -69,6 +69,15 @@ const (
 	// GatewayServiceGetRTCConfigurationProcedure is the fully-qualified name of the GatewayService's
 	// GetRTCConfiguration RPC.
 	GatewayServiceGetRTCConfigurationProcedure = "/dieter.gateway.v1.GatewayService/GetRTCConfiguration"
+	// GatewayServiceListProviderQuotasProcedure is the fully-qualified name of the GatewayService's
+	// ListProviderQuotas RPC.
+	GatewayServiceListProviderQuotasProcedure = "/dieter.gateway.v1.GatewayService/ListProviderQuotas"
+	// GatewayServiceWatchProviderQuotasProcedure is the fully-qualified name of the GatewayService's
+	// WatchProviderQuotas RPC.
+	GatewayServiceWatchProviderQuotasProcedure = "/dieter.gateway.v1.GatewayService/WatchProviderQuotas"
+	// GatewayServiceRefreshProviderQuotasProcedure is the fully-qualified name of the GatewayService's
+	// RefreshProviderQuotas RPC.
+	GatewayServiceRefreshProviderQuotasProcedure = "/dieter.gateway.v1.GatewayService/RefreshProviderQuotas"
 	// DaemonLinkServiceConnectProcedure is the fully-qualified name of the DaemonLinkService's Connect
 	// RPC.
 	DaemonLinkServiceConnectProcedure = "/dieter.gateway.v1.DaemonLinkService/Connect"
@@ -90,6 +99,9 @@ type GatewayServiceClient interface {
 	// The signed envelope is verified by the daemon before a desktop session is
 	// admitted; the gateway never participates in the WebRTC media path.
 	GetRTCConfiguration(context.Context, *connect.Request[v1.DaemonRef]) (*connect.Response[v1.RTCConfiguration], error)
+	ListProviderQuotas(context.Context, *connect.Request[v1.ListProviderQuotasRequest]) (*connect.Response[v1.ListProviderQuotasResponse], error)
+	WatchProviderQuotas(context.Context, *connect.Request[v1.WatchProviderQuotasRequest]) (*connect.ServerStreamForClient[v1.ProviderQuotaUpdate], error)
+	RefreshProviderQuotas(context.Context, *connect.Request[v1.RefreshProviderQuotasRequest]) (*connect.Response[v1.RefreshProviderQuotasResponse], error)
 }
 
 // NewGatewayServiceClient constructs a client for the dieter.gateway.v1.GatewayService service. By
@@ -169,6 +181,24 @@ func NewGatewayServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(gatewayServiceMethods.ByName("GetRTCConfiguration")),
 			connect.WithClientOptions(opts...),
 		),
+		listProviderQuotas: connect.NewClient[v1.ListProviderQuotasRequest, v1.ListProviderQuotasResponse](
+			httpClient,
+			baseURL+GatewayServiceListProviderQuotasProcedure,
+			connect.WithSchema(gatewayServiceMethods.ByName("ListProviderQuotas")),
+			connect.WithClientOptions(opts...),
+		),
+		watchProviderQuotas: connect.NewClient[v1.WatchProviderQuotasRequest, v1.ProviderQuotaUpdate](
+			httpClient,
+			baseURL+GatewayServiceWatchProviderQuotasProcedure,
+			connect.WithSchema(gatewayServiceMethods.ByName("WatchProviderQuotas")),
+			connect.WithClientOptions(opts...),
+		),
+		refreshProviderQuotas: connect.NewClient[v1.RefreshProviderQuotasRequest, v1.RefreshProviderQuotasResponse](
+			httpClient,
+			baseURL+GatewayServiceRefreshProviderQuotasProcedure,
+			connect.WithSchema(gatewayServiceMethods.ByName("RefreshProviderQuotas")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -185,6 +215,9 @@ type gatewayServiceClient struct {
 	exchangeDaemonToken      *connect.Client[v1.ExchangeDaemonTokenRequest, v1.DaemonAccessToken]
 	resolveDaemonRoute       *connect.Client[v1.DaemonRef, v1.DaemonRoute]
 	getRTCConfiguration      *connect.Client[v1.DaemonRef, v1.RTCConfiguration]
+	listProviderQuotas       *connect.Client[v1.ListProviderQuotasRequest, v1.ListProviderQuotasResponse]
+	watchProviderQuotas      *connect.Client[v1.WatchProviderQuotasRequest, v1.ProviderQuotaUpdate]
+	refreshProviderQuotas    *connect.Client[v1.RefreshProviderQuotasRequest, v1.RefreshProviderQuotasResponse]
 }
 
 // GetAccount calls dieter.gateway.v1.GatewayService.GetAccount.
@@ -242,6 +275,21 @@ func (c *gatewayServiceClient) GetRTCConfiguration(ctx context.Context, req *con
 	return c.getRTCConfiguration.CallUnary(ctx, req)
 }
 
+// ListProviderQuotas calls dieter.gateway.v1.GatewayService.ListProviderQuotas.
+func (c *gatewayServiceClient) ListProviderQuotas(ctx context.Context, req *connect.Request[v1.ListProviderQuotasRequest]) (*connect.Response[v1.ListProviderQuotasResponse], error) {
+	return c.listProviderQuotas.CallUnary(ctx, req)
+}
+
+// WatchProviderQuotas calls dieter.gateway.v1.GatewayService.WatchProviderQuotas.
+func (c *gatewayServiceClient) WatchProviderQuotas(ctx context.Context, req *connect.Request[v1.WatchProviderQuotasRequest]) (*connect.ServerStreamForClient[v1.ProviderQuotaUpdate], error) {
+	return c.watchProviderQuotas.CallServerStream(ctx, req)
+}
+
+// RefreshProviderQuotas calls dieter.gateway.v1.GatewayService.RefreshProviderQuotas.
+func (c *gatewayServiceClient) RefreshProviderQuotas(ctx context.Context, req *connect.Request[v1.RefreshProviderQuotasRequest]) (*connect.Response[v1.RefreshProviderQuotasResponse], error) {
+	return c.refreshProviderQuotas.CallUnary(ctx, req)
+}
+
 // GatewayServiceHandler is an implementation of the dieter.gateway.v1.GatewayService service.
 type GatewayServiceHandler interface {
 	GetAccount(context.Context, *connect.Request[emptypb.Empty]) (*connect.Response[v1.Account], error)
@@ -258,6 +306,9 @@ type GatewayServiceHandler interface {
 	// The signed envelope is verified by the daemon before a desktop session is
 	// admitted; the gateway never participates in the WebRTC media path.
 	GetRTCConfiguration(context.Context, *connect.Request[v1.DaemonRef]) (*connect.Response[v1.RTCConfiguration], error)
+	ListProviderQuotas(context.Context, *connect.Request[v1.ListProviderQuotasRequest]) (*connect.Response[v1.ListProviderQuotasResponse], error)
+	WatchProviderQuotas(context.Context, *connect.Request[v1.WatchProviderQuotasRequest], *connect.ServerStream[v1.ProviderQuotaUpdate]) error
+	RefreshProviderQuotas(context.Context, *connect.Request[v1.RefreshProviderQuotasRequest]) (*connect.Response[v1.RefreshProviderQuotasResponse], error)
 }
 
 // NewGatewayServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -333,6 +384,24 @@ func NewGatewayServiceHandler(svc GatewayServiceHandler, opts ...connect.Handler
 		connect.WithSchema(gatewayServiceMethods.ByName("GetRTCConfiguration")),
 		connect.WithHandlerOptions(opts...),
 	)
+	gatewayServiceListProviderQuotasHandler := connect.NewUnaryHandler(
+		GatewayServiceListProviderQuotasProcedure,
+		svc.ListProviderQuotas,
+		connect.WithSchema(gatewayServiceMethods.ByName("ListProviderQuotas")),
+		connect.WithHandlerOptions(opts...),
+	)
+	gatewayServiceWatchProviderQuotasHandler := connect.NewServerStreamHandler(
+		GatewayServiceWatchProviderQuotasProcedure,
+		svc.WatchProviderQuotas,
+		connect.WithSchema(gatewayServiceMethods.ByName("WatchProviderQuotas")),
+		connect.WithHandlerOptions(opts...),
+	)
+	gatewayServiceRefreshProviderQuotasHandler := connect.NewUnaryHandler(
+		GatewayServiceRefreshProviderQuotasProcedure,
+		svc.RefreshProviderQuotas,
+		connect.WithSchema(gatewayServiceMethods.ByName("RefreshProviderQuotas")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/dieter.gateway.v1.GatewayService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case GatewayServiceGetAccountProcedure:
@@ -357,6 +426,12 @@ func NewGatewayServiceHandler(svc GatewayServiceHandler, opts ...connect.Handler
 			gatewayServiceResolveDaemonRouteHandler.ServeHTTP(w, r)
 		case GatewayServiceGetRTCConfigurationProcedure:
 			gatewayServiceGetRTCConfigurationHandler.ServeHTTP(w, r)
+		case GatewayServiceListProviderQuotasProcedure:
+			gatewayServiceListProviderQuotasHandler.ServeHTTP(w, r)
+		case GatewayServiceWatchProviderQuotasProcedure:
+			gatewayServiceWatchProviderQuotasHandler.ServeHTTP(w, r)
+		case GatewayServiceRefreshProviderQuotasProcedure:
+			gatewayServiceRefreshProviderQuotasHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -408,6 +483,18 @@ func (UnimplementedGatewayServiceHandler) ResolveDaemonRoute(context.Context, *c
 
 func (UnimplementedGatewayServiceHandler) GetRTCConfiguration(context.Context, *connect.Request[v1.DaemonRef]) (*connect.Response[v1.RTCConfiguration], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.gateway.v1.GatewayService.GetRTCConfiguration is not implemented"))
+}
+
+func (UnimplementedGatewayServiceHandler) ListProviderQuotas(context.Context, *connect.Request[v1.ListProviderQuotasRequest]) (*connect.Response[v1.ListProviderQuotasResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.gateway.v1.GatewayService.ListProviderQuotas is not implemented"))
+}
+
+func (UnimplementedGatewayServiceHandler) WatchProviderQuotas(context.Context, *connect.Request[v1.WatchProviderQuotasRequest], *connect.ServerStream[v1.ProviderQuotaUpdate]) error {
+	return connect.NewError(connect.CodeUnimplemented, errors.New("dieter.gateway.v1.GatewayService.WatchProviderQuotas is not implemented"))
+}
+
+func (UnimplementedGatewayServiceHandler) RefreshProviderQuotas(context.Context, *connect.Request[v1.RefreshProviderQuotasRequest]) (*connect.Response[v1.RefreshProviderQuotasResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.gateway.v1.GatewayService.RefreshProviderQuotas is not implemented"))
 }
 
 // DaemonLinkServiceClient is a client for the dieter.gateway.v1.DaemonLinkService service.

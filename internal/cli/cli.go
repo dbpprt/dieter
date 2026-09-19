@@ -29,6 +29,7 @@ import (
 	"github.com/dbpprt/dieter/internal/harness"
 	"github.com/dbpprt/dieter/internal/machine"
 	"github.com/dbpprt/dieter/internal/model"
+	"github.com/dbpprt/dieter/internal/providerquota"
 	"github.com/dbpprt/dieter/internal/remotedesktop"
 	"github.com/dbpprt/dieter/internal/scheduler"
 	"github.com/dbpprt/dieter/internal/server"
@@ -199,6 +200,7 @@ Commands:
   machine      List, route, rename, revoke, inspect, or control machines
   status       Show target daemon health, runtime, route, and state counts
   harness      List target daemon harnesses, models, and options
+  quota        Show and refresh provider-account usage quotas
   project      Create, browse, map hostnames, relocate, archive, and restore projects
   board        Manage boards, hostnames, retention, workflows, and labels
   card         Create, edit, present files, merge, and manage board conversations
@@ -538,10 +540,11 @@ Service startup activates a staged verified release there before workers begin.
 			serveDaemonDirectRoute(ctx, cancel, logger, direct)
 		}
 		go func() {
+			quotaSource := providerquota.New(c.Store.Root, logger)
 			client := &dieterdaemon.GatewayClient{
 				Identity: identity, LocalTarget: *addr, Version: Version, APIVersion: server.APIVersion, Routes: routes,
 				Log: logger, OnStatus: statusWriter.Gateway, OnAcknowledged: statusWriter.GatewayAcknowledged,
-				RemoteDesktopPresence: remoteDesktopPresence,
+				RemoteDesktopPresence: remoteDesktopPresence, ProviderQuotas: quotaSource,
 			}
 			if tunnelErr := client.Run(ctx); tunnelErr != nil && ctx.Err() == nil {
 				logger.Error("gateway tunnel stopped", "error", tunnelErr)

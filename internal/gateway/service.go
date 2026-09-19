@@ -34,6 +34,7 @@ type Service struct {
 	auth           *Auth
 	keys           *Keys
 	hub            *Hub
+	quota          *QuotaManager
 	config         Config
 	enrollMu       sync.Mutex
 	enrollAttempts map[string][]time.Time
@@ -44,6 +45,8 @@ const maxEnrollmentRatePeers = 4096
 func NewService(store *Store, auth *Auth, keys *Keys, hub *Hub, config Config) *Service {
 	return &Service{store: store, auth: auth, keys: keys, hub: hub, config: config, enrollAttempts: map[string][]time.Time{}}
 }
+
+func (s *Service) SetQuotaManager(manager *QuotaManager) { s.quota = manager }
 
 func (s *Service) GetAccount(ctx context.Context, _ *emptypb.Empty) (*gatewayv1.Account, error) {
 	principal, ok := PrincipalFromContext(ctx)
@@ -94,6 +97,94 @@ func (s *Service) WatchDaemons(request *gatewayv1.WatchDaemonsRequest, stream gr
 		case <-s.hub.Changed():
 		}
 	}
+}
+
+func (s *Service) ListProviderQuotas(ctx context.Context, request *gatewayv1.ListProviderQuotasRequest) (*gatewayv1.ListProviderQuotasResponse, error) {
+	principal, ok := PrincipalFromContext(ctx)
+	if !ok {
+		return nil, status.Error(codes.Unauthenticated, "authentication required")
+	}
+	provider := request.GetProvider()
+	if provider != gatewayv1.ProviderQuotaProvider_PROVIDER_QUOTA_PROVIDER_UNSPECIFIED && !validProvider(provider) {
+		return nil, status.Error(codes.InvalidArgument, "provider is invalid")
+	}
+	if s.quota == nil {
+		return nil, status.Error(codes.Unimplemented, "provider quota service is unavailable")
+	}
+	groups, err := s.quota.Catalog(principal.GitHubID, provider)
+	if err != nil {
+		return nil, status.Error(codes.Internal, "list provider quotas")
+	}
+	return &gatewayv1.ListProviderQuotasResponse{
+		Groups: groups, Revision: s.quota.Revision(), GatewayInformation: gatewayBuildInformation(),
+	}, nil
+}
+
+func (s *Service) WatchProviderQuotas(request *gatewayv1.WatchProviderQuotasRequest, stream grpc.ServerStreamingServer[gatewayv1.ProviderQuotaUpdate]) error {
+	principal, ok := PrincipalFromContext(stream.Context())
+	if !ok {
+		return status.Error(codes.Unauthenticated, "authentication required")
+	}
+	provider := request.GetProvider()
+	if provider != gatewayv1.ProviderQuotaProvider_PROVIDER_QUOTA_PROVIDER_UNSPECIFIED && !validProvider(provider) {
+		return status.Error(codes.InvalidArgument, "provider is invalid")
+	}
+	if s.quota == nil {
+		return status.Error(codes.Unimplemented, "provider quota service is unavailable")
+	}
+	interval := time.Duration(request.GetHeartbeatSeconds()) * time.Second
+	if interval < 5*time.Second {
+		interval = 15 * time.Second
+	}
+	if interval > time.Minute {
+		interval = time.Minute
+	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	heartbeat := false
+	for {
+		groups, err := s.quota.Catalog(principal.GitHubID, provider)
+		if err != nil {
+			return status.Error(codes.Internal, "watch provider quotas")
+		}
+		if err := stream.Send(&gatewayv1.ProviderQuotaUpdate{Groups: groups, Revision: s.quota.Revision(), Heartbeat: heartbeat}); err != nil {
+			return err
+		}
+		select {
+		case <-stream.Context().Done():
+			return stream.Context().Err()
+		case <-ticker.C:
+			heartbeat = true
+		case <-s.quota.Changed():
+			heartbeat = false
+		}
+	}
+}
+
+func (s *Service) RefreshProviderQuotas(ctx context.Context, request *gatewayv1.RefreshProviderQuotasRequest) (*gatewayv1.RefreshProviderQuotasResponse, error) {
+	principal, ok := PrincipalFromContext(ctx)
+	if !ok {
+		return nil, status.Error(codes.Unauthenticated, "authentication required")
+	}
+	provider := request.GetProvider()
+	if provider != gatewayv1.ProviderQuotaProvider_PROVIDER_QUOTA_PROVIDER_UNSPECIFIED && !validProvider(provider) {
+		return nil, status.Error(codes.InvalidArgument, "provider is invalid")
+	}
+	if request.GetAccountKey() != "" && (provider == gatewayv1.ProviderQuotaProvider_PROVIDER_QUOTA_PROVIDER_UNSPECIFIED || !validAccountKey(request.GetAccountKey())) {
+		return nil, status.Error(codes.InvalidArgument, "a valid provider and account key are required together")
+	}
+	if s.quota == nil {
+		return nil, status.Error(codes.Unimplemented, "provider quota service is unavailable")
+	}
+	accepted, err := s.quota.Refresh(principal.GitHubID, provider, request.GetAccountKey())
+	if err != nil {
+		return nil, status.Error(codes.NotFound, err.Error())
+	}
+	groups, err := s.quota.Catalog(principal.GitHubID, provider)
+	if err != nil {
+		return nil, status.Error(codes.Internal, "list provider quotas")
+	}
+	return &gatewayv1.RefreshProviderQuotasResponse{Groups: groups, Revision: s.quota.Revision(), Accepted: accepted}, nil
 }
 
 func gatewayBuildInformation() *gatewayv1.GatewayInformation {

@@ -222,6 +222,20 @@ package final class DieterRPC: Sendable {
         )
     }
 
+    package func providerQuotas() async throws -> Dieter_Gateway_V1_ListProviderQuotasResponse {
+        try await gatewayService.listProviderQuotas(
+            request: .init(message: Dieter_Gateway_V1_ListProviderQuotasRequest()),
+            options: Self.boundedUnaryCallOptions()
+        )
+    }
+
+    package func refreshProviderQuotas() async throws -> Dieter_Gateway_V1_RefreshProviderQuotasResponse {
+        try await gatewayService.refreshProviderQuotas(
+            request: .init(message: Dieter_Gateway_V1_RefreshProviderQuotasRequest()),
+            options: Self.boundedUnaryCallOptions()
+        )
+    }
+
     package func route(daemonID: String) async throws -> Dieter_Gateway_V1_DaemonRoute {
         var request = Dieter_Gateway_V1_DaemonRef()
         request.daemonID = daemonID

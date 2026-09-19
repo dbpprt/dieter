@@ -22,25 +22,346 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+type ProviderQuotaProvider int32
+
+const (
+	ProviderQuotaProvider_PROVIDER_QUOTA_PROVIDER_UNSPECIFIED      ProviderQuotaProvider = 0
+	ProviderQuotaProvider_PROVIDER_QUOTA_PROVIDER_OPENAI_CODEX     ProviderQuotaProvider = 1
+	ProviderQuotaProvider_PROVIDER_QUOTA_PROVIDER_ANTHROPIC_CLAUDE ProviderQuotaProvider = 2
+)
+
+// Enum value maps for ProviderQuotaProvider.
+var (
+	ProviderQuotaProvider_name = map[int32]string{
+		0: "PROVIDER_QUOTA_PROVIDER_UNSPECIFIED",
+		1: "PROVIDER_QUOTA_PROVIDER_OPENAI_CODEX",
+		2: "PROVIDER_QUOTA_PROVIDER_ANTHROPIC_CLAUDE",
+	}
+	ProviderQuotaProvider_value = map[string]int32{
+		"PROVIDER_QUOTA_PROVIDER_UNSPECIFIED":      0,
+		"PROVIDER_QUOTA_PROVIDER_OPENAI_CODEX":     1,
+		"PROVIDER_QUOTA_PROVIDER_ANTHROPIC_CLAUDE": 2,
+	}
+)
+
+func (x ProviderQuotaProvider) Enum() *ProviderQuotaProvider {
+	p := new(ProviderQuotaProvider)
+	*p = x
+	return p
+}
+
+func (x ProviderQuotaProvider) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (ProviderQuotaProvider) Descriptor() protoreflect.EnumDescriptor {
+	return file_dieter_gateway_v1_gateway_proto_enumTypes[0].Descriptor()
+}
+
+func (ProviderQuotaProvider) Type() protoreflect.EnumType {
+	return &file_dieter_gateway_v1_gateway_proto_enumTypes[0]
+}
+
+func (x ProviderQuotaProvider) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use ProviderQuotaProvider.Descriptor instead.
+func (ProviderQuotaProvider) EnumDescriptor() ([]byte, []int) {
+	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{0}
+}
+
+type ProviderAccountKind int32
+
+const (
+	ProviderAccountKind_PROVIDER_ACCOUNT_KIND_UNSPECIFIED  ProviderAccountKind = 0
+	ProviderAccountKind_PROVIDER_ACCOUNT_KIND_SUBSCRIPTION ProviderAccountKind = 1
+	ProviderAccountKind_PROVIDER_ACCOUNT_KIND_API          ProviderAccountKind = 2
+)
+
+// Enum value maps for ProviderAccountKind.
+var (
+	ProviderAccountKind_name = map[int32]string{
+		0: "PROVIDER_ACCOUNT_KIND_UNSPECIFIED",
+		1: "PROVIDER_ACCOUNT_KIND_SUBSCRIPTION",
+		2: "PROVIDER_ACCOUNT_KIND_API",
+	}
+	ProviderAccountKind_value = map[string]int32{
+		"PROVIDER_ACCOUNT_KIND_UNSPECIFIED":  0,
+		"PROVIDER_ACCOUNT_KIND_SUBSCRIPTION": 1,
+		"PROVIDER_ACCOUNT_KIND_API":          2,
+	}
+)
+
+func (x ProviderAccountKind) Enum() *ProviderAccountKind {
+	p := new(ProviderAccountKind)
+	*p = x
+	return p
+}
+
+func (x ProviderAccountKind) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (ProviderAccountKind) Descriptor() protoreflect.EnumDescriptor {
+	return file_dieter_gateway_v1_gateway_proto_enumTypes[1].Descriptor()
+}
+
+func (ProviderAccountKind) Type() protoreflect.EnumType {
+	return &file_dieter_gateway_v1_gateway_proto_enumTypes[1]
+}
+
+func (x ProviderAccountKind) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use ProviderAccountKind.Descriptor instead.
+func (ProviderAccountKind) EnumDescriptor() ([]byte, []int) {
+	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{1}
+}
+
+type ProviderQuotaAvailability int32
+
+const (
+	ProviderQuotaAvailability_PROVIDER_QUOTA_AVAILABILITY_UNSPECIFIED             ProviderQuotaAvailability = 0
+	ProviderQuotaAvailability_PROVIDER_QUOTA_AVAILABILITY_AVAILABLE               ProviderQuotaAvailability = 1
+	ProviderQuotaAvailability_PROVIDER_QUOTA_AVAILABILITY_SIGNED_OUT              ProviderQuotaAvailability = 2
+	ProviderQuotaAvailability_PROVIDER_QUOTA_AVAILABILITY_UNSUPPORTED             ProviderQuotaAvailability = 3
+	ProviderQuotaAvailability_PROVIDER_QUOTA_AVAILABILITY_TEMPORARILY_UNAVAILABLE ProviderQuotaAvailability = 4
+	ProviderQuotaAvailability_PROVIDER_QUOTA_AVAILABILITY_PERMISSION_DENIED       ProviderQuotaAvailability = 5
+)
+
+// Enum value maps for ProviderQuotaAvailability.
+var (
+	ProviderQuotaAvailability_name = map[int32]string{
+		0: "PROVIDER_QUOTA_AVAILABILITY_UNSPECIFIED",
+		1: "PROVIDER_QUOTA_AVAILABILITY_AVAILABLE",
+		2: "PROVIDER_QUOTA_AVAILABILITY_SIGNED_OUT",
+		3: "PROVIDER_QUOTA_AVAILABILITY_UNSUPPORTED",
+		4: "PROVIDER_QUOTA_AVAILABILITY_TEMPORARILY_UNAVAILABLE",
+		5: "PROVIDER_QUOTA_AVAILABILITY_PERMISSION_DENIED",
+	}
+	ProviderQuotaAvailability_value = map[string]int32{
+		"PROVIDER_QUOTA_AVAILABILITY_UNSPECIFIED":             0,
+		"PROVIDER_QUOTA_AVAILABILITY_AVAILABLE":               1,
+		"PROVIDER_QUOTA_AVAILABILITY_SIGNED_OUT":              2,
+		"PROVIDER_QUOTA_AVAILABILITY_UNSUPPORTED":             3,
+		"PROVIDER_QUOTA_AVAILABILITY_TEMPORARILY_UNAVAILABLE": 4,
+		"PROVIDER_QUOTA_AVAILABILITY_PERMISSION_DENIED":       5,
+	}
+)
+
+func (x ProviderQuotaAvailability) Enum() *ProviderQuotaAvailability {
+	p := new(ProviderQuotaAvailability)
+	*p = x
+	return p
+}
+
+func (x ProviderQuotaAvailability) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (ProviderQuotaAvailability) Descriptor() protoreflect.EnumDescriptor {
+	return file_dieter_gateway_v1_gateway_proto_enumTypes[2].Descriptor()
+}
+
+func (ProviderQuotaAvailability) Type() protoreflect.EnumType {
+	return &file_dieter_gateway_v1_gateway_proto_enumTypes[2]
+}
+
+func (x ProviderQuotaAvailability) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use ProviderQuotaAvailability.Descriptor instead.
+func (ProviderQuotaAvailability) EnumDescriptor() ([]byte, []int) {
+	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{2}
+}
+
+type ProviderQuotaWindowKind int32
+
+const (
+	ProviderQuotaWindowKind_PROVIDER_QUOTA_WINDOW_KIND_UNSPECIFIED ProviderQuotaWindowKind = 0
+	ProviderQuotaWindowKind_PROVIDER_QUOTA_WINDOW_KIND_FIVE_HOUR   ProviderQuotaWindowKind = 1
+	ProviderQuotaWindowKind_PROVIDER_QUOTA_WINDOW_KIND_WEEKLY      ProviderQuotaWindowKind = 2
+	ProviderQuotaWindowKind_PROVIDER_QUOTA_WINDOW_KIND_MONTHLY     ProviderQuotaWindowKind = 3
+	ProviderQuotaWindowKind_PROVIDER_QUOTA_WINDOW_KIND_MODEL       ProviderQuotaWindowKind = 4
+	ProviderQuotaWindowKind_PROVIDER_QUOTA_WINDOW_KIND_OTHER       ProviderQuotaWindowKind = 5
+)
+
+// Enum value maps for ProviderQuotaWindowKind.
+var (
+	ProviderQuotaWindowKind_name = map[int32]string{
+		0: "PROVIDER_QUOTA_WINDOW_KIND_UNSPECIFIED",
+		1: "PROVIDER_QUOTA_WINDOW_KIND_FIVE_HOUR",
+		2: "PROVIDER_QUOTA_WINDOW_KIND_WEEKLY",
+		3: "PROVIDER_QUOTA_WINDOW_KIND_MONTHLY",
+		4: "PROVIDER_QUOTA_WINDOW_KIND_MODEL",
+		5: "PROVIDER_QUOTA_WINDOW_KIND_OTHER",
+	}
+	ProviderQuotaWindowKind_value = map[string]int32{
+		"PROVIDER_QUOTA_WINDOW_KIND_UNSPECIFIED": 0,
+		"PROVIDER_QUOTA_WINDOW_KIND_FIVE_HOUR":   1,
+		"PROVIDER_QUOTA_WINDOW_KIND_WEEKLY":      2,
+		"PROVIDER_QUOTA_WINDOW_KIND_MONTHLY":     3,
+		"PROVIDER_QUOTA_WINDOW_KIND_MODEL":       4,
+		"PROVIDER_QUOTA_WINDOW_KIND_OTHER":       5,
+	}
+)
+
+func (x ProviderQuotaWindowKind) Enum() *ProviderQuotaWindowKind {
+	p := new(ProviderQuotaWindowKind)
+	*p = x
+	return p
+}
+
+func (x ProviderQuotaWindowKind) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (ProviderQuotaWindowKind) Descriptor() protoreflect.EnumDescriptor {
+	return file_dieter_gateway_v1_gateway_proto_enumTypes[3].Descriptor()
+}
+
+func (ProviderQuotaWindowKind) Type() protoreflect.EnumType {
+	return &file_dieter_gateway_v1_gateway_proto_enumTypes[3]
+}
+
+func (x ProviderQuotaWindowKind) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use ProviderQuotaWindowKind.Descriptor instead.
+func (ProviderQuotaWindowKind) EnumDescriptor() ([]byte, []int) {
+	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{3}
+}
+
+type ProviderQuotaRefreshState int32
+
+const (
+	ProviderQuotaRefreshState_PROVIDER_QUOTA_REFRESH_STATE_UNSPECIFIED ProviderQuotaRefreshState = 0
+	ProviderQuotaRefreshState_PROVIDER_QUOTA_REFRESH_STATE_IDLE        ProviderQuotaRefreshState = 1
+	ProviderQuotaRefreshState_PROVIDER_QUOTA_REFRESH_STATE_REFRESHING  ProviderQuotaRefreshState = 2
+	ProviderQuotaRefreshState_PROVIDER_QUOTA_REFRESH_STATE_THROTTLED   ProviderQuotaRefreshState = 3
+	ProviderQuotaRefreshState_PROVIDER_QUOTA_REFRESH_STATE_FAILED      ProviderQuotaRefreshState = 4
+)
+
+// Enum value maps for ProviderQuotaRefreshState.
+var (
+	ProviderQuotaRefreshState_name = map[int32]string{
+		0: "PROVIDER_QUOTA_REFRESH_STATE_UNSPECIFIED",
+		1: "PROVIDER_QUOTA_REFRESH_STATE_IDLE",
+		2: "PROVIDER_QUOTA_REFRESH_STATE_REFRESHING",
+		3: "PROVIDER_QUOTA_REFRESH_STATE_THROTTLED",
+		4: "PROVIDER_QUOTA_REFRESH_STATE_FAILED",
+	}
+	ProviderQuotaRefreshState_value = map[string]int32{
+		"PROVIDER_QUOTA_REFRESH_STATE_UNSPECIFIED": 0,
+		"PROVIDER_QUOTA_REFRESH_STATE_IDLE":        1,
+		"PROVIDER_QUOTA_REFRESH_STATE_REFRESHING":  2,
+		"PROVIDER_QUOTA_REFRESH_STATE_THROTTLED":   3,
+		"PROVIDER_QUOTA_REFRESH_STATE_FAILED":      4,
+	}
+)
+
+func (x ProviderQuotaRefreshState) Enum() *ProviderQuotaRefreshState {
+	p := new(ProviderQuotaRefreshState)
+	*p = x
+	return p
+}
+
+func (x ProviderQuotaRefreshState) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (ProviderQuotaRefreshState) Descriptor() protoreflect.EnumDescriptor {
+	return file_dieter_gateway_v1_gateway_proto_enumTypes[4].Descriptor()
+}
+
+func (ProviderQuotaRefreshState) Type() protoreflect.EnumType {
+	return &file_dieter_gateway_v1_gateway_proto_enumTypes[4]
+}
+
+func (x ProviderQuotaRefreshState) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use ProviderQuotaRefreshState.Descriptor instead.
+func (ProviderQuotaRefreshState) EnumDescriptor() ([]byte, []int) {
+	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{4}
+}
+
+type ProviderQuotaFreshness int32
+
+const (
+	ProviderQuotaFreshness_PROVIDER_QUOTA_FRESHNESS_UNSPECIFIED ProviderQuotaFreshness = 0
+	ProviderQuotaFreshness_PROVIDER_QUOTA_FRESHNESS_FRESH       ProviderQuotaFreshness = 1
+	ProviderQuotaFreshness_PROVIDER_QUOTA_FRESHNESS_STALE       ProviderQuotaFreshness = 2
+)
+
+// Enum value maps for ProviderQuotaFreshness.
+var (
+	ProviderQuotaFreshness_name = map[int32]string{
+		0: "PROVIDER_QUOTA_FRESHNESS_UNSPECIFIED",
+		1: "PROVIDER_QUOTA_FRESHNESS_FRESH",
+		2: "PROVIDER_QUOTA_FRESHNESS_STALE",
+	}
+	ProviderQuotaFreshness_value = map[string]int32{
+		"PROVIDER_QUOTA_FRESHNESS_UNSPECIFIED": 0,
+		"PROVIDER_QUOTA_FRESHNESS_FRESH":       1,
+		"PROVIDER_QUOTA_FRESHNESS_STALE":       2,
+	}
+)
+
+func (x ProviderQuotaFreshness) Enum() *ProviderQuotaFreshness {
+	p := new(ProviderQuotaFreshness)
+	*p = x
+	return p
+}
+
+func (x ProviderQuotaFreshness) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (ProviderQuotaFreshness) Descriptor() protoreflect.EnumDescriptor {
+	return file_dieter_gateway_v1_gateway_proto_enumTypes[5].Descriptor()
+}
+
+func (ProviderQuotaFreshness) Type() protoreflect.EnumType {
+	return &file_dieter_gateway_v1_gateway_proto_enumTypes[5]
+}
+
+func (x ProviderQuotaFreshness) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use ProviderQuotaFreshness.Descriptor instead.
+func (ProviderQuotaFreshness) EnumDescriptor() ([]byte, []int) {
+	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{5}
+}
+
 type DaemonLinkFrameKind int32
 
 const (
-	DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_UNSPECIFIED      DaemonLinkFrameKind = 0
-	DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_HELLO            DaemonLinkFrameKind = 1
-	DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_HELLO_ACK        DaemonLinkFrameKind = 2
-	DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_HEARTBEAT        DaemonLinkFrameKind = 3
-	DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_ROUTES           DaemonLinkFrameKind = 4
-	DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_OPEN_RPC         DaemonLinkFrameKind = 5
-	DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_REQUEST_MESSAGE  DaemonLinkFrameKind = 6
-	DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_REQUEST_END      DaemonLinkFrameKind = 7
-	DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_CANCEL_RPC       DaemonLinkFrameKind = 8
-	DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_RESPONSE_HEADER  DaemonLinkFrameKind = 9
-	DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_RESPONSE_MESSAGE DaemonLinkFrameKind = 10
-	DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_RESPONSE_END     DaemonLinkFrameKind = 11
-	DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_RPC_ERROR        DaemonLinkFrameKind = 12
-	DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_WINDOW_UPDATE    DaemonLinkFrameKind = 13
-	DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_PING             DaemonLinkFrameKind = 14
-	DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_PONG             DaemonLinkFrameKind = 15
+	DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_UNSPECIFIED                    DaemonLinkFrameKind = 0
+	DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_HELLO                          DaemonLinkFrameKind = 1
+	DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_HELLO_ACK                      DaemonLinkFrameKind = 2
+	DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_HEARTBEAT                      DaemonLinkFrameKind = 3
+	DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_ROUTES                         DaemonLinkFrameKind = 4
+	DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_OPEN_RPC                       DaemonLinkFrameKind = 5
+	DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_REQUEST_MESSAGE                DaemonLinkFrameKind = 6
+	DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_REQUEST_END                    DaemonLinkFrameKind = 7
+	DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_CANCEL_RPC                     DaemonLinkFrameKind = 8
+	DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_RESPONSE_HEADER                DaemonLinkFrameKind = 9
+	DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_RESPONSE_MESSAGE               DaemonLinkFrameKind = 10
+	DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_RESPONSE_END                   DaemonLinkFrameKind = 11
+	DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_RPC_ERROR                      DaemonLinkFrameKind = 12
+	DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_WINDOW_UPDATE                  DaemonLinkFrameKind = 13
+	DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_PING                           DaemonLinkFrameKind = 14
+	DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_PONG                           DaemonLinkFrameKind = 15
+	DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_PROVIDER_ACCOUNTS              DaemonLinkFrameKind = 16
+	DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_PROVIDER_QUOTA_REFRESH_REQUEST DaemonLinkFrameKind = 17
+	DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_PROVIDER_QUOTA_REFRESH_RESULT  DaemonLinkFrameKind = 18
 )
 
 // Enum value maps for DaemonLinkFrameKind.
@@ -62,24 +383,30 @@ var (
 		13: "DAEMON_LINK_FRAME_KIND_WINDOW_UPDATE",
 		14: "DAEMON_LINK_FRAME_KIND_PING",
 		15: "DAEMON_LINK_FRAME_KIND_PONG",
+		16: "DAEMON_LINK_FRAME_KIND_PROVIDER_ACCOUNTS",
+		17: "DAEMON_LINK_FRAME_KIND_PROVIDER_QUOTA_REFRESH_REQUEST",
+		18: "DAEMON_LINK_FRAME_KIND_PROVIDER_QUOTA_REFRESH_RESULT",
 	}
 	DaemonLinkFrameKind_value = map[string]int32{
-		"DAEMON_LINK_FRAME_KIND_UNSPECIFIED":      0,
-		"DAEMON_LINK_FRAME_KIND_HELLO":            1,
-		"DAEMON_LINK_FRAME_KIND_HELLO_ACK":        2,
-		"DAEMON_LINK_FRAME_KIND_HEARTBEAT":        3,
-		"DAEMON_LINK_FRAME_KIND_ROUTES":           4,
-		"DAEMON_LINK_FRAME_KIND_OPEN_RPC":         5,
-		"DAEMON_LINK_FRAME_KIND_REQUEST_MESSAGE":  6,
-		"DAEMON_LINK_FRAME_KIND_REQUEST_END":      7,
-		"DAEMON_LINK_FRAME_KIND_CANCEL_RPC":       8,
-		"DAEMON_LINK_FRAME_KIND_RESPONSE_HEADER":  9,
-		"DAEMON_LINK_FRAME_KIND_RESPONSE_MESSAGE": 10,
-		"DAEMON_LINK_FRAME_KIND_RESPONSE_END":     11,
-		"DAEMON_LINK_FRAME_KIND_RPC_ERROR":        12,
-		"DAEMON_LINK_FRAME_KIND_WINDOW_UPDATE":    13,
-		"DAEMON_LINK_FRAME_KIND_PING":             14,
-		"DAEMON_LINK_FRAME_KIND_PONG":             15,
+		"DAEMON_LINK_FRAME_KIND_UNSPECIFIED":                    0,
+		"DAEMON_LINK_FRAME_KIND_HELLO":                          1,
+		"DAEMON_LINK_FRAME_KIND_HELLO_ACK":                      2,
+		"DAEMON_LINK_FRAME_KIND_HEARTBEAT":                      3,
+		"DAEMON_LINK_FRAME_KIND_ROUTES":                         4,
+		"DAEMON_LINK_FRAME_KIND_OPEN_RPC":                       5,
+		"DAEMON_LINK_FRAME_KIND_REQUEST_MESSAGE":                6,
+		"DAEMON_LINK_FRAME_KIND_REQUEST_END":                    7,
+		"DAEMON_LINK_FRAME_KIND_CANCEL_RPC":                     8,
+		"DAEMON_LINK_FRAME_KIND_RESPONSE_HEADER":                9,
+		"DAEMON_LINK_FRAME_KIND_RESPONSE_MESSAGE":               10,
+		"DAEMON_LINK_FRAME_KIND_RESPONSE_END":                   11,
+		"DAEMON_LINK_FRAME_KIND_RPC_ERROR":                      12,
+		"DAEMON_LINK_FRAME_KIND_WINDOW_UPDATE":                  13,
+		"DAEMON_LINK_FRAME_KIND_PING":                           14,
+		"DAEMON_LINK_FRAME_KIND_PONG":                           15,
+		"DAEMON_LINK_FRAME_KIND_PROVIDER_ACCOUNTS":              16,
+		"DAEMON_LINK_FRAME_KIND_PROVIDER_QUOTA_REFRESH_REQUEST": 17,
+		"DAEMON_LINK_FRAME_KIND_PROVIDER_QUOTA_REFRESH_RESULT":  18,
 	}
 )
 
@@ -94,11 +421,11 @@ func (x DaemonLinkFrameKind) String() string {
 }
 
 func (DaemonLinkFrameKind) Descriptor() protoreflect.EnumDescriptor {
-	return file_dieter_gateway_v1_gateway_proto_enumTypes[0].Descriptor()
+	return file_dieter_gateway_v1_gateway_proto_enumTypes[6].Descriptor()
 }
 
 func (DaemonLinkFrameKind) Type() protoreflect.EnumType {
-	return &file_dieter_gateway_v1_gateway_proto_enumTypes[0]
+	return &file_dieter_gateway_v1_gateway_proto_enumTypes[6]
 }
 
 func (x DaemonLinkFrameKind) Number() protoreflect.EnumNumber {
@@ -107,7 +434,7 @@ func (x DaemonLinkFrameKind) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use DaemonLinkFrameKind.Descriptor instead.
 func (DaemonLinkFrameKind) EnumDescriptor() ([]byte, []int) {
-	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{0}
+	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{6}
 }
 
 type Account struct {
@@ -1458,34 +1785,1332 @@ func (x *RTCConfiguration) GetIssuedAt() string {
 	return ""
 }
 
+type ProviderQuotaWindow struct {
+	state            protoimpl.MessageState  `protogen:"open.v1"`
+	Id               string                  `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Label            string                  `protobuf:"bytes,2,opt,name=label,proto3" json:"label,omitempty"`
+	Kind             ProviderQuotaWindowKind `protobuf:"varint,3,opt,name=kind,proto3,enum=dieter.gateway.v1.ProviderQuotaWindowKind" json:"kind,omitempty"`
+	UsedPercent      *uint32                 `protobuf:"varint,4,opt,name=used_percent,json=usedPercent,proto3,oneof" json:"used_percent,omitempty"`
+	RemainingPercent *uint32                 `protobuf:"varint,5,opt,name=remaining_percent,json=remainingPercent,proto3,oneof" json:"remaining_percent,omitempty"`
+	DurationMinutes  *uint32                 `protobuf:"varint,6,opt,name=duration_minutes,json=durationMinutes,proto3,oneof" json:"duration_minutes,omitempty"`
+	ResetsAt         string                  `protobuf:"bytes,7,opt,name=resets_at,json=resetsAt,proto3" json:"resets_at,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *ProviderQuotaWindow) Reset() {
+	*x = ProviderQuotaWindow{}
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ProviderQuotaWindow) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ProviderQuotaWindow) ProtoMessage() {}
+
+func (x *ProviderQuotaWindow) ProtoReflect() protoreflect.Message {
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ProviderQuotaWindow.ProtoReflect.Descriptor instead.
+func (*ProviderQuotaWindow) Descriptor() ([]byte, []int) {
+	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *ProviderQuotaWindow) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *ProviderQuotaWindow) GetLabel() string {
+	if x != nil {
+		return x.Label
+	}
+	return ""
+}
+
+func (x *ProviderQuotaWindow) GetKind() ProviderQuotaWindowKind {
+	if x != nil {
+		return x.Kind
+	}
+	return ProviderQuotaWindowKind_PROVIDER_QUOTA_WINDOW_KIND_UNSPECIFIED
+}
+
+func (x *ProviderQuotaWindow) GetUsedPercent() uint32 {
+	if x != nil && x.UsedPercent != nil {
+		return *x.UsedPercent
+	}
+	return 0
+}
+
+func (x *ProviderQuotaWindow) GetRemainingPercent() uint32 {
+	if x != nil && x.RemainingPercent != nil {
+		return *x.RemainingPercent
+	}
+	return 0
+}
+
+func (x *ProviderQuotaWindow) GetDurationMinutes() uint32 {
+	if x != nil && x.DurationMinutes != nil {
+		return *x.DurationMinutes
+	}
+	return 0
+}
+
+func (x *ProviderQuotaWindow) GetResetsAt() string {
+	if x != nil {
+		return x.ResetsAt
+	}
+	return ""
+}
+
+type ProviderCreditBalance struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Balance       string                 `protobuf:"bytes,1,opt,name=balance,proto3" json:"balance,omitempty"`
+	HasCredits    *bool                  `protobuf:"varint,2,opt,name=has_credits,json=hasCredits,proto3,oneof" json:"has_credits,omitempty"`
+	Unlimited     bool                   `protobuf:"varint,3,opt,name=unlimited,proto3" json:"unlimited,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ProviderCreditBalance) Reset() {
+	*x = ProviderCreditBalance{}
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[21]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ProviderCreditBalance) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ProviderCreditBalance) ProtoMessage() {}
+
+func (x *ProviderCreditBalance) ProtoReflect() protoreflect.Message {
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[21]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ProviderCreditBalance.ProtoReflect.Descriptor instead.
+func (*ProviderCreditBalance) Descriptor() ([]byte, []int) {
+	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{21}
+}
+
+func (x *ProviderCreditBalance) GetBalance() string {
+	if x != nil {
+		return x.Balance
+	}
+	return ""
+}
+
+func (x *ProviderCreditBalance) GetHasCredits() bool {
+	if x != nil && x.HasCredits != nil {
+		return *x.HasCredits
+	}
+	return false
+}
+
+func (x *ProviderCreditBalance) GetUnlimited() bool {
+	if x != nil {
+		return x.Unlimited
+	}
+	return false
+}
+
+type ProviderSpendAllowance struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	Used             string                 `protobuf:"bytes,1,opt,name=used,proto3" json:"used,omitempty"`
+	Limit            string                 `protobuf:"bytes,2,opt,name=limit,proto3" json:"limit,omitempty"`
+	Currency         string                 `protobuf:"bytes,3,opt,name=currency,proto3" json:"currency,omitempty"`
+	RemainingPercent *uint32                `protobuf:"varint,4,opt,name=remaining_percent,json=remainingPercent,proto3,oneof" json:"remaining_percent,omitempty"`
+	ResetsAt         string                 `protobuf:"bytes,5,opt,name=resets_at,json=resetsAt,proto3" json:"resets_at,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *ProviderSpendAllowance) Reset() {
+	*x = ProviderSpendAllowance{}
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[22]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ProviderSpendAllowance) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ProviderSpendAllowance) ProtoMessage() {}
+
+func (x *ProviderSpendAllowance) ProtoReflect() protoreflect.Message {
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[22]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ProviderSpendAllowance.ProtoReflect.Descriptor instead.
+func (*ProviderSpendAllowance) Descriptor() ([]byte, []int) {
+	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{22}
+}
+
+func (x *ProviderSpendAllowance) GetUsed() string {
+	if x != nil {
+		return x.Used
+	}
+	return ""
+}
+
+func (x *ProviderSpendAllowance) GetLimit() string {
+	if x != nil {
+		return x.Limit
+	}
+	return ""
+}
+
+func (x *ProviderSpendAllowance) GetCurrency() string {
+	if x != nil {
+		return x.Currency
+	}
+	return ""
+}
+
+func (x *ProviderSpendAllowance) GetRemainingPercent() uint32 {
+	if x != nil && x.RemainingPercent != nil {
+		return *x.RemainingPercent
+	}
+	return 0
+}
+
+func (x *ProviderSpendAllowance) GetResetsAt() string {
+	if x != nil {
+		return x.ResetsAt
+	}
+	return ""
+}
+
+type ProviderResetCredit struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Title         string                 `protobuf:"bytes,1,opt,name=title,proto3" json:"title,omitempty"`
+	Kind          string                 `protobuf:"bytes,2,opt,name=kind,proto3" json:"kind,omitempty"`
+	Status        string                 `protobuf:"bytes,3,opt,name=status,proto3" json:"status,omitempty"`
+	GrantedAt     string                 `protobuf:"bytes,4,opt,name=granted_at,json=grantedAt,proto3" json:"granted_at,omitempty"`
+	ExpiresAt     string                 `protobuf:"bytes,5,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ProviderResetCredit) Reset() {
+	*x = ProviderResetCredit{}
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[23]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ProviderResetCredit) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ProviderResetCredit) ProtoMessage() {}
+
+func (x *ProviderResetCredit) ProtoReflect() protoreflect.Message {
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[23]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ProviderResetCredit.ProtoReflect.Descriptor instead.
+func (*ProviderResetCredit) Descriptor() ([]byte, []int) {
+	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{23}
+}
+
+func (x *ProviderResetCredit) GetTitle() string {
+	if x != nil {
+		return x.Title
+	}
+	return ""
+}
+
+func (x *ProviderResetCredit) GetKind() string {
+	if x != nil {
+		return x.Kind
+	}
+	return ""
+}
+
+func (x *ProviderResetCredit) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+func (x *ProviderResetCredit) GetGrantedAt() string {
+	if x != nil {
+		return x.GrantedAt
+	}
+	return ""
+}
+
+func (x *ProviderResetCredit) GetExpiresAt() string {
+	if x != nil {
+		return x.ExpiresAt
+	}
+	return ""
+}
+
+type ProviderResetCredits struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	AvailableCount uint32                 `protobuf:"varint,1,opt,name=available_count,json=availableCount,proto3" json:"available_count,omitempty"`
+	Details        []*ProviderResetCredit `protobuf:"bytes,2,rep,name=details,proto3" json:"details,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *ProviderResetCredits) Reset() {
+	*x = ProviderResetCredits{}
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[24]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ProviderResetCredits) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ProviderResetCredits) ProtoMessage() {}
+
+func (x *ProviderResetCredits) ProtoReflect() protoreflect.Message {
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[24]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ProviderResetCredits.ProtoReflect.Descriptor instead.
+func (*ProviderResetCredits) Descriptor() ([]byte, []int) {
+	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{24}
+}
+
+func (x *ProviderResetCredits) GetAvailableCount() uint32 {
+	if x != nil {
+		return x.AvailableCount
+	}
+	return 0
+}
+
+func (x *ProviderResetCredits) GetDetails() []*ProviderResetCredit {
+	if x != nil {
+		return x.Details
+	}
+	return nil
+}
+
+// ProviderQuotaSnapshot is normalized provider data for exactly one account.
+// account_key is an opaque, gateway-account-scoped HMAC and is not a provider
+// account identifier, email address, credential, or display name.
+type ProviderQuotaSnapshot struct {
+	state                protoimpl.MessageState    `protogen:"open.v1"`
+	Provider             ProviderQuotaProvider     `protobuf:"varint,1,opt,name=provider,proto3,enum=dieter.gateway.v1.ProviderQuotaProvider" json:"provider,omitempty"`
+	AccountKey           string                    `protobuf:"bytes,2,opt,name=account_key,json=accountKey,proto3" json:"account_key,omitempty"`
+	AccountKind          ProviderAccountKind       `protobuf:"varint,3,opt,name=account_kind,json=accountKind,proto3,enum=dieter.gateway.v1.ProviderAccountKind" json:"account_kind,omitempty"`
+	Plan                 string                    `protobuf:"bytes,4,opt,name=plan,proto3" json:"plan,omitempty"`
+	Availability         ProviderQuotaAvailability `protobuf:"varint,5,opt,name=availability,proto3,enum=dieter.gateway.v1.ProviderQuotaAvailability" json:"availability,omitempty"`
+	Windows              []*ProviderQuotaWindow    `protobuf:"bytes,6,rep,name=windows,proto3" json:"windows,omitempty"`
+	NextResetAt          string                    `protobuf:"bytes,7,opt,name=next_reset_at,json=nextResetAt,proto3" json:"next_reset_at,omitempty"`
+	NextResetWindowId    string                    `protobuf:"bytes,8,opt,name=next_reset_window_id,json=nextResetWindowId,proto3" json:"next_reset_window_id,omitempty"`
+	Credits              *ProviderCreditBalance    `protobuf:"bytes,9,opt,name=credits,proto3" json:"credits,omitempty"`
+	SpendAllowance       *ProviderSpendAllowance   `protobuf:"bytes,10,opt,name=spend_allowance,json=spendAllowance,proto3" json:"spend_allowance,omitempty"`
+	ResetCredits         *ProviderResetCredits     `protobuf:"bytes,11,opt,name=reset_credits,json=resetCredits,proto3" json:"reset_credits,omitempty"`
+	OrdinaryUsageAllowed *bool                     `protobuf:"varint,12,opt,name=ordinary_usage_allowed,json=ordinaryUsageAllowed,proto3,oneof" json:"ordinary_usage_allowed,omitempty"`
+	RefreshedAt          string                    `protobuf:"bytes,13,opt,name=refreshed_at,json=refreshedAt,proto3" json:"refreshed_at,omitempty"`
+	NextRefreshAt        string                    `protobuf:"bytes,14,opt,name=next_refresh_at,json=nextRefreshAt,proto3" json:"next_refresh_at,omitempty"`
+	FreshUntil           string                    `protobuf:"bytes,15,opt,name=fresh_until,json=freshUntil,proto3" json:"fresh_until,omitempty"`
+	LastSuccessAt        string                    `protobuf:"bytes,16,opt,name=last_success_at,json=lastSuccessAt,proto3" json:"last_success_at,omitempty"`
+	RefreshState         ProviderQuotaRefreshState `protobuf:"varint,17,opt,name=refresh_state,json=refreshState,proto3,enum=dieter.gateway.v1.ProviderQuotaRefreshState" json:"refresh_state,omitempty"`
+	OnlineSourceCount    uint32                    `protobuf:"varint,18,opt,name=online_source_count,json=onlineSourceCount,proto3" json:"online_source_count,omitempty"`
+	StatusCode           string                    `protobuf:"bytes,19,opt,name=status_code,json=statusCode,proto3" json:"status_code,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
+}
+
+func (x *ProviderQuotaSnapshot) Reset() {
+	*x = ProviderQuotaSnapshot{}
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[25]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ProviderQuotaSnapshot) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ProviderQuotaSnapshot) ProtoMessage() {}
+
+func (x *ProviderQuotaSnapshot) ProtoReflect() protoreflect.Message {
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[25]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ProviderQuotaSnapshot.ProtoReflect.Descriptor instead.
+func (*ProviderQuotaSnapshot) Descriptor() ([]byte, []int) {
+	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{25}
+}
+
+func (x *ProviderQuotaSnapshot) GetProvider() ProviderQuotaProvider {
+	if x != nil {
+		return x.Provider
+	}
+	return ProviderQuotaProvider_PROVIDER_QUOTA_PROVIDER_UNSPECIFIED
+}
+
+func (x *ProviderQuotaSnapshot) GetAccountKey() string {
+	if x != nil {
+		return x.AccountKey
+	}
+	return ""
+}
+
+func (x *ProviderQuotaSnapshot) GetAccountKind() ProviderAccountKind {
+	if x != nil {
+		return x.AccountKind
+	}
+	return ProviderAccountKind_PROVIDER_ACCOUNT_KIND_UNSPECIFIED
+}
+
+func (x *ProviderQuotaSnapshot) GetPlan() string {
+	if x != nil {
+		return x.Plan
+	}
+	return ""
+}
+
+func (x *ProviderQuotaSnapshot) GetAvailability() ProviderQuotaAvailability {
+	if x != nil {
+		return x.Availability
+	}
+	return ProviderQuotaAvailability_PROVIDER_QUOTA_AVAILABILITY_UNSPECIFIED
+}
+
+func (x *ProviderQuotaSnapshot) GetWindows() []*ProviderQuotaWindow {
+	if x != nil {
+		return x.Windows
+	}
+	return nil
+}
+
+func (x *ProviderQuotaSnapshot) GetNextResetAt() string {
+	if x != nil {
+		return x.NextResetAt
+	}
+	return ""
+}
+
+func (x *ProviderQuotaSnapshot) GetNextResetWindowId() string {
+	if x != nil {
+		return x.NextResetWindowId
+	}
+	return ""
+}
+
+func (x *ProviderQuotaSnapshot) GetCredits() *ProviderCreditBalance {
+	if x != nil {
+		return x.Credits
+	}
+	return nil
+}
+
+func (x *ProviderQuotaSnapshot) GetSpendAllowance() *ProviderSpendAllowance {
+	if x != nil {
+		return x.SpendAllowance
+	}
+	return nil
+}
+
+func (x *ProviderQuotaSnapshot) GetResetCredits() *ProviderResetCredits {
+	if x != nil {
+		return x.ResetCredits
+	}
+	return nil
+}
+
+func (x *ProviderQuotaSnapshot) GetOrdinaryUsageAllowed() bool {
+	if x != nil && x.OrdinaryUsageAllowed != nil {
+		return *x.OrdinaryUsageAllowed
+	}
+	return false
+}
+
+func (x *ProviderQuotaSnapshot) GetRefreshedAt() string {
+	if x != nil {
+		return x.RefreshedAt
+	}
+	return ""
+}
+
+func (x *ProviderQuotaSnapshot) GetNextRefreshAt() string {
+	if x != nil {
+		return x.NextRefreshAt
+	}
+	return ""
+}
+
+func (x *ProviderQuotaSnapshot) GetFreshUntil() string {
+	if x != nil {
+		return x.FreshUntil
+	}
+	return ""
+}
+
+func (x *ProviderQuotaSnapshot) GetLastSuccessAt() string {
+	if x != nil {
+		return x.LastSuccessAt
+	}
+	return ""
+}
+
+func (x *ProviderQuotaSnapshot) GetRefreshState() ProviderQuotaRefreshState {
+	if x != nil {
+		return x.RefreshState
+	}
+	return ProviderQuotaRefreshState_PROVIDER_QUOTA_REFRESH_STATE_UNSPECIFIED
+}
+
+func (x *ProviderQuotaSnapshot) GetOnlineSourceCount() uint32 {
+	if x != nil {
+		return x.OnlineSourceCount
+	}
+	return 0
+}
+
+func (x *ProviderQuotaSnapshot) GetStatusCode() string {
+	if x != nil {
+		return x.StatusCode
+	}
+	return ""
+}
+
+// ProviderQuotaSummary drives the one compact bar shown for a provider. The
+// selected percentage is the lowest remaining value across distinct accounts
+// and windows; separate account quotas are never summed or averaged.
+type ProviderQuotaSummary struct {
+	state                   protoimpl.MessageState  `protogen:"open.v1"`
+	TotalAccountCount       uint32                  `protobuf:"varint,1,opt,name=total_account_count,json=totalAccountCount,proto3" json:"total_account_count,omitempty"`
+	NumericAccountCount     uint32                  `protobuf:"varint,2,opt,name=numeric_account_count,json=numericAccountCount,proto3" json:"numeric_account_count,omitempty"`
+	UnavailableAccountCount uint32                  `protobuf:"varint,3,opt,name=unavailable_account_count,json=unavailableAccountCount,proto3" json:"unavailable_account_count,omitempty"`
+	RemainingPercent        *uint32                 `protobuf:"varint,4,opt,name=remaining_percent,json=remainingPercent,proto3,oneof" json:"remaining_percent,omitempty"`
+	SummaryAccountKey       string                  `protobuf:"bytes,5,opt,name=summary_account_key,json=summaryAccountKey,proto3" json:"summary_account_key,omitempty"`
+	SummaryWindowId         string                  `protobuf:"bytes,6,opt,name=summary_window_id,json=summaryWindowId,proto3" json:"summary_window_id,omitempty"`
+	SummaryWindowKind       ProviderQuotaWindowKind `protobuf:"varint,7,opt,name=summary_window_kind,json=summaryWindowKind,proto3,enum=dieter.gateway.v1.ProviderQuotaWindowKind" json:"summary_window_kind,omitempty"`
+	SummaryWindowLabel      string                  `protobuf:"bytes,8,opt,name=summary_window_label,json=summaryWindowLabel,proto3" json:"summary_window_label,omitempty"`
+	ResetsAt                string                  `protobuf:"bytes,9,opt,name=resets_at,json=resetsAt,proto3" json:"resets_at,omitempty"`
+	Freshness               ProviderQuotaFreshness  `protobuf:"varint,10,opt,name=freshness,proto3,enum=dieter.gateway.v1.ProviderQuotaFreshness" json:"freshness,omitempty"`
+	unknownFields           protoimpl.UnknownFields
+	sizeCache               protoimpl.SizeCache
+}
+
+func (x *ProviderQuotaSummary) Reset() {
+	*x = ProviderQuotaSummary{}
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[26]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ProviderQuotaSummary) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ProviderQuotaSummary) ProtoMessage() {}
+
+func (x *ProviderQuotaSummary) ProtoReflect() protoreflect.Message {
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[26]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ProviderQuotaSummary.ProtoReflect.Descriptor instead.
+func (*ProviderQuotaSummary) Descriptor() ([]byte, []int) {
+	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{26}
+}
+
+func (x *ProviderQuotaSummary) GetTotalAccountCount() uint32 {
+	if x != nil {
+		return x.TotalAccountCount
+	}
+	return 0
+}
+
+func (x *ProviderQuotaSummary) GetNumericAccountCount() uint32 {
+	if x != nil {
+		return x.NumericAccountCount
+	}
+	return 0
+}
+
+func (x *ProviderQuotaSummary) GetUnavailableAccountCount() uint32 {
+	if x != nil {
+		return x.UnavailableAccountCount
+	}
+	return 0
+}
+
+func (x *ProviderQuotaSummary) GetRemainingPercent() uint32 {
+	if x != nil && x.RemainingPercent != nil {
+		return *x.RemainingPercent
+	}
+	return 0
+}
+
+func (x *ProviderQuotaSummary) GetSummaryAccountKey() string {
+	if x != nil {
+		return x.SummaryAccountKey
+	}
+	return ""
+}
+
+func (x *ProviderQuotaSummary) GetSummaryWindowId() string {
+	if x != nil {
+		return x.SummaryWindowId
+	}
+	return ""
+}
+
+func (x *ProviderQuotaSummary) GetSummaryWindowKind() ProviderQuotaWindowKind {
+	if x != nil {
+		return x.SummaryWindowKind
+	}
+	return ProviderQuotaWindowKind_PROVIDER_QUOTA_WINDOW_KIND_UNSPECIFIED
+}
+
+func (x *ProviderQuotaSummary) GetSummaryWindowLabel() string {
+	if x != nil {
+		return x.SummaryWindowLabel
+	}
+	return ""
+}
+
+func (x *ProviderQuotaSummary) GetResetsAt() string {
+	if x != nil {
+		return x.ResetsAt
+	}
+	return ""
+}
+
+func (x *ProviderQuotaSummary) GetFreshness() ProviderQuotaFreshness {
+	if x != nil {
+		return x.Freshness
+	}
+	return ProviderQuotaFreshness_PROVIDER_QUOTA_FRESHNESS_UNSPECIFIED
+}
+
+type ProviderQuotaGroup struct {
+	state         protoimpl.MessageState   `protogen:"open.v1"`
+	Provider      ProviderQuotaProvider    `protobuf:"varint,1,opt,name=provider,proto3,enum=dieter.gateway.v1.ProviderQuotaProvider" json:"provider,omitempty"`
+	Accounts      []*ProviderQuotaSnapshot `protobuf:"bytes,2,rep,name=accounts,proto3" json:"accounts,omitempty"`
+	Summary       *ProviderQuotaSummary    `protobuf:"bytes,3,opt,name=summary,proto3" json:"summary,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ProviderQuotaGroup) Reset() {
+	*x = ProviderQuotaGroup{}
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[27]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ProviderQuotaGroup) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ProviderQuotaGroup) ProtoMessage() {}
+
+func (x *ProviderQuotaGroup) ProtoReflect() protoreflect.Message {
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[27]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ProviderQuotaGroup.ProtoReflect.Descriptor instead.
+func (*ProviderQuotaGroup) Descriptor() ([]byte, []int) {
+	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{27}
+}
+
+func (x *ProviderQuotaGroup) GetProvider() ProviderQuotaProvider {
+	if x != nil {
+		return x.Provider
+	}
+	return ProviderQuotaProvider_PROVIDER_QUOTA_PROVIDER_UNSPECIFIED
+}
+
+func (x *ProviderQuotaGroup) GetAccounts() []*ProviderQuotaSnapshot {
+	if x != nil {
+		return x.Accounts
+	}
+	return nil
+}
+
+func (x *ProviderQuotaGroup) GetSummary() *ProviderQuotaSummary {
+	if x != nil {
+		return x.Summary
+	}
+	return nil
+}
+
+type ListProviderQuotasRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Provider      ProviderQuotaProvider  `protobuf:"varint,1,opt,name=provider,proto3,enum=dieter.gateway.v1.ProviderQuotaProvider" json:"provider,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListProviderQuotasRequest) Reset() {
+	*x = ListProviderQuotasRequest{}
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[28]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListProviderQuotasRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListProviderQuotasRequest) ProtoMessage() {}
+
+func (x *ListProviderQuotasRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[28]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListProviderQuotasRequest.ProtoReflect.Descriptor instead.
+func (*ListProviderQuotasRequest) Descriptor() ([]byte, []int) {
+	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{28}
+}
+
+func (x *ListProviderQuotasRequest) GetProvider() ProviderQuotaProvider {
+	if x != nil {
+		return x.Provider
+	}
+	return ProviderQuotaProvider_PROVIDER_QUOTA_PROVIDER_UNSPECIFIED
+}
+
+type ListProviderQuotasResponse struct {
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	Groups             []*ProviderQuotaGroup  `protobuf:"bytes,1,rep,name=groups,proto3" json:"groups,omitempty"`
+	Revision           uint64                 `protobuf:"varint,2,opt,name=revision,proto3" json:"revision,omitempty"`
+	GatewayInformation *GatewayInformation    `protobuf:"bytes,3,opt,name=gateway_information,json=gatewayInformation,proto3" json:"gateway_information,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
+}
+
+func (x *ListProviderQuotasResponse) Reset() {
+	*x = ListProviderQuotasResponse{}
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[29]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListProviderQuotasResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListProviderQuotasResponse) ProtoMessage() {}
+
+func (x *ListProviderQuotasResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[29]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListProviderQuotasResponse.ProtoReflect.Descriptor instead.
+func (*ListProviderQuotasResponse) Descriptor() ([]byte, []int) {
+	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{29}
+}
+
+func (x *ListProviderQuotasResponse) GetGroups() []*ProviderQuotaGroup {
+	if x != nil {
+		return x.Groups
+	}
+	return nil
+}
+
+func (x *ListProviderQuotasResponse) GetRevision() uint64 {
+	if x != nil {
+		return x.Revision
+	}
+	return 0
+}
+
+func (x *ListProviderQuotasResponse) GetGatewayInformation() *GatewayInformation {
+	if x != nil {
+		return x.GatewayInformation
+	}
+	return nil
+}
+
+type WatchProviderQuotasRequest struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	HeartbeatSeconds uint32                 `protobuf:"varint,1,opt,name=heartbeat_seconds,json=heartbeatSeconds,proto3" json:"heartbeat_seconds,omitempty"`
+	Provider         ProviderQuotaProvider  `protobuf:"varint,2,opt,name=provider,proto3,enum=dieter.gateway.v1.ProviderQuotaProvider" json:"provider,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *WatchProviderQuotasRequest) Reset() {
+	*x = WatchProviderQuotasRequest{}
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[30]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WatchProviderQuotasRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WatchProviderQuotasRequest) ProtoMessage() {}
+
+func (x *WatchProviderQuotasRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[30]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WatchProviderQuotasRequest.ProtoReflect.Descriptor instead.
+func (*WatchProviderQuotasRequest) Descriptor() ([]byte, []int) {
+	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{30}
+}
+
+func (x *WatchProviderQuotasRequest) GetHeartbeatSeconds() uint32 {
+	if x != nil {
+		return x.HeartbeatSeconds
+	}
+	return 0
+}
+
+func (x *WatchProviderQuotasRequest) GetProvider() ProviderQuotaProvider {
+	if x != nil {
+		return x.Provider
+	}
+	return ProviderQuotaProvider_PROVIDER_QUOTA_PROVIDER_UNSPECIFIED
+}
+
+type ProviderQuotaUpdate struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Groups        []*ProviderQuotaGroup  `protobuf:"bytes,1,rep,name=groups,proto3" json:"groups,omitempty"`
+	Revision      uint64                 `protobuf:"varint,2,opt,name=revision,proto3" json:"revision,omitempty"`
+	Heartbeat     bool                   `protobuf:"varint,3,opt,name=heartbeat,proto3" json:"heartbeat,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ProviderQuotaUpdate) Reset() {
+	*x = ProviderQuotaUpdate{}
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[31]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ProviderQuotaUpdate) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ProviderQuotaUpdate) ProtoMessage() {}
+
+func (x *ProviderQuotaUpdate) ProtoReflect() protoreflect.Message {
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[31]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ProviderQuotaUpdate.ProtoReflect.Descriptor instead.
+func (*ProviderQuotaUpdate) Descriptor() ([]byte, []int) {
+	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{31}
+}
+
+func (x *ProviderQuotaUpdate) GetGroups() []*ProviderQuotaGroup {
+	if x != nil {
+		return x.Groups
+	}
+	return nil
+}
+
+func (x *ProviderQuotaUpdate) GetRevision() uint64 {
+	if x != nil {
+		return x.Revision
+	}
+	return 0
+}
+
+func (x *ProviderQuotaUpdate) GetHeartbeat() bool {
+	if x != nil {
+		return x.Heartbeat
+	}
+	return false
+}
+
+type RefreshProviderQuotasRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Provider      ProviderQuotaProvider  `protobuf:"varint,1,opt,name=provider,proto3,enum=dieter.gateway.v1.ProviderQuotaProvider" json:"provider,omitempty"`
+	AccountKey    string                 `protobuf:"bytes,2,opt,name=account_key,json=accountKey,proto3" json:"account_key,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RefreshProviderQuotasRequest) Reset() {
+	*x = RefreshProviderQuotasRequest{}
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[32]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RefreshProviderQuotasRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RefreshProviderQuotasRequest) ProtoMessage() {}
+
+func (x *RefreshProviderQuotasRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[32]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RefreshProviderQuotasRequest.ProtoReflect.Descriptor instead.
+func (*RefreshProviderQuotasRequest) Descriptor() ([]byte, []int) {
+	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{32}
+}
+
+func (x *RefreshProviderQuotasRequest) GetProvider() ProviderQuotaProvider {
+	if x != nil {
+		return x.Provider
+	}
+	return ProviderQuotaProvider_PROVIDER_QUOTA_PROVIDER_UNSPECIFIED
+}
+
+func (x *RefreshProviderQuotasRequest) GetAccountKey() string {
+	if x != nil {
+		return x.AccountKey
+	}
+	return ""
+}
+
+type RefreshProviderQuotasResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Groups        []*ProviderQuotaGroup  `protobuf:"bytes,1,rep,name=groups,proto3" json:"groups,omitempty"`
+	Revision      uint64                 `protobuf:"varint,2,opt,name=revision,proto3" json:"revision,omitempty"`
+	Accepted      bool                   `protobuf:"varint,3,opt,name=accepted,proto3" json:"accepted,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RefreshProviderQuotasResponse) Reset() {
+	*x = RefreshProviderQuotasResponse{}
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[33]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RefreshProviderQuotasResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RefreshProviderQuotasResponse) ProtoMessage() {}
+
+func (x *RefreshProviderQuotasResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[33]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RefreshProviderQuotasResponse.ProtoReflect.Descriptor instead.
+func (*RefreshProviderQuotasResponse) Descriptor() ([]byte, []int) {
+	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{33}
+}
+
+func (x *RefreshProviderQuotasResponse) GetGroups() []*ProviderQuotaGroup {
+	if x != nil {
+		return x.Groups
+	}
+	return nil
+}
+
+func (x *RefreshProviderQuotasResponse) GetRevision() uint64 {
+	if x != nil {
+		return x.Revision
+	}
+	return 0
+}
+
+func (x *RefreshProviderQuotasResponse) GetAccepted() bool {
+	if x != nil {
+		return x.Accepted
+	}
+	return false
+}
+
+type ProviderAccountPresence struct {
+	state            protoimpl.MessageState    `protogen:"open.v1"`
+	Provider         ProviderQuotaProvider     `protobuf:"varint,1,opt,name=provider,proto3,enum=dieter.gateway.v1.ProviderQuotaProvider" json:"provider,omitempty"`
+	AccountKey       string                    `protobuf:"bytes,2,opt,name=account_key,json=accountKey,proto3" json:"account_key,omitempty"`
+	AccountKind      ProviderAccountKind       `protobuf:"varint,3,opt,name=account_kind,json=accountKind,proto3,enum=dieter.gateway.v1.ProviderAccountKind" json:"account_kind,omitempty"`
+	Plan             string                    `protobuf:"bytes,4,opt,name=plan,proto3" json:"plan,omitempty"`
+	Availability     ProviderQuotaAvailability `protobuf:"varint,5,opt,name=availability,proto3,enum=dieter.gateway.v1.ProviderQuotaAvailability" json:"availability,omitempty"`
+	RefreshSupported bool                      `protobuf:"varint,6,opt,name=refresh_supported,json=refreshSupported,proto3" json:"refresh_supported,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *ProviderAccountPresence) Reset() {
+	*x = ProviderAccountPresence{}
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[34]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ProviderAccountPresence) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ProviderAccountPresence) ProtoMessage() {}
+
+func (x *ProviderAccountPresence) ProtoReflect() protoreflect.Message {
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[34]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ProviderAccountPresence.ProtoReflect.Descriptor instead.
+func (*ProviderAccountPresence) Descriptor() ([]byte, []int) {
+	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{34}
+}
+
+func (x *ProviderAccountPresence) GetProvider() ProviderQuotaProvider {
+	if x != nil {
+		return x.Provider
+	}
+	return ProviderQuotaProvider_PROVIDER_QUOTA_PROVIDER_UNSPECIFIED
+}
+
+func (x *ProviderAccountPresence) GetAccountKey() string {
+	if x != nil {
+		return x.AccountKey
+	}
+	return ""
+}
+
+func (x *ProviderAccountPresence) GetAccountKind() ProviderAccountKind {
+	if x != nil {
+		return x.AccountKind
+	}
+	return ProviderAccountKind_PROVIDER_ACCOUNT_KIND_UNSPECIFIED
+}
+
+func (x *ProviderAccountPresence) GetPlan() string {
+	if x != nil {
+		return x.Plan
+	}
+	return ""
+}
+
+func (x *ProviderAccountPresence) GetAvailability() ProviderQuotaAvailability {
+	if x != nil {
+		return x.Availability
+	}
+	return ProviderQuotaAvailability_PROVIDER_QUOTA_AVAILABILITY_UNSPECIFIED
+}
+
+func (x *ProviderAccountPresence) GetRefreshSupported() bool {
+	if x != nil {
+		return x.RefreshSupported
+	}
+	return false
+}
+
+type ProviderAccountsPresence struct {
+	state         protoimpl.MessageState     `protogen:"open.v1"`
+	Accounts      []*ProviderAccountPresence `protobuf:"bytes,1,rep,name=accounts,proto3" json:"accounts,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ProviderAccountsPresence) Reset() {
+	*x = ProviderAccountsPresence{}
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[35]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ProviderAccountsPresence) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ProviderAccountsPresence) ProtoMessage() {}
+
+func (x *ProviderAccountsPresence) ProtoReflect() protoreflect.Message {
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[35]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ProviderAccountsPresence.ProtoReflect.Descriptor instead.
+func (*ProviderAccountsPresence) Descriptor() ([]byte, []int) {
+	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{35}
+}
+
+func (x *ProviderAccountsPresence) GetAccounts() []*ProviderAccountPresence {
+	if x != nil {
+		return x.Accounts
+	}
+	return nil
+}
+
+type ProviderQuotaRefreshRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Provider      ProviderQuotaProvider  `protobuf:"varint,1,opt,name=provider,proto3,enum=dieter.gateway.v1.ProviderQuotaProvider" json:"provider,omitempty"`
+	AccountKey    string                 `protobuf:"bytes,2,opt,name=account_key,json=accountKey,proto3" json:"account_key,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ProviderQuotaRefreshRequest) Reset() {
+	*x = ProviderQuotaRefreshRequest{}
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[36]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ProviderQuotaRefreshRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ProviderQuotaRefreshRequest) ProtoMessage() {}
+
+func (x *ProviderQuotaRefreshRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[36]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ProviderQuotaRefreshRequest.ProtoReflect.Descriptor instead.
+func (*ProviderQuotaRefreshRequest) Descriptor() ([]byte, []int) {
+	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{36}
+}
+
+func (x *ProviderQuotaRefreshRequest) GetProvider() ProviderQuotaProvider {
+	if x != nil {
+		return x.Provider
+	}
+	return ProviderQuotaProvider_PROVIDER_QUOTA_PROVIDER_UNSPECIFIED
+}
+
+func (x *ProviderQuotaRefreshRequest) GetAccountKey() string {
+	if x != nil {
+		return x.AccountKey
+	}
+	return ""
+}
+
+type ProviderQuotaRefreshResult struct {
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	Snapshot          *ProviderQuotaSnapshot `protobuf:"bytes,1,opt,name=snapshot,proto3" json:"snapshot,omitempty"`
+	ErrorCode         string                 `protobuf:"bytes,2,opt,name=error_code,json=errorCode,proto3" json:"error_code,omitempty"`
+	RetryAfterSeconds uint32                 `protobuf:"varint,3,opt,name=retry_after_seconds,json=retryAfterSeconds,proto3" json:"retry_after_seconds,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
+}
+
+func (x *ProviderQuotaRefreshResult) Reset() {
+	*x = ProviderQuotaRefreshResult{}
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[37]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ProviderQuotaRefreshResult) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ProviderQuotaRefreshResult) ProtoMessage() {}
+
+func (x *ProviderQuotaRefreshResult) ProtoReflect() protoreflect.Message {
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[37]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ProviderQuotaRefreshResult.ProtoReflect.Descriptor instead.
+func (*ProviderQuotaRefreshResult) Descriptor() ([]byte, []int) {
+	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{37}
+}
+
+func (x *ProviderQuotaRefreshResult) GetSnapshot() *ProviderQuotaSnapshot {
+	if x != nil {
+		return x.Snapshot
+	}
+	return nil
+}
+
+func (x *ProviderQuotaRefreshResult) GetErrorCode() string {
+	if x != nil {
+		return x.ErrorCode
+	}
+	return ""
+}
+
+func (x *ProviderQuotaRefreshResult) GetRetryAfterSeconds() uint32 {
+	if x != nil {
+		return x.RetryAfterSeconds
+	}
+	return 0
+}
+
 type DaemonLinkFrame struct {
-	state               protoimpl.MessageState `protogen:"open.v1"`
-	Kind                DaemonLinkFrameKind    `protobuf:"varint,1,opt,name=kind,proto3,enum=dieter.gateway.v1.DaemonLinkFrameKind" json:"kind,omitempty"`
-	StreamId            uint64                 `protobuf:"varint,2,opt,name=stream_id,json=streamId,proto3" json:"stream_id,omitempty"`
-	DaemonId            string                 `protobuf:"bytes,3,opt,name=daemon_id,json=daemonId,proto3" json:"daemon_id,omitempty"`
-	RequestId           string                 `protobuf:"bytes,4,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
-	Method              string                 `protobuf:"bytes,5,opt,name=method,proto3" json:"method,omitempty"`
-	Payload             []byte                 `protobuf:"bytes,6,opt,name=payload,proto3" json:"payload,omitempty"`
-	PayloadSha256       []byte                 `protobuf:"bytes,7,opt,name=payload_sha256,json=payloadSha256,proto3" json:"payload_sha256,omitempty"`
-	DelegationAssertion string                 `protobuf:"bytes,8,opt,name=delegation_assertion,json=delegationAssertion,proto3" json:"delegation_assertion,omitempty"`
-	DeadlineUnixMillis  int64                  `protobuf:"varint,9,opt,name=deadline_unix_millis,json=deadlineUnixMillis,proto3" json:"deadline_unix_millis,omitempty"`
-	StatusCode          int32                  `protobuf:"varint,10,opt,name=status_code,json=statusCode,proto3" json:"status_code,omitempty"`
-	StatusMessage       string                 `protobuf:"bytes,11,opt,name=status_message,json=statusMessage,proto3" json:"status_message,omitempty"`
-	Metadata            map[string]string      `protobuf:"bytes,12,rep,name=metadata,proto3" json:"metadata,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	WindowBytes         uint32                 `protobuf:"varint,13,opt,name=window_bytes,json=windowBytes,proto3" json:"window_bytes,omitempty"`
-	Version             string                 `protobuf:"bytes,14,opt,name=version,proto3" json:"version,omitempty"`
-	Generation          uint64                 `protobuf:"varint,15,opt,name=generation,proto3" json:"generation,omitempty"`
-	DirectCandidates    []*DirectCandidate     `protobuf:"bytes,16,rep,name=direct_candidates,json=directCandidates,proto3" json:"direct_candidates,omitempty"`
-	RemoteDesktop       *RemoteDesktopPresence `protobuf:"bytes,17,opt,name=remote_desktop,json=remoteDesktop,proto3" json:"remote_desktop,omitempty"`
-	ApiVersion          string                 `protobuf:"bytes,18,opt,name=api_version,json=apiVersion,proto3" json:"api_version,omitempty"`
-	Capabilities        []string               `protobuf:"bytes,19,rep,name=capabilities,proto3" json:"capabilities,omitempty"`
-	unknownFields       protoimpl.UnknownFields
-	sizeCache           protoimpl.SizeCache
+	state                         protoimpl.MessageState       `protogen:"open.v1"`
+	Kind                          DaemonLinkFrameKind          `protobuf:"varint,1,opt,name=kind,proto3,enum=dieter.gateway.v1.DaemonLinkFrameKind" json:"kind,omitempty"`
+	StreamId                      uint64                       `protobuf:"varint,2,opt,name=stream_id,json=streamId,proto3" json:"stream_id,omitempty"`
+	DaemonId                      string                       `protobuf:"bytes,3,opt,name=daemon_id,json=daemonId,proto3" json:"daemon_id,omitempty"`
+	RequestId                     string                       `protobuf:"bytes,4,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	Method                        string                       `protobuf:"bytes,5,opt,name=method,proto3" json:"method,omitempty"`
+	Payload                       []byte                       `protobuf:"bytes,6,opt,name=payload,proto3" json:"payload,omitempty"`
+	PayloadSha256                 []byte                       `protobuf:"bytes,7,opt,name=payload_sha256,json=payloadSha256,proto3" json:"payload_sha256,omitempty"`
+	DelegationAssertion           string                       `protobuf:"bytes,8,opt,name=delegation_assertion,json=delegationAssertion,proto3" json:"delegation_assertion,omitempty"`
+	DeadlineUnixMillis            int64                        `protobuf:"varint,9,opt,name=deadline_unix_millis,json=deadlineUnixMillis,proto3" json:"deadline_unix_millis,omitempty"`
+	StatusCode                    int32                        `protobuf:"varint,10,opt,name=status_code,json=statusCode,proto3" json:"status_code,omitempty"`
+	StatusMessage                 string                       `protobuf:"bytes,11,opt,name=status_message,json=statusMessage,proto3" json:"status_message,omitempty"`
+	Metadata                      map[string]string            `protobuf:"bytes,12,rep,name=metadata,proto3" json:"metadata,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	WindowBytes                   uint32                       `protobuf:"varint,13,opt,name=window_bytes,json=windowBytes,proto3" json:"window_bytes,omitempty"`
+	Version                       string                       `protobuf:"bytes,14,opt,name=version,proto3" json:"version,omitempty"`
+	Generation                    uint64                       `protobuf:"varint,15,opt,name=generation,proto3" json:"generation,omitempty"`
+	DirectCandidates              []*DirectCandidate           `protobuf:"bytes,16,rep,name=direct_candidates,json=directCandidates,proto3" json:"direct_candidates,omitempty"`
+	RemoteDesktop                 *RemoteDesktopPresence       `protobuf:"bytes,17,opt,name=remote_desktop,json=remoteDesktop,proto3" json:"remote_desktop,omitempty"`
+	ApiVersion                    string                       `protobuf:"bytes,18,opt,name=api_version,json=apiVersion,proto3" json:"api_version,omitempty"`
+	Capabilities                  []string                     `protobuf:"bytes,19,rep,name=capabilities,proto3" json:"capabilities,omitempty"`
+	ProviderAccountCorrelationKey []byte                       `protobuf:"bytes,20,opt,name=provider_account_correlation_key,json=providerAccountCorrelationKey,proto3" json:"provider_account_correlation_key,omitempty"`
+	ProviderAccounts              *ProviderAccountsPresence    `protobuf:"bytes,21,opt,name=provider_accounts,json=providerAccounts,proto3" json:"provider_accounts,omitempty"`
+	ProviderQuotaRefreshRequest   *ProviderQuotaRefreshRequest `protobuf:"bytes,22,opt,name=provider_quota_refresh_request,json=providerQuotaRefreshRequest,proto3" json:"provider_quota_refresh_request,omitempty"`
+	ProviderQuotaRefreshResult    *ProviderQuotaRefreshResult  `protobuf:"bytes,23,opt,name=provider_quota_refresh_result,json=providerQuotaRefreshResult,proto3" json:"provider_quota_refresh_result,omitempty"`
+	unknownFields                 protoimpl.UnknownFields
+	sizeCache                     protoimpl.SizeCache
 }
 
 func (x *DaemonLinkFrame) Reset() {
 	*x = DaemonLinkFrame{}
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[20]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[38]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1497,7 +3122,7 @@ func (x *DaemonLinkFrame) String() string {
 func (*DaemonLinkFrame) ProtoMessage() {}
 
 func (x *DaemonLinkFrame) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[20]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[38]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1510,7 +3135,7 @@ func (x *DaemonLinkFrame) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DaemonLinkFrame.ProtoReflect.Descriptor instead.
 func (*DaemonLinkFrame) Descriptor() ([]byte, []int) {
-	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{20}
+	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{38}
 }
 
 func (x *DaemonLinkFrame) GetKind() DaemonLinkFrameKind {
@@ -1646,6 +3271,34 @@ func (x *DaemonLinkFrame) GetCapabilities() []string {
 	return nil
 }
 
+func (x *DaemonLinkFrame) GetProviderAccountCorrelationKey() []byte {
+	if x != nil {
+		return x.ProviderAccountCorrelationKey
+	}
+	return nil
+}
+
+func (x *DaemonLinkFrame) GetProviderAccounts() *ProviderAccountsPresence {
+	if x != nil {
+		return x.ProviderAccounts
+	}
+	return nil
+}
+
+func (x *DaemonLinkFrame) GetProviderQuotaRefreshRequest() *ProviderQuotaRefreshRequest {
+	if x != nil {
+		return x.ProviderQuotaRefreshRequest
+	}
+	return nil
+}
+
+func (x *DaemonLinkFrame) GetProviderQuotaRefreshResult() *ProviderQuotaRefreshResult {
+	if x != nil {
+		return x.ProviderQuotaRefreshResult
+	}
+	return nil
+}
+
 var File_dieter_gateway_v1_gateway_proto protoreflect.FileDescriptor
 
 const file_dieter_gateway_v1_gateway_proto_rawDesc = "" +
@@ -1766,7 +3419,125 @@ const file_dieter_gateway_v1_gateway_proto_rawDesc = "" +
 	"\x10operator_subject\x18\x05 \x01(\tR\x0foperatorSubject\x12)\n" +
 	"\x10configuration_id\x18\x06 \x01(\tR\x0fconfigurationId\x12+\n" +
 	"\x11daemon_generation\x18\a \x01(\x04R\x10daemonGeneration\x12\x1b\n" +
-	"\tissued_at\x18\b \x01(\tR\bissuedAt\"\xfb\x06\n" +
+	"\tissued_at\x18\b \x01(\tR\bissuedAt\"\xde\x02\n" +
+	"\x13ProviderQuotaWindow\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x14\n" +
+	"\x05label\x18\x02 \x01(\tR\x05label\x12>\n" +
+	"\x04kind\x18\x03 \x01(\x0e2*.dieter.gateway.v1.ProviderQuotaWindowKindR\x04kind\x12&\n" +
+	"\fused_percent\x18\x04 \x01(\rH\x00R\vusedPercent\x88\x01\x01\x120\n" +
+	"\x11remaining_percent\x18\x05 \x01(\rH\x01R\x10remainingPercent\x88\x01\x01\x12.\n" +
+	"\x10duration_minutes\x18\x06 \x01(\rH\x02R\x0fdurationMinutes\x88\x01\x01\x12\x1b\n" +
+	"\tresets_at\x18\a \x01(\tR\bresetsAtB\x0f\n" +
+	"\r_used_percentB\x14\n" +
+	"\x12_remaining_percentB\x13\n" +
+	"\x11_duration_minutes\"\x85\x01\n" +
+	"\x15ProviderCreditBalance\x12\x18\n" +
+	"\abalance\x18\x01 \x01(\tR\abalance\x12$\n" +
+	"\vhas_credits\x18\x02 \x01(\bH\x00R\n" +
+	"hasCredits\x88\x01\x01\x12\x1c\n" +
+	"\tunlimited\x18\x03 \x01(\bR\tunlimitedB\x0e\n" +
+	"\f_has_credits\"\xc3\x01\n" +
+	"\x16ProviderSpendAllowance\x12\x12\n" +
+	"\x04used\x18\x01 \x01(\tR\x04used\x12\x14\n" +
+	"\x05limit\x18\x02 \x01(\tR\x05limit\x12\x1a\n" +
+	"\bcurrency\x18\x03 \x01(\tR\bcurrency\x120\n" +
+	"\x11remaining_percent\x18\x04 \x01(\rH\x00R\x10remainingPercent\x88\x01\x01\x12\x1b\n" +
+	"\tresets_at\x18\x05 \x01(\tR\bresetsAtB\x14\n" +
+	"\x12_remaining_percent\"\x95\x01\n" +
+	"\x13ProviderResetCredit\x12\x14\n" +
+	"\x05title\x18\x01 \x01(\tR\x05title\x12\x12\n" +
+	"\x04kind\x18\x02 \x01(\tR\x04kind\x12\x16\n" +
+	"\x06status\x18\x03 \x01(\tR\x06status\x12\x1d\n" +
+	"\n" +
+	"granted_at\x18\x04 \x01(\tR\tgrantedAt\x12\x1d\n" +
+	"\n" +
+	"expires_at\x18\x05 \x01(\tR\texpiresAt\"\x81\x01\n" +
+	"\x14ProviderResetCredits\x12'\n" +
+	"\x0favailable_count\x18\x01 \x01(\rR\x0eavailableCount\x12@\n" +
+	"\adetails\x18\x02 \x03(\v2&.dieter.gateway.v1.ProviderResetCreditR\adetails\"\xba\b\n" +
+	"\x15ProviderQuotaSnapshot\x12D\n" +
+	"\bprovider\x18\x01 \x01(\x0e2(.dieter.gateway.v1.ProviderQuotaProviderR\bprovider\x12\x1f\n" +
+	"\vaccount_key\x18\x02 \x01(\tR\n" +
+	"accountKey\x12I\n" +
+	"\faccount_kind\x18\x03 \x01(\x0e2&.dieter.gateway.v1.ProviderAccountKindR\vaccountKind\x12\x12\n" +
+	"\x04plan\x18\x04 \x01(\tR\x04plan\x12P\n" +
+	"\favailability\x18\x05 \x01(\x0e2,.dieter.gateway.v1.ProviderQuotaAvailabilityR\favailability\x12@\n" +
+	"\awindows\x18\x06 \x03(\v2&.dieter.gateway.v1.ProviderQuotaWindowR\awindows\x12\"\n" +
+	"\rnext_reset_at\x18\a \x01(\tR\vnextResetAt\x12/\n" +
+	"\x14next_reset_window_id\x18\b \x01(\tR\x11nextResetWindowId\x12B\n" +
+	"\acredits\x18\t \x01(\v2(.dieter.gateway.v1.ProviderCreditBalanceR\acredits\x12R\n" +
+	"\x0fspend_allowance\x18\n" +
+	" \x01(\v2).dieter.gateway.v1.ProviderSpendAllowanceR\x0espendAllowance\x12L\n" +
+	"\rreset_credits\x18\v \x01(\v2'.dieter.gateway.v1.ProviderResetCreditsR\fresetCredits\x129\n" +
+	"\x16ordinary_usage_allowed\x18\f \x01(\bH\x00R\x14ordinaryUsageAllowed\x88\x01\x01\x12!\n" +
+	"\frefreshed_at\x18\r \x01(\tR\vrefreshedAt\x12&\n" +
+	"\x0fnext_refresh_at\x18\x0e \x01(\tR\rnextRefreshAt\x12\x1f\n" +
+	"\vfresh_until\x18\x0f \x01(\tR\n" +
+	"freshUntil\x12&\n" +
+	"\x0flast_success_at\x18\x10 \x01(\tR\rlastSuccessAt\x12Q\n" +
+	"\rrefresh_state\x18\x11 \x01(\x0e2,.dieter.gateway.v1.ProviderQuotaRefreshStateR\frefreshState\x12.\n" +
+	"\x13online_source_count\x18\x12 \x01(\rR\x11onlineSourceCount\x12\x1f\n" +
+	"\vstatus_code\x18\x13 \x01(\tR\n" +
+	"statusCodeB\x19\n" +
+	"\x17_ordinary_usage_allowed\"\xce\x04\n" +
+	"\x14ProviderQuotaSummary\x12.\n" +
+	"\x13total_account_count\x18\x01 \x01(\rR\x11totalAccountCount\x122\n" +
+	"\x15numeric_account_count\x18\x02 \x01(\rR\x13numericAccountCount\x12:\n" +
+	"\x19unavailable_account_count\x18\x03 \x01(\rR\x17unavailableAccountCount\x120\n" +
+	"\x11remaining_percent\x18\x04 \x01(\rH\x00R\x10remainingPercent\x88\x01\x01\x12.\n" +
+	"\x13summary_account_key\x18\x05 \x01(\tR\x11summaryAccountKey\x12*\n" +
+	"\x11summary_window_id\x18\x06 \x01(\tR\x0fsummaryWindowId\x12Z\n" +
+	"\x13summary_window_kind\x18\a \x01(\x0e2*.dieter.gateway.v1.ProviderQuotaWindowKindR\x11summaryWindowKind\x120\n" +
+	"\x14summary_window_label\x18\b \x01(\tR\x12summaryWindowLabel\x12\x1b\n" +
+	"\tresets_at\x18\t \x01(\tR\bresetsAt\x12G\n" +
+	"\tfreshness\x18\n" +
+	" \x01(\x0e2).dieter.gateway.v1.ProviderQuotaFreshnessR\tfreshnessB\x14\n" +
+	"\x12_remaining_percent\"\xe3\x01\n" +
+	"\x12ProviderQuotaGroup\x12D\n" +
+	"\bprovider\x18\x01 \x01(\x0e2(.dieter.gateway.v1.ProviderQuotaProviderR\bprovider\x12D\n" +
+	"\baccounts\x18\x02 \x03(\v2(.dieter.gateway.v1.ProviderQuotaSnapshotR\baccounts\x12A\n" +
+	"\asummary\x18\x03 \x01(\v2'.dieter.gateway.v1.ProviderQuotaSummaryR\asummary\"a\n" +
+	"\x19ListProviderQuotasRequest\x12D\n" +
+	"\bprovider\x18\x01 \x01(\x0e2(.dieter.gateway.v1.ProviderQuotaProviderR\bprovider\"\xcf\x01\n" +
+	"\x1aListProviderQuotasResponse\x12=\n" +
+	"\x06groups\x18\x01 \x03(\v2%.dieter.gateway.v1.ProviderQuotaGroupR\x06groups\x12\x1a\n" +
+	"\brevision\x18\x02 \x01(\x04R\brevision\x12V\n" +
+	"\x13gateway_information\x18\x03 \x01(\v2%.dieter.gateway.v1.GatewayInformationR\x12gatewayInformation\"\x8f\x01\n" +
+	"\x1aWatchProviderQuotasRequest\x12+\n" +
+	"\x11heartbeat_seconds\x18\x01 \x01(\rR\x10heartbeatSeconds\x12D\n" +
+	"\bprovider\x18\x02 \x01(\x0e2(.dieter.gateway.v1.ProviderQuotaProviderR\bprovider\"\x8e\x01\n" +
+	"\x13ProviderQuotaUpdate\x12=\n" +
+	"\x06groups\x18\x01 \x03(\v2%.dieter.gateway.v1.ProviderQuotaGroupR\x06groups\x12\x1a\n" +
+	"\brevision\x18\x02 \x01(\x04R\brevision\x12\x1c\n" +
+	"\theartbeat\x18\x03 \x01(\bR\theartbeat\"\x85\x01\n" +
+	"\x1cRefreshProviderQuotasRequest\x12D\n" +
+	"\bprovider\x18\x01 \x01(\x0e2(.dieter.gateway.v1.ProviderQuotaProviderR\bprovider\x12\x1f\n" +
+	"\vaccount_key\x18\x02 \x01(\tR\n" +
+	"accountKey\"\x96\x01\n" +
+	"\x1dRefreshProviderQuotasResponse\x12=\n" +
+	"\x06groups\x18\x01 \x03(\v2%.dieter.gateway.v1.ProviderQuotaGroupR\x06groups\x12\x1a\n" +
+	"\brevision\x18\x02 \x01(\x04R\brevision\x12\x1a\n" +
+	"\baccepted\x18\x03 \x01(\bR\baccepted\"\xde\x02\n" +
+	"\x17ProviderAccountPresence\x12D\n" +
+	"\bprovider\x18\x01 \x01(\x0e2(.dieter.gateway.v1.ProviderQuotaProviderR\bprovider\x12\x1f\n" +
+	"\vaccount_key\x18\x02 \x01(\tR\n" +
+	"accountKey\x12I\n" +
+	"\faccount_kind\x18\x03 \x01(\x0e2&.dieter.gateway.v1.ProviderAccountKindR\vaccountKind\x12\x12\n" +
+	"\x04plan\x18\x04 \x01(\tR\x04plan\x12P\n" +
+	"\favailability\x18\x05 \x01(\x0e2,.dieter.gateway.v1.ProviderQuotaAvailabilityR\favailability\x12+\n" +
+	"\x11refresh_supported\x18\x06 \x01(\bR\x10refreshSupported\"b\n" +
+	"\x18ProviderAccountsPresence\x12F\n" +
+	"\baccounts\x18\x01 \x03(\v2*.dieter.gateway.v1.ProviderAccountPresenceR\baccounts\"\x84\x01\n" +
+	"\x1bProviderQuotaRefreshRequest\x12D\n" +
+	"\bprovider\x18\x01 \x01(\x0e2(.dieter.gateway.v1.ProviderQuotaProviderR\bprovider\x12\x1f\n" +
+	"\vaccount_key\x18\x02 \x01(\tR\n" +
+	"accountKey\"\xb1\x01\n" +
+	"\x1aProviderQuotaRefreshResult\x12D\n" +
+	"\bsnapshot\x18\x01 \x01(\v2(.dieter.gateway.v1.ProviderQuotaSnapshotR\bsnapshot\x12\x1d\n" +
+	"\n" +
+	"error_code\x18\x02 \x01(\tR\terrorCode\x12.\n" +
+	"\x13retry_after_seconds\x18\x03 \x01(\rR\x11retryAfterSeconds\"\x85\n" +
+	"\n" +
 	"\x0fDaemonLinkFrame\x12:\n" +
 	"\x04kind\x18\x01 \x01(\x0e2&.dieter.gateway.v1.DaemonLinkFrameKindR\x04kind\x12\x1b\n" +
 	"\tstream_id\x18\x02 \x01(\x04R\bstreamId\x12\x1b\n" +
@@ -1792,10 +3563,46 @@ const file_dieter_gateway_v1_gateway_proto_rawDesc = "" +
 	"\x0eremote_desktop\x18\x11 \x01(\v2(.dieter.gateway.v1.RemoteDesktopPresenceR\rremoteDesktop\x12\x1f\n" +
 	"\vapi_version\x18\x12 \x01(\tR\n" +
 	"apiVersion\x12\"\n" +
-	"\fcapabilities\x18\x13 \x03(\tR\fcapabilities\x1a;\n" +
+	"\fcapabilities\x18\x13 \x03(\tR\fcapabilities\x12G\n" +
+	" provider_account_correlation_key\x18\x14 \x01(\fR\x1dproviderAccountCorrelationKey\x12X\n" +
+	"\x11provider_accounts\x18\x15 \x01(\v2+.dieter.gateway.v1.ProviderAccountsPresenceR\x10providerAccounts\x12s\n" +
+	"\x1eprovider_quota_refresh_request\x18\x16 \x01(\v2..dieter.gateway.v1.ProviderQuotaRefreshRequestR\x1bproviderQuotaRefreshRequest\x12p\n" +
+	"\x1dprovider_quota_refresh_result\x18\x17 \x01(\v2-.dieter.gateway.v1.ProviderQuotaRefreshResultR\x1aproviderQuotaRefreshResult\x1a;\n" +
 	"\rMetadataEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01*\x82\x05\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01*\x98\x01\n" +
+	"\x15ProviderQuotaProvider\x12'\n" +
+	"#PROVIDER_QUOTA_PROVIDER_UNSPECIFIED\x10\x00\x12(\n" +
+	"$PROVIDER_QUOTA_PROVIDER_OPENAI_CODEX\x10\x01\x12,\n" +
+	"(PROVIDER_QUOTA_PROVIDER_ANTHROPIC_CLAUDE\x10\x02*\x83\x01\n" +
+	"\x13ProviderAccountKind\x12%\n" +
+	"!PROVIDER_ACCOUNT_KIND_UNSPECIFIED\x10\x00\x12&\n" +
+	"\"PROVIDER_ACCOUNT_KIND_SUBSCRIPTION\x10\x01\x12\x1d\n" +
+	"\x19PROVIDER_ACCOUNT_KIND_API\x10\x02*\xb8\x02\n" +
+	"\x19ProviderQuotaAvailability\x12+\n" +
+	"'PROVIDER_QUOTA_AVAILABILITY_UNSPECIFIED\x10\x00\x12)\n" +
+	"%PROVIDER_QUOTA_AVAILABILITY_AVAILABLE\x10\x01\x12*\n" +
+	"&PROVIDER_QUOTA_AVAILABILITY_SIGNED_OUT\x10\x02\x12+\n" +
+	"'PROVIDER_QUOTA_AVAILABILITY_UNSUPPORTED\x10\x03\x127\n" +
+	"3PROVIDER_QUOTA_AVAILABILITY_TEMPORARILY_UNAVAILABLE\x10\x04\x121\n" +
+	"-PROVIDER_QUOTA_AVAILABILITY_PERMISSION_DENIED\x10\x05*\x8a\x02\n" +
+	"\x17ProviderQuotaWindowKind\x12*\n" +
+	"&PROVIDER_QUOTA_WINDOW_KIND_UNSPECIFIED\x10\x00\x12(\n" +
+	"$PROVIDER_QUOTA_WINDOW_KIND_FIVE_HOUR\x10\x01\x12%\n" +
+	"!PROVIDER_QUOTA_WINDOW_KIND_WEEKLY\x10\x02\x12&\n" +
+	"\"PROVIDER_QUOTA_WINDOW_KIND_MONTHLY\x10\x03\x12$\n" +
+	" PROVIDER_QUOTA_WINDOW_KIND_MODEL\x10\x04\x12$\n" +
+	" PROVIDER_QUOTA_WINDOW_KIND_OTHER\x10\x05*\xf2\x01\n" +
+	"\x19ProviderQuotaRefreshState\x12,\n" +
+	"(PROVIDER_QUOTA_REFRESH_STATE_UNSPECIFIED\x10\x00\x12%\n" +
+	"!PROVIDER_QUOTA_REFRESH_STATE_IDLE\x10\x01\x12+\n" +
+	"'PROVIDER_QUOTA_REFRESH_STATE_REFRESHING\x10\x02\x12*\n" +
+	"&PROVIDER_QUOTA_REFRESH_STATE_THROTTLED\x10\x03\x12'\n" +
+	"#PROVIDER_QUOTA_REFRESH_STATE_FAILED\x10\x04*\x8a\x01\n" +
+	"\x16ProviderQuotaFreshness\x12(\n" +
+	"$PROVIDER_QUOTA_FRESHNESS_UNSPECIFIED\x10\x00\x12\"\n" +
+	"\x1ePROVIDER_QUOTA_FRESHNESS_FRESH\x10\x01\x12\"\n" +
+	"\x1ePROVIDER_QUOTA_FRESHNESS_STALE\x10\x02*\xa5\x06\n" +
 	"\x13DaemonLinkFrameKind\x12&\n" +
 	"\"DAEMON_LINK_FRAME_KIND_UNSPECIFIED\x10\x00\x12 \n" +
 	"\x1cDAEMON_LINK_FRAME_KIND_HELLO\x10\x01\x12$\n" +
@@ -1813,7 +3620,11 @@ const file_dieter_gateway_v1_gateway_proto_rawDesc = "" +
 	" DAEMON_LINK_FRAME_KIND_RPC_ERROR\x10\f\x12(\n" +
 	"$DAEMON_LINK_FRAME_KIND_WINDOW_UPDATE\x10\r\x12\x1f\n" +
 	"\x1bDAEMON_LINK_FRAME_KIND_PING\x10\x0e\x12\x1f\n" +
-	"\x1bDAEMON_LINK_FRAME_KIND_PONG\x10\x0f2\xef\a\n" +
+	"\x1bDAEMON_LINK_FRAME_KIND_PONG\x10\x0f\x12,\n" +
+	"(DAEMON_LINK_FRAME_KIND_PROVIDER_ACCOUNTS\x10\x10\x129\n" +
+	"5DAEMON_LINK_FRAME_KIND_PROVIDER_QUOTA_REFRESH_REQUEST\x10\x11\x128\n" +
+	"4DAEMON_LINK_FRAME_KIND_PROVIDER_QUOTA_REFRESH_RESULT\x10\x122\xce\n" +
+	"\n" +
 	"\x0eGatewayService\x12@\n" +
 	"\n" +
 	"GetAccount\x12\x16.google.protobuf.Empty\x1a\x1a.dieter.gateway.v1.Account\x12M\n" +
@@ -1826,7 +3637,10 @@ const file_dieter_gateway_v1_gateway_proto_rawDesc = "" +
 	"\fRevokeDaemon\x12\x1c.dieter.gateway.v1.DaemonRef\x1a\x16.google.protobuf.Empty\x12j\n" +
 	"\x13ExchangeDaemonToken\x12-.dieter.gateway.v1.ExchangeDaemonTokenRequest\x1a$.dieter.gateway.v1.DaemonAccessToken\x12R\n" +
 	"\x12ResolveDaemonRoute\x12\x1c.dieter.gateway.v1.DaemonRef\x1a\x1e.dieter.gateway.v1.DaemonRoute\x12X\n" +
-	"\x13GetRTCConfiguration\x12\x1c.dieter.gateway.v1.DaemonRef\x1a#.dieter.gateway.v1.RTCConfiguration2j\n" +
+	"\x13GetRTCConfiguration\x12\x1c.dieter.gateway.v1.DaemonRef\x1a#.dieter.gateway.v1.RTCConfiguration\x12q\n" +
+	"\x12ListProviderQuotas\x12,.dieter.gateway.v1.ListProviderQuotasRequest\x1a-.dieter.gateway.v1.ListProviderQuotasResponse\x12n\n" +
+	"\x13WatchProviderQuotas\x12-.dieter.gateway.v1.WatchProviderQuotasRequest\x1a&.dieter.gateway.v1.ProviderQuotaUpdate0\x01\x12z\n" +
+	"\x15RefreshProviderQuotas\x12/.dieter.gateway.v1.RefreshProviderQuotasRequest\x1a0.dieter.gateway.v1.RefreshProviderQuotasResponse2j\n" +
 	"\x11DaemonLinkService\x12U\n" +
 	"\aConnect\x12\".dieter.gateway.v1.DaemonLinkFrame\x1a\".dieter.gateway.v1.DaemonLinkFrame(\x010\x01Bw\n" +
 	"\x1ccom.dbpprt.dieter.gateway.v1B\x12DieterGatewayProtoP\x01ZAgithub.com/dbpprt/dieter/internal/gen/dieter/gateway/v1;gatewayv1b\x06proto3"
@@ -1843,76 +3657,137 @@ func file_dieter_gateway_v1_gateway_proto_rawDescGZIP() []byte {
 	return file_dieter_gateway_v1_gateway_proto_rawDescData
 }
 
-var file_dieter_gateway_v1_gateway_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_dieter_gateway_v1_gateway_proto_msgTypes = make([]protoimpl.MessageInfo, 22)
+var file_dieter_gateway_v1_gateway_proto_enumTypes = make([]protoimpl.EnumInfo, 7)
+var file_dieter_gateway_v1_gateway_proto_msgTypes = make([]protoimpl.MessageInfo, 40)
 var file_dieter_gateway_v1_gateway_proto_goTypes = []any{
-	(DaemonLinkFrameKind)(0),                // 0: dieter.gateway.v1.DaemonLinkFrameKind
-	(*Account)(nil),                         // 1: dieter.gateway.v1.Account
-	(*DaemonRef)(nil),                       // 2: dieter.gateway.v1.DaemonRef
-	(*Daemon)(nil),                          // 3: dieter.gateway.v1.Daemon
-	(*RemoteDesktopPresence)(nil),           // 4: dieter.gateway.v1.RemoteDesktopPresence
-	(*ListDaemonsResponse)(nil),             // 5: dieter.gateway.v1.ListDaemonsResponse
-	(*GatewayInformation)(nil),              // 6: dieter.gateway.v1.GatewayInformation
-	(*WatchDaemonsRequest)(nil),             // 7: dieter.gateway.v1.WatchDaemonsRequest
-	(*DaemonPresenceUpdate)(nil),            // 8: dieter.gateway.v1.DaemonPresenceUpdate
-	(*BeginDaemonEnrollmentRequest)(nil),    // 9: dieter.gateway.v1.BeginDaemonEnrollmentRequest
-	(*DaemonEnrollment)(nil),                // 10: dieter.gateway.v1.DaemonEnrollment
-	(*CompleteDaemonEnrollmentRequest)(nil), // 11: dieter.gateway.v1.CompleteDaemonEnrollmentRequest
-	(*UnenrollDaemonRequest)(nil),           // 12: dieter.gateway.v1.UnenrollDaemonRequest
-	(*DaemonCredential)(nil),                // 13: dieter.gateway.v1.DaemonCredential
-	(*RenameDaemonRequest)(nil),             // 14: dieter.gateway.v1.RenameDaemonRequest
-	(*ExchangeDaemonTokenRequest)(nil),      // 15: dieter.gateway.v1.ExchangeDaemonTokenRequest
-	(*DaemonAccessToken)(nil),               // 16: dieter.gateway.v1.DaemonAccessToken
-	(*DirectCandidate)(nil),                 // 17: dieter.gateway.v1.DirectCandidate
-	(*DaemonRoute)(nil),                     // 18: dieter.gateway.v1.DaemonRoute
-	(*RTCIceServer)(nil),                    // 19: dieter.gateway.v1.RTCIceServer
-	(*RTCConfiguration)(nil),                // 20: dieter.gateway.v1.RTCConfiguration
-	(*DaemonLinkFrame)(nil),                 // 21: dieter.gateway.v1.DaemonLinkFrame
-	nil,                                     // 22: dieter.gateway.v1.DaemonLinkFrame.MetadataEntry
-	(*emptypb.Empty)(nil),                   // 23: google.protobuf.Empty
+	(ProviderQuotaProvider)(0),              // 0: dieter.gateway.v1.ProviderQuotaProvider
+	(ProviderAccountKind)(0),                // 1: dieter.gateway.v1.ProviderAccountKind
+	(ProviderQuotaAvailability)(0),          // 2: dieter.gateway.v1.ProviderQuotaAvailability
+	(ProviderQuotaWindowKind)(0),            // 3: dieter.gateway.v1.ProviderQuotaWindowKind
+	(ProviderQuotaRefreshState)(0),          // 4: dieter.gateway.v1.ProviderQuotaRefreshState
+	(ProviderQuotaFreshness)(0),             // 5: dieter.gateway.v1.ProviderQuotaFreshness
+	(DaemonLinkFrameKind)(0),                // 6: dieter.gateway.v1.DaemonLinkFrameKind
+	(*Account)(nil),                         // 7: dieter.gateway.v1.Account
+	(*DaemonRef)(nil),                       // 8: dieter.gateway.v1.DaemonRef
+	(*Daemon)(nil),                          // 9: dieter.gateway.v1.Daemon
+	(*RemoteDesktopPresence)(nil),           // 10: dieter.gateway.v1.RemoteDesktopPresence
+	(*ListDaemonsResponse)(nil),             // 11: dieter.gateway.v1.ListDaemonsResponse
+	(*GatewayInformation)(nil),              // 12: dieter.gateway.v1.GatewayInformation
+	(*WatchDaemonsRequest)(nil),             // 13: dieter.gateway.v1.WatchDaemonsRequest
+	(*DaemonPresenceUpdate)(nil),            // 14: dieter.gateway.v1.DaemonPresenceUpdate
+	(*BeginDaemonEnrollmentRequest)(nil),    // 15: dieter.gateway.v1.BeginDaemonEnrollmentRequest
+	(*DaemonEnrollment)(nil),                // 16: dieter.gateway.v1.DaemonEnrollment
+	(*CompleteDaemonEnrollmentRequest)(nil), // 17: dieter.gateway.v1.CompleteDaemonEnrollmentRequest
+	(*UnenrollDaemonRequest)(nil),           // 18: dieter.gateway.v1.UnenrollDaemonRequest
+	(*DaemonCredential)(nil),                // 19: dieter.gateway.v1.DaemonCredential
+	(*RenameDaemonRequest)(nil),             // 20: dieter.gateway.v1.RenameDaemonRequest
+	(*ExchangeDaemonTokenRequest)(nil),      // 21: dieter.gateway.v1.ExchangeDaemonTokenRequest
+	(*DaemonAccessToken)(nil),               // 22: dieter.gateway.v1.DaemonAccessToken
+	(*DirectCandidate)(nil),                 // 23: dieter.gateway.v1.DirectCandidate
+	(*DaemonRoute)(nil),                     // 24: dieter.gateway.v1.DaemonRoute
+	(*RTCIceServer)(nil),                    // 25: dieter.gateway.v1.RTCIceServer
+	(*RTCConfiguration)(nil),                // 26: dieter.gateway.v1.RTCConfiguration
+	(*ProviderQuotaWindow)(nil),             // 27: dieter.gateway.v1.ProviderQuotaWindow
+	(*ProviderCreditBalance)(nil),           // 28: dieter.gateway.v1.ProviderCreditBalance
+	(*ProviderSpendAllowance)(nil),          // 29: dieter.gateway.v1.ProviderSpendAllowance
+	(*ProviderResetCredit)(nil),             // 30: dieter.gateway.v1.ProviderResetCredit
+	(*ProviderResetCredits)(nil),            // 31: dieter.gateway.v1.ProviderResetCredits
+	(*ProviderQuotaSnapshot)(nil),           // 32: dieter.gateway.v1.ProviderQuotaSnapshot
+	(*ProviderQuotaSummary)(nil),            // 33: dieter.gateway.v1.ProviderQuotaSummary
+	(*ProviderQuotaGroup)(nil),              // 34: dieter.gateway.v1.ProviderQuotaGroup
+	(*ListProviderQuotasRequest)(nil),       // 35: dieter.gateway.v1.ListProviderQuotasRequest
+	(*ListProviderQuotasResponse)(nil),      // 36: dieter.gateway.v1.ListProviderQuotasResponse
+	(*WatchProviderQuotasRequest)(nil),      // 37: dieter.gateway.v1.WatchProviderQuotasRequest
+	(*ProviderQuotaUpdate)(nil),             // 38: dieter.gateway.v1.ProviderQuotaUpdate
+	(*RefreshProviderQuotasRequest)(nil),    // 39: dieter.gateway.v1.RefreshProviderQuotasRequest
+	(*RefreshProviderQuotasResponse)(nil),   // 40: dieter.gateway.v1.RefreshProviderQuotasResponse
+	(*ProviderAccountPresence)(nil),         // 41: dieter.gateway.v1.ProviderAccountPresence
+	(*ProviderAccountsPresence)(nil),        // 42: dieter.gateway.v1.ProviderAccountsPresence
+	(*ProviderQuotaRefreshRequest)(nil),     // 43: dieter.gateway.v1.ProviderQuotaRefreshRequest
+	(*ProviderQuotaRefreshResult)(nil),      // 44: dieter.gateway.v1.ProviderQuotaRefreshResult
+	(*DaemonLinkFrame)(nil),                 // 45: dieter.gateway.v1.DaemonLinkFrame
+	nil,                                     // 46: dieter.gateway.v1.DaemonLinkFrame.MetadataEntry
+	(*emptypb.Empty)(nil),                   // 47: google.protobuf.Empty
 }
 var file_dieter_gateway_v1_gateway_proto_depIdxs = []int32{
-	17, // 0: dieter.gateway.v1.Daemon.direct_candidates:type_name -> dieter.gateway.v1.DirectCandidate
-	4,  // 1: dieter.gateway.v1.Daemon.remote_desktop:type_name -> dieter.gateway.v1.RemoteDesktopPresence
-	3,  // 2: dieter.gateway.v1.ListDaemonsResponse.daemons:type_name -> dieter.gateway.v1.Daemon
-	6,  // 3: dieter.gateway.v1.ListDaemonsResponse.gateway_information:type_name -> dieter.gateway.v1.GatewayInformation
-	3,  // 4: dieter.gateway.v1.DaemonPresenceUpdate.daemons:type_name -> dieter.gateway.v1.Daemon
-	6,  // 5: dieter.gateway.v1.DaemonPresenceUpdate.gateway_information:type_name -> dieter.gateway.v1.GatewayInformation
-	17, // 6: dieter.gateway.v1.DaemonRoute.direct_candidates:type_name -> dieter.gateway.v1.DirectCandidate
-	19, // 7: dieter.gateway.v1.RTCConfiguration.ice_servers:type_name -> dieter.gateway.v1.RTCIceServer
-	0,  // 8: dieter.gateway.v1.DaemonLinkFrame.kind:type_name -> dieter.gateway.v1.DaemonLinkFrameKind
-	22, // 9: dieter.gateway.v1.DaemonLinkFrame.metadata:type_name -> dieter.gateway.v1.DaemonLinkFrame.MetadataEntry
-	17, // 10: dieter.gateway.v1.DaemonLinkFrame.direct_candidates:type_name -> dieter.gateway.v1.DirectCandidate
-	4,  // 11: dieter.gateway.v1.DaemonLinkFrame.remote_desktop:type_name -> dieter.gateway.v1.RemoteDesktopPresence
-	23, // 12: dieter.gateway.v1.GatewayService.GetAccount:input_type -> google.protobuf.Empty
-	23, // 13: dieter.gateway.v1.GatewayService.ListDaemons:input_type -> google.protobuf.Empty
-	7,  // 14: dieter.gateway.v1.GatewayService.WatchDaemons:input_type -> dieter.gateway.v1.WatchDaemonsRequest
-	9,  // 15: dieter.gateway.v1.GatewayService.BeginDaemonEnrollment:input_type -> dieter.gateway.v1.BeginDaemonEnrollmentRequest
-	11, // 16: dieter.gateway.v1.GatewayService.CompleteDaemonEnrollment:input_type -> dieter.gateway.v1.CompleteDaemonEnrollmentRequest
-	12, // 17: dieter.gateway.v1.GatewayService.UnenrollDaemon:input_type -> dieter.gateway.v1.UnenrollDaemonRequest
-	14, // 18: dieter.gateway.v1.GatewayService.RenameDaemon:input_type -> dieter.gateway.v1.RenameDaemonRequest
-	2,  // 19: dieter.gateway.v1.GatewayService.RevokeDaemon:input_type -> dieter.gateway.v1.DaemonRef
-	15, // 20: dieter.gateway.v1.GatewayService.ExchangeDaemonToken:input_type -> dieter.gateway.v1.ExchangeDaemonTokenRequest
-	2,  // 21: dieter.gateway.v1.GatewayService.ResolveDaemonRoute:input_type -> dieter.gateway.v1.DaemonRef
-	2,  // 22: dieter.gateway.v1.GatewayService.GetRTCConfiguration:input_type -> dieter.gateway.v1.DaemonRef
-	21, // 23: dieter.gateway.v1.DaemonLinkService.Connect:input_type -> dieter.gateway.v1.DaemonLinkFrame
-	1,  // 24: dieter.gateway.v1.GatewayService.GetAccount:output_type -> dieter.gateway.v1.Account
-	5,  // 25: dieter.gateway.v1.GatewayService.ListDaemons:output_type -> dieter.gateway.v1.ListDaemonsResponse
-	8,  // 26: dieter.gateway.v1.GatewayService.WatchDaemons:output_type -> dieter.gateway.v1.DaemonPresenceUpdate
-	10, // 27: dieter.gateway.v1.GatewayService.BeginDaemonEnrollment:output_type -> dieter.gateway.v1.DaemonEnrollment
-	13, // 28: dieter.gateway.v1.GatewayService.CompleteDaemonEnrollment:output_type -> dieter.gateway.v1.DaemonCredential
-	23, // 29: dieter.gateway.v1.GatewayService.UnenrollDaemon:output_type -> google.protobuf.Empty
-	3,  // 30: dieter.gateway.v1.GatewayService.RenameDaemon:output_type -> dieter.gateway.v1.Daemon
-	23, // 31: dieter.gateway.v1.GatewayService.RevokeDaemon:output_type -> google.protobuf.Empty
-	16, // 32: dieter.gateway.v1.GatewayService.ExchangeDaemonToken:output_type -> dieter.gateway.v1.DaemonAccessToken
-	18, // 33: dieter.gateway.v1.GatewayService.ResolveDaemonRoute:output_type -> dieter.gateway.v1.DaemonRoute
-	20, // 34: dieter.gateway.v1.GatewayService.GetRTCConfiguration:output_type -> dieter.gateway.v1.RTCConfiguration
-	21, // 35: dieter.gateway.v1.DaemonLinkService.Connect:output_type -> dieter.gateway.v1.DaemonLinkFrame
-	24, // [24:36] is the sub-list for method output_type
-	12, // [12:24] is the sub-list for method input_type
-	12, // [12:12] is the sub-list for extension type_name
-	12, // [12:12] is the sub-list for extension extendee
-	0,  // [0:12] is the sub-list for field type_name
+	23, // 0: dieter.gateway.v1.Daemon.direct_candidates:type_name -> dieter.gateway.v1.DirectCandidate
+	10, // 1: dieter.gateway.v1.Daemon.remote_desktop:type_name -> dieter.gateway.v1.RemoteDesktopPresence
+	9,  // 2: dieter.gateway.v1.ListDaemonsResponse.daemons:type_name -> dieter.gateway.v1.Daemon
+	12, // 3: dieter.gateway.v1.ListDaemonsResponse.gateway_information:type_name -> dieter.gateway.v1.GatewayInformation
+	9,  // 4: dieter.gateway.v1.DaemonPresenceUpdate.daemons:type_name -> dieter.gateway.v1.Daemon
+	12, // 5: dieter.gateway.v1.DaemonPresenceUpdate.gateway_information:type_name -> dieter.gateway.v1.GatewayInformation
+	23, // 6: dieter.gateway.v1.DaemonRoute.direct_candidates:type_name -> dieter.gateway.v1.DirectCandidate
+	25, // 7: dieter.gateway.v1.RTCConfiguration.ice_servers:type_name -> dieter.gateway.v1.RTCIceServer
+	3,  // 8: dieter.gateway.v1.ProviderQuotaWindow.kind:type_name -> dieter.gateway.v1.ProviderQuotaWindowKind
+	30, // 9: dieter.gateway.v1.ProviderResetCredits.details:type_name -> dieter.gateway.v1.ProviderResetCredit
+	0,  // 10: dieter.gateway.v1.ProviderQuotaSnapshot.provider:type_name -> dieter.gateway.v1.ProviderQuotaProvider
+	1,  // 11: dieter.gateway.v1.ProviderQuotaSnapshot.account_kind:type_name -> dieter.gateway.v1.ProviderAccountKind
+	2,  // 12: dieter.gateway.v1.ProviderQuotaSnapshot.availability:type_name -> dieter.gateway.v1.ProviderQuotaAvailability
+	27, // 13: dieter.gateway.v1.ProviderQuotaSnapshot.windows:type_name -> dieter.gateway.v1.ProviderQuotaWindow
+	28, // 14: dieter.gateway.v1.ProviderQuotaSnapshot.credits:type_name -> dieter.gateway.v1.ProviderCreditBalance
+	29, // 15: dieter.gateway.v1.ProviderQuotaSnapshot.spend_allowance:type_name -> dieter.gateway.v1.ProviderSpendAllowance
+	31, // 16: dieter.gateway.v1.ProviderQuotaSnapshot.reset_credits:type_name -> dieter.gateway.v1.ProviderResetCredits
+	4,  // 17: dieter.gateway.v1.ProviderQuotaSnapshot.refresh_state:type_name -> dieter.gateway.v1.ProviderQuotaRefreshState
+	3,  // 18: dieter.gateway.v1.ProviderQuotaSummary.summary_window_kind:type_name -> dieter.gateway.v1.ProviderQuotaWindowKind
+	5,  // 19: dieter.gateway.v1.ProviderQuotaSummary.freshness:type_name -> dieter.gateway.v1.ProviderQuotaFreshness
+	0,  // 20: dieter.gateway.v1.ProviderQuotaGroup.provider:type_name -> dieter.gateway.v1.ProviderQuotaProvider
+	32, // 21: dieter.gateway.v1.ProviderQuotaGroup.accounts:type_name -> dieter.gateway.v1.ProviderQuotaSnapshot
+	33, // 22: dieter.gateway.v1.ProviderQuotaGroup.summary:type_name -> dieter.gateway.v1.ProviderQuotaSummary
+	0,  // 23: dieter.gateway.v1.ListProviderQuotasRequest.provider:type_name -> dieter.gateway.v1.ProviderQuotaProvider
+	34, // 24: dieter.gateway.v1.ListProviderQuotasResponse.groups:type_name -> dieter.gateway.v1.ProviderQuotaGroup
+	12, // 25: dieter.gateway.v1.ListProviderQuotasResponse.gateway_information:type_name -> dieter.gateway.v1.GatewayInformation
+	0,  // 26: dieter.gateway.v1.WatchProviderQuotasRequest.provider:type_name -> dieter.gateway.v1.ProviderQuotaProvider
+	34, // 27: dieter.gateway.v1.ProviderQuotaUpdate.groups:type_name -> dieter.gateway.v1.ProviderQuotaGroup
+	0,  // 28: dieter.gateway.v1.RefreshProviderQuotasRequest.provider:type_name -> dieter.gateway.v1.ProviderQuotaProvider
+	34, // 29: dieter.gateway.v1.RefreshProviderQuotasResponse.groups:type_name -> dieter.gateway.v1.ProviderQuotaGroup
+	0,  // 30: dieter.gateway.v1.ProviderAccountPresence.provider:type_name -> dieter.gateway.v1.ProviderQuotaProvider
+	1,  // 31: dieter.gateway.v1.ProviderAccountPresence.account_kind:type_name -> dieter.gateway.v1.ProviderAccountKind
+	2,  // 32: dieter.gateway.v1.ProviderAccountPresence.availability:type_name -> dieter.gateway.v1.ProviderQuotaAvailability
+	41, // 33: dieter.gateway.v1.ProviderAccountsPresence.accounts:type_name -> dieter.gateway.v1.ProviderAccountPresence
+	0,  // 34: dieter.gateway.v1.ProviderQuotaRefreshRequest.provider:type_name -> dieter.gateway.v1.ProviderQuotaProvider
+	32, // 35: dieter.gateway.v1.ProviderQuotaRefreshResult.snapshot:type_name -> dieter.gateway.v1.ProviderQuotaSnapshot
+	6,  // 36: dieter.gateway.v1.DaemonLinkFrame.kind:type_name -> dieter.gateway.v1.DaemonLinkFrameKind
+	46, // 37: dieter.gateway.v1.DaemonLinkFrame.metadata:type_name -> dieter.gateway.v1.DaemonLinkFrame.MetadataEntry
+	23, // 38: dieter.gateway.v1.DaemonLinkFrame.direct_candidates:type_name -> dieter.gateway.v1.DirectCandidate
+	10, // 39: dieter.gateway.v1.DaemonLinkFrame.remote_desktop:type_name -> dieter.gateway.v1.RemoteDesktopPresence
+	42, // 40: dieter.gateway.v1.DaemonLinkFrame.provider_accounts:type_name -> dieter.gateway.v1.ProviderAccountsPresence
+	43, // 41: dieter.gateway.v1.DaemonLinkFrame.provider_quota_refresh_request:type_name -> dieter.gateway.v1.ProviderQuotaRefreshRequest
+	44, // 42: dieter.gateway.v1.DaemonLinkFrame.provider_quota_refresh_result:type_name -> dieter.gateway.v1.ProviderQuotaRefreshResult
+	47, // 43: dieter.gateway.v1.GatewayService.GetAccount:input_type -> google.protobuf.Empty
+	47, // 44: dieter.gateway.v1.GatewayService.ListDaemons:input_type -> google.protobuf.Empty
+	13, // 45: dieter.gateway.v1.GatewayService.WatchDaemons:input_type -> dieter.gateway.v1.WatchDaemonsRequest
+	15, // 46: dieter.gateway.v1.GatewayService.BeginDaemonEnrollment:input_type -> dieter.gateway.v1.BeginDaemonEnrollmentRequest
+	17, // 47: dieter.gateway.v1.GatewayService.CompleteDaemonEnrollment:input_type -> dieter.gateway.v1.CompleteDaemonEnrollmentRequest
+	18, // 48: dieter.gateway.v1.GatewayService.UnenrollDaemon:input_type -> dieter.gateway.v1.UnenrollDaemonRequest
+	20, // 49: dieter.gateway.v1.GatewayService.RenameDaemon:input_type -> dieter.gateway.v1.RenameDaemonRequest
+	8,  // 50: dieter.gateway.v1.GatewayService.RevokeDaemon:input_type -> dieter.gateway.v1.DaemonRef
+	21, // 51: dieter.gateway.v1.GatewayService.ExchangeDaemonToken:input_type -> dieter.gateway.v1.ExchangeDaemonTokenRequest
+	8,  // 52: dieter.gateway.v1.GatewayService.ResolveDaemonRoute:input_type -> dieter.gateway.v1.DaemonRef
+	8,  // 53: dieter.gateway.v1.GatewayService.GetRTCConfiguration:input_type -> dieter.gateway.v1.DaemonRef
+	35, // 54: dieter.gateway.v1.GatewayService.ListProviderQuotas:input_type -> dieter.gateway.v1.ListProviderQuotasRequest
+	37, // 55: dieter.gateway.v1.GatewayService.WatchProviderQuotas:input_type -> dieter.gateway.v1.WatchProviderQuotasRequest
+	39, // 56: dieter.gateway.v1.GatewayService.RefreshProviderQuotas:input_type -> dieter.gateway.v1.RefreshProviderQuotasRequest
+	45, // 57: dieter.gateway.v1.DaemonLinkService.Connect:input_type -> dieter.gateway.v1.DaemonLinkFrame
+	7,  // 58: dieter.gateway.v1.GatewayService.GetAccount:output_type -> dieter.gateway.v1.Account
+	11, // 59: dieter.gateway.v1.GatewayService.ListDaemons:output_type -> dieter.gateway.v1.ListDaemonsResponse
+	14, // 60: dieter.gateway.v1.GatewayService.WatchDaemons:output_type -> dieter.gateway.v1.DaemonPresenceUpdate
+	16, // 61: dieter.gateway.v1.GatewayService.BeginDaemonEnrollment:output_type -> dieter.gateway.v1.DaemonEnrollment
+	19, // 62: dieter.gateway.v1.GatewayService.CompleteDaemonEnrollment:output_type -> dieter.gateway.v1.DaemonCredential
+	47, // 63: dieter.gateway.v1.GatewayService.UnenrollDaemon:output_type -> google.protobuf.Empty
+	9,  // 64: dieter.gateway.v1.GatewayService.RenameDaemon:output_type -> dieter.gateway.v1.Daemon
+	47, // 65: dieter.gateway.v1.GatewayService.RevokeDaemon:output_type -> google.protobuf.Empty
+	22, // 66: dieter.gateway.v1.GatewayService.ExchangeDaemonToken:output_type -> dieter.gateway.v1.DaemonAccessToken
+	24, // 67: dieter.gateway.v1.GatewayService.ResolveDaemonRoute:output_type -> dieter.gateway.v1.DaemonRoute
+	26, // 68: dieter.gateway.v1.GatewayService.GetRTCConfiguration:output_type -> dieter.gateway.v1.RTCConfiguration
+	36, // 69: dieter.gateway.v1.GatewayService.ListProviderQuotas:output_type -> dieter.gateway.v1.ListProviderQuotasResponse
+	38, // 70: dieter.gateway.v1.GatewayService.WatchProviderQuotas:output_type -> dieter.gateway.v1.ProviderQuotaUpdate
+	40, // 71: dieter.gateway.v1.GatewayService.RefreshProviderQuotas:output_type -> dieter.gateway.v1.RefreshProviderQuotasResponse
+	45, // 72: dieter.gateway.v1.DaemonLinkService.Connect:output_type -> dieter.gateway.v1.DaemonLinkFrame
+	58, // [58:73] is the sub-list for method output_type
+	43, // [43:58] is the sub-list for method input_type
+	43, // [43:43] is the sub-list for extension type_name
+	43, // [43:43] is the sub-list for extension extendee
+	0,  // [0:43] is the sub-list for field type_name
 }
 
 func init() { file_dieter_gateway_v1_gateway_proto_init() }
@@ -1920,13 +3795,18 @@ func file_dieter_gateway_v1_gateway_proto_init() {
 	if File_dieter_gateway_v1_gateway_proto != nil {
 		return
 	}
+	file_dieter_gateway_v1_gateway_proto_msgTypes[20].OneofWrappers = []any{}
+	file_dieter_gateway_v1_gateway_proto_msgTypes[21].OneofWrappers = []any{}
+	file_dieter_gateway_v1_gateway_proto_msgTypes[22].OneofWrappers = []any{}
+	file_dieter_gateway_v1_gateway_proto_msgTypes[25].OneofWrappers = []any{}
+	file_dieter_gateway_v1_gateway_proto_msgTypes[26].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_dieter_gateway_v1_gateway_proto_rawDesc), len(file_dieter_gateway_v1_gateway_proto_rawDesc)),
-			NumEnums:      1,
-			NumMessages:   22,
+			NumEnums:      7,
+			NumMessages:   40,
 			NumExtensions: 0,
 			NumServices:   2,
 		},

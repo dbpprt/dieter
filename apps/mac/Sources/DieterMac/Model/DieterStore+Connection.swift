@@ -235,6 +235,7 @@ extension DieterStore {
             // Refreshing auxiliary machines must not hold this connect attempt
             // (and its reconnect task) open on an unrelated half-open RPC.
             startMachineDirectoryRefresh(refreshImmediately: true)
+            Task { [weak self] in await self?.loadProviderQuotas() }
             if section == .terminals { await loadTerminals() }
         } catch {
             gatewayTask?.cancel()
@@ -773,6 +774,9 @@ extension DieterStore {
         terminalError = nil
         archiveError = nil
         schedulesError = nil
+        providerQuotaGroups.removeAll()
+        providerQuotasLoading = false
+        providerQuotaError = nil
         closeConversation()
         syncProjection = .empty
         syncSnapshot = nil
@@ -1127,6 +1131,13 @@ extension DieterStore {
             if directory.hasGatewayInformation {
                 gatewayInformation[origin.credentialID] = directory.gatewayInformation
             }
+            if let quotas = try? await client.providerQuotas(), !Task.isCancelled,
+                generation == connectionGeneration,
+                origin.credentialID == activeGateway.credentialID
+            {
+                providerQuotaGroups = quotas.groups
+                providerQuotaError = nil
+            }
             let previous = Dictionary(
                 uniqueKeysWithValues: endpoints.compactMap { item in item.daemonID.map { ($0, item) } })
             endpoints = directory.daemons.map { daemon in
@@ -1158,6 +1169,44 @@ extension DieterStore {
             }
         } catch {
             // Keep the last known directory during a transient gateway loss.
+        }
+    }
+
+    func loadProviderQuotas(requestRefresh: Bool = false) async {
+        guard !providerQuotasLoading else { return }
+        let generation = connectionGeneration
+        guard
+            let origin = gatewayOrigins.first(where: { $0.credentialID == activeGateway.credentialID })
+                ?? gatewayOrigins.first
+        else { return }
+        providerQuotasLoading = true
+        defer {
+            if origin.credentialID == activeGateway.credentialID { providerQuotasLoading = false }
+        }
+        do {
+            let client = try environment.clients.client(
+                endpoint: origin, accessToken: await accessToken(for: origin))
+            let runner = Task { try? await client.run() }
+            defer {
+                runner.cancel()
+                client.shutdown()
+            }
+            let groups =
+                if requestRefresh {
+                    try await client.refreshProviderQuotas().groups
+                } else {
+                    try await client.providerQuotas().groups
+                }
+            guard !Task.isCancelled, generation == connectionGeneration,
+                origin.credentialID == activeGateway.credentialID
+            else { return }
+            providerQuotaGroups = groups
+            providerQuotaError = nil
+        } catch {
+            guard generation == connectionGeneration,
+                origin.credentialID == activeGateway.credentialID
+            else { return }
+            providerQuotaError = DieterRPCFailure.message(for: error)
         }
     }
 
