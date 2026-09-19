@@ -813,6 +813,30 @@
             }
         }
 
+        func readConversationImage(projectID: String, cardID: String, url: URL) async -> Dieter_V1_FileDocument? {
+            guard let rpc = dataPlane?.rpc, RemoteWorkspaceImage.isWorkspaceImageURL(url) else { return nil }
+            let attempt = connectionID
+            do {
+                let path: String
+                if let relative = RemoteWorkspaceImage.relativePath(from: url) {
+                    path = relative
+                } else {
+                    let workspace = try await rpc.workspace(cardID: cardID)
+                    guard owns(attempt),
+                        let relative = RemoteWorkspaceImage.relativePath(from: url, workspaceRoot: workspace.path)
+                    else { return nil }
+                    path = relative
+                }
+                var request = Dieter_V1_ReadFileRequest()
+                request.projectID = projectID; request.cardID = cardID; request.path = path
+                let value = try await rpc.readFile(request)
+                return owns(attempt) ? value : nil
+            } catch {
+                if owns(attempt) { errorMessage = IOSUserError.message(error) }
+                return nil
+            }
+        }
+
         func saveFile(projectID: String, cardID: String = "", document: Dieter_V1_FileDocument, content: String) async
             -> Dieter_V1_FileDocument?
         {

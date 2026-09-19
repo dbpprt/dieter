@@ -2,6 +2,7 @@
 
 package com.dbpprt.dieter.ui
 
+import android.graphics.BitmapFactory
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloat
@@ -19,6 +20,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
@@ -35,15 +37,18 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.outlined.Cancel
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.ChevronRight
+import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.Terminal
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
@@ -65,7 +70,9 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextLinkStyles
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
@@ -73,15 +80,20 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withLink
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.dbpprt.dieter.ui.theme.DieterEyes
 import com.dbpprt.dieter.ui.theme.DieterShell
 import com.dbpprt.dieter.ui.theme.DieterMuted
 import com.dbpprt.dieter.ui.theme.DieterOutline
+import com.dbpprt.dieter.ui.theme.DieterShellTint
 import com.dbpprt.dieter.ui.theme.DieterSurfaceHigh
-import com.dbpprt.dieter.v1.Schedule
 import com.dbpprt.dieter.v1.MessagePart
+import com.dbpprt.dieter.v1.Schedule
 import com.dbpprt.dieter.v1.Subagent
 import com.dbpprt.dieter.v1.TaskPlan
 import com.dbpprt.dieter.v1.UiMessage
@@ -90,8 +102,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.net.URI
 import java.nio.charset.StandardCharsets
-import com.dbpprt.dieter.ui.theme.DieterShellTint
 
 @Composable
 internal fun MessageParts(
@@ -102,6 +114,7 @@ internal fun MessageParts(
     plan: TaskPlan? = null,
     subagents: List<Subagent> = emptyList(),
 ) {
+    var previewPath by remember(message.id) { mutableStateOf<String?>(null) }
     val timeline = remember(message, subagents, plan, showReasoningTraces) {
         buildConversationTimeline(
             parts = message.partsList,
@@ -124,15 +137,20 @@ internal fun MessageParts(
                 item.part.conversationPartPresentation(showReasoningTraces)
             ) {
                 ConversationPartPresentation.TEXT -> SelectionContainer {
-                    MessageMarkdown(item.part.text, compact)
+                    MessageMarkdown(item.part.text, compact) { previewPath = it }
                 }
                 ConversationPartPresentation.REASONING -> ReasoningPart(item.part.text)
                 ConversationPartPresentation.FILE -> AttachmentPart(item.part)
-                ConversationPartPresentation.FALLBACK_TEXT -> MessageMarkdown(item.part.text, compact)
+                ConversationPartPresentation.FALLBACK_TEXT -> MessageMarkdown(item.part.text, compact) {
+                    previewPath = it
+                }
                 ConversationPartPresentation.TOOL,
                 ConversationPartPresentation.HIDDEN -> Unit
             }
         }
+    }
+    previewPath?.let { path ->
+        ConversationImageLightbox(path = path, model = model, onDismiss = { previewPath = null })
     }
 }
 
@@ -259,7 +277,7 @@ private fun markdownTableDelimiter(value: String): List<MessageMarkdownAlignment
 }
 
 @Composable
-internal fun MessageMarkdown(value: String, compact: Boolean) {
+internal fun MessageMarkdown(value: String, compact: Boolean, onImageLink: ((String) -> Unit)? = null) {
     val blocks = remember(value) { parseMessageMarkdown(value) }
     Column(verticalArrangement = Arrangement.spacedBy(if (compact) 2.dp else 7.dp)) {
         blocks.forEach { block ->
@@ -277,7 +295,7 @@ internal fun MessageMarkdown(value: String, compact: Boolean) {
                     )
                 }
             } else {
-                val inline = remember(block.text) { markdownInlineText(block.text) }
+                val inline = remember(block.text, onImageLink) { markdownInlineText(block.text, onImageLink) }
                 Text(
                     inline,
                     fontSize = if (block.headingLevel > 0) 15.sp else 14.sp,
@@ -348,22 +366,167 @@ private fun MarkdownTableRow(
 
 internal val inlineMarkdownPattern = Regex("(\\*\\*([^*]+)\\*\\*|`([^`]+)`|\\[([^]]+)]\\(([^)]+)\\))")
 
-internal fun markdownInlineText(value: String): AnnotatedString = buildAnnotatedString {
+private val conversationImageExtensions = setOf(
+    "apng", "avif", "bmp", "gif", "heic", "heif", "ico", "jpeg", "jpg", "png", "tif", "tiff", "webp",
+)
+
+internal fun conversationImagePath(destination: String): String? {
+    return conversationImagePath(destination, workspaceRoot = null)
+}
+
+internal fun conversationImagePath(destination: String, workspaceRoot: String?): String? {
+    val uri = conversationImageURI(destination) ?: return null
+    val rawPath = uri.rawPath ?: return null
+    if (uri.scheme != null && !uri.scheme.equals("file", ignoreCase = true)) return null
+    if (uri.host != null && uri.host.isNotEmpty() && !uri.host.equals("localhost", ignoreCase = true)) return null
+    val decoded = uri.path ?: return null
+    if (decoded.isBlank() || '\\' in decoded || decoded.any(Char::isISOControl)) return null
+    if (decoded.substringAfterLast('.', "").lowercase() !in conversationImageExtensions) return null
+    if (!rawPath.startsWith('/')) {
+        val components = decoded.split('/').filter { it.isNotEmpty() && it != "." }
+        if (components.isEmpty() || components.any { it == ".." }) return null
+        return components.joinToString("/")
+    }
+    val root = workspaceRoot?.let(::normalizedAbsoluteRemotePath) ?: return null
+    val candidate = normalizedAbsoluteRemotePath(decoded) ?: return null
+    if (candidate.size <= root.size || candidate.take(root.size) != root) return null
+    return candidate.drop(root.size).joinToString("/")
+}
+
+private fun normalizedAbsoluteRemotePath(value: String): List<String>? {
+    if (!value.startsWith('/') || '\\' in value || value.any(Char::isISOControl)) return null
+    val components = mutableListOf<String>()
+    value.split('/').filter(String::isNotEmpty).forEach { component ->
+        when (component) {
+            "." -> Unit
+            ".." -> if (components.isEmpty()) return null else components.removeAt(components.lastIndex)
+            else -> components += component
+        }
+    }
+    return components.takeIf { it.isNotEmpty() }
+}
+
+internal fun conversationImageDestination(destination: String): String? {
+    val uri = conversationImageURI(destination) ?: return null
+    if (uri.scheme != null && !uri.scheme.equals("file", ignoreCase = true)) return null
+    if (uri.host != null && uri.host.isNotEmpty() && !uri.host.equals("localhost", ignoreCase = true)) return null
+    val path = uri.path ?: return null
+    return uri.toASCIIString().takeIf { path.substringAfterLast('.', "").lowercase() in conversationImageExtensions }
+}
+
+private fun conversationImageURI(destination: String): URI? {
+    val trimmed = destination.trim()
+    val value = if (trimmed.startsWith('<') && trimmed.endsWith('>')) trimmed.drop(1).dropLast(1) else trimmed
+    return runCatching { URI(value) }.getOrElse {
+        if ("://" in value) null else runCatching { URI(null, null, value, null) }.getOrNull()
+    }
+}
+
+internal fun markdownInlineText(value: String, onImageLink: ((String) -> Unit)? = null): AnnotatedString = buildAnnotatedString {
     var cursor = 0
     inlineMarkdownPattern.findAll(value).forEach { match ->
         append(value.substring(cursor, match.range.first))
         when {
-            match.groupValues[2].isNotEmpty() -> pushStyle(SpanStyle(fontWeight = FontWeight.SemiBold))
-            match.groupValues[3].isNotEmpty() -> pushStyle(
+            match.groupValues[2].isNotEmpty() -> withStyle(SpanStyle(fontWeight = FontWeight.SemiBold)) {
+                append(match.groupValues[2])
+            }
+            match.groupValues[3].isNotEmpty() -> withStyle(
                 SpanStyle(color = DieterShell, background = DieterSurfaceHigh, fontFamily = FontFamily.Monospace),
-            )
-            else -> pushStyle(SpanStyle(color = DieterShell, textDecoration = TextDecoration.Underline))
+            ) { append(match.groupValues[3]) }
+            else -> {
+                val label = match.groupValues[4]
+                val destination = conversationImageDestination(match.groupValues[5])
+                val style = SpanStyle(color = DieterShell, textDecoration = TextDecoration.Underline)
+                if (destination != null && onImageLink != null) {
+                    withLink(
+                        LinkAnnotation.Clickable(
+                            tag = destination,
+                            styles = TextLinkStyles(style = style),
+                            linkInteractionListener = { onImageLink(destination) },
+                        ),
+                    ) { append(label) }
+                } else {
+                    withStyle(style) { append(label) }
+                }
+            }
         }
-        append(match.groupValues[2].ifEmpty { match.groupValues[3].ifEmpty { match.groupValues[4] } })
-        pop()
         cursor = match.range.last + 1
     }
     append(value.substring(cursor))
+}
+
+@Composable
+private fun ConversationImageLightbox(path: String, model: DieterViewModel, onDismiss: () -> Unit) {
+    var document by remember(path) { mutableStateOf<com.dbpprt.dieter.v1.FileDocument?>(null) }
+    var loaded by remember(path) { mutableStateOf(false) }
+    var bitmap by remember(path) { mutableStateOf<ImageBitmap?>(null) }
+    LaunchedEffect(path) {
+        document = model.readConversationImage(path)
+        bitmap = document?.let { value ->
+            val bytes = if (value.binary) value.data.toByteArray() else value.content.toByteArray()
+            withContext(Dispatchers.Default) { decodeConversationImage(bytes) }?.asImageBitmap()
+        }
+        loaded = true
+    }
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
+    ) {
+        Box(
+            Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color.Black)
+                .testTag("conversation-image-lightbox"),
+        ) {
+            when {
+                bitmap != null -> Image(
+                    bitmap = bitmap,
+                    contentDescription = document?.name ?: path.substringAfterLast('/'),
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier.fillMaxSize().padding(12.dp),
+                )
+                !loaded -> CircularProgressIndicator(
+                    Modifier.align(Alignment.Center),
+                    color = androidx.compose.ui.graphics.Color.White,
+                )
+                else -> Text(
+                    "This image could not be displayed.",
+                    color = androidx.compose.ui.graphics.Color.White,
+                    modifier = Modifier.align(Alignment.Center),
+                )
+            }
+            Text(
+                document?.name ?: path.substringAfterLast('/'),
+                color = androidx.compose.ui.graphics.Color.White,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.align(Alignment.TopStart).padding(20.dp),
+            )
+            IconButton(
+                onClick = onDismiss,
+                modifier = Modifier.align(Alignment.TopEnd).padding(8.dp).testTag("conversation-image-close"),
+            ) {
+                Icon(
+                    Icons.Outlined.Close,
+                    contentDescription = "Close image",
+                    tint = androidx.compose.ui.graphics.Color.White,
+                )
+            }
+        }
+    }
+}
+
+private fun decodeConversationImage(bytes: ByteArray, maxDimension: Int = 2400): android.graphics.Bitmap? {
+    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+    var sample = 1
+    while (bounds.outWidth / sample > maxDimension * 2 || bounds.outHeight / sample > maxDimension * 2) {
+        sample *= 2
+    }
+    return BitmapFactory.decodeByteArray(
+        bytes,
+        0,
+        bytes.size,
+        BitmapFactory.Options().apply { inSampleSize = sample },
+    )
 }
 
 @Composable

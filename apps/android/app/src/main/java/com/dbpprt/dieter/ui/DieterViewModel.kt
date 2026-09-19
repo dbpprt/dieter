@@ -1984,6 +1984,33 @@ class DieterViewModel internal constructor(
         _state.update { it.copy(fileDocument = document, fileDraft = document.content, fileDirty = false) }
     }
 
+    suspend fun readConversationImage(destination: String): FileDocument? {
+        val initial = _state.value
+        val projectId = initial.selectedProjectId
+        val cardId = initial.selectedCardId ?: return null
+        if (projectId.isBlank()) return null
+        return try {
+            connectionManager.ensureProjectRoute(projectId)
+            val path = conversationImagePath(destination) ?: run {
+                val workspace = repository.workspace(cardId)
+                conversationImagePath(destination, workspace.path)
+            } ?: return null
+            val document = repository.readFile(projectId, path, cardId)
+            document.takeIf {
+                val current = _state.value
+                current.selectedProjectId == projectId && current.selectedCardId == cardId
+            }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Throwable) {
+            val current = _state.value
+            if (current.selectedProjectId == projectId && current.selectedCardId == cardId) {
+                _state.update { it.copy(error = readableError(error)) }
+            }
+            null
+        }
+    }
+
     fun updateFileDraft(content: String) = _state.update { state ->
         state.copy(fileDraft = content, fileDirty = content != state.fileDocument?.content)
     }

@@ -1,5 +1,6 @@
 #if os(iOS)
     import DieterAPI
+    import DieterCore
     import PhotosUI
     import SwiftUI
     import UniformTypeIdentifiers
@@ -21,6 +22,9 @@
         @State private var attachmentError: String?
         @State private var photoItems: [PhotosPickerItem] = []
         @State private var fileImporterPresented = false
+        @State private var imageLoadID: UUID?
+        @State private var imageLoadingTitle: String?
+        @State private var imagePreview: IOSConversationImagePreview?
         @FocusState private var composerFocused: Bool
 
         private var card: Dieter_V1_Card? {
@@ -55,6 +59,18 @@
             }
             .navigationTitle(card?.title ?? "Conversation")
             .navigationBarTitleDisplayMode(.inline)
+            .environment(\.openURL, OpenURLAction(handler: openConversationURL))
+            .overlay {
+                if let imageLoadingTitle {
+                    ProgressView("Loading \(imageLoadingTitle)…")
+                        .padding(.horizontal, 18).padding(.vertical, 14)
+                        .background(.regularMaterial, in: Capsule())
+                        .accessibilityIdentifier("ios.conversation.image-loading")
+                }
+            }
+            .fullScreenCover(item: $imagePreview) { preview in
+                IOSConversationImageLightbox(preview: preview)
+            }
             .toolbar {
                 ToolbarItemGroup(placement: .topBarTrailing) {
                     if let card {
@@ -89,6 +105,9 @@
                 }
             }
             .task(id: cardID) {
+                imageLoadID = nil
+                imageLoadingTitle = nil
+                imagePreview = nil
                 timelineReadyCardID = nil
                 followsLatest = true
                 isAtLatest = false
@@ -134,6 +153,40 @@
                     }
                 }
             }
+        }
+
+        private func openConversationURL(_ url: URL) -> OpenURLAction.Result {
+            guard RemoteWorkspaceImage.isWorkspaceImageURL(url), let projectID = card?.projectID else {
+                return .systemAction(url)
+            }
+            let requestID = UUID()
+            let title = (url.path as NSString).lastPathComponent
+            imageLoadID = requestID
+            imageLoadingTitle = title
+            Task { @MainActor in
+                guard
+                    let document = await store.readConversationImage(projectID: projectID, cardID: cardID, url: url),
+                    imageLoadID == requestID
+                else {
+                    if imageLoadID == requestID {
+                        imageLoadID = nil
+                        imageLoadingTitle = nil
+                        if store.errorMessage == nil { store.show(IOSConversationImageError(name: title)) }
+                    }
+                    return
+                }
+                let data = document.binary ? document.data : Data(document.content.utf8)
+                guard let image = UIImage(data: data) else {
+                    imageLoadID = nil
+                    imageLoadingTitle = nil
+                    store.show(IOSConversationImageError(name: title))
+                    return
+                }
+                imageLoadID = nil
+                imageLoadingTitle = nil
+                imagePreview = IOSConversationImagePreview(title: title, image: image)
+            }
+            return .handled
         }
 
         private func transcript(_ card: Dieter_V1_Card) -> some View {
@@ -1123,6 +1176,58 @@
                 await store.steerQueuedMessage(message)
                 action = nil
             }
+        }
+    }
+
+    private struct IOSConversationImagePreview: Identifiable {
+        let id = UUID()
+        let title: String
+        let image: UIImage
+    }
+
+    private struct IOSConversationImageError: LocalizedError {
+        let name: String
+        var errorDescription: String? { "\(name) is not a supported image." }
+    }
+
+    private struct IOSConversationImageLightbox: View {
+        @Environment(\.dismiss) private var dismiss
+        let preview: IOSConversationImagePreview
+        @State private var scale: CGFloat = 1
+        @GestureState private var magnification: CGFloat = 1
+
+        var body: some View {
+            ZStack {
+                Color.black.ignoresSafeArea()
+                Image(uiImage: preview.image)
+                    .resizable()
+                    .scaledToFit()
+                    .scaleEffect(min(6, max(1, scale * magnification)))
+                    .gesture(
+                        MagnificationGesture()
+                            .updating($magnification) { value, state, _ in state = value }
+                            .onEnded { value in scale = min(6, max(1, scale * value)) }
+                    )
+                    .onTapGesture(count: 2) { withAnimation { scale = scale > 1 ? 1 : 2 } }
+                    .padding(.horizontal, 8)
+                    .accessibilityLabel(preview.title)
+            }
+            .overlay(alignment: .top) {
+                HStack(spacing: 12) {
+                    Text(preview.title).font(.headline).lineLimit(1)
+                    Spacer(minLength: 8)
+                    Button("Close", systemImage: "xmark") { dismiss() }
+                        .labelStyle(.iconOnly)
+                        .buttonStyle(.borderedProminent)
+                        .buttonBorderShape(.circle)
+                        .accessibilityIdentifier("ios.conversation.image-close")
+                }
+                .foregroundStyle(.white)
+                .padding()
+                .background(.black.opacity(0.72))
+            }
+            .statusBarHidden()
+            .accessibilityIdentifier("ios.conversation.image-lightbox")
         }
     }
 #endif
