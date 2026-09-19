@@ -22,6 +22,61 @@ import Testing
     #expect(BoardConversationSizing.dragMaximumWidth(availableWidth: 1200) > 900)
 }
 
+@Test @MainActor func nativeOverlayHostRendersAboveAMaximizedConversationHostingView() async throws {
+    let suite = "NativeOverlayHostTests.\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let overlayColor = Color(red: 0.12, green: 0.78, blue: 0.32)
+    let root = NSHostingView(
+        rootView: BoardConversationOverlay(
+            board: AnyView(Color.red),
+            conversation: AnyView(Color.red),
+            presented: true,
+            maximized: true,
+            defaults: defaults
+        )
+        .overlay {
+            NativeOverlayHost {
+                overlayColor
+                    .contentShape(Rectangle())
+                    .accessibilityIdentifier("test.native-overlay-content")
+            }
+        }
+    )
+    root.sizingOptions = []
+    let size = NSSize(width: 900, height: 640)
+    let window = NSWindow(
+        contentRect: NSRect(origin: NSPoint(x: -3_000, y: -3_000), size: size),
+        styleMask: [.borderless], backing: .buffered, defer: false
+    )
+    window.isReleasedWhenClosed = false
+    window.contentView = root
+    window.orderBack(nil)
+    defer { window.close() }
+
+    for _ in 0..<3 {
+        root.layoutSubtreeIfNeeded()
+        try await DieterTaskSleep.milliseconds(60)
+    }
+
+    let nativeOverlay = try #require(
+        boardConversationDescendants(of: root).first {
+            $0.accessibilityIdentifier() == "workspace.native-overlay-host"
+        }
+    )
+    let center = NSPoint(x: root.bounds.midX, y: root.bounds.midY)
+    let hit = try #require(root.hitTest(center))
+    #expect(hit === nativeOverlay || hit.isDescendant(of: nativeOverlay))
+
+    let bitmap = try #require(root.bitmapImageRepForCachingDisplay(in: root.bounds))
+    root.cacheDisplay(in: root.bounds, to: bitmap)
+    let pixel = try #require(
+        bitmap.colorAt(x: bitmap.pixelsWide / 2, y: bitmap.pixelsHigh / 2)?.usingColorSpace(.deviceRGB)
+    )
+    #expect(pixel.greenComponent > 0.7)
+    #expect(pixel.redComponent < 0.25)
+}
+
 @Test(arguments: [CGFloat(1024), 1200]) @MainActor
 func boardConversationUsesABorderlessNativePaneAndRestoresItsDraftAndWidth(preferredWidth: CGFloat) async {
     let suite = "BoardConversationOverlayTests.\(UUID().uuidString)"
@@ -343,6 +398,10 @@ private struct BoardConversationBridgeTestView: View {
 
 @MainActor private func boardConversationTranscript(in view: NSView) -> MessageTextView? {
     (view as? MessageTextView) ?? view.subviews.lazy.compactMap { boardConversationTranscript(in: $0) }.first
+}
+
+@MainActor private func boardConversationDescendants(of view: NSView) -> [NSView] {
+    [view] + view.subviews.flatMap { boardConversationDescendants(of: $0) }
 }
 
 private struct BoardConversationBridgeTestActionCapture: NSViewRepresentable {
