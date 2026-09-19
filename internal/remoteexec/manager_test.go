@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -61,6 +62,26 @@ func TestImmediateExitDoesNotRaceInitialStdinEOF(t *testing.T) {
 		if final.Status != StatusExited || final.ExitCode == nil || *final.ExitCode != 0 {
 			t.Fatalf("final execution at iteration %d = %#v", iteration, final)
 		}
+	}
+}
+
+func TestExecutionEOFSucceedsWhenWaitAlreadyClosedInput(t *testing.T) {
+	reader, stdin, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := reader.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := stdin.Close(); err != nil {
+		t.Fatal(err)
+	}
+	session := &unixSession{value: Execution{Status: StatusRunning}, stdin: stdin}
+	if _, err := session.write(nil, true); err != nil {
+		t.Fatalf("redundant EOF close = %v", err)
+	}
+	if !session.stdinClosed {
+		t.Fatal("stdin was not marked closed")
 	}
 }
 

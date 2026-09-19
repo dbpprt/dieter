@@ -503,7 +503,8 @@ func (s *unixSession) write(data []byte, eof bool) (Execution, error) {
 				return Execution{}, fmt.Errorf("close PTY execution input: %w", err)
 			}
 		} else {
-			if err := stdin.Close(); err != nil {
+			// Cmd.Wait also owns StdinPipe and may close it after the child exits.
+			if err := stdin.Close(); err != nil && !errors.Is(err, os.ErrClosed) {
 				return Execution{}, fmt.Errorf("close execution input: %w", err)
 			}
 			s.mu.Lock()
