@@ -7,8 +7,8 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from check_changed import (MAC_SMOKE_SUITES, affected_go_packages, affected_mac_smoke_suites,
-                           changed_paths, main, plan_checks)
+from check_changed import (MAC_SMOKE_SUITES, affected_ci_components, affected_go_packages,
+                           affected_mac_smoke_suites, changed_paths, main, plan_checks)
 
 
 class CheckChangedTests(unittest.TestCase):
@@ -16,6 +16,9 @@ class CheckChangedTests(unittest.TestCase):
 
     def plan(self, *paths):
         return plan_checks(self.root, paths, packages=[])
+
+    def components(self, *paths):
+        return {name for name, selected in affected_ci_components(self.root, paths).items() if selected}
 
     def test_android_screen_changes_run_native_emulator_integration(self):
         for path in ("apps/android/app/src/main/java/com/dbpprt/dieter/screens/ScreenController.kt",
@@ -33,6 +36,31 @@ class CheckChangedTests(unittest.TestCase):
     def test_no_changes_or_docs_need_no_checks(self):
         self.assertEqual(self.plan(), [])
         self.assertEqual(self.plan("README.md", "apps/mac/README.md", "AGENTS.md"), [])
+
+    def test_ci_component_selection_skips_unaffected_platforms(self):
+        cases = {
+            (): set(),
+            ("README.md", "docs/architecture.md"): set(),
+            ("internal/server/server.go",): {"core"},
+            ("scripts/new_tool.py",): {"core"},
+            ("apps/mac/Sources/DieterMac/UI/BoardView.swift",): {"macos"},
+            ("apps/mac/Sources/DieterIOS/UI/Root.swift",): {"ios"},
+            ("apps/android/app/src/main/java/Conversation.kt",): {"android"},
+            ("native/android-webrtc/build_sdk.py",): {"android"},
+            ("apps/mac/Sources/DieterClient/DieterRPC.swift",): {"macos", "ios"},
+            ("apps/mac/MarkdownPreview/src/chart-sizing.js",): {"core", "macos"},
+        }
+        for paths, expected in cases.items():
+            with self.subTest(paths=paths):
+                self.assertEqual(self.components(*paths), expected)
+
+    def test_ci_shared_contract_changes_run_every_component(self):
+        expected = {"core", "macos", "ios", "android"}
+        for path in ("api/proto/dieter/v1/dieter.proto", "assets/brand/icon.png", "justfile",
+                     ".github/workflows/ci.yml", "scripts/check_changed.py",
+                     "scripts/check_changed_test.py"):
+            with self.subTest(path=path):
+                self.assertEqual(self.components(path), expected)
 
     def test_release_packaging_changes_run_signing_and_installer_regressions(self):
         for path in ("scripts/macos_daemon_installer.py", "scripts/macos_daemon_installer_test.py",
@@ -262,6 +290,43 @@ class CheckChangedTests(unittest.TestCase):
             with patch("sys.argv", ["check_changed.py"]):
                 self.assertEqual(main(), 7)
                 run.assert_called_once_with(commands[0], cwd=self.root)
+
+    def test_ci_mode_writes_outputs_for_the_event_base(self):
+        with tempfile.TemporaryDirectory() as directory:
+            github_output = Path(directory) / "github-output"
+            environment = {
+                "GITHUB_OUTPUT": str(github_output),
+                "GITHUB_EVENT_NAME": "pull_request",
+                "CI_CHANGE_BASE": "base-sha",
+            }
+            with patch.dict(os.environ, environment, clear=True), \
+                 patch("check_changed.output", return_value="/repo"), \
+                 patch("check_changed.changed_paths", return_value=["apps/ios/DieterIOSApp/App.swift"]) as changed, \
+                 patch("sys.stdout", new=io.StringIO()), \
+                 patch("sys.argv", ["check_changed.py", "--ci"]):
+                self.assertEqual(main(), 0)
+            changed.assert_called_once_with(self.root, "base-sha")
+            self.assertEqual(github_output.read_text().splitlines(), [
+                "core=false", "macos=false", "ios=true", "android=false",
+            ])
+
+    def test_ci_mode_forces_full_qualification_without_a_comparison_base(self):
+        with tempfile.TemporaryDirectory() as directory:
+            github_output = Path(directory) / "github-output"
+            environment = {
+                "GITHUB_OUTPUT": str(github_output),
+                "GITHUB_EVENT_NAME": "workflow_dispatch",
+                "CI_CHANGE_BASE": "",
+            }
+            with patch.dict(os.environ, environment, clear=True), \
+                 patch("check_changed.output", return_value="/repo"), \
+                 patch("check_changed.changed_paths", side_effect=AssertionError("unexpected Git comparison")), \
+                 patch("sys.stdout", new=io.StringIO()), \
+                 patch("sys.argv", ["check_changed.py", "--ci"]):
+                self.assertEqual(main(), 0)
+            self.assertEqual(github_output.read_text().splitlines(), [
+                "core=true", "macos=true", "ios=true", "android=true",
+            ])
 
     def test_running_mac_app_blocks_integration_before_packaging(self):
         for recipe in [["smoke-all"], ["smoke-suites", "island"]]:
