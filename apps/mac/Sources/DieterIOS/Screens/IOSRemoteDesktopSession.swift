@@ -48,6 +48,7 @@
         private(set) var preferredMaxFPS = IOSRemoteDesktopFrameRate.maximum
         var quality: Dieter_V1_RemoteDesktopQuality = .auto
         var keyboardModifiers: UInt32 = 0
+        private(set) var keyboardVisible = false
         var videoSize = CGSize(width: 16, height: 9)
 
         var availableFrameRates: [Int32] {
@@ -559,7 +560,11 @@
         }
 
         func setKeyboardHandler(_ handler: ((Bool) -> Void)?) { keyboardHandler = handler }
-        func showKeyboard(_ show: Bool) { keyboardHandler?(show) }
+        func showKeyboard(_ show: Bool) {
+            keyboardVisible = show
+            keyboardHandler?(show)
+        }
+        func keyboardVisibilityChanged(_ visible: Bool) { keyboardVisible = visible }
         func setCursorHandler(_ handler: ((Dieter_V1_RemoteDesktopCursor) -> Void)?) {
             cursorHandler = handler
             if let handler { handler(cursor) }
@@ -817,6 +822,7 @@
             localCandidates.removeAll(); remoteCandidates.removeAll()
             presentedGeneration = 0; pointerSequence = 0; stateSequence = 0; eventOrdinal = 0
             sessionState = .init(); cursor = .init(); controlActive = false
+            keyboardVisible = false; keyboardModifiers = 0
             controlTransferPending = false; controlTransferError = ""
             routeLabel = ""
             cursorHandler?(cursor)

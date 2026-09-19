@@ -338,6 +338,9 @@ final class RemoteNodeUITests: XCTestCase {
             tap(app, "ios.screens.open")
             XCTAssertTrue(element(app, "ios.screens.back").waitForExistence(timeout: 10))
             XCTAssertTrue(element(app, "ios.screens.settings").isHittable)
+            XCTAssertTrue(element(app, "ios.screens.right-click").waitForExistence(timeout: 10))
+            XCTAssertTrue(element(app, "ios.screens.keyboard").exists)
+            XCTAssertTrue(element(app, "ios.screens.keys").exists)
             let window = app.windows.firstMatch
             let landscape = XCTNSPredicateExpectation(
                 predicate: NSPredicate { _, _ in window.frame.width > window.frame.height }, object: window)

@@ -17,6 +17,7 @@ import CoreGraphics
         @State private var phoneChromeVisible = true
         @State private var phoneSettingsPresented = false
         @State private var manuallyDisconnected = false
+        @State private var clickMode = IOSRemoteDesktopClickMode()
 
         private var machine: DieterEndpoint? { store.selectedMachine }
         private var isPhone: Bool { UIDevice.current.userInterfaceIdiom == .phone }
@@ -29,6 +30,7 @@ import CoreGraphics
         var body: some View {
             VStack(spacing: 0) {
                 screenContent
+                if isConnected { inputBar }
                 statusBar
             }
             .background(Color.black)
@@ -55,6 +57,12 @@ import CoreGraphics
             .onChange(of: session.phase) { _, phase in
                 if phase != .streaming { phoneChromeVisible = true }
             }
+            .onChange(of: session.controlActive) { _, active in
+                if !active {
+                    clickMode.cancel()
+                    session.showKeyboard(false)
+                }
+            }
             .onChange(
                 of: CGSize(
                     width: CGFloat(session.sessionState.width),
@@ -74,7 +82,11 @@ import CoreGraphics
             case .streaming, .connecting, .reconnecting:
                 ZStack {
                     Color.black
-                    IOSRemoteDesktopSurface(session: session) {
+                    IOSRemoteDesktopSurface(
+                        session: session,
+                        rightClickArmed: clickMode.rightClickArmed,
+                        clickSent: { clickMode.consume() }
+                    ) {
                         guard isPhone else { return }
                         withAnimation(.easeInOut(duration: 0.16)) {
                             phoneChromeVisible.toggle()
@@ -145,6 +157,66 @@ import CoreGraphics
             .frame(minHeight: 30)
             .background(.bar)
             .accessibilityElement(children: .combine)
+        }
+
+        private var inputBar: some View {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    if session.canTransferControl {
+                        Button {
+                            session.transferControl(take: !session.sessionState.controlActive)
+                        } label: {
+                            Label(
+                                session.sessionState.controlActive ? "Release Control" : "Take Control",
+                                systemImage: session.sessionState.controlActive
+                                    ? "hand.raised" : "cursorarrow.click")
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(session.controlTransferPending)
+                        .accessibilityIdentifier("ios.screens.control")
+                        if !session.sessionState.controlActive,
+                            !session.sessionState.controllerName.isEmpty
+                        {
+                            Text("\(session.sessionState.controllerName) controls")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    } else if !session.controlActive {
+                        Label("View only", systemImage: "eye")
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Button {
+                        clickMode.toggleRightClick()
+                    } label: {
+                        Label(
+                            clickMode.rightClickArmed ? "Right click armed" : "Right click",
+                            systemImage: "cursorarrow.click")
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(clickMode.rightClickArmed ? .orange : .accentColor)
+                    .disabled(!session.controlActive)
+                    .accessibilityIdentifier("ios.screens.right-click")
+                    .accessibilityHint("Arms one right click for the next tap on the remote screen")
+
+                    Button {
+                        session.showKeyboard(!session.keyboardVisible)
+                    } label: {
+                        Label(session.keyboardVisible ? "Hide Keyboard" : "Keyboard", systemImage: "keyboard")
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(!session.controlActive)
+                    .accessibilityIdentifier("ios.screens.keyboard")
+
+                    inputMenu
+                        .buttonStyle(.bordered)
+                        .disabled(!session.controlActive)
+                }
+                .font(.subheadline.weight(.medium))
+                .padding(.horizontal, 10)
+                .padding(.vertical, 7)
+            }
+            .background(.bar)
         }
 
         @ToolbarContentBuilder private var screenToolbar: some ToolbarContent {
@@ -270,13 +342,21 @@ import CoreGraphics
                     Button("Return") { session.press(hid: 40) }
                     Button("Delete") { session.press(hid: 42) }
                     Button("Forward Delete") { session.press(hid: 76) }
+                    Button("Home") { session.press(hid: 74) }
+                    Button("End") { session.press(hid: 77) }
+                    Button("Page Up") { session.press(hid: 75) }
+                    Button("Page Down") { session.press(hid: 78) }
                     Button("Up") { session.press(hid: 82) }
                     Button("Down") { session.press(hid: 81) }
                     Button("Left") { session.press(hid: 80) }
                     Button("Right") { session.press(hid: 79) }
                 }
+                Section("Function keys") {
+                    ForEach(1...12, id: \.self) { number in
+                        Button("F\(number)") { session.press(hid: UInt32(57 + number)) }
+                    }
+                }
                 Divider()
-                Button("Right Click") { session.click(.right) }
                 Button("Release All Input") { session.releaseAllInput() }
             }
             .accessibilityIdentifier("ios.screens.keys")
@@ -424,14 +504,22 @@ import CoreGraphics
 
     private struct IOSRemoteDesktopSurface: UIViewRepresentable {
         let session: IOSRemoteDesktopSession
+        let rightClickArmed: Bool
+        let clickSent: () -> Void
         let chromeTapped: () -> Void
 
         func makeUIView(context: Context) -> IOSRemoteDesktopInputView {
-            IOSRemoteDesktopInputView(session: session, chromeTapped: chromeTapped)
+            IOSRemoteDesktopInputView(
+                session: session,
+                rightClickArmed: rightClickArmed,
+                clickSent: clickSent,
+                chromeTapped: chromeTapped)
         }
 
         func updateUIView(_ uiView: IOSRemoteDesktopInputView, context: Context) {
             uiView.use(session: session)
+            uiView.rightClickArmed = rightClickArmed
+            uiView.clickSent = clickSent
             uiView.chromeTapped = chromeTapped
         }
 
@@ -457,9 +545,18 @@ import CoreGraphics
         private var pinchAnchor = CGPoint.zero
         private var inputMode = IOSRemoteDesktopInputMode.pointer
         private lazy var suppressedSoftwareKeyboard = UIView(frame: .zero)
+        var rightClickArmed: Bool
+        var clickSent: () -> Void
         var chromeTapped: () -> Void
 
-        init(session: IOSRemoteDesktopSession, chromeTapped: @escaping () -> Void) {
+        init(
+            session: IOSRemoteDesktopSession,
+            rightClickArmed: Bool,
+            clickSent: @escaping () -> Void,
+            chromeTapped: @escaping () -> Void
+        ) {
+            self.rightClickArmed = rightClickArmed
+            self.clickSent = clickSent
             self.chromeTapped = chromeTapped
             super.init(frame: .zero)
             backgroundColor = .black
@@ -541,7 +638,10 @@ import CoreGraphics
 
         override func resignFirstResponder() -> Bool {
             let resigned = super.resignFirstResponder()
-            if resigned { inputMode = .pointer }
+            if resigned {
+                inputMode = .pointer
+                session?.keyboardVisibilityChanged(false)
+            }
             return resigned
         }
 
@@ -558,6 +658,7 @@ import CoreGraphics
             } else if !resignFirstResponder(), changed {
                 reloadInputViews()
             }
+            session?.keyboardVisibilityChanged(active && isFirstResponder)
         }
 
         override func layoutSubviews() {
@@ -625,20 +726,29 @@ import CoreGraphics
 
         @objc private func tapped(_ gesture: UITapGestureRecognizer) {
             chromeTapped()
-            guard let point = normalized(gesture.location(in: self)) else { return }
+            guard let session, session.controlActive,
+                let point = normalized(gesture.location(in: self))
+            else { return }
             becomeFirstResponder()
-            session?.pointer(x: point.x, y: point.y)
-            session?.button(.left, down: true, x: point.x, y: point.y, clickCount: 1)
-            session?.button(.left, down: false, x: point.x, y: point.y, clickCount: 1)
+            let button: Dieter_V1_RemoteDesktopPointerButton.Button = rightClickArmed ? .right : .left
+            session.pointer(x: point.x, y: point.y)
+            session.button(button, down: true, x: point.x, y: point.y, clickCount: 1)
+            session.button(button, down: false, x: point.x, y: point.y, clickCount: 1)
+            clickSent()
         }
 
         @objc private func doubleTapped(_ gesture: UITapGestureRecognizer) {
             chromeTapped()
-            guard let point = normalized(gesture.location(in: self)) else { return }
+            guard let session, session.controlActive,
+                let point = normalized(gesture.location(in: self))
+            else { return }
             becomeFirstResponder()
-            session?.pointer(x: point.x, y: point.y)
-            session?.button(.left, down: true, x: point.x, y: point.y, clickCount: 2)
-            session?.button(.left, down: false, x: point.x, y: point.y, clickCount: 2)
+            let button: Dieter_V1_RemoteDesktopPointerButton.Button = rightClickArmed ? .right : .left
+            let clickCount = rightClickArmed ? 1 : 2
+            session.pointer(x: point.x, y: point.y)
+            session.button(button, down: true, x: point.x, y: point.y, clickCount: clickCount)
+            session.button(button, down: false, x: point.x, y: point.y, clickCount: clickCount)
+            clickSent()
         }
 
         @objc private func pointerMoved(_ gesture: UIPanGestureRecognizer) {
@@ -812,6 +922,14 @@ enum IOSRemoteDesktopInputMode: Equatable {
     }
 
     var presentsSoftwareKeyboard: Bool { self == .text }
+}
+
+struct IOSRemoteDesktopClickMode: Equatable {
+    private(set) var rightClickArmed = false
+
+    mutating func toggleRightClick() { rightClickArmed.toggle() }
+    mutating func consume() { rightClickArmed = false }
+    mutating func cancel() { rightClickArmed = false }
 }
 
 enum IOSRemoteDesktopGeometry {
