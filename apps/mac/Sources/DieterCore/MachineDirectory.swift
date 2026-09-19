@@ -103,7 +103,11 @@ package enum MachineDirectoryReducer {
 
 package enum MachineConnectionRoute: String, Sendable {
     case local = "Local"
-    case gateway = "Gateway"
+    case gateway = "Gateway relay"
+    case directTLS = "Direct TLS"
+    case webrtcDirect = "WebRTC · Direct"
+    case webrtcTURN = "WebRTC · TURN"
+    case webrtc = "WebRTC"
 }
 
 package struct MachineConnectionStatus: Equatable, Sendable {

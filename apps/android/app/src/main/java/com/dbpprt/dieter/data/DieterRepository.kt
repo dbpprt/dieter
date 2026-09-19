@@ -144,6 +144,8 @@ import java.security.cert.CertificateFactory
 import java.security.cert.X509Certificate
 import java.time.Instant
 import java.util.concurrent.TimeUnit
+import org.bouncycastle.jce.provider.BouncyCastleProvider
+import org.bouncycastle.jsse.provider.BouncyCastleJsseProvider
 import javax.net.ssl.SSLContext
 import javax.net.ssl.TrustManagerFactory
 
@@ -210,6 +212,11 @@ fun dieterEndpointFromAddress(id: String, label: String, address: String): Diete
 }
 
 /** The complete native client boundary for the shared dieter.v1 service. */
+private object DaemonTLSProviders {
+    val crypto by lazy { BouncyCastleProvider() }
+    val tls by lazy { BouncyCastleJsseProvider(crypto) }
+}
+
 interface DieterRepository {
     val endpoints: List<DieterEndpoint>
     val activeEndpoint: DieterEndpoint
@@ -341,6 +348,7 @@ class GrpcDieterRepository(context: Context) : DieterRepository {
     private var gatewayChannel: ManagedChannel? = null
     private var directAccessToken: String? = null
     private var directRefreshAt: Long? = null
+    private var controlRoute: String? = null
     private var configuredEndpoints = DIETER_ENDPOINTS
     private var selectedEndpoint = DIETER_ENDPOINTS.first()
     // AndroidKeyStore.load() may touch disk. Do it on first authenticated RPC, which all run
@@ -364,6 +372,7 @@ class GrpcDieterRepository(context: Context) : DieterRepository {
                 channel = null
                 directAccessToken = null
                 directRefreshAt = null
+                controlRoute = null
             }
             if (replacement.credentialId != selectedEndpoint.credentialId) {
                 gatewayChannel?.shutdownNow()
@@ -381,6 +390,7 @@ class GrpcDieterRepository(context: Context) : DieterRepository {
             channel = null
             directAccessToken = null
             directRefreshAt = null
+            controlRoute = null
             if (selectedEndpoint.credentialId != endpoint.credentialId) {
                 gatewayChannel?.shutdownNow()
                 gatewayChannel = null
@@ -503,27 +513,15 @@ class GrpcDieterRepository(context: Context) : DieterRepository {
         endpoint: DieterEndpoint,
         operation: suspend DieterServiceGrpcKt.DieterServiceCoroutineStub.() -> T,
     ): T {
-        requireNotNull(endpoint.daemonId) { "No routed Dieter machine is available" }
-        val builder = AndroidChannelBuilder.forAddress(endpoint.host, endpoint.port)
-            .context(appContext)
-            .maxInboundMessageSize(16 * 1024 * 1024)
-        if (!endpoint.secure) builder.usePlaintext()
-        val relay = builder.build()
-        return try {
-            var stub = DieterServiceGrpcKt.DieterServiceCoroutineStub(relay).withDeadlineAfter(15, TimeUnit.SECONDS)
-            credentials.get(endpoint.credentialId)?.let { token ->
-                stub = stub.withInterceptors(MetadataUtils.newAttachHeadersInterceptor(metadata(token, endpoint.daemonId)))
-            }
-            stub.operation()
-        } finally {
-            relay.shutdownNow()
-        }
+        // Directory reads use the same authenticated route policy as foreground RPCs.
+        val scoped = openScopedMachine(endpoint, 15)
+        return try { scoped.stub.operation() } finally { scoped.channel.shutdownNow() }
     }
 
     /**
      * Opens a one-shot data-plane connection without changing [activeEndpoint]
-     * or tearing down its foreground sync stream. Direct TLS is preferred and
-     * the authenticated bounded relay is retained as the fallback.
+     * or tearing down its foreground sync stream. Prefer direct TLS, then WebRTC,
+     * with the authenticated bounded relay retained as the fallback.
      */
     private suspend fun <T> withMachine(
         endpointId: String,
@@ -552,6 +550,7 @@ class GrpcDieterRepository(context: Context) : DieterRepository {
         val certificate: ByteArray,
         val route: String,
         val refreshAtMillis: Long? = null,
+        val accessToken: String? = null,
     )
 
     private suspend fun openScopedMachine(endpoint: DieterEndpoint, deadlineSeconds: Long): ScopedMachineConnection {
@@ -591,6 +590,14 @@ class GrpcDieterRepository(context: Context) : DieterRepository {
                         Instant.parse(access.expiresAt).toEpochMilli() - 30_000)
                 }
             }
+            if (route.controlWebrtc && route.relayAvailable) {
+                try {
+                    val rtc = openControlMachine(endpoint, gateway, route, deadlineSeconds)
+                    gateway.shutdownNow()
+                    return rtc
+                } catch (error: kotlinx.coroutines.CancellationException) { throw error }
+                catch (error: Exception) { android.util.Log.w("DieterControlRTC", "WebRTC unavailable; using gateway relay", error) }
+            }
             if (!route.relayAvailable) {
                 throw Status.UNAVAILABLE.withDescription("Dieter daemon is offline").asRuntimeException()
             }
@@ -606,6 +613,37 @@ class GrpcDieterRepository(context: Context) : DieterRepository {
             gateway.shutdownNow()
             throw error
         }
+    }
+
+    private suspend fun openControlMachine(
+        endpoint: DieterEndpoint, gateway: ManagedChannel,
+        route: com.dbpprt.dieter.gateway.v1.DaemonRoute, deadlineSeconds: Long,
+    ): ScopedMachineConnection {
+        val daemonId = requireNotNull(endpoint.daemonId)
+        val issuer = authenticatedGatewayStub(gateway, endpoint)
+        val configuration = issuer.getRTCConfiguration(DaemonRef.newBuilder().setDaemonId(daemonId).build())
+        val access = issuer.exchangeDaemonToken(ExchangeDaemonTokenRequest.newBuilder().setDaemonId(daemonId).build())
+        require(access.tokenType == "Bearer")
+        val bridge = ControlRTCBridge(appContext, configuration)
+        var owned: ManagedChannel? = null
+        try {
+            val bootstrap = DieterServiceGrpcKt.DieterServiceCoroutineStub(gateway)
+                .withInterceptors(MetadataUtils.newAttachHeadersInterceptor(metadata(requireNotNull(credentials.get(endpoint.credentialId)), daemonId)))
+                .withDeadlineAfter(15, TimeUnit.SECONDS)
+            val session = bootstrap.startControlConnection(com.dbpprt.dieter.v1.StartControlConnectionRequest.newBuilder()
+                .setRtcConfiguration(configuration).setOfferSdp(bridge.offer()).build())
+            val port = bridge.connect(session.answerSdp)
+            val data = ControlRTCChannel(directChannel("127.0.0.1", port, daemonId, route.daemonCaPem.toByteArray()), bridge)
+            owned = data
+            val stub = DieterServiceGrpcKt.DieterServiceCoroutineStub(data)
+                .withInterceptors(MetadataUtils.newAttachHeadersInterceptor(metadata(access.accessToken)))
+                .withDeadlineAfter(deadlineSeconds, TimeUnit.SECONDS)
+            check(stub.withDeadlineAfter(5, TimeUnit.SECONDS).health(Empty.getDefaultInstance()).status == "ok")
+            val status = stub.getControlConnection(com.dbpprt.dieter.v1.ControlConnectionRef.newBuilder().setSessionId(session.sessionId).build())
+            val mode = when (status.mode) { "turn" -> "WebRTC · TURN"; "direct" -> "WebRTC · Direct"; else -> "WebRTC" }
+            return ScopedMachineConnection(data, stub, route.daemonCertificatePem.toByteArray(), mode,
+                Instant.parse(access.expiresAt).toEpochMilli() - 30_000, access.accessToken)
+        } catch (error: Throwable) { owned?.shutdownNow(); bridge.close(); throw error }
     }
 
     private fun newGatewayChannel(endpoint: DieterEndpoint): ManagedChannel {
@@ -652,6 +690,7 @@ class GrpcDieterRepository(context: Context) : DieterRepository {
             channel = null
             directAccessToken = null
             directRefreshAt = null
+            controlRoute = null
         }
         val route = gatewayStub().resolveDaemonRoute(DaemonRef.newBuilder().setDaemonId(daemonId).build())
         if (route.directCandidatesCount > 0) {
@@ -689,6 +728,22 @@ class GrpcDieterRepository(context: Context) : DieterRepository {
                 direct.shutdownNow()
             }
         }
+        if (route.controlWebrtc && route.relayAvailable) {
+            val gateway = newGatewayChannel(endpoint)
+            try {
+                val rtc = openControlMachine(endpoint, gateway, route, 15)
+                if (activeEndpoint.id != endpoint.id) { rtc.channel.shutdownNow(); throw kotlinx.coroutines.CancellationException() }
+                synchronized(lock) {
+                    channel = rtc.channel
+                    directAccessToken = rtc.accessToken
+                    directRefreshAt = rtc.refreshAtMillis
+                    controlRoute = rtc.route
+                }
+                return rtc.route
+            } catch (error: kotlinx.coroutines.CancellationException) { throw error }
+            catch (error: Exception) { android.util.Log.w("DieterControlRTC", "WebRTC unavailable; using gateway relay", error) }
+            finally { gateway.shutdownNow() }
+        }
         if (!route.relayAvailable) throw Status.UNAVAILABLE.withDescription("Dieter daemon is offline").asRuntimeException()
         return "Gateway relay"
     }
@@ -696,17 +751,21 @@ class GrpcDieterRepository(context: Context) : DieterRepository {
     override fun directRefreshAtMillis(): Long? = synchronized(lock) { directRefreshAt }
 
     override fun dataRoute(): String = synchronized(lock) {
-        if (directAccessToken != null) "local" else "gateway"
+        controlRoute ?: if (directAccessToken != null) "local" else "gateway"
     }
 
     private fun directChannel(host: String, port: Int, daemonId: String, daemonCA: ByteArray): ManagedChannel {
-        val certificate = CertificateFactory.getInstance("X.509").generateCertificate(ByteArrayInputStream(daemonCA))
+        // Android's platform TLS provider does not negotiate Ed25519 daemon certificates.
+        // Use explicit providers without changing the process-wide security registry.
+        val crypto = DaemonTLSProviders.crypto
+        val tls = DaemonTLSProviders.tls
+        val certificate = CertificateFactory.getInstance("X.509", crypto).generateCertificate(ByteArrayInputStream(daemonCA))
         val keyStore = KeyStore.getInstance(KeyStore.getDefaultType()).apply {
             load(null)
             setCertificateEntry("dieter-daemon-ca", certificate)
         }
-        val managers = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm()).apply { init(keyStore) }
-        val ssl = SSLContext.getInstance("TLS").apply { init(null, managers.trustManagers, null) }
+        val managers = TrustManagerFactory.getInstance("PKIX", tls).apply { init(keyStore) }
+        val ssl = SSLContext.getInstance("TLSv1.3", tls).apply { init(null, managers.trustManagers, null) }
         return OkHttpChannelBuilder.forAddress(host, port)
             .sslSocketFactory(ssl.socketFactory)
             .hostnameVerifier { _, session ->
@@ -1147,6 +1206,7 @@ class GrpcDieterRepository(context: Context) : DieterRepository {
             gatewayChannel = null
             directAccessToken = null
             directRefreshAt = null
+            controlRoute = null
         }
     }
 

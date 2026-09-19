@@ -31,9 +31,10 @@ var errPersistentSessionMissing = errors.New("persistent terminal session is mis
 // Dieter daemon process. Dieter still owns the session metadata and addresses
 // a private named tmux server derived from one DIETER_HOME.
 type tmuxPersistence struct {
-	executable string
-	directory  string
-	label      string
+	executable           string
+	directory            string
+	label                string
+	supportsRawPasteFlag bool
 }
 
 type tmuxRecord struct {
@@ -54,9 +55,10 @@ func newPersistentBackend(root string) backend {
 	}
 	_ = os.Chmod(directory, 0o700)
 	persistence := &tmuxPersistence{
-		executable: executable,
-		directory:  directory,
-		label:      fmt.Sprintf("dieter-%x", sha256.Sum256([]byte(filepath.Clean(root))))[:31],
+		executable:           executable,
+		directory:            directory,
+		label:                fmt.Sprintf("dieter-%x", sha256.Sum256([]byte(filepath.Clean(root))))[:31],
+		supportsRawPasteFlag: tmuxSupportsRawPasteFlag(executable),
 	}
 	backend := &unixBackend{sessions: map[string]*unixSession{}, persistence: persistence}
 	backend.restorePersistent()
@@ -73,6 +75,19 @@ func findTmux() string {
 		}
 	}
 	return ""
+}
+
+func tmuxSupportsRawPasteFlag(executable string) bool {
+	output, err := exec.Command(executable, "list-commands", "paste-buffer").Output()
+	if err != nil {
+		return false
+	}
+	for _, field := range strings.Fields(string(output)) {
+		if strings.HasPrefix(field, "[-") && strings.Contains(field, "S") {
+			return true
+		}
+	}
+	return false
 }
 
 func (b *unixBackend) createPersistent(
@@ -421,7 +436,16 @@ func (p *tmuxPersistence) write(name, id string, data []byte) error {
 	if output, err := command.CombinedOutput(); err != nil {
 		return fmt.Errorf("buffer persistent terminal input: %s: %w", strings.TrimSpace(string(output)), err)
 	}
-	output, err := p.run("paste-buffer", "-d", "-b", buffer, "-t", name)
+	arguments := []string{"paste-buffer", "-d"}
+	if p.supportsRawPasteFlag {
+		// tmux 3.7 sanitizes control bytes such as DEL, ESC and Ctrl-C by
+		// default. Terminal input is not clipboard text: those bytes are the
+		// keyboard protocol and must reach the PTY unchanged. Older tmux
+		// releases did not sanitize and do not recognize -S.
+		arguments = append(arguments, "-S")
+	}
+	arguments = append(arguments, "-b", buffer, "-t", name)
+	output, err := p.run(arguments...)
 	if err != nil {
 		return fmt.Errorf("write persistent terminal: %s: %w", strings.TrimSpace(string(output)), err)
 	}

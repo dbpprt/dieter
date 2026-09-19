@@ -130,6 +130,7 @@ protobuf {
 
 dependencies {
     implementation(libs.bouncycastle)
+    implementation(libs.bouncycastle.tls)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.lifecycle.runtime.compose)

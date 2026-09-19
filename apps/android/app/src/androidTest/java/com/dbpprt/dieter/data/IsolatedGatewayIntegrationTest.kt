@@ -4,6 +4,7 @@ import com.dbpprt.dieter.DieterApplication
 import com.dbpprt.dieter.connection.ConnectionPhase
 import com.dbpprt.dieter.v1.CreateConversationRequest
 import com.dbpprt.dieter.v1.CreateProjectRequest
+import com.dbpprt.dieter.v1.CreateTerminalRequest
 import com.dbpprt.dieter.v1.MessagePart
 import com.dbpprt.dieter.v1.SendMessageRequest
 import com.dbpprt.dieter.v1.StartCardRequest
@@ -26,6 +27,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.io.ByteArrayOutputStream
 import java.util.UUID
 import kotlin.system.measureTimeMillis
 
@@ -35,6 +37,74 @@ import kotlin.system.measureTimeMillis
  */
 @RunWith(AndroidJUnit4::class)
 class IsolatedGatewayIntegrationTest {
+    @Test
+    fun webRTCControlCarriesRPCAndReportsICEPath() = runBlocking {
+        assumeTrue("Requires the WebRTC fixture", argument("isolatedControlWebRTC") == "1")
+        val token = argument("isolatedGatewayToken")
+        assumeTrue(token.isNotBlank())
+        val repository = GrpcDieterRepository(InstrumentationRegistry.getInstrumentation().targetContext)
+        try {
+            val endpoint = connect(repository, isolatedOrigin(), token)
+            assertEquals("WebRTC · Direct", repository.prepareDaemon())
+            assertEquals("WebRTC · Direct", repository.dataRoute())
+            assertTrue(repository.state().projectsCount > 0)
+            assertTrue(repository.relayState(endpoint).projectsCount > 0)
+            // First cancels the watch. The next RPC must retain its transport.
+            withTimeout(10_000) { repository.watchState().first() }
+            assertTrue(repository.state().projectsCount > 0)
+            assertEquals("WebRTC · Direct", repository.prepareDaemon())
+            assertTrue(repository.state().projectsCount > 0)
+        } finally { repository.close() }
+    }
+
+    @Test
+    fun terminalEditingControlBytesRoundTripThroughTheIsolatedGateway() = runBlocking {
+        val origin = isolatedOrigin()
+        val token = argument("isolatedGatewayToken")
+        assumeTrue("Pass isolatedGatewayToken to run the isolated gateway test", token.isNotBlank())
+
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val repository = GrpcDieterRepository(context)
+        var terminalId: String? = null
+        try {
+            connect(repository, origin, token)
+            repository.prepareDaemon()
+            val project = repository.state().projectsList.first()
+            val terminal = repository.createTerminal(
+                CreateTerminalRequest.newBuilder()
+                    .setProjectId(project.id)
+                    .setName("android-control-input")
+                    .setShell("sh")
+                    .setWorkingDirectory(project.path)
+                    .setColumns(92)
+                    .setRows(26)
+                    .build(),
+            )
+            terminalId = terminal.id
+
+            repository.writeTerminal(
+                terminal.id,
+                "stty -echo; printf 'ANDROID_RAW_CONTROL_READY\\n'\n".encodeToByteArray(),
+            )
+            val ready = awaitTerminalOutput(repository, terminal.id, 0, "ANDROID_RAW_CONTROL_READY\r\n")
+            val input = "printf '%s\\n' ANDROID_RAW_CONTROL_OKx".encodeToByteArray() +
+                byteArrayOf(0x7f) + byteArrayOf('\n'.code.toByte())
+            repository.writeTerminal(terminal.id, input)
+
+            val output = awaitTerminalOutput(
+                repository,
+                terminal.id,
+                ready.first,
+                "ANDROID_RAW_CONTROL_OK\r\n",
+            ).second
+            assertFalse("DEL was rendered as visible text: $output", output.contains("^?"))
+            assertFalse("DEL did not erase the preceding byte: $output", output.contains("ANDROID_RAW_CONTROL_OKx"))
+        } finally {
+            terminalId?.let { runCatching { repository.closeTerminal(it) } }
+            repository.close()
+        }
+    }
+
     @Test
     fun machineScopedProjectCreationAndWorkspaceAdministrationRoundTrip() = runBlocking {
         val origin = isolatedOrigin()
@@ -485,6 +555,22 @@ class IsolatedGatewayIntegrationTest {
         repository.replaceEndpoints(listOf(endpoint))
         repository.selectEndpoint(endpoint)
         return endpoint
+    }
+
+    private suspend fun awaitTerminalOutput(
+        repository: GrpcDieterRepository,
+        terminalId: String,
+        afterSequence: Long,
+        marker: String,
+    ): Pair<Long, String> {
+        val output = ByteArrayOutputStream()
+        val frame = withTimeout(15_000) {
+            repository.watchTerminal(terminalId, afterSequence).first { frame ->
+                output.write(frame.data.toByteArray())
+                output.toString(Charsets.UTF_8.name()).contains(marker)
+            }
+        }
+        return frame.sequence to output.toString(Charsets.UTF_8.name())
     }
 
     private fun isolatedOrigin(): DieterEndpoint = DieterEndpoint(

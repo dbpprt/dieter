@@ -13,6 +13,11 @@ import "gateway.proto";
 service DieterService {
   rpc Health(google.protobuf.Empty) returns (HealthResponse);
   rpc GetRuntimeStatus(google.protobuf.Empty) returns (RuntimeStatus);
+  // Data-only WebRTC carries the existing authenticated TLS/gRPC byte stream.
+  // Bootstrap uses an existing route; no screen capture is started.
+  rpc StartControlConnection(StartControlConnectionRequest) returns (ControlConnection);
+  rpc GetControlConnection(ControlConnectionRef) returns (ControlConnection);
+  rpc CloseControlConnection(ControlConnectionRef) returns (google.protobuf.Empty);
   // Machine telemetry stays on the daemon and follows the same authenticated
   // direct-or-relay data path as every other Dieter operation.
   rpc GetMachineInformation(google.protobuf.Empty) returns (MachineInformation);
@@ -2313,4 +2318,20 @@ message RemoteDesktopClipboardFrame {
   string operation_id = 1;
   bytes data = 2;
   bool end = 3;
+}
+
+message StartControlConnectionRequest {
+  dieter.gateway.v1.RTCConfiguration rtc_configuration = 1;
+  string offer_sdp = 2;
+}
+message ControlConnectionRef { string session_id = 1; }
+message ControlConnection {
+  string session_id = 1;
+  string answer_sdp = 2;
+  string expires_at = 3;
+  string state = 4;
+  // unknown until ICE selects a pair; then direct or turn.
+  string mode = 5;
+  string local_candidate_type = 6;
+  string remote_candidate_type = 7;
 }

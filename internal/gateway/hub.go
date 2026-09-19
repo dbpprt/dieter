@@ -58,17 +58,18 @@ type Hub struct {
 }
 
 type daemonLink struct {
-	id           string
-	generation   uint64
-	send         chan *gatewayv1.DaemonLinkFrame
-	control      chan *gatewayv1.DaemonLinkFrame
-	quota        chan *gatewayv1.DaemonLinkFrame
-	done         chan struct{}
-	closeOnce    sync.Once
-	mu           sync.RWMutex
-	streams      map[uint64]*relayFrameQueue
-	lastSeenAt   atomic.Int64
-	capabilities map[string]bool
+	controlWebRTC bool
+	id            string
+	generation    uint64
+	send          chan *gatewayv1.DaemonLinkFrame
+	control       chan *gatewayv1.DaemonLinkFrame
+	quota         chan *gatewayv1.DaemonLinkFrame
+	done          chan struct{}
+	closeOnce     sync.Once
+	mu            sync.RWMutex
+	streams       map[uint64]*relayFrameQueue
+	lastSeenAt    atomic.Int64
+	capabilities  map[string]bool
 }
 
 type relayStream struct {
@@ -184,8 +185,15 @@ func (h *Hub) connect(stream grpc.BidiStreamingServer[gatewayv1.DaemonLinkFrame,
 	}
 	hello, record := authenticated.hello, authenticated.record
 	identity := record.ID
+	controlWebRTC := false
+	for _, capability := range hello.GetCapabilities() {
+		if capability == "control_webrtc_v1" {
+			controlWebRTC = true
+			break
+		}
+	}
 	link := &daemonLink{
-		id: identity, generation: record.Generation,
+		id: identity, generation: record.Generation, controlWebRTC: controlWebRTC,
 		send: make(chan *gatewayv1.DaemonLinkFrame, 8), control: make(chan *gatewayv1.DaemonLinkFrame, 2*maxDaemonRelayStreams),
 		quota: make(chan *gatewayv1.DaemonLinkFrame, 16), done: make(chan struct{}), streams: map[uint64]*relayFrameQueue{},
 		capabilities: map[string]bool{},
@@ -670,4 +678,14 @@ func (l *daemonLink) close() {
 		}
 		l.mu.Unlock()
 	})
+}
+
+func (h *Hub) ControlWebRTC(id string) bool {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	link := h.links[id]
+	if link == nil {
+		return false
+	}
+	return link.controlWebRTC
 }

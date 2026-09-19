@@ -22,6 +22,9 @@ const _ = grpc.SupportPackageIsVersion9
 const (
 	DieterService_Health_FullMethodName                          = "/dieter.v1.DieterService/Health"
 	DieterService_GetRuntimeStatus_FullMethodName                = "/dieter.v1.DieterService/GetRuntimeStatus"
+	DieterService_StartControlConnection_FullMethodName          = "/dieter.v1.DieterService/StartControlConnection"
+	DieterService_GetControlConnection_FullMethodName            = "/dieter.v1.DieterService/GetControlConnection"
+	DieterService_CloseControlConnection_FullMethodName          = "/dieter.v1.DieterService/CloseControlConnection"
 	DieterService_GetMachineInformation_FullMethodName           = "/dieter.v1.DieterService/GetMachineInformation"
 	DieterService_PerformMachineOperation_FullMethodName         = "/dieter.v1.DieterService/PerformMachineOperation"
 	DieterService_GetState_FullMethodName                        = "/dieter.v1.DieterService/GetState"
@@ -139,6 +142,11 @@ const (
 type DieterServiceClient interface {
 	Health(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*HealthResponse, error)
 	GetRuntimeStatus(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*RuntimeStatus, error)
+	// Data-only WebRTC carries the existing authenticated TLS/gRPC byte stream.
+	// Bootstrap uses an existing route; no screen capture is started.
+	StartControlConnection(ctx context.Context, in *StartControlConnectionRequest, opts ...grpc.CallOption) (*ControlConnection, error)
+	GetControlConnection(ctx context.Context, in *ControlConnectionRef, opts ...grpc.CallOption) (*ControlConnection, error)
+	CloseControlConnection(ctx context.Context, in *ControlConnectionRef, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	// Machine telemetry stays on the daemon and follows the same authenticated
 	// direct-or-relay data path as every other Dieter operation.
 	GetMachineInformation(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*MachineInformation, error)
@@ -297,6 +305,36 @@ func (c *dieterServiceClient) GetRuntimeStatus(ctx context.Context, in *emptypb.
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(RuntimeStatus)
 	err := c.cc.Invoke(ctx, DieterService_GetRuntimeStatus_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dieterServiceClient) StartControlConnection(ctx context.Context, in *StartControlConnectionRequest, opts ...grpc.CallOption) (*ControlConnection, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ControlConnection)
+	err := c.cc.Invoke(ctx, DieterService_StartControlConnection_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dieterServiceClient) GetControlConnection(ctx context.Context, in *ControlConnectionRef, opts ...grpc.CallOption) (*ControlConnection, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ControlConnection)
+	err := c.cc.Invoke(ctx, DieterService_GetControlConnection_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dieterServiceClient) CloseControlConnection(ctx context.Context, in *ControlConnectionRef, opts ...grpc.CallOption) (*emptypb.Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(emptypb.Empty)
+	err := c.cc.Invoke(ctx, DieterService_CloseControlConnection_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -1462,6 +1500,11 @@ func (c *dieterServiceClient) ListScheduleRuns(ctx context.Context, in *ListSche
 type DieterServiceServer interface {
 	Health(context.Context, *emptypb.Empty) (*HealthResponse, error)
 	GetRuntimeStatus(context.Context, *emptypb.Empty) (*RuntimeStatus, error)
+	// Data-only WebRTC carries the existing authenticated TLS/gRPC byte stream.
+	// Bootstrap uses an existing route; no screen capture is started.
+	StartControlConnection(context.Context, *StartControlConnectionRequest) (*ControlConnection, error)
+	GetControlConnection(context.Context, *ControlConnectionRef) (*ControlConnection, error)
+	CloseControlConnection(context.Context, *ControlConnectionRef) (*emptypb.Empty, error)
 	// Machine telemetry stays on the daemon and follows the same authenticated
 	// direct-or-relay data path as every other Dieter operation.
 	GetMachineInformation(context.Context, *emptypb.Empty) (*MachineInformation, error)
@@ -1611,6 +1654,15 @@ func (UnimplementedDieterServiceServer) Health(context.Context, *emptypb.Empty) 
 }
 func (UnimplementedDieterServiceServer) GetRuntimeStatus(context.Context, *emptypb.Empty) (*RuntimeStatus, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetRuntimeStatus not implemented")
+}
+func (UnimplementedDieterServiceServer) StartControlConnection(context.Context, *StartControlConnectionRequest) (*ControlConnection, error) {
+	return nil, status.Error(codes.Unimplemented, "method StartControlConnection not implemented")
+}
+func (UnimplementedDieterServiceServer) GetControlConnection(context.Context, *ControlConnectionRef) (*ControlConnection, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetControlConnection not implemented")
+}
+func (UnimplementedDieterServiceServer) CloseControlConnection(context.Context, *ControlConnectionRef) (*emptypb.Empty, error) {
+	return nil, status.Error(codes.Unimplemented, "method CloseControlConnection not implemented")
 }
 func (UnimplementedDieterServiceServer) GetMachineInformation(context.Context, *emptypb.Empty) (*MachineInformation, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetMachineInformation not implemented")
@@ -1992,6 +2044,60 @@ func _DieterService_GetRuntimeStatus_Handler(srv interface{}, ctx context.Contex
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(DieterServiceServer).GetRuntimeStatus(ctx, req.(*emptypb.Empty))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DieterService_StartControlConnection_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(StartControlConnectionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DieterServiceServer).StartControlConnection(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DieterService_StartControlConnection_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DieterServiceServer).StartControlConnection(ctx, req.(*StartControlConnectionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DieterService_GetControlConnection_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ControlConnectionRef)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DieterServiceServer).GetControlConnection(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DieterService_GetControlConnection_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DieterServiceServer).GetControlConnection(ctx, req.(*ControlConnectionRef))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DieterService_CloseControlConnection_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ControlConnectionRef)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DieterServiceServer).CloseControlConnection(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DieterService_CloseControlConnection_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DieterServiceServer).CloseControlConnection(ctx, req.(*ControlConnectionRef))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -3923,6 +4029,18 @@ var DieterService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetRuntimeStatus",
 			Handler:    _DieterService_GetRuntimeStatus_Handler,
+		},
+		{
+			MethodName: "StartControlConnection",
+			Handler:    _DieterService_StartControlConnection_Handler,
+		},
+		{
+			MethodName: "GetControlConnection",
+			Handler:    _DieterService_GetControlConnection_Handler,
+		},
+		{
+			MethodName: "CloseControlConnection",
+			Handler:    _DieterService_CloseControlConnection_Handler,
 		},
 		{
 			MethodName: "GetMachineInformation",

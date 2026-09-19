@@ -1422,6 +1422,22 @@ private func historyTextMessage(_ id: String, role: String = "assistant") -> Die
     #expect(menu?.items.map(\.title).filter { !$0.isEmpty } == ["Copy", "Paste", "Select All"])
 }
 
+@Test @MainActor func remoteTerminalViewEmitsRawTerminalControlBytesForEditingKeys() {
+    let view = RemoteTerminalView(
+        frame: NSRect(x: 0, y: 0, width: 640, height: 320),
+        font: .monospacedSystemFont(ofSize: 13, weight: .regular)
+    )
+    var sent = Data()
+    let coordinator = RemoteTerminalSurface.Coordinator(
+        terminalID: "editing-keys", send: { sent.append($0) }, resize: { _, _ in })
+    view.terminalDelegate = coordinator
+
+    view.doCommand(by: #selector(NSResponder.deleteBackward(_:)))
+    view.doCommand(by: #selector(NSResponder.moveLeft(_:)))
+
+    #expect(Array(sent) == [0x7f, 0x1b, 0x5b, 0x44])
+}
+
 @Test @MainActor func remoteTerminalViewUsesShiftDragToSelectWhenApplicationTracksTheMouse() async throws {
     let view = RemoteTerminalView(
         frame: NSRect(x: 0, y: 0, width: 640, height: 320),

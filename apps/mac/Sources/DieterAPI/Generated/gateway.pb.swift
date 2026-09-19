@@ -741,6 +741,8 @@ public nonisolated struct Dieter_Gateway_V1_DaemonRoute: Sendable {
   /// signaling routes.
   public var daemonCertificatePem: Data = Data()
 
+  public var controlWebrtc: Bool = false
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
@@ -2374,7 +2376,7 @@ nonisolated extension Dieter_Gateway_V1_DirectCandidate: SwiftProtobuf.Message, 
 
 nonisolated extension Dieter_Gateway_V1_DaemonRoute: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".DaemonRoute"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}daemon_id\0\u{3}relay_available\0\u{3}direct_candidates\0\u{1}generation\0\u{3}daemon_ca_pem\0\u{3}daemon_certificate_pem\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}daemon_id\0\u{3}relay_available\0\u{3}direct_candidates\0\u{1}generation\0\u{3}daemon_ca_pem\0\u{3}daemon_certificate_pem\0\u{3}control_webrtc\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -2388,6 +2390,7 @@ nonisolated extension Dieter_Gateway_V1_DaemonRoute: SwiftProtobuf.Message, Swif
       case 4: try { try decoder.decodeSingularUInt64Field(value: &self.generation) }()
       case 5: try { try decoder.decodeSingularBytesField(value: &self.daemonCaPem) }()
       case 6: try { try decoder.decodeSingularBytesField(value: &self.daemonCertificatePem) }()
+      case 7: try { try decoder.decodeSingularBoolField(value: &self.controlWebrtc) }()
       default: break
       }
     }
@@ -2412,6 +2415,9 @@ nonisolated extension Dieter_Gateway_V1_DaemonRoute: SwiftProtobuf.Message, Swif
     if !self.daemonCertificatePem.isEmpty {
       try visitor.visitSingularBytesField(value: self.daemonCertificatePem, fieldNumber: 6)
     }
+    if self.controlWebrtc != false {
+      try visitor.visitSingularBoolField(value: self.controlWebrtc, fieldNumber: 7)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -2422,6 +2428,7 @@ nonisolated extension Dieter_Gateway_V1_DaemonRoute: SwiftProtobuf.Message, Swif
     if lhs.generation != rhs.generation {return false}
     if lhs.daemonCaPem != rhs.daemonCaPem {return false}
     if lhs.daemonCertificatePem != rhs.daemonCertificatePem {return false}
+    if lhs.controlWebrtc != rhs.controlWebrtc {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

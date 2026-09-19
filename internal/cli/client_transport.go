@@ -254,6 +254,25 @@ func (c *CLI) dialDieter(ctx context.Context) (*dieterTransport, error) {
 			cancel()
 		}
 	}
+
+	if route.GetControlWebrtc() && route.GetRelayAvailable() {
+		// Reserve part of the command deadline for the relay. Unreachable ICE
+		// must not consume the entire budget and prevent fallback.
+		budget := 12 * time.Second
+		if deadline, ok := ctx.Deadline(); ok {
+			budget = min(budget, time.Until(deadline)*2/3)
+		}
+		probe, cancel := context.WithTimeout(ctx, budget)
+		connection, err := c.dialControl(probe, gateway, route)
+		cancel()
+		if err == nil {
+			c.transport = connection
+			return connection, nil
+		}
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+	}
 	if !route.GetRelayAvailable() {
 		return nil, fmt.Errorf("Dieter machine %s has no reachable direct route and its relay is unavailable", machine.GetName())
 	}

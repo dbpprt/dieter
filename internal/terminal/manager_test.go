@@ -127,6 +127,50 @@ func TestPersistentSessionSurvivesManagerRestart(t *testing.T) {
 	}
 }
 
+func TestPersistentSessionPreservesTerminalControlInput(t *testing.T) {
+	root := t.TempDir()
+	manager := NewPersistent(root)
+	if !manager.Durable() {
+		t.Skip("tmux is unavailable")
+	}
+	t.Cleanup(func() {
+		for _, session := range manager.List("") {
+			_ = manager.Close(session.ID)
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		manager.Shutdown(ctx)
+	})
+
+	session, err := manager.Create(CreateInput{
+		Name: "raw-control-input", Shell: "sh", WorkingDirectory: t.TempDir(), Columns: 90, Rows: 28,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, cursor := waitForTerminalOutput(t, manager, session.ID, 0, []byte(" "))
+	if _, err := manager.Write(session.ID, []byte("stty -echo; printf 'raw-control-ready\\n'\n")); err != nil {
+		t.Fatal(err)
+	}
+	_, cursor = waitForTerminalOutput(t, manager, session.ID, cursor, []byte("raw-control-ready\r\n"))
+
+	// DEL is Backspace in the terminal protocol. Appending a disposable byte
+	// and deleting it proves tmux forwards the control byte to the PTY instead
+	// of sanitizing it into the visible characters "^?".
+	input := append([]byte("printf '%s\\n' raw-control-input-markerx"), 0x7f)
+	input = append(input, '\n')
+	if _, err := manager.Write(session.ID, input); err != nil {
+		t.Fatal(err)
+	}
+	output, _ := waitForTerminalOutput(t, manager, session.ID, cursor, []byte("raw-control-input-marker"))
+	if bytes.Contains(output, []byte("^?")) {
+		t.Fatalf("DEL was sanitized instead of reaching the PTY: %q", output)
+	}
+	if bytes.Contains(output, []byte("raw-control-input-markerx")) {
+		t.Fatalf("DEL did not erase the preceding input byte: %q", output)
+	}
+}
+
 func TestPersistentRestoreRemovesOrphanedTerminalFiles(t *testing.T) {
 	root := t.TempDir()
 	manager := NewPersistent(root)

@@ -426,7 +426,8 @@ private final class SmokeRun {
             arguments: arguments,
             output: appLog,
             error: appErrorLog,
-            directory: repository
+            directory: repository,
+            environment: ProcessInfo.processInfo.environment
         )
         let appPID = app?.process.processIdentifier ?? 0
         let deadline = Date().addingTimeInterval(options.suite.timeout)

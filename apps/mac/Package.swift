@@ -52,6 +52,7 @@ let package = Package(
         .target(
             name: "DieterClient",
             dependencies: [
+                "WebRTC",
                 "DieterCore", "DieterAPI",
                 .product(name: "X509", package: "swift-certificates"),
                 .product(name: "GRPCCore", package: "grpc-swift-2"),

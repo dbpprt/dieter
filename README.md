@@ -226,6 +226,29 @@ dieter --machine <machine-id> terminal list --format jsonl
 dieter --machine <machine-id> terminal create --home --name shell --format id
 ```
 
+Remote API connections prefer verified direct TLS, then a data-only WebRTC
+connection when the daemon advertises support, with gateway relay fallback.
+macOS Machines, iOS connection status, and Android machine connection details
+show **WebRTC · Direct** or **WebRTC · TURN** from the selected ICE pair. CLI
+`status` reports `webrtc-direct` or `webrtc-turn`. TURN is still a relay; the
+client-to-daemon TLS connection remains authenticated and encrypted through it.
+
+This transport is independent of Screens and does not request capture or input
+permissions. It carries existing gRPC calls, including watches and terminal
+streams, through a bounded reliable data channel. STUN/TURN use the gateway's
+`DIETER_RTC_STUN_URLS`, `DIETER_RTC_TURN_URLS`, and short-lived credentials.
+Both endpoints gather candidates for up to three seconds before exchanging SDP;
+connection failures retain the gateway fallback. Existing daemons without the
+capability continue using direct TLS or gateway relay.
+
+Automation can inspect and manage signaling through
+`dieter [--machine ID] machine connection start --request offer.json`,
+`machine connection show SESSION`, and `machine connection close SESSION`.
+The start file is protobuf JSON with `rtcConfiguration` (from `machine rtc`) and
+`offerSdp`. Closing a connection cancels its transport RPCs, not agent turns,
+terminals, or executions. Domain mutations are never replayed on route failure.
+
+
 `machine list`, `machine show`, and `machine watch` expose both the Dieter
 release version and the data-plane API version. `machine gateway` reports the
 gateway release and control-plane API versions. `machine info` returns live

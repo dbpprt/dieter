@@ -24,6 +24,7 @@ import (
 	"github.com/dbpprt/dieter/internal/app"
 	"github.com/dbpprt/dieter/internal/attachments"
 	"github.com/dbpprt/dieter/internal/buildinfo"
+	"github.com/dbpprt/dieter/internal/controlrtc"
 	dieterdaemon "github.com/dbpprt/dieter/internal/daemon"
 	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
 	"github.com/dbpprt/dieter/internal/harness"
@@ -222,8 +223,9 @@ Commands:
   version      Print the version
 
 Without --machine, operational commands use the running local daemon API. With
---machine, the CLI authenticates to the gateway, prefers direct TLS, and falls
-back to the bounded gateway relay. It never reads a remote machine's storage.
+--machine, the CLI authenticates to the gateway, prefers direct TLS, then tries
+WebRTC (direct or TURN), and falls back to the bounded gateway relay.
+Status reports the selected route. It never reads a remote machine's storage.
 Read watches renew credentials and resume after transient failures, with five
 retries between delivered frames. Revocation stops recovery; mutations and
 process starts are never replayed by watch recovery.
@@ -519,6 +521,7 @@ Service startup activates a staged verified release there before workers begin.
 	go runStatusHeartbeat(ctx, statusWriter)
 	var quotaSource *providerquota.Manager
 
+	var controlRTC *controlrtc.Manager
 	if enrolled {
 		quotaSource = providerquota.New(c.Store.Root, logger)
 		var routes []*gatewayv1.DirectCandidate
@@ -527,6 +530,7 @@ Service startup activates a staged verified release there before workers begin.
 			logger.Warn("automatic local route is unavailable; clients will use the gateway relay", "error", loopbackErr)
 		} else {
 			routes = append(routes, loopback.candidate)
+			controlRTC = controlrtc.New(controlrtc.Identity{DaemonID: identity.ID, GatewayURL: identity.GatewayURL, Generation: identity.Generation, GatewaySigningPublicKey: identity.GatewaySigningPublicKey}, loopback.listener.Addr().String())
 			serveDaemonDirectRoute(ctx, cancel, logger, loopback)
 			logger.Info("automatic authenticated local route enabled", "address", loopback.listener.Addr().String())
 		}
@@ -546,6 +550,7 @@ Service startup activates a staged verified release there before workers begin.
 				Identity: identity, LocalTarget: *addr, Version: Version, APIVersion: server.APIVersion, Routes: routes,
 				Log: logger, OnStatus: statusWriter.Gateway, OnAcknowledged: statusWriter.GatewayAcknowledged,
 				RemoteDesktopPresence: remoteDesktopPresence, ProviderQuotas: quotaSource,
+				ControlWebRTC: controlRTC != nil,
 			}
 			if tunnelErr := client.Run(ctx); tunnelErr != nil && ctx.Err() == nil {
 				logger.Error("gateway tunnel stopped", "error", tunnelErr)
@@ -570,7 +575,7 @@ Service startup activates a staged verified release there before workers begin.
 	if quotaSource != nil {
 		providerAccountKey = quotaSource.ActiveAccountKey
 	}
-	err = server.ListenDaemonReady(ctx, *addr, c.Store, c.Runner, logger, remoteDesktop, ready, providerAccountKey)
+	err = server.ListenDaemonReady(ctx, *addr, c.Store, c.Runner, logger, remoteDesktop, ready, providerAccountKey, controlRTC)
 	if errors.Is(err, http.ErrServerClosed) {
 		return nil
 	}

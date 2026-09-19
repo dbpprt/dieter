@@ -7437,6 +7437,66 @@ public nonisolated struct Dieter_V1_RemoteDesktopClipboardFrame: Sendable {
   public init() {}
 }
 
+public nonisolated struct Dieter_V1_StartControlConnectionRequest: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var rtcConfiguration: Dieter_Gateway_V1_RTCConfiguration {
+    get {_rtcConfiguration ?? Dieter_Gateway_V1_RTCConfiguration()}
+    set {_rtcConfiguration = newValue}
+  }
+  /// Returns true if `rtcConfiguration` has been explicitly set.
+  public var hasRtcConfiguration: Bool {self._rtcConfiguration != nil}
+  /// Clears the value of `rtcConfiguration`. Subsequent reads from it will return its default value.
+  public mutating func clearRtcConfiguration() {self._rtcConfiguration = nil}
+
+  public var offerSdp: String = String()
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+
+  fileprivate var _rtcConfiguration: Dieter_Gateway_V1_RTCConfiguration? = nil
+}
+
+public nonisolated struct Dieter_V1_ControlConnectionRef: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var sessionID: String = String()
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct Dieter_V1_ControlConnection: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var sessionID: String = String()
+
+  public var answerSdp: String = String()
+
+  public var expiresAt: String = String()
+
+  public var state: String = String()
+
+  /// unknown until ICE selects a pair; then direct or turn.
+  public var mode: String = String()
+
+  public var localCandidateType: String = String()
+
+  public var remoteCandidateType: String = String()
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
 // MARK: - Code below here is support for the SwiftProtobuf runtime.
 
 fileprivate nonisolated let _protobuf_package = "dieter.v1"
@@ -21554,6 +21614,135 @@ nonisolated extension Dieter_V1_RemoteDesktopClipboardFrame: SwiftProtobuf.Messa
     if lhs.operationID != rhs.operationID {return false}
     if lhs.data != rhs.data {return false}
     if lhs.end != rhs.end {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Dieter_V1_StartControlConnectionRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".StartControlConnectionRequest"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}rtc_configuration\0\u{3}offer_sdp\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularMessageField(value: &self._rtcConfiguration) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.offerSdp) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    // The use of inline closures is to circumvent an issue where the compiler
+    // allocates stack space for every if/case branch local when no optimizations
+    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+    // https://github.com/apple/swift-protobuf/issues/1182
+    try { if let v = self._rtcConfiguration {
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 1)
+    } }()
+    if !self.offerSdp.isEmpty {
+      try visitor.visitSingularStringField(value: self.offerSdp, fieldNumber: 2)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Dieter_V1_StartControlConnectionRequest, rhs: Dieter_V1_StartControlConnectionRequest) -> Bool {
+    if lhs._rtcConfiguration != rhs._rtcConfiguration {return false}
+    if lhs.offerSdp != rhs.offerSdp {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Dieter_V1_ControlConnectionRef: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".ControlConnectionRef"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}session_id\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.sessionID) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.sessionID.isEmpty {
+      try visitor.visitSingularStringField(value: self.sessionID, fieldNumber: 1)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Dieter_V1_ControlConnectionRef, rhs: Dieter_V1_ControlConnectionRef) -> Bool {
+    if lhs.sessionID != rhs.sessionID {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Dieter_V1_ControlConnection: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".ControlConnection"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}session_id\0\u{3}answer_sdp\0\u{3}expires_at\0\u{1}state\0\u{1}mode\0\u{3}local_candidate_type\0\u{3}remote_candidate_type\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.sessionID) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.answerSdp) }()
+      case 3: try { try decoder.decodeSingularStringField(value: &self.expiresAt) }()
+      case 4: try { try decoder.decodeSingularStringField(value: &self.state) }()
+      case 5: try { try decoder.decodeSingularStringField(value: &self.mode) }()
+      case 6: try { try decoder.decodeSingularStringField(value: &self.localCandidateType) }()
+      case 7: try { try decoder.decodeSingularStringField(value: &self.remoteCandidateType) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.sessionID.isEmpty {
+      try visitor.visitSingularStringField(value: self.sessionID, fieldNumber: 1)
+    }
+    if !self.answerSdp.isEmpty {
+      try visitor.visitSingularStringField(value: self.answerSdp, fieldNumber: 2)
+    }
+    if !self.expiresAt.isEmpty {
+      try visitor.visitSingularStringField(value: self.expiresAt, fieldNumber: 3)
+    }
+    if !self.state.isEmpty {
+      try visitor.visitSingularStringField(value: self.state, fieldNumber: 4)
+    }
+    if !self.mode.isEmpty {
+      try visitor.visitSingularStringField(value: self.mode, fieldNumber: 5)
+    }
+    if !self.localCandidateType.isEmpty {
+      try visitor.visitSingularStringField(value: self.localCandidateType, fieldNumber: 6)
+    }
+    if !self.remoteCandidateType.isEmpty {
+      try visitor.visitSingularStringField(value: self.remoteCandidateType, fieldNumber: 7)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Dieter_V1_ControlConnection, rhs: Dieter_V1_ControlConnection) -> Bool {
+    if lhs.sessionID != rhs.sessionID {return false}
+    if lhs.answerSdp != rhs.answerSdp {return false}
+    if lhs.expiresAt != rhs.expiresAt {return false}
+    if lhs.state != rhs.state {return false}
+    if lhs.mode != rhs.mode {return false}
+    if lhs.localCandidateType != rhs.localCandidateType {return false}
+    if lhs.remoteCandidateType != rhs.remoteCandidateType {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

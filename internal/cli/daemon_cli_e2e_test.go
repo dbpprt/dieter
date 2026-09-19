@@ -22,6 +22,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dbpprt/dieter/internal/controlrtc"
 	dieterdaemon "github.com/dbpprt/dieter/internal/daemon"
 	"github.com/dbpprt/dieter/internal/gateway"
 	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
@@ -489,7 +490,9 @@ func TestDaemonCLIAuthenticatesWithLoopbackPKCEEndToEnd(t *testing.T) {
 	}
 }
 
-func TestDaemonCLIUsesDirectRouteThenRelayFallback(t *testing.T) {
+func TestDaemonCLIUsesDirectRouteThenRelayFallback(t *testing.T) { testDaemonRoutes(t, false) }
+func TestDaemonCLIUsesWebRTCControlAndFallback(t *testing.T)     { testDaemonRoutes(t, true) }
+func testDaemonRoutes(t *testing.T, withRTC bool) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -554,7 +557,19 @@ func TestDaemonCLIUsesDirectRouteThenRelayFallback(t *testing.T) {
 		},
 	})
 	defer screenManager.Shutdown(context.Background())
+	var control *controlrtc.Manager
+	if withRTC {
+		transport, err := newDaemonDirectRoute(identity, localListener.Addr().String(), "control-tls", "127.0.0.1:0", "127.0.0.1", "loopback", 1000)
+		if err != nil {
+			t.Fatal(err)
+		}
+		go func() { _ = transport.server.Serve(transport.listener) }()
+		defer transport.server.Stop()
+		control = controlrtc.New(controlrtc.Identity{DaemonID: identity.ID, GatewayURL: identity.GatewayURL, Generation: identity.Generation, GatewaySigningPublicKey: identity.GatewaySigningPublicKey}, transport.listener.Addr().String())
+		defer control.Close()
+	}
 	remoteServer := server.NewWithOptions(remoteStore, logger, server.Options{
+		ControlRTC:    control,
 		RemoteDesktop: screenManager,
 		Runner:        &fakeRunner{},
 		MachineAction: func(_ context.Context, operation machine.Operation) error {
@@ -585,7 +600,7 @@ func TestDaemonCLIUsesDirectRouteThenRelayFallback(t *testing.T) {
 			_ = directRoute.listener.Close()
 		}
 	}()
-	tunnel := &dieterdaemon.GatewayClient{Identity: identity, LocalTarget: localListener.Addr().String(), Version: "test", Routes: []*gatewayv1.DirectCandidate{directRoute.candidate}, Log: logger}
+	tunnel := &dieterdaemon.GatewayClient{ControlWebRTC: withRTC, Identity: identity, LocalTarget: localListener.Addr().String(), Version: "test", Routes: []*gatewayv1.DirectCandidate{directRoute.candidate}, Log: logger}
 	go func() { _ = tunnel.Run(ctx) }()
 	deadline := time.Now().Add(5 * time.Second)
 	for !gatewayServer.Hub.Online(identity.ID) && time.Now().Before(deadline) {
@@ -619,6 +634,88 @@ func TestDaemonCLIUsesDirectRouteThenRelayFallback(t *testing.T) {
 	}
 	if first.transport == nil || first.transport.route != "direct" {
 		t.Fatalf("route=%#v want direct", first.transport)
+	}
+	if withRTC {
+		first.Close()
+		directRoute.server.Stop()
+		_ = directRoute.listener.Close()
+		directClosed = true
+		peer := New(cliStore)
+		defer peer.Close()
+		peer.DaemonMode, peer.Machine, peer.GatewayURL = true, identity.ID, publicURL.String()
+		peer.Timeout = 20 * time.Second
+		var output bytes.Buffer
+		peer.Out, peer.Err = &output, &output
+		if err := peer.Run([]string{"status"}); err != nil {
+			t.Fatal(err)
+		}
+		if peer.transport.route != "webrtc-direct" {
+			t.Fatalf("want WebRTC, got %s", peer.transport.route)
+		}
+		assertSyncCursorCLI(t, peer, &output)
+		assertMachineHomeTerminalCLI(t, peer, &output)
+		output.Reset()
+		if err := peer.Run([]string{"project", "update", "--hostname", "rtc.example", remoteProject.ID}); err != nil {
+			t.Fatal(err)
+		}
+		output.Reset()
+		if err := peer.Run([]string{"project", "show", remoteProject.ID}); err != nil || !strings.Contains(output.String(), "rtc.example") {
+			t.Fatalf("RTC mutation/read: %q %v", output.String(), err)
+		}
+		output.Reset()
+		if err := peer.Run([]string{"remote", "exec", "--project", remoteProject.ID, "--", "/usr/bin/printf", "rtc-exec"}); err != nil || output.String() != "rtc-exec" {
+			t.Fatalf("RTC execution: %q %v", output.String(), err)
+		}
+		configuration, err := peer.gateway.client.GetRTCConfiguration(ctx, &gatewayv1.DaemonRef{DaemonId: identity.ID})
+		if err != nil {
+			t.Fatal(err)
+		}
+		// Exercise the explicit CLI signaling operations over the active RTC
+		// API route, without starting screen capture or another agent.
+		stream, session, err := controlrtc.Dial(ctx, configuration, func(ctx context.Context, request *dieterv1.StartControlConnectionRequest) (*dieterv1.ControlConnection, error) {
+			raw, err := protojson.Marshal(request)
+			if err != nil {
+				return nil, err
+			}
+			path := filepath.Join(t.TempDir(), "offer.json")
+			if err = os.WriteFile(path, raw, 0600); err != nil {
+				return nil, err
+			}
+			output.Reset()
+			if err = peer.Run([]string{"machine", "connection", "start", "--request", path}); err != nil {
+				return nil, err
+			}
+			result := &dieterv1.ControlConnection{}
+			err = protojson.Unmarshal(output.Bytes(), result)
+			return result, err
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer stream.Close()
+		output.Reset()
+		if err = peer.Run([]string{"machine", "connection", "show", session.SessionId}); err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(output.String(), session.SessionId) {
+			t.Fatal("missing control session")
+		}
+		if err = peer.Run([]string{"machine", "connection", "close", session.SessionId}); err != nil {
+			t.Fatal(err)
+		}
+		peer.Close()
+		control.Close()
+		fallback := New(cliStore)
+		defer fallback.Close()
+		fallback.DaemonMode, fallback.Machine, fallback.GatewayURL = true, identity.ID, publicURL.String()
+		fallback.Out, fallback.Err = io.Discard, io.Discard
+		if err := fallback.Run([]string{"status"}); err != nil {
+			t.Fatal(err)
+		}
+		if fallback.transport.route != "relay" {
+			t.Fatalf("closed RTC manager did not fall back: %s", fallback.transport.route)
+		}
+		return
 	}
 	firstOutput.Reset()
 	if err := first.Run([]string{"machine", "info"}); err != nil || !strings.Contains(firstOutput.String(), `"daemonBuild"`) || !strings.Contains(firstOutput.String(), `"gpu"`) {
@@ -698,8 +795,9 @@ func TestDaemonCLIUsesDirectRouteThenRelayFallback(t *testing.T) {
 	if err := second.Run([]string{"status"}); err != nil {
 		t.Fatal(err)
 	}
-	if second.transport == nil || second.transport.route != "relay" {
-		t.Fatalf("route=%#v want relay", second.transport)
+	expectedRoute := "relay"
+	if second.transport == nil || second.transport.route != expectedRoute {
+		t.Fatalf("route=%#v want %s", second.transport, expectedRoute)
 	}
 	assertSyncCursorCLI(t, second, &secondOutput)
 	secondOutput.Reset()
@@ -744,6 +842,7 @@ func TestDaemonCLIUsesDirectRouteThenRelayFallback(t *testing.T) {
 	assertConversationSelectionCLI(t, second, &secondOutput, remoteStore, remoteProject.ID)
 	assertContentPresentationCLI(t, second, &secondOutput, remoteStore, remoteProject.ID)
 	assertBackgroundProcessCLI(t, second, &secondOutput, remoteStore, remoteProject.ID)
+
 }
 
 func assertMachineHomeTerminalCLI(t *testing.T, client *CLI, output *bytes.Buffer) {

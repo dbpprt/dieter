@@ -47,6 +47,45 @@ public enum Dieter_V1_DieterService: Sendable {
                 type: .unary
             )
         }
+        /// Namespace for "StartControlConnection" metadata.
+        public enum StartControlConnection: Sendable {
+            /// Request type for "StartControlConnection".
+            public typealias Input = Dieter_V1_StartControlConnectionRequest
+            /// Response type for "StartControlConnection".
+            public typealias Output = Dieter_V1_ControlConnection
+            /// Descriptor for "StartControlConnection".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.DieterService"),
+                method: "StartControlConnection",
+                type: .unary
+            )
+        }
+        /// Namespace for "GetControlConnection" metadata.
+        public enum GetControlConnection: Sendable {
+            /// Request type for "GetControlConnection".
+            public typealias Input = Dieter_V1_ControlConnectionRef
+            /// Response type for "GetControlConnection".
+            public typealias Output = Dieter_V1_ControlConnection
+            /// Descriptor for "GetControlConnection".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.DieterService"),
+                method: "GetControlConnection",
+                type: .unary
+            )
+        }
+        /// Namespace for "CloseControlConnection" metadata.
+        public enum CloseControlConnection: Sendable {
+            /// Request type for "CloseControlConnection".
+            public typealias Input = Dieter_V1_ControlConnectionRef
+            /// Response type for "CloseControlConnection".
+            public typealias Output = SwiftProtobuf.Google_Protobuf_Empty
+            /// Descriptor for "CloseControlConnection".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.DieterService"),
+                method: "CloseControlConnection",
+                type: .unary
+            )
+        }
         /// Namespace for "GetMachineInformation" metadata.
         public enum GetMachineInformation: Sendable {
             /// Request type for "GetMachineInformation".
@@ -1468,6 +1507,9 @@ public enum Dieter_V1_DieterService: Sendable {
         public static let descriptors: [GRPCCore.MethodDescriptor] = [
             Health.descriptor,
             GetRuntimeStatus.descriptor,
+            StartControlConnection.descriptor,
+            GetControlConnection.descriptor,
+            CloseControlConnection.descriptor,
             GetMachineInformation.descriptor,
             PerformMachineOperation.descriptor,
             GetState.descriptor,
@@ -1632,6 +1674,68 @@ extension Dieter_V1_DieterService {
             deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_RuntimeStatus>,
             options: GRPCCore.CallOptions,
             onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_RuntimeStatus>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "StartControlConnection" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Data-only WebRTC carries the existing authenticated TLS/gRPC byte stream.
+        /// > Bootstrap uses an existing route; no screen capture is started.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_StartControlConnectionRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_StartControlConnectionRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_ControlConnection` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func startControlConnection<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_StartControlConnectionRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_StartControlConnectionRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_ControlConnection>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_ControlConnection>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "GetControlConnection" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_ControlConnectionRef` message.
+        ///   - serializer: A serializer for `Dieter_V1_ControlConnectionRef` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_ControlConnection` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func getControlConnection<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_ControlConnectionRef>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_ControlConnectionRef>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_ControlConnection>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_ControlConnection>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "CloseControlConnection" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_ControlConnectionRef` message.
+        ///   - serializer: A serializer for `Dieter_V1_ControlConnectionRef` messages.
+        ///   - deserializer: A deserializer for `SwiftProtobuf.Google_Protobuf_Empty` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func closeControlConnection<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_ControlConnectionRef>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_ControlConnectionRef>,
+            deserializer: some GRPCCore.MessageDeserializer<SwiftProtobuf.Google_Protobuf_Empty>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<SwiftProtobuf.Google_Protobuf_Empty>) async throws -> Result
         ) async throws -> Result where Result: Sendable
 
         /// Call the "GetMachineInformation" method.
@@ -3830,6 +3934,101 @@ extension Dieter_V1_DieterService {
             try await self.client.unary(
                 request: request,
                 descriptor: Dieter_V1_DieterService.Method.GetRuntimeStatus.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "StartControlConnection" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Data-only WebRTC carries the existing authenticated TLS/gRPC byte stream.
+        /// > Bootstrap uses an existing route; no screen capture is started.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_StartControlConnectionRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_StartControlConnectionRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_ControlConnection` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func startControlConnection<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_StartControlConnectionRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_StartControlConnectionRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_ControlConnection>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_ControlConnection>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Dieter_V1_DieterService.Method.StartControlConnection.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "GetControlConnection" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_ControlConnectionRef` message.
+        ///   - serializer: A serializer for `Dieter_V1_ControlConnectionRef` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_ControlConnection` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func getControlConnection<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_ControlConnectionRef>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_ControlConnectionRef>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_ControlConnection>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_ControlConnection>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Dieter_V1_DieterService.Method.GetControlConnection.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "CloseControlConnection" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_ControlConnectionRef` message.
+        ///   - serializer: A serializer for `Dieter_V1_ControlConnectionRef` messages.
+        ///   - deserializer: A deserializer for `SwiftProtobuf.Google_Protobuf_Empty` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func closeControlConnection<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_ControlConnectionRef>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_ControlConnectionRef>,
+            deserializer: some GRPCCore.MessageDeserializer<SwiftProtobuf.Google_Protobuf_Empty>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<SwiftProtobuf.Google_Protobuf_Empty>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Dieter_V1_DieterService.Method.CloseControlConnection.descriptor,
                 serializer: serializer,
                 deserializer: deserializer,
                 options: options,
@@ -7203,6 +7402,86 @@ extension Dieter_V1_DieterService.ClientProtocol {
         )
     }
 
+    /// Call the "StartControlConnection" method.
+    ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > Data-only WebRTC carries the existing authenticated TLS/gRPC byte stream.
+    /// > Bootstrap uses an existing route; no screen capture is started.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Dieter_V1_StartControlConnectionRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func startControlConnection<Result>(
+        request: GRPCCore.ClientRequest<Dieter_V1_StartControlConnectionRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_ControlConnection>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.startControlConnection(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_V1_StartControlConnectionRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_V1_ControlConnection>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "GetControlConnection" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Dieter_V1_ControlConnectionRef` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func getControlConnection<Result>(
+        request: GRPCCore.ClientRequest<Dieter_V1_ControlConnectionRef>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_ControlConnection>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.getControlConnection(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_V1_ControlConnectionRef>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_V1_ControlConnection>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "CloseControlConnection" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Dieter_V1_ControlConnectionRef` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func closeControlConnection<Result>(
+        request: GRPCCore.ClientRequest<Dieter_V1_ControlConnectionRef>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<SwiftProtobuf.Google_Protobuf_Empty>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.closeControlConnection(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_V1_ControlConnectionRef>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<SwiftProtobuf.Google_Protobuf_Empty>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
     /// Call the "GetMachineInformation" method.
     ///
     /// > Source IDL Documentation:
@@ -10025,6 +10304,98 @@ extension Dieter_V1_DieterService.ClientProtocol {
             metadata: metadata
         )
         return try await self.getRuntimeStatus(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "StartControlConnection" method.
+    ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > Data-only WebRTC carries the existing authenticated TLS/gRPC byte stream.
+    /// > Bootstrap uses an existing route; no screen capture is started.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func startControlConnection<Result>(
+        _ message: Dieter_V1_StartControlConnectionRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_ControlConnection>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Dieter_V1_StartControlConnectionRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.startControlConnection(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "GetControlConnection" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func getControlConnection<Result>(
+        _ message: Dieter_V1_ControlConnectionRef,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_ControlConnection>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Dieter_V1_ControlConnectionRef>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.getControlConnection(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "CloseControlConnection" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func closeControlConnection<Result>(
+        _ message: Dieter_V1_ControlConnectionRef,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<SwiftProtobuf.Google_Protobuf_Empty>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Dieter_V1_ControlConnectionRef>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.closeControlConnection(
             request: request,
             options: options,
             onResponse: handleResponse

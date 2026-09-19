@@ -1,11 +1,14 @@
 package com.dbpprt.dieter.ui
 
+import android.view.KeyEvent
+import android.view.inputmethod.EditorInfo
 import androidx.compose.foundation.layout.size
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.compose.ui.test.junit4.v2.createComposeRule
 import com.dbpprt.dieter.ui.theme.DieterTheme
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -52,6 +55,37 @@ class RemoteTerminalViewTest {
             assertTrue(terminal.cursorBlinkTransitionsForTesting() >= 2)
             terminal.sendBytes("cursor wakes\n".encodeToByteArray())
             assertTrue(terminal.cursorVisibleForTesting())
+        }
+    }
+
+    @Test
+    fun terminalImeAndSpecialKeysEmitRawTerminalControlBytes() {
+        lateinit var terminal: RemoteTerminalView
+        var input = byteArrayOf()
+        composeRule.setContent {
+            DieterTheme {
+                AndroidView(
+                    factory = { context ->
+                        RemoteTerminalView(context).also { view ->
+                            terminal = view
+                            view.onInput = { input += it }
+                        }
+                    },
+                    modifier = Modifier.size(width = 320.dp, height = 180.dp),
+                )
+            }
+        }
+
+        composeRule.runOnIdle {
+            val connection = terminal.onCreateInputConnection(EditorInfo())
+            connection.commitText("abc", 1)
+            connection.deleteSurroundingText(1, 0)
+            terminal.sendKeyCode(KeyEvent.KEYCODE_DPAD_LEFT)
+
+            assertArrayEquals(
+                byteArrayOf('a'.code.toByte(), 'b'.code.toByte(), 'c'.code.toByte(), 0x7f, 0x1b, '['.code.toByte(), 'D'.code.toByte()),
+                input,
+            )
         }
     }
 }

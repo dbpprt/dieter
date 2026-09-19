@@ -17,6 +17,7 @@ import (
 	"github.com/dbpprt/dieter/internal/app"
 	"github.com/dbpprt/dieter/internal/attachments"
 	"github.com/dbpprt/dieter/internal/changeset"
+	"github.com/dbpprt/dieter/internal/controlrtc"
 	"github.com/dbpprt/dieter/internal/gen/dieter/v1/dieterv1connect"
 	"github.com/dbpprt/dieter/internal/gitops"
 	"github.com/dbpprt/dieter/internal/harness"
@@ -33,6 +34,7 @@ import (
 )
 
 type Server struct {
+	controlRTC              *controlrtc.Manager
 	syncProjections         syncProjectionCache
 	store                   *store.Store
 	app                     *app.Service
@@ -62,6 +64,7 @@ type Server struct {
 // capability probe, and executor. Tests can substitute a no-op executor
 // without weakening the authenticated RPC or its validation.
 type Options struct {
+	ControlRTC          *controlrtc.Manager
 	Runner              harness.Runner
 	RemoteDesktop       *remotedesktop.Manager
 	MachineAction       func(context.Context, machine.Operation) error
@@ -80,6 +83,7 @@ func NewWithRunner(data *store.Store, logger *slog.Logger, runner harness.Runner
 func NewWithOptions(data *store.Store, logger *slog.Logger, options Options) *Server {
 	manager, _ := newAuthManager(authConfig{}, data)
 	application := newWithAuth(data, logger, options.Runner, manager)
+	application.controlRTC = options.ControlRTC
 	if options.RemoteDesktop != nil {
 		application.remoteDesktop = options.RemoteDesktop
 	}
@@ -285,19 +289,23 @@ func ListenDaemon(ctx context.Context, addr string, data *store.Store, runner ha
 	if len(remoteDesktop) > 0 {
 		desktop = remoteDesktop[0]
 	}
-	return ListenDaemonReady(ctx, addr, data, runner, logger, desktop, nil)
+	return ListenDaemonReady(ctx, addr, data, runner, logger, desktop, nil, nil, nil)
 }
 
 // ListenDaemonReady acknowledges a runtime activation only after initialization
 // and successful listener binding, before any scheduled work is dispatched.
-func ListenDaemonReady(ctx context.Context, addr string, data *store.Store, runner harness.Runner, logger *slog.Logger, remoteDesktop *remotedesktop.Manager, ready func() error, providerAccountKey ...func(string) string) error {
+func ListenDaemonReady(ctx context.Context, addr string, data *store.Store, runner harness.Runner, logger *slog.Logger, remoteDesktop *remotedesktop.Manager, ready func() error, providerAccountKey func(string) string, control *controlrtc.Manager) error {
 	manager, err := newAuthManager(authConfig{}, data)
 	if err != nil {
 		return err
 	}
 	application := newWithAuth(data, logger, runner, manager)
-	if len(providerAccountKey) > 0 {
-		application.app.ProviderAccountKey = providerAccountKey[0]
+	if providerAccountKey != nil {
+		application.app.ProviderAccountKey = providerAccountKey
+	}
+	if control != nil {
+		application.controlRTC = control
+		defer control.Close()
 	}
 	if remoteDesktop != nil {
 		application.remoteDesktop = remoteDesktop

@@ -40,8 +40,12 @@ dieter --machine <machine-id> status
 dieter --machine <machine-id> project list --format jsonl
 ```
 
-Remote commands prefer the daemon's authenticated direct TLS route and fall
-back to the bounded gateway relay. State, sync, card, terminal, remote-execution,
+Remote commands prefer the daemon's authenticated direct TLS route, then try
+a data-only WebRTC route when supported, with bounded gateway relay fallback.
+`status` reports `webrtc-direct` or `webrtc-turn` from the selected ICE pair.
+TURN still relays traffic; end-to-end daemon TLS and per-RPC authorization remain
+in force. WebRTC sessions are independent of screen sharing and expire after
+one hour; transport recovery must not replay mutations. State, sync, card, terminal, remote-execution,
 and Git-operation watches renew direct credentials and resume from the last
 delivered sequence or complete sync projection. Transient failures allow five
 retries between delivered frames; revocation and permanent errors stop recovery.
@@ -779,3 +783,28 @@ The qualified one-credit fallback remains available with older helpers.
 collection. The physical Android runner requires an exact serial and a separate
 fixture application ID; the original emulator-only runner remains unchanged in
 its device policy. Do not present a skipped/unavailable matrix cell as a pass.
+
+### Data-only WebRTC control signaling
+
+All commands support the normal local target or global `--machine ID|NAME`.
+`machine route` includes `controlWebrtc` when the connected daemon supports this
+transport. The gateway provides account authentication, discovery, ICE
+configuration, bootstrap signaling, and fallback; API payloads then use the
+selected peer or TURN path. Clients retain direct TLS preference.
+
+```sh
+dieter machine rtc MACHINE
+dieter --machine MACHINE machine connection start --request offer.json
+dieter --machine MACHINE machine connection show SESSION
+dieter --machine MACHINE machine connection close SESSION
+```
+
+The start file is protobuf JSON containing `rtcConfiguration` and `offerSdp`.
+The response contains the gathered answer, session ID, expiry, state and mode.
+Mode is `unknown` before ICE selection and then `direct` or `turn`; candidate
+kinds describe the selected path without exposing addresses. A data-only peer
+must create the reliable ordered `dieter-control-tls-v1` channel and speak the
+bounded byte framing in `docs/webrtc-control-transport.md`. It carries the
+ordinary authenticated TLS/gRPC connection, not unencrypted protobuf RPCs.
+A close is transport-only. Existing agent turns, terminals and remote executions
+continue; callers resume eligible watches using their existing cursors.

@@ -23,6 +23,7 @@ package final class DieterRPC: Sendable {
     package let service: Service
     package let gatewayService: GatewayService
     package let directCredential: DirectAccessCredential?
+    private let controlBridge: ControlRTCBridge?
 
     package static func attachmentCallOptions(bounded: Bool = false) -> CallOptions {
         var options = CallOptions.defaults
@@ -85,10 +86,12 @@ package final class DieterRPC: Sendable {
         endpoint: DieterEndpoint,
         accessToken: String? = nil,
         route: Route = .gateway,
-        direct: DirectRoute? = nil
+        direct: DirectRoute? = nil,
+        controlBridge: ControlRTCBridge? = nil
     ) throws {
+        self.controlBridge = controlBridge
         self.endpoint = endpoint
-        isLoopbackDataPlane = Self.isLoopbackDataPlane(endpoint: endpoint, route: route, directHost: direct?.host)
+        isLoopbackDataPlane = controlBridge == nil && Self.isLoopbackDataPlane(endpoint: endpoint, route: route, directHost: direct?.host)
         let host = direct?.host ?? endpoint.host
         let port = direct?.port ?? endpoint.port
         let security: HTTP2ClientTransport.Posix.TransportSecurity
@@ -213,6 +216,7 @@ package final class DieterRPC: Sendable {
 
     package func shutdown() {
         core.beginGracefulShutdown()
+        controlBridge?.close()
     }
 
     package func daemons() async throws -> Dieter_Gateway_V1_ListDaemonsResponse {

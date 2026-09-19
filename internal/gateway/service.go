@@ -399,7 +399,7 @@ func (s *Service) ResolveDaemonRoute(ctx context.Context, request *gatewayv1.Dae
 		return nil, err
 	}
 	daemon := s.protoDaemon(record)
-	return &gatewayv1.DaemonRoute{DaemonId: record.ID, RelayAvailable: daemon.Online, DirectCandidates: daemon.DirectCandidates, Generation: record.Generation, DaemonCaPem: s.keys.DaemonCAPEM, DaemonCertificatePem: append([]byte(nil), record.Certificate...)}, nil
+	return &gatewayv1.DaemonRoute{ControlWebrtc: s.hub.ControlWebRTC(record.ID), DaemonId: record.ID, RelayAvailable: daemon.Online, DirectCandidates: daemon.DirectCandidates, Generation: record.Generation, DaemonCaPem: s.keys.DaemonCAPEM, DaemonCertificatePem: append([]byte(nil), record.Certificate...)}, nil
 }
 
 func (s *Service) GetRTCConfiguration(ctx context.Context, request *gatewayv1.DaemonRef) (*gatewayv1.RTCConfiguration, error) {

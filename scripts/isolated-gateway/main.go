@@ -28,6 +28,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/dbpprt/dieter/internal/controlrtc"
 	"github.com/dbpprt/dieter/internal/daemon"
 	"github.com/dbpprt/dieter/internal/gateway"
 	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
@@ -110,7 +111,7 @@ func run(address, home, offlineTrigger, daemonRestartTrigger string, boardStress
 	config := gateway.Config{
 		Root: filepath.Join(home, "gateway"), Address: gatewayListener.Addr().String(), PublicURL: publicURL,
 		GitHubClientID: "isolated", GitHubSecret: "isolated", AllowedUserID: 1, AllowedLogin: "isolated",
-		AuthSecret: authSecret, SessionTTL: 12 * time.Hour,
+		AuthSecret: authSecret, SessionTTL: 12 * time.Hour, RTCTTL: 5 * time.Minute,
 		NativeRedirects: map[string]struct{}{}, GitHubBaseURL: "https://github.invalid", GitHubAPIURL: "https://api.github.invalid",
 		DevInsecure: true,
 	}
@@ -200,6 +201,22 @@ func run(address, home, offlineTrigger, daemonRestartTrigger string, boardStress
 	if err != nil {
 		return err
 	}
+	var control *controlrtc.Manager
+	if os.Getenv("DIETER_TEST_CONTROL_WEBRTC") == "1" {
+		tlsListener, listenErr := net.Listen("tcp", "127.0.0.1:0")
+		if listenErr != nil {
+			return listenErr
+		}
+		direct, directErr := daemon.NewDirectServer(identity, boardListener.Addr().String())
+		if directErr != nil {
+			tlsListener.Close()
+			return directErr
+		}
+		go func() { _ = direct.Serve(tlsListener) }()
+		defer direct.Stop()
+		control = controlrtc.New(controlrtc.Identity{DaemonID: identity.ID, GatewayURL: identity.GatewayURL, Generation: identity.Generation, GatewaySigningPublicKey: identity.GatewaySigningPublicKey}, tlsListener.Addr().String())
+		defer control.Close()
+	}
 	var boardServersMu sync.Mutex
 	var boardServers []*server.Server
 	var boardRunners []*isolatedRunner
@@ -208,6 +225,12 @@ func run(address, home, offlineTrigger, daemonRestartTrigger string, boardStress
 		runner.logger = logger
 		value := server.NewWithOptions(fixtureData, logger, server.Options{
 			Runner: runner,
+			ControlRTC: func() *controlrtc.Manager {
+				if fixtureData == data {
+					return control
+				}
+				return nil
+			}(),
 			MachineAction: func(_ context.Context, operation machine.Operation) error {
 				logger.Info("isolated machine operation accepted", "operation", operation)
 				return nil
@@ -263,7 +286,7 @@ func run(address, home, offlineTrigger, daemonRestartTrigger string, boardStress
 		secondTarget = secondListener.Addr().String()
 	}
 
-	tunnel := &daemon.GatewayClient{Identity: identity, LocalTarget: boardListener.Addr().String(), Version: "isolated-e2e", APIVersion: server.APIVersion, Log: logger}
+	tunnel := &daemon.GatewayClient{ControlWebRTC: control != nil, Identity: identity, LocalTarget: boardListener.Addr().String(), Version: "isolated-e2e", APIVersion: server.APIVersion, Log: logger}
 	if offlineTrigger == "" {
 		go func() { _ = tunnel.Run(ctx) }()
 	} else {

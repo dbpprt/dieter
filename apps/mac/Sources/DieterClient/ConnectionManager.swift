@@ -157,7 +157,8 @@ private let connectionLogger = Logger(subsystem: "com.dbpprt.dieter.mac", catego
                             rpc: direct,
                             task: directTask,
                             connection: .init(
-                                route: .local, latencyMilliseconds: Self.latencyMilliseconds(since: started)),
+                                route: candidate.network.caseInsensitiveCompare("loopback") == .orderedSame ? .local : .directTLS,
+                                latencyMilliseconds: Self.latencyMilliseconds(since: started)),
                             directTokenExpiresAt: token.expiresAt,
                             directCredential: direct.directCredential,
                             credentialRefreshTask: credentialRefreshTask
@@ -178,6 +179,14 @@ private let connectionLogger = Logger(subsystem: "com.dbpprt.dieter.mac", catego
             }
         }
         try Task.checkCancellation()
+        if route.controlWebrtc && route.relayAvailable {
+            do {
+                return try await controlConnection(gateway: gateway, target: target, gatewayAccessToken: gatewayAccessToken, route: route, refreshDirectToken: refreshDirectToken, run: run)
+            } catch {
+                try Task.checkCancellation()
+                connectionLogger.debug("WebRTC control route failed: \(error.localizedDescription, privacy: .public)")
+            }
+        }
         guard route.relayAvailable else {
             throw NSError(
                 domain: "DieterGateway", code: 3,
@@ -245,7 +254,7 @@ private let connectionLogger = Logger(subsystem: "com.dbpprt.dieter.mac", catego
             connectionTask: plane.task,
             rtcConfiguration: configuration,
             daemonCertificatePEM: route.daemonCertificatePem,
-            routeLabel: plane.connection.route == .local ? "Direct" : "Gateway",
+            routeLabel: plane.connection.route == .local ? "Direct" : plane.connection.route.rawValue,
             credentialRefreshTask: plane.credentialRefreshTask)
     }
 }

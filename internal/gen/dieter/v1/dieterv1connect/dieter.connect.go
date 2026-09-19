@@ -39,6 +39,15 @@ const (
 	// DieterServiceGetRuntimeStatusProcedure is the fully-qualified name of the DieterService's
 	// GetRuntimeStatus RPC.
 	DieterServiceGetRuntimeStatusProcedure = "/dieter.v1.DieterService/GetRuntimeStatus"
+	// DieterServiceStartControlConnectionProcedure is the fully-qualified name of the DieterService's
+	// StartControlConnection RPC.
+	DieterServiceStartControlConnectionProcedure = "/dieter.v1.DieterService/StartControlConnection"
+	// DieterServiceGetControlConnectionProcedure is the fully-qualified name of the DieterService's
+	// GetControlConnection RPC.
+	DieterServiceGetControlConnectionProcedure = "/dieter.v1.DieterService/GetControlConnection"
+	// DieterServiceCloseControlConnectionProcedure is the fully-qualified name of the DieterService's
+	// CloseControlConnection RPC.
+	DieterServiceCloseControlConnectionProcedure = "/dieter.v1.DieterService/CloseControlConnection"
 	// DieterServiceGetMachineInformationProcedure is the fully-qualified name of the DieterService's
 	// GetMachineInformation RPC.
 	DieterServiceGetMachineInformationProcedure = "/dieter.v1.DieterService/GetMachineInformation"
@@ -359,6 +368,11 @@ const (
 type DieterServiceClient interface {
 	Health(context.Context, *connect.Request[emptypb.Empty]) (*connect.Response[v1.HealthResponse], error)
 	GetRuntimeStatus(context.Context, *connect.Request[emptypb.Empty]) (*connect.Response[v1.RuntimeStatus], error)
+	// Data-only WebRTC carries the existing authenticated TLS/gRPC byte stream.
+	// Bootstrap uses an existing route; no screen capture is started.
+	StartControlConnection(context.Context, *connect.Request[v1.StartControlConnectionRequest]) (*connect.Response[v1.ControlConnection], error)
+	GetControlConnection(context.Context, *connect.Request[v1.ControlConnectionRef]) (*connect.Response[v1.ControlConnection], error)
+	CloseControlConnection(context.Context, *connect.Request[v1.ControlConnectionRef]) (*connect.Response[emptypb.Empty], error)
 	// Machine telemetry stays on the daemon and follows the same authenticated
 	// direct-or-relay data path as every other Dieter operation.
 	GetMachineInformation(context.Context, *connect.Request[emptypb.Empty]) (*connect.Response[v1.MachineInformation], error)
@@ -516,6 +530,24 @@ func NewDieterServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 			httpClient,
 			baseURL+DieterServiceGetRuntimeStatusProcedure,
 			connect.WithSchema(dieterServiceMethods.ByName("GetRuntimeStatus")),
+			connect.WithClientOptions(opts...),
+		),
+		startControlConnection: connect.NewClient[v1.StartControlConnectionRequest, v1.ControlConnection](
+			httpClient,
+			baseURL+DieterServiceStartControlConnectionProcedure,
+			connect.WithSchema(dieterServiceMethods.ByName("StartControlConnection")),
+			connect.WithClientOptions(opts...),
+		),
+		getControlConnection: connect.NewClient[v1.ControlConnectionRef, v1.ControlConnection](
+			httpClient,
+			baseURL+DieterServiceGetControlConnectionProcedure,
+			connect.WithSchema(dieterServiceMethods.ByName("GetControlConnection")),
+			connect.WithClientOptions(opts...),
+		),
+		closeControlConnection: connect.NewClient[v1.ControlConnectionRef, emptypb.Empty](
+			httpClient,
+			baseURL+DieterServiceCloseControlConnectionProcedure,
+			connect.WithSchema(dieterServiceMethods.ByName("CloseControlConnection")),
 			connect.WithClientOptions(opts...),
 		),
 		getMachineInformation: connect.NewClient[emptypb.Empty, v1.MachineInformation](
@@ -1179,6 +1211,9 @@ func NewDieterServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 type dieterServiceClient struct {
 	health                          *connect.Client[emptypb.Empty, v1.HealthResponse]
 	getRuntimeStatus                *connect.Client[emptypb.Empty, v1.RuntimeStatus]
+	startControlConnection          *connect.Client[v1.StartControlConnectionRequest, v1.ControlConnection]
+	getControlConnection            *connect.Client[v1.ControlConnectionRef, v1.ControlConnection]
+	closeControlConnection          *connect.Client[v1.ControlConnectionRef, emptypb.Empty]
 	getMachineInformation           *connect.Client[emptypb.Empty, v1.MachineInformation]
 	performMachineOperation         *connect.Client[v1.MachineOperationRequest, v1.MachineOperationResponse]
 	getState                        *connect.Client[v1.GetStateRequest, v1.State]
@@ -1298,6 +1333,21 @@ func (c *dieterServiceClient) Health(ctx context.Context, req *connect.Request[e
 // GetRuntimeStatus calls dieter.v1.DieterService.GetRuntimeStatus.
 func (c *dieterServiceClient) GetRuntimeStatus(ctx context.Context, req *connect.Request[emptypb.Empty]) (*connect.Response[v1.RuntimeStatus], error) {
 	return c.getRuntimeStatus.CallUnary(ctx, req)
+}
+
+// StartControlConnection calls dieter.v1.DieterService.StartControlConnection.
+func (c *dieterServiceClient) StartControlConnection(ctx context.Context, req *connect.Request[v1.StartControlConnectionRequest]) (*connect.Response[v1.ControlConnection], error) {
+	return c.startControlConnection.CallUnary(ctx, req)
+}
+
+// GetControlConnection calls dieter.v1.DieterService.GetControlConnection.
+func (c *dieterServiceClient) GetControlConnection(ctx context.Context, req *connect.Request[v1.ControlConnectionRef]) (*connect.Response[v1.ControlConnection], error) {
+	return c.getControlConnection.CallUnary(ctx, req)
+}
+
+// CloseControlConnection calls dieter.v1.DieterService.CloseControlConnection.
+func (c *dieterServiceClient) CloseControlConnection(ctx context.Context, req *connect.Request[v1.ControlConnectionRef]) (*connect.Response[emptypb.Empty], error) {
+	return c.closeControlConnection.CallUnary(ctx, req)
 }
 
 // GetMachineInformation calls dieter.v1.DieterService.GetMachineInformation.
@@ -1849,6 +1899,11 @@ func (c *dieterServiceClient) ListScheduleRuns(ctx context.Context, req *connect
 type DieterServiceHandler interface {
 	Health(context.Context, *connect.Request[emptypb.Empty]) (*connect.Response[v1.HealthResponse], error)
 	GetRuntimeStatus(context.Context, *connect.Request[emptypb.Empty]) (*connect.Response[v1.RuntimeStatus], error)
+	// Data-only WebRTC carries the existing authenticated TLS/gRPC byte stream.
+	// Bootstrap uses an existing route; no screen capture is started.
+	StartControlConnection(context.Context, *connect.Request[v1.StartControlConnectionRequest]) (*connect.Response[v1.ControlConnection], error)
+	GetControlConnection(context.Context, *connect.Request[v1.ControlConnectionRef]) (*connect.Response[v1.ControlConnection], error)
+	CloseControlConnection(context.Context, *connect.Request[v1.ControlConnectionRef]) (*connect.Response[emptypb.Empty], error)
 	// Machine telemetry stays on the daemon and follows the same authenticated
 	// direct-or-relay data path as every other Dieter operation.
 	GetMachineInformation(context.Context, *connect.Request[emptypb.Empty]) (*connect.Response[v1.MachineInformation], error)
@@ -2002,6 +2057,24 @@ func NewDieterServiceHandler(svc DieterServiceHandler, opts ...connect.HandlerOp
 		DieterServiceGetRuntimeStatusProcedure,
 		svc.GetRuntimeStatus,
 		connect.WithSchema(dieterServiceMethods.ByName("GetRuntimeStatus")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dieterServiceStartControlConnectionHandler := connect.NewUnaryHandler(
+		DieterServiceStartControlConnectionProcedure,
+		svc.StartControlConnection,
+		connect.WithSchema(dieterServiceMethods.ByName("StartControlConnection")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dieterServiceGetControlConnectionHandler := connect.NewUnaryHandler(
+		DieterServiceGetControlConnectionProcedure,
+		svc.GetControlConnection,
+		connect.WithSchema(dieterServiceMethods.ByName("GetControlConnection")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dieterServiceCloseControlConnectionHandler := connect.NewUnaryHandler(
+		DieterServiceCloseControlConnectionProcedure,
+		svc.CloseControlConnection,
+		connect.WithSchema(dieterServiceMethods.ByName("CloseControlConnection")),
 		connect.WithHandlerOptions(opts...),
 	)
 	dieterServiceGetMachineInformationHandler := connect.NewUnaryHandler(
@@ -2664,6 +2737,12 @@ func NewDieterServiceHandler(svc DieterServiceHandler, opts ...connect.HandlerOp
 			dieterServiceHealthHandler.ServeHTTP(w, r)
 		case DieterServiceGetRuntimeStatusProcedure:
 			dieterServiceGetRuntimeStatusHandler.ServeHTTP(w, r)
+		case DieterServiceStartControlConnectionProcedure:
+			dieterServiceStartControlConnectionHandler.ServeHTTP(w, r)
+		case DieterServiceGetControlConnectionProcedure:
+			dieterServiceGetControlConnectionHandler.ServeHTTP(w, r)
+		case DieterServiceCloseControlConnectionProcedure:
+			dieterServiceCloseControlConnectionHandler.ServeHTTP(w, r)
 		case DieterServiceGetMachineInformationProcedure:
 			dieterServiceGetMachineInformationHandler.ServeHTTP(w, r)
 		case DieterServicePerformMachineOperationProcedure:
@@ -2897,6 +2976,18 @@ func (UnimplementedDieterServiceHandler) Health(context.Context, *connect.Reques
 
 func (UnimplementedDieterServiceHandler) GetRuntimeStatus(context.Context, *connect.Request[emptypb.Empty]) (*connect.Response[v1.RuntimeStatus], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.GetRuntimeStatus is not implemented"))
+}
+
+func (UnimplementedDieterServiceHandler) StartControlConnection(context.Context, *connect.Request[v1.StartControlConnectionRequest]) (*connect.Response[v1.ControlConnection], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.StartControlConnection is not implemented"))
+}
+
+func (UnimplementedDieterServiceHandler) GetControlConnection(context.Context, *connect.Request[v1.ControlConnectionRef]) (*connect.Response[v1.ControlConnection], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.GetControlConnection is not implemented"))
+}
+
+func (UnimplementedDieterServiceHandler) CloseControlConnection(context.Context, *connect.Request[v1.ControlConnectionRef]) (*connect.Response[emptypb.Empty], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.CloseControlConnection is not implemented"))
 }
 
 func (UnimplementedDieterServiceHandler) GetMachineInformation(context.Context, *connect.Request[emptypb.Empty]) (*connect.Response[v1.MachineInformation], error) {

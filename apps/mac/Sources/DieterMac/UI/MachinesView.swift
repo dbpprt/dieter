@@ -201,6 +201,13 @@ struct MachinePopover: View {
                     .font(.system(size: 12, weight: .medium, design: .monospaced))
                     .foregroundStyle(DieterTheme.tertiary)
                     .lineLimit(2)
+                if let status = store.connectionStatus(for: machine) {
+                    Label("\(status.route.rawValue) · \(status.latencyMilliseconds) ms", systemImage: "network")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(DieterTheme.subtle)
+                        .accessibilityLabel("Connection: \(status.route.rawValue), \(status.latencyMilliseconds) milliseconds")
+                        .accessibilityIdentifier("machine.connection-mode")
+                }
             }
             Spacer()
             Button {
@@ -268,9 +275,6 @@ struct MachinePopover: View {
             .filter { !$0.isEmpty }.joined(separator: " ")
         if !operatingSystem.isEmpty { parts.append(operatingSystem) }
         parts.append("up \(MachineInformationPresentation.uptime(information.uptimeSeconds))")
-        if let status = store.connectionStatus(for: machine) {
-            parts.append("\(status.route.rawValue) \(status.latencyMilliseconds) ms")
-        }
         return parts.joined(separator: "  ·  ")
     }
 

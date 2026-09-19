@@ -31,6 +31,7 @@ import (
 )
 
 type GatewayClient struct {
+	ControlWebRTC         bool
 	Identity              *Identity
 	LocalTarget           string
 	Version               string
@@ -226,14 +227,7 @@ func (c *GatewayClient) runOnce(ctx context.Context) (time.Duration, error) {
 	if err != nil {
 		return 0, handshakeFailure(err)
 	}
-	capabilities := []string{}
-	if c.ProviderQuotas != nil {
-		capabilities = append(capabilities, gatewayProviderQuotaCapability)
-		if _, ok := c.ProviderQuotas.(ProviderQuotaResetSource); ok {
-			capabilities = append(capabilities, gatewayProviderResetCapability)
-		}
-	}
-	if err := stream.Send(&gatewayv1.DaemonLinkFrame{Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_HELLO, DaemonId: c.Identity.ID, Version: c.Version, ApiVersion: c.APIVersion, DirectCandidates: c.Routes, RemoteDesktop: c.remoteDesktopPresence(), Capabilities: capabilities}); err != nil {
+	if err := stream.Send(&gatewayv1.DaemonLinkFrame{Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_HELLO, DaemonId: c.Identity.ID, Version: c.Version, ApiVersion: c.APIVersion, Capabilities: c.controlCapabilities(), DirectCandidates: c.Routes, RemoteDesktop: c.remoteDesktopPresence()}); err != nil {
 		return 0, handshakeFailure(err)
 	}
 	challenge, err := stream.Recv()
@@ -462,7 +456,7 @@ func (c *GatewayClient) runOnce(ctx context.Context) (time.Duration, error) {
 		case <-heartbeatWatchdogC:
 			return finish(fmt.Errorf("gateway heartbeat acknowledgement timed out after %s", timing.HeartbeatAckTimeout))
 		case <-heartbeat.C:
-			frame := &gatewayv1.DaemonLinkFrame{Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_HEARTBEAT, DaemonId: c.Identity.ID, Version: c.Version, ApiVersion: c.APIVersion, DirectCandidates: c.Routes, RemoteDesktop: c.remoteDesktopPresence()}
+			frame := &gatewayv1.DaemonLinkFrame{Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_HEARTBEAT, DaemonId: c.Identity.ID, Version: c.Version, ApiVersion: c.APIVersion, Capabilities: c.controlCapabilities(), DirectCandidates: c.Routes, RemoteDesktop: c.remoteDesktopPresence()}
 			if !heartbeatAcknowledged {
 				if !tryEnqueueControl(frame) {
 					return finish(errors.New("gateway heartbeat control queue is stalled"))
@@ -852,4 +846,18 @@ func Unenroll(ctx context.Context, identity *Identity) error {
 		Signature: linkauth.SignUnenrollment(identity.PrivateKey, identity.GatewayURL, identity.ID, nonce),
 	})
 	return err
+}
+
+func (c *GatewayClient) controlCapabilities() []string {
+	capabilities := []string{}
+	if c.ProviderQuotas != nil {
+		capabilities = append(capabilities, gatewayProviderQuotaCapability)
+		if _, ok := c.ProviderQuotas.(ProviderQuotaResetSource); ok {
+			capabilities = append(capabilities, gatewayProviderResetCapability)
+		}
+	}
+	if c.ControlWebRTC {
+		capabilities = append(capabilities, "control_webrtc_v1")
+	}
+	return capabilities
 }

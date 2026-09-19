@@ -117,6 +117,10 @@
                 "route": store.connectionStatus(for: machine) == nil
                     ? "failed: no authenticated route measurement" : "passed",
             ]
+            if ProcessInfo.processInfo.environment["DIETER_TEST_CONTROL_WEBRTC"] == "1" {
+                results["webrtc-route"] = store.connectionStatus(for: machine)?.route == .webrtcDirect
+                    ? "passed" : "failed: fixture did not select direct WebRTC"
+            }
             results["render"] =
                 capture(window: window, to: output.appendingPathComponent("machine-information.png"))
                 ? "passed" : "failed: could not capture machine popup"

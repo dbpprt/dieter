@@ -91,9 +91,9 @@ build. The vulnerability check uses the Go version pinned in `go.mod` and the
 gateway image. CI requires both checks before publishing an image. Confirm the
 deployed build identity through `/healthz` after deployment.
 
-## ICE / TURN for Screens
+## ICE / TURN for Screens and API connections
 
-Remote viewing can use `DIETER_RTC_STUN_URLS` and `DIETER_RTC_TURN_URLS` as
+Remote viewing and data-only WebRTC API connections can use `DIETER_RTC_STUN_URLS` and `DIETER_RTC_TURN_URLS` as
 comma-separated ICE server URLs. When TURN URLs are configured, set
 `DIETER_RTC_TURN_SECRET` to a hex-encoded secret of at least 32 bytes shared
 with coturn's REST authentication; the gateway derives ephemeral credentials
@@ -105,3 +105,10 @@ configuration lifetime and defaults to five minutes.
 The gateway owns a SQLite database under `DIETER_GATEWAY_HOME` plus its private
 signing and daemon-CA keys. A container image is available via
 `Dockerfile.gateway`.
+
+Enrolled daemons advertise `controlWebrtc` in route discovery when their
+WebRTC-to-authenticated-TLS bridge is available. Current clients prefer direct
+TLS, then attempt WebRTC, retaining the gateway relay for older peers or failed
+ICE negotiation. Machine connection details distinguish WebRTC Direct from
+WebRTC TURN using the selected candidate pair. TURN traffic is still relayed;
+the daemon's TLS certificate and per-RPC access token remain verified.

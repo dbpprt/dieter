@@ -13,6 +13,7 @@ import (
 // RPC must have an equivalent, documented CLI entry point. Adding an RPC makes
 // this test fail until the feature team wires and documents its CLI operation.
 var rpcCommand = map[string]string{
+	"StartControlConnection": "machine connection start", "GetControlConnection": "machine connection show", "CloseControlConnection": "machine connection close",
 	"ListRemoteDesktopDisplayModes":   "screen resolution modes",
 	"SetRemoteDesktopDisplayMode":     "screen resolution set",
 	"RestoreRemoteDesktopDisplayMode": "screen resolution restore",
@@ -59,6 +60,7 @@ func TestEveryDaemonRPCMapsToCLICommand(t *testing.T) {
 
 func TestEveryDaemonCLICommandHasOfflineHelp(t *testing.T) {
 	paths := []string{
+		"machine connection", "machine connection start", "machine connection show", "machine connection close",
 		"screen resolution", "screen resolution modes", "screen resolution set", "screen resolution restore",
 		"card present", "chat present",
 		"auth", "auth login", "auth status", "auth logout",

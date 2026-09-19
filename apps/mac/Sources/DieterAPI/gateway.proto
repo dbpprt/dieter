@@ -172,6 +172,7 @@ message DaemonRoute {
   // daemon-signed remote-desktop session bindings on both relay and direct
   // signaling routes.
   bytes daemon_certificate_pem = 6;
+  bool control_webrtc = 7;
 }
 
 message RTCIceServer {

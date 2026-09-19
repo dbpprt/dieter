@@ -351,7 +351,7 @@
             guard owns(attempt) else { return }
             harnesses = catalogValue.harnesses
             applyState(stateValue)
-            routeDescription = plane.connection.route == .local ? "Direct TLS" : "Gateway relay"
+            routeDescription = plane.connection.route == .local ? "Direct TLS" : plane.connection.route.rawValue
             phase = .connected(version: health.version)
             defaults.set(machine.daemonID, forKey: "DieterIOSMachine:\(machine.credentialID)")
             watchState(attempt: attempt)

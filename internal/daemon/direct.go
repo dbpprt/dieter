@@ -39,7 +39,7 @@ func NewDirectServer(identity *Identity, localTarget string) (*DirectServer, err
 		return nil, err
 	}
 	direct := &DirectServer{identity: identity, local: local}
-	direct.server = grpc.NewServer(grpc.ForceServerCodec(rpcraw.Codec{}), grpc.UnknownServiceHandler(direct.handle), grpc.MaxRecvMsgSize(16<<20), grpc.MaxSendMsgSize(16<<20))
+	direct.server = grpc.NewServer(grpc.ConnectionTimeout(10*time.Second), grpc.ForceServerCodec(rpcraw.Codec{}), grpc.UnknownServiceHandler(direct.handle), grpc.MaxRecvMsgSize(16<<20), grpc.MaxSendMsgSize(16<<20))
 	return direct, nil
 }
 
@@ -140,7 +140,7 @@ func DialDirect(ctx context.Context, address, daemonID string, daemonCA []byte, 
 
 // DialDirectWithCredentials preserves the daemon certificate identity check
 // while allowing long-lived clients to renew their per-RPC bearer credentials.
-func DialDirectWithCredentials(ctx context.Context, address, daemonID string, daemonCA []byte, bearer credentials.PerRPCCredentials) (*grpc.ClientConn, error) {
+func DialDirectWithCredentials(ctx context.Context, address, daemonID string, daemonCA []byte, bearer credentials.PerRPCCredentials, options ...grpc.DialOption) (*grpc.ClientConn, error) {
 	roots := x509.NewCertPool()
 	if !roots.AppendCertsFromPEM(daemonCA) {
 		return nil, errors.New("daemon CA is invalid")
@@ -163,7 +163,8 @@ func DialDirectWithCredentials(ctx context.Context, address, daemonID string, da
 			return errors.New("daemon certificate identity does not match the route")
 		},
 	}
-	connection, err := grpc.NewClient(address, grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)), grpc.WithPerRPCCredentials(bearer), grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(16<<20), grpc.MaxCallSendMsgSize(16<<20)))
+	options = append(options, grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)), grpc.WithPerRPCCredentials(bearer), grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(16<<20), grpc.MaxCallSendMsgSize(16<<20)))
+	connection, err := grpc.NewClient(address, options...)
 	if err != nil {
 		return nil, err
 	}

@@ -179,6 +179,7 @@ Actions:
   shutdown --confirm "SHUT DOWN" [MACHINE]
   update --confirm UPDATE [MACHINE]           Update a managed daemon service
   rtc [MACHINE]                              Get signed WebRTC configuration
+  connection <start|show|close>               Manage data-only WebRTC signaling
 
 Pass MACHINE or global --machine to select a remote daemon. Info, restart, and
 shutdown and update target the local daemon when MACHINE is omitted. Update is
@@ -213,6 +214,9 @@ func (c *CLI) gatewayMachine(ctx context.Context, reference string) (*gatewayTra
 }
 
 func (c *CLI) machineCommand(args []string) error {
+	if len(args) > 0 && args[0] == "connection" {
+		return c.controlConnectionCommand(args[1:])
+	}
 	if groupHelp(args) {
 		fmt.Fprint(c.Out, machineHelp)
 		return nil

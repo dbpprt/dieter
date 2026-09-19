@@ -15,6 +15,8 @@
         private static let followMarker = "DIETER_TERMINAL_CURSOR_FOLLOW"
         private static let resizeMarker = "DIETER_TERMINAL_AFTER_WINDOW_RESIZE"
         private static let pasteMarker = "DIETER_TERMINAL_CLIPBOARD_PASTE"
+        private static let deleteMarker = "DIETER_TERMINAL_DELETE_KEY"
+        private static let editReadyMarker = "DIETER_TERMINAL_EDIT_READY"
 
         static func run(store: DieterStore) async {
             let output = outputDirectory()
@@ -141,6 +143,7 @@
             let received = await waitUntil(timeout: 20, condition: { screen(store, terminalID).contains(firstMarker) })
             try? await DieterTaskSleep.milliseconds(500)
             let clipboard = await terminalClipboardInteraction(store: store, terminalID: terminalID, in: window)
+            let editingKeys = await terminalEditingKeysInteraction(store: store, terminalID: terminalID, in: window)
             capture(window, to: output.appending(path: "01-selection-copy-paste.png"))
             capture(window, to: output.appending(path: "01-before-client-exit.png"))
 
@@ -213,6 +216,8 @@
                         ? "passed" : "failed: Command-V did not reach the remote PTY",
                     "terminal-context-menu": clipboard.contextMenu
                         ? "passed" : "failed: native terminal edit actions were missing",
+                    "terminal-delete-key": editingKeys
+                        ? "passed" : "failed: Backspace did not edit the shell input line",
                     "scrollback-output": filledScrollback ? "passed" : "failed: scrollback marker was not rendered",
                     "cursor-tracking": presentation.cursorTracks
                         ? "passed"
@@ -382,7 +387,7 @@
             let selected = window.firstResponder === view && view.selectedRange().length > 0
 
             pasteboard.clearContents()
-            NSApp.sendEvent(keyEvent("c", keyCode: 8, window: window))
+            NSApp.sendEvent(keyEvent("c", keyCode: 8, modifiers: .command, window: window))
             let copied = pasteboard.string(forType: .string)?.contains(firstMarker) == true
             let menuTitles =
                 view.menu(
@@ -391,9 +396,41 @@
 
             pasteboard.clearContents()
             pasteboard.setString(String(decoding: command(printing: pasteMarker), as: UTF8.self), forType: .string)
-            NSApp.sendEvent(keyEvent("v", keyCode: 9, window: window))
+            NSApp.sendEvent(keyEvent("v", keyCode: 9, modifiers: .command, window: window))
             let pasted = await waitUntil(timeout: 20) { screen(store, terminalID).contains(pasteMarker) }
             return (selected, copied, pasted, menuTitles == ["Copy", "Paste", "Select All"])
+        }
+
+        private static func terminalEditingKeysInteraction(
+            store: DieterStore,
+            terminalID: String,
+            in window: NSWindow
+        ) async -> Bool {
+            guard let view = terminalView(in: window.contentView) as? RemoteTerminalView else { return false }
+
+            // Disable shell echo so the marker can only appear when the edited
+            // command actually executes, not merely because its source was drawn.
+            store.sendTerminalInput(
+                id: terminalID,
+                data: Data("stty -echo; printf '%s\\n' '\(editReadyMarker)'\n".utf8))
+            guard
+                await waitUntil(
+                    timeout: 20,
+                    condition: {
+                        screen(store, terminalID).contains("\(editReadyMarker)\r\n")
+                    })
+            else { return false }
+            window.makeFirstResponder(view)
+            view.insertText(
+                "printf '%s\\n' \(deleteMarker)x",
+                replacementRange: NSRange(location: NSNotFound, length: 0))
+            NSApp.sendEvent(keyEvent("\u{7f}", keyCode: 51, window: window))
+            NSApp.sendEvent(keyEvent("\r", keyCode: 36, window: window))
+            let edited = await waitUntil(timeout: 20) {
+                screen(store, terminalID).contains("\(deleteMarker)\r\n")
+            }
+            store.sendTerminalInput(id: terminalID, data: Data("stty echo\n".utf8))
+            return edited
         }
 
         private static func mouseEvent(
@@ -415,11 +452,16 @@
             )!
         }
 
-        private static func keyEvent(_ characters: String, keyCode: UInt16, window: NSWindow) -> NSEvent {
+        private static func keyEvent(
+            _ characters: String,
+            keyCode: UInt16,
+            modifiers: NSEvent.ModifierFlags = [],
+            window: NSWindow
+        ) -> NSEvent {
             NSEvent.keyEvent(
                 with: .keyDown,
                 location: .zero,
-                modifierFlags: .command,
+                modifierFlags: modifiers,
                 timestamp: 0,
                 windowNumber: window.windowNumber,
                 context: nil,

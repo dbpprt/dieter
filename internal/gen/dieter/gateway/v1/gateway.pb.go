@@ -1555,6 +1555,7 @@ type DaemonRoute struct {
 	// daemon-signed remote-desktop session bindings on both relay and direct
 	// signaling routes.
 	DaemonCertificatePem []byte `protobuf:"bytes,6,opt,name=daemon_certificate_pem,json=daemonCertificatePem,proto3" json:"daemon_certificate_pem,omitempty"`
+	ControlWebrtc        bool   `protobuf:"varint,7,opt,name=control_webrtc,json=controlWebrtc,proto3" json:"control_webrtc,omitempty"`
 	unknownFields        protoimpl.UnknownFields
 	sizeCache            protoimpl.SizeCache
 }
@@ -1629,6 +1630,13 @@ func (x *DaemonRoute) GetDaemonCertificatePem() []byte {
 		return x.DaemonCertificatePem
 	}
 	return nil
+}
+
+func (x *DaemonRoute) GetControlWebrtc() bool {
+	if x != nil {
+		return x.ControlWebrtc
+	}
+	return false
 }
 
 type RTCIceServer struct {
@@ -3897,7 +3905,7 @@ const file_dieter_gateway_v1_gateway_proto_rawDesc = "" +
 	"\x04port\x18\x03 \x01(\rR\x04port\x12\x18\n" +
 	"\anetwork\x18\x04 \x01(\tR\anetwork\x12\x1a\n" +
 	"\bpriority\x18\x05 \x01(\x05R\bpriority\x121\n" +
-	"\x14certificate_identity\x18\x06 \x01(\tR\x13certificateIdentity\"\x9e\x02\n" +
+	"\x14certificate_identity\x18\x06 \x01(\tR\x13certificateIdentity\"\xc5\x02\n" +
 	"\vDaemonRoute\x12\x1b\n" +
 	"\tdaemon_id\x18\x01 \x01(\tR\bdaemonId\x12'\n" +
 	"\x0frelay_available\x18\x02 \x01(\bR\x0erelayAvailable\x12O\n" +
@@ -3906,7 +3914,8 @@ const file_dieter_gateway_v1_gateway_proto_rawDesc = "" +
 	"generation\x18\x04 \x01(\x04R\n" +
 	"generation\x12\"\n" +
 	"\rdaemon_ca_pem\x18\x05 \x01(\fR\vdaemonCaPem\x124\n" +
-	"\x16daemon_certificate_pem\x18\x06 \x01(\fR\x14daemonCertificatePem\"^\n" +
+	"\x16daemon_certificate_pem\x18\x06 \x01(\fR\x14daemonCertificatePem\x12%\n" +
+	"\x0econtrol_webrtc\x18\a \x01(\bR\rcontrolWebrtc\"^\n" +
 	"\fRTCIceServer\x12\x12\n" +
 	"\x04urls\x18\x01 \x03(\tR\x04urls\x12\x1a\n" +
 	"\busername\x18\x02 \x01(\tR\busername\x12\x1e\n" +
