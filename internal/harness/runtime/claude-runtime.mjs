@@ -1,13 +1,12 @@
 import { createClaudeCode } from '@ai-sdk/harness-claude-code';
 
-const claudePackage = '@anthropic-ai/claude-code';
-const claudeInstaller = `node node_modules/${claudePackage}/install.cjs`;
+export const CLAUDE_AGENT_SDK_VERSION = '0.3.278';
+export const CLAUDE_CODE_VERSION = '2.1.278';
 
-// Dieter substitutes npm for pnpm because pnpm is not a daemon prerequisite.
-// Keep lifecycle scripts disabled for the bridge dependency tree, then run the
-// one installation step Claude Code requires to select its downloaded native
-// optional dependency. This is equivalent to Claude Code's pinned postinstall
-// without enabling arbitrary transitive package scripts.
+// The adapter ships a version-locked bridge recipe independently of Dieter's
+// lockfile. Keep the adapter transport and bridge, but move its Anthropic
+// runtime pins forward explicitly so a harness package release cannot leave
+// Dieter on a stale Claude CLI.
 export function createLocalClaudeCode(settings = {}) {
   const harness = createClaudeCode(settings);
   return {
@@ -16,21 +15,26 @@ export function createLocalClaudeCode(settings = {}) {
       const recipe = await harness.getBootstrap(options);
       const manifestPath = `${recipe.bootstrapDir}/package.json`;
       const manifest = recipe.files.find(file => file.path === manifestPath);
-      if (!manifest) throw new Error('Claude Code bridge bootstrap is missing its package manifest');
+      if (!manifest) throw new Error('Claude bridge bootstrap is missing its package manifest');
       const pkg = JSON.parse(manifest.content);
-      if (!pkg.dependencies?.[claudePackage]) {
-        throw new Error('Claude Code bridge no longer declares its CLI; review the runtime integration');
+      if (!pkg.dependencies?.['@anthropic-ai/claude-agent-sdk'] || !pkg.dependencies?.['@anthropic-ai/claude-code']) {
+        throw new Error('Claude bridge no longer declares its SDK and CLI; review the runtime integration');
       }
-      const installIndex = recipe.commands.findIndex(({ command }) => command.startsWith('pnpm install'));
-      if (installIndex < 0) {
-        throw new Error('Claude Code bridge bootstrap no longer uses the expected install command');
-      }
+      pkg.dependencies['@anthropic-ai/claude-agent-sdk'] = CLAUDE_AGENT_SDK_VERSION;
+      pkg.dependencies['@anthropic-ai/claude-code'] = CLAUDE_CODE_VERSION;
       return {
         ...recipe,
-        commands: recipe.commands.map((command, index) => index === installIndex ? {
-          ...command,
-          command: `npm install --ignore-scripts --no-audit --no-fund --prefer-offline && ${claudeInstaller}`,
-        } : command),
+        files: recipe.files
+          .filter(file => !file.path.endsWith('/pnpm-lock.yaml') && !file.path.endsWith('/pnpm-workspace.yaml'))
+          .map(file => file.path === manifestPath ? { ...file, content: `${JSON.stringify(pkg, null, 2)}\n` } : file),
+        commands: [
+          { command: 'npm install --ignore-scripts --no-audit --no-fund --prefer-offline --package-lock=false' },
+          // Dieter skips arbitrary dependency lifecycle scripts. Claude's
+          // audited installer is required to materialize its optional native
+          // binary, so invoke that one known script explicitly.
+          { command: 'node node_modules/@anthropic-ai/claude-code/install.cjs' },
+          { command: './node_modules/.bin/claude --version' },
+        ],
       };
     },
   };

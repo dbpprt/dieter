@@ -687,6 +687,10 @@ header. A conversation records the opaque account key selected when its turn
 starts, so its own header can show that exact account rather than an aggregate.
 Account details also list the enrolled machines where the account is present.
 
+Dieter also pins the Claude Code bridge to Claude Agent SDK 0.3.278 and Claude
+Code CLI 2.1.278. Its bootstrap skips arbitrary package lifecycle scripts and
+runs only Anthropic's required native-binary installer explicitly.
+
 ## Development
 
 For local iteration, detect changes and run only the affected components:

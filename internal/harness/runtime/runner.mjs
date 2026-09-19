@@ -156,18 +156,16 @@ let ompConfigPath;
 switch (adapter) {
   case 'codex':
     harness = createLocalCodex({
-      model: request.model || undefined,
       reasoningEffort: request.effort || undefined,
       webSearch: request.webSearch === true,
       codexConfig: codexConfig(request),
     });
     break;
   case 'claude-code':
-    harness = createLocalClaudeCode({ model: request.model || undefined, effort: request.effort || undefined });
+    harness = createLocalClaudeCode({ effort: request.effort || undefined });
     break;
   case 'pi':
     harness = createPi({
-      model: request.model || undefined,
       thinkingLevel: request.effort || undefined,
       agentDir: process.env.PI_AGENT_DIR || join(homedir(), '.pi', 'agent'),
     });
@@ -309,7 +307,7 @@ try {
   const createAgent = candidateHarness => new HarnessAgent({
     harness: observeHarnessCapabilities(candidateHarness, capabilityCollector),
     sandbox,
-    model: ['omp-acp', 'dsh-acp'].includes(adapter) ? request.model || undefined : undefined,
+    model: request.model || undefined,
     instructions: instructions || undefined,
     tools: { ...contentTools, ...processTools, ...(adapter === 'pi' ? { board_task_plan: piTaskPlanTool } : {}) },
     permissionMode: 'allow-all',

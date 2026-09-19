@@ -1,18 +1,25 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createClaudeCode } from '@ai-sdk/harness-claude-code';
-import { createLocalClaudeCode } from './claude-runtime.mjs';
+import {
+  CLAUDE_AGENT_SDK_VERSION,
+  CLAUDE_CODE_VERSION,
+  createLocalClaudeCode,
+} from './claude-runtime.mjs';
 
-test('Claude bootstrap installs its pinned native CLI with only the required lifecycle script', async () => {
-  const original = await createClaudeCode().getBootstrap();
-  const recipe = await createLocalClaudeCode({ model: 'sonnet', effort: 'high' }).getBootstrap();
-  const manifest = JSON.parse(recipe.files.find(file => file.path.endsWith('/package.json')).content);
+test('Claude bootstrap pins the current SDK and CLI and installs its native binary safely', async () => {
+  const recipe = await createLocalClaudeCode().getBootstrap();
+  const manifestPath = `${recipe.bootstrapDir}/package.json`;
+  const manifest = recipe.files.find(file => file.path === manifestPath);
+  assert(manifest);
+  const pkg = JSON.parse(manifest.content);
 
-  assert.match(manifest.dependencies['@anthropic-ai/claude-code'], /^\d+\.\d+\.\d+$/);
-  assert.match(recipe.commands[0].command, /^npm install /);
-  assert.match(recipe.commands[0].command, /--ignore-scripts/);
-  assert.match(recipe.commands[0].command, /node_modules\/@anthropic-ai\/claude-code\/install\.cjs/);
-  assert.equal(recipe.commands[1].command, './node_modules/.bin/claude --version');
-  assert.equal(recipe.files.find(file => file.path.endsWith('/bridge.mjs')).content,
-    original.files.find(file => file.path.endsWith('/bridge.mjs')).content);
+  assert.equal(pkg.dependencies['@anthropic-ai/claude-agent-sdk'], CLAUDE_AGENT_SDK_VERSION);
+  assert.equal(pkg.dependencies['@anthropic-ai/claude-code'], CLAUDE_CODE_VERSION);
+  assert.equal(recipe.files.some(file => file.path.endsWith('/pnpm-lock.yaml')), false);
+  assert.equal(recipe.files.some(file => file.path.endsWith('/pnpm-workspace.yaml')), false);
+  assert.deepEqual(recipe.commands.map(command => command.command), [
+    'npm install --ignore-scripts --no-audit --no-fund --prefer-offline --package-lock=false',
+    'node node_modules/@anthropic-ai/claude-code/install.cjs',
+    './node_modules/.bin/claude --version',
+  ]);
 });
