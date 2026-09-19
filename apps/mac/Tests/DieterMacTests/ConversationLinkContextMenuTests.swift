@@ -47,11 +47,14 @@ import Testing
     let text = MessageTextView()
     text.update(source: "[Remote report](reports/result.md)", color: .labelColor)
     var presented = [URL]()
+    var downloads = 0
     text.linkDelegate.handler = {
         presented.append($0); return true
     }
     text.linkDelegate.externalResolver = { _ in
-        .unavailable("This file is on another machine. Open in Dieter to save a local copy.")
+        ConversationLinkExternalTarget(
+            unavailableReason: "This file is on another machine. Download it or open it in Dieter.",
+            downloadFile: { downloads += 1 }, revalidate: { nil })
     }
     let menu = text.linkDelegate.contextMenu(NSMenu(), textView: text, at: 5)
     await text.linkDelegate.waitForExternalMenu()
@@ -60,7 +63,9 @@ import Testing
     #expect(submenu.items.count == 1 && submenu.items[0].isEnabled == false)
     #expect(submenu.items[0].title.contains("another machine"))
     #expect(menu.item(withTitle: "Copy Link")?.isEnabled == true)
+    activateLinkMenuItem(try #require(menu.item(withTitle: "Download File")))
     activateLinkMenuItem(try #require(menu.item(withTitle: "Open in Dieter")))
+    #expect(downloads == 1)
     #expect(presented.map(\.relativeString) == ["reports/result.md"])
 }
 
@@ -78,6 +83,7 @@ import Testing
     await text.linkDelegate.waitForExternalMenu()
     current = false
     let applications = try #require(menu.item(withTitle: "Open in…")?.submenu)
+    #expect(menu.item(withTitle: "Download File") == nil)
     activateLinkMenuItem(try #require(applications.item(withTitle: "Default App")))
     activateLinkMenuItem(try #require(menu.item(withTitle: "Show in Finder")))
     #expect(effects == 0)

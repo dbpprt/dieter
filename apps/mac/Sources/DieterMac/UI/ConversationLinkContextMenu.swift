@@ -7,6 +7,7 @@ struct ConversationLinkExternalTarget {
     var isFile = true
     var applications: [FileOpeningApplication] = []
     var unavailableReason: String?
+    var downloadFile: (@MainActor () -> Void)?
     var revalidate: @MainActor () -> URL?
 
     static func unavailable(_ reason: String, isFile: Bool = true) -> Self {
@@ -89,6 +90,9 @@ struct ConversationLinkExternalTarget {
                         reveal(url)
                     }
                 }
+            }
+            if let downloadFile = target.downloadFile {
+                menu.insertItem(item("Download File", action: downloadFile), at: min(1, menu.items.count))
             }
             if !target.isFile, menu.items.contains(finder) { menu.removeItem(finder) }
             menu.update()

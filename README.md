@@ -370,8 +370,8 @@ or Cancel. Switching conversations retains the current unsaved document until
 you return or choose another item. Closing the content pane restores the previous
 board or chat-list layout. Right-click a file link for **Open in** (supported
 installed apps) or **Show in Finder** on its owning local workspace. Remote files
-stay in Dieter; their paths are never opened as local files. Command-click keeps
-the system's external link action.
+offer **Download File** for a local copy; their paths are never opened as local
+files. Command-click keeps the system's external link action.
 
 Agents can register exact-argv background commands with `start_background_process`;
 `list_background_processes`, `read_background_process`, and

@@ -1,5 +1,7 @@
 import AppKit
+import DieterAPI
 import Foundation
+import UniformTypeIdentifiers
 
 extension DieterStore {
     @MainActor
@@ -47,10 +49,20 @@ extension DieterStore {
             let reason = actions.unavailableReason.map { _ in
                 verifiedLocal
                     ? "This file is unavailable locally. Open in Dieter to inspect it."
-                    : "This file is on another machine. Open in Dieter to save a local copy."
+                    : "This file is on another machine. Download it or open it in Dieter."
+            }
+            var downloadFile: (@MainActor () -> Void)?
+            if rpc.isLoopbackDataPlane {
+                downloadFile = nil
+            } else {
+                downloadFile = { [weak self] in
+                    guard isCurrent(), let self, self.phase.isConnected else { return }
+                    self.downloadConversationFile(
+                        path: path, projectID: scope.target.projectID, cardID: cardID, rpc: rpc)
+                }
             }
             return ConversationLinkExternalTarget(
-                applications: actions.applications, unavailableReason: reason,
+                applications: actions.applications, unavailableReason: reason, downloadFile: downloadFile,
                 revalidate: { [weak self] in
                     guard isCurrent(), self?.phase.isConnected == true, rpc.isLoopbackDataPlane else { return nil }
                     return FileExternalActions.resolve(
@@ -58,5 +70,33 @@ extension DieterStore {
                     ).fileURL
                 })
         } catch { return .unavailable(error.localizedDescription) }
+    }
+
+    @MainActor
+    private func downloadConversationFile(path: String, projectID: String, cardID: String, rpc: DieterRPC) {
+        let filename = (path as NSString).lastPathComponent
+        let panel = NSSavePanel()
+        panel.title = "Download File"
+        panel.prompt = "Download"
+        panel.nameFieldStringValue = filename
+        panel.canCreateDirectories = true
+        if let type = UTType(filenameExtension: (filename as NSString).pathExtension) {
+            panel.allowedContentTypes = [type]
+        }
+        guard panel.runModal() == .OK, let destination = panel.url else { return }
+        Task { @MainActor [weak self] in
+            do {
+                var request = Dieter_V1_ReadFileRequest()
+                request.projectID = projectID
+                request.cardID = cardID
+                request.path = path
+                let document = try await rpc.readFile(request)
+                let bytes = ProjectFilePresentation.bytes(
+                    binary: document.binary, content: document.content, data: document.data)
+                try bytes.write(to: destination, options: .atomic)
+            } catch {
+                self?.errorMessage = "Could not download \(filename): \(DieterRPCFailure.message(for: error))"
+            }
+        }
     }
 }
