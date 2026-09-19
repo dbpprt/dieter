@@ -12,6 +12,7 @@ final class ShareViewController: UIViewController {
     private let chatButton = UIButton(type: .system)
     private let closeButton = UIButton(type: .system)
     private var started = false
+    private var readyToComplete = false
     private var stagedID: String?
 
     override func viewDidLoad() {
@@ -21,17 +22,18 @@ final class ShareViewController: UIViewController {
         statusLabel.font = .preferredFont(forTextStyle: .headline)
         statusLabel.textAlignment = .center
         statusLabel.numberOfLines = 0
+        statusLabel.accessibilityIdentifier = "ios.share.status"
         spinner.startAnimating()
 
         configure(
             newTaskButton, title: "New Task", subtitle: "Create a task with this attachment",
-            image: "square.and.pencil", action: #selector(openNewTask))
+            image: "square.and.pencil", identifier: "ios.share.new-task", action: #selector(openNewTask))
         configure(
             taskButton, title: "Add to Task", subtitle: "Choose an existing board task",
-            image: "checklist", action: #selector(openTask))
+            image: "checklist", identifier: "ios.share.task", action: #selector(openTask))
         configure(
             chatButton, title: "Use in Chat", subtitle: "Choose an existing chat",
-            image: "bubble.left.and.bubble.right", action: #selector(openChat))
+            image: "bubble.left.and.bubble.right", identifier: "ios.share.chat", action: #selector(openChat))
         destinationStack.axis = .vertical
         destinationStack.alignment = .fill
         destinationStack.spacing = 10
@@ -39,6 +41,7 @@ final class ShareViewController: UIViewController {
         [newTaskButton, taskButton, chatButton].forEach(destinationStack.addArrangedSubview)
 
         closeButton.setTitle("Cancel", for: .normal)
+        closeButton.accessibilityIdentifier = "ios.share.cancel"
         closeButton.addTarget(self, action: #selector(close), for: .touchUpInside)
         let stack = UIStackView(arrangedSubviews: [spinner, statusLabel, destinationStack, closeButton])
         stack.axis = .vertical
@@ -63,7 +66,8 @@ final class ShareViewController: UIViewController {
     }
 
     private func configure(
-        _ button: UIButton, title: String, subtitle: String, image: String, action: Selector
+        _ button: UIButton, title: String, subtitle: String, image: String, identifier: String,
+        action: Selector
     ) {
         var configuration = UIButton.Configuration.tinted()
         configuration.title = title
@@ -76,6 +80,7 @@ final class ShareViewController: UIViewController {
         configuration.contentInsets = NSDirectionalEdgeInsets(top: 12, leading: 16, bottom: 12, trailing: 16)
         button.configuration = configuration
         button.contentHorizontalAlignment = .fill
+        button.accessibilityIdentifier = identifier
         button.addTarget(self, action: action, for: .touchUpInside)
     }
 
@@ -98,43 +103,28 @@ final class ShareViewController: UIViewController {
         }
     }
 
-    @objc private func openNewTask() { openDieter(destination: "new-task") }
+    @objc private func openNewTask() { prepareHandoff(destination: "new-task") }
 
-    @objc private func openTask() { openDieter(destination: "task") }
+    @objc private func openTask() { prepareHandoff(destination: "task") }
 
-    @objc private func openChat() { openDieter(destination: "chat") }
+    @objc private func openChat() { prepareHandoff(destination: "chat") }
 
-    private func openDieter(destination: String) {
-        guard let stagedID, let extensionContext else {
-            statusLabel.text = SharePayloadError.couldNotOpen.localizedDescription
+    private func prepareHandoff(destination: String) {
+        guard let stagedID else {
+            statusLabel.text = SharePayloadError.unavailable.localizedDescription
             return
         }
-        var components = URLComponents()
-        components.scheme = "dieter-mac"
-        components.host = "share"
-        components.queryItems = [
-            URLQueryItem(name: "id", value: stagedID),
-            URLQueryItem(name: "destination", value: destination),
-        ]
-        guard let url = components.url else {
-            statusLabel.text = SharePayloadError.couldNotOpen.localizedDescription
-            return
-        }
-        spinner.startAnimating()
-        statusLabel.text = "Opening Dieter…"
         setDestinationButtonsEnabled(false)
-        extensionContext.open(url) { [weak self] opened in
-            Task { @MainActor [weak self] in
-                guard let self else { return }
-                if opened {
-                    self.extensionContext?.completeRequest(returningItems: nil)
-                } else {
-                    self.spinner.stopAnimating()
-                    self.statusLabel.text =
-                        "iOS couldn’t open Dieter. Make sure the app is installed, then try again."
-                    self.setDestinationButtonsEnabled(true)
-                }
-            }
+        do {
+            try SharePayloadWriter.prepareHandoff(id: stagedID, destination: destination)
+            readyToComplete = true
+            destinationStack.isHidden = true
+            statusLabel.text = "Ready in Dieter. Tap Done, then open Dieter to continue."
+            closeButton.setTitle("Done", for: .normal)
+            closeButton.accessibilityIdentifier = "ios.share.done"
+        } catch {
+            statusLabel.text = error.localizedDescription
+            setDestinationButtonsEnabled(true)
         }
     }
 
@@ -145,6 +135,10 @@ final class ShareViewController: UIViewController {
     }
 
     @objc private func close() {
+        if readyToComplete {
+            extensionContext?.completeRequest(returningItems: nil)
+            return
+        }
         extensionContext?.cancelRequest(
             withError: NSError(
                 domain: "DieterShare", code: 1,
@@ -160,7 +154,6 @@ private enum SharePayloadError: LocalizedError {
     case fileTooLarge(String)
     case totalTooLarge
     case unavailable
-    case couldNotOpen
 
     var errorDescription: String? {
         switch self {
@@ -169,7 +162,6 @@ private enum SharePayloadError: LocalizedError {
         case .fileTooLarge(let name): "\(name) must be at most 5 MB."
         case .totalTooLarge: "Attachments must total at most 6 MB."
         case .unavailable: "The shared item could not be read."
-        case .couldNotOpen: "Dieter could not be opened. Close this sheet and try again."
         }
     }
 }
@@ -198,6 +190,11 @@ private enum SharePayloadWriter {
         let mediaType: String
     }
 
+    private struct PendingRequest: Encodable {
+        let id: String
+        let destination: String
+    }
+
     private static let maximumCount = 4
     private static let maximumBytes = 5 * 1_024 * 1_024
     private static let maximumTotalBytes = 6 * 1_024 * 1_024
@@ -213,11 +210,7 @@ private enum SharePayloadWriter {
         guard payloads.reduce(0, { $0 + $1.data.count }) <= maximumTotalBytes else {
             throw SharePayloadError.totalTooLarge
         }
-        guard
-            let group = Bundle.main.object(forInfoDictionaryKey: "DieterAppGroupIdentifier") as? String,
-            let container = FileManager.default.containerURL(
-                forSecurityApplicationGroupIdentifier: group)
-        else { throw SharePayloadError.unavailable }
+        let container = try sharedContainer()
         let inbox = container.appendingPathComponent("ShareInbox", isDirectory: true)
         try FileManager.default.createDirectory(at: inbox, withIntermediateDirectories: true)
         removeExpiredItems(from: inbox)
@@ -243,6 +236,30 @@ private enum SharePayloadWriter {
             try? FileManager.default.removeItem(at: directory)
             throw error
         }
+    }
+
+    static func prepareHandoff(id: String, destination: String) throws {
+        guard let uuid = UUID(uuidString: id), ["new-task", "task", "chat"].contains(destination) else {
+            throw SharePayloadError.unavailable
+        }
+        let inbox = try sharedContainer().appendingPathComponent("ShareInbox", isDirectory: true)
+        let canonicalID = uuid.uuidString.lowercased()
+        let directory = inbox.appendingPathComponent(canonicalID, isDirectory: true)
+        guard FileManager.default.fileExists(atPath: directory.appendingPathComponent("manifest.json").path) else {
+            throw SharePayloadError.unavailable
+        }
+        try JSONEncoder().encode(PendingRequest(id: canonicalID, destination: destination)).write(
+            to: inbox.appendingPathComponent("pending-request.json"),
+            options: [.atomic, .completeFileProtection])
+    }
+
+    private static func sharedContainer() throws -> URL {
+        guard
+            let group = Bundle.main.object(forInfoDictionaryKey: "DieterAppGroupIdentifier") as? String,
+            let container = FileManager.default.containerURL(
+                forSecurityApplicationGroupIdentifier: group)
+        else { throw SharePayloadError.unavailable }
+        return container
     }
 
     private static func payload(_ provider: NSItemProvider, index: Int) async throws -> Payload {

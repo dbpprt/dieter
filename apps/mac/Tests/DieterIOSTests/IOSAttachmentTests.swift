@@ -170,6 +170,27 @@ struct IOSAttachmentTests {
         }
     }
 
+    @Test func pendingShareHandoffIsBoundedAndClearedConditionally() throws {
+        let container = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: container) }
+        let first = IOSShareInbox.Request(id: UUID().uuidString.lowercased(), destination: .newTask)
+        let second = IOSShareInbox.Request(id: UUID().uuidString.lowercased(), destination: .chat)
+        for request in [first, second] {
+            let directory = container.appendingPathComponent(
+                "ShareInbox/\(request.id)", isDirectory: true)
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            try Data("{\"items\":[]}".utf8).write(to: directory.appendingPathComponent("manifest.json"))
+        }
+
+        try IOSShareInbox.recordPendingRequest(first, in: container)
+        #expect(IOSShareInbox.pendingRequest(from: container) == first)
+        try IOSShareInbox.recordPendingRequest(second, in: container)
+        IOSShareInbox.clearPendingRequest(first, from: container)
+        #expect(IOSShareInbox.pendingRequest(from: container) == second)
+        IOSShareInbox.clearPendingRequest(second, from: container)
+        #expect(IOSShareInbox.pendingRequest(from: container) == nil)
+    }
+
     @Test func stagedShareCannotEscapeItsInboxDirectory() async throws {
         let container = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: container) }

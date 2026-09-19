@@ -209,6 +209,13 @@ enum IOSShareInbox {
         let items: [Item]
     }
 
+    private struct PendingRequest: Codable {
+        let id: String
+        let destination: String
+    }
+
+    private static let pendingRequestName = "pending-request.json"
+
     static func request(from url: URL) -> Request? {
         guard url.scheme?.lowercased() == "dieter-mac", url.host?.lowercased() == "share",
             let query = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems,
@@ -227,6 +234,61 @@ enum IOSShareInbox {
 
     static func shareID(from url: URL) -> String? {
         request(from: url)?.id
+    }
+
+    static func pendingRequest() -> Request? {
+        guard
+            let group = Bundle.main.object(forInfoDictionaryKey: "DieterAppGroupIdentifier") as? String,
+            let container = FileManager.default.containerURL(
+                forSecurityApplicationGroupIdentifier: group)
+        else { return nil }
+        return pendingRequest(from: container)
+    }
+
+    static func pendingRequest(from container: URL) -> Request? {
+        let inbox = container.appendingPathComponent("ShareInbox", isDirectory: true)
+        let url = inbox.appendingPathComponent(pendingRequestName, isDirectory: false)
+        guard let data = try? Data(contentsOf: url), data.count <= 16 * 1_024,
+            let pending = try? JSONDecoder().decode(PendingRequest.self, from: data),
+            let id = UUID(uuidString: pending.id),
+            let destination = Destination(rawValue: pending.destination)
+        else { return nil }
+        let canonicalID = id.uuidString.lowercased()
+        let manifest = inbox.appendingPathComponent(canonicalID, isDirectory: true)
+            .appendingPathComponent("manifest.json", isDirectory: false)
+        guard FileManager.default.fileExists(atPath: manifest.path) else { return nil }
+        return Request(id: canonicalID, destination: destination)
+    }
+
+    static func recordPendingRequest(_ request: Request, in container: URL) throws {
+        guard let id = UUID(uuidString: request.id) else { throw IOSAttachmentError.invalidShare }
+        let inbox = container.appendingPathComponent("ShareInbox", isDirectory: true)
+        try FileManager.default.createDirectory(at: inbox, withIntermediateDirectories: true)
+        let canonicalID = id.uuidString.lowercased()
+        try JSONEncoder().encode(
+            PendingRequest(id: canonicalID, destination: request.destination.rawValue)
+        ).write(to: inbox.appendingPathComponent(pendingRequestName), options: .atomic)
+    }
+
+    static func clearPendingRequest(_ request: Request) {
+        guard
+            let group = Bundle.main.object(forInfoDictionaryKey: "DieterAppGroupIdentifier") as? String,
+            let container = FileManager.default.containerURL(
+                forSecurityApplicationGroupIdentifier: group)
+        else { return }
+        clearPendingRequest(request, from: container)
+    }
+
+    static func clearPendingRequest(_ request: Request, from container: URL) {
+        let url = container.appendingPathComponent("ShareInbox", isDirectory: true)
+            .appendingPathComponent(pendingRequestName, isDirectory: false)
+        guard let data = try? Data(contentsOf: url), data.count <= 16 * 1_024,
+            let pending = try? JSONDecoder().decode(PendingRequest.self, from: data),
+            let id = UUID(uuidString: pending.id),
+            let destination = Destination(rawValue: pending.destination),
+            Request(id: id.uuidString.lowercased(), destination: destination) == request
+        else { return }
+        try? FileManager.default.removeItem(at: url)
     }
 
     static func consume(id: String) async throws -> [Dieter_V1_MessagePart] {

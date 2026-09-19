@@ -48,9 +48,17 @@
                 }
             }
             .tint(.blue)
-            .task { await store.bootstrap() }
+            .task {
+                await store.bootstrap()
+                receivePendingShare()
+            }
             .onChange(of: scenePhase) { _, phase in
-                if phase == .active { store.resume() } else if phase == .background { store.suspend() }
+                if phase == .active {
+                    store.resume()
+                    receivePendingShare()
+                } else if phase == .background {
+                    store.suspend()
+                }
             }
             .onOpenURL { receiveShare($0) }
             .onChange(of: shareReady) { _, ready in
@@ -287,6 +295,14 @@
             presentPendingShare()
         }
 
+        private func receivePendingShare() {
+            guard pendingShareRequest == nil, loadingShareID == nil,
+                let request = IOSShareInbox.pendingRequest()
+            else { return }
+            pendingShareRequest = request
+            presentPendingShare()
+        }
+
         private func presentPendingShare() {
             guard shareReady, let request = pendingShareRequest, loadingShareID == nil else { return }
             loadingShareID = request.id
@@ -295,6 +311,7 @@
                 do {
                     let attachments = try await IOSShareInbox.consume(id: request.id)
                     guard pendingShareRequest == request else { return }
+                    IOSShareInbox.clearPendingRequest(request)
                     pendingShareRequest = nil
                     switch request.destination {
                     case .newTask:
@@ -305,6 +322,7 @@
                     }
                 } catch {
                     if pendingShareRequest == request {
+                        IOSShareInbox.clearPendingRequest(request)
                         pendingShareRequest = nil
                         store.show(error)
                     }

@@ -206,6 +206,13 @@ final class RemoteNodeUITests: XCTestCase {
         add(shot)
     }
 
+    private func screenScreenshot(_ name: String) {
+        let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        shot.name = name
+        shot.lifetime = .keepAlways
+        add(shot)
+    }
+
     func testHTTPSGatewayRejectsInvalidSession() throws {
         guard let gateway = ProcessInfo.processInfo.environment["DIETER_IOS_TEST_HTTPS_GATEWAY"] else {
             throw XCTSkip("Pass --https-gateway to verify an HTTPS gateway without authenticating")
@@ -368,5 +375,100 @@ final class RemoteNodeUITests: XCTestCase {
                 XCTWaiter.wait(for: [portrait], timeout: 10), .completed,
                 "Leaving the iPhone screen viewer should restore portrait.\n\(app.debugDescription)")
         }
+    }
+
+    func testAShareExtensionRoutesScreenshotToNewTask() throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard environment["DIETER_IOS_TEST_LANDSCAPE"] != "1" else {
+            throw XCTSkip("The phone smoke captures the compact Photos share sheet")
+        }
+        let gateway = try XCTUnwrap(environment["DIETER_IOS_TEST_GATEWAY"])
+        let token = try XCTUnwrap(environment["DIETER_IOS_TEST_TOKEN"])
+        let project = try XCTUnwrap(environment["DIETER_IOS_TEST_PROJECT"])
+        let board = try XCTUnwrap(environment["DIETER_IOS_TEST_BOARD"])
+        XCUIDevice.shared.orientation = .portrait
+
+        // Authenticate the app before Photos launches it through the share URL.
+        let app = XCUIApplication()
+        app.launchEnvironment["DIETER_IOS_TEST_GATEWAY"] = gateway
+        app.launchEnvironment["DIETER_IOS_TEST_TOKEN"] = token
+        app.launch()
+        waitForBoard(app, project: project, board: board)
+        XCUIDevice.shared.press(.home)
+
+        let photos = XCUIApplication(bundleIdentifier: "com.apple.mobileslideshow")
+        addTeardownBlock {
+            photos.terminate()
+            app.terminate()
+        }
+        photos.launch()
+        XCTAssertTrue(photos.wait(for: .runningForeground, timeout: 20))
+        let onboardingLabels = [
+            "Continue", "Fortfahren", "Get Started", "Los geht’s", "Start Using Photos",
+            "Fotos verwenden", "Not Now", "Nicht jetzt", "Später",
+        ]
+        for _ in 0..<3 {
+            let onboarding = photos.buttons.matching(
+                NSPredicate(format: "label IN %@", onboardingLabels)
+            ).firstMatch
+            guard onboarding.waitForExistence(timeout: 2) else { break }
+            onboarding.tap()
+        }
+
+        let thumbnails = photos.images.matching(identifier: "PXGGridLayout-Info")
+        let thumbnailCount = thumbnails.count
+        XCTAssertGreaterThan(
+            thumbnailCount, 0,
+            "The imported screenshot must appear in Photos.\n\(photos.debugDescription)")
+        guard thumbnailCount > 0 else { return }
+        let photo = thumbnails.element(boundBy: thumbnailCount - 1)
+        XCTAssertTrue(
+            photo.waitForExistence(timeout: 10),
+            "The imported screenshot must appear in Photos.\n\(photos.debugDescription)")
+        photo.tap()
+        let share = photos.buttons.matching(
+            NSPredicate(format: "label CONTAINS[c] 'share' OR label CONTAINS[c] 'teilen'")
+        )
+        .firstMatch
+        XCTAssertTrue(
+            share.waitForExistence(timeout: 10),
+            "The opened screenshot must expose the Photos share action.\n\(photos.debugDescription)")
+        share.tap()
+
+        let dieter = photos.cells.matching(
+            NSPredicate(format: "identifier == 'shareCell' AND label == 'Dieter'")
+        )
+        .firstMatch
+        XCTAssertTrue(
+            dieter.waitForExistence(timeout: 15),
+            "The installed Dieter share extension must appear in the share sheet.\n\(photos.debugDescription)")
+        dieter.tap()
+        XCTAssertTrue(
+            photos.staticTexts["Where should this go?"].waitForExistence(timeout: 20),
+            "The Dieter share extension must finish staging the screenshot.\n\(photos.debugDescription)")
+        screenScreenshot("12-share-destination-picker")
+
+        let newTask = photos.buttons.matching(identifier: "ios.share.new-task").firstMatch
+        XCTAssertTrue(newTask.waitForExistence(timeout: 5))
+        newTask.tap()
+        XCTAssertTrue(
+            photos.staticTexts["Ready in Dieter. Tap Done, then open Dieter to continue."]
+                .waitForExistence(timeout: 10),
+            "The share extension must confirm the platform-safe handoff.\n\(photos.debugDescription)")
+        screenScreenshot("13-share-ready-in-dieter")
+        let done = photos.buttons.matching(identifier: "ios.share.done").firstMatch
+        XCTAssertTrue(done.waitForExistence(timeout: 5))
+        done.tap()
+        app.activate()
+        XCTAssertTrue(
+            app.wait(for: .runningForeground, timeout: 20),
+            "Opening Dieter after the handoff must resume the shared request.")
+        XCTAssertTrue(
+            element(app, "ios.create.attachment.0").waitForExistence(timeout: 20),
+            "The New Task form must contain the screenshot shared from Photos.\n\(app.debugDescription)")
+        XCTAssertTrue(element(app, "ios.create.attach-photos").exists)
+        XCTAssertTrue(element(app, "ios.create.attach-files").exists)
+        screenScreenshot("14-shared-screenshot-in-new-task")
+        app.terminate()
     }
 }
