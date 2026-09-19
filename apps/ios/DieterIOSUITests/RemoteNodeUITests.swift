@@ -25,7 +25,10 @@ final class RemoteNodeUITests: XCTestCase {
     }
 
     private func enter(_ app: XCUIApplication, _ identifier: String, _ text: String) {
-        let field = element(app, identifier)
+        // All editable journey fields are native text fields. Query that small
+        // type directly: a descendant `.any` lookup can stall while snapshotting
+        // the complete iPad split view and then falsely report the field missing.
+        let field = app.textFields.matching(identifier: identifier).firstMatch
         XCTAssertTrue(field.waitForExistence(timeout: 10), "Missing \(identifier)")
         let keyboard = app.keyboards.firstMatch
         var activated = false
@@ -42,7 +45,10 @@ final class RemoteNodeUITests: XCTestCase {
         }
         XCTAssertTrue(
             activated, "Tapping \(identifier) should activate text input.\n\(app.debugDescription)")
-        field.typeText(text)
+        // A vertical SwiftUI TextField can be rebuilt while its value wraps to
+        // another line. Sending keys through the focused application responder
+        // avoids re-resolving a now-stale TextField query midway through input.
+        app.typeText(text)
         dismissKeyboardIntroduction(app)
     }
 
@@ -138,7 +144,7 @@ final class RemoteNodeUITests: XCTestCase {
         }
         // Return to the first form section after selecting the provider.
         for _ in 0..<4 {
-            let titleField = element(app, "ios.create.title")
+            let titleField = app.textFields.matching(identifier: "ios.create.title").firstMatch
             if titleField.isHittable && titleField.frame.minY >= form.frame.minY { break }
             form.swipeDown()
         }
@@ -156,13 +162,17 @@ final class RemoteNodeUITests: XCTestCase {
     }
 
     private func assistantTextExists(_ app: XCUIApplication, _ text: String, timeout: TimeInterval = 60) {
-        // Match the small set of transcript text nodes by identifier before
-        // inspecting their labels. A broad StaticText query repeatedly snapshots
-        // the entire iPad split view and can starve the fixture data plane.
-        let label = app.staticTexts.matching(identifier: "ios.message.text.assistant")
-            .matching(NSPredicate(format: "label CONTAINS %@", text)).firstMatch
-        XCTAssertTrue(
-            label.waitForExistence(timeout: timeout),
+        // Let the isolated harness finish its short streamed response before
+        // snapshotting SwiftUI's changing transcript. `waitForExistence` also
+        // captures a full debug hierarchy after each unsuccessful probe, which
+        // can keep the app main thread busy on CI. Poll one exact label through
+        // a predicate expectation instead.
+        Thread.sleep(forTimeInterval: 4)
+        let label = app.staticTexts[text]
+        let response = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "exists == true"), object: label)
+        XCTAssertEqual(
+            XCTWaiter.wait(for: [response], timeout: timeout), .completed,
             "Missing assistant text \(text).\n\(app.debugDescription)")
     }
 
@@ -239,19 +249,37 @@ final class RemoteNodeUITests: XCTestCase {
         tap(app, "ios.task.actions")
         tap(app, "ios.task.files")
         tap(app, "ios.files.entry.README.md")
-        let editor = element(app, "ios.files.editor")
+        let editor = app.textViews.matching(identifier: "ios.files.editor").firstMatch
         XCTAssertTrue(editor.waitForExistence(timeout: 20))
         XCTAssertTrue((editor.value as? String)?.contains("Isolated E2E") == true)
         // UITextView’s accessibility frame includes the full sheet. Target the
-        // visible first text line beneath its breadcrumb, not the blank center.
-        let breadcrumb = element(app, "ios.files.path")
+        // trailing edge of the visible first line beneath its breadcrumb. The
+        // leading edge can select a word and leave XCTest waiting for text
+        // selection UI instead of presenting the keyboard.
+        let breadcrumb = app.staticTexts.matching(identifier: "ios.files.path").firstMatch
         XCTAssertTrue(breadcrumb.waitForExistence(timeout: 5))
-        editor.coordinate(withNormalizedOffset: .zero)
-            .withOffset(CGVector(dx: 40, dy: breadcrumb.frame.maxY - editor.frame.minY + 20)).tap()
+        let editorText = editor.coordinate(withNormalizedOffset: .zero)
+            .withOffset(
+                CGVector(
+                    dx: editor.frame.width - 40,
+                    dy: breadcrumb.frame.maxY - editor.frame.minY + 20))
+        var editorActivated = false
+        for attempt in 0..<2 {
+            editorText.tap()
+            let editorFocus = XCTNSPredicateExpectation(
+                predicate: NSPredicate(format: "hasKeyboardFocus == true"), object: editor)
+            if XCTWaiter.wait(for: [editorFocus], timeout: 5) == .completed {
+                editorActivated = true
+                break
+            }
+            // Presenting the sheet can leave the covered composer as the focus
+            // owner; the first tap only clears that stale focus on iPhone.
+            guard attempt == 0, editor.isHittable else { break }
+        }
         XCTAssertTrue(
-            app.keyboards.firstMatch.waitForExistence(timeout: 5),
+            editorActivated,
             "Tapping the file editor should activate text input.\n\(app.debugDescription)")
-        editor.typeText("\niOS remote edit verified\n")
+        app.typeText("\niOS remote edit verified\n")
         let editedContents = try XCTUnwrap(editor.value as? String)
         tap(app, "ios.files.save")
         let saved = NSPredicate(format: "enabled == false")
