@@ -50,11 +50,13 @@ secrets: `IOS_DISTRIBUTION_CERTIFICATE_BASE64`,
 `IOS_APP_STORE_CONNECT_KEY_BASE64`, `IOS_APP_STORE_CONNECT_KEY_ID`,
 `IOS_APP_STORE_CONNECT_ISSUER_ID`, `IOS_TEAM_ID`, and `IOS_BUNDLE_ID`.
 
-**Pending for screenshot sharing:** recreate the main app profile with the App
-Group entitlement, create the Share extension App Store profile, and rerun the
-setup helper with `--ios-share-provisioning-profile`. This adds
-`IOS_SHARE_PROVISIONING_PROFILE_BASE64`; signed archives intentionally fail
-closed until both profiles validate. The distribution certificate and upload
+**Screenshot sharing signing:** recreate the main app profile with the App Group
+entitlement, create the Share extension App Store profile, and rerun the setup
+helper with `--ios-share-provisioning-profile`. This adds
+`IOS_SHARE_PROVISIONING_PROFILE_BASE64` and restores fully manual profile
+selection. Until then, the TestFlight workflow uses the dedicated distribution
+certificate and API key with Xcode automatic provisioning to create or update the
+App Group, identifiers, and profiles. The distribution certificate and upload
 API key can remain unchanged.
 
 The existing 1Password item **Dieter — Apple release signing credentials** was
