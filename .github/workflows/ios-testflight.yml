@@ -44,12 +44,13 @@ jobs:
         uses: actions/cache@v4
         with:
           path: apps/ios/.build/DerivedData
-          key: ${{ runner.os }}-${{ runner.arch }}-xcode-26.5-ios-release-v1-${{ hashFiles('apps/mac/Package.swift', 'apps/ios/**/Package.resolved', 'apps/mac/Vendor/**/Package.swift') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-xcode-26.5-ios-release-v2-${{ hashFiles('apps/mac/Package.swift', 'apps/ios/**/Package.resolved', 'apps/mac/Vendor/**/Package.swift') }}
       - name: Sign and export; upload only when requested
         env:
           IOS_DISTRIBUTION_CERTIFICATE_BASE64: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_BASE64 }}
           IOS_DISTRIBUTION_CERTIFICATE_PASSWORD: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_PASSWORD }}
           IOS_PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}
+          IOS_SHARE_PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_SHARE_PROVISIONING_PROFILE_BASE64 }}
           IOS_APP_STORE_CONNECT_KEY_BASE64: ${{ secrets.IOS_APP_STORE_CONNECT_KEY_BASE64 }}
           IOS_APP_STORE_CONNECT_KEY_ID: ${{ secrets.IOS_APP_STORE_CONNECT_KEY_ID }}
           IOS_APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.IOS_APP_STORE_CONNECT_ISSUER_ID }}

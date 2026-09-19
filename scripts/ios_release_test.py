@@ -22,10 +22,17 @@ META = {
     "profile_uuid": "01234567-89AB-CDEF-0123-456789ABCDEF", "profile_name": "Dedicated Dieter App Store",
     "key_id": "KLMNOPQRST", "issuer_id": "89abcdef-0123-4567-89ab-cdef01234567",
 }
+SHARE_META = {
+    **META,
+    "bundle_id": META["bundle_id"] + ".share",
+    "profile_uuid": "FEDCBA98-7654-3210-FEDC-BA9876543210",
+    "profile_name": "Dedicated Dieter Share App Store",
+}
 IDENTITY = "A" * 40
 CERTIFICATE = b"dedicated certificate fixture"
 PASSWORD = b"private p12 password fixture"
 PROFILE = b"dedicated profile fixture"
+SHARE_PROFILE = b"dedicated share profile fixture"
 KEY = b"private API key fixture"
 
 
@@ -35,6 +42,7 @@ def fixture_env(runner_temp):
         "IOS_DISTRIBUTION_CERTIFICATE_BASE64": base64.b64encode(CERTIFICATE).decode(),
         "IOS_DISTRIBUTION_CERTIFICATE_PASSWORD": PASSWORD.decode(),
         "IOS_PROVISIONING_PROFILE_BASE64": base64.b64encode(PROFILE).decode(),
+        "IOS_SHARE_PROVISIONING_PROFILE_BASE64": base64.b64encode(SHARE_PROFILE).decode(),
         "IOS_APP_STORE_CONNECT_KEY_BASE64": base64.b64encode(KEY).decode(),
         "IOS_APP_STORE_CONNECT_KEY_ID": META["key_id"],
         "IOS_APP_STORE_CONNECT_ISSUER_ID": META["issuer_id"],
@@ -48,6 +56,12 @@ def create_archive(path, version="1.2.3", build="42", bundle_id=META["bundle_id"
     framework.mkdir(parents=True)
     (framework / "DieterIOS").write_bytes(b"framework fixture")
     (app / "Dieter").write_bytes(b"app fixture")
+    share = app / "PlugIns/DieterShare.appex"
+    share.mkdir(parents=True)
+    (share / "DieterShare").write_bytes(b"share fixture")
+    (share / "Info.plist").write_bytes(plistlib.dumps({
+        "CFBundleIdentifier": bundle_id + ".share", "CFBundleExecutable": "DieterShare",
+    }))
     info = {"CFBundleIdentifier": bundle_id, "CFBundleShortVersionString": version,
             "CFBundleVersion": build, "CFBundleExecutable": "Dieter",
             "NSCameraUsageDescription": release.CAMERA_USAGE_DESCRIPTION}
@@ -119,6 +133,7 @@ class FakeCommands:
                 with zipfile.ZipFile(directory / "Dieter.ipa", "w") as ipa:
                     ipa.writestr("Payload/Dieter.app/Info.plist", (app / "Info.plist").read_bytes())
                     ipa.writestr("Payload/Dieter.app/Frameworks/DieterIOS.framework/DieterIOS", b"framework fixture")
+                    ipa.writestr("Payload/Dieter.app/PlugIns/DieterShare.appex/DieterShare", b"share fixture")
         return b""
 
 
@@ -134,12 +149,18 @@ class ReleaseTests(unittest.TestCase):
         self.env = fixture_env(self.runner)
         self.profile = self.home / "Library/Developer/Xcode/UserData/Provisioning Profiles" / (
             META["profile_uuid"] + ".mobileprovision")
+        self.share_profile = self.home / "Library/Developer/Xcode/UserData/Provisioning Profiles" / (
+            SHARE_META["profile_uuid"] + ".mobileprovision")
 
     def material(self):
-        return release.Material(CERTIFICATE, PASSWORD, PROFILE, KEY, dict(META))
+        return release.Material(
+            CERTIFICATE, PASSWORD, PROFILE, SHARE_PROFILE, KEY, dict(META), dict(SHARE_META))
+
+    def validate_material(self, *args, **kwargs):
+        return dict(SHARE_META if args[6].endswith(".share") else META)
 
     def run_signed(self, commands, *, upload=False, build="42"):
-        with patch.object(release.signing, "validate_ios_material", return_value=dict(META)), \
+        with patch.object(release.signing, "validate_ios_material", side_effect=self.validate_material), \
                 patch.object(release, "command", side_effect=commands), \
                 patch.object(Path, "home", return_value=self.home), \
                 contextlib.redirect_stdout(io.StringIO()) as output:
@@ -151,11 +172,20 @@ class ReleaseTests(unittest.TestCase):
         self.assertEqual(list(self.runner.iterdir()), [])
 
     def test_material_validator_receives_all_original_bytes_and_expected_team(self):
-        with patch.object(release.signing, "validate_ios_material", return_value=dict(META)) as validate:
+        with patch.object(
+            release.signing, "validate_ios_material", side_effect=self.validate_material
+        ) as validate:
             material = release.load_material(self.env)
-        validate.assert_called_once_with(CERTIFICATE, PASSWORD, PROFILE, KEY, META["key_id"],
-                                         META["issuer_id"], META["bundle_id"], team_id=META["team_id"])
+        self.assertEqual(validate.call_count, 2)
+        validate.assert_any_call(
+            CERTIFICATE, PASSWORD, PROFILE, KEY, META["key_id"], META["issuer_id"], META["bundle_id"],
+            team_id=META["team_id"], required_app_group="group." + META["bundle_id"])
+        validate.assert_any_call(
+            CERTIFICATE, PASSWORD, SHARE_PROFILE, KEY, META["key_id"], META["issuer_id"],
+            META["bundle_id"] + ".share", team_id=META["team_id"],
+            required_app_group="group." + META["bundle_id"])
         self.assertEqual(material.metadata, META)
+        self.assertEqual(material.share_metadata, SHARE_META)
         self.assertNotIn(PASSWORD.decode(), repr(material))
 
     def test_missing_configuration_fails_closed_without_output_or_validation(self):
@@ -175,7 +205,7 @@ class ReleaseTests(unittest.TestCase):
     def test_signing_config_sets_output_only_after_validation(self):
         output = self.root / "github-output"
         env = dict(self.env, GITHUB_OUTPUT=str(output))
-        with patch.object(release.signing, "validate_ios_material", return_value=dict(META)), \
+        with patch.object(release.signing, "validate_ios_material", side_effect=self.validate_material), \
                 contextlib.redirect_stdout(io.StringIO()):
             release.signing_config(env)
         self.assertEqual(output.read_text(), "enabled=true\n")
@@ -191,6 +221,7 @@ class ReleaseTests(unittest.TestCase):
                 command.assert_not_called()
                 validate.assert_not_called()
         self.assertFalse(self.profile.exists())
+        self.assertFalse(self.share_profile.exists())
         self.assertFalse((self.root / "apps").exists())
 
     def test_material_mismatch_has_no_signing_side_effects(self):
@@ -243,13 +274,19 @@ class ReleaseTests(unittest.TestCase):
         self.assertIn("no upload was requested", output)
         self.assert_clean(commands)
         self.assertFalse(self.profile.exists())
+        self.assertFalse(self.share_profile.exists())
         archive = next(argv for argv, _ in commands.calls if "archive" in argv)
-        for setting in (f"DIETER_IOS_TEAM_ID={META['team_id']}", "DIETER_IOS_SIGN_STYLE=Manual",
-                        f"DIETER_IOS_SIGN_IDENTITY={IDENTITY}", f"DIETER_IOS_PROFILE_SPECIFIER={META['profile_uuid']}"):
+        for setting in (
+            f"DIETER_IOS_TEAM_ID={META['team_id']}", "DIETER_IOS_SIGN_STYLE=Manual",
+            f"DIETER_IOS_SIGN_IDENTITY={IDENTITY}", f"DIETER_IOS_PROFILE_SPECIFIER={META['profile_uuid']}",
+            f"DIETER_IOS_SHARE_PROFILE_SPECIFIER={SHARE_META['profile_uuid']}",
+        ):
             self.assertIn(setting, archive)
         self.assertFalse(any(value.startswith(("PROVISIONING_PROFILE=", "PROVISIONING_PROFILE_SPECIFIER=", "CODE_SIGN_IDENTITY=")) for value in archive))
         self.assertTrue(any(argv[:4] == ["codesign", "--verify", "--deep", "--strict"] for argv, _ in commands.calls))
-        self.assertEqual(commands.export_options, [release.export_options(META, IDENTITY, "export")])
+        self.assertEqual(
+            commands.export_options,
+            [release.export_options(META, IDENTITY, "export", SHARE_META)])
         self.assertEqual(commands.export_options[0]["method"], "app-store-connect")
         self.assertFalse(commands.export_options[0]["manageAppVersionAndBuildNumber"])
         self.assertTrue(commands.export_options[0]["uploadSymbols"])
@@ -295,6 +332,7 @@ class ReleaseTests(unittest.TestCase):
         self.run_signed(commands)
         self.assertEqual(self.profile.read_bytes(), b"prior profile contents")
         self.assertEqual(stat.S_IMODE(self.profile.stat().st_mode), 0o640)
+        self.assertFalse(self.share_profile.exists())
         self.assert_clean(commands)
 
     def test_cleanup_on_each_signing_archive_export_and_upload_failure(self):
@@ -310,12 +348,15 @@ class ReleaseTests(unittest.TestCase):
         for index, label in enumerate(labels):
             with self.subTest(label=label):
                 commands = FakeCommands(self, fail_label=label)
-                with patch.object(release.signing, "validate_ios_material", return_value=dict(META)), \
+                with patch.object(
+                    release.signing, "validate_ios_material", side_effect=self.validate_material
+                ), \
                         patch.object(release, "command", side_effect=commands), \
                         patch.object(Path, "home", return_value=self.home), self.assertRaises(release.ReleaseError):
                     release.testflight(self.root, "1.2.3", str(100 + index), self.env, upload=True)
                 self.assertEqual(self.profile.read_bytes(), b"prior profile")
                 self.assertEqual(stat.S_IMODE(self.profile.stat().st_mode), 0o640)
+                self.assertFalse(self.share_profile.exists())
                 self.assert_clean(commands)
 
     def test_body_interruption_still_restores_signing_environment(self):
@@ -325,6 +366,7 @@ class ReleaseTests(unittest.TestCase):
                 raise KeyboardInterrupt()
         self.assert_clean(commands)
         self.assertFalse(self.profile.exists())
+        self.assertFalse(self.share_profile.exists())
 
     def test_profile_install_failure_restores_prior_file_and_keychains(self):
         self.profile.parent.mkdir(parents=True)
@@ -364,10 +406,11 @@ class ReleaseTests(unittest.TestCase):
             with release.signing_environment(self.material(), self.runner, home=self.home):
                 pass
         self.assertFalse(self.profile.exists())
+        self.assertFalse(self.share_profile.exists())
         self.assertEqual(list(self.runner.iterdir()), [])
 
-    def test_archive_mismatch_missing_binary_and_missing_framework_block_export(self):
-        for defect in ("version", "build", "bundle", "camera", "executable", "framework", "archive"):
+    def test_archive_mismatch_missing_binary_framework_and_share_extension_block_export(self):
+        for defect in ("version", "build", "bundle", "camera", "executable", "framework", "share", "archive"):
             with self.subTest(defect=defect):
                 archive = self.root / defect / "Dieter.xcarchive"
                 create_archive(archive)
@@ -382,6 +425,8 @@ class ReleaseTests(unittest.TestCase):
                     (app / "Dieter").unlink()
                 elif defect == "framework":
                     (app / "Frameworks/DieterIOS.framework/DieterIOS").unlink()
+                elif defect == "share":
+                    (app / "PlugIns/DieterShare.appex/DieterShare").unlink()
                 else:
                     (archive / "Info.plist").write_bytes(b"invalid plist")
                 with patch.object(release, "command") as command, self.assertRaises(release.ReleaseError):
@@ -396,8 +441,8 @@ class ReleaseTests(unittest.TestCase):
         self.assertEqual(commands.uploads, 0)
         self.assert_clean(commands)
 
-    def test_ipa_validation_checks_count_metadata_and_embedded_framework(self):
-        for defect in ("missing", "extra", "invalid-zip", "metadata", "framework"):
+    def test_ipa_validation_checks_count_metadata_framework_and_share_extension(self):
+        for defect in ("missing", "extra", "invalid-zip", "metadata", "framework", "share"):
             with self.subTest(defect=defect):
                 directory = self.root / ("ipa-" + defect)
                 directory.mkdir()
@@ -411,6 +456,8 @@ class ReleaseTests(unittest.TestCase):
                         ipa.writestr("Payload/Dieter.app/Info.plist", plistlib.dumps(info))
                         if defect != "framework":
                             ipa.writestr("Payload/Dieter.app/Frameworks/DieterIOS.framework/DieterIOS", b"framework")
+                        if defect != "share":
+                            ipa.writestr("Payload/Dieter.app/PlugIns/DieterShare.appex/DieterShare", b"share")
                     if defect == "extra":
                         (directory / "Extra.ipa").write_bytes(b"another zip")
                 with self.assertRaises(release.ReleaseError):

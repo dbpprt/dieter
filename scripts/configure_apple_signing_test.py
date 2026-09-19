@@ -30,7 +30,8 @@ class CredentialTransportTests(unittest.TestCase):
 
     def test_ios_check_does_not_require_mac_or_contact_github(self):
         argv = ["--platform", "ios", "--ios-distribution-p12", "dedicated-ios.p12",
-                "--ios-provisioning-profile", "dedicated.mobileprovision", "--ios-api-key", "ios.p8",
+                "--ios-provisioning-profile", "dedicated.mobileprovision",
+                "--ios-share-provisioning-profile", "share.mobileprovision", "--ios-api-key", "ios.p8",
                 "--ios-key-id", "ABCDEFGHIJ", "--ios-issuer-id", "52e72a38-f9bd-43be-bf43-311937e963bd", "--check"]
         with patch.object(signing, "build_secrets", return_value={"SECRET": b"private"}) as build, \
                 patch.object(signing, "upload_secrets") as upload, contextlib.redirect_stdout(io.StringIO()):
@@ -264,6 +265,7 @@ class IOSCertificateValidationTests(unittest.TestCase):
             "DeveloperCertificates": [self.openssl("x509", "-in", str(self.cert_path), "-outform", "DER")],
             "Entitlements": {"application-identifier": f"{self.team}.{self.bundle}",
                              "com.apple.developer.team-identifier": self.team,
+                             "com.apple.security.application-groups": [f"group.{self.bundle}"],
                              "get-task-allow": False, "beta-reports-active": True},
         }
 
@@ -312,12 +314,25 @@ class IOSCertificateValidationTests(unittest.TestCase):
 
     def test_ios_secret_names_and_encoded_material(self):
         profile = self.cms()
+        share_definition = dict(
+            self.profile,
+            UUID="A5657D18-9BC9-4E28-B530-C1CCF6CA9A56",
+            Name="Dieter Share App Store",
+            Entitlements=dict(
+                self.profile["Entitlements"],
+                **{"application-identifier": f"{self.team}.{self.bundle}.share"}),
+        )
+        share_profile = self.cms(share_definition)
         paths = {}
-        for name, data in (("distribution", self.p12), ("profile", profile), ("api", self.api_key)):
+        for name, data in (
+            ("distribution", self.p12), ("profile", profile), ("share_profile", share_profile),
+            ("api", self.api_key),
+        ):
             path = self.root / name
             path.write_bytes(data)
             paths[name] = path
         args = argparse.Namespace(ios_distribution_p12=paths["distribution"], ios_provisioning_profile=paths["profile"],
+                                  ios_share_provisioning_profile=paths["share_profile"],
                                   ios_api_key=paths["api"], ios_distribution_password_file=None,
                                   ios_key_id=self.key_id, ios_issuer_id=self.issuer, ios_bundle_id=self.bundle)
         with patch.object(signing, "password_for", return_value=self.password):
@@ -326,6 +341,7 @@ class IOSCertificateValidationTests(unittest.TestCase):
             "IOS_DISTRIBUTION_CERTIFICATE_BASE64": base64.b64encode(self.p12),
             "IOS_DISTRIBUTION_CERTIFICATE_PASSWORD": self.password,
             "IOS_PROVISIONING_PROFILE_BASE64": base64.b64encode(profile),
+            "IOS_SHARE_PROVISIONING_PROFILE_BASE64": base64.b64encode(share_profile),
             "IOS_APP_STORE_CONNECT_KEY_BASE64": base64.b64encode(self.api_key),
             "IOS_APP_STORE_CONNECT_KEY_ID": self.key_id.encode(),
             "IOS_APP_STORE_CONNECT_ISSUER_ID": self.issuer.encode(),

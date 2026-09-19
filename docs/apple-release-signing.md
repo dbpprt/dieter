@@ -92,15 +92,19 @@ unaffected.
 
 Create dedicated iOS credentials and an app record before configuring GitHub:
 
-1. Register the explicit bundle ID `com.dbpprt.dieter.ios` in your Apple Developer
-   team and create its iOS app record in App Store Connect. Use the same bundle ID
-   throughout; `--ios-bundle-id` can override the default.
+1. Register the explicit bundle ID `com.dbpprt.dieter.ios`, its
+   `com.dbpprt.dieter.ios.share` Share extension, and the
+   `group.com.dbpprt.dieter.ios` App Group in your Apple Developer team. Enable
+   that App Group on both App IDs, and create the main app's iOS record in App
+   Store Connect. Use the same base bundle ID throughout; `--ios-bundle-id` can
+   override the default and derives the extension and App Group identifiers.
 2. Create a fresh Apple Distribution certificate and private key dedicated to
    Dieter, then export them together as a password-protected `.p12`. The P12
    compatibility requirements above apply to this export too.
-3. Create an **App Store Connect** provisioning profile for that bundle ID and
-   distribution certificate. Download the `.mobileprovision` file. Development,
-   Ad Hoc, and Enterprise profiles are not substitutes.
+3. Create **App Store Connect** provisioning profiles for both bundle IDs and
+   the distribution certificate. Both profiles must include the derived App
+   Group. Download both `.mobileprovision` files. Development, Ad Hoc, and
+   Enterprise profiles are not substitutes.
 4. Create a dedicated App Store Connect **team API key** for Dieter iOS uploads,
    with an appropriate upload role. Save its `.p8`, Key ID, and Issuer ID. Keep
    this separate from the Mac notarization key.
@@ -116,6 +120,7 @@ just release configure-apple-signing \
   --ios-distribution-p12 /private/path/dieter-ios-distribution.p12 \
   --ios-distribution-password-file /private/path/dieter-ios-password.txt \
   --ios-provisioning-profile /private/path/dieter-ios.mobileprovision \
+  --ios-share-provisioning-profile /private/path/dieter-ios-share.mobileprovision \
   --ios-api-key /private/path/dieter-ios-upload.p8 \
   --ios-key-id KEY_ID \
   --ios-issuer-id ISSUER_UUID \
@@ -135,6 +140,7 @@ The iOS setup uploads these repository secrets:
 | `IOS_DISTRIBUTION_CERTIFICATE_BASE64` | Dedicated Apple Distribution `.p12`, base64 encoded |
 | `IOS_DISTRIBUTION_CERTIFICATE_PASSWORD` | Distribution export password |
 | `IOS_PROVISIONING_PROFILE_BASE64` | Matching App Store Connect profile, base64 encoded |
+| `IOS_SHARE_PROVISIONING_PROFILE_BASE64` | Matching Share extension App Store Connect profile, base64 encoded |
 | `IOS_APP_STORE_CONNECT_KEY_BASE64` | Dedicated upload `.p8`, base64 encoded |
 | `IOS_APP_STORE_CONNECT_KEY_ID` | Upload API Key ID |
 | `IOS_APP_STORE_CONNECT_ISSUER_ID` | Upload API Issuer ID |

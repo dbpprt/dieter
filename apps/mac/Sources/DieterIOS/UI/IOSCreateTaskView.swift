@@ -1,6 +1,9 @@
+import DieterAPI
+
 #if os(iOS)
-    import DieterAPI
     import SwiftUI
+    import UniformTypeIdentifiers
+    import UIKit
 
     struct IOSCreateTaskView: View {
         @Environment(\.dismiss) private var dismiss
@@ -14,6 +17,9 @@
         @State private var provider = ""
         @State private var model = ""
         @State private var effort = ""
+        @State private var attachments: [Dieter_V1_MessagePart]
+        @State private var fileImporterPresented = false
+        @State private var attachmentError: String?
         @State private var submitting = false
         @State private var runRequested = false
         private enum Field: Hashable { case title, prompt }
@@ -21,6 +27,7 @@
 
         init(
             store: IOSStore, initialProjectID: String, initialBoardID: String?, chat: Bool,
+            initialAttachments: [Dieter_V1_MessagePart] = [],
             created: @escaping (String) -> Void
         ) {
             self.store = store
@@ -28,6 +35,7 @@
             self.created = created
             _projectID = State(initialValue: initialProjectID)
             _boardID = State(initialValue: initialBoardID ?? "")
+            _attachments = State(initialValue: initialAttachments)
         }
 
         private var boards: [Dieter_V1_Board] { store.boards.filter { $0.projectID == projectID } }
@@ -56,6 +64,25 @@
                             .lineLimit(6...12)
                             .focused($focusedField, equals: .prompt)
                             .accessibilityIdentifier("ios.create.prompt")
+                    }
+                    Section("Attachments") {
+                        ForEach(Array(attachments.enumerated()), id: \.offset) { index, part in
+                            attachmentRow(part, index: index)
+                        }
+                        Button {
+                            focusedField = nil
+                            fileImporterPresented = true
+                        } label: {
+                            Label(attachments.isEmpty ? "Attach files" : "Add files", systemImage: "paperclip")
+                        }
+                        .disabled(attachments.count >= IOSAttachmentLoader.maximumCount)
+                        .accessibilityIdentifier("ios.create.attach")
+                        Text("Up to 4 files, 5 MB each and 6 MB total.")
+                            .font(.caption).foregroundStyle(.secondary)
+                        if let attachmentError {
+                            Text(attachmentError).font(.caption).foregroundStyle(.red)
+                                .accessibilityIdentifier("ios.create.attachment-error")
+                        }
                     }
                     Section("Destination") {
                         Picker("Project", selection: $projectID) {
@@ -142,16 +169,43 @@
                     .padding().background(.bar)
                 }
             }
-            .interactiveDismissDisabled(submitting || !prompt.isEmpty || !title.isEmpty)
+            .interactiveDismissDisabled(
+                submitting || !prompt.isEmpty || !title.isEmpty || !attachments.isEmpty
+            )
+            .fileImporter(
+                isPresented: $fileImporterPresented,
+                allowedContentTypes: [.item],
+                allowsMultipleSelection: true
+            ) { result in
+                switch result {
+                case .success(let urls):
+                    Task {
+                        do {
+                            attachments = try await IOSAttachmentLoader().parts(
+                                urls: urls, appendingTo: attachments)
+                            attachmentError = nil
+                        } catch {
+                            attachmentError = error.localizedDescription
+                        }
+                    }
+                case .failure(let error):
+                    if (error as NSError).code != NSUserCancelledError {
+                        attachmentError = error.localizedDescription
+                    }
+                }
+            }
             .task {
                 if projectID.isEmpty { projectID = store.projects.first?.id ?? "" }
                 if !boards.contains(where: { $0.id == boardID }) { boardID = boards.first?.id ?? "" }
                 if provider.isEmpty { provider = store.harnesses.first?.id ?? ""; resetModel() }
             }
             .onChange(of: projectID) { _, _ in
-                focusedField = nil; boardID = boards.first?.id ?? ""
+                focusedField = nil
+                boardID = boards.first?.id ?? ""
             }
-            .onChange(of: boardID) { _, _ in focusedField = nil }
+            .onChange(of: boardID) { _, _ in
+                focusedField = nil
+            }
             .onChange(of: provider) { _, _ in
                 focusedField = nil; resetModel()
             }
@@ -174,6 +228,36 @@
             effort = efforts.contains(preferred) ? preferred : efforts.first ?? ""
         }
 
+        private func attachmentRow(_ part: Dieter_V1_MessagePart, index: Int) -> some View {
+            HStack(spacing: 12) {
+                if part.mediaType.hasPrefix("image/"), let image = UIImage(data: part.data) {
+                    Image(uiImage: image)
+                        .resizable().scaledToFill()
+                        .frame(width: 44, height: 44)
+                        .clipShape(RoundedRectangle(cornerRadius: 7))
+                } else {
+                    Image(systemName: "doc.fill")
+                        .font(.title2).foregroundStyle(.secondary)
+                        .frame(width: 44, height: 44)
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(part.filename).lineLimit(1)
+                    Text(ByteCountFormatter.string(fromByteCount: Int64(part.data.count), countStyle: .file))
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 8)
+                Button("Remove", systemImage: "xmark.circle.fill", role: .destructive) {
+                    guard attachments.indices.contains(index), attachments[index] == part else { return }
+                    attachments.remove(at: index)
+                    attachmentError = nil
+                }
+                .labelStyle(.iconOnly)
+                .accessibilityIdentifier("ios.create.attachment.remove.\(index)")
+            }
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("ios.create.attachment.\(index)")
+        }
+
         private func submit(run: Bool) {
             guard canSubmit else { return }
             focusedField = nil
@@ -182,10 +266,11 @@
             Task {
                 let id = await store.createTask(
                     projectID: projectID, boardID: chat ? nil : boardID, title: title, prompt: prompt,
-                    provider: provider, model: model, effort: effort, run: run)
+                    provider: provider, model: model, effort: effort, attachments: attachments, run: run)
                 submitting = false
                 if let id { created(id); dismiss() }
             }
         }
     }
+
 #endif
