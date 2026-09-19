@@ -1,4 +1,5 @@
 #if os(iOS)
+    import CryptoKit
     import DieterAPI
     import DieterClient
     import DieterCore
@@ -569,21 +570,40 @@
             }
         }
 
-        func sendMessage(text: String) async -> Bool {
+        private static func attachmentIdentity(_ part: Dieter_V1_MessagePart) -> String {
+            let digest = SHA256.hash(data: part.data).map { String(format: "%02x", $0) }.joined()
+            return [part.filename, part.mediaType, String(part.data.count), digest].joined(separator: "\u{0}")
+        }
+
+        func sendMessage(
+            text: String, attachments: [Dieter_V1_MessagePart] = [],
+            selection: Dieter_V1_HarnessSelection? = nil
+        ) async -> Bool {
             guard pendingOperations == 0, let rpc = dataPlane?.rpc, let card = selectedCard?.card else { return false }
             let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !text.isEmpty else { return false }
+            guard !text.isEmpty || !attachments.isEmpty else { return false }
             let scope = scope
             pendingOperations += 1
             defer { pendingOperations -= 1 }
             var request = Dieter_V1_SendMessageRequest()
             request.cardID = card.id
-            var part = Dieter_V1_MessagePart(); part.type = "text"; part.text = text
-            request.parts = [part]
-            request.provider = card.provider; request.model = card.model; request.effort = card.effort
-            request.providerOptions = card.providerOptions
+            if !text.isEmpty {
+                var part = Dieter_V1_MessagePart(); part.type = "text"; part.text = text
+                request.parts = [part]
+            }
+            request.parts.append(contentsOf: attachments)
+            request.provider = selection?.provider ?? card.provider
+            request.model = selection?.model ?? card.model
+            request.effort = selection?.effort ?? card.effort
+            request.providerOptions = selection?.providerOptions ?? card.providerOptions
             request.clientID = clientID
-            let command = messageIdentity.command(for: [selectedMachine?.id ?? "", card.id, text])
+            let attachmentIdentity = attachments.map(Self.attachmentIdentity).joined(separator: "\u{1}")
+            let optionIdentity = request.providerOptions.sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }
+            let command = messageIdentity.command(
+                for: [
+                    selectedMachine?.id ?? "", card.id, text, attachmentIdentity, request.provider, request.model,
+                    request.effort,
+                ] + optionIdentity)
             request.commandID = command
             request.messageID = "ios-\(command)"
             do {
@@ -597,6 +617,34 @@
                     "Could not confirm delivery. Retrying the same message is safe. \(IOSUserError.message(error))"
                 return false
             }
+        }
+
+        func removeQueuedMessage(_ message: Dieter_V1_QueuedMessage) async -> Dieter_V1_QueuedMessage? {
+            guard pendingOperations == 0, !message.id.isEmpty, let rpc = dataPlane?.rpc,
+                let card = selectedCard?.card, conversation?.queue.contains(where: { $0.id == message.id }) == true
+            else { return nil }
+            let scope = scope
+            pendingOperations += 1
+            defer { pendingOperations -= 1 }
+            do {
+                let removed = try await rpc.removeQueuedMessage(cardID: card.id, messageID: message.id)
+                if owns(scope) {
+                    _ = transcript.removeQueuedMessage(id: removed.id)
+                    publishTranscript()
+                }
+                return removed
+            } catch {
+                if owns(scope) { errorMessage = IOSUserError.message(error) }
+                return nil
+            }
+        }
+
+        func steerQueuedMessage(_ message: Dieter_V1_QueuedMessage) async {
+            guard conversation?.queue.first?.id == message.id,
+                IOSConversationPresentation.isAgentWorking(
+                    conversationStatus: conversation?.status ?? "", cardRuntime: selectedCard?.card.runtime ?? "")
+            else { return }
+            await cancelTask()
         }
 
         func startTask() async {

@@ -13,7 +13,7 @@
         @State private var settingsPresented = false
         @State private var createPresented = false
         @State private var fileScope: IOSFileScope?
-        @State private var drafts: [String: String] = [:]
+        @State private var drafts: [String: IOSConversationDraft] = [:]
 
         public init() {}
 
@@ -224,9 +224,9 @@
             return store.boards.first { $0.projectID == selectedProjectID }?.id
         }
 
-        private func draftBinding(for id: String) -> Binding<String> {
+        private func draftBinding(for id: String) -> Binding<IOSConversationDraft> {
             let key = (store.selectedMachine?.id ?? "") + ":" + id
-            return Binding(get: { drafts[key] ?? "" }, set: { drafts[key] = $0 })
+            return Binding(get: { drafts[key] ?? IOSConversationDraft() }, set: { drafts[key] = $0 })
         }
 
         private func openProjectFiles(_ project: Dieter_V1_Project) {

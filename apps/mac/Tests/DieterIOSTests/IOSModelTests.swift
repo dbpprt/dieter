@@ -303,6 +303,72 @@ struct IOSModelTests {
         #expect(transcript.conversation?.lastSeq == 11)
     }
 
+    @Test func adjacentRoutineActivityCollapsesLikeTheMacTimeline() {
+        let messages = [
+            conversationMessage("user", role: "user", parts: [conversationPart("text", text: "Investigate")]),
+            conversationMessage("reasoning", parts: [conversationPart("reasoning", text: "Inspect")]),
+            conversationMessage("command", parts: [conversationPart("tool-call", tool: "exec_command")]),
+            conversationMessage("edit", parts: [conversationPart("tool-apply_patch")]),
+            conversationMessage("answer", parts: [conversationPart("text", text: "Done")]),
+        ]
+
+        let items = IOSConversationPresentation.timelineItems(messages)
+        #expect(items.count == 3)
+        #expect(items.map(\.isActivity) == [false, true, false])
+        #expect(items[1].messages.map(\.id) == ["reasoning", "command", "edit"])
+        #expect(IOSConversationActivitySummary(steps: items[1].steps).title == "Reasoning · 1 edit · 1 command")
+    }
+
+    @Test func queuedSteeringRecognizesProviderWorkingStatuses() {
+        #expect(IOSConversationPresentation.isAgentWorking(conversationStatus: "streaming", cardRuntime: ""))
+        #expect(IOSConversationPresentation.isAgentWorking(conversationStatus: "", cardRuntime: "working"))
+        #expect(!IOSConversationPresentation.isAgentWorking(conversationStatus: "idle", cardRuntime: "stopped"))
+        #expect(!IOSConversationPresentation.isAgentWorking(conversationStatus: "queued", cardRuntime: "waiting"))
+    }
+
+    @Test func mixedMessagesCollapseOnlyTheirRoutineActivityAndKeepFailuresVisible() {
+        var failed = conversationPart("tool-call", tool: "exec_command")
+        failed.state = "failed"
+        failed.errorText = "Exited with status 1"
+        let mixed = conversationMessage(
+            "mixed",
+            parts: [
+                conversationPart("text", text: "Starting"),
+                conversationPart("tool-call", tool: "exec_command"),
+                conversationPart("thinking", text: "Checking"),
+                conversationPart("text", text: "Continuing"), failed,
+            ])
+
+        let groups = IOSConversationPresentation.partGroups(in: mixed)
+        #expect(groups.map(\.isActivity) == [false, true, false, false])
+        #expect(groups[1].steps.count == 2)
+        let failedItems = IOSConversationPresentation.timelineItems([
+            conversationMessage("failed", parts: [failed])
+        ])
+        #expect(!failedItems[0].isActivity)
+    }
+
+    @Test func queuedEditingRestoresTextAndAttachmentsAndLocalRemovalIsImmediate() {
+        var text = Dieter_V1_MessagePart(); text.type = "text"; text.text = "Revise this"
+        var attachment = Dieter_V1_MessagePart()
+        attachment.type = "file"; attachment.filename = "notes.md"; attachment.mediaType = "text/markdown"
+        var selection = Dieter_V1_HarnessSelection()
+        selection.provider = "codex"; selection.model = "gpt-6-astra"; selection.effort = "high"
+        selection.providerOptions = ["fast_mode": "true"]
+        var queued = Dieter_V1_QueuedMessage()
+        queued.id = "queued"; queued.parts = [text, attachment]; queued.selection = selection
+        let restored = IOSConversationPresentation.queuedDraft(for: queued)
+        #expect(restored.text == "Revise this")
+        #expect(restored.attachments.map(\.filename) == ["notes.md"])
+        #expect(restored.selection == selection)
+
+        var value = snapshot(range: 0..<1, sequence: 1, total: 1)
+        value.conversation.queue = [queued]
+        var transcript = IOSTranscript(); transcript.reset(value)
+        #expect(transcript.removeQueuedMessage(id: queued.id)?.id == queued.id)
+        #expect(transcript.conversation?.queue.isEmpty == true)
+    }
+
     private func machine(id: String, api: String, online: Bool = true) -> DieterEndpoint {
         .init(name: id, host: "example.com", port: 443, secure: true, daemonID: id, online: online, apiVersion: api)
     }
@@ -314,6 +380,22 @@ struct IOSModelTests {
         var part = Dieter_V1_MessagePart(); part.type = "text"; part.text = text
         message.parts = [part]
         return message
+    }
+
+    private func conversationMessage(
+        _ id: String, role: String = "assistant", parts: [Dieter_V1_MessagePart]
+    ) -> Dieter_V1_UiMessage {
+        var message = Dieter_V1_UiMessage()
+        message.id = id; message.role = role; message.parts = parts
+        return message
+    }
+
+    private func conversationPart(_ type: String, text: String = "", tool: String = "")
+        -> Dieter_V1_MessagePart
+    {
+        var part = Dieter_V1_MessagePart()
+        part.type = type; part.text = text; part.toolName = tool
+        return part
     }
 
     private func snapshot(range: Range<Int>, sequence: Int64, total: Int32) -> Dieter_V1_ConversationSnapshot {
