@@ -66,6 +66,24 @@ final class RemoteNodeUITests: XCTestCase {
         }
     }
 
+    private func dismissPhotosOnboarding(_ photos: XCUIApplication, timeout: TimeInterval = 10) {
+        let onboardingLabels = [
+            "Continue", "Fortfahren", "Get Started", "Los geht’s", "Start Using Photos",
+            "Fotos verwenden", "Not Now", "Nicht jetzt", "Später",
+        ]
+        let onboarding = photos.buttons.matching(
+            NSPredicate(format: "label IN %@", onboardingLabels)
+        ).firstMatch
+        for attempt in 0..<3 {
+            // Photos can present its first-run sheet several seconds after it
+            // has reached the foreground. Give the first screen enough time to
+            // arrive, then keep handling any immediately following screens.
+            let wait = attempt == 0 ? timeout : 2
+            guard onboarding.waitForExistence(timeout: wait) else { return }
+            onboarding.tap()
+        }
+    }
+
     private func tapPicker(_ picker: XCUIElement) {
         if picker.isHittable {
             picker.tap()
@@ -403,17 +421,7 @@ final class RemoteNodeUITests: XCTestCase {
         }
         photos.launch()
         XCTAssertTrue(photos.wait(for: .runningForeground, timeout: 20))
-        let onboardingLabels = [
-            "Continue", "Fortfahren", "Get Started", "Los geht’s", "Start Using Photos",
-            "Fotos verwenden", "Not Now", "Nicht jetzt", "Später",
-        ]
-        for _ in 0..<3 {
-            let onboarding = photos.buttons.matching(
-                NSPredicate(format: "label IN %@", onboardingLabels)
-            ).firstMatch
-            guard onboarding.waitForExistence(timeout: 2) else { break }
-            onboarding.tap()
-        }
+        dismissPhotosOnboarding(photos)
 
         let thumbnails = photos.images.matching(identifier: "PXGGridLayout-Info")
         let thumbnailCount = thumbnails.count
@@ -425,6 +433,16 @@ final class RemoteNodeUITests: XCTestCase {
         XCTAssertTrue(
             photo.waitForExistence(timeout: 10),
             "The imported screenshot must appear in Photos.\n\(photos.debugDescription)")
+        if !photo.isHittable {
+            // A slow simulator can finish presenting onboarding while the
+            // library snapshot above is being resolved.
+            dismissPhotosOnboarding(photos, timeout: 5)
+        }
+        let photoReady = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "exists == true AND hittable == true"), object: photo)
+        XCTAssertEqual(
+            XCTWaiter.wait(for: [photoReady], timeout: 10), .completed,
+            "The imported screenshot must be tappable after Photos onboarding.\n\(photos.debugDescription)")
         photo.tap()
         let share = photos.buttons.matching(
             NSPredicate(format: "label CONTAINS[c] 'share' OR label CONTAINS[c] 'teilen'")
