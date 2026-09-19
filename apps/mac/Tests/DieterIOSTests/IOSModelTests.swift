@@ -7,6 +7,44 @@ import Testing
 
 @Suite("iOS remote session policies")
 struct IOSModelTests {
+    @Test func taskLabelSelectionKeepsOnlyCurrentBoardLabelsInStableOrder() {
+        var first = Dieter_V1_Label()
+        first.id = "label-a"
+        var second = Dieter_V1_Label()
+        second.id = "label-b"
+
+        #expect(
+            IOSCreateTaskLabels.normalized(
+                selected: ["stale-label", "label-b", "label-a"], available: [second, first])
+                == ["label-a", "label-b"])
+        #expect(IOSCreateTaskLabels.normalized(selected: ["stale-label"], available: []) == [])
+    }
+
+    @Test func taskFastModeOnlyAppearsForSupportedModelsAndHasStableIdentity() {
+        var fastMode = Dieter_V1_ProviderOption()
+        fastMode.id = "fast_mode"
+        fastMode.name = "Fast mode"
+        fastMode.type = "boolean"
+        fastMode.defaultValue = "false"
+        fastMode.models = ["fast-model"]
+        var harness = Dieter_V1_Harness()
+        harness.options = [fastMode]
+
+        #expect(IOSCreateTaskProviderOptions.fastModeOption(for: harness, model: "fast-model")?.id == "fast_mode")
+        #expect(IOSCreateTaskProviderOptions.fastModeOption(for: harness, model: "other-model") == nil)
+        #expect(
+            IOSCreateTaskProviderOptions.normalized(
+                for: harness, model: "fast-model", saved: ["fast_mode": "true"])
+                == ["fast_mode": "true"])
+        #expect(
+            IOSCreateTaskProviderOptions.normalized(
+                for: harness, model: "other-model", saved: ["fast_mode": "true"]
+            ).isEmpty)
+        #expect(
+            IOSCreateTaskProviderOptions.identity(["z": "last", "a": "first"])
+                == ["a=first", "z=last"])
+    }
+
     @Test func authenticationSurvivesSuspensionButDefersTheDataPlaneConnection() {
         var ownership = IOSAuthenticationOwnership()
         let attempt = ownership.begin(gatewayID: "https://gateway.example:443")

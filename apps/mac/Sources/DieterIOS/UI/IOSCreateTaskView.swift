@@ -1,4 +1,5 @@
 import DieterAPI
+import DieterCore
 
 #if os(iOS)
     import PhotosUI
@@ -18,6 +19,8 @@ import DieterAPI
         @State private var provider = ""
         @State private var model = ""
         @State private var effort = ""
+        @State private var providerOptions: [String: String] = [:]
+        @State private var selectedLabelIDs: Set<String> = []
         @State private var attachments: [Dieter_V1_MessagePart]
         @State private var photoItems: [PhotosPickerItem] = []
         @State private var fileImporterPresented = false
@@ -41,8 +44,13 @@ import DieterAPI
         }
 
         private var boards: [Dieter_V1_Board] { store.boards.filter { $0.projectID == projectID } }
+        private var selectedBoard: Dieter_V1_Board? { boards.first { $0.id == boardID } }
+        private var labels: [Dieter_V1_Label] { chat ? [] : selectedBoard?.labels ?? [] }
         private var harness: Dieter_V1_Harness? { store.harnesses.first { $0.id == provider } }
         private var selectedModel: Dieter_V1_HarnessModel? { harness?.models.first { $0.id == model } }
+        private var fastModeOption: Dieter_V1_ProviderOption? {
+            IOSCreateTaskProviderOptions.fastModeOption(for: harness, model: model)
+        }
         private var efforts: [String] {
             guard let selectedModel else { return [] }
             return selectedModel.efforts.isEmpty ? (harness?.effort.options.map(\.id) ?? []) : selectedModel.efforts
@@ -51,6 +59,10 @@ import DieterAPI
             !submitting && store.phase.isConnected && !projectID.isEmpty && (chat || !boardID.isEmpty)
                 && !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                 && !provider.isEmpty && !model.isEmpty
+        }
+        private var hasModifiedProviderOptions: Bool {
+            providerOptions
+                != IOSCreateTaskProviderOptions.normalized(for: harness, model: model, saved: [:])
         }
 
         var body: some View {
@@ -123,6 +135,16 @@ import DieterAPI
                             LabeledContent("Machine", value: name)
                         }
                     }
+                    if !labels.isEmpty {
+                        Section("Labels") {
+                            ForEach(labels, id: \.id) { label in
+                                Toggle(isOn: labelSelection(label.id)) {
+                                    Label(label.name, systemImage: "tag.fill")
+                                }
+                                .accessibilityIdentifier("ios.create.label.\(label.id)")
+                            }
+                        }
+                    }
                     Section("Agent") {
                         Picker("Provider", selection: $provider) {
                             ForEach(store.harnesses, id: \.id) { Text($0.name).tag($0.id) }
@@ -142,6 +164,13 @@ import DieterAPI
                                 }
                             }
                             .accessibilityIdentifier("ios.create.effort")
+                        }
+                        if let fastModeOption {
+                            Toggle(
+                                fastModeOption.name.isEmpty ? "Fast mode" : fastModeOption.name,
+                                isOn: fastModeSelection
+                            )
+                            .accessibilityIdentifier("ios.create.fast-mode")
                         }
                     }
                     if !store.phase.isConnected {
@@ -194,7 +223,8 @@ import DieterAPI
                 }
             }
             .interactiveDismissDisabled(
-                submitting || !prompt.isEmpty || !title.isEmpty || !attachments.isEmpty
+                submitting || !prompt.isEmpty || !title.isEmpty || !selectedLabelIDs.isEmpty || !attachments.isEmpty
+                    || hasModifiedProviderOptions
             )
             .fileImporter(
                 isPresented: $fileImporterPresented,
@@ -239,16 +269,24 @@ import DieterAPI
             }
             .onChange(of: projectID) { _, _ in
                 focusedField = nil
+                selectedLabelIDs.removeAll()
                 boardID = boards.first?.id ?? ""
             }
             .onChange(of: boardID) { _, _ in
                 focusedField = nil
+                selectedLabelIDs.removeAll()
+            }
+            .onChange(of: labels.map(\.id)) { _, availableIDs in
+                selectedLabelIDs.formIntersection(availableIDs)
             }
             .onChange(of: provider) { _, _ in
                 focusedField = nil; resetModel()
             }
             .onChange(of: model) { _, _ in
-                focusedField = nil; resetEffort()
+                focusedField = nil
+                resetEffort()
+                providerOptions = IOSCreateTaskProviderOptions.normalized(
+                    for: harness, model: model, saved: providerOptions)
             }
             .onChange(of: effort) { _, _ in focusedField = nil }
         }
@@ -259,6 +297,7 @@ import DieterAPI
                 harness?.models.contains(where: { $0.id == preferred }) == true
                 ? preferred : harness?.models.first?.id ?? ""
             resetEffort()
+            providerOptions = IOSCreateTaskProviderOptions.normalized(for: harness, model: model, saved: [:])
         }
 
         private func resetEffort() {
@@ -281,6 +320,24 @@ import DieterAPI
 
         private func showAttachmentError(_ error: Error) {
             attachmentError = error.localizedDescription
+        }
+
+        private func labelSelection(_ id: String) -> Binding<Bool> {
+            Binding(
+                get: { selectedLabelIDs.contains(id) },
+                set: { selected in
+                    if selected {
+                        selectedLabelIDs.insert(id)
+                    } else {
+                        selectedLabelIDs.remove(id)
+                    }
+                })
+        }
+
+        private var fastModeSelection: Binding<Bool> {
+            Binding(
+                get: { providerOptions["fast_mode", default: fastModeOption?.defaultValue ?? "false"] == "true" },
+                set: { providerOptions["fast_mode"] = $0 ? "true" : "false" })
         }
 
         private func attachmentRow(_ part: Dieter_V1_MessagePart, index: Int) -> some View {
@@ -318,10 +375,14 @@ import DieterAPI
             focusedField = nil
             submitting = true
             runRequested = run
+            let labelIDs = IOSCreateTaskLabels.normalized(selected: selectedLabelIDs, available: labels)
+            let providerOptions = IOSCreateTaskProviderOptions.normalized(
+                for: harness, model: model, saved: providerOptions)
             Task {
                 let id = await store.createTask(
                     projectID: projectID, boardID: chat ? nil : boardID, title: title, prompt: prompt,
-                    provider: provider, model: model, effort: effort, attachments: attachments, run: run)
+                    provider: provider, model: model, effort: effort, labelIDs: labelIDs,
+                    providerOptions: providerOptions, attachments: attachments, run: run)
                 submitting = false
                 if let id { created(id); dismiss() }
             }
@@ -329,3 +390,31 @@ import DieterAPI
     }
 
 #endif
+
+enum IOSCreateTaskLabels {
+    static func normalized(selected: Set<String>, available: [Dieter_V1_Label]) -> [String] {
+        let availableIDs = Set(available.lazy.map(\.id))
+        return selected.intersection(availableIDs).sorted()
+    }
+}
+
+enum IOSCreateTaskProviderOptions {
+    static func fastModeOption(
+        for harness: Dieter_V1_Harness?, model: String
+    ) -> Dieter_V1_ProviderOption? {
+        ProviderOptionValues.options(for: harness, model: model).first { $0.id == "fast_mode" }
+    }
+
+    static func normalized(
+        for harness: Dieter_V1_Harness?, model: String, saved: [String: String]
+    ) -> [String: String] {
+        guard fastModeOption(for: harness, model: model) != nil else { return [:] }
+        let values = ProviderOptionValues.normalized(for: harness, model: model, saved: saved)
+        guard let fastMode = values["fast_mode"] else { return [:] }
+        return ["fast_mode": fastMode]
+    }
+
+    static func identity(_ values: [String: String]) -> [String] {
+        values.sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }
+    }
+}
