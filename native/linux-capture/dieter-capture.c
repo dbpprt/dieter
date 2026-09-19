@@ -1,3 +1,8 @@
+#if defined(__GNUC__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wconversion"
+#endif
+
 #include <errno.h>
 #include <fcntl.h>
 #include <gio/gio.h>
@@ -20,6 +25,10 @@
 #include <X11/Xlib.h>
 #include <X11/extensions/Xrandr.h>
 #include <X11/extensions/XTest.h>
+
+#if defined(__GNUC__)
+#pragma GCC diagnostic pop
+#endif
 
 #define HELPER_VERSION "linux-native-v1"
 #define MAX_STREAMS 4
