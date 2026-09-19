@@ -53,4 +53,27 @@ struct QuickTaskStoryEditorTests {
 
         #expect(editor.validateUserInterfaceItem(paste))
     }
+
+    @Test func conversationPasteMonitorGivesTheFocusedQuickTaskEditorPriority() {
+        let editor = QuickTaskStoryTextView()
+        let pasteboard = NSPasteboard(name: .init("quick-task-priority-test"))
+        var quickTaskCalls = 0
+        var conversationCalls = 0
+        editor.pasteAttachment = { received in
+            quickTaskCalls += 1
+            #expect(received === pasteboard)
+            return true
+        }
+
+        let consumed = AttachmentPasteRouting.consume(
+            firstResponder: editor, from: pasteboard,
+            fallback: { _ in
+                conversationCalls += 1
+                return true
+            })
+
+        #expect(consumed)
+        #expect(quickTaskCalls == 1)
+        #expect(conversationCalls == 0)
+    }
 }

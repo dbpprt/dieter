@@ -6,6 +6,24 @@ import UniformTypeIdentifiers
 
 // MARK: - ⌘V interception
 
+@MainActor
+protocol AttachmentPasteFirstResponder: AnyObject {
+    func consumesAttachmentPaste(from pasteboard: NSPasteboard) -> Bool
+}
+
+@MainActor
+enum AttachmentPasteRouting {
+    static func consume(
+        firstResponder responder: NSResponder?, from pasteboard: NSPasteboard,
+        fallback: ((NSPasteboard) -> Bool)?
+    ) -> Bool {
+        if (responder as? AttachmentPasteFirstResponder)?.consumesAttachmentPaste(from: pasteboard) == true {
+            return true
+        }
+        return fallback?(pasteboard) == true
+    }
+}
+
 extension View {
     /// Intercepts ⌘V in this view's window before the focused text view can
     /// swallow it, so images and files on the pasteboard become attachments.
@@ -113,10 +131,16 @@ private struct AttachmentPasteMonitor: NSViewRepresentable {
             box.token = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
                 guard let self, let window = self.window, event.window === window,
                     event.modifierFlags.intersection([.command, .shift, .option, .control]) == .command,
-                    event.charactersIgnoringModifiers?.lowercased() == "v",
-                    self.paste?(NSPasteboard.general) == true
+                    event.charactersIgnoringModifiers?.lowercased() == "v"
                 else { return event }
-                return nil
+
+                // A Quick Task can be presented over a conversation in the
+                // same window. Let its focused native editor claim the image
+                // before this conversation-wide fallback appends it to the
+                // chat composer behind the popover.
+                return AttachmentPasteRouting.consume(
+                    firstResponder: window.firstResponder, from: .general, fallback: self.paste)
+                    ? nil : event
             }
         }
 
