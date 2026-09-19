@@ -29,6 +29,7 @@ type Service struct {
 	Runner              harness.Runner
 	Workspaces          *workspace.Manager
 	BackgroundProcesses func(context.Context, string, harness.ProcessCall) (json.RawMessage, error)
+	ProviderAccountKey  func(string) string
 
 	mu               sync.Mutex
 	active           map[string]*activeTurn
@@ -789,6 +790,11 @@ func (s *Service) startCard(ref, content string, parts []model.UIMessagePart, pr
 	}
 	provider, modelName, effort = selection.Provider, selection.Model, selection.Effort
 	providerOptions := selection.ProviderOptions
+	var providerAccountKey *string
+	if s.ProviderAccountKey != nil {
+		resolved := strings.TrimSpace(s.ProviderAccountKey(provider))
+		providerAccountKey = &resolved
+	}
 	if err := s.ensureStartStorage(s.Store.Root, detail.Project.Path); err != nil {
 		return nil, err
 	}
@@ -860,12 +866,12 @@ func (s *Service) startCard(ref, content string, parts []model.UIMessagePart, pr
 		return nil, startErr
 	}
 	if first {
-		_, err = s.Store.UpdateCardCache(detail.Card.ID, store.CardCacheInput{Provider: provider, Model: modelName, Effort: &effort, ProviderOptions: providerOptions})
+		_, err = s.Store.UpdateCardCache(detail.Card.ID, store.CardCacheInput{Provider: provider, ProviderAccountKey: providerAccountKey, Model: modelName, Effort: &effort, ProviderOptions: providerOptions})
 		if err == nil {
 			_, err = s.Store.MarkPromptSent(detail.Card.ID)
 		}
 	} else {
-		_, err = s.Store.UpdateCardCache(detail.Card.ID, store.CardCacheInput{Provider: provider, Model: modelName, Effort: &effort, ProviderOptions: providerOptions, Runtime: "running"})
+		_, err = s.Store.UpdateCardCache(detail.Card.ID, store.CardCacheInput{Provider: provider, ProviderAccountKey: providerAccountKey, Model: modelName, Effort: &effort, ProviderOptions: providerOptions, Runtime: "running"})
 		if err == nil && detail.Card.Scope == model.ConversationScopeBoard && detail.Card.Lane != model.LaneRunning {
 			_, err = s.Store.MoveCard(detail.Card.ID, model.LaneRunning, nil)
 		}

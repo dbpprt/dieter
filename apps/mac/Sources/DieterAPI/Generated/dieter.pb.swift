@@ -1621,6 +1621,14 @@ public nonisolated struct Dieter_V1_Card: @unchecked Sendable {
     set {_uniqueStorage()._mergedIntoCardID = newValue}
   }
 
+  /// Owner-scoped provider account HMAC used by the latest turn. This is safe
+  /// to correlate with credential-free quota snapshots and is not a provider
+  /// credential or raw provider account identifier.
+  public var providerAccountKey: String {
+    get {_storage._providerAccountKey}
+    set {_uniqueStorage()._providerAccountKey = newValue}
+  }
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
@@ -9358,7 +9366,7 @@ nonisolated extension Dieter_V1_TokenUsage: SwiftProtobuf.Message, SwiftProtobuf
 
 nonisolated extension Dieter_V1_Card: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".Card"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{1}scope\0\u{3}project_id\0\u{3}board_id\0\u{1}lane\0\u{1}position\0\u{1}title\0\u{3}initial_prompt\0\u{3}initial_prompt_sent_at\0\u{3}phase_changed_at\0\u{1}provider\0\u{1}model\0\u{1}effort\0\u{1}runtime\0\u{1}summary\0\u{3}runtime_updated_at\0\u{3}last_activity_at\0\u{1}archived\0\u{3}done_archive_exempt\0\u{1}pinned\0\u{3}created_at\0\u{3}updated_at\0\u{3}label_ids\0\u{3}comment_count\0\u{1}origin\0\u{3}active_subagents\0\u{3}provider_options\0\u{3}workspace_mode\0\u{3}workspace_branch\0\u{3}workspace_base_branch\0\u{1}workspace\0\u{3}pull_request\0\u{3}workspace_base_remote\0\u{3}remote_publish_mode\0\u{3}token_usage\0\u{3}merged_into_card_id\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{1}scope\0\u{3}project_id\0\u{3}board_id\0\u{1}lane\0\u{1}position\0\u{1}title\0\u{3}initial_prompt\0\u{3}initial_prompt_sent_at\0\u{3}phase_changed_at\0\u{1}provider\0\u{1}model\0\u{1}effort\0\u{1}runtime\0\u{1}summary\0\u{3}runtime_updated_at\0\u{3}last_activity_at\0\u{1}archived\0\u{3}done_archive_exempt\0\u{1}pinned\0\u{3}created_at\0\u{3}updated_at\0\u{3}label_ids\0\u{3}comment_count\0\u{1}origin\0\u{3}active_subagents\0\u{3}provider_options\0\u{3}workspace_mode\0\u{3}workspace_branch\0\u{3}workspace_base_branch\0\u{1}workspace\0\u{3}pull_request\0\u{3}workspace_base_remote\0\u{3}remote_publish_mode\0\u{3}token_usage\0\u{3}merged_into_card_id\0\u{3}provider_account_key\0")
 
   fileprivate class _StorageClass {
     var _id: String = String()
@@ -9397,6 +9405,7 @@ nonisolated extension Dieter_V1_Card: SwiftProtobuf.Message, SwiftProtobuf._Mess
     var _remotePublishMode: String = String()
     var _tokenUsage: Dieter_V1_TokenUsage? = nil
     var _mergedIntoCardID: String = String()
+    var _providerAccountKey: String = String()
 
       // This property is used as the initial default value for new instances of the type.
       // The type itself is protecting the reference to its storage via CoW semantics.
@@ -9443,6 +9452,7 @@ nonisolated extension Dieter_V1_Card: SwiftProtobuf.Message, SwiftProtobuf._Mess
       _remotePublishMode = source._remotePublishMode
       _tokenUsage = source._tokenUsage
       _mergedIntoCardID = source._mergedIntoCardID
+      _providerAccountKey = source._providerAccountKey
     }
   }
 
@@ -9497,6 +9507,7 @@ nonisolated extension Dieter_V1_Card: SwiftProtobuf.Message, SwiftProtobuf._Mess
         case 34: try { try decoder.decodeSingularStringField(value: &_storage._remotePublishMode) }()
         case 35: try { try decoder.decodeSingularMessageField(value: &_storage._tokenUsage) }()
         case 36: try { try decoder.decodeSingularStringField(value: &_storage._mergedIntoCardID) }()
+        case 37: try { try decoder.decodeSingularStringField(value: &_storage._providerAccountKey) }()
         default: break
         }
       }
@@ -9617,6 +9628,9 @@ nonisolated extension Dieter_V1_Card: SwiftProtobuf.Message, SwiftProtobuf._Mess
       if !_storage._mergedIntoCardID.isEmpty {
         try visitor.visitSingularStringField(value: _storage._mergedIntoCardID, fieldNumber: 36)
       }
+      if !_storage._providerAccountKey.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._providerAccountKey, fieldNumber: 37)
+      }
     }
     try unknownFields.traverse(visitor: &visitor)
   }
@@ -9662,6 +9676,7 @@ nonisolated extension Dieter_V1_Card: SwiftProtobuf.Message, SwiftProtobuf._Mess
         if _storage._remotePublishMode != rhs_storage._remotePublishMode {return false}
         if _storage._tokenUsage != rhs_storage._tokenUsage {return false}
         if _storage._mergedIntoCardID != rhs_storage._mergedIntoCardID {return false}
+        if _storage._providerAccountKey != rhs_storage._providerAccountKey {return false}
         return true
       }
       if !storagesAreEqual {return false}

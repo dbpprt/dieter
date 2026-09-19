@@ -154,8 +154,9 @@ struct DieterRootView: View {
             .allowsHitTesting(false)
         }
         .toolbar {
-            if store.section != .board || store.selectedCardID == nil {
-                ToolbarItem(placement: .primaryAction) {
+            ToolbarItemGroup(placement: .primaryAction) {
+                ProviderQuotaCompactView()
+                if store.section != .board || store.selectedCardID == nil {
                     GlobalQuickTaskButton()
                 }
             }

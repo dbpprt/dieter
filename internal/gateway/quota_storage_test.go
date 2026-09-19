@@ -130,6 +130,10 @@ func TestReplaceProviderAccountPresenceSeparatesMultipleAccounts(t *testing.T) {
 		groups[0].GetAccounts()[0].GetAvailability() != gatewayv1.ProviderQuotaAvailability_PROVIDER_QUOTA_AVAILABILITY_TEMPORARILY_UNAVAILABLE {
 		t.Fatalf("latest presence did not override stored snapshot state: %#v", groups)
 	}
+	machines := groups[0].GetAccounts()[0].GetMachines()
+	if len(machines) != 1 || machines[0].GetDaemonId() != daemonID || machines[0].GetName() != "quota test" || machines[0].GetOnline() {
+		t.Fatalf("account machine presence = %#v", machines)
+	}
 	if err := store.ReplaceProviderAccountPresence(owner, daemonID, nil, now.Add(time.Minute)); err != nil {
 		t.Fatal(err)
 	}

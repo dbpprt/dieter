@@ -3168,8 +3168,12 @@ type Card struct {
 	RemotePublishMode   string                 `protobuf:"bytes,34,opt,name=remote_publish_mode,json=remotePublishMode,proto3" json:"remote_publish_mode,omitempty"`
 	TokenUsage          *TokenUsage            `protobuf:"bytes,35,opt,name=token_usage,json=tokenUsage,proto3" json:"token_usage,omitempty"`
 	MergedIntoCardId    string                 `protobuf:"bytes,36,opt,name=merged_into_card_id,json=mergedIntoCardId,proto3" json:"merged_into_card_id,omitempty"`
-	unknownFields       protoimpl.UnknownFields
-	sizeCache           protoimpl.SizeCache
+	// Owner-scoped provider account HMAC used by the latest turn. This is safe
+	// to correlate with credential-free quota snapshots and is not a provider
+	// credential or raw provider account identifier.
+	ProviderAccountKey string `protobuf:"bytes,37,opt,name=provider_account_key,json=providerAccountKey,proto3" json:"provider_account_key,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *Card) Reset() {
@@ -3450,6 +3454,13 @@ func (x *Card) GetTokenUsage() *TokenUsage {
 func (x *Card) GetMergedIntoCardId() string {
 	if x != nil {
 		return x.MergedIntoCardId
+	}
+	return ""
+}
+
+func (x *Card) GetProviderAccountKey() string {
+	if x != nil {
+		return x.ProviderAccountKey
 	}
 	return ""
 }
@@ -19543,7 +19554,7 @@ const file_dieter_v1_dieter_proto_rawDesc = "" +
 	"\ftotal_tokens\x18\x03 \x01(\x03R\vtotalTokens\x12+\n" +
 	"\x11reported_messages\x18\x04 \x01(\x03R\x10reportedMessages\x12)\n" +
 	"\x10missing_messages\x18\x05 \x01(\x03R\x0fmissingMessages\x12\x18\n" +
-	"\apartial\x18\x06 \x01(\bR\apartial\"\xbe\v\n" +
+	"\apartial\x18\x06 \x01(\bR\apartial\"\xf0\v\n" +
 	"\x04Card\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x14\n" +
 	"\x05scope\x18\x02 \x01(\tR\x05scope\x12\x1d\n" +
@@ -19585,7 +19596,8 @@ const file_dieter_v1_dieter_proto_rawDesc = "" +
 	"\x13remote_publish_mode\x18\" \x01(\tR\x11remotePublishMode\x126\n" +
 	"\vtoken_usage\x18# \x01(\v2\x15.dieter.v1.TokenUsageR\n" +
 	"tokenUsage\x12-\n" +
-	"\x13merged_into_card_id\x18$ \x01(\tR\x10mergedIntoCardId\x1aB\n" +
+	"\x13merged_into_card_id\x18$ \x01(\tR\x10mergedIntoCardId\x120\n" +
+	"\x14provider_account_key\x18% \x01(\tR\x12providerAccountKey\x1aB\n" +
 	"\x14ProviderOptionsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x8e\x01\n" +

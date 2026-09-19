@@ -529,6 +529,10 @@ message Card {
   string remote_publish_mode = 34;
   TokenUsage token_usage = 35;
   string merged_into_card_id = 36;
+  // Owner-scoped provider account HMAC used by the latest turn. This is safe
+  // to correlate with credential-free quota snapshots and is not a provider
+  // credential or raw provider account identifier.
+  string provider_account_key = 37;
 }
 
 message CardOrigin {

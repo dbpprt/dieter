@@ -386,6 +386,26 @@ func TestUpdateCardEditsOnlyAnUnsentTask(t *testing.T) {
 	}
 }
 
+func TestUpdateCardCachePersistsAndClearsProviderAccountKey(t *testing.T) {
+	s, project, board := setup(t, model.WorkflowReview)
+	card, err := s.CreateCard(CreateCardInput{
+		Project: project.ID, Board: board.ID, ID: "card_provider_account", Title: "Account", Prompt: "Work",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	accountKey := "owner_scoped_account_key"
+	updated, err := s.UpdateCardCache(card.ID, CardCacheInput{ProviderAccountKey: &accountKey})
+	if err != nil || updated.ProviderAccountKey != accountKey {
+		t.Fatalf("provider account update = %#v, %v", updated, err)
+	}
+	empty := ""
+	updated, err = s.UpdateCardCache(card.ID, CardCacheInput{ProviderAccountKey: &empty})
+	if err != nil || updated.ProviderAccountKey != "" {
+		t.Fatalf("provider account clear = %#v, %v", updated, err)
+	}
+}
+
 func TestInterruptConversationReconcilesOrphanedRuntime(t *testing.T) {
 	s, project, board := setup(t, model.WorkflowReview)
 	card, err := s.CreateCard(CreateCardInput{Project: project.ID, Board: board.ID, ID: "card_orphan", Title: "Recover me", Prompt: "Work"})

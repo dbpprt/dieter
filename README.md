@@ -679,8 +679,13 @@ with a gateway-account key before leaving the daemon. A ChatGPT account email,
 when returned by the structured account API, is sent as bounded display-only
 snapshot metadata so authenticated clients can distinguish accounts;
 credentials and raw provider payloads are never transmitted. Claude quota
-collection stays disabled until its pinned harness exposes an equivalent
-structured interface.
+collection uses Claude Code's structured OAuth usage endpoint on the daemon and
+normalizes the returned session and weekly windows before transmission; its
+OAuth credential and raw response never leave that machine. Native macOS
+surfaces show one compact quota chip per enabled account in the global app
+header. A conversation records the opaque account key selected when its turn
+starts, so its own header can show that exact account rather than an aggregate.
+Account details also list the enrolled machines where the account is present.
 
 ## Development
 

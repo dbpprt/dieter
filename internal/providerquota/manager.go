@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"os"
@@ -40,6 +41,7 @@ type Manager struct {
 }
 
 type accountHandle struct {
+	provider        gatewayv1.ProviderQuotaProvider
 	profileRoot     string
 	stableAccountID string
 	lastProbe       probeResult
@@ -104,11 +106,45 @@ func New(root string, logger *slog.Logger) *Manager {
 	return &Manager{runner: harness.NewSubprocessRunner(root), logger: logger, now: time.Now, handles: map[string]accountHandle{}}
 }
 
+// ActiveAccountKey returns the owner-scoped account identity used by new
+// harness turns on this daemon. It is intentionally empty until discovery has
+// verified that exact profile through the structured provider API.
+func (m *Manager) ActiveAccountKey(provider string) string {
+	var quotaProvider gatewayv1.ProviderQuotaProvider
+	var profileRoot string
+	var err error
+	switch provider {
+	case "codex", "openai-codex":
+		quotaProvider = gatewayv1.ProviderQuotaProvider_PROVIDER_QUOTA_PROVIDER_OPENAI_CODEX
+		profileRoot, err = activeCodexProfile()
+	case "claude-code", "anthropic-claude":
+		quotaProvider = gatewayv1.ProviderQuotaProvider_PROVIDER_QUOTA_PROVIDER_ANTHROPIC_CLAUDE
+		profileRoot, err = activeClaudeProfile()
+	default:
+		return ""
+	}
+	if err != nil {
+		return ""
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for accountKey, handle := range m.handles {
+		if handle.provider == quotaProvider && handle.profileRoot == profileRoot {
+			return accountKey
+		}
+	}
+	return ""
+}
+
 func (m *Manager) Discover(ctx context.Context, correlationKey []byte) (*gatewayv1.ProviderAccountsPresence, error) {
 	if len(correlationKey) != 32 {
 		return nil, errors.New("provider account correlation key is invalid")
 	}
-	profiles, err := configuredCodexProfiles()
+	codexProfiles, err := configuredCodexProfiles()
+	if err != nil {
+		return nil, err
+	}
+	claudeProfiles, err := configuredClaudeProfiles()
 	if err != nil {
 		return nil, err
 	}
@@ -118,26 +154,43 @@ func (m *Manager) Discover(ctx context.Context, correlationKey []byte) (*gateway
 		previousHandles[key] = handle
 	}
 	m.mu.Unlock()
+	type profileTarget struct {
+		provider gatewayv1.ProviderQuotaProvider
+		root     string
+	}
 	type discoveredProfile struct {
-		root   string
+		profileTarget
 		result probeResult
 		err    error
 	}
-	jobs := make(chan string, len(profiles))
-	results := make(chan discoveredProfile, len(profiles))
-	for _, profileRoot := range profiles {
-		jobs <- profileRoot
+	targets := make([]profileTarget, 0, len(codexProfiles)+len(claudeProfiles))
+	for _, profileRoot := range codexProfiles {
+		targets = append(targets, profileTarget{
+			provider: gatewayv1.ProviderQuotaProvider_PROVIDER_QUOTA_PROVIDER_OPENAI_CODEX,
+			root:     profileRoot,
+		})
+	}
+	for _, profileRoot := range claudeProfiles {
+		targets = append(targets, profileTarget{
+			provider: gatewayv1.ProviderQuotaProvider_PROVIDER_QUOTA_PROVIDER_ANTHROPIC_CLAUDE,
+			root:     profileRoot,
+		})
+	}
+	jobs := make(chan profileTarget, len(targets))
+	results := make(chan discoveredProfile, len(targets))
+	for _, target := range targets {
+		jobs <- target
 	}
 	close(jobs)
-	workerCount := min(2, len(profiles))
+	workerCount := min(2, len(targets))
 	var workers sync.WaitGroup
 	workers.Add(workerCount)
 	for range workerCount {
 		go func() {
 			defer workers.Done()
-			for profileRoot := range jobs {
-				result, err := m.probe(ctx, profileRoot)
-				results <- discoveredProfile{root: profileRoot, result: result, err: err}
+			for target := range jobs {
+				result, err := m.probe(ctx, target.provider, target.root)
+				results <- discoveredProfile{profileTarget: target, result: result, err: err}
 			}
 		}()
 	}
@@ -149,14 +202,14 @@ func (m *Manager) Discover(ctx context.Context, correlationKey []byte) (*gateway
 	nextHandles := map[string]accountHandle{}
 	for discovered := range results {
 		if discovered.err != nil {
-			m.logger.Warn("OpenAI quota profile is temporarily unavailable")
+			m.logger.Warn("provider quota profile is temporarily unavailable", "provider", discovered.provider.String())
 			for accountKey, handle := range previousHandles {
-				if handle.profileRoot != discovered.root {
+				if handle.provider != discovered.provider || handle.profileRoot != discovered.root {
 					continue
 				}
 				nextHandles[accountKey] = handle
 				presence.Accounts = append(presence.Accounts, &gatewayv1.ProviderAccountPresence{
-					Provider: gatewayv1.ProviderQuotaProvider_PROVIDER_QUOTA_PROVIDER_OPENAI_CODEX, AccountKey: accountKey,
+					Provider: discovered.provider, AccountKey: accountKey,
 					AccountKind: accountKind(handle.lastProbe.AccountKind), Plan: bounded(handle.lastProbe.Plan, 128),
 					Availability:     gatewayv1.ProviderQuotaAvailability_PROVIDER_QUOTA_AVAILABILITY_TEMPORARILY_UNAVAILABLE,
 					RefreshSupported: true,
@@ -168,13 +221,16 @@ func (m *Manager) Discover(ctx context.Context, correlationKey []byte) (*gateway
 		if result.StableAccountID == "" {
 			continue
 		}
-		accountKey := correlateAccount(correlationKey, gatewayv1.ProviderQuotaProvider_PROVIDER_QUOTA_PROVIDER_OPENAI_CODEX, result.StableAccountID)
+		accountKey := correlateAccount(correlationKey, discovered.provider, result.StableAccountID)
 		if _, duplicate := nextHandles[accountKey]; duplicate {
 			continue
 		}
-		nextHandles[accountKey] = accountHandle{profileRoot: profileRoot, stableAccountID: result.StableAccountID, lastProbe: result, probedAt: m.now().UTC()}
+		nextHandles[accountKey] = accountHandle{
+			provider: discovered.provider, profileRoot: profileRoot, stableAccountID: result.StableAccountID,
+			lastProbe: result, probedAt: m.now().UTC(),
+		}
 		presence.Accounts = append(presence.Accounts, &gatewayv1.ProviderAccountPresence{
-			Provider:   gatewayv1.ProviderQuotaProvider_PROVIDER_QUOTA_PROVIDER_OPENAI_CODEX,
+			Provider:   discovered.provider,
 			AccountKey: accountKey, AccountKind: accountKind(result.AccountKind), Plan: bounded(result.Plan, 128),
 			Availability: availability(result.Availability), RefreshSupported: true,
 		})
@@ -183,6 +239,9 @@ func (m *Manager) Discover(ctx context.Context, correlationKey []byte) (*gateway
 		return nil, err
 	}
 	sort.Slice(presence.Accounts, func(i, j int) bool {
+		if presence.Accounts[i].GetProvider() != presence.Accounts[j].GetProvider() {
+			return presence.Accounts[i].GetProvider() < presence.Accounts[j].GetProvider()
+		}
 		return presence.Accounts[i].GetAccountKey() < presence.Accounts[j].GetAccountKey()
 	})
 	m.mu.Lock()
@@ -192,20 +251,20 @@ func (m *Manager) Discover(ctx context.Context, correlationKey []byte) (*gateway
 }
 
 func (m *Manager) Refresh(ctx context.Context, correlationKey []byte, request *gatewayv1.ProviderQuotaRefreshRequest) (*gatewayv1.ProviderQuotaRefreshResult, error) {
-	if len(correlationKey) != 32 || request == nil || request.GetProvider() != gatewayv1.ProviderQuotaProvider_PROVIDER_QUOTA_PROVIDER_OPENAI_CODEX {
+	if len(correlationKey) != 32 || request == nil || !supportedProvider(request.GetProvider()) {
 		return nil, errors.New("provider quota refresh request is invalid")
 	}
 	m.mu.Lock()
 	handle, exists := m.handles[request.GetAccountKey()]
 	m.mu.Unlock()
-	if !exists {
+	if !exists || handle.provider != request.GetProvider() {
 		return &gatewayv1.ProviderQuotaRefreshResult{ErrorCode: "account_not_found"}, nil
 	}
 	result := handle.lastProbe
 	probed := false
 	if handle.probedAt.IsZero() || m.now().Sub(handle.probedAt) > probeCacheDuration {
 		var err error
-		result, err = m.probe(ctx, handle.profileRoot)
+		result, err = m.probe(ctx, handle.provider, handle.profileRoot)
 		if err != nil {
 			return &gatewayv1.ProviderQuotaRefreshResult{ErrorCode: "temporarily_unavailable"}, nil
 		}
@@ -224,7 +283,7 @@ func (m *Manager) Refresh(ctx context.Context, correlationKey []byte, request *g
 		}
 		m.mu.Unlock()
 	}
-	snapshot := normalizeSnapshot(request.GetAccountKey(), result, m.now().UTC())
+	snapshot := normalizeSnapshot(request.GetProvider(), request.GetAccountKey(), result, m.now().UTC())
 	return &gatewayv1.ProviderQuotaRefreshResult{Snapshot: snapshot}, nil
 }
 
@@ -236,10 +295,10 @@ func (m *Manager) ConsumeReset(ctx context.Context, correlationKey []byte, reque
 	m.mu.Lock()
 	handle, exists := m.handles[request.GetAccountKey()]
 	m.mu.Unlock()
-	if !exists {
+	if !exists || handle.provider != gatewayv1.ProviderQuotaProvider_PROVIDER_QUOTA_PROVIDER_OPENAI_CODEX {
 		return &gatewayv1.ProviderQuotaResetResult{ErrorCode: "account_not_found"}, nil
 	}
-	result, err := m.runProbe(ctx, handle.profileRoot, "consume_reset", request.GetIdempotencyKey(), handle.stableAccountID)
+	result, err := m.runProbe(ctx, handle.provider, handle.profileRoot, "consume_reset", request.GetIdempotencyKey(), handle.stableAccountID)
 	if err != nil {
 		return &gatewayv1.ProviderQuotaResetResult{ErrorCode: "temporarily_unavailable"}, nil
 	}
@@ -260,9 +319,14 @@ func (m *Manager) ConsumeReset(ctx context.Context, correlationKey []byte, reque
 	}
 	m.mu.Unlock()
 	return &gatewayv1.ProviderQuotaResetResult{
-		Snapshot: normalizeSnapshot(request.GetAccountKey(), result, m.now().UTC()),
+		Snapshot: normalizeSnapshot(request.GetProvider(), request.GetAccountKey(), result, m.now().UTC()),
 		Outcome:  result.ResetOutcome,
 	}, nil
+}
+
+func supportedProvider(provider gatewayv1.ProviderQuotaProvider) bool {
+	return provider == gatewayv1.ProviderQuotaProvider_PROVIDER_QUOTA_PROVIDER_OPENAI_CODEX ||
+		provider == gatewayv1.ProviderQuotaProvider_PROVIDER_QUOTA_PROVIDER_ANTHROPIC_CLAUDE
 }
 
 func correlateAccount(key []byte, provider gatewayv1.ProviderQuotaProvider, stableID string) string {
@@ -274,27 +338,40 @@ func correlateAccount(key []byte, provider gatewayv1.ProviderQuotaProvider, stab
 }
 
 func configuredCodexProfiles() ([]string, error) {
-	var candidates []string
-	if configured := strings.TrimSpace(os.Getenv("DIETER_CODEX_ACCOUNT_HOMES")); configured != "" {
+	active, err := activeCodexProfile()
+	if err != nil {
+		return nil, err
+	}
+	return configuredProfiles(active, "DIETER_CODEX_ACCOUNT_HOMES")
+}
+
+func configuredClaudeProfiles() ([]string, error) {
+	active, err := activeClaudeProfile()
+	if err != nil {
+		return nil, err
+	}
+	return configuredProfiles(active, "DIETER_CLAUDE_ACCOUNT_HOMES")
+}
+
+func configuredProfiles(active, environmentName string) ([]string, error) {
+	candidates := []string{active}
+	if configured := strings.TrimSpace(os.Getenv(environmentName)); configured != "" {
 		for _, value := range filepath.SplitList(configured) {
 			if value = strings.TrimSpace(value); value != "" {
 				candidates = append(candidates, value)
 			}
 		}
 	}
-	if current := strings.TrimSpace(os.Getenv("CODEX_HOME")); current != "" {
-		candidates = append(candidates, current)
-	}
-	if len(candidates) == 0 {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return nil, err
-		}
-		candidates = append(candidates, filepath.Join(home, ".codex"))
-	}
 	seen := map[string]struct{}{}
 	profiles := make([]string, 0, len(candidates))
 	for _, candidate := range candidates {
+		if candidate == "" {
+			if _, duplicate := seen[candidate]; !duplicate {
+				seen[candidate] = struct{}{}
+				profiles = append(profiles, candidate)
+			}
+			continue
+		}
 		absolute, err := filepath.Abs(candidate)
 		if err != nil {
 			return nil, err
@@ -313,6 +390,29 @@ func configuredCodexProfiles() ([]string, error) {
 		}
 	}
 	return profiles, nil
+}
+
+func activeCodexProfile() (string, error) {
+	value := strings.TrimSpace(os.Getenv("CODEX_HOME"))
+	if value == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", err
+		}
+		value = filepath.Join(home, ".codex")
+	}
+	return filepath.Abs(value)
+}
+
+func activeClaudeProfile() (string, error) {
+	value := strings.TrimSpace(os.Getenv("CLAUDE_CONFIG_DIR"))
+	if value == "" {
+		// An unset CLAUDE_CONFIG_DIR is semantically different from explicitly
+		// setting it to ~/.claude: Claude Code resolves its global state beside
+		// that directory in the default mode.
+		return "", nil
+	}
+	return filepath.Abs(value)
 }
 
 type cappedBuffer struct {
@@ -335,20 +435,32 @@ func (w *cappedBuffer) Write(value []byte) (int, error) {
 	return len(value), nil
 }
 
-func (m *Manager) probe(ctx context.Context, profileRoot string) (probeResult, error) {
-	return m.runProbe(ctx, profileRoot, "read", "", "")
+func (m *Manager) probe(ctx context.Context, provider gatewayv1.ProviderQuotaProvider, profileRoot string) (probeResult, error) {
+	return m.runProbe(ctx, provider, profileRoot, "read", "", "")
 }
 
-func (m *Manager) runProbe(ctx context.Context, profileRoot, action, idempotencyKey, expectedAccountID string) (probeResult, error) {
+func (m *Manager) runProbe(ctx context.Context, provider gatewayv1.ProviderQuotaProvider, profileRoot, action, idempotencyKey, expectedAccountID string) (probeResult, error) {
 	var result probeResult
 	runtimeDirectory, err := m.runner.RuntimeDirectory(ctx)
 	if err != nil {
 		return result, err
 	}
-	command := exec.CommandContext(ctx, "node", filepath.Join(runtimeDirectory, "quota-openai.mjs"))
+	script, environmentName, providerName := "", "", ""
+	switch provider {
+	case gatewayv1.ProviderQuotaProvider_PROVIDER_QUOTA_PROVIDER_OPENAI_CODEX:
+		script, environmentName, providerName = "quota-openai.mjs", "CODEX_HOME", "OpenAI"
+	case gatewayv1.ProviderQuotaProvider_PROVIDER_QUOTA_PROVIDER_ANTHROPIC_CLAUDE:
+		if action != "read" {
+			return result, errors.New("Claude quota mutation is unsupported")
+		}
+		script, environmentName, providerName = "quota-claude.mjs", "CLAUDE_CONFIG_DIR", "Claude"
+	default:
+		return result, errors.New("provider quota probe is unsupported")
+	}
+	command := exec.CommandContext(ctx, "node", filepath.Join(runtimeDirectory, script))
 	command.Dir = runtimeDirectory
 	command.WaitDelay = 2 * time.Second
-	command.Env = environmentWithCodexHome(os.Environ(), profileRoot)
+	command.Env = environmentWithProfile(os.Environ(), environmentName, profileRoot)
 	command.Env = append(command.Env, "DIETER_QUOTA_ACTION="+action)
 	if idempotencyKey != "" {
 		command.Env = append(command.Env, "DIETER_QUOTA_IDEMPOTENCY_KEY="+idempotencyKey)
@@ -359,13 +471,13 @@ func (m *Manager) runProbe(ctx context.Context, profileRoot, action, idempotency
 	var output cappedBuffer
 	command.Stdout, command.Stderr = &output, io.Discard
 	if err := command.Run(); err != nil {
-		return result, errors.New("OpenAI quota probe failed")
+		return result, fmt.Errorf("%s quota probe failed", providerName)
 	}
 	if output.exceeded {
-		return result, errors.New("OpenAI quota probe output exceeded 64 KiB")
+		return result, fmt.Errorf("%s quota probe output exceeded 64 KiB", providerName)
 	}
 	if err := json.Unmarshal(bytes.TrimSpace(output.buffer.Bytes()), &result); err != nil {
-		return result, errors.New("OpenAI quota probe returned invalid data")
+		return result, fmt.Errorf("%s quota probe returned invalid data", providerName)
 	}
 	return result, nil
 }
@@ -385,15 +497,18 @@ func validIdempotencyKey(value string) bool {
 	return true
 }
 
-func environmentWithCodexHome(environment []string, profileRoot string) []string {
+func environmentWithProfile(environment []string, name, profileRoot string) []string {
 	result := make([]string, 0, len(environment)+1)
 	for _, value := range environment {
-		if strings.EqualFold(strings.SplitN(value, "=", 2)[0], "CODEX_HOME") {
+		if strings.EqualFold(strings.SplitN(value, "=", 2)[0], name) {
 			continue
 		}
 		result = append(result, value)
 	}
-	return append(result, "CODEX_HOME="+profileRoot)
+	if profileRoot == "" {
+		return result
+	}
+	return append(result, name+"="+profileRoot)
 }
 
 func accountKind(value string) gatewayv1.ProviderAccountKind {
@@ -433,9 +548,9 @@ func windowKind(value string) gatewayv1.ProviderQuotaWindowKind {
 	}
 }
 
-func normalizeSnapshot(accountKey string, result probeResult, now time.Time) *gatewayv1.ProviderQuotaSnapshot {
+func normalizeSnapshot(provider gatewayv1.ProviderQuotaProvider, accountKey string, result probeResult, now time.Time) *gatewayv1.ProviderQuotaSnapshot {
 	snapshot := &gatewayv1.ProviderQuotaSnapshot{
-		Provider:   gatewayv1.ProviderQuotaProvider_PROVIDER_QUOTA_PROVIDER_OPENAI_CODEX,
+		Provider:   provider,
 		AccountKey: accountKey, AccountKind: accountKind(result.AccountKind), Plan: bounded(result.Plan, 128),
 		DisplayEmail: bounded(result.DisplayEmail, 320),
 		Availability: availability(result.Availability), RefreshState: gatewayv1.ProviderQuotaRefreshState_PROVIDER_QUOTA_REFRESH_STATE_IDLE,

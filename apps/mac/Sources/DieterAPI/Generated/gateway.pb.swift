@@ -925,6 +925,29 @@ public nonisolated struct Dieter_Gateway_V1_ProviderResetCredits: Sendable {
   public init() {}
 }
 
+/// ProviderQuotaMachine is gateway-owned presence metadata for an enrolled
+/// machine that advertised this exact provider account. Daemons never populate
+/// this field in quota results.
+public nonisolated struct Dieter_Gateway_V1_ProviderQuotaMachine: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var daemonID: String = String()
+
+  public var name: String = String()
+
+  public var online: Bool = false
+
+  public var availability: Dieter_Gateway_V1_ProviderQuotaAvailability = .unspecified
+
+  public var lastSeenAt: String = String()
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
 /// ProviderQuotaSnapshot is normalized provider data for exactly one account.
 /// account_key is an opaque, gateway-account-scoped HMAC and is not a provider
 /// account identifier or credential. display_email is optional display-only
@@ -1059,6 +1082,11 @@ public nonisolated struct Dieter_Gateway_V1_ProviderQuotaSnapshot: @unchecked Se
   /// Clears the value of `includedInSummary`. Subsequent reads from it will return its default value.
   public mutating func clearIncludedInSummary() {_uniqueStorage()._includedInSummary = nil}
 
+  public var machines: [Dieter_Gateway_V1_ProviderQuotaMachine] {
+    get {_storage._machines}
+    set {_uniqueStorage()._machines = newValue}
+  }
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
@@ -1066,9 +1094,10 @@ public nonisolated struct Dieter_Gateway_V1_ProviderQuotaSnapshot: @unchecked Se
   fileprivate var _storage = _StorageClass.defaultInstance
 }
 
-/// ProviderQuotaSummary drives the one compact bar shown for a provider. The
-/// selected percentage is the lowest remaining value across distinct accounts
-/// and windows; separate account quotas are never summed or averaged.
+/// ProviderQuotaSummary is the deterministic provider-level API/CLI summary.
+/// Native clients may instead render each account independently. The selected
+/// percentage is the lowest remaining value across distinct accounts and
+/// windows; separate account quotas are never summed or averaged.
 public nonisolated struct Dieter_Gateway_V1_ProviderQuotaSummary: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
@@ -2750,9 +2779,59 @@ nonisolated extension Dieter_Gateway_V1_ProviderResetCredits: SwiftProtobuf.Mess
   }
 }
 
+nonisolated extension Dieter_Gateway_V1_ProviderQuotaMachine: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".ProviderQuotaMachine"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}daemon_id\0\u{1}name\0\u{1}online\0\u{1}availability\0\u{3}last_seen_at\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.daemonID) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.name) }()
+      case 3: try { try decoder.decodeSingularBoolField(value: &self.online) }()
+      case 4: try { try decoder.decodeSingularEnumField(value: &self.availability) }()
+      case 5: try { try decoder.decodeSingularStringField(value: &self.lastSeenAt) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.daemonID.isEmpty {
+      try visitor.visitSingularStringField(value: self.daemonID, fieldNumber: 1)
+    }
+    if !self.name.isEmpty {
+      try visitor.visitSingularStringField(value: self.name, fieldNumber: 2)
+    }
+    if self.online != false {
+      try visitor.visitSingularBoolField(value: self.online, fieldNumber: 3)
+    }
+    if self.availability != .unspecified {
+      try visitor.visitSingularEnumField(value: self.availability, fieldNumber: 4)
+    }
+    if !self.lastSeenAt.isEmpty {
+      try visitor.visitSingularStringField(value: self.lastSeenAt, fieldNumber: 5)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Dieter_Gateway_V1_ProviderQuotaMachine, rhs: Dieter_Gateway_V1_ProviderQuotaMachine) -> Bool {
+    if lhs.daemonID != rhs.daemonID {return false}
+    if lhs.name != rhs.name {return false}
+    if lhs.online != rhs.online {return false}
+    if lhs.availability != rhs.availability {return false}
+    if lhs.lastSeenAt != rhs.lastSeenAt {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
 nonisolated extension Dieter_Gateway_V1_ProviderQuotaSnapshot: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".ProviderQuotaSnapshot"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}provider\0\u{3}account_key\0\u{3}account_kind\0\u{1}plan\0\u{1}availability\0\u{1}windows\0\u{3}next_reset_at\0\u{3}next_reset_window_id\0\u{1}credits\0\u{3}spend_allowance\0\u{3}reset_credits\0\u{3}ordinary_usage_allowed\0\u{3}refreshed_at\0\u{3}next_refresh_at\0\u{3}fresh_until\0\u{3}last_success_at\0\u{3}refresh_state\0\u{3}online_source_count\0\u{3}status_code\0\u{3}display_email\0\u{3}included_in_summary\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}provider\0\u{3}account_key\0\u{3}account_kind\0\u{1}plan\0\u{1}availability\0\u{1}windows\0\u{3}next_reset_at\0\u{3}next_reset_window_id\0\u{1}credits\0\u{3}spend_allowance\0\u{3}reset_credits\0\u{3}ordinary_usage_allowed\0\u{3}refreshed_at\0\u{3}next_refresh_at\0\u{3}fresh_until\0\u{3}last_success_at\0\u{3}refresh_state\0\u{3}online_source_count\0\u{3}status_code\0\u{3}display_email\0\u{3}included_in_summary\0\u{1}machines\0")
 
   fileprivate class _StorageClass {
     var _provider: Dieter_Gateway_V1_ProviderQuotaProvider = .unspecified
@@ -2776,6 +2855,7 @@ nonisolated extension Dieter_Gateway_V1_ProviderQuotaSnapshot: SwiftProtobuf.Mes
     var _statusCode: String = String()
     var _displayEmail: String = String()
     var _includedInSummary: Bool? = nil
+    var _machines: [Dieter_Gateway_V1_ProviderQuotaMachine] = []
 
       // This property is used as the initial default value for new instances of the type.
       // The type itself is protecting the reference to its storage via CoW semantics.
@@ -2807,6 +2887,7 @@ nonisolated extension Dieter_Gateway_V1_ProviderQuotaSnapshot: SwiftProtobuf.Mes
       _statusCode = source._statusCode
       _displayEmail = source._displayEmail
       _includedInSummary = source._includedInSummary
+      _machines = source._machines
     }
   }
 
@@ -2846,6 +2927,7 @@ nonisolated extension Dieter_Gateway_V1_ProviderQuotaSnapshot: SwiftProtobuf.Mes
         case 19: try { try decoder.decodeSingularStringField(value: &_storage._statusCode) }()
         case 20: try { try decoder.decodeSingularStringField(value: &_storage._displayEmail) }()
         case 21: try { try decoder.decodeSingularBoolField(value: &_storage._includedInSummary) }()
+        case 22: try { try decoder.decodeRepeatedMessageField(value: &_storage._machines) }()
         default: break
         }
       }
@@ -2921,6 +3003,9 @@ nonisolated extension Dieter_Gateway_V1_ProviderQuotaSnapshot: SwiftProtobuf.Mes
       try { if let v = _storage._includedInSummary {
         try visitor.visitSingularBoolField(value: v, fieldNumber: 21)
       } }()
+      if !_storage._machines.isEmpty {
+        try visitor.visitRepeatedMessageField(value: _storage._machines, fieldNumber: 22)
+      }
     }
     try unknownFields.traverse(visitor: &visitor)
   }
@@ -2951,6 +3036,7 @@ nonisolated extension Dieter_Gateway_V1_ProviderQuotaSnapshot: SwiftProtobuf.Mes
         if _storage._statusCode != rhs_storage._statusCode {return false}
         if _storage._displayEmail != rhs_storage._displayEmail {return false}
         if _storage._includedInSummary != rhs_storage._includedInSummary {return false}
+        if _storage._machines != rhs_storage._machines {return false}
         return true
       }
       if !storagesAreEqual {return false}
