@@ -91,6 +91,8 @@
 
         func clearError() { errorMessage = nil }
 
+        func show(_ error: Error) { errorMessage = IOSUserError.message(error) }
+
         func signIn() async {
             cancelAuthentication()
             do {
@@ -520,7 +522,8 @@
 
         func createTask(
             projectID: String, boardID: String?, title: String, prompt: String,
-            provider: String, model: String, effort: String, run: Bool
+            provider: String, model: String, effort: String,
+            attachments: [Dieter_V1_MessagePart] = [], run: Bool
         ) async -> String? {
             guard pendingOperations == 0, let rpc = dataPlane?.rpc else { return nil }
             let attempt = connectionID
@@ -544,13 +547,15 @@
             request.provider = provider
             request.model = model
             request.effort = effort
+            request.attachments = attachments
             request.deferStart = !run
             request.workspaceMode = "project"
             request.clientID = clientID
-            request.commandID = createIdentity.command(for: [
-                selectedMachine?.id ?? "", projectID, boardID ?? "", title, prompt, provider, model, effort,
-                String(run),
-            ])
+            request.commandID = createIdentity.command(
+                for: [
+                    selectedMachine?.id ?? "", projectID, boardID ?? "", title, prompt, provider, model, effort,
+                    String(run),
+                ] + attachments.map(Self.attachmentIdentity))
             do {
                 let card = try await (boardID == nil ? rpc.createChat(request) : rpc.createCard(request))
                 guard owns(attempt) else { return nil }

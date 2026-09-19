@@ -35,7 +35,8 @@ CAMERA_USAGE_DESCRIPTION = (
 )
 SECRET_NAMES = (
     "IOS_DISTRIBUTION_CERTIFICATE_BASE64", "IOS_DISTRIBUTION_CERTIFICATE_PASSWORD",
-    "IOS_PROVISIONING_PROFILE_BASE64", "IOS_APP_STORE_CONNECT_KEY_BASE64",
+    "IOS_PROVISIONING_PROFILE_BASE64", "IOS_SHARE_PROVISIONING_PROFILE_BASE64",
+    "IOS_APP_STORE_CONNECT_KEY_BASE64",
     "IOS_APP_STORE_CONNECT_KEY_ID", "IOS_APP_STORE_CONNECT_ISSUER_ID",
     "IOS_TEAM_ID", "IOS_BUNDLE_ID",
 )
@@ -50,8 +51,10 @@ class Material:
     certificate: bytes = field(repr=False)
     password: bytes = field(repr=False)
     profile: bytes = field(repr=False)
+    share_profile: bytes = field(repr=False)
     key: bytes = field(repr=False)
     metadata: dict
+    share_metadata: dict
 
 
 def xcode_error_summary(stdout, stderr, secrets_to_redact):
@@ -140,16 +143,22 @@ def load_material(env):
         raise ReleaseError("Complete dedicated iOS signing credentials are required; configure all IOS_* release inputs.")
     certificate = decoded_secret(env, "IOS_DISTRIBUTION_CERTIFICATE_BASE64")
     profile = decoded_secret(env, "IOS_PROVISIONING_PROFILE_BASE64")
+    share_profile = decoded_secret(env, "IOS_SHARE_PROVISIONING_PROFILE_BASE64")
     key = decoded_secret(env, "IOS_APP_STORE_CONNECT_KEY_BASE64")
     password = env["IOS_DISTRIBUTION_CERTIFICATE_PASSWORD"].encode("utf-8")
     if (not password or len(password) > signing.MAX_PASSWORD_BYTES
             or any(value in password for value in (b"\n", b"\r", b"\0"))):
         raise ReleaseError("The iOS certificate password must be a nonempty single line of at most 1024 bytes.")
+    app_group = "group." + env["IOS_BUNDLE_ID"]
     metadata = signing.validate_ios_material(
         certificate, password, profile, key,
         env["IOS_APP_STORE_CONNECT_KEY_ID"], env["IOS_APP_STORE_CONNECT_ISSUER_ID"],
-        env["IOS_BUNDLE_ID"], team_id=env["IOS_TEAM_ID"])
-    return Material(certificate, password, profile, key, metadata)
+        env["IOS_BUNDLE_ID"], team_id=env["IOS_TEAM_ID"], required_app_group=app_group)
+    share_metadata = signing.validate_ios_material(
+        certificate, password, share_profile, key,
+        env["IOS_APP_STORE_CONNECT_KEY_ID"], env["IOS_APP_STORE_CONNECT_ISSUER_ID"],
+        env["IOS_BUNDLE_ID"] + ".share", team_id=env["IOS_TEAM_ID"], required_app_group=app_group)
+    return Material(certificate, password, profile, share_profile, key, metadata, share_metadata)
 
 
 def signing_config(env):
@@ -210,12 +219,24 @@ def owned_identity(keychain):
 @contextmanager
 def signing_environment(material, runner_temp, *, home=None):
     home = Path.home() if home is None else home
-    profile = home / "Library/Developer/Xcode/UserData/Provisioning Profiles" / (
-        material.metadata["profile_uuid"] + ".mobileprovision")
-    if profile.is_symlink() or (profile.exists() and not profile.is_file()):
-        raise ReleaseError("The destination provisioning profile is not a regular file.")
-    previous_profile = profile.read_bytes() if profile.exists() else None
-    previous_mode = stat.S_IMODE(profile.stat().st_mode) if profile.exists() else 0o600
+    profile_directory = home / "Library/Developer/Xcode/UserData/Provisioning Profiles"
+    profile_inputs = (
+        (material.metadata["profile_uuid"], material.profile),
+        (material.share_metadata["profile_uuid"], material.share_profile),
+    )
+    if profile_inputs[0][0] == profile_inputs[1][0]:
+        raise ReleaseError("The app and Share extension provisioning profiles must have distinct UUIDs.")
+    profiles = []
+    for profile_uuid, content in profile_inputs:
+        path = profile_directory / (profile_uuid + ".mobileprovision")
+        if path.is_symlink() or (path.exists() and not path.is_file()):
+            raise ReleaseError("A destination provisioning profile is not a regular file.")
+        profiles.append({
+            "path": path, "content": content,
+            "previous": path.read_bytes() if path.exists() else None,
+            "mode": stat.S_IMODE(path.stat().st_mode) if path.exists() else 0o600,
+            "attempted": False,
+        })
     try:
         previous_keychains = shlex.split(command(
             ["security", "list-keychains", "-d", "user"], label="Keychain search list read", timeout=30
@@ -225,7 +246,6 @@ def signing_environment(material, runner_temp, *, home=None):
     private = Path(tempfile.mkdtemp(prefix="dieter-ios-signing-", dir=runner_temp))
     keychain = private / "release.keychain-db"
     keychain_attempted = False
-    profile_attempted = False
     cleanup_errors = []
     try:
         certificate = private / "distribution.p12"
@@ -248,17 +268,20 @@ def signing_environment(material, runner_temp, *, home=None):
         identity = owned_identity(keychain)
         command(["security", "list-keychains", "-d", "user", "-s", keychain],
                 label="Temporary keychain search list", timeout=30)
-        profile.parent.mkdir(parents=True, exist_ok=True)
-        profile_attempted = True
-        replace_profile(profile, material.profile)
+        profile_directory.mkdir(parents=True, exist_ok=True)
+        for profile in profiles:
+            profile["attempted"] = True
+            replace_profile(profile["path"], profile["content"])
         yield {"directory": private, "key": key, "identity": identity, "password": password}
     finally:
-        if profile_attempted:
+        for profile in reversed(profiles):
+            if not profile["attempted"]:
+                continue
             try:
-                if previous_profile is None:
-                    profile.unlink(missing_ok=True)
+                if profile["previous"] is None:
+                    profile["path"].unlink(missing_ok=True)
                 else:
-                    replace_profile(profile, previous_profile, previous_mode)
+                    replace_profile(profile["path"], profile["previous"], profile["mode"])
             except OSError:
                 cleanup_errors.append("profile")
         if keychain_attempted:
@@ -320,15 +343,29 @@ def validate_archive(archive, version, build, bundle_id, *, signed):
     framework = app / "Frameworks/DieterIOS.framework"
     if not framework.is_dir() or not (framework / "DieterIOS").is_file():
         raise ReleaseError("The archive is missing its embedded DieterIOS framework.")
+    share = app / "PlugIns/DieterShare.appex"
+    try:
+        share_info = plistlib.loads((share / "Info.plist").read_bytes())
+    except (OSError, ValueError, plistlib.InvalidFileException):
+        raise ReleaseError("The archive is missing its Share extension metadata.") from None
+    share_executable = share_info.get("CFBundleExecutable")
+    if (share_info.get("CFBundleIdentifier") != bundle_id + ".share"
+            or not isinstance(share_executable, str) or not share_executable
+            or Path(share_executable).name != share_executable
+            or not (share / share_executable).is_file()):
+        raise ReleaseError("The archive is missing its Share extension executable.")
     if signed:
         command(["codesign", "--verify", "--deep", "--strict", app], label="Archived iOS signature verification", timeout=120)
 
 
-def export_options(metadata, identity, destination):
+def export_options(metadata, identity, destination, share_metadata=None):
+    profiles = {metadata["bundle_id"]: metadata["profile_uuid"]}
+    if share_metadata is not None:
+        profiles[share_metadata["bundle_id"]] = share_metadata["profile_uuid"]
     return {
         "method": "app-store-connect", "destination": destination, "signingStyle": "manual",
         "teamID": metadata["team_id"], "signingCertificate": identity,
-        "provisioningProfiles": {metadata["bundle_id"]: metadata["profile_uuid"]},
+        "provisioningProfiles": profiles,
         "manageAppVersionAndBuildNumber": False, "uploadSymbols": True,
     }
 
@@ -343,6 +380,8 @@ def validate_ipa(directory, version, build, bundle_id):
             validate_info(info, version, build, bundle_id)
             if "Payload/Dieter.app/Frameworks/DieterIOS.framework/DieterIOS" not in ipa.namelist():
                 raise ReleaseError("The exported IPA is missing its embedded DieterIOS framework.")
+            if "Payload/Dieter.app/PlugIns/DieterShare.appex/DieterShare" not in ipa.namelist():
+                raise ReleaseError("The exported IPA is missing its Share extension.")
     except (OSError, ValueError, KeyError, zipfile.BadZipFile, plistlib.InvalidFileException):
         raise ReleaseError("The exported IPA does not contain a valid Dieter iOS app.") from None
     return candidates[0]
@@ -373,7 +412,7 @@ def testflight(root, version, build, env, *, upload=False):
     metadata = material.metadata
     with signing_environment(material, runner_temp) as context:
         diagnostic_secrets = (
-            material.certificate, material.password, material.profile, material.key,
+            material.certificate, material.password, material.profile, material.share_profile, material.key,
             context["directory"], context["key"], context["identity"], context["password"],
             *(value for name, value in env.items() if name.startswith("IOS_")),
         )
@@ -383,10 +422,13 @@ def testflight(root, version, build, env, *, upload=False):
             f"DIETER_IOS_TEAM_ID={metadata['team_id']}", "DIETER_IOS_SIGN_STYLE=Manual",
             f"DIETER_IOS_SIGN_IDENTITY={context['identity']}",
             f"DIETER_IOS_PROFILE_SPECIFIER={metadata['profile_uuid']}",
+            f"DIETER_IOS_SHARE_PROFILE_SPECIFIER={material.share_metadata['profile_uuid']}",
         ], label="Signed iOS archive", diagnostic_secrets=diagnostic_secrets)
         validate_archive(archive, version, build, metadata["bundle_id"], signed=True)
         options = context["directory"] / "ExportOptions.plist"
-        write_private(options, plistlib.dumps(export_options(metadata, context["identity"], "export")))
+        write_private(
+            options,
+            plistlib.dumps(export_options(metadata, context["identity"], "export", material.share_metadata)))
         export = output / "Export"
         command(["xcodebuild", "-exportArchive", "-archivePath", archive,
                  "-exportPath", export, "-exportOptionsPlist", options], label="App Store IPA export",
@@ -394,7 +436,9 @@ def testflight(root, version, build, env, *, upload=False):
         ipa = validate_ipa(export, version, build, metadata["bundle_id"])
         if upload:
             upload_options = context["directory"] / "UploadOptions.plist"
-            write_private(upload_options, plistlib.dumps(export_options(metadata, context["identity"], "upload")))
+            write_private(
+                upload_options,
+                plistlib.dumps(export_options(metadata, context["identity"], "upload", material.share_metadata)))
             command(["xcodebuild", "-exportArchive", "-archivePath", archive,
                      "-exportPath", context["directory"] / "Upload", "-exportOptionsPlist", upload_options,
                      "-allowProvisioningUpdates", "-authenticationKeyPath", context["key"],

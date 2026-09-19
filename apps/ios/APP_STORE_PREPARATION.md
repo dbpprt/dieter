@@ -15,6 +15,8 @@ account. Keep reviewer credentials out of this file and out of the repository.
 | Name | Dieter AI | User-approved name saved in App Store Connect. |
 | Platform | iOS | One app supports iPhone and iPad, iOS 18 or later. |
 | Bundle ID | `com.dbpprt.dieter.ios` | Registered App ID and App Store Connect app; matches the current build default. |
+| Share extension bundle ID | `com.dbpprt.dieter.ios.share` | **Pending:** register the explicit extension App ID and enable the shared App Group. |
+| App Group | `group.com.dbpprt.dieter.ios` | **Pending:** register and assign to both the app and Share extension App IDs. |
 | Apple team | `DS6N5L85E7` | Team used for registration and the dedicated iOS distribution credentials. |
 | App Store Connect ID | `6811592270` | Registered [app record](https://appstoreconnect.apple.com/apps/6811592270). |
 | SKU | `dieter-ios` | Registered internal identifier. |
@@ -42,11 +44,18 @@ are intentionally excluded.
 | App Store provisioning profile | `Dieter iOS App Store 2026`; portal ID `7QUZQSNAZZ`; UUID `465A053C-8DE5-4EF3-9AEB-5A090342644C`; expires 13 September 2027. |
 | App Store Connect API key | `Dieter GitHub iOS Upload`; Developer role; key ID `9LAL22MXP5`; issuer ID `69a6de74-a6e2-47e3-e053-5b8c7c11a4d1`. |
 
-The signing setup validated and successfully uploaded all eight iOS GitHub
-Actions secrets: `IOS_DISTRIBUTION_CERTIFICATE_BASE64`,
+The original signing setup validated and uploaded eight iOS GitHub Actions
+secrets: `IOS_DISTRIBUTION_CERTIFICATE_BASE64`,
 `IOS_DISTRIBUTION_CERTIFICATE_PASSWORD`, `IOS_PROVISIONING_PROFILE_BASE64`,
 `IOS_APP_STORE_CONNECT_KEY_BASE64`, `IOS_APP_STORE_CONNECT_KEY_ID`,
 `IOS_APP_STORE_CONNECT_ISSUER_ID`, `IOS_TEAM_ID`, and `IOS_BUNDLE_ID`.
+
+**Pending for screenshot sharing:** recreate the main app profile with the App
+Group entitlement, create the Share extension App Store profile, and rerun the
+setup helper with `--ios-share-provisioning-profile`. This adds
+`IOS_SHARE_PROVISIONING_PROFILE_BASE64`; signed archives intentionally fail
+closed until both profiles validate. The distribution certificate and upload
+API key can remain unchanged.
 
 The existing 1Password item **Dieter — Apple release signing credentials** was
 updated and saved with the iOS certificate, profile, and API key identifiers,

@@ -11,7 +11,9 @@
         @State private var selectedTaskID: String?
         @State private var preferredColumn: NavigationSplitViewColumn = .sidebar
         @State private var settingsPresented = false
-        @State private var createPresented = false
+        @State private var createPresentation: IOSCreateTaskPresentation?
+        @State private var pendingShareID: String?
+        @State private var loadingShareID: String?
         @State private var fileScope: IOSFileScope?
         @State private var drafts: [String: IOSConversationDraft] = [:]
 
@@ -29,6 +31,10 @@
             .task { await store.bootstrap() }
             .onChange(of: scenePhase) { _, phase in
                 if phase == .active { store.resume() } else if phase == .background { store.suspend() }
+            }
+            .onOpenURL { receiveShare($0) }
+            .onChange(of: shareReady) { _, ready in
+                if ready { presentPendingShare() }
             }
             .alert(
                 "Couldn’t complete the request",
@@ -54,7 +60,7 @@
                 } else {
                     IOSTaskListView(
                         store: store, destination: destination ?? .allTasks, selectedTaskID: $selectedTaskID,
-                        createTask: { createPresented = true }
+                        createTask: presentTaskCreation
                     )
                     .navigationSplitViewColumnWidth(min: 280, ideal: 350, max: 480)
                 }
@@ -81,10 +87,11 @@
             .sheet(isPresented: $settingsPresented) {
                 NavigationStack { IOSSettingsView(store: store) }
             }
-            .sheet(isPresented: $createPresented) {
+            .sheet(item: $createPresentation) { presentation in
                 IOSCreateTaskView(
                     store: store, initialProjectID: selectedProjectID,
-                    initialBoardID: selectedBoardID, chat: destination == .chats
+                    initialBoardID: selectedBoardID, chat: presentation.chat,
+                    initialAttachments: presentation.attachments
                 ) { id in
                     selectedTaskID = id
                     preferredColumn = .detail
@@ -170,7 +177,7 @@
                         .accessibilityIdentifier("ios.settings")
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("New task", systemImage: "square.and.pencil") { createPresented = true }
+                    Button("New task", systemImage: "square.and.pencil", action: presentTaskCreation)
                         .disabled(!store.phase.isConnected || store.projects.isEmpty)
                         .accessibilityIdentifier("ios.new-task")
                 }
@@ -229,6 +236,40 @@
             return Binding(get: { drafts[key] ?? IOSConversationDraft() }, set: { drafts[key] = $0 })
         }
 
+        private var shareReady: Bool {
+            pendingShareID != nil && store.isAuthenticated && store.phase.isConnected
+                && !store.projects.isEmpty && !store.harnesses.isEmpty
+        }
+
+        private func presentTaskCreation() {
+            createPresentation = IOSCreateTaskPresentation(chat: destination == .chats, attachments: [])
+        }
+
+        private func receiveShare(_ url: URL) {
+            guard let id = IOSShareInbox.shareID(from: url) else { return }
+            pendingShareID = id
+            presentPendingShare()
+        }
+
+        private func presentPendingShare() {
+            guard shareReady, let id = pendingShareID, loadingShareID == nil else { return }
+            loadingShareID = id
+            Task {
+                defer { if loadingShareID == id { loadingShareID = nil } }
+                do {
+                    let attachments = try await IOSShareInbox.consume(id: id)
+                    guard pendingShareID == id else { return }
+                    pendingShareID = nil
+                    createPresentation = IOSCreateTaskPresentation(chat: false, attachments: attachments)
+                } catch {
+                    if pendingShareID == id {
+                        pendingShareID = nil
+                        store.show(error)
+                    }
+                }
+            }
+        }
+
         private func openProjectFiles(_ project: Dieter_V1_Project) {
             fileScope = IOSFileScope(
                 machineID: store.selectedMachine?.id ?? "", projectID: project.id, cardID: "", title: project.name)
@@ -240,6 +281,12 @@
                 machineID: store.selectedMachine?.id ?? "", projectID: card.projectID, cardID: card.id,
                 title: card.title)
         }
+    }
+
+    private struct IOSCreateTaskPresentation: Identifiable {
+        let id = UUID()
+        let chat: Bool
+        let attachments: [Dieter_V1_MessagePart]
     }
 
     struct IOSTaskListView: View {

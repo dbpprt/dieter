@@ -28,7 +28,7 @@ existing brand SVG with an opaque square background. iOS applies the icon shape.
 
 The iOS client extends the repository's [Apple signing setup](../../docs/apple-release-signing.md#configure-ios-signing-and-testflight). Use `just release configure-apple-signing --platform ios` with explicit paths to dedicated Apple Distribution, provisioning profile, and App Store Connect team API credentials. Add `--check` for local validation without uploading secrets. `--platform all` configures both Mac and iOS credentials; the default remains `macos`.
 
-Create the App Store Connect app record for `com.dbpprt.dieter.ios` first, or supply a matching custom bundle ID during setup. iOS uses its own signing credentials and does not use the Mac Developer ID certificates or notarization service.
+Create the App Store Connect app record for `com.dbpprt.dieter.ios` first, or supply a matching custom bundle ID during setup. Screenshot sharing also requires the `group.com.dbpprt.dieter.ios` App Group, the `com.dbpprt.dieter.ios.share` extension App ID, and an App Store provisioning profile for both the app and extension with that App Group enabled. Pass the extension profile with `--ios-share-provisioning-profile`. iOS uses its own signing credentials and does not use the Mac Developer ID certificates or notarization service.
 
 The manual `ios-testflight.yml` workflow accepts a marketing `version` (default `0.1.0`) and `upload` (default `false`). It derives the build number from `run_number.run_attempt` and retains signed archive/IPA artifacts when building without upload:
 
@@ -81,6 +81,7 @@ The existing `dieter-mac://oauth/callback` redirect is deliberately reused insid
 
 - Browse remote nodes, projects, boards, tasks, and standalone chats.
 - Create a draft or immediately run a task with provider, model, and reasoning selection.
+- Attach screenshots and files from the New Task sheet, or share a screenshot/file to Dieter to open a pre-populated New Task sheet.
 - Start a draft, send follow-up messages, stop an active turn, and read live transcript updates and older messages.
 - Read and edit remote text files with revision-checked saves.
 - View and control the selected machine through authenticated remote screen sharing.

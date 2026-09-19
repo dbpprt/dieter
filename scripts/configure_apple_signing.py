@@ -192,7 +192,8 @@ def validate_api_key(api_key, key_id, issuer_id):
 
 
 def validate_ios_material(distribution_p12, distribution_password, provisioning_profile,
-                          api_key, key_id, issuer_id, bundle_id, *, team_id=None):
+                          api_key, key_id, issuer_id, bundle_id, *, team_id=None,
+                          required_app_group=None):
     """Validate dedicated iOS release material locally; return non-secret metadata.
 
     CMS signature integrity is checked without contacting Apple. Account roles,
@@ -224,6 +225,10 @@ def validate_ios_material(distribution_p12, distribution_password, provisioning_
     if (profile.get("TeamIdentifier") != [team]
             or entitlements.get("com.apple.developer.team-identifier") != team):
         raise SetupError("The iOS provisioning profile and distribution certificate must belong to the same Apple team.")
+    if required_app_group is not None:
+        groups = entitlements.get("com.apple.security.application-groups")
+        if not isinstance(groups, list) or required_app_group not in groups:
+            raise SetupError("The iOS provisioning profile must include Dieter's App Group entitlement.")
     prefixes = profile.get("ApplicationIdentifierPrefix")
     app_id = entitlements.get("application-identifier")
     if (not isinstance(prefixes, list) or not prefixes
@@ -291,13 +296,23 @@ def build_ios_secrets(args):
     distribution = read_credential(args.ios_distribution_p12, "Apple Distribution .p12")
     password = password_for(args.ios_distribution_password_file, "Apple Distribution")
     profile = read_credential(args.ios_provisioning_profile, "iOS App Store provisioning profile")
+    share_profile = read_credential(
+        args.ios_share_provisioning_profile, "iOS Share extension App Store provisioning profile")
     api_key = read_credential(args.ios_api_key, "iOS App Store Connect .p8")
-    metadata = validate_ios_material(distribution, password, profile, api_key,
-                                     args.ios_key_id, args.ios_issuer_id, args.ios_bundle_id)
+    app_group = "group." + args.ios_bundle_id
+    metadata = validate_ios_material(
+        distribution, password, profile, api_key,
+        args.ios_key_id, args.ios_issuer_id, args.ios_bundle_id,
+        required_app_group=app_group)
+    validate_ios_material(
+        distribution, password, share_profile, api_key,
+        args.ios_key_id, args.ios_issuer_id, args.ios_bundle_id + ".share",
+        team_id=metadata["team_id"], required_app_group=app_group)
     return {
         "IOS_DISTRIBUTION_CERTIFICATE_BASE64": base64.b64encode(distribution),
         "IOS_DISTRIBUTION_CERTIFICATE_PASSWORD": password,
         "IOS_PROVISIONING_PROFILE_BASE64": base64.b64encode(profile),
+        "IOS_SHARE_PROVISIONING_PROFILE_BASE64": base64.b64encode(share_profile),
         "IOS_APP_STORE_CONNECT_KEY_BASE64": base64.b64encode(api_key),
         "IOS_APP_STORE_CONNECT_KEY_ID": metadata["key_id"].encode("ascii"),
         "IOS_APP_STORE_CONNECT_ISSUER_ID": metadata["issuer_id"].encode("ascii"),
@@ -352,6 +367,7 @@ def main(argv=None):
     parser.add_argument("--ios-distribution-p12", help="Dedicated Dieter Apple Distribution certificate and private key export")
     parser.add_argument("--ios-distribution-password-file", help="Private file containing the iOS distribution export password; otherwise prompt securely")
     parser.add_argument("--ios-provisioning-profile", help="Dedicated Dieter iOS App Store distribution provisioning profile (.mobileprovision)")
+    parser.add_argument("--ios-share-provisioning-profile", help="Dieter Share extension App Store distribution provisioning profile (.mobileprovision)")
     parser.add_argument("--ios-api-key", help="Dedicated Dieter iOS App Store Connect team API private key (.p8)")
     parser.add_argument("--ios-key-id", help="iOS App Store Connect API Key ID")
     parser.add_argument("--ios-issuer-id", help="iOS App Store Connect team API Issuer ID")
@@ -362,7 +378,7 @@ def main(argv=None):
     if args.platform in ("macos", "all"):
         required += ["application_p12", "installer_p12", "notary_key", "key_id", "issuer_id"]
     if args.platform in ("ios", "all"):
-        required += ["ios_distribution_p12", "ios_provisioning_profile", "ios_api_key", "ios_key_id", "ios_issuer_id"]
+        required += ["ios_distribution_p12", "ios_provisioning_profile", "ios_share_provisioning_profile", "ios_api_key", "ios_key_id", "ios_issuer_id"]
     missing = ["--" + name.replace("_", "-") for name in required if not getattr(args, name)]
     if missing:
         parser.error("the following arguments are required for this platform: " + ", ".join(missing))
