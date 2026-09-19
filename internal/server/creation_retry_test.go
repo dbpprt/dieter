@@ -46,6 +46,34 @@ func creationRetryClient(t *testing.T, data *store.Store, runner harness.Runner)
 				t.Error(err)
 			}
 		}
+		// CancelCard acknowledges admission immediately. Wait for each owning
+		// runTurn goroutine to release its lease and finish its last durable write
+		// before t.TempDir removes the shared store.
+		for {
+			settled := true
+			for _, card := range cards {
+				current, resolveErr := data.ResolveCard(card.ID)
+				conversation, conversationErr := data.Conversation(card.ID)
+				leased, leaseErr := data.CardHasRuntimeLease(card.ID)
+				if resolveErr != nil || conversationErr != nil || leaseErr != nil {
+					t.Errorf("inspect canceled creation-retry turn: card=%v conversation=%v lease=%v", resolveErr, conversationErr, leaseErr)
+					return
+				}
+				if leased || current.Runtime == "running" || conversation.Status == "running" || conversation.ActiveTurn != nil {
+					settled = false
+					break
+				}
+			}
+			if settled {
+				break
+			}
+			select {
+			case <-ctx.Done():
+				t.Error(ctx.Err())
+				return
+			case <-time.After(5 * time.Millisecond):
+			}
+		}
 		if err := data.WaitForWriter(ctx); err != nil {
 			t.Error(err)
 		}

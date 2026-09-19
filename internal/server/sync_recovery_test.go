@@ -68,6 +68,37 @@ func TestSyncBurstDoesNotSkipMetadataBeyondDiagnosticBatch(t *testing.T) {
 	}
 }
 
+func TestSyncRecoveryFrameIncludesEventsThroughPublishedCursor(t *testing.T) {
+	data, api, _ := syncRecoveryFixture(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	stop := errors.New("done")
+	var initialSequence uint64
+	err := api.watchSync(ctx, &dieterv1.SyncRequest{ProtocolVersion: 1}, func(frame *dieterv1.SyncFrame) error {
+		if initialSequence == 0 {
+			initialSequence = frame.GetCursor().GetSequence()
+			pending, err := json.Marshal(store.SyncEvent{
+				Sequence: initialSequence + 1,
+				Kind:     "store_changed",
+			})
+			if err != nil {
+				return err
+			}
+			return os.WriteFile(filepath.Join(data.Root, "sync", "pending.json"), pending, 0600)
+		}
+		if frame.GetHeartbeat() || frame.GetCursor().GetSequence() <= initialSequence {
+			return nil
+		}
+		if len(frame.GetEvents()) != 1 || frame.GetEvents()[0].GetSequence() != frame.GetCursor().GetSequence() {
+			t.Fatalf("recovered cursor skipped its diagnostic event: %#v", frame)
+		}
+		return stop
+	})
+	if !errors.Is(err, stop) {
+		t.Fatalf("recovered sync event was not published: %v", err)
+	}
+}
+
 func TestSyncHeartbeatsSurviveBlockedProjectionAndCancellation(t *testing.T) {
 	data, api, _ := syncRecoveryFixture(t)
 	lock := filepath.Join(data.Root, ".write-lock")

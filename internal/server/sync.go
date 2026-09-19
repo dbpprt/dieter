@@ -470,6 +470,22 @@ func (api *grpcAPI) buildSyncFrames(ctx context.Context, request *dieterv1.SyncR
 		if err != nil {
 			return err
 		}
+		// The projection build crosses the central writer boundary and can
+		// therefore observe commits newer than the highwater sampled above.
+		// Refresh the diagnostic journal after that build and retain only events
+		// covered by the cursor we are about to publish. Otherwise a concurrent
+		// commit can produce a cursor-only frame that permanently skips its event.
+		_, events, err = api.server.store.SyncEvents(projection.cursor.Sequence, 256)
+		if err != nil {
+			return err
+		}
+		covered := events[:0]
+		for _, event := range events {
+			if event.Sequence <= next.cursor.Sequence {
+				covered = append(covered, event)
+			}
+		}
+		events = covered
 		full = full || next.cursor.Epoch != projection.cursor.Epoch || next.cursor.Sequence < projection.cursor.Sequence
 		reset = full
 		if err := publish(next, events, full); err != nil {
