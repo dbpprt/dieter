@@ -55,6 +55,15 @@ update, formula upgrade, and service restart. The new formula must ship with the
 new binaries; the release recipe generates it from this repository rather than
 patching an independently maintained formula template.
 
+Update availability is checked with Homebrew's prefix-only lookup and the
+installed `opt/dieter/INSTALL_RECEIPT.json` record. The receipt must identify
+`dbpprt/tap`, and the daemon must run from that keg's `bin/dieter` or the fixed
+service path. This avoids evaluating a formula during routine machine polling.
+Timeouts, canceled requests, and failed Homebrew probes are reported as check
+failures and retried on the next request, rather than cached as an absent
+installation. A missing formula still disables updates, even if an old fixed
+runtime remains on disk.
+
 ## Permission migration and verification
 
 Restart an old Cellar-based service once after installing the new formula so
