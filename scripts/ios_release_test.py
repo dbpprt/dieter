@@ -64,7 +64,8 @@ def create_archive(path, version="1.2.3", build="42", bundle_id=META["bundle_id"
     }))
     info = {"CFBundleIdentifier": bundle_id, "CFBundleShortVersionString": version,
             "CFBundleVersion": build, "CFBundleExecutable": "Dieter",
-            "NSCameraUsageDescription": release.CAMERA_USAGE_DESCRIPTION}
+            "NSCameraUsageDescription": release.CAMERA_USAGE_DESCRIPTION,
+            "ITSAppUsesNonExemptEncryption": False}
     (app / "Info.plist").write_bytes(plistlib.dumps(info))
     (path / "Info.plist").write_bytes(plistlib.dumps({
         "ApplicationProperties": {
@@ -432,15 +433,16 @@ class ReleaseTests(unittest.TestCase):
         self.assertEqual(list(self.runner.iterdir()), [])
 
     def test_archive_mismatch_missing_binary_framework_and_share_extension_block_export(self):
-        for defect in ("version", "build", "bundle", "camera", "executable", "framework", "share", "archive"):
+        for defect in ("version", "build", "bundle", "camera", "encryption", "executable", "framework", "share", "archive"):
             with self.subTest(defect=defect):
                 archive = self.root / defect / "Dieter.xcarchive"
                 create_archive(archive)
                 app = archive / "Products/Applications/Dieter.app"
-                if defect in ("version", "build", "bundle", "camera"):
+                if defect in ("version", "build", "bundle", "camera", "encryption"):
                     info = plistlib.loads((app / "Info.plist").read_bytes())
                     key = {"version": "CFBundleShortVersionString", "build": "CFBundleVersion",
-                           "bundle": "CFBundleIdentifier", "camera": "NSCameraUsageDescription"}[defect]
+                           "bundle": "CFBundleIdentifier", "camera": "NSCameraUsageDescription",
+                           "encryption": "ITSAppUsesNonExemptEncryption"}[defect]
                     info[key] = "wrong"
                     (app / "Info.plist").write_bytes(plistlib.dumps(info))
                 elif defect == "executable":
@@ -464,7 +466,7 @@ class ReleaseTests(unittest.TestCase):
         self.assert_clean(commands)
 
     def test_ipa_validation_checks_count_metadata_framework_and_share_extension(self):
-        for defect in ("missing", "extra", "invalid-zip", "metadata", "framework", "share"):
+        for defect in ("missing", "extra", "invalid-zip", "metadata", "encryption", "framework", "share"):
             with self.subTest(defect=defect):
                 directory = self.root / ("ipa-" + defect)
                 directory.mkdir()
@@ -474,7 +476,8 @@ class ReleaseTests(unittest.TestCase):
                     with zipfile.ZipFile(directory / "Dieter.ipa", "w") as ipa:
                         info = {"CFBundleIdentifier": META["bundle_id"], "CFBundleShortVersionString": "1.2.3",
                                 "CFBundleVersion": "wrong" if defect == "metadata" else "42",
-                                "NSCameraUsageDescription": release.CAMERA_USAGE_DESCRIPTION}
+                                "NSCameraUsageDescription": release.CAMERA_USAGE_DESCRIPTION,
+                                "ITSAppUsesNonExemptEncryption": defect == "encryption"}
                         ipa.writestr("Payload/Dieter.app/Info.plist", plistlib.dumps(info))
                         if defect != "framework":
                             ipa.writestr("Payload/Dieter.app/Frameworks/DieterIOS.framework/DieterIOS", b"framework")

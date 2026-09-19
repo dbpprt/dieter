@@ -318,14 +318,16 @@ def archive_command(root, archive, version, build, bundle_id):
     ]
 
 
-def validate_info(info, version, build, bundle_id, *, require_camera_usage=True):
+def validate_info(info, version, build, bundle_id, *, require_app_declarations=True):
     if not isinstance(info, dict) or any(info.get(key) != value for key, value in (
         ("CFBundleIdentifier", bundle_id), ("CFBundleShortVersionString", version),
         ("CFBundleVersion", build),
     )):
         raise ReleaseError("The built app's bundle ID, version, or build number does not match the requested release.")
-    if require_camera_usage and info.get("NSCameraUsageDescription") != CAMERA_USAGE_DESCRIPTION:
+    if require_app_declarations and info.get("NSCameraUsageDescription") != CAMERA_USAGE_DESCRIPTION:
         raise ReleaseError("The built app is missing its camera usage description.")
+    if require_app_declarations and info.get("ITSAppUsesNonExemptEncryption") is not False:
+        raise ReleaseError("The built app must declare ITSAppUsesNonExemptEncryption as false.")
 
 
 def validate_archive(archive, version, build, bundle_id, *, signed):
@@ -337,7 +339,7 @@ def validate_archive(archive, version, build, bundle_id, *, signed):
         raise ReleaseError("The iOS archive is missing valid application metadata.") from None
     validate_info(info, version, build, bundle_id)
     properties = archive_info.get("ApplicationProperties", {}) if isinstance(archive_info, dict) else {}
-    validate_info(properties, version, build, bundle_id, require_camera_usage=False)
+    validate_info(properties, version, build, bundle_id, require_app_declarations=False)
     if properties.get("ApplicationPath") != "Applications/Dieter.app":
         raise ReleaseError("The archive does not contain the expected Dieter iOS application.")
     executable = info.get("CFBundleExecutable", "")

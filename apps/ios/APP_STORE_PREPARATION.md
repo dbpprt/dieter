@@ -169,7 +169,7 @@ requires additional [TestFlight test information](https://developer.apple.com/he
 | Seller and copyright | **Pending.** The repository's MIT license says “Copyright (c) 2026 Dieter contributors”; this does not establish the Apple account's legal seller or the copyright field to submit. |
 | Pricing and availability | Manual public release is selected. **Pending:** confirm price, countries/regions, and release timing. |
 | Age rating and content rights | **Pending.** Complete the current questionnaires using the actual app and connected services. Do not infer answers from the Developer Tools category. |
-| Encryption/export compliance | **Pending.** The app uses HTTPS and authenticated TLS. Confirm the applicable declaration; the app currently has no `ITSAppUsesNonExemptEncryption` declaration. |
+| Encryption/export compliance | The app uses standard HTTPS and authenticated TLS, and the release build declares `ITSAppUsesNonExemptEncryption` as `false`. Reconfirm this declaration if the app's cryptography changes. |
 
 `getdieter.com` appears in website configuration, but the website README describes
 it as a future domain. Do not substitute it for a verified public URL.
