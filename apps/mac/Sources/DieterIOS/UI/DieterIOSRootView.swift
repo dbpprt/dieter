@@ -12,8 +12,9 @@
         @State private var preferredColumn: NavigationSplitViewColumn = .sidebar
         @State private var settingsPresented = false
         @State private var createPresentation: IOSCreateTaskPresentation?
-        @State private var pendingShareID: String?
+        @State private var pendingShareRequest: IOSShareInbox.Request?
         @State private var loadingShareID: String?
+        @State private var shareTargetPresentation: IOSShareTargetPresentation?
         @State private var fileScope: IOSFileScope?
         @State private var drafts: [String: IOSConversationDraft] = [:]
 
@@ -47,9 +48,17 @@
                 }
             }
             .tint(.blue)
-            .task { await store.bootstrap() }
+            .task {
+                await store.bootstrap()
+                receivePendingShare()
+            }
             .onChange(of: scenePhase) { _, phase in
-                if phase == .active { store.resume() } else if phase == .background { store.suspend() }
+                if phase == .active {
+                    store.resume()
+                    receivePendingShare()
+                } else if phase == .background {
+                    store.suspend()
+                }
             }
             .onOpenURL { receiveShare($0) }
             .onChange(of: shareReady) { _, ready in
@@ -116,12 +125,23 @@
                     preferredColumn = .detail
                 }
             }
+            .sheet(item: $shareTargetPresentation) { presentation in
+                IOSShareTargetPicker(
+                    kind: presentation.kind,
+                    cards: presentation.kind == .task ? store.cards : store.chats,
+                    projects: store.projects
+                ) { card in
+                    routeSharedAttachments(presentation.attachments, to: card, kind: presentation.kind)
+                }
+            }
             .sheet(item: $fileScope) { scope in
                 IOSFilesView(store: store, scope: scope)
             }
             .onChange(of: destination) { _, _ in
-                selectedTaskID = nil
-                store.closeConversation()
+                if !selectedTaskBelongsToDestination {
+                    selectedTaskID = nil
+                    store.closeConversation()
+                }
                 if destination == .screens { preferredColumn = .detail }
             }
             .onChange(of: selectedTaskID) { _, id in
@@ -251,13 +271,18 @@
         }
 
         private func draftBinding(for id: String) -> Binding<IOSConversationDraft> {
-            let key = (store.selectedMachine?.id ?? "") + ":" + id
+            let key = draftKey(for: id)
             return Binding(get: { drafts[key] ?? IOSConversationDraft() }, set: { drafts[key] = $0 })
         }
 
         private var shareReady: Bool {
-            pendingShareID != nil && store.isAuthenticated && store.phase.isConnected
-                && !store.projects.isEmpty && !store.harnesses.isEmpty
+            guard let request = pendingShareRequest, store.isAuthenticated, store.phase.isConnected else {
+                return false
+            }
+            switch request.destination {
+            case .newTask: return !store.projects.isEmpty && !store.harnesses.isEmpty
+            case .task, .chat: return true
+            }
         }
 
         private func presentTaskCreation() {
@@ -265,27 +290,82 @@
         }
 
         private func receiveShare(_ url: URL) {
-            guard let id = IOSShareInbox.shareID(from: url) else { return }
-            pendingShareID = id
+            guard let request = IOSShareInbox.request(from: url) else { return }
+            pendingShareRequest = request
+            presentPendingShare()
+        }
+
+        private func receivePendingShare() {
+            guard pendingShareRequest == nil, loadingShareID == nil,
+                let request = IOSShareInbox.pendingRequest()
+            else { return }
+            pendingShareRequest = request
             presentPendingShare()
         }
 
         private func presentPendingShare() {
-            guard shareReady, let id = pendingShareID, loadingShareID == nil else { return }
-            loadingShareID = id
+            guard shareReady, let request = pendingShareRequest, loadingShareID == nil else { return }
+            loadingShareID = request.id
             Task {
-                defer { if loadingShareID == id { loadingShareID = nil } }
+                defer { if loadingShareID == request.id { loadingShareID = nil } }
                 do {
-                    let attachments = try await IOSShareInbox.consume(id: id)
-                    guard pendingShareID == id else { return }
-                    pendingShareID = nil
-                    createPresentation = IOSCreateTaskPresentation(chat: false, attachments: attachments)
+                    let attachments = try await IOSShareInbox.consume(id: request.id)
+                    guard pendingShareRequest == request else { return }
+                    IOSShareInbox.clearPendingRequest(request)
+                    pendingShareRequest = nil
+                    switch request.destination {
+                    case .newTask:
+                        createPresentation = IOSCreateTaskPresentation(chat: false, attachments: attachments)
+                    case .task, .chat:
+                        shareTargetPresentation = IOSShareTargetPresentation(
+                            kind: request.destination, attachments: attachments)
+                    }
                 } catch {
-                    if pendingShareID == id {
-                        pendingShareID = nil
+                    if pendingShareRequest == request {
+                        IOSShareInbox.clearPendingRequest(request)
+                        pendingShareRequest = nil
                         store.show(error)
                     }
                 }
+            }
+        }
+
+        private func routeSharedAttachments(
+            _ attachments: [Dieter_V1_MessagePart], to card: Dieter_V1_Card,
+            kind: IOSShareInbox.Destination
+        ) -> Bool {
+            let key = draftKey(for: card.id)
+            var draft = drafts[key] ?? IOSConversationDraft()
+            do {
+                draft.attachments = try IOSAttachmentLoader.appending(attachments, to: draft.attachments)
+            } catch {
+                store.show(error)
+                return false
+            }
+            drafts[key] = draft
+            destination = kind == .chat ? .chats : .board(card.boardID)
+            selectedTaskID = card.id
+            preferredColumn = .detail
+            return true
+        }
+
+        private func draftKey(for cardID: String) -> String {
+            (store.selectedMachine?.id ?? "") + ":" + cardID
+        }
+
+        private var selectedTaskBelongsToDestination: Bool {
+            guard let selectedTaskID, let destination else { return false }
+            switch destination {
+            case .allTasks:
+                return store.cards.contains { $0.id == selectedTaskID }
+            case .chats:
+                return store.chats.contains { $0.id == selectedTaskID }
+            case .screens:
+                return false
+            case let .project(id):
+                return store.cards.contains { $0.id == selectedTaskID && $0.projectID == id }
+            case let .board(id):
+                return store.cards.contains { $0.id == selectedTaskID && $0.boardID == id }
             }
         }
 
@@ -306,6 +386,68 @@
         let id = UUID()
         let chat: Bool
         let attachments: [Dieter_V1_MessagePart]
+    }
+
+    private struct IOSShareTargetPresentation: Identifiable {
+        let id = UUID()
+        let kind: IOSShareInbox.Destination
+        let attachments: [Dieter_V1_MessagePart]
+    }
+
+    private struct IOSShareTargetPicker: View {
+        @Environment(\.dismiss) private var dismiss
+        let kind: IOSShareInbox.Destination
+        let cards: [Dieter_V1_Card]
+        let projects: [Dieter_V1_Project]
+        let selected: (Dieter_V1_Card) -> Bool
+        @State private var search = ""
+
+        private var matches: [Dieter_V1_Card] {
+            cards.filter { card in
+                !card.archived
+                    && (search.isEmpty || card.title.localizedCaseInsensitiveContains(search)
+                        || card.initialPrompt.localizedCaseInsensitiveContains(search))
+            }.sorted { $0.updatedAt > $1.updatedAt }
+        }
+
+        private var title: String { kind == .chat ? "Choose Chat" : "Choose Task" }
+
+        var body: some View {
+            NavigationStack {
+                List(matches, id: \.id) { card in
+                    Button {
+                        if selected(card) { dismiss() }
+                    } label: {
+                        IOSTaskRow(
+                            card: card,
+                            projectName: projects.first { $0.id == card.projectID }?.name)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("ios.share.destination.\(card.id)")
+                }
+                .searchable(text: $search, prompt: kind == .chat ? "Search chats" : "Search tasks")
+                .navigationTitle(title)
+                .navigationBarTitleDisplayMode(.inline)
+                .overlay {
+                    if matches.isEmpty {
+                        ContentUnavailableView(
+                            search.isEmpty ? (kind == .chat ? "No chats" : "No tasks") : "No matches",
+                            systemImage: kind == .chat ? "bubble.left.and.bubble.right" : "checklist",
+                            description: Text(
+                                search.isEmpty
+                                    ? "Create one in Dieter, then share this item again."
+                                    : "Try a different search."))
+                    }
+                }
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Cancel") { dismiss() }
+                            .accessibilityIdentifier("ios.share.cancel")
+                    }
+                }
+            }
+            .presentationDetents([.medium, .large])
+        }
     }
 
     struct IOSTaskListView: View {

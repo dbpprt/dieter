@@ -1,6 +1,7 @@
 import DieterAPI
 
 #if os(iOS)
+    import PhotosUI
     import SwiftUI
     import UniformTypeIdentifiers
     import UIKit
@@ -18,6 +19,7 @@ import DieterAPI
         @State private var model = ""
         @State private var effort = ""
         @State private var attachments: [Dieter_V1_MessagePart]
+        @State private var photoItems: [PhotosPickerItem] = []
         @State private var fileImporterPresented = false
         @State private var attachmentError: String?
         @State private var submitting = false
@@ -60,23 +62,45 @@ import DieterAPI
                             .submitLabel(.next)
                             .onSubmit { focusedField = .prompt }
                             .accessibilityIdentifier("ios.create.title")
-                        TextField("What should the agent do?", text: $prompt, axis: .vertical)
-                            .lineLimit(6...12)
-                            .focused($focusedField, equals: .prompt)
-                            .accessibilityIdentifier("ios.create.prompt")
+                        IOSAttachmentTextEditor(
+                            text: $prompt,
+                            isFocused: Binding(
+                                get: { focusedField == .prompt },
+                                set: { focusedField = $0 ? .prompt : nil }
+                            ),
+                            placeholder: "What should the agent do?",
+                            minimumLines: 6,
+                            maximumLines: 12,
+                            accessibilityIdentifier: "ios.create.prompt",
+                            keyboardDoneAccessibilityIdentifier: "ios.create.keyboard-done",
+                            pastedImages: appendPastedImages,
+                            pasteFailed: showAttachmentError
+                        )
                     }
                     Section("Attachments") {
                         ForEach(Array(attachments.enumerated()), id: \.offset) { index, part in
                             attachmentRow(part, index: index)
                         }
-                        Button {
-                            focusedField = nil
-                            fileImporterPresented = true
-                        } label: {
-                            Label(attachments.isEmpty ? "Attach files" : "Add files", systemImage: "paperclip")
+                        HStack(spacing: 20) {
+                            PhotosPicker(
+                                selection: $photoItems,
+                                maxSelectionCount: max(
+                                    1, IOSAttachmentLoader.maximumCount - attachments.count),
+                                matching: .images
+                            ) {
+                                Label("Photos", systemImage: "photo.on.rectangle")
+                            }
+                            .disabled(attachments.count >= IOSAttachmentLoader.maximumCount)
+                            .accessibilityIdentifier("ios.create.attach-photos")
+                            Button {
+                                focusedField = nil
+                                fileImporterPresented = true
+                            } label: {
+                                Label("Files", systemImage: "folder")
+                            }
+                            .disabled(attachments.count >= IOSAttachmentLoader.maximumCount)
+                            .accessibilityIdentifier("ios.create.attach-files")
                         }
-                        .disabled(attachments.count >= IOSAttachmentLoader.maximumCount)
-                        .accessibilityIdentifier("ios.create.attach")
                         Text("Up to 4 files, 5 MB each and 6 MB total.")
                             .font(.caption).foregroundStyle(.secondary)
                         if let attachmentError {
@@ -194,6 +218,20 @@ import DieterAPI
                     }
                 }
             }
+            .onChange(of: photoItems) { _, items in
+                guard !items.isEmpty else { return }
+                photoItems = []
+                focusedField = nil
+                Task {
+                    do {
+                        attachments = try await IOSAttachmentLoader().parts(
+                            photoItems: items, appendingTo: attachments)
+                        attachmentError = nil
+                    } catch {
+                        showAttachmentError(error)
+                    }
+                }
+            }
             .task {
                 if projectID.isEmpty { projectID = store.projects.first?.id ?? "" }
                 if !boards.contains(where: { $0.id == boardID }) { boardID = boards.first?.id ?? "" }
@@ -226,6 +264,23 @@ import DieterAPI
         private func resetEffort() {
             let preferred = selectedModel?.defaultEffort ?? ""
             effort = efforts.contains(preferred) ? preferred : efforts.first ?? ""
+        }
+
+        private func appendPastedImages(_ payloads: [IOSAttachmentPayload]) {
+            Task {
+                do {
+                    attachments = try await IOSAttachmentLoader().parts(
+                        payloads: payloads,
+                        appendingTo: attachments)
+                    attachmentError = nil
+                } catch {
+                    showAttachmentError(error)
+                }
+            }
+        }
+
+        private func showAttachmentError(_ error: Error) {
+            attachmentError = error.localizedDescription
         }
 
         private func attachmentRow(_ part: Dieter_V1_MessagePart, index: Int) -> some View {

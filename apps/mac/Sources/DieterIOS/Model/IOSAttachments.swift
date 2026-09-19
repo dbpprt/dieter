@@ -1,6 +1,10 @@
 import DieterAPI
 import Foundation
 import UniformTypeIdentifiers
+#if os(iOS)
+    import PhotosUI
+    import SwiftUI
+#endif
 
 struct IOSAttachmentSource: Sendable {
     let url: URL
@@ -14,6 +18,12 @@ struct IOSAttachmentSource: Sendable {
     }
 }
 
+struct IOSAttachmentPayload: Sendable {
+    let data: Data
+    let filename: String
+    let mediaType: String
+}
+
 enum IOSAttachmentError: LocalizedError {
     case tooMany
     case fileTooLarge(String)
@@ -22,6 +32,7 @@ enum IOSAttachmentError: LocalizedError {
     case notAFile(String)
     case unavailableShare
     case invalidShare
+    case invalidPaste
 
     var errorDescription: String? {
         switch self {
@@ -32,6 +43,7 @@ enum IOSAttachmentError: LocalizedError {
         case .notAFile(let name): "\(name) is not a regular file."
         case .unavailableShare: "The shared item is no longer available. Share it again and retry."
         case .invalidShare: "Dieter could not read the shared item."
+        case .invalidPaste: "Dieter could not read the pasted screenshot."
         }
     }
 }
@@ -85,6 +97,82 @@ actor IOSAttachmentLoader {
         return result
     }
 
+    func parts(
+        payloads: [IOSAttachmentPayload],
+        appendingTo existing: [Dieter_V1_MessagePart] = []
+    ) throws -> [Dieter_V1_MessagePart] {
+        guard existing.count + payloads.count <= Self.maximumCount else {
+            throw IOSAttachmentError.tooMany
+        }
+        var result = existing
+        var total = existing.reduce(0) { $0 + $1.data.count }
+        for payload in payloads {
+            let filename = sanitizedFilename(payload.filename)
+            guard !payload.data.isEmpty else { throw IOSAttachmentError.empty(filename) }
+            guard payload.data.count <= Self.maximumBytes else {
+                throw IOSAttachmentError.fileTooLarge(filename)
+            }
+            total += payload.data.count
+            guard total <= Self.maximumTotalBytes else { throw IOSAttachmentError.totalTooLarge }
+            var part = Dieter_V1_MessagePart()
+            part.type = "file"
+            part.mediaType = normalizedMediaType(
+                payload.mediaType,
+                fallback: UTType(filenameExtension: URL(fileURLWithPath: filename).pathExtension))
+            part.filename = filename
+            part.data = payload.data
+            result.append(part)
+        }
+        return result
+    }
+
+    #if os(iOS)
+        func parts(
+            photoItems: [PhotosPickerItem],
+            appendingTo existing: [Dieter_V1_MessagePart] = []
+        ) async throws -> [Dieter_V1_MessagePart] {
+            guard existing.count + photoItems.count <= Self.maximumCount else {
+                throw IOSAttachmentError.tooMany
+            }
+            var payloads: [IOSAttachmentPayload] = []
+            payloads.reserveCapacity(photoItems.count)
+            for (index, item) in photoItems.enumerated() {
+                guard let data = try await item.loadTransferable(type: Data.self), !data.isEmpty else {
+                    throw IOSAttachmentError.invalidPaste
+                }
+                let type = item.supportedContentTypes.first(where: { $0.conforms(to: .image) })
+                let suffix = type?.preferredFilenameExtension ?? "png"
+                let number = photoItems.count == 1 ? "" : " \(index + 1)"
+                payloads.append(
+                    IOSAttachmentPayload(
+                        data: data,
+                        filename: "Photo\(number).\(suffix)",
+                        mediaType: type?.preferredMIMEType ?? "image/png"))
+            }
+            return try parts(payloads: payloads, appendingTo: existing)
+        }
+    #endif
+
+    static func appending(
+        _ incoming: [Dieter_V1_MessagePart],
+        to existing: [Dieter_V1_MessagePart]
+    ) throws -> [Dieter_V1_MessagePart] {
+        guard existing.count + incoming.count <= maximumCount else {
+            throw IOSAttachmentError.tooMany
+        }
+        var total = existing.reduce(0) { $0 + $1.data.count }
+        for part in incoming {
+            let filename = part.filename.isEmpty ? "attachment" : part.filename
+            guard !part.data.isEmpty else { throw IOSAttachmentError.empty(filename) }
+            guard part.data.count <= maximumBytes else {
+                throw IOSAttachmentError.fileTooLarge(filename)
+            }
+            total += part.data.count
+            guard total <= maximumTotalBytes else { throw IOSAttachmentError.totalTooLarge }
+        }
+        return existing + incoming
+    }
+
     private func sanitizedFilename(_ value: String) -> String {
         let filename = URL(fileURLWithPath: value).lastPathComponent
             .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -100,6 +188,17 @@ actor IOSAttachmentLoader {
 }
 
 enum IOSShareInbox {
+    enum Destination: String, Sendable {
+        case newTask = "new-task"
+        case task
+        case chat
+    }
+
+    struct Request: Equatable, Sendable {
+        let id: String
+        let destination: Destination
+    }
+
     private struct Manifest: Decodable {
         struct Item: Decodable {
             let storedName: String
@@ -110,13 +209,86 @@ enum IOSShareInbox {
         let items: [Item]
     }
 
-    static func shareID(from url: URL) -> String? {
+    private struct PendingRequest: Codable {
+        let id: String
+        let destination: String
+    }
+
+    private static let pendingRequestName = "pending-request.json"
+
+    static func request(from url: URL) -> Request? {
         guard url.scheme?.lowercased() == "dieter-mac", url.host?.lowercased() == "share",
-            let value = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?
-                .first(where: { $0.name == "id" })?.value,
+            let query = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems,
+            let value = query.first(where: { $0.name == "id" })?.value,
             let id = UUID(uuidString: value)
         else { return nil }
-        return id.uuidString.lowercased()
+        let destination: Destination
+        if let value = query.first(where: { $0.name == "destination" })?.value {
+            guard let parsed = Destination(rawValue: value) else { return nil }
+            destination = parsed
+        } else {
+            destination = .newTask
+        }
+        return Request(id: id.uuidString.lowercased(), destination: destination)
+    }
+
+    static func shareID(from url: URL) -> String? {
+        request(from: url)?.id
+    }
+
+    static func pendingRequest() -> Request? {
+        guard
+            let group = Bundle.main.object(forInfoDictionaryKey: "DieterAppGroupIdentifier") as? String,
+            let container = FileManager.default.containerURL(
+                forSecurityApplicationGroupIdentifier: group)
+        else { return nil }
+        return pendingRequest(from: container)
+    }
+
+    static func pendingRequest(from container: URL) -> Request? {
+        let inbox = container.appendingPathComponent("ShareInbox", isDirectory: true)
+        let url = inbox.appendingPathComponent(pendingRequestName, isDirectory: false)
+        guard let data = try? Data(contentsOf: url), data.count <= 16 * 1_024,
+            let pending = try? JSONDecoder().decode(PendingRequest.self, from: data),
+            let id = UUID(uuidString: pending.id),
+            let destination = Destination(rawValue: pending.destination)
+        else { return nil }
+        let canonicalID = id.uuidString.lowercased()
+        let manifest = inbox.appendingPathComponent(canonicalID, isDirectory: true)
+            .appendingPathComponent("manifest.json", isDirectory: false)
+        guard FileManager.default.fileExists(atPath: manifest.path) else { return nil }
+        return Request(id: canonicalID, destination: destination)
+    }
+
+    static func recordPendingRequest(_ request: Request, in container: URL) throws {
+        guard let id = UUID(uuidString: request.id) else { throw IOSAttachmentError.invalidShare }
+        let inbox = container.appendingPathComponent("ShareInbox", isDirectory: true)
+        try FileManager.default.createDirectory(at: inbox, withIntermediateDirectories: true)
+        let canonicalID = id.uuidString.lowercased()
+        try JSONEncoder().encode(
+            PendingRequest(id: canonicalID, destination: request.destination.rawValue)
+        ).write(to: inbox.appendingPathComponent(pendingRequestName), options: .atomic)
+    }
+
+    static func clearPendingRequest(_ request: Request) {
+        guard
+            let group = Bundle.main.object(forInfoDictionaryKey: "DieterAppGroupIdentifier") as? String,
+            let container = FileManager.default.containerURL(
+                forSecurityApplicationGroupIdentifier: group)
+        else { return }
+        clearPendingRequest(request, from: container)
+    }
+
+    static func clearPendingRequest(_ request: Request, from container: URL) {
+        let url = container.appendingPathComponent("ShareInbox", isDirectory: true)
+            .appendingPathComponent(pendingRequestName, isDirectory: false)
+        guard let data = try? Data(contentsOf: url), data.count <= 16 * 1_024,
+            let pending = try? JSONDecoder().decode(PendingRequest.self, from: data),
+            let id = UUID(uuidString: pending.id),
+            let destination = Destination(rawValue: pending.destination),
+            Request(id: id.uuidString.lowercased(), destination: destination) == request
+        else { return }
+        try? FileManager.default.removeItem(at: url)
     }
 
     static func consume(id: String) async throws -> [Dieter_V1_MessagePart] {

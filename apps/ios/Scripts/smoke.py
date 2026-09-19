@@ -246,6 +246,9 @@ def main():
             run('xcrun', 'simctl', 'bootstatus', simulator, '-b', timeout=600,
                 stdout=log, stderr=subprocess.STDOUT)
         stage('Owned simulator ready')
+        stage('Loading screenshot share fixture')
+        run('xcrun', 'simctl', 'addmedia', simulator,
+            str(ROOT / 'apps/android/design/reference/phone-board.png'))
         products = BUILD / 'DerivedData/Build/Products'
         candidates = [path for path in products.glob('*iphonesimulator*.xctestrun') if '-smoke-' not in path.name]
         if not candidates:

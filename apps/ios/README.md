@@ -81,7 +81,7 @@ The existing `dieter-mac://oauth/callback` redirect is deliberately reused insid
 
 - Browse remote nodes, projects, boards, tasks, and standalone chats.
 - Create a draft or immediately run a task with provider, model, and reasoning selection.
-- Attach screenshots and files from the New Task sheet, or share a screenshot/file to Dieter to open a pre-populated New Task sheet.
+- Attach photos, pasted screenshots, and files from New Task or any conversation. The iOS share extension can route a shared screenshot or file into a new task, an existing task, or an existing chat. After choosing the destination, tap **Done** and open Dieter to continue; iOS does not allow a Share extension to launch its containing app directly.
 - Start a draft, send follow-up messages, stop an active turn, and read live transcript updates and older messages.
 - Read and edit remote text files with revision-checked saves.
 - View and control the selected machine through authenticated remote screen sharing.

@@ -25,10 +25,12 @@ final class RemoteNodeUITests: XCTestCase {
     }
 
     private func enter(_ app: XCUIApplication, _ identifier: String, _ text: String) {
-        // All editable journey fields are native text fields. Query that small
-        // type directly: a descendant `.any` lookup can stall while snapshotting
-        // the complete iPad split view and then falsely report the field missing.
-        let field = app.textFields.matching(identifier: identifier).firstMatch
+        // Query the two native editable types directly: a descendant `.any`
+        // lookup can stall while snapshotting the complete iPad split view.
+        // Multiline fields use UITextView so they can intercept pasted images.
+        let textField = app.textFields.matching(identifier: identifier).firstMatch
+        let textView = app.textViews.matching(identifier: identifier).firstMatch
+        let field = textField.exists ? textField : textView
         XCTAssertTrue(field.waitForExistence(timeout: 10), "Missing \(identifier)")
         let keyboard = app.keyboards.firstMatch
         var activated = false
@@ -154,7 +156,12 @@ final class RemoteNodeUITests: XCTestCase {
         }
         enter(app, "ios.create.title", title)
         enter(app, "ios.create.prompt", prompt)
-        tap(app, "ios.create.keyboard-done")
+        let keyboardDone = app.buttons.matching(identifier: "ios.create.keyboard-done").firstMatch
+        if keyboardDone.waitForExistence(timeout: 3) {
+            keyboardDone.tap()
+        } else {
+            form.swipeDown()
+        }
         let keyboardGone = XCTNSPredicateExpectation(
             predicate: NSPredicate(format: "exists == false"), object: app.keyboards.firstMatch)
         XCTAssertEqual(XCTWaiter.wait(for: [keyboardGone], timeout: 5), .completed, app.debugDescription)
@@ -194,6 +201,13 @@ final class RemoteNodeUITests: XCTestCase {
 
     private func screenshot(_ app: XCUIApplication, _ name: String) {
         let shot = XCTAttachment(screenshot: app.screenshot())
+        shot.name = name
+        shot.lifetime = .keepAlways
+        add(shot)
+    }
+
+    private func screenScreenshot(_ name: String) {
+        let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
         shot.name = name
         shot.lifetime = .keepAlways
         add(shot)
@@ -341,13 +355,18 @@ final class RemoteNodeUITests: XCTestCase {
         if environment["DIETER_IOS_TEST_LANDSCAPE"] != "1" {
             tap(app, "ios.screens.open")
             XCTAssertTrue(element(app, "ios.screens.back").waitForExistence(timeout: 10))
-            XCTAssertTrue(element(app, "ios.screens.settings").isHittable)
             let window = app.windows.firstMatch
             let landscape = XCTNSPredicateExpectation(
                 predicate: NSPredicate { _, _ in window.frame.width > window.frame.height }, object: window)
             XCTAssertEqual(
                 XCTWaiter.wait(for: [landscape], timeout: 10), .completed,
                 "The iPhone screen viewer should request landscape automatically.\n\(app.debugDescription)")
+            let settingsReady = XCTNSPredicateExpectation(
+                predicate: NSPredicate(format: "exists == true AND hittable == true"),
+                object: element(app, "ios.screens.settings"))
+            XCTAssertEqual(
+                XCTWaiter.wait(for: [settingsReady], timeout: 10), .completed,
+                "Screen settings should be usable after the landscape transition.\n\(app.debugDescription)")
             screenshot(app, "11-remote-screen-phone-chrome")
             tap(app, "ios.screens.back")
             let portrait = XCTNSPredicateExpectation(
@@ -356,5 +375,100 @@ final class RemoteNodeUITests: XCTestCase {
                 XCTWaiter.wait(for: [portrait], timeout: 10), .completed,
                 "Leaving the iPhone screen viewer should restore portrait.\n\(app.debugDescription)")
         }
+    }
+
+    func testAShareExtensionRoutesScreenshotToNewTask() throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard environment["DIETER_IOS_TEST_LANDSCAPE"] != "1" else {
+            throw XCTSkip("The phone smoke captures the compact Photos share sheet")
+        }
+        let gateway = try XCTUnwrap(environment["DIETER_IOS_TEST_GATEWAY"])
+        let token = try XCTUnwrap(environment["DIETER_IOS_TEST_TOKEN"])
+        let project = try XCTUnwrap(environment["DIETER_IOS_TEST_PROJECT"])
+        let board = try XCTUnwrap(environment["DIETER_IOS_TEST_BOARD"])
+        XCUIDevice.shared.orientation = .portrait
+
+        // Authenticate the app before Photos launches it through the share URL.
+        let app = XCUIApplication()
+        app.launchEnvironment["DIETER_IOS_TEST_GATEWAY"] = gateway
+        app.launchEnvironment["DIETER_IOS_TEST_TOKEN"] = token
+        app.launch()
+        waitForBoard(app, project: project, board: board)
+        XCUIDevice.shared.press(.home)
+
+        let photos = XCUIApplication(bundleIdentifier: "com.apple.mobileslideshow")
+        addTeardownBlock {
+            photos.terminate()
+            app.terminate()
+        }
+        photos.launch()
+        XCTAssertTrue(photos.wait(for: .runningForeground, timeout: 20))
+        let onboardingLabels = [
+            "Continue", "Fortfahren", "Get Started", "Los geht’s", "Start Using Photos",
+            "Fotos verwenden", "Not Now", "Nicht jetzt", "Später",
+        ]
+        for _ in 0..<3 {
+            let onboarding = photos.buttons.matching(
+                NSPredicate(format: "label IN %@", onboardingLabels)
+            ).firstMatch
+            guard onboarding.waitForExistence(timeout: 2) else { break }
+            onboarding.tap()
+        }
+
+        let thumbnails = photos.images.matching(identifier: "PXGGridLayout-Info")
+        let thumbnailCount = thumbnails.count
+        XCTAssertGreaterThan(
+            thumbnailCount, 0,
+            "The imported screenshot must appear in Photos.\n\(photos.debugDescription)")
+        guard thumbnailCount > 0 else { return }
+        let photo = thumbnails.element(boundBy: thumbnailCount - 1)
+        XCTAssertTrue(
+            photo.waitForExistence(timeout: 10),
+            "The imported screenshot must appear in Photos.\n\(photos.debugDescription)")
+        photo.tap()
+        let share = photos.buttons.matching(
+            NSPredicate(format: "label CONTAINS[c] 'share' OR label CONTAINS[c] 'teilen'")
+        )
+        .firstMatch
+        XCTAssertTrue(
+            share.waitForExistence(timeout: 10),
+            "The opened screenshot must expose the Photos share action.\n\(photos.debugDescription)")
+        share.tap()
+
+        let dieter = photos.cells.matching(
+            NSPredicate(format: "identifier == 'shareCell' AND label == 'Dieter'")
+        )
+        .firstMatch
+        XCTAssertTrue(
+            dieter.waitForExistence(timeout: 15),
+            "The installed Dieter share extension must appear in the share sheet.\n\(photos.debugDescription)")
+        dieter.tap()
+        XCTAssertTrue(
+            photos.staticTexts["Where should this go?"].waitForExistence(timeout: 20),
+            "The Dieter share extension must finish staging the screenshot.\n\(photos.debugDescription)")
+        screenScreenshot("12-share-destination-picker")
+
+        let newTask = photos.buttons.matching(identifier: "ios.share.new-task").firstMatch
+        XCTAssertTrue(newTask.waitForExistence(timeout: 5))
+        newTask.tap()
+        XCTAssertTrue(
+            photos.staticTexts["Ready in Dieter. Tap Done, then open Dieter to continue."]
+                .waitForExistence(timeout: 10),
+            "The share extension must confirm the platform-safe handoff.\n\(photos.debugDescription)")
+        screenScreenshot("13-share-ready-in-dieter")
+        let done = photos.buttons.matching(identifier: "ios.share.done").firstMatch
+        XCTAssertTrue(done.waitForExistence(timeout: 5))
+        done.tap()
+        app.activate()
+        XCTAssertTrue(
+            app.wait(for: .runningForeground, timeout: 20),
+            "Opening Dieter after the handoff must resume the shared request.")
+        XCTAssertTrue(
+            element(app, "ios.create.attachment.0").waitForExistence(timeout: 20),
+            "The New Task form must contain the screenshot shared from Photos.\n\(app.debugDescription)")
+        XCTAssertTrue(element(app, "ios.create.attach-photos").exists)
+        XCTAssertTrue(element(app, "ios.create.attach-files").exists)
+        screenScreenshot("14-shared-screenshot-in-new-task")
+        app.terminate()
     }
 }

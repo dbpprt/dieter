@@ -1,6 +1,8 @@
 #if os(iOS)
     import DieterAPI
+    import PhotosUI
     import SwiftUI
+    import UniformTypeIdentifiers
 
     struct IOSConversationView: View {
         @Bindable var store: IOSStore
@@ -12,6 +14,9 @@
         @State private var bottomVisible = false
         @State private var userScrolling = false
         @State private var scrollPosition = ScrollPosition(edge: .bottom)
+        @State private var attachmentError: String?
+        @State private var photoItems: [PhotosPickerItem] = []
+        @State private var fileImporterPresented = false
         @FocusState private var composerFocused: Bool
 
         private var card: Dieter_V1_Card? {
@@ -76,6 +81,41 @@
                 }
             }
             .task(id: cardID) { await store.selectCard(id: cardID) }
+            .fileImporter(
+                isPresented: $fileImporterPresented,
+                allowedContentTypes: [.item],
+                allowsMultipleSelection: true
+            ) { result in
+                switch result {
+                case .success(let urls):
+                    Task {
+                        do {
+                            draft.attachments = try await IOSAttachmentLoader().parts(
+                                urls: urls, appendingTo: draft.attachments)
+                            attachmentError = nil
+                        } catch {
+                            showAttachmentError(error)
+                        }
+                    }
+                case .failure(let error):
+                    if (error as NSError).code != NSUserCancelledError {
+                        showAttachmentError(error)
+                    }
+                }
+            }
+            .onChange(of: photoItems) { _, items in
+                guard !items.isEmpty else { return }
+                photoItems = []
+                Task {
+                    do {
+                        draft.attachments = try await IOSAttachmentLoader().parts(
+                            photoItems: items, appendingTo: draft.attachments)
+                        attachmentError = nil
+                    } catch {
+                        showAttachmentError(error)
+                    }
+                }
+            }
         }
 
         private func transcript(_ card: Dieter_V1_Card) -> some View {
@@ -207,17 +247,55 @@
                     .frame(maxWidth: 900, alignment: .leading)
                     .accessibilityIdentifier("ios.composer.attachments")
                 }
+                if let attachmentError {
+                    Text(attachmentError)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                        .frame(maxWidth: 900, alignment: .leading)
+                        .accessibilityIdentifier("ios.composer.attachment-error")
+                }
                 HStack(alignment: .bottom, spacing: 10) {
-                    TextField("Message the agent…", text: $draft.text, axis: .vertical)
-                        .lineLimit(1...8)
-                        .focused($composerFocused)
-                        .padding(12)
-                        .background(
-                            Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 18)
-                        )
-                        .contentShape(Rectangle())
-                        .simultaneousGesture(TapGesture().onEnded { composerFocused = true })
-                        .accessibilityIdentifier("ios.composer.message")
+                    PhotosPicker(
+                        selection: $photoItems,
+                        maxSelectionCount: max(
+                            1, IOSAttachmentLoader.maximumCount - draft.attachments.count),
+                        matching: .images
+                    ) {
+                        Image(systemName: "photo")
+                            .frame(width: 32, height: 42)
+                    }
+                    .disabled(draft.attachments.count >= IOSAttachmentLoader.maximumCount)
+                    .accessibilityLabel("Attach photos")
+                    .accessibilityIdentifier("ios.composer.attach-photos")
+                    Button {
+                        composerFocused = false
+                        fileImporterPresented = true
+                    } label: {
+                        Image(systemName: "paperclip")
+                            .frame(width: 32, height: 42)
+                    }
+                    .disabled(draft.attachments.count >= IOSAttachmentLoader.maximumCount)
+                    .accessibilityLabel("Attach files")
+                    .accessibilityIdentifier("ios.composer.attach-files")
+                    IOSAttachmentTextEditor(
+                        text: $draft.text,
+                        isFocused: Binding(
+                            get: { composerFocused },
+                            set: { composerFocused = $0 }
+                        ),
+                        placeholder: "Message the agent…",
+                        minimumLines: 1,
+                        maximumLines: 8,
+                        accessibilityIdentifier: "ios.composer.message",
+                        pastedImages: appendPastedImages,
+                        pasteFailed: showAttachmentError
+                    )
+                    .padding(12)
+                    .background(
+                        Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 18)
+                    )
+                    .contentShape(Rectangle())
+                    .simultaneousGesture(TapGesture().onEnded { composerFocused = true })
                     Button {
                         let message = draft
                         sending = true
@@ -256,6 +334,23 @@
             .padding(.horizontal, 12).padding(.vertical, 10)
             .frame(maxWidth: .infinity)
             .background(.bar)
+        }
+
+        private func appendPastedImages(_ payloads: [IOSAttachmentPayload]) {
+            Task {
+                do {
+                    draft.attachments = try await IOSAttachmentLoader().parts(
+                        payloads: payloads,
+                        appendingTo: draft.attachments)
+                    attachmentError = nil
+                } catch {
+                    showAttachmentError(error)
+                }
+            }
+        }
+
+        private func showAttachmentError(_ error: Error) {
+            attachmentError = error.localizedDescription
         }
     }
 
