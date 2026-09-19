@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 """Archive Dieter for iOS, or explicitly export/upload TestFlight builds in CI.
 
-Signing uses a dedicated supplied certificate and API key in a temporary
-keychain. Explicit profiles are validated when available; Xcode can bootstrap
-profiles for a newly added target. Only bounded, redacted Xcode error summaries
-are printed; signing commands and their raw output remain private.
+Signing uses a dedicated supplied certificate, explicit app and Share extension
+profiles, and an API key in a temporary keychain. Only bounded, redacted Xcode
+error summaries are printed; signing commands and their raw output remain private.
 """
 
 import argparse
@@ -23,7 +22,6 @@ import stat
 import subprocess
 import sys
 import tempfile
-from typing import Optional
 import zipfile
 
 import configure_apple_signing as signing
@@ -37,7 +35,8 @@ CAMERA_USAGE_DESCRIPTION = (
 )
 SECRET_NAMES = (
     "IOS_DISTRIBUTION_CERTIFICATE_BASE64", "IOS_DISTRIBUTION_CERTIFICATE_PASSWORD",
-    "IOS_PROVISIONING_PROFILE_BASE64", "IOS_APP_STORE_CONNECT_KEY_BASE64",
+    "IOS_PROVISIONING_PROFILE_BASE64", "IOS_SHARE_PROVISIONING_PROFILE_BASE64",
+    "IOS_APP_STORE_CONNECT_KEY_BASE64",
     "IOS_APP_STORE_CONNECT_KEY_ID", "IOS_APP_STORE_CONNECT_ISSUER_ID",
     "IOS_TEAM_ID", "IOS_BUNDLE_ID",
 )
@@ -52,10 +51,10 @@ class Material:
     certificate: bytes = field(repr=False)
     password: bytes = field(repr=False)
     profile: bytes = field(repr=False)
-    share_profile: Optional[bytes] = field(repr=False)
+    share_profile: bytes = field(repr=False)
     key: bytes = field(repr=False)
     metadata: dict
-    share_metadata: Optional[dict]
+    share_metadata: dict
 
 
 def xcode_error_summary(stdout, stderr, secrets_to_redact):
@@ -140,13 +139,14 @@ def decoded_secret(env, name):
 
 
 def load_material(env):
-    if any(not env.get(name) for name in SECRET_NAMES):
-        raise ReleaseError("Complete dedicated iOS signing credentials are required; configure all IOS_* release inputs.")
+    missing = [name for name in SECRET_NAMES if not env.get(name)]
+    if missing:
+        raise ReleaseError(
+            "Complete dedicated iOS signing credentials are required; missing: "
+            + ", ".join(missing) + ".")
     certificate = decoded_secret(env, "IOS_DISTRIBUTION_CERTIFICATE_BASE64")
     profile = decoded_secret(env, "IOS_PROVISIONING_PROFILE_BASE64")
-    share_profile = None
-    if env.get("IOS_SHARE_PROVISIONING_PROFILE_BASE64"):
-        share_profile = decoded_secret(env, "IOS_SHARE_PROVISIONING_PROFILE_BASE64")
+    share_profile = decoded_secret(env, "IOS_SHARE_PROVISIONING_PROFILE_BASE64")
     key = decoded_secret(env, "IOS_APP_STORE_CONNECT_KEY_BASE64")
     password = env["IOS_DISTRIBUTION_CERTIFICATE_PASSWORD"].encode("utf-8")
     if (not password or len(password) > signing.MAX_PASSWORD_BYTES
@@ -157,14 +157,12 @@ def load_material(env):
         certificate, password, profile, key,
         env["IOS_APP_STORE_CONNECT_KEY_ID"], env["IOS_APP_STORE_CONNECT_ISSUER_ID"],
         env["IOS_BUNDLE_ID"], team_id=env["IOS_TEAM_ID"],
-        required_app_group=app_group if share_profile is not None else None)
-    share_metadata = None
-    if share_profile is not None:
-        share_metadata = signing.validate_ios_material(
-            certificate, password, share_profile, key,
-            env["IOS_APP_STORE_CONNECT_KEY_ID"], env["IOS_APP_STORE_CONNECT_ISSUER_ID"],
-            env["IOS_BUNDLE_ID"] + ".share", team_id=env["IOS_TEAM_ID"],
-            required_app_group=app_group)
+        required_app_group=app_group)
+    share_metadata = signing.validate_ios_material(
+        certificate, password, share_profile, key,
+        env["IOS_APP_STORE_CONNECT_KEY_ID"], env["IOS_APP_STORE_CONNECT_ISSUER_ID"],
+        env["IOS_BUNDLE_ID"] + ".share", team_id=env["IOS_TEAM_ID"],
+        required_app_group=app_group)
     return Material(certificate, password, profile, share_profile, key, metadata, share_metadata)
 
 
@@ -176,10 +174,7 @@ def signing_config(env):
                 stream.write("enabled=true\n")
         except OSError:
             raise ReleaseError("Could not write the validated signing configuration output.") from None
-    if material.share_metadata is None:
-        print("Dedicated iOS identity is valid; Xcode will bootstrap App Group profiles automatically.")
-    else:
-        print("Dedicated iOS signing configuration is valid.")
+    print("Dedicated iOS signing configuration is valid.")
 
 
 def release_parameters(version, build, bundle_id):
@@ -231,9 +226,8 @@ def signing_environment(material, runner_temp, *, home=None):
     home = Path.home() if home is None else home
     profile_directory = home / "Library/Developer/Xcode/UserData/Provisioning Profiles"
     profile_inputs = [(material.metadata["profile_uuid"], material.profile)]
-    if material.share_metadata is not None:
-        profile_inputs.append((material.share_metadata["profile_uuid"], material.share_profile))
-    if len(profile_inputs) == 2 and profile_inputs[0][0] == profile_inputs[1][0]:
+    profile_inputs.append((material.share_metadata["profile_uuid"], material.share_profile))
+    if profile_inputs[0][0] == profile_inputs[1][0]:
         raise ReleaseError("The app and Share extension provisioning profiles must have distinct UUIDs.")
     profiles = []
     for profile_uuid, content in profile_inputs:
@@ -367,16 +361,11 @@ def validate_archive(archive, version, build, bundle_id, *, signed):
         command(["codesign", "--verify", "--deep", "--strict", app], label="Archived iOS signature verification", timeout=120)
 
 
-def export_options(metadata, identity, destination, share_metadata=None, *, automatic=False):
-    if automatic:
-        return {
-            "method": "app-store-connect", "destination": destination,
-            "signingStyle": "automatic", "teamID": metadata["team_id"],
-            "manageAppVersionAndBuildNumber": False, "uploadSymbols": True,
-        }
-    profiles = {metadata["bundle_id"]: metadata["profile_uuid"]}
-    if share_metadata is not None:
-        profiles[share_metadata["bundle_id"]] = share_metadata["profile_uuid"]
+def export_options(metadata, identity, destination, share_metadata):
+    profiles = {
+        metadata["bundle_id"]: metadata["profile_uuid"],
+        share_metadata["bundle_id"]: share_metadata["profile_uuid"],
+    }
     return {
         "method": "app-store-connect", "destination": destination, "signingStyle": "manual",
         "teamID": metadata["team_id"], "signingCertificate": identity,
@@ -425,11 +414,10 @@ def testflight(root, version, build, env, *, upload=False):
     output = release_directory(root, version, build)
     material = load_material(env)
     metadata = material.metadata
-    automatic = material.share_metadata is None
     with signing_environment(material, runner_temp) as context:
         diagnostic_secrets = (
             material.certificate, material.password, material.profile, material.key,
-            *((material.share_profile,) if material.share_profile is not None else ()),
+            material.share_profile,
             context["directory"], context["key"], context["identity"], context["password"],
             *(value for name, value in env.items() if name.startswith("IOS_")),
         )
@@ -438,41 +426,28 @@ def testflight(root, version, build, env, *, upload=False):
         archive_arguments = archive_command(root, archive, version, build, metadata["bundle_id"]) + [
             f"DIETER_IOS_TEAM_ID={metadata['team_id']}",
         ]
-        authentication = [
-            "-allowProvisioningUpdates", "-authenticationKeyPath", context["key"],
-            "-authenticationKeyID", metadata["key_id"],
-            "-authenticationKeyIssuerID", metadata["issuer_id"],
+        archive_arguments += [
+            "DIETER_IOS_SIGN_STYLE=Manual", f"DIETER_IOS_SIGN_IDENTITY={context['identity']}",
+            f"DIETER_IOS_PROFILE_SPECIFIER={metadata['profile_uuid']}",
+            f"DIETER_IOS_SHARE_PROFILE_SPECIFIER={material.share_metadata['profile_uuid']}",
         ]
-        if automatic:
-            archive_arguments += [
-                "DIETER_IOS_SIGN_STYLE=Automatic", "DIETER_IOS_SIGN_IDENTITY=Apple Development",
-                *authentication,
-            ]
-        else:
-            archive_arguments += [
-                "DIETER_IOS_SIGN_STYLE=Manual", f"DIETER_IOS_SIGN_IDENTITY={context['identity']}",
-                f"DIETER_IOS_PROFILE_SPECIFIER={metadata['profile_uuid']}",
-                f"DIETER_IOS_SHARE_PROFILE_SPECIFIER={material.share_metadata['profile_uuid']}",
-            ]
         command(archive_arguments, label="Signed iOS archive", diagnostic_secrets=diagnostic_secrets)
         validate_archive(archive, version, build, metadata["bundle_id"], signed=True)
         options = context["directory"] / "ExportOptions.plist"
         write_private(
             options,
             plistlib.dumps(export_options(
-                metadata, context["identity"], "export", material.share_metadata, automatic=automatic)))
+                metadata, context["identity"], "export", material.share_metadata)))
         export = output / "Export"
         export_arguments = ["xcodebuild", "-exportArchive", "-archivePath", archive,
                             "-exportPath", export, "-exportOptionsPlist", options]
-        if automatic:
-            export_arguments += authentication
         command(export_arguments, label="App Store IPA export",
                 diagnostic_secrets=diagnostic_secrets)
         ipa = validate_ipa(export, version, build, metadata["bundle_id"])
         if upload:
             upload_options = context["directory"] / "UploadOptions.plist"
             write_private(upload_options, plistlib.dumps(export_options(
-                metadata, context["identity"], "upload", material.share_metadata, automatic=automatic)))
+                metadata, context["identity"], "upload", material.share_metadata)))
             command(["xcodebuild", "-exportArchive", "-archivePath", archive,
                      "-exportPath", context["directory"] / "Upload", "-exportOptionsPlist", upload_options,
                      "-allowProvisioningUpdates", "-authenticationKeyPath", context["key"],

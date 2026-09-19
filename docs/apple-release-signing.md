@@ -140,7 +140,7 @@ The iOS setup uploads these repository secrets:
 | `IOS_DISTRIBUTION_CERTIFICATE_BASE64` | Dedicated Apple Distribution `.p12`, base64 encoded |
 | `IOS_DISTRIBUTION_CERTIFICATE_PASSWORD` | Distribution export password |
 | `IOS_PROVISIONING_PROFILE_BASE64` | Matching App Store Connect profile, base64 encoded |
-| `IOS_SHARE_PROVISIONING_PROFILE_BASE64` | Matching Share extension App Store Connect profile, base64 encoded; optional during automatic profile bootstrap |
+| `IOS_SHARE_PROVISIONING_PROFILE_BASE64` | Matching Share extension App Store Connect profile, base64 encoded |
 | `IOS_APP_STORE_CONNECT_KEY_BASE64` | Dedicated upload `.p8`, base64 encoded |
 | `IOS_APP_STORE_CONNECT_KEY_ID` | Upload API Key ID |
 | `IOS_APP_STORE_CONNECT_ISSUER_ID` | Upload API Issuer ID |
@@ -175,13 +175,11 @@ gh workflow run ios-testflight.yml --repo dbpprt/dieter --ref BRANCH \
 This produces signed archive and IPA workflow artifacts for inspection. When
 ready to upload a new build to App Store Connect, dispatch with `-f upload=true`.
 The workflow uses `xcodebuild -exportArchive` with the `app-store-connect` method
-and explicit signing credentials. When the Share extension profile secret is not
-configured yet, it uses the existing dedicated certificate and App Store Connect
-key with Xcode's `-allowProvisioningUpdates` mode to bootstrap the App Group,
-identifiers, and matching profiles. Once both profile secrets are present, it
-returns to manual signing and validates both profiles locally before touching the
-keychain. It requires a supported Xcode version for App Store Connect uploads;
-current iOS uploads require builds made with Xcode 26 or later.
+and explicit signing credentials. Both provisioning-profile secrets are required,
+and the release helper validates their bundle IDs, team, distribution certificate,
+and shared App Group entitlement before touching the keychain. It requires a
+supported Xcode version for App Store Connect uploads; current iOS uploads require
+builds made with Xcode 26 or later.
 
 The underlying recipes are:
 

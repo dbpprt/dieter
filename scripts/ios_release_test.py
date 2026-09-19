@@ -211,34 +211,18 @@ class ReleaseTests(unittest.TestCase):
             release.signing_config(env)
         self.assertEqual(output.read_text(), "enabled=true\n")
 
-    def test_missing_share_profile_selects_automatic_provisioning(self):
+    def test_missing_share_profile_fails_before_signing(self):
         env = dict(self.env)
         del env["IOS_SHARE_PROVISIONING_PROFILE_BASE64"]
-        commands = FakeCommands(self)
-        ipa, output = self.run_signed(commands, env=env)
-        self.assertTrue(ipa.is_file())
-        self.assertIn("no upload was requested", output)
-        archive = next(argv for argv, _ in commands.calls if "archive" in argv)
-        for value in (
-            f"DIETER_IOS_TEAM_ID={META['team_id']}", "DIETER_IOS_SIGN_STYLE=Automatic",
-            "DIETER_IOS_SIGN_IDENTITY=Apple Development", "-allowProvisioningUpdates",
-            "-authenticationKeyPath",
-            "-authenticationKeyID", "-authenticationKeyIssuerID",
-        ):
-            self.assertIn(value, archive)
-        self.assertFalse(any(value.startswith("DIETER_IOS_SHARE_PROFILE_SPECIFIER=") for value in archive))
-        self.assertEqual(commands.export_options, [
-            release.export_options(META, IDENTITY, "export", automatic=True),
-        ])
-        self.assertNotIn("signingCertificate", commands.export_options[0])
-        self.assertNotIn("provisioningProfiles", commands.export_options[0])
-        export = next(argv for argv, _ in commands.calls if "-exportArchive" in argv)
-        self.assertIn("-allowProvisioningUpdates", export)
-        self.assertFalse(self.profile.exists())
-        self.assertFalse(self.share_profile.exists())
-        self.assert_clean(commands)
+        with patch.object(release, "command") as command, \
+                patch.object(release.signing, "validate_ios_material") as validate, \
+                self.assertRaisesRegex(
+                    release.ReleaseError, "IOS_SHARE_PROVISIONING_PROFILE_BASE64"):
+            release.testflight(self.root, "1.2.3", "42", env)
+        command.assert_not_called()
+        validate.assert_not_called()
 
-    def test_invalid_optional_share_profile_fails_before_signing(self):
+    def test_invalid_share_profile_fails_before_signing(self):
         with patch.object(release, "command") as command, \
                 patch.object(release.signing, "validate_ios_material") as validate, \
                 self.assertRaises(release.ReleaseError):

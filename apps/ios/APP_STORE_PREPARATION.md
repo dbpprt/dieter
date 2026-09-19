@@ -4,9 +4,9 @@ Draft prepared on 13 September 2026 from the iOS implementation, repository
 documentation, and completed Apple setup. The app record and dedicated release
 credentials are configured. The TestFlight beta description and marketing URL
 are saved, and the internal tester group exists. The App Store version `0.1.0`
-listing is saved as a draft; no build has been uploaded or submitted for review. Fields marked
-**Pending** need the release owner's input or verification in the selected Apple
-account. Keep reviewer credentials out of this file and out of the repository.
+listing is saved as a draft. Fields marked **Pending** need the release owner's
+input or verification in the selected Apple account. Keep reviewer credentials
+out of this file and out of the repository.
 
 ## App record
 
@@ -15,8 +15,8 @@ account. Keep reviewer credentials out of this file and out of the repository.
 | Name | Dieter AI | User-approved name saved in App Store Connect. |
 | Platform | iOS | One app supports iPhone and iPad, iOS 18 or later. |
 | Bundle ID | `com.dbpprt.dieter.ios` | Registered App ID and App Store Connect app; matches the current build default. |
-| Share extension bundle ID | `com.dbpprt.dieter.ios.share` | **Pending:** register the explicit extension App ID and enable the shared App Group. |
-| App Group | `group.com.dbpprt.dieter.ios` | **Pending:** register and assign to both the app and Share extension App IDs. |
+| Share extension bundle ID | `com.dbpprt.dieter.ios.share` | Registered explicit App ID with the shared App Group enabled. |
+| App Group | `group.com.dbpprt.dieter.ios` | Registered and assigned to both the app and Share extension App IDs. |
 | Apple team | `DS6N5L85E7` | Team used for registration and the dedicated iOS distribution credentials. |
 | App Store Connect ID | `6811592270` | Registered [app record](https://appstoreconnect.apple.com/apps/6811592270). |
 | SKU | `dieter-ios` | Registered internal identifier. |
@@ -41,34 +41,27 @@ are intentionally excluded.
 | Resource | Registered metadata |
 | --- | --- |
 | Apple Distribution certificate | Portal ID `4TWJG5NTJ3`; expires 13 September 2027. |
-| App Store provisioning profile | `Dieter iOS App Store 2026`; portal ID `7QUZQSNAZZ`; UUID `465A053C-8DE5-4EF3-9AEB-5A090342644C`; expires 13 September 2027. |
+| App Store provisioning profile | `Dieter iOS App Store 2026`; portal ID `7QUZQSNAZZ`; UUID `755E18D2-B358-43CF-A339-A64EC8098AE9`; expires 13 September 2027. |
+| Share App Store provisioning profile | `Dieter iOS Share App Store 2026`; portal ID `G6KRHY774A`; UUID `924983F8-C764-468C-87B2-6B16F8DBFC38`; expires 13 September 2027. |
 | App Store Connect API key | `Dieter GitHub iOS Upload`; Developer role; key ID `9LAL22MXP5`; issuer ID `69a6de74-a6e2-47e3-e053-5b8c7c11a4d1`. |
 
-The original signing setup validated and uploaded eight iOS GitHub Actions
+The signing setup now provides nine iOS GitHub Actions
 secrets: `IOS_DISTRIBUTION_CERTIFICATE_BASE64`,
 `IOS_DISTRIBUTION_CERTIFICATE_PASSWORD`, `IOS_PROVISIONING_PROFILE_BASE64`,
+`IOS_SHARE_PROVISIONING_PROFILE_BASE64`,
 `IOS_APP_STORE_CONNECT_KEY_BASE64`, `IOS_APP_STORE_CONNECT_KEY_ID`,
 `IOS_APP_STORE_CONNECT_ISSUER_ID`, `IOS_TEAM_ID`, and `IOS_BUNDLE_ID`.
 
-**Screenshot sharing signing:** recreate the main app profile with the App Group
-entitlement, create the Share extension App Store profile, and rerun the setup
-helper with `--ios-share-provisioning-profile`. This adds
-`IOS_SHARE_PROVISIONING_PROFILE_BASE64` and restores fully manual profile
-selection. Until then, the TestFlight workflow uses the dedicated distribution
-certificate and API key with Xcode automatic provisioning to create or update the
-App Group, identifiers, and profiles. The distribution certificate and upload
-API key can remain unchanged.
+**Screenshot sharing signing:** completed on 19 September 2026. The App Group is
+enabled for both explicit App IDs, both App Store profiles contain the App Group,
+and their profile secrets are configured for explicit manual profile selection.
+The distribution certificate and upload API key remain unchanged.
 
 The existing 1Password item **Dieter — Apple release signing credentials** was
 updated and saved with the iOS certificate, profile, and API key identifiers,
-protected local file references, all eight GitHub secret mappings, and recovery
+protected local file references, the original GitHub secret mappings, and recovery
 and revocation links. Existing macOS notes, fields, and attachments were preserved.
 The iOS credential files were referenced, not added as new 1Password attachments.
-
-**Pending:** merge the manual TestFlight workflow into the default branch, then
-dispatch its first archive/export run. GitHub manual dispatch is available only
-after the workflow exists on the default branch. No first build has been uploaded;
-Apple processing, TestFlight availability, and App Store review remain unverified.
 
 ## App Store description (saved draft)
 
