@@ -49,6 +49,16 @@ struct IOSTranscript {
     }
 
     @discardableResult
+    mutating func removeQueuedMessage(id: String) -> Dieter_V1_QueuedMessage? {
+        guard var current = conversation, let index = current.queue.firstIndex(where: { $0.id == id }) else {
+            return nil
+        }
+        let removed = current.queue.remove(at: index)
+        conversation = current
+        return removed
+    }
+
+    @discardableResult
     mutating func prepend(_ snapshot: Dieter_V1_ConversationSnapshot, expectedSequence: Int64) -> Bool {
         guard var current = conversation, current.lastSeq == expectedSequence,
             snapshot.conversation.cardID == current.cardID, snapshot.page.end == page.start

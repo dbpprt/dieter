@@ -5,7 +5,7 @@
     struct IOSConversationView: View {
         @Bindable var store: IOSStore
         let cardID: String
-        @Binding var draft: String
+        @Binding var draft: IOSConversationDraft
         let browseFiles: () -> Void
         @State private var sending = false
         @State private var followsLatest = true
@@ -20,11 +20,18 @@
         }
 
         private var messages: [Dieter_V1_UiMessage] {
-            store.conversation?.cardID == cardID ? store.conversation?.messages ?? [] : []
+            guard store.conversation?.cardID == cardID else { return [] }
+            let queuedIDs = Set((store.conversation?.queue ?? []).lazy.map(\.id).filter { !$0.isEmpty })
+            return (store.conversation?.messages ?? []).filter { !queuedIDs.contains($0.id) }
+        }
+
+        private var queue: [Dieter_V1_QueuedMessage] {
+            store.conversation?.cardID == cardID ? store.conversation?.queue ?? [] : []
         }
 
         private var isRunning: Bool {
-            ["running", "starting", "resuming", "queued", "waiting"].contains(card?.runtime ?? "")
+            IOSConversationPresentation.isAgentWorking(
+                conversationStatus: store.conversation?.status ?? "", cardRuntime: card?.runtime ?? "")
         }
 
         var body: some View {
@@ -101,13 +108,14 @@
                             description: Text(
                                 card.initialPrompt.isEmpty ? "Send a message to begin." : card.initialPrompt))
                     }
-                    ForEach(messages, id: \.id) { message in
-                        IOSConversationMessage(message: message)
-                            .id(message.id)
-                    }
-                    if let queued = store.conversation?.queue.count, queued > 0 {
-                        Label("\(queued) queued \(queued == 1 ? "message" : "messages")", systemImage: "clock")
-                            .font(.caption).foregroundStyle(.secondary)
+                    ForEach(IOSConversationPresentation.timelineItems(messages)) { item in
+                        if item.isActivity {
+                            IOSConversationActivityDisclosure(steps: item.steps, identifier: item.id)
+                                .id(item.id)
+                        } else if let message = item.messages.first {
+                            IOSConversationMessage(message: message)
+                                .id(message.id)
+                        }
                     }
                     Color.clear.frame(height: 1)
                         .onAppear {
@@ -167,8 +175,39 @@
                         Task { await store.reconnect() }
                     }
                 }
+                if !queue.isEmpty {
+                    IOSQueuedMessageTray(
+                        store: store, messages: queue, agentIsWorking: isRunning, draft: $draft,
+                        focusComposer: { composerFocused = true }
+                    )
+                    .frame(maxWidth: 900)
+                }
+                if !draft.attachments.isEmpty {
+                    ScrollView(.horizontal) {
+                        HStack(spacing: 8) {
+                            ForEach(Array(draft.attachments.enumerated()), id: \.offset) { index, attachment in
+                                HStack(spacing: 6) {
+                                    Image(systemName: attachment.mediaType.hasPrefix("image/") ? "photo" : "doc")
+                                    Text(attachment.filename.isEmpty ? "Attachment" : attachment.filename)
+                                        .lineLimit(1)
+                                    Button("Remove attachment", systemImage: "xmark") {
+                                        draft.attachments.remove(at: index)
+                                    }
+                                    .labelStyle(.iconOnly)
+                                    .accessibilityIdentifier("ios.composer.attachment.remove.\(index)")
+                                }
+                                .font(.caption)
+                                .padding(.horizontal, 10).padding(.vertical, 7)
+                                .background(Color(uiColor: .secondarySystemGroupedBackground), in: Capsule())
+                            }
+                        }
+                    }
+                    .scrollIndicators(.hidden)
+                    .frame(maxWidth: 900, alignment: .leading)
+                    .accessibilityIdentifier("ios.composer.attachments")
+                }
                 HStack(alignment: .bottom, spacing: 10) {
-                    TextField("Message the agent…", text: $draft, axis: .vertical)
+                    TextField("Message the agent…", text: $draft.text, axis: .vertical)
                         .lineLimit(1...8)
                         .focused($composerFocused)
                         .padding(12)
@@ -182,8 +221,15 @@
                         let message = draft
                         sending = true
                         Task {
-                            let accepted = await store.sendMessage(text: message)
-                            if accepted, draft == message { draft = "" }
+                            let accepted = await store.sendMessage(
+                                text: message.text, attachments: message.attachments, selection: message.selection)
+                            if accepted, draft.text == message.text,
+                                IOSConversationPresentation.attachmentIdentity(draft.attachments)
+                                    == IOSConversationPresentation.attachmentIdentity(message.attachments),
+                                draft.selection == message.selection
+                            {
+                                draft = IOSConversationDraft()
+                            }
                             sending = false
                             followsLatest = true
                         }
@@ -199,8 +245,7 @@
                     }
                     .buttonStyle(.borderedProminent).buttonBorderShape(.circle)
                     .disabled(
-                        sending || draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                            || !store.phase.isConnected
+                        sending || draft.isEmpty || !store.phase.isConnected
                     )
                     .accessibilityLabel("Send message")
                     .accessibilityIdentifier("ios.composer.send")
@@ -220,31 +265,13 @@
             VStack(alignment: .leading, spacing: 10) {
                 Text(message.role == "user" ? "You" : message.role.capitalized)
                     .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-                ForEach(Array(message.parts.enumerated()), id: \.offset) { _, part in
-                    if part.type == "reasoning" {
-                        DisclosureGroup("Reasoning") { IOSMessageText(text: part.text) }
-                            .font(.subheadline).foregroundStyle(.secondary)
-                    } else if !part.toolName.isEmpty || part.type.hasPrefix("tool-") {
-                        DisclosureGroup {
-                            VStack(alignment: .leading, spacing: 8) {
-                                if !part.inputPreview.isEmpty {
-                                    Text(part.inputPreview).font(.system(.caption, design: .monospaced))
-                                }
-                                if !part.outputPreview.isEmpty {
-                                    Text(part.outputPreview).font(.system(.caption, design: .monospaced))
-                                }
-                                if !part.errorText.isEmpty { Text(part.errorText).foregroundStyle(.red) }
-                            }.textSelection(.enabled)
-                        } label: {
-                            Label(part.toolName.isEmpty ? "Tool activity" : part.toolName, systemImage: "terminal")
+                ForEach(IOSConversationPresentation.partGroups(in: message)) { group in
+                    if group.isActivity {
+                        IOSConversationActivityDisclosure(steps: group.steps, identifier: group.id)
+                    } else {
+                        ForEach(group.steps) { step in
+                            IOSConversationPart(messageID: step.messageID, part: step.part, role: message.role)
                         }
-                        .font(.subheadline).foregroundStyle(.secondary)
-                    } else if !part.text.isEmpty {
-                        IOSMessageText(text: part.text)
-                            .accessibilityIdentifier("ios.message.text.\(message.role)")
-                    } else if !part.filename.isEmpty {
-                        Label(part.filename, systemImage: part.mediaType.hasPrefix("image/") ? "photo" : "doc")
-                            .font(.subheadline).foregroundStyle(.secondary)
                     }
                 }
             }
@@ -254,6 +281,239 @@
                 if message.role == "user" {
                     RoundedRectangle(cornerRadius: 18).fill(Color(uiColor: .secondarySystemBackground))
                 }
+            }
+        }
+    }
+
+    private struct IOSConversationActivityDisclosure: View {
+        let steps: [IOSConversationActivityStep]
+        let identifier: String
+        @State private var expanded = false
+
+        var body: some View {
+            DisclosureGroup(isExpanded: $expanded) {
+                if expanded {
+                    VStack(alignment: .leading, spacing: 9) {
+                        ForEach(steps) { step in
+                            if IOSConversationPresentation.isReasoning(step.part) {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("Reasoning").font(.caption2.weight(.medium)).foregroundStyle(.secondary)
+                                    IOSMessageText(text: step.part.text)
+                                }
+                            } else {
+                                IOSToolPart(messageID: step.messageID, part: step.part)
+                            }
+                        }
+                    }
+                    .padding(.top, 6)
+                }
+            } label: {
+                Text(IOSConversationActivitySummary(steps: steps).title)
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.secondary)
+            }
+            .accessibilityIdentifier("ios.conversation.activity.\(identifier)")
+            .accessibilityValue(expanded ? "Expanded" : "Collapsed")
+        }
+    }
+
+    private struct IOSConversationPart: View {
+        let messageID: String
+        let part: Dieter_V1_MessagePart
+        let role: String
+
+        var body: some View {
+            if IOSConversationPresentation.isReasoning(part) {
+                DisclosureGroup("Reasoning") { IOSMessageText(text: part.text) }
+                    .font(.subheadline).foregroundStyle(.secondary)
+            } else if IOSConversationPresentation.isToolCall(part) {
+                IOSToolPart(messageID: messageID, part: part)
+            } else if !part.text.isEmpty {
+                IOSMessageText(text: part.text)
+                    .accessibilityIdentifier("ios.message.text.\(role)")
+            } else if !part.filename.isEmpty {
+                Label(part.filename, systemImage: part.mediaType.hasPrefix("image/") ? "photo" : "doc")
+                    .font(.subheadline).foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private struct IOSToolPart: View {
+        let messageID: String
+        let part: Dieter_V1_MessagePart
+        @State private var expanded = false
+
+        private var name: String {
+            let value = IOSConversationPresentation.effectiveToolName(part)
+            return value.isEmpty ? "Command" : value
+        }
+
+        var body: some View {
+            VStack(alignment: .leading, spacing: 6) {
+                DisclosureGroup(isExpanded: $expanded) {
+                    if expanded {
+                        VStack(alignment: .leading, spacing: 8) {
+                            if !part.inputPreview.isEmpty {
+                                Text(part.inputPreview).font(.system(.caption, design: .monospaced))
+                            }
+                            if !part.outputPreview.isEmpty {
+                                Text(part.outputPreview).font(.system(.caption, design: .monospaced))
+                            }
+                            if !part.errorText.isEmpty { Text(part.errorText).foregroundStyle(.red) }
+                        }
+                        .textSelection(.enabled)
+                        .padding(.top, 4)
+                    }
+                } label: {
+                    HStack(spacing: 7) {
+                        Image(
+                            systemName: IOSConversationPresentation.needsAttention(part)
+                                ? "exclamationmark.circle" : "terminal"
+                        )
+                        Text(name).font(.system(.caption, design: .monospaced).weight(.medium)).lineLimit(1)
+                        Spacer(minLength: 8)
+                        if !part.state.isEmpty {
+                            Text(part.state.replacingOccurrences(of: "_", with: " "))
+                                .font(.caption2).foregroundStyle(.tertiary)
+                        }
+                    }
+                }
+                .font(.subheadline)
+                .foregroundStyle(IOSConversationPresentation.needsAttention(part) ? Color.orange : Color.secondary)
+                if IOSConversationPresentation.needsAttention(part), !part.errorText.isEmpty, !expanded {
+                    Text(part.errorText).font(.caption.monospaced()).foregroundStyle(.red)
+                }
+            }
+            .accessibilityIdentifier(
+                "ios.conversation.tool.\(messageID).\(part.toolCallID.isEmpty ? name : part.toolCallID)")
+        }
+    }
+
+    private struct IOSQueuedMessageTray: View {
+        @Bindable var store: IOSStore
+        let messages: [Dieter_V1_QueuedMessage]
+        let agentIsWorking: Bool
+        @Binding var draft: IOSConversationDraft
+        let focusComposer: () -> Void
+
+        var body: some View {
+            ScrollView(.vertical) {
+                LazyVStack(spacing: 7) {
+                    ForEach(Array(messages.enumerated()), id: \.element.id) { index, message in
+                        IOSQueuedMessageRow(
+                            store: store, message: message,
+                            canSteer: index == 0 && agentIsWorking,
+                            draft: $draft, focusComposer: focusComposer
+                        )
+                    }
+                }
+            }
+            .scrollIndicators(.hidden)
+            .frame(height: min(CGFloat(messages.count) * 68, 196))
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel("Queued messages")
+            .accessibilityIdentifier("ios.conversation.queue")
+        }
+    }
+
+    private struct IOSQueuedMessageRow: View {
+        private enum Action { case edit, remove, steer }
+
+        @Bindable var store: IOSStore
+        let message: Dieter_V1_QueuedMessage
+        let canSteer: Bool
+        @Binding var draft: IOSConversationDraft
+        let focusComposer: () -> Void
+        @State private var action: Action?
+
+        private var queuedDraft: IOSConversationDraft {
+            IOSConversationPresentation.queuedDraft(for: message)
+        }
+
+        private var summary: String {
+            if !queuedDraft.text.isEmpty { return queuedDraft.text }
+            if queuedDraft.attachments.count == 1 { return "1 attachment" }
+            if !queuedDraft.attachments.isEmpty { return "\(queuedDraft.attachments.count) attachments" }
+            return "Queued message"
+        }
+
+        var body: some View {
+            HStack(spacing: 10) {
+                Image(systemName: "arrow.turn.down.right")
+                    .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(summary).font(.subheadline.weight(.medium)).lineLimit(2)
+                    HStack(spacing: 5) {
+                        Text("Queued")
+                        if !queuedDraft.attachments.isEmpty {
+                            Text(
+                                "· \(queuedDraft.attachments.count) attachment"
+                                    + (queuedDraft.attachments.count == 1 ? "" : "s"))
+                        }
+                    }
+                    .font(.caption2).foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 4)
+                if canSteer {
+                    Button(action == .steer ? "Steering…" : "Steer") { performSteer() }
+                        .buttonStyle(.bordered).controlSize(.small)
+                        .disabled(action != nil || store.busy || !store.phase.isConnected)
+                        .accessibilityIdentifier("ios.queued-message.steer.\(message.id)")
+                }
+                Menu {
+                    Button("Edit queued message", systemImage: "pencil") { performEdit() }
+                    Button("Remove queued message", systemImage: "trash", role: .destructive) { performRemove() }
+                } label: {
+                    if action == .edit || action == .remove {
+                        ProgressView()
+                    } else {
+                        Image(systemName: "ellipsis.circle")
+                    }
+                }
+                .disabled(action != nil || store.busy || !store.phase.isConnected)
+                .accessibilityLabel("Queued message actions")
+                .accessibilityIdentifier("ios.queued-message.menu.\(message.id)")
+            }
+            .padding(.horizontal, 12).padding(.vertical, 9)
+            .frame(minHeight: 60)
+            .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14))
+            .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.secondary.opacity(0.18)))
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("ios.queued-message.\(message.id)")
+        }
+
+        private func performEdit() {
+            guard action == nil else { return }
+            action = .edit
+            Task { @MainActor in
+                if let removed = await store.removeQueuedMessage(message) {
+                    let restored = IOSConversationPresentation.queuedDraft(for: removed)
+                    var next = draft
+                    next.text = [restored.text, next.text].filter { !$0.isEmpty }.joined(separator: "\n\n")
+                    next.attachments = restored.attachments + next.attachments
+                    if let selection = restored.selection { next.selection = selection }
+                    draft = next
+                    focusComposer()
+                }
+                action = nil
+            }
+        }
+
+        private func performRemove() {
+            guard action == nil else { return }
+            action = .remove
+            Task { @MainActor in
+                _ = await store.removeQueuedMessage(message)
+                action = nil
+            }
+        }
+
+        private func performSteer() {
+            guard action == nil, canSteer else { return }
+            action = .steer
+            Task { @MainActor in
+                await store.steerQueuedMessage(message)
+                action = nil
             }
         }
     }
