@@ -16,8 +16,32 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  changes:
+    name: Detect affected components
+    runs-on: ubuntu-latest
+    outputs:
+      core: ${{ steps.select.outputs.core }}
+      macos: ${{ steps.select.outputs.macos }}
+      ios: ${{ steps.select.outputs.ios }}
+      android: ${{ steps.select.outputs.android }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: extractions/setup-just@v3
+        with:
+          just-version: "1.58.0"
+      - name: Select affected components
+        id: select
+        env:
+          CI_CHANGE_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: just check-changed --ci
+
   core:
     name: Go and harness runtime
+    needs: changes
+    if: needs.changes.outputs.core == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -56,6 +80,8 @@ jobs:
 
   macos:
     name: macOS client
+    needs: changes
+    if: needs.changes.outputs.macos == 'true'
     runs-on: macos-26
     timeout-minutes: 60
     steps:
@@ -112,6 +138,8 @@ jobs:
 
   ios-device:
     name: iOS client (${{ matrix.platform }})
+    needs: changes
+    if: needs.changes.outputs.ios == 'true'
     runs-on: macos-26
     timeout-minutes: 60
     strategy:
@@ -177,7 +205,7 @@ jobs:
 
   ios:
     name: iPhone and iPad client
-    needs: ios-device
+    needs: [changes, ios-device]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -189,11 +217,13 @@ jobs:
           just-version: "1.58.0"
       - name: Require both device journeys
         env:
-          IOS_DEVICE_RESULT: ${{ needs.ios-device.result }}
+          IOS_DEVICE_RESULT: ${{ needs.changes.result == 'success' && (needs.changes.outputs.ios != 'true' || needs.ios-device.result == 'success') && 'success' || 'failure' }}
         run: just ios ci-smoke-result
 
   android:
     name: Android client
+    needs: changes
+    if: needs.changes.outputs.android == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

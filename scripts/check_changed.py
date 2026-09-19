@@ -3,6 +3,7 @@
 
 import argparse
 import json
+import os
 from pathlib import Path
 import shlex
 import subprocess
@@ -11,6 +12,7 @@ import sys
 
 MAC_SMOKE_SUITES = ("core", "board", "conversation", "machine", "sidebar", "terminal", "island", "workspace")
 MAC_SOURCE_ROOT = "apps/mac/Sources/DieterMac/"
+CI_COMPONENTS = ("core", "macos", "ios", "android")
 
 # This is a conservative component map, not a Swift dependency graph. Shared
 # app/store/navigation/theme code and unclassified paths always run every suite.
@@ -142,6 +144,17 @@ def affected_go_packages(root, paths, packages):
         affected = expanded
 
 
+def changed_code_paths(paths):
+    return [path for path in paths if not path.endswith((".md", ".txt")) or "/testdata/" in path]
+
+
+def includes_go_changes(paths):
+    return any(
+        path.endswith(".go") or path in {"go.mod", "go.sum", "just/daemon.just", "just/gateway.just"}
+        or path.startswith(("config/", "internal/", "api/gen/"))
+        or (path.startswith("native/") and not path.startswith("native/android-webrtc/")) for path in paths)
+
+
 def plan_checks(root, paths, packages=None):
     commands = []
 
@@ -150,7 +163,7 @@ def plan_checks(root, paths, packages=None):
             commands.append(list(command))
 
     # Documentation alone does not require compilers or devices.
-    code = [p for p in paths if not p.endswith((".md", ".txt")) or "/testdata/" in p]
+    code = changed_code_paths(paths)
     schema = any(p.startswith("api/proto/") or p == "scripts/generate-proto.sh" for p in code)
     fixture = any(p.startswith("scripts/isolated-gateway/") for p in code)
     brand = any(p.startswith("assets/brand/") for p in code)
@@ -178,10 +191,7 @@ def plan_checks(root, paths, packages=None):
         add("just", "release", "test")
     if schema:
         add("just", "proto")
-    go_changed = schema or any(
-        p.endswith(".go") or p in {"go.mod", "go.sum", "just/daemon.just", "just/gateway.just"}
-        or p.startswith(("config/", "internal/", "api/gen/"))
-        or (p.startswith("native/") and not p.startswith("native/android-webrtc/")) for p in code)
+    go_changed = schema or includes_go_changes(code)
     if go_changed:
         affected = affected_go_packages(root, code, go_packages(root) if packages is None else packages)
         if schema and not affected:
@@ -223,12 +233,75 @@ def plan_checks(root, paths, packages=None):
     return commands
 
 
+def affected_ci_components(root, paths):
+    """Select coarse CI jobs from the same checks used by local validation."""
+    selected = {component: False for component in CI_COMPONENTS}
+    code = changed_code_paths(paths)
+    if not code:
+        return selected
+
+    # Changes to the selector, its root entry point, or this workflow validate
+    # every branch of the selection contract instead of trusting itself.
+    if any(path == "justfile" or path == ".github/workflows/ci.yml"
+           or path.startswith("scripts/check_changed") for path in code):
+        return {component: True for component in CI_COMPONENTS}
+
+    commands = plan_checks(root, paths, packages=[])
+    for command in commands:
+        if command[:2] == ["just", "mac"]:
+            selected["macos"] = True
+            if command[:3] == ["just", "mac", "markdown-check"]:
+                selected["core"] = True
+        elif command[:2] == ["just", "ios"]:
+            selected["ios"] = True
+        elif command[:2] == ["just", "android"]:
+            selected["android"] = True
+        else:
+            selected["core"] = True
+
+    # Unknown non-documentation paths fail closed into the portable job. Known
+    # native roots can select only their owning client jobs.
+    native_roots = ("apps/mac/", "apps/ios/", "apps/android/", "native/android-webrtc/")
+    if includes_go_changes(code) or any(not path.startswith(native_roots) for path in code):
+        selected["core"] = True
+    return selected
+
+
+def write_ci_outputs(output_path, components):
+    with Path(output_path).open("a") as output_file:
+        for component in CI_COMPONENTS:
+            output_file.write(f"{component}={'true' if components[component] else 'false'}\n")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--base", help="Compare the working tree with the merge base of this ref and HEAD.")
     parser.add_argument("--dry-run", action="store_true", help="Print changed paths and commands without running checks.")
+    parser.add_argument("--ci", action="store_true", help="Write affected CI component outputs to GITHUB_OUTPUT.")
     args = parser.parse_args()
     root = Path(output(Path.cwd(), "git", "rev-parse", "--show-toplevel").strip())
+    if args.ci:
+        output_path = os.environ.get("GITHUB_OUTPUT")
+        if not output_path:
+            parser.error("--ci requires GITHUB_OUTPUT")
+        base = args.base or os.environ.get("CI_CHANGE_BASE", "")
+        event = os.environ.get("GITHUB_EVENT_NAME", "")
+        force_all = event in {"schedule", "workflow_dispatch"} or not base or set(base) == {"0"}
+        if force_all:
+            components = {component: True for component in CI_COMPONENTS}
+            print("CI change detection selected every component.", flush=True)
+        else:
+            paths = changed_paths(root, base)
+            components = affected_ci_components(root, paths)
+            print("Changed paths:", flush=True)
+            for path in paths:
+                print("  " + path, flush=True)
+        print("Selected CI components: "
+              + ", ".join(component for component, enabled in components.items() if enabled)
+              if any(components.values()) else "Selected CI components: none", flush=True)
+        write_ci_outputs(output_path, components)
+        return 0
+
     paths = changed_paths(root, args.base)
     commands = plan_checks(root, paths)
     print("Changed paths:", flush=True)
