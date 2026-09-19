@@ -67,6 +67,7 @@ struct ConversationChrome: View {
                             }
                             .buttonStyle(.plain).accessibilityLabel("Open workspace changes")
                         }
+                        ProviderQuotaCompactView()
                         Spacer(minLength: 0)
                         if context.conversationSyncing {
                             ProgressView().controlSize(.mini).accessibilityLabel("Refreshing conversation")
@@ -115,6 +116,7 @@ struct ConversationChrome: View {
                         .buttonStyle(.plain)
                         .accessibilityLabel("Open workspace changes")
                     }
+                    ProviderQuotaCompactView()
                     StatusPill(text: status, color: runtimeColor(status))
                     conversationMenu
                     contentPaneToggle

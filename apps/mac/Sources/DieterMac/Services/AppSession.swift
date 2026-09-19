@@ -69,6 +69,10 @@ final class AppSession {
     var machineCPUHistory: [String: [Double]] = [:]
     var machineGPUHistory: [String: [String: [Double]]] = [:]
     var gatewayInformation: [String: Dieter_Gateway_V1_GatewayInformation] = [:]
+    var providerQuotaGroups: [Dieter_Gateway_V1_ProviderQuotaGroup] = []
+    var providerQuotasLoading = false
+    var providerQuotaError: String?
+    var providerQuotaMutatingAccounts: Set<String> = []
     var machineInformationLoading = false
     var machineInformationError: String?
     var machineOperationMessage: String?

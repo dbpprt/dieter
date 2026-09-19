@@ -213,6 +213,11 @@ dieter auth login
 dieter machine list --format jsonl
 dieter machine gateway
 dieter machine info
+dieter quota list
+dieter quota refresh openai
+dieter quota exclude openai --account <opaque-key>
+dieter quota include openai --account <opaque-key>
+dieter quota reset openai --account <opaque-key> --confirm RESET
 dieter --machine <machine-id> status
 dieter --machine <machine-id> machine info
 dieter --machine <machine-id> project list --format jsonl
@@ -227,6 +232,17 @@ gateway release and control-plane API versions. `machine info` returns live
 host telemetry, including optional Apple, NVIDIA, and AMD GPU data with absent
 sensors kept distinct from real zero values. Native clients use API versions
 to keep compatible machines in a mixed-version fleet available.
+
+`quota list` shows provider-account limits discovered by online enrolled
+machines. Each account and quota window remains separate; a provider summary
+uses the lowest remaining percentage among included accounts instead of adding
+or averaging unrelated allowances. `quota include` and `quota exclude` control
+that summary without hiding the account details. `quota watch` streams changes
+and `quota refresh [PROVIDER]` asks an eligible daemon for a bounded refresh.
+For OpenAI accounts, `quota reset` consumes one available reset credit after an
+exact confirmation and forwards one idempotent request to an eligible daemon
+that has access to that account. These commands are gateway-account scoped and
+do not accept `--machine`.
 
 Restart, shutdown, and daemon update use the same authenticated local,
 direct-TLS, or relay route as every other machine operation and require exact
@@ -362,9 +378,10 @@ The system has three components:
    verified direct TLS route when one is reachable.
 
 Both network paths expose the same `dieter.v1.DieterService` API. The gateway
-stores account sessions, daemon identities, presence, and route metadata. It
-never stores project code, transcripts, schedules, files, or harness
-credentials. Daemons prove possession of their Ed25519 identity on each tunnel
+stores account sessions, daemon identities, presence, route metadata, and
+normalized provider-account quota snapshots. It never stores provider
+credentials or raw provider responses, project code, transcripts, schedules,
+or files. Daemons prove possession of their Ed25519 identity on each tunnel
 connection.
 
 All domain data lives under `DIETER_HOME` on the daemon host (by default
@@ -652,6 +669,18 @@ bundled CLI. Astra, Sol, and Terra support Max and Ultra; Luna supports Max.
 Ultra is Codex's native mode with automatic task delegation, rather than an
 API reasoning-effort value. Model-specific choices also apply when resuming
 an existing conversation.
+
+The same pinned Codex app-server supplies structured account quota data. By
+default the daemon checks `CODEX_HOME` or `~/.codex`. To expose several local
+OpenAI accounts without scanning arbitrary directories, set
+`DIETER_CODEX_ACCOUNT_HOMES` to an OS path-list of explicit Codex profile
+directories (up to eight per daemon). Stable provider account IDs are HMACed
+with a gateway-account key before leaving the daemon. A ChatGPT account email,
+when returned by the structured account API, is sent as bounded display-only
+snapshot metadata so authenticated clients can distinguish accounts;
+credentials and raw provider payloads are never transmitted. Claude quota
+collection stays disabled until its pinned harness exposes an equivalent
+structured interface.
 
 ## Development
 

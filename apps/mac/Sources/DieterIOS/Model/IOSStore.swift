@@ -32,6 +32,10 @@
         private(set) var isAuthenticated = false
         private(set) var errorMessage: String?
         private(set) var routeDescription = ""
+        private(set) var providerQuotaGroups: [Dieter_Gateway_V1_ProviderQuotaGroup] = []
+        private(set) var providerQuotasLoading = false
+        private(set) var providerQuotaError: String?
+        private(set) var providerQuotaMutatingAccounts: Set<String> = []
         private var pendingOperations = 0
         var busy: Bool { pendingOperations > 0 || phase == .connecting }
         var selectedMachine: DieterEndpoint? { machines.first { $0.daemonID == selectedMachineID } }
@@ -46,6 +50,7 @@
         @ObservationIgnored private var stateTask: Task<Void, Never>?
         @ObservationIgnored private var transcriptTask: Task<Void, Never>?
         @ObservationIgnored private var refreshTask: Task<Void, Never>?
+        @ObservationIgnored private var providerQuotaTask: Task<Void, Never>?
         @ObservationIgnored private var reconnectTask: Task<Void, Never>?
         @ObservationIgnored private var authTask: Task<String, Error>?
         @ObservationIgnored private var connectionID = UUID()
@@ -76,6 +81,7 @@
             stateTask?.cancel()
             transcriptTask?.cancel()
             refreshTask?.cancel()
+            providerQuotaTask?.cancel()
             reconnectTask?.cancel()
             authTask?.cancel()
             dataPlane?.shutdown()
@@ -223,6 +229,7 @@
                 guard owns(attempt) else { return }
                 isAuthenticated = true
                 machines = makeMachines(directory, origin: origin)
+                startProviderQuotaRefresh(attempt: attempt)
                 defaults.set(gatewayAddress, forKey: "DieterIOSGateway")
                 let saved = defaults.string(forKey: "DieterIOSMachine:\(origin.credentialID)")
                 let preferred = IOSMachinePolicy.preferred(in: machines, preferredID: previousID ?? saved)
@@ -305,6 +312,7 @@
             do {
                 try await connectMachine(machine, attempt: attempt)
                 guard owns(attempt) else { return }
+                startProviderQuotaRefresh(attempt: attempt)
                 startDirectoryRefresh(attempt: attempt)
             } catch {
                 guard owns(attempt) else { return }
@@ -401,6 +409,91 @@
                     await self.refreshMachines()
                 }
             }
+        }
+
+        private func startProviderQuotaRefresh(attempt: UUID) {
+            providerQuotaTask?.cancel()
+            providerQuotaTask = Task { [weak self] in
+                guard let self else { return }
+                await self.loadProviderQuotas()
+                while !Task.isCancelled {
+                    do { try await Task.sleep(for: .seconds(60)) } catch { return }
+                    guard self.owns(attempt) else { return }
+                    await self.loadProviderQuotas()
+                }
+            }
+        }
+
+        func loadProviderQuotas(requestRefresh: Bool = false) async {
+            guard !providerQuotasLoading, let control = gateway else { return }
+            let attempt = connectionID
+            providerQuotasLoading = true
+            defer {
+                if connectionID == attempt { providerQuotasLoading = false }
+            }
+            do {
+                let groups =
+                    if requestRefresh {
+                        try await control.refreshProviderQuotas().groups
+                    } else {
+                        try await control.providerQuotas().groups
+                    }
+                guard owns(attempt) else { return }
+                providerQuotaGroups = groups
+                providerQuotaError = nil
+            } catch {
+                guard owns(attempt) else { return }
+                providerQuotaError = IOSUserError.message(error)
+            }
+        }
+
+        func setProviderQuotaSummaryInclusion(
+            provider: Dieter_Gateway_V1_ProviderQuotaProvider,
+            accountKey: String,
+            included: Bool
+        ) async {
+            guard let control = gateway else { return }
+            guard providerQuotaMutatingAccounts.insert(accountKey).inserted else { return }
+            defer { providerQuotaMutatingAccounts.remove(accountKey) }
+            let attempt = connectionID
+            do {
+                let response = try await control.setProviderQuotaSummaryInclusion(
+                    provider: provider, accountKey: accountKey, included: included)
+                guard owns(attempt) else { return }
+                replaceProviderQuotaGroups(response.groups, provider: provider)
+                providerQuotaError = nil
+            } catch {
+                guard owns(attempt) else { return }
+                providerQuotaError = IOSUserError.message(error)
+            }
+        }
+
+        func consumeProviderQuotaReset(accountKey: String) async {
+            guard let control = gateway else { return }
+            guard providerQuotaMutatingAccounts.insert(accountKey).inserted else { return }
+            defer { providerQuotaMutatingAccounts.remove(accountKey) }
+            let attempt = connectionID
+            do {
+                let response = try await control.consumeProviderQuotaReset(
+                    accountKey: accountKey, idempotencyKey: UUID().uuidString.lowercased())
+                guard owns(attempt) else { return }
+                replaceProviderQuotaGroups(response.groups, provider: .openaiCodex)
+                providerQuotaError =
+                    response.accepted
+                    ? nil : "No online machine with access to this OpenAI account accepted the reset."
+            } catch {
+                guard owns(attempt) else { return }
+                providerQuotaError = IOSUserError.message(error)
+            }
+        }
+
+        private func replaceProviderQuotaGroups(
+            _ groups: [Dieter_Gateway_V1_ProviderQuotaGroup],
+            provider: Dieter_Gateway_V1_ProviderQuotaProvider
+        ) {
+            providerQuotaGroups.removeAll { $0.provider == provider }
+            providerQuotaGroups.append(contentsOf: groups)
+            providerQuotaGroups.sort { $0.provider.rawValue < $1.provider.rawValue }
         }
 
         func selectCard(id: String) async {
@@ -796,12 +889,19 @@
             stateTask?.cancel(); stateTask = nil
             transcriptTask?.cancel(); transcriptTask = nil
             refreshTask?.cancel(); refreshTask = nil
+            providerQuotaTask?.cancel(); providerQuotaTask = nil
             reconnectTask?.cancel(); reconnectTask = nil
             dataPlane?.shutdown(); dataPlane = nil
             gatewayTask?.cancel(); gatewayTask = nil
             gateway?.shutdown(); gateway = nil
             connections.invalidateTemporaryLeases()
-            if clearContent { clearNodeContent() }
+            if clearContent {
+                providerQuotaGroups = []
+                providerQuotasLoading = false
+                providerQuotaError = nil
+                providerQuotaMutatingAccounts = []
+                clearNodeContent()
+            }
         }
 
         private func clearNodeContent() {

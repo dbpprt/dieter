@@ -20,26 +20,32 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	GatewayService_GetAccount_FullMethodName               = "/dieter.gateway.v1.GatewayService/GetAccount"
-	GatewayService_ListDaemons_FullMethodName              = "/dieter.gateway.v1.GatewayService/ListDaemons"
-	GatewayService_WatchDaemons_FullMethodName             = "/dieter.gateway.v1.GatewayService/WatchDaemons"
-	GatewayService_BeginDaemonEnrollment_FullMethodName    = "/dieter.gateway.v1.GatewayService/BeginDaemonEnrollment"
-	GatewayService_CompleteDaemonEnrollment_FullMethodName = "/dieter.gateway.v1.GatewayService/CompleteDaemonEnrollment"
-	GatewayService_UnenrollDaemon_FullMethodName           = "/dieter.gateway.v1.GatewayService/UnenrollDaemon"
-	GatewayService_RenameDaemon_FullMethodName             = "/dieter.gateway.v1.GatewayService/RenameDaemon"
-	GatewayService_RevokeDaemon_FullMethodName             = "/dieter.gateway.v1.GatewayService/RevokeDaemon"
-	GatewayService_ExchangeDaemonToken_FullMethodName      = "/dieter.gateway.v1.GatewayService/ExchangeDaemonToken"
-	GatewayService_ResolveDaemonRoute_FullMethodName       = "/dieter.gateway.v1.GatewayService/ResolveDaemonRoute"
-	GatewayService_GetRTCConfiguration_FullMethodName      = "/dieter.gateway.v1.GatewayService/GetRTCConfiguration"
+	GatewayService_GetAccount_FullMethodName                       = "/dieter.gateway.v1.GatewayService/GetAccount"
+	GatewayService_ListDaemons_FullMethodName                      = "/dieter.gateway.v1.GatewayService/ListDaemons"
+	GatewayService_WatchDaemons_FullMethodName                     = "/dieter.gateway.v1.GatewayService/WatchDaemons"
+	GatewayService_BeginDaemonEnrollment_FullMethodName            = "/dieter.gateway.v1.GatewayService/BeginDaemonEnrollment"
+	GatewayService_CompleteDaemonEnrollment_FullMethodName         = "/dieter.gateway.v1.GatewayService/CompleteDaemonEnrollment"
+	GatewayService_UnenrollDaemon_FullMethodName                   = "/dieter.gateway.v1.GatewayService/UnenrollDaemon"
+	GatewayService_RenameDaemon_FullMethodName                     = "/dieter.gateway.v1.GatewayService/RenameDaemon"
+	GatewayService_RevokeDaemon_FullMethodName                     = "/dieter.gateway.v1.GatewayService/RevokeDaemon"
+	GatewayService_ExchangeDaemonToken_FullMethodName              = "/dieter.gateway.v1.GatewayService/ExchangeDaemonToken"
+	GatewayService_ResolveDaemonRoute_FullMethodName               = "/dieter.gateway.v1.GatewayService/ResolveDaemonRoute"
+	GatewayService_GetRTCConfiguration_FullMethodName              = "/dieter.gateway.v1.GatewayService/GetRTCConfiguration"
+	GatewayService_ListProviderQuotas_FullMethodName               = "/dieter.gateway.v1.GatewayService/ListProviderQuotas"
+	GatewayService_WatchProviderQuotas_FullMethodName              = "/dieter.gateway.v1.GatewayService/WatchProviderQuotas"
+	GatewayService_RefreshProviderQuotas_FullMethodName            = "/dieter.gateway.v1.GatewayService/RefreshProviderQuotas"
+	GatewayService_SetProviderQuotaSummaryInclusion_FullMethodName = "/dieter.gateway.v1.GatewayService/SetProviderQuotaSummaryInclusion"
+	GatewayService_ConsumeProviderQuotaReset_FullMethodName        = "/dieter.gateway.v1.GatewayService/ConsumeProviderQuotaReset"
 )
 
 // GatewayServiceClient is the client API for GatewayService service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
-// GatewayService is Dieter's account and machine directory. Dieter domain data
-// never enters this service; clients target one enrolled daemon for all
-// project, conversation, schedule, and file operations.
+// GatewayService is Dieter's account and machine directory. Project,
+// conversation, schedule, file, and provider credential data never enters this
+// service. The gateway may cache normalized, credential-free provider quota
+// snapshots for the authenticated account.
 type GatewayServiceClient interface {
 	GetAccount(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*Account, error)
 	ListDaemons(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*ListDaemonsResponse, error)
@@ -55,6 +61,11 @@ type GatewayServiceClient interface {
 	// The signed envelope is verified by the daemon before a desktop session is
 	// admitted; the gateway never participates in the WebRTC media path.
 	GetRTCConfiguration(ctx context.Context, in *DaemonRef, opts ...grpc.CallOption) (*RTCConfiguration, error)
+	ListProviderQuotas(ctx context.Context, in *ListProviderQuotasRequest, opts ...grpc.CallOption) (*ListProviderQuotasResponse, error)
+	WatchProviderQuotas(ctx context.Context, in *WatchProviderQuotasRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ProviderQuotaUpdate], error)
+	RefreshProviderQuotas(ctx context.Context, in *RefreshProviderQuotasRequest, opts ...grpc.CallOption) (*RefreshProviderQuotasResponse, error)
+	SetProviderQuotaSummaryInclusion(ctx context.Context, in *SetProviderQuotaSummaryInclusionRequest, opts ...grpc.CallOption) (*SetProviderQuotaSummaryInclusionResponse, error)
+	ConsumeProviderQuotaReset(ctx context.Context, in *ConsumeProviderQuotaResetRequest, opts ...grpc.CallOption) (*ConsumeProviderQuotaResetResponse, error)
 }
 
 type gatewayServiceClient struct {
@@ -184,13 +195,73 @@ func (c *gatewayServiceClient) GetRTCConfiguration(ctx context.Context, in *Daem
 	return out, nil
 }
 
+func (c *gatewayServiceClient) ListProviderQuotas(ctx context.Context, in *ListProviderQuotasRequest, opts ...grpc.CallOption) (*ListProviderQuotasResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListProviderQuotasResponse)
+	err := c.cc.Invoke(ctx, GatewayService_ListProviderQuotas_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *gatewayServiceClient) WatchProviderQuotas(ctx context.Context, in *WatchProviderQuotasRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ProviderQuotaUpdate], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &GatewayService_ServiceDesc.Streams[1], GatewayService_WatchProviderQuotas_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[WatchProviderQuotasRequest, ProviderQuotaUpdate]{ClientStream: stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type GatewayService_WatchProviderQuotasClient = grpc.ServerStreamingClient[ProviderQuotaUpdate]
+
+func (c *gatewayServiceClient) RefreshProviderQuotas(ctx context.Context, in *RefreshProviderQuotasRequest, opts ...grpc.CallOption) (*RefreshProviderQuotasResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RefreshProviderQuotasResponse)
+	err := c.cc.Invoke(ctx, GatewayService_RefreshProviderQuotas_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *gatewayServiceClient) SetProviderQuotaSummaryInclusion(ctx context.Context, in *SetProviderQuotaSummaryInclusionRequest, opts ...grpc.CallOption) (*SetProviderQuotaSummaryInclusionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SetProviderQuotaSummaryInclusionResponse)
+	err := c.cc.Invoke(ctx, GatewayService_SetProviderQuotaSummaryInclusion_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *gatewayServiceClient) ConsumeProviderQuotaReset(ctx context.Context, in *ConsumeProviderQuotaResetRequest, opts ...grpc.CallOption) (*ConsumeProviderQuotaResetResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ConsumeProviderQuotaResetResponse)
+	err := c.cc.Invoke(ctx, GatewayService_ConsumeProviderQuotaReset_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // GatewayServiceServer is the server API for GatewayService service.
 // All implementations must embed UnimplementedGatewayServiceServer
 // for forward compatibility.
 //
-// GatewayService is Dieter's account and machine directory. Dieter domain data
-// never enters this service; clients target one enrolled daemon for all
-// project, conversation, schedule, and file operations.
+// GatewayService is Dieter's account and machine directory. Project,
+// conversation, schedule, file, and provider credential data never enters this
+// service. The gateway may cache normalized, credential-free provider quota
+// snapshots for the authenticated account.
 type GatewayServiceServer interface {
 	GetAccount(context.Context, *emptypb.Empty) (*Account, error)
 	ListDaemons(context.Context, *emptypb.Empty) (*ListDaemonsResponse, error)
@@ -206,6 +277,11 @@ type GatewayServiceServer interface {
 	// The signed envelope is verified by the daemon before a desktop session is
 	// admitted; the gateway never participates in the WebRTC media path.
 	GetRTCConfiguration(context.Context, *DaemonRef) (*RTCConfiguration, error)
+	ListProviderQuotas(context.Context, *ListProviderQuotasRequest) (*ListProviderQuotasResponse, error)
+	WatchProviderQuotas(*WatchProviderQuotasRequest, grpc.ServerStreamingServer[ProviderQuotaUpdate]) error
+	RefreshProviderQuotas(context.Context, *RefreshProviderQuotasRequest) (*RefreshProviderQuotasResponse, error)
+	SetProviderQuotaSummaryInclusion(context.Context, *SetProviderQuotaSummaryInclusionRequest) (*SetProviderQuotaSummaryInclusionResponse, error)
+	ConsumeProviderQuotaReset(context.Context, *ConsumeProviderQuotaResetRequest) (*ConsumeProviderQuotaResetResponse, error)
 	mustEmbedUnimplementedGatewayServiceServer()
 }
 
@@ -248,6 +324,21 @@ func (UnimplementedGatewayServiceServer) ResolveDaemonRoute(context.Context, *Da
 }
 func (UnimplementedGatewayServiceServer) GetRTCConfiguration(context.Context, *DaemonRef) (*RTCConfiguration, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetRTCConfiguration not implemented")
+}
+func (UnimplementedGatewayServiceServer) ListProviderQuotas(context.Context, *ListProviderQuotasRequest) (*ListProviderQuotasResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListProviderQuotas not implemented")
+}
+func (UnimplementedGatewayServiceServer) WatchProviderQuotas(*WatchProviderQuotasRequest, grpc.ServerStreamingServer[ProviderQuotaUpdate]) error {
+	return status.Error(codes.Unimplemented, "method WatchProviderQuotas not implemented")
+}
+func (UnimplementedGatewayServiceServer) RefreshProviderQuotas(context.Context, *RefreshProviderQuotasRequest) (*RefreshProviderQuotasResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method RefreshProviderQuotas not implemented")
+}
+func (UnimplementedGatewayServiceServer) SetProviderQuotaSummaryInclusion(context.Context, *SetProviderQuotaSummaryInclusionRequest) (*SetProviderQuotaSummaryInclusionResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method SetProviderQuotaSummaryInclusion not implemented")
+}
+func (UnimplementedGatewayServiceServer) ConsumeProviderQuotaReset(context.Context, *ConsumeProviderQuotaResetRequest) (*ConsumeProviderQuotaResetResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ConsumeProviderQuotaReset not implemented")
 }
 func (UnimplementedGatewayServiceServer) mustEmbedUnimplementedGatewayServiceServer() {}
 func (UnimplementedGatewayServiceServer) testEmbeddedByValue()                        {}
@@ -461,6 +552,89 @@ func _GatewayService_GetRTCConfiguration_Handler(srv interface{}, ctx context.Co
 	return interceptor(ctx, in, info, handler)
 }
 
+func _GatewayService_ListProviderQuotas_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListProviderQuotasRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(GatewayServiceServer).ListProviderQuotas(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: GatewayService_ListProviderQuotas_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(GatewayServiceServer).ListProviderQuotas(ctx, req.(*ListProviderQuotasRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _GatewayService_WatchProviderQuotas_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(WatchProviderQuotasRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(GatewayServiceServer).WatchProviderQuotas(m, &grpc.GenericServerStream[WatchProviderQuotasRequest, ProviderQuotaUpdate]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type GatewayService_WatchProviderQuotasServer = grpc.ServerStreamingServer[ProviderQuotaUpdate]
+
+func _GatewayService_RefreshProviderQuotas_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RefreshProviderQuotasRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(GatewayServiceServer).RefreshProviderQuotas(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: GatewayService_RefreshProviderQuotas_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(GatewayServiceServer).RefreshProviderQuotas(ctx, req.(*RefreshProviderQuotasRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _GatewayService_SetProviderQuotaSummaryInclusion_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SetProviderQuotaSummaryInclusionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(GatewayServiceServer).SetProviderQuotaSummaryInclusion(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: GatewayService_SetProviderQuotaSummaryInclusion_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(GatewayServiceServer).SetProviderQuotaSummaryInclusion(ctx, req.(*SetProviderQuotaSummaryInclusionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _GatewayService_ConsumeProviderQuotaReset_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ConsumeProviderQuotaResetRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(GatewayServiceServer).ConsumeProviderQuotaReset(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: GatewayService_ConsumeProviderQuotaReset_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(GatewayServiceServer).ConsumeProviderQuotaReset(ctx, req.(*ConsumeProviderQuotaResetRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // GatewayService_ServiceDesc is the grpc.ServiceDesc for GatewayService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -508,11 +682,32 @@ var GatewayService_ServiceDesc = grpc.ServiceDesc{
 			MethodName: "GetRTCConfiguration",
 			Handler:    _GatewayService_GetRTCConfiguration_Handler,
 		},
+		{
+			MethodName: "ListProviderQuotas",
+			Handler:    _GatewayService_ListProviderQuotas_Handler,
+		},
+		{
+			MethodName: "RefreshProviderQuotas",
+			Handler:    _GatewayService_RefreshProviderQuotas_Handler,
+		},
+		{
+			MethodName: "SetProviderQuotaSummaryInclusion",
+			Handler:    _GatewayService_SetProviderQuotaSummaryInclusion_Handler,
+		},
+		{
+			MethodName: "ConsumeProviderQuotaReset",
+			Handler:    _GatewayService_ConsumeProviderQuotaReset_Handler,
+		},
 	},
 	Streams: []grpc.StreamDesc{
 		{
 			StreamName:    "WatchDaemons",
 			Handler:       _GatewayService_WatchDaemons_Handler,
+			ServerStreams: true,
+		},
+		{
+			StreamName:    "WatchProviderQuotas",
+			Handler:       _GatewayService_WatchProviderQuotas_Handler,
 			ServerStreams: true,
 		},
 	},

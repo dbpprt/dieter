@@ -561,7 +561,7 @@ type Suspender interface {
 	Suspend(sessionID, runtimeRoot string) error
 }
 
-//go:embed runtime/package.json runtime/package-lock.json runtime/runner.mjs runtime/content-presentation.mjs runtime/background-processes.mjs runtime/dsh-discovery.mjs runtime/dsh-models.mjs runtime/claude-resilience.mjs runtime/local-attachments.mjs runtime/local-sandbox.mjs runtime/codex-runtime.mjs runtime/capabilities.mjs runtime/stream-reconciliation.mjs runtime/omp-capabilities-hook.mjs runtime/omp-resilience.mjs runtime/provider-options.mjs runtime/usage-metadata.mjs
+//go:embed runtime/package.json runtime/package-lock.json runtime/runner.mjs runtime/content-presentation.mjs runtime/background-processes.mjs runtime/dsh-discovery.mjs runtime/dsh-models.mjs runtime/claude-resilience.mjs runtime/local-attachments.mjs runtime/local-sandbox.mjs runtime/codex-runtime.mjs runtime/capabilities.mjs runtime/stream-reconciliation.mjs runtime/omp-capabilities-hook.mjs runtime/omp-resilience.mjs runtime/provider-options.mjs runtime/usage-metadata.mjs runtime/quota-openai.mjs
 var runtimeAssets embed.FS
 
 type SubprocessRunner struct {
@@ -641,6 +641,13 @@ func (r *SubprocessRunner) ensure(ctx context.Context) (string, error) {
 	}
 	r.dir = dir
 	return dir, nil
+}
+
+// RuntimeDirectory stages the pinned harness runtime for auxiliary read-only
+// provider integrations such as quota discovery. Callers must still launch
+// only checked-in runtime assets and keep provider credentials local.
+func (r *SubprocessRunner) RuntimeDirectory(ctx context.Context) (string, error) {
+	return r.ensure(ctx)
 }
 
 func (r *SubprocessRunner) Run(ctx context.Context, request Request, emit func(Output) error) error {

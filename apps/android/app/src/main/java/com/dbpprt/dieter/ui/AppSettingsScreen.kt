@@ -102,7 +102,8 @@ import com.dbpprt.dieter.ui.theme.DieterAbyss
 private const val CONNECTIONS_TAB = 0
 private const val NOTIFICATIONS_TAB = 1
 private const val DISPLAY_TAB = 2
-private const val UPDATES_TAB = 3
+private const val QUOTAS_TAB = 3
+private const val UPDATES_TAB = 4
 
 private data class ConnectionDraft(val id: String, val label: String, val address: String)
 
@@ -150,6 +151,7 @@ fun AppSettingsScreen(
             SettingsTab("Connect", selectedTab == CONNECTIONS_TAB) { selectedTab = CONNECTIONS_TAB }
             SettingsTab("Alerts", selectedTab == NOTIFICATIONS_TAB) { selectedTab = NOTIFICATIONS_TAB }
             SettingsTab("Display", selectedTab == DISPLAY_TAB) { selectedTab = DISPLAY_TAB }
+            SettingsTab("Usage", selectedTab == QUOTAS_TAB) { selectedTab = QUOTAS_TAB }
             SettingsTab("Updates", selectedTab == UPDATES_TAB) { selectedTab = UPDATES_TAB }
         }
         SurfaceErrorBanner(state.error, model::clearError)
@@ -171,6 +173,13 @@ fun AppSettingsScreen(
                 )
                 NOTIFICATIONS_TAB -> NotificationSettings(state, model)
                 DISPLAY_TAB -> DisplaySettings(state, model)
+                QUOTAS_TAB -> ProviderQuotaDetails(
+                    state = state,
+                    onRefresh = { model.refreshProviderQuotas() },
+                    onSetSummaryInclusion = model::setProviderQuotaSummaryInclusion,
+                    onUseReset = model::consumeProviderQuotaReset,
+                    modifier = Modifier.fillMaxSize().padding(20.dp),
+                )
                 UPDATES_TAB -> UpdateSettings(updateManager)
                 else -> UpdateSettings(updateManager)
             }

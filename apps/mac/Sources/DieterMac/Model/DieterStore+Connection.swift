@@ -12,6 +12,12 @@ private struct InitialConnectionState {
     let state: Dieter_V1_State
 }
 
+private enum ProviderQuotaClientError: LocalizedError {
+    case noGateway
+
+    var errorDescription: String? { "No gateway is configured." }
+}
+
 extension DieterStore {
     func connect(to newEndpoint: DieterEndpoint? = nil, automatic: Bool = false) async {
         if let syncRestoreTask {
@@ -235,6 +241,7 @@ extension DieterStore {
             // Refreshing auxiliary machines must not hold this connect attempt
             // (and its reconnect task) open on an unrelated half-open RPC.
             startMachineDirectoryRefresh(refreshImmediately: true)
+            Task { [weak self] in await self?.loadProviderQuotas() }
             if section == .terminals { await loadTerminals() }
         } catch {
             gatewayTask?.cancel()
@@ -773,6 +780,10 @@ extension DieterStore {
         terminalError = nil
         archiveError = nil
         schedulesError = nil
+        providerQuotaGroups.removeAll()
+        providerQuotasLoading = false
+        providerQuotaError = nil
+        providerQuotaMutatingAccounts.removeAll()
         closeConversation()
         syncProjection = .empty
         syncSnapshot = nil
@@ -1127,6 +1138,13 @@ extension DieterStore {
             if directory.hasGatewayInformation {
                 gatewayInformation[origin.credentialID] = directory.gatewayInformation
             }
+            if let quotas = try? await client.providerQuotas(), !Task.isCancelled,
+                generation == connectionGeneration,
+                origin.credentialID == activeGateway.credentialID
+            {
+                providerQuotaGroups = quotas.groups
+                providerQuotaError = nil
+            }
             let previous = Dictionary(
                 uniqueKeysWithValues: endpoints.compactMap { item in item.daemonID.map { ($0, item) } })
             endpoints = directory.daemons.map { daemon in
@@ -1159,6 +1177,110 @@ extension DieterStore {
         } catch {
             // Keep the last known directory during a transient gateway loss.
         }
+    }
+
+    func loadProviderQuotas(requestRefresh: Bool = false) async {
+        guard !providerQuotasLoading else { return }
+        let generation = connectionGeneration
+        guard
+            let origin = gatewayOrigins.first(where: { $0.credentialID == activeGateway.credentialID })
+                ?? gatewayOrigins.first
+        else { return }
+        providerQuotasLoading = true
+        defer {
+            if origin.credentialID == activeGateway.credentialID { providerQuotasLoading = false }
+        }
+        do {
+            let client = try environment.clients.client(
+                endpoint: origin, accessToken: await accessToken(for: origin))
+            let runner = Task { try? await client.run() }
+            defer {
+                runner.cancel()
+                client.shutdown()
+            }
+            let groups =
+                if requestRefresh {
+                    try await client.refreshProviderQuotas().groups
+                } else {
+                    try await client.providerQuotas().groups
+                }
+            guard !Task.isCancelled, generation == connectionGeneration,
+                origin.credentialID == activeGateway.credentialID
+            else { return }
+            providerQuotaGroups = groups
+            providerQuotaError = nil
+        } catch {
+            guard generation == connectionGeneration,
+                origin.credentialID == activeGateway.credentialID
+            else { return }
+            providerQuotaError = DieterRPCFailure.message(for: error)
+        }
+    }
+
+    func setProviderQuotaSummaryInclusion(
+        provider: Dieter_Gateway_V1_ProviderQuotaProvider,
+        accountKey: String,
+        included: Bool
+    ) async {
+        guard providerQuotaMutatingAccounts.insert(accountKey).inserted else { return }
+        defer { providerQuotaMutatingAccounts.remove(accountKey) }
+        do {
+            let (client, origin, runner) = try await providerQuotaClient()
+            defer {
+                runner.cancel()
+                client.shutdown()
+            }
+            let response = try await client.setProviderQuotaSummaryInclusion(
+                provider: provider, accountKey: accountKey, included: included)
+            guard origin.credentialID == activeGateway.credentialID else { return }
+            replaceProviderQuotaGroups(response.groups, provider: provider)
+            providerQuotaError = nil
+        } catch {
+            providerQuotaError = DieterRPCFailure.message(for: error)
+        }
+    }
+
+    func consumeProviderQuotaReset(accountKey: String) async {
+        guard providerQuotaMutatingAccounts.insert(accountKey).inserted else { return }
+        defer { providerQuotaMutatingAccounts.remove(accountKey) }
+        do {
+            let (client, origin, runner) = try await providerQuotaClient()
+            defer {
+                runner.cancel()
+                client.shutdown()
+            }
+            let response = try await client.consumeProviderQuotaReset(
+                accountKey: accountKey, idempotencyKey: UUID().uuidString.lowercased())
+            guard origin.credentialID == activeGateway.credentialID else { return }
+            replaceProviderQuotaGroups(response.groups, provider: .openaiCodex)
+            providerQuotaError =
+                response.accepted
+                ? nil : "No online machine with access to this OpenAI account accepted the reset."
+        } catch {
+            providerQuotaError = DieterRPCFailure.message(for: error)
+        }
+    }
+
+    private func providerQuotaClient() async throws -> (
+        DieterRPC, DieterEndpoint, Task<Void, Never>
+    ) {
+        guard
+            let origin = gatewayOrigins.first(where: { $0.credentialID == activeGateway.credentialID })
+                ?? gatewayOrigins.first
+        else { throw ProviderQuotaClientError.noGateway }
+        let client = try environment.clients.client(
+            endpoint: origin, accessToken: await accessToken(for: origin))
+        let runner = Task<Void, Never> { _ = try? await client.run() }
+        return (client, origin, runner)
+    }
+
+    private func replaceProviderQuotaGroups(
+        _ groups: [Dieter_Gateway_V1_ProviderQuotaGroup],
+        provider: Dieter_Gateway_V1_ProviderQuotaProvider
+    ) {
+        providerQuotaGroups.removeAll { $0.provider == provider }
+        providerQuotaGroups.append(contentsOf: groups)
+        providerQuotaGroups.sort { $0.provider.rawValue < $1.provider.rawValue }
     }
 
     func loadMachine(_ machine: DieterEndpoint, includeArchivedChats: Bool) async throws

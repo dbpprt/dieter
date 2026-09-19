@@ -54,18 +54,21 @@ type Hub struct {
 	nextID   atomic.Uint64
 	revision atomic.Uint64
 	changed  chan struct{}
+	quota    *QuotaManager
 }
 
 type daemonLink struct {
-	id         string
-	generation uint64
-	send       chan *gatewayv1.DaemonLinkFrame
-	control    chan *gatewayv1.DaemonLinkFrame
-	done       chan struct{}
-	closeOnce  sync.Once
-	mu         sync.RWMutex
-	streams    map[uint64]*relayFrameQueue
-	lastSeenAt atomic.Int64
+	id           string
+	generation   uint64
+	send         chan *gatewayv1.DaemonLinkFrame
+	control      chan *gatewayv1.DaemonLinkFrame
+	quota        chan *gatewayv1.DaemonLinkFrame
+	done         chan struct{}
+	closeOnce    sync.Once
+	mu           sync.RWMutex
+	streams      map[uint64]*relayFrameQueue
+	lastSeenAt   atomic.Int64
+	capabilities map[string]bool
 }
 
 type relayStream struct {
@@ -106,6 +109,8 @@ func (q *relayFrameQueue) push(frame *gatewayv1.DaemonLinkFrame) bool {
 func NewHub(store *Store, config Config) *Hub {
 	return &Hub{store: store, config: config, links: map[string]*daemonLink{}, changed: make(chan struct{}, 1), handshakes: make(chan struct{}, maxDaemonHandshakes)}
 }
+
+func (h *Hub) SetQuotaManager(manager *QuotaManager) { h.quota = manager }
 
 func (h *Hub) Connect(stream grpc.BidiStreamingServer[gatewayv1.DaemonLinkFrame, gatewayv1.DaemonLinkFrame]) error {
 	return h.connect(stream, daemonHandshakeTimeout)
@@ -182,7 +187,11 @@ func (h *Hub) connect(stream grpc.BidiStreamingServer[gatewayv1.DaemonLinkFrame,
 	link := &daemonLink{
 		id: identity, generation: record.Generation,
 		send: make(chan *gatewayv1.DaemonLinkFrame, 8), control: make(chan *gatewayv1.DaemonLinkFrame, 2*maxDaemonRelayStreams),
-		done: make(chan struct{}), streams: map[uint64]*relayFrameQueue{},
+		quota: make(chan *gatewayv1.DaemonLinkFrame, 16), done: make(chan struct{}), streams: map[uint64]*relayFrameQueue{},
+		capabilities: map[string]bool{},
+	}
+	for _, capability := range hello.GetCapabilities() {
+		link.capabilities[capability] = true
 	}
 	link.markSeen(time.Now())
 	h.register(link)
@@ -208,6 +217,12 @@ func (h *Hub) connect(stream grpc.BidiStreamingServer[gatewayv1.DaemonLinkFrame,
 					return
 				}
 				continue
+			case frame := <-link.quota:
+				if err := stream.Send(frame); err != nil {
+					sendErr <- err
+					return
+				}
+				continue
 			default:
 			}
 			select {
@@ -215,6 +230,11 @@ func (h *Hub) connect(stream grpc.BidiStreamingServer[gatewayv1.DaemonLinkFrame,
 				sendErr <- nil
 				return
 			case frame := <-link.control:
+				if err := stream.Send(frame); err != nil {
+					sendErr <- err
+					return
+				}
+			case frame := <-link.quota:
 				if err := stream.Send(frame); err != nil {
 					sendErr <- err
 					return
@@ -232,11 +252,23 @@ func (h *Hub) connect(stream grpc.BidiStreamingServer[gatewayv1.DaemonLinkFrame,
 			}
 		}
 	}()
-	link.sendControlFrame(&gatewayv1.DaemonLinkFrame{
+	ack := &gatewayv1.DaemonLinkFrame{
 		Kind:     gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_HELLO_ACK,
 		DaemonId: identity, Generation: record.Generation, Version: "1",
 		Capabilities: []string{heartbeatAckCapability},
-	})
+	}
+	if h.quota != nil && link.capabilities[providerQuotaCapability] {
+		correlationKey, err := h.store.ProviderCorrelationKey(record.GitHubID)
+		if err != nil {
+			return status.Error(codes.Internal, "load provider account correlation key")
+		}
+		ack.Capabilities = append(ack.Capabilities, providerQuotaCapability)
+		ack.ProviderAccountCorrelationKey = correlationKey
+		if link.capabilities[providerQuotaResetCapability] {
+			ack.Capabilities = append(ack.Capabilities, providerQuotaResetCapability)
+		}
+	}
+	link.sendControlFrame(ack)
 
 	recvErr := make(chan error, 1)
 	go func() {
@@ -278,6 +310,33 @@ func (h *Hub) connect(stream grpc.BidiStreamingServer[gatewayv1.DaemonLinkFrame,
 					recvErr <- err
 					return
 				}
+			case gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_PROVIDER_ACCOUNTS:
+				if h.quota == nil || !link.capabilities[providerQuotaCapability] || frame.GetDaemonId() != identity {
+					recvErr <- status.Error(codes.PermissionDenied, "provider quota capability was not negotiated")
+					return
+				}
+				if err := h.quota.HandlePresence(record, identity, frame.GetProviderAccounts()); err != nil {
+					recvErr <- status.Error(codes.InvalidArgument, err.Error())
+					return
+				}
+			case gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_PROVIDER_QUOTA_REFRESH_RESULT:
+				if h.quota == nil || !link.capabilities[providerQuotaCapability] || frame.GetDaemonId() != identity {
+					recvErr <- status.Error(codes.PermissionDenied, "provider quota capability was not negotiated")
+					return
+				}
+				if err := h.quota.HandleResult(record, identity, frame.GetRequestId(), frame.GetProviderQuotaRefreshResult()); err != nil {
+					recvErr <- status.Error(codes.InvalidArgument, err.Error())
+					return
+				}
+			case gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_PROVIDER_QUOTA_RESET_RESULT:
+				if h.quota == nil || !link.capabilities[providerQuotaResetCapability] || frame.GetDaemonId() != identity {
+					recvErr <- status.Error(codes.PermissionDenied, "provider quota reset capability was not negotiated")
+					return
+				}
+				if err := h.quota.HandleResetResult(record, identity, frame.GetRequestId(), frame.GetProviderQuotaResetResult()); err != nil {
+					recvErr <- status.Error(codes.InvalidArgument, err.Error())
+					return
+				}
 			default:
 				link.dispatch(frame)
 			}
@@ -314,6 +373,9 @@ func (h *Hub) register(link *daemonLink) {
 	h.links[link.id] = link
 	h.mu.Unlock()
 	h.signalChanged()
+	if h.quota != nil {
+		h.quota.signalChanged()
+	}
 }
 
 func (h *Hub) unregister(link *daemonLink) {
@@ -324,6 +386,9 @@ func (h *Hub) unregister(link *daemonLink) {
 	h.mu.Unlock()
 	link.close()
 	h.signalChanged()
+	if h.quota != nil {
+		h.quota.signalChanged()
+	}
 }
 
 func (h *Hub) signalChanged() {
@@ -343,6 +408,52 @@ func (h *Hub) Online(id string) bool {
 	defer h.mu.RUnlock()
 	link := h.links[id]
 	return link != nil && link.isAlive(time.Now())
+}
+
+func (h *Hub) SupportsProviderQuotas(id string) bool {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	link := h.links[id]
+	return link != nil && link.isAlive(time.Now()) && link.capabilities[providerQuotaCapability]
+}
+
+func (h *Hub) SupportsProviderQuotaReset(id string) bool {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	link := h.links[id]
+	return link != nil && link.isAlive(time.Now()) && link.capabilities[providerQuotaResetCapability]
+}
+
+func (h *Hub) SendProviderQuotaRefresh(daemonID, requestID string, request *gatewayv1.ProviderQuotaRefreshRequest) error {
+	if requestID == "" || request == nil || proto.Size(request) > maxProviderQuotaFrameBytes {
+		return status.Error(codes.InvalidArgument, "provider quota refresh request is invalid")
+	}
+	h.mu.RLock()
+	link := h.links[daemonID]
+	h.mu.RUnlock()
+	if link == nil || !link.isAlive(time.Now()) || !link.capabilities[providerQuotaCapability] {
+		return status.Error(codes.Unavailable, "provider quota source is offline")
+	}
+	return link.sendQuotaFrame(&gatewayv1.DaemonLinkFrame{
+		Kind:     gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_PROVIDER_QUOTA_REFRESH_REQUEST,
+		DaemonId: daemonID, RequestId: requestID, ProviderQuotaRefreshRequest: request,
+	})
+}
+
+func (h *Hub) SendProviderQuotaReset(daemonID, requestID string, request *gatewayv1.ProviderQuotaResetRequest) error {
+	if requestID == "" || request == nil || proto.Size(request) > maxProviderQuotaFrameBytes {
+		return status.Error(codes.InvalidArgument, "provider quota reset request is invalid")
+	}
+	h.mu.RLock()
+	link := h.links[daemonID]
+	h.mu.RUnlock()
+	if link == nil || !link.isAlive(time.Now()) || !link.capabilities[providerQuotaResetCapability] {
+		return status.Error(codes.Unavailable, "provider quota reset source is offline")
+	}
+	return link.sendQuotaFrame(&gatewayv1.DaemonLinkFrame{
+		Kind:     gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_PROVIDER_QUOTA_RESET_REQUEST,
+		DaemonId: daemonID, RequestId: requestID, ProviderQuotaResetRequest: request,
+	})
 }
 
 func (h *Hub) CloseDaemon(id string) {
@@ -468,6 +579,17 @@ func (l *daemonLink) sendControlFrame(frame *gatewayv1.DaemonLinkFrame) error {
 		return nil
 	default:
 		return status.Error(codes.ResourceExhausted, "daemon control queue is stalled")
+	}
+}
+
+func (l *daemonLink) sendQuotaFrame(frame *gatewayv1.DaemonLinkFrame) error {
+	select {
+	case <-l.done:
+		return errors.New("daemon link is closed")
+	case l.quota <- frame:
+		return nil
+	default:
+		return status.Error(codes.ResourceExhausted, "provider quota queue is stalled")
 	}
 }
 

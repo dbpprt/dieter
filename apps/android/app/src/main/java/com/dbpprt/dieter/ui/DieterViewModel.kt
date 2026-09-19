@@ -20,6 +20,8 @@ import com.dbpprt.dieter.data.DIETER_ENDPOINTS
 import com.dbpprt.dieter.data.DIETER_LOCAL_ENDPOINT
 import com.dbpprt.dieter.data.DieterEndpoint
 import com.dbpprt.dieter.data.DieterRepository
+import com.dbpprt.dieter.gateway.v1.ProviderQuotaGroup
+import com.dbpprt.dieter.gateway.v1.ProviderQuotaProvider
 import com.dbpprt.dieter.settings.AppPreferences
 import com.dbpprt.dieter.settings.ConversationCreationPreferences
 import com.dbpprt.dieter.settings.DEFAULT_PANE_LEADING_FRACTION
@@ -72,6 +74,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.retryWhen
 import kotlinx.coroutines.flow.update
@@ -81,6 +84,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withContext
 import java.time.ZoneId
+import java.util.UUID
 
 private const val CONVERSATION_PAGE_SIZE = 30
 private const val SCHEDULE_PAGE_SIZE = 50
@@ -173,6 +177,10 @@ data class DieterUiState(
     val runtimeStatus: RuntimeStatus? = null,
     val harnesses: List<Harness> = emptyList(),
     val harnessesEndpointId: String? = null,
+    val providerQuotaGroups: List<ProviderQuotaGroup> = emptyList(),
+    val providerQuotasLoading: Boolean = false,
+    val providerQuotaError: String? = null,
+    val providerQuotaMutatingAccounts: Set<String> = emptySet(),
     val projects: List<Project> = emptyList(),
     val projectOrder: List<String> = emptyList(),
     val collapsedChatProjectIds: Set<String> = emptySet(),
@@ -383,6 +391,7 @@ class DieterViewModel internal constructor(
     private val mutationMutex = Mutex()
     private var foreground = false
     private var stateJob: Job? = null
+    private var providerQuotaWatchJob: Job? = null
     private var conversationJob: Job? = null
     private var postSendRefreshJob: Job? = null
     private var postSendRefreshCardId: String? = null
@@ -487,8 +496,10 @@ class DieterViewModel internal constructor(
         stateJob = viewModelScope.launch {
             connectionManager.state.collectLatest(::applyConnectionState)
         }
+        startProviderQuotaWatch()
         connectionManager.onAppForegrounded(_state.value.selectedProjectId)
         startStateStream()
+        refreshProviderQuotas(requestRefresh = false)
         if (_state.value.destination == Destination.TERMINALS) loadTerminals()
     }
 
@@ -496,6 +507,8 @@ class DieterViewModel internal constructor(
         rememberConversation()
         foreground = false
         stateJob?.cancel()
+        providerQuotaWatchJob?.cancel()
+        providerQuotaWatchJob = null
         cancelConversationStream()
         cancelPostSendRefresh()
         stopTerminalWatch()
@@ -664,6 +677,12 @@ class DieterViewModel internal constructor(
     }
 
     private fun applyConnectionState(connection: DieterConnectionState) {
+        val wasConnected = _state.value.connected
+        val gatewayChanged = connection.activeGatewayId != _state.value.activeGatewayId
+        if (gatewayChanged) {
+            providerQuotaWatchJob?.cancel()
+            providerQuotaWatchJob = null
+        }
         val connectedEndpointId = connection.endpoint?.id
         val endpointChanged = connectedEndpointId != null && connectedEndpointId != terminalEndpointId
         if (endpointChanged) {
@@ -713,6 +732,10 @@ class DieterViewModel internal constructor(
                 runtimeStatus = connection.runtimeStatus,
                 harnesses = connection.harnesses,
                 harnessesEndpointId = connection.harnessesEndpointId,
+                providerQuotaGroups = if (gatewayChanged) emptyList() else current.providerQuotaGroups,
+                providerQuotasLoading = if (gatewayChanged) false else current.providerQuotasLoading,
+                providerQuotaError = if (gatewayChanged) null else current.providerQuotaError,
+                providerQuotaMutatingAccounts = if (gatewayChanged) emptySet() else current.providerQuotaMutatingAccounts,
                 chats = connection.chats,
                 projects = orderedProjects(connection.projects, current.projectOrder),
                 projectHosts = connection.projectHosts,
@@ -751,6 +774,10 @@ class DieterViewModel internal constructor(
             startConversationStream(requireNotNull(resolvedSelectedCardId))
         }
         resolvedSelectedCardId?.let(::ensureConversationRecovery)
+        if (gatewayChanged && foreground) startProviderQuotaWatch()
+        if ((gatewayChanged || !wasConnected) && connection.phase == ConnectionPhase.CONNECTED) {
+            refreshProviderQuotas(requestRefresh = false)
+        }
         reconcileConnectionDialog(connection)
         if (remote != null && remote !== lastRemoteState) {
             lastRemoteState = remote
@@ -760,6 +787,120 @@ class DieterViewModel internal constructor(
             _state.value.destination == Destination.TERMINALS
         ) {
             loadTerminals()
+        }
+    }
+
+    fun refreshProviderQuotas(requestRefresh: Boolean = true) {
+        if (_state.value.providerQuotasLoading) return
+        val gatewayId = _state.value.activeGatewayId
+        viewModelScope.launch {
+            if (_state.value.activeGatewayId != gatewayId) return@launch
+            _state.update { it.copy(providerQuotasLoading = true, providerQuotaError = null) }
+            runCatching {
+                if (requestRefresh) repository.refreshProviderQuotas().groupsList
+                else repository.providerQuotas().groupsList
+            }.onSuccess { groups ->
+                if (_state.value.activeGatewayId != gatewayId) return@onSuccess
+                _state.update {
+                    it.copy(
+                        providerQuotaGroups = groups,
+                        providerQuotasLoading = false,
+                        providerQuotaError = null,
+                    )
+                }
+            }.onFailure { error ->
+                if (error is CancellationException) throw error
+                if (_state.value.activeGatewayId != gatewayId) return@onFailure
+                _state.update {
+                    it.copy(
+                        providerQuotasLoading = false,
+                        providerQuotaError = error.message ?: "Provider quotas are unavailable.",
+                    )
+                }
+            }
+        }
+    }
+
+    fun setProviderQuotaSummaryInclusion(
+        provider: ProviderQuotaProvider,
+        accountKey: String,
+        included: Boolean,
+    ) {
+        mutateProviderQuotaAccount(accountKey) {
+            repository.setProviderQuotaSummaryInclusion(provider, accountKey, included).groupsList
+        }
+    }
+
+    fun consumeProviderQuotaReset(accountKey: String) {
+        mutateProviderQuotaAccount(accountKey) {
+            val response = repository.consumeProviderQuotaReset(accountKey, UUID.randomUUID().toString())
+            check(response.accepted) { "No online machine with access to this OpenAI account accepted the reset." }
+            response.groupsList
+        }
+    }
+
+    private fun mutateProviderQuotaAccount(
+        accountKey: String,
+        operation: suspend () -> List<ProviderQuotaGroup>,
+    ) {
+        if (accountKey in _state.value.providerQuotaMutatingAccounts) return
+        val gatewayId = _state.value.activeGatewayId
+        _state.update {
+            it.copy(
+                providerQuotaMutatingAccounts = it.providerQuotaMutatingAccounts + accountKey,
+                providerQuotaError = null,
+            )
+        }
+        viewModelScope.launch {
+            runCatching { operation() }
+                .onSuccess { groups ->
+                    if (_state.value.activeGatewayId != gatewayId) return@onSuccess
+                    val providers = groups.map { it.provider }.toSet()
+                    _state.update { current ->
+                        current.copy(
+                            providerQuotaGroups = (
+                                current.providerQuotaGroups.filterNot { it.provider in providers } + groups
+                            ).sortedBy { it.providerValue },
+                            providerQuotaMutatingAccounts = current.providerQuotaMutatingAccounts - accountKey,
+                            providerQuotaError = null,
+                        )
+                    }
+                }
+                .onFailure { error ->
+                    if (error is CancellationException) throw error
+                    if (_state.value.activeGatewayId != gatewayId) return@onFailure
+                    _state.update {
+                        it.copy(
+                            providerQuotaMutatingAccounts = it.providerQuotaMutatingAccounts - accountKey,
+                            providerQuotaError = error.message ?: "Provider quota operation failed.",
+                        )
+                    }
+                }
+        }
+    }
+
+    private fun startProviderQuotaWatch() {
+        providerQuotaWatchJob?.cancel()
+        val gatewayId = _state.value.activeGatewayId
+        providerQuotaWatchJob = viewModelScope.launch {
+            var attempt = 0
+            while (true) {
+                try {
+                    repository.watchProviderQuotas().collect { update ->
+                        attempt = 0
+                        if (_state.value.activeGatewayId != gatewayId) return@collect
+                        _state.update {
+                            it.copy(providerQuotaGroups = update.groupsList, providerQuotaError = null)
+                        }
+                    }
+                    delay(250)
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Throwable) {
+                    delay((750L shl attempt.coerceAtMost(4)).coerceAtMost(10_000L))
+                    attempt++
+                }
+            }
         }
     }
 

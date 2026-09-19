@@ -41,6 +41,7 @@ val DieterEyes get() = Color(if (activeDarkTheme) activeTokens.eyes else activeT
 val DieterRunning get() = DieterLive
 val DieterAmber get() = if (activeDarkTheme) Color(0xFFE2BE6A) else Color(0xFF8A5A00)
 val DieterCoral get() = if (activeDarkTheme) Color(0xFFF1868E) else Color(0xFFBA1A1A)
+val DieterOpenAIQuota = Color(0xFF2588F5)
 val DieterText get() = Color(if (activeDarkTheme) activeTokens.light else activeTokens.darkBrand)
 val DieterMuted get() = if (activeDarkTheme) {
     lerp(DieterText, DieterAbyss, 0.30f)

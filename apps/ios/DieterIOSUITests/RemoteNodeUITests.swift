@@ -80,7 +80,11 @@ final class RemoteNodeUITests: XCTestCase {
         // A compact iPad sheet scrolls the Agent section beneath its fixed footer.
         let provider = element(app, "ios.create.provider")
         XCTAssertTrue(provider.waitForExistence(timeout: 10))
-        let form = app.collectionViews.containing(.button, identifier: "ios.create.provider").firstMatch
+        // Keep this query independent of the Picker's transient automation type.
+        // Xcode 26.5 can expose it as a Button before selection and a PopUpButton
+        // afterwards, which makes a containing(.button, ...) query fail when its
+        // frame is read again while scrolling back to the title field.
+        let form = app.collectionViews.firstMatch
         let footer = element(app, "ios.create.run")
         for _ in 0..<4 {
             if provider.frame.maxY < footer.frame.minY - 8 && provider.isHittable { break }

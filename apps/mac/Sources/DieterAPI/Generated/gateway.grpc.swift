@@ -164,6 +164,71 @@ public enum Dieter_Gateway_V1_GatewayService: Sendable {
                 type: .unary
             )
         }
+        /// Namespace for "ListProviderQuotas" metadata.
+        public enum ListProviderQuotas: Sendable {
+            /// Request type for "ListProviderQuotas".
+            public typealias Input = Dieter_Gateway_V1_ListProviderQuotasRequest
+            /// Response type for "ListProviderQuotas".
+            public typealias Output = Dieter_Gateway_V1_ListProviderQuotasResponse
+            /// Descriptor for "ListProviderQuotas".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.gateway.v1.GatewayService"),
+                method: "ListProviderQuotas",
+                type: .unary
+            )
+        }
+        /// Namespace for "WatchProviderQuotas" metadata.
+        public enum WatchProviderQuotas: Sendable {
+            /// Request type for "WatchProviderQuotas".
+            public typealias Input = Dieter_Gateway_V1_WatchProviderQuotasRequest
+            /// Response type for "WatchProviderQuotas".
+            public typealias Output = Dieter_Gateway_V1_ProviderQuotaUpdate
+            /// Descriptor for "WatchProviderQuotas".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.gateway.v1.GatewayService"),
+                method: "WatchProviderQuotas",
+                type: .serverStreaming
+            )
+        }
+        /// Namespace for "RefreshProviderQuotas" metadata.
+        public enum RefreshProviderQuotas: Sendable {
+            /// Request type for "RefreshProviderQuotas".
+            public typealias Input = Dieter_Gateway_V1_RefreshProviderQuotasRequest
+            /// Response type for "RefreshProviderQuotas".
+            public typealias Output = Dieter_Gateway_V1_RefreshProviderQuotasResponse
+            /// Descriptor for "RefreshProviderQuotas".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.gateway.v1.GatewayService"),
+                method: "RefreshProviderQuotas",
+                type: .unary
+            )
+        }
+        /// Namespace for "SetProviderQuotaSummaryInclusion" metadata.
+        public enum SetProviderQuotaSummaryInclusion: Sendable {
+            /// Request type for "SetProviderQuotaSummaryInclusion".
+            public typealias Input = Dieter_Gateway_V1_SetProviderQuotaSummaryInclusionRequest
+            /// Response type for "SetProviderQuotaSummaryInclusion".
+            public typealias Output = Dieter_Gateway_V1_SetProviderQuotaSummaryInclusionResponse
+            /// Descriptor for "SetProviderQuotaSummaryInclusion".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.gateway.v1.GatewayService"),
+                method: "SetProviderQuotaSummaryInclusion",
+                type: .unary
+            )
+        }
+        /// Namespace for "ConsumeProviderQuotaReset" metadata.
+        public enum ConsumeProviderQuotaReset: Sendable {
+            /// Request type for "ConsumeProviderQuotaReset".
+            public typealias Input = Dieter_Gateway_V1_ConsumeProviderQuotaResetRequest
+            /// Response type for "ConsumeProviderQuotaReset".
+            public typealias Output = Dieter_Gateway_V1_ConsumeProviderQuotaResetResponse
+            /// Descriptor for "ConsumeProviderQuotaReset".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.gateway.v1.GatewayService"),
+                method: "ConsumeProviderQuotaReset",
+                type: .unary
+            )
+        }
         /// Descriptors for all methods in the "dieter.gateway.v1.GatewayService" service.
         public static let descriptors: [GRPCCore.MethodDescriptor] = [
             GetAccount.descriptor,
@@ -176,7 +241,12 @@ public enum Dieter_Gateway_V1_GatewayService: Sendable {
             RevokeDaemon.descriptor,
             ExchangeDaemonToken.descriptor,
             ResolveDaemonRoute.descriptor,
-            GetRTCConfiguration.descriptor
+            GetRTCConfiguration.descriptor,
+            ListProviderQuotas.descriptor,
+            WatchProviderQuotas.descriptor,
+            RefreshProviderQuotas.descriptor,
+            SetProviderQuotaSummaryInclusion.descriptor,
+            ConsumeProviderQuotaReset.descriptor
         ]
     }
 }
@@ -198,9 +268,10 @@ extension Dieter_Gateway_V1_GatewayService {
     ///
     /// > Source IDL Documentation:
     /// >
-    /// > GatewayService is Dieter's account and machine directory. Dieter domain data
-    /// > never enters this service; clients target one enrolled daemon for all
-    /// > project, conversation, schedule, and file operations.
+    /// > GatewayService is Dieter's account and machine directory. Project,
+    /// > conversation, schedule, file, and provider credential data never enters this
+    /// > service. The gateway may cache normalized, credential-free provider quota
+    /// > snapshots for the authenticated account.
     public protocol ClientProtocol: Sendable {
         /// Call the "GetAccount" method.
         ///
@@ -416,6 +487,101 @@ extension Dieter_Gateway_V1_GatewayService {
             options: GRPCCore.CallOptions,
             onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_Gateway_V1_RTCConfiguration>) async throws -> Result
         ) async throws -> Result where Result: Sendable
+
+        /// Call the "ListProviderQuotas" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_Gateway_V1_ListProviderQuotasRequest` message.
+        ///   - serializer: A serializer for `Dieter_Gateway_V1_ListProviderQuotasRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_Gateway_V1_ListProviderQuotasResponse` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func listProviderQuotas<Result>(
+            request: GRPCCore.ClientRequest<Dieter_Gateway_V1_ListProviderQuotasRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_Gateway_V1_ListProviderQuotasRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_Gateway_V1_ListProviderQuotasResponse>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_Gateway_V1_ListProviderQuotasResponse>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "WatchProviderQuotas" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_Gateway_V1_WatchProviderQuotasRequest` message.
+        ///   - serializer: A serializer for `Dieter_Gateway_V1_WatchProviderQuotasRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_Gateway_V1_ProviderQuotaUpdate` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func watchProviderQuotas<Result>(
+            request: GRPCCore.ClientRequest<Dieter_Gateway_V1_WatchProviderQuotasRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_Gateway_V1_WatchProviderQuotasRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_Gateway_V1_ProviderQuotaUpdate>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.StreamingClientResponse<Dieter_Gateway_V1_ProviderQuotaUpdate>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "RefreshProviderQuotas" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_Gateway_V1_RefreshProviderQuotasRequest` message.
+        ///   - serializer: A serializer for `Dieter_Gateway_V1_RefreshProviderQuotasRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_Gateway_V1_RefreshProviderQuotasResponse` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func refreshProviderQuotas<Result>(
+            request: GRPCCore.ClientRequest<Dieter_Gateway_V1_RefreshProviderQuotasRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_Gateway_V1_RefreshProviderQuotasRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_Gateway_V1_RefreshProviderQuotasResponse>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_Gateway_V1_RefreshProviderQuotasResponse>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "SetProviderQuotaSummaryInclusion" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_Gateway_V1_SetProviderQuotaSummaryInclusionRequest` message.
+        ///   - serializer: A serializer for `Dieter_Gateway_V1_SetProviderQuotaSummaryInclusionRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_Gateway_V1_SetProviderQuotaSummaryInclusionResponse` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func setProviderQuotaSummaryInclusion<Result>(
+            request: GRPCCore.ClientRequest<Dieter_Gateway_V1_SetProviderQuotaSummaryInclusionRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_Gateway_V1_SetProviderQuotaSummaryInclusionRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_Gateway_V1_SetProviderQuotaSummaryInclusionResponse>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_Gateway_V1_SetProviderQuotaSummaryInclusionResponse>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "ConsumeProviderQuotaReset" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_Gateway_V1_ConsumeProviderQuotaResetRequest` message.
+        ///   - serializer: A serializer for `Dieter_Gateway_V1_ConsumeProviderQuotaResetRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_Gateway_V1_ConsumeProviderQuotaResetResponse` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func consumeProviderQuotaReset<Result>(
+            request: GRPCCore.ClientRequest<Dieter_Gateway_V1_ConsumeProviderQuotaResetRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_Gateway_V1_ConsumeProviderQuotaResetRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_Gateway_V1_ConsumeProviderQuotaResetResponse>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_Gateway_V1_ConsumeProviderQuotaResetResponse>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
     }
 
     /// Generated client for the "dieter.gateway.v1.GatewayService" service.
@@ -426,9 +592,10 @@ extension Dieter_Gateway_V1_GatewayService {
     ///
     /// > Source IDL Documentation:
     /// >
-    /// > GatewayService is Dieter's account and machine directory. Dieter domain data
-    /// > never enters this service; clients target one enrolled daemon for all
-    /// > project, conversation, schedule, and file operations.
+    /// > GatewayService is Dieter's account and machine directory. Project,
+    /// > conversation, schedule, file, and provider credential data never enters this
+    /// > service. The gateway may cache normalized, credential-free provider quota
+    /// > snapshots for the authenticated account.
     public struct Client<Transport>: ClientProtocol where Transport: GRPCCore.ClientTransport {
         private let client: GRPCCore.GRPCClient<Transport>
 
@@ -773,6 +940,154 @@ extension Dieter_Gateway_V1_GatewayService {
                 onResponse: handleResponse
             )
         }
+
+        /// Call the "ListProviderQuotas" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_Gateway_V1_ListProviderQuotasRequest` message.
+        ///   - serializer: A serializer for `Dieter_Gateway_V1_ListProviderQuotasRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_Gateway_V1_ListProviderQuotasResponse` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func listProviderQuotas<Result>(
+            request: GRPCCore.ClientRequest<Dieter_Gateway_V1_ListProviderQuotasRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_Gateway_V1_ListProviderQuotasRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_Gateway_V1_ListProviderQuotasResponse>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_Gateway_V1_ListProviderQuotasResponse>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Dieter_Gateway_V1_GatewayService.Method.ListProviderQuotas.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "WatchProviderQuotas" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_Gateway_V1_WatchProviderQuotasRequest` message.
+        ///   - serializer: A serializer for `Dieter_Gateway_V1_WatchProviderQuotasRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_Gateway_V1_ProviderQuotaUpdate` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func watchProviderQuotas<Result>(
+            request: GRPCCore.ClientRequest<Dieter_Gateway_V1_WatchProviderQuotasRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_Gateway_V1_WatchProviderQuotasRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_Gateway_V1_ProviderQuotaUpdate>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.StreamingClientResponse<Dieter_Gateway_V1_ProviderQuotaUpdate>) async throws -> Result
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.serverStreaming(
+                request: request,
+                descriptor: Dieter_Gateway_V1_GatewayService.Method.WatchProviderQuotas.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "RefreshProviderQuotas" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_Gateway_V1_RefreshProviderQuotasRequest` message.
+        ///   - serializer: A serializer for `Dieter_Gateway_V1_RefreshProviderQuotasRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_Gateway_V1_RefreshProviderQuotasResponse` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func refreshProviderQuotas<Result>(
+            request: GRPCCore.ClientRequest<Dieter_Gateway_V1_RefreshProviderQuotasRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_Gateway_V1_RefreshProviderQuotasRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_Gateway_V1_RefreshProviderQuotasResponse>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_Gateway_V1_RefreshProviderQuotasResponse>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Dieter_Gateway_V1_GatewayService.Method.RefreshProviderQuotas.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "SetProviderQuotaSummaryInclusion" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_Gateway_V1_SetProviderQuotaSummaryInclusionRequest` message.
+        ///   - serializer: A serializer for `Dieter_Gateway_V1_SetProviderQuotaSummaryInclusionRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_Gateway_V1_SetProviderQuotaSummaryInclusionResponse` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func setProviderQuotaSummaryInclusion<Result>(
+            request: GRPCCore.ClientRequest<Dieter_Gateway_V1_SetProviderQuotaSummaryInclusionRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_Gateway_V1_SetProviderQuotaSummaryInclusionRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_Gateway_V1_SetProviderQuotaSummaryInclusionResponse>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_Gateway_V1_SetProviderQuotaSummaryInclusionResponse>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Dieter_Gateway_V1_GatewayService.Method.SetProviderQuotaSummaryInclusion.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "ConsumeProviderQuotaReset" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_Gateway_V1_ConsumeProviderQuotaResetRequest` message.
+        ///   - serializer: A serializer for `Dieter_Gateway_V1_ConsumeProviderQuotaResetRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_Gateway_V1_ConsumeProviderQuotaResetResponse` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func consumeProviderQuotaReset<Result>(
+            request: GRPCCore.ClientRequest<Dieter_Gateway_V1_ConsumeProviderQuotaResetRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_Gateway_V1_ConsumeProviderQuotaResetRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_Gateway_V1_ConsumeProviderQuotaResetResponse>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_Gateway_V1_ConsumeProviderQuotaResetResponse>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Dieter_Gateway_V1_GatewayService.Method.ConsumeProviderQuotaReset.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
     }
 }
 
@@ -1053,6 +1368,129 @@ extension Dieter_Gateway_V1_GatewayService.ClientProtocol {
             request: request,
             serializer: GRPCProtobuf.ProtobufSerializer<Dieter_Gateway_V1_DaemonRef>(),
             deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_Gateway_V1_RTCConfiguration>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "ListProviderQuotas" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Dieter_Gateway_V1_ListProviderQuotasRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func listProviderQuotas<Result>(
+        request: GRPCCore.ClientRequest<Dieter_Gateway_V1_ListProviderQuotasRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_Gateway_V1_ListProviderQuotasResponse>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.listProviderQuotas(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_Gateway_V1_ListProviderQuotasRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_Gateway_V1_ListProviderQuotasResponse>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "WatchProviderQuotas" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Dieter_Gateway_V1_WatchProviderQuotasRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func watchProviderQuotas<Result>(
+        request: GRPCCore.ClientRequest<Dieter_Gateway_V1_WatchProviderQuotasRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.StreamingClientResponse<Dieter_Gateway_V1_ProviderQuotaUpdate>) async throws -> Result
+    ) async throws -> Result where Result: Sendable {
+        try await self.watchProviderQuotas(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_Gateway_V1_WatchProviderQuotasRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_Gateway_V1_ProviderQuotaUpdate>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "RefreshProviderQuotas" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Dieter_Gateway_V1_RefreshProviderQuotasRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func refreshProviderQuotas<Result>(
+        request: GRPCCore.ClientRequest<Dieter_Gateway_V1_RefreshProviderQuotasRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_Gateway_V1_RefreshProviderQuotasResponse>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.refreshProviderQuotas(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_Gateway_V1_RefreshProviderQuotasRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_Gateway_V1_RefreshProviderQuotasResponse>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "SetProviderQuotaSummaryInclusion" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Dieter_Gateway_V1_SetProviderQuotaSummaryInclusionRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func setProviderQuotaSummaryInclusion<Result>(
+        request: GRPCCore.ClientRequest<Dieter_Gateway_V1_SetProviderQuotaSummaryInclusionRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_Gateway_V1_SetProviderQuotaSummaryInclusionResponse>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.setProviderQuotaSummaryInclusion(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_Gateway_V1_SetProviderQuotaSummaryInclusionRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_Gateway_V1_SetProviderQuotaSummaryInclusionResponse>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "ConsumeProviderQuotaReset" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Dieter_Gateway_V1_ConsumeProviderQuotaResetRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func consumeProviderQuotaReset<Result>(
+        request: GRPCCore.ClientRequest<Dieter_Gateway_V1_ConsumeProviderQuotaResetRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_Gateway_V1_ConsumeProviderQuotaResetResponse>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.consumeProviderQuotaReset(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_Gateway_V1_ConsumeProviderQuotaResetRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_Gateway_V1_ConsumeProviderQuotaResetResponse>(),
             options: options,
             onResponse: handleResponse
         )
@@ -1379,6 +1817,149 @@ extension Dieter_Gateway_V1_GatewayService.ClientProtocol {
             metadata: metadata
         )
         return try await self.getRTCConfiguration(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "ListProviderQuotas" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func listProviderQuotas<Result>(
+        _ message: Dieter_Gateway_V1_ListProviderQuotasRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_Gateway_V1_ListProviderQuotasResponse>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Dieter_Gateway_V1_ListProviderQuotasRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.listProviderQuotas(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "WatchProviderQuotas" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func watchProviderQuotas<Result>(
+        _ message: Dieter_Gateway_V1_WatchProviderQuotasRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.StreamingClientResponse<Dieter_Gateway_V1_ProviderQuotaUpdate>) async throws -> Result
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Dieter_Gateway_V1_WatchProviderQuotasRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.watchProviderQuotas(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "RefreshProviderQuotas" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func refreshProviderQuotas<Result>(
+        _ message: Dieter_Gateway_V1_RefreshProviderQuotasRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_Gateway_V1_RefreshProviderQuotasResponse>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Dieter_Gateway_V1_RefreshProviderQuotasRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.refreshProviderQuotas(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "SetProviderQuotaSummaryInclusion" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func setProviderQuotaSummaryInclusion<Result>(
+        _ message: Dieter_Gateway_V1_SetProviderQuotaSummaryInclusionRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_Gateway_V1_SetProviderQuotaSummaryInclusionResponse>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Dieter_Gateway_V1_SetProviderQuotaSummaryInclusionRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.setProviderQuotaSummaryInclusion(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "ConsumeProviderQuotaReset" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func consumeProviderQuotaReset<Result>(
+        _ message: Dieter_Gateway_V1_ConsumeProviderQuotaResetRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_Gateway_V1_ConsumeProviderQuotaResetResponse>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Dieter_Gateway_V1_ConsumeProviderQuotaResetRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.consumeProviderQuotaReset(
             request: request,
             options: options,
             onResponse: handleResponse

@@ -27,6 +27,7 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 )
 
 type GatewayClient struct {
@@ -39,6 +40,7 @@ type GatewayClient struct {
 	OnStatus              func(GatewayEvent)
 	OnAcknowledged        func(time.Time)
 	RemoteDesktopPresence func() *gatewayv1.RemoteDesktopPresence
+	ProviderQuotas        ProviderQuotaSource
 	Timing                GatewayTiming
 
 	replayMu    sync.Mutex
@@ -61,8 +63,13 @@ const (
 	gatewayReconnectMaximumBackoff  = 30 * time.Second
 	gatewayReconnectStableAfter     = 30 * time.Second
 	gatewayHeartbeatAckCapability   = "heartbeat_ack_v1"
+	gatewayProviderQuotaCapability  = "provider_quota_v1"
+	gatewayProviderResetCapability  = "provider_quota_reset_v1"
 	maxActiveGatewayRelays          = 16
 	maxGatewayRelayProofs           = 16384
+	maxGatewayProviderQuotaBytes    = 64 << 10
+	maxGatewayProviderQuotaProbes   = 2
+	gatewayProviderDiscoveryTimeout = 75 * time.Second
 )
 
 // GatewayTiming exposes bounded timing overrides for isolated integration
@@ -219,7 +226,14 @@ func (c *GatewayClient) runOnce(ctx context.Context) (time.Duration, error) {
 	if err != nil {
 		return 0, handshakeFailure(err)
 	}
-	if err := stream.Send(&gatewayv1.DaemonLinkFrame{Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_HELLO, DaemonId: c.Identity.ID, Version: c.Version, ApiVersion: c.APIVersion, DirectCandidates: c.Routes, RemoteDesktop: c.remoteDesktopPresence()}); err != nil {
+	capabilities := []string{}
+	if c.ProviderQuotas != nil {
+		capabilities = append(capabilities, gatewayProviderQuotaCapability)
+		if _, ok := c.ProviderQuotas.(ProviderQuotaResetSource); ok {
+			capabilities = append(capabilities, gatewayProviderResetCapability)
+		}
+	}
+	if err := stream.Send(&gatewayv1.DaemonLinkFrame{Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_HELLO, DaemonId: c.Identity.ID, Version: c.Version, ApiVersion: c.APIVersion, DirectCandidates: c.Routes, RemoteDesktop: c.remoteDesktopPresence(), Capabilities: capabilities}); err != nil {
 		return 0, handshakeFailure(err)
 	}
 	challenge, err := stream.Recv()
@@ -244,6 +258,10 @@ func (c *GatewayClient) runOnce(ctx context.Context) (time.Duration, error) {
 	connectedAt := time.Now()
 	c.report(GatewayConnected, nil)
 	heartbeatAcknowledged := supportsGatewayCapability(first, gatewayHeartbeatAckCapability)
+	providerQuotaKey := append([]byte(nil), first.GetProviderAccountCorrelationKey()...)
+	providerQuotasNegotiated := c.ProviderQuotas != nil && supportsGatewayCapability(first, gatewayProviderQuotaCapability) && len(providerQuotaKey) == 32
+	resetSource, resetSourceAvailable := c.ProviderQuotas.(ProviderQuotaResetSource)
+	providerResetNegotiated := providerQuotasNegotiated && resetSourceAvailable && supportsGatewayCapability(first, gatewayProviderResetCapability)
 	if heartbeatAcknowledged && c.OnAcknowledged != nil {
 		c.OnAcknowledged(connectedAt)
 	}
@@ -262,6 +280,7 @@ func (c *GatewayClient) runOnce(ctx context.Context) (time.Duration, error) {
 	prioritySend := make(chan *gatewayv1.DaemonLinkFrame, 16)
 	streamSend := make(chan *gatewayv1.DaemonLinkFrame, 8)
 	controlSend := make(chan *gatewayv1.DaemonLinkFrame, 2*maxActiveGatewayRelays)
+	quotaSend := make(chan *gatewayv1.DaemonLinkFrame, 16)
 	var relayActive atomic.Bool
 	enqueue := func(callCtx context.Context, frame *gatewayv1.DaemonLinkFrame, priority bool) bool {
 		if frame.GetKind() != gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_HEARTBEAT {
@@ -283,6 +302,19 @@ func (c *GatewayClient) runOnce(ctx context.Context) (time.Duration, error) {
 			return false
 		}
 	}
+	enqueueQuota := func(frame *gatewayv1.DaemonLinkFrame) bool {
+		if frame == nil || proto.Size(frame) > maxGatewayProviderQuotaBytes {
+			return false
+		}
+		select {
+		case <-linkCtx.Done():
+			return false
+		case quotaSend <- frame:
+			return true
+		default:
+			return false
+		}
+	}
 	sendErr := make(chan error, 1)
 	go func() {
 		for {
@@ -292,6 +324,12 @@ func (c *GatewayClient) runOnce(ctx context.Context) (time.Duration, error) {
 			case <-linkCtx.Done():
 				return
 			case frame := <-controlSend:
+				if err := stream.Send(frame); err != nil {
+					sendErr <- err
+					return
+				}
+				continue
+			case frame := <-quotaSend:
 				if err := stream.Send(frame); err != nil {
 					sendErr <- err
 					return
@@ -312,6 +350,12 @@ func (c *GatewayClient) runOnce(ctx context.Context) (time.Duration, error) {
 					return
 				}
 				continue
+			case frame := <-quotaSend:
+				if err := stream.Send(frame); err != nil {
+					sendErr <- err
+					return
+				}
+				continue
 			case frame := <-prioritySend:
 				if err := stream.Send(frame); err != nil {
 					sendErr <- err
@@ -325,6 +369,11 @@ func (c *GatewayClient) runOnce(ctx context.Context) (time.Duration, error) {
 				sendErr <- linkCtx.Err()
 				return
 			case frame := <-controlSend:
+				if err := stream.Send(frame); err != nil {
+					sendErr <- err
+					return
+				}
+			case frame := <-quotaSend:
 				if err := stream.Send(frame); err != nil {
 					sendErr <- err
 					return
@@ -372,6 +421,36 @@ func (c *GatewayClient) runOnce(ctx context.Context) (time.Duration, error) {
 			}
 		}
 	}()
+	if providerQuotasNegotiated {
+		go func() {
+			discover := func() {
+				discoveryCtx, cancel := context.WithTimeout(linkCtx, gatewayProviderDiscoveryTimeout)
+				presence, err := c.ProviderQuotas.Discover(discoveryCtx, providerQuotaKey)
+				cancel()
+				if err != nil || presence == nil || proto.Size(presence) > maxGatewayProviderQuotaBytes {
+					c.Log.Warn("provider quota account discovery failed")
+					return
+				}
+				enqueueQuota(&gatewayv1.DaemonLinkFrame{
+					Kind:     gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_PROVIDER_ACCOUNTS,
+					DaemonId: c.Identity.ID, ProviderAccounts: presence,
+				})
+			}
+			discover()
+			ticker := time.NewTicker(time.Minute)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-linkCtx.Done():
+					return
+				case <-ticker.C:
+					discover()
+				}
+			}
+		}()
+	}
+	var quotaCalls sync.Map
+	quotaProbes := make(chan struct{}, maxGatewayProviderQuotaProbes)
 	for {
 		select {
 		case <-ctx.Done():
@@ -406,6 +485,105 @@ func (c *GatewayClient) runOnce(ctx context.Context) (time.Duration, error) {
 				relayActive.Store(true)
 			}
 			switch frame.GetKind() {
+			case gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_PROVIDER_QUOTA_REFRESH_REQUEST:
+				request := frame.GetProviderQuotaRefreshRequest()
+				if !providerQuotasNegotiated || frame.GetDaemonId() != c.Identity.ID || frame.GetRequestId() == "" || request == nil {
+					return finish(errors.New("gateway sent an invalid provider quota refresh request"))
+				}
+				accountIndex := fmt.Sprintf("%d:%s", request.GetProvider(), request.GetAccountKey())
+				if _, loaded := quotaCalls.LoadOrStore(accountIndex, struct{}{}); loaded {
+					enqueueQuota(&gatewayv1.DaemonLinkFrame{
+						Kind:     gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_PROVIDER_QUOTA_REFRESH_RESULT,
+						DaemonId: c.Identity.ID, RequestId: frame.GetRequestId(),
+						ProviderQuotaRefreshResult: &gatewayv1.ProviderQuotaRefreshResult{ErrorCode: "already_refreshing", RetryAfterSeconds: 60},
+					})
+					continue
+				}
+				select {
+				case quotaProbes <- struct{}{}:
+				default:
+					quotaCalls.Delete(accountIndex)
+					enqueueQuota(&gatewayv1.DaemonLinkFrame{
+						Kind:     gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_PROVIDER_QUOTA_REFRESH_RESULT,
+						DaemonId: c.Identity.ID, RequestId: frame.GetRequestId(),
+						ProviderQuotaRefreshResult: &gatewayv1.ProviderQuotaRefreshResult{ErrorCode: "probe_capacity", RetryAfterSeconds: 60},
+					})
+					continue
+				}
+				go func(requestID, accountIndex string, request *gatewayv1.ProviderQuotaRefreshRequest) {
+					defer quotaCalls.Delete(accountIndex)
+					defer func() { <-quotaProbes }()
+					probeCtx, cancel := context.WithTimeout(linkCtx, 15*time.Second)
+					defer cancel()
+					result, err := c.ProviderQuotas.Refresh(probeCtx, providerQuotaKey, request)
+					if err != nil || result == nil {
+						result = &gatewayv1.ProviderQuotaRefreshResult{ErrorCode: "probe_failed"}
+					}
+					if snapshot := result.GetSnapshot(); snapshot != nil && (snapshot.GetProvider() != request.GetProvider() || snapshot.GetAccountKey() != request.GetAccountKey()) {
+						result = &gatewayv1.ProviderQuotaRefreshResult{ErrorCode: "identity_mismatch"}
+					}
+					response := &gatewayv1.DaemonLinkFrame{
+						Kind:     gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_PROVIDER_QUOTA_REFRESH_RESULT,
+						DaemonId: c.Identity.ID, RequestId: requestID, ProviderQuotaRefreshResult: result,
+					}
+					if !enqueueQuota(response) {
+						fallback := &gatewayv1.DaemonLinkFrame{
+							Kind:     gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_PROVIDER_QUOTA_REFRESH_RESULT,
+							DaemonId: c.Identity.ID, RequestId: requestID,
+							ProviderQuotaRefreshResult: &gatewayv1.ProviderQuotaRefreshResult{ErrorCode: "result_too_large"},
+						}
+						enqueueQuota(fallback)
+					}
+				}(frame.GetRequestId(), accountIndex, proto.Clone(request).(*gatewayv1.ProviderQuotaRefreshRequest))
+			case gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_PROVIDER_QUOTA_RESET_REQUEST:
+				request := frame.GetProviderQuotaResetRequest()
+				if !providerResetNegotiated || frame.GetDaemonId() != c.Identity.ID || frame.GetRequestId() == "" || request == nil {
+					return finish(errors.New("gateway sent an invalid provider quota reset request"))
+				}
+				accountIndex := fmt.Sprintf("%d:%s", request.GetProvider(), request.GetAccountKey())
+				if _, loaded := quotaCalls.LoadOrStore(accountIndex, struct{}{}); loaded {
+					enqueueQuota(&gatewayv1.DaemonLinkFrame{
+						Kind:     gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_PROVIDER_QUOTA_RESET_RESULT,
+						DaemonId: c.Identity.ID, RequestId: frame.GetRequestId(),
+						ProviderQuotaResetResult: &gatewayv1.ProviderQuotaResetResult{ErrorCode: "operation_in_progress", RetryAfterSeconds: 30},
+					})
+					continue
+				}
+				select {
+				case quotaProbes <- struct{}{}:
+				default:
+					quotaCalls.Delete(accountIndex)
+					enqueueQuota(&gatewayv1.DaemonLinkFrame{
+						Kind:     gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_PROVIDER_QUOTA_RESET_RESULT,
+						DaemonId: c.Identity.ID, RequestId: frame.GetRequestId(),
+						ProviderQuotaResetResult: &gatewayv1.ProviderQuotaResetResult{ErrorCode: "probe_capacity", RetryAfterSeconds: 30},
+					})
+					continue
+				}
+				go func(requestID, accountIndex string, request *gatewayv1.ProviderQuotaResetRequest) {
+					defer quotaCalls.Delete(accountIndex)
+					defer func() { <-quotaProbes }()
+					probeCtx, cancel := context.WithTimeout(linkCtx, 15*time.Second)
+					defer cancel()
+					result, err := resetSource.ConsumeReset(probeCtx, providerQuotaKey, request)
+					if err != nil || result == nil {
+						result = &gatewayv1.ProviderQuotaResetResult{ErrorCode: "reset_failed"}
+					}
+					if snapshot := result.GetSnapshot(); snapshot != nil && (snapshot.GetProvider() != request.GetProvider() || snapshot.GetAccountKey() != request.GetAccountKey()) {
+						result = &gatewayv1.ProviderQuotaResetResult{ErrorCode: "identity_mismatch"}
+					}
+					response := &gatewayv1.DaemonLinkFrame{
+						Kind:     gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_PROVIDER_QUOTA_RESET_RESULT,
+						DaemonId: c.Identity.ID, RequestId: requestID, ProviderQuotaResetResult: result,
+					}
+					if !enqueueQuota(response) {
+						enqueueQuota(&gatewayv1.DaemonLinkFrame{
+							Kind:     gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_PROVIDER_QUOTA_RESET_RESULT,
+							DaemonId: c.Identity.ID, RequestId: requestID,
+							ProviderQuotaResetResult: &gatewayv1.ProviderQuotaResetResult{ErrorCode: "result_too_large"},
+						})
+					}
+				}(frame.GetRequestId(), accountIndex, proto.Clone(request).(*gatewayv1.ProviderQuotaResetRequest))
 			case gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_OPEN_RPC:
 				if frame.GetStreamId() == 0 {
 					if !tryEnqueueControl(relayError(frame.GetStreamId(), codes.InvalidArgument, "relay stream ID is required")) {
