@@ -395,7 +395,9 @@
         }
 
         private var composerControls: some View {
-            HStack(alignment: .bottom, spacing: 8) {
+            let sendEnabled = !sending && !draft.isEmpty && store.phase.isConnected
+
+            return HStack(alignment: .bottom, spacing: 8) {
                 VStack(spacing: 0) {
                     PhotosPicker(
                         selection: $photoItems,
@@ -459,12 +461,14 @@
                                 .font(.system(size: 15, weight: .bold))
                         }
                     }
-                    .frame(width: 34, height: 34)
+                    .frame(width: 36, height: 36)
+                    .modifier(IOSComposerSendVisualStyle(enabled: sendEnabled))
+                    .contentShape(Circle())
+                    .frame(width: 44, height: 44)
                 }
-                .modifier(IOSComposerSendStyle())
-                .controlSize(.small)
+                .buttonStyle(.plain)
                 .padding(.bottom, 3)
-                .disabled(sending || draft.isEmpty || !store.phase.isConnected)
+                .disabled(!sendEnabled)
                 .accessibilityLabel("Send message")
                 .accessibilityIdentifier("ios.composer.send")
             }
@@ -826,12 +830,26 @@
         }
     }
 
-    private struct IOSComposerSendStyle: ViewModifier {
+    private struct IOSComposerSendVisualStyle: ViewModifier {
+        let enabled: Bool
+
         @ViewBuilder func body(content: Content) -> some View {
             if #available(iOS 26.0, *) {
-                content.buttonStyle(.glassProminent).buttonBorderShape(.circle)
+                content
+                    .foregroundStyle(enabled ? Color.white : Color.secondary.opacity(0.72))
+                    .glassEffect(
+                        .regular
+                            .tint(enabled ? Color.accentColor : Color.secondary.opacity(0.12))
+                            .interactive(),
+                        in: Circle())
             } else {
-                content.buttonStyle(.borderedProminent).buttonBorderShape(.circle)
+                content
+                    .foregroundStyle(enabled ? Color.white : Color.secondary.opacity(0.72))
+                    .background(
+                        enabled ? Color.accentColor : Color.secondary.opacity(0.12),
+                        in: Circle()
+                    )
+                    .overlay(Circle().stroke(Color.white.opacity(0.22), lineWidth: 0.75))
             }
         }
     }
