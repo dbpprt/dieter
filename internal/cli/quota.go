@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"os"
@@ -19,6 +20,9 @@ Actions:
   list [PROVIDER] [--format table|json|jsonl]  List account quotas and provider summaries
   watch [PROVIDER] [--count N]                Stream quota updates as JSON Lines
   refresh [PROVIDER] [--account KEY]          Request a bounded refresh and show the result
+  include PROVIDER --account KEY              Include an account in its header summary
+  exclude PROVIDER --account KEY              Exclude an account from its header summary
+  reset openai --account KEY --confirm RESET  Consume one available reset credit
 
 PROVIDER is openai, codex, or claude. Quotas are gateway-account scoped and
 combine accounts discovered by all online enrolled machines. Summary values
@@ -40,9 +44,102 @@ func (c *CLI) quotaCommand(args []string) error {
 		return c.quotaWatch(args[1:])
 	case "refresh":
 		return c.quotaRefresh(args[1:])
+	case "include":
+		return c.quotaSetInclusion(args[1:], true)
+	case "exclude":
+		return c.quotaSetInclusion(args[1:], false)
+	case "reset":
+		return c.quotaReset(args[1:])
 	default:
 		return fmt.Errorf("unknown quota action %q; run `dieter quota --help`", args[0])
 	}
+}
+
+func (c *CLI) quotaSetInclusion(args []string, included bool) error {
+	action := "exclude"
+	if included {
+		action = "include"
+	}
+	usage := fmt.Sprintf("Usage: dieter quota %s PROVIDER --account KEY\n", action)
+	set := flags("quota " + action)
+	account := set.String("account", "", "opaque account key returned by quota list --format json")
+	help, err := parse(set, args, usage, c.Out)
+	if help || err != nil {
+		return err
+	}
+	provider, err := quotaProviderArgument(set.Args())
+	if err != nil {
+		return err
+	}
+	if provider == gatewayv1.ProviderQuotaProvider_PROVIDER_QUOTA_PROVIDER_UNSPECIFIED || strings.TrimSpace(*account) == "" {
+		return errors.New("PROVIDER and --account KEY are required")
+	}
+	ctx, cancel := c.commandContext()
+	defer cancel()
+	gateway, err := c.dialGateway(ctx)
+	if err != nil {
+		return err
+	}
+	response, err := gateway.client.SetProviderQuotaSummaryInclusion(ctx, &gatewayv1.SetProviderQuotaSummaryInclusionRequest{
+		Provider: provider, AccountKey: strings.TrimSpace(*account), Included: included,
+	})
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(c.Out, "Account %s is now %s the provider summary.\n", shortAccountKey(*account), map[bool]string{true: "included in", false: "excluded from"}[included])
+	return c.writeQuotaGroups(response.GetGroups(), "table", nil)
+}
+
+func (c *CLI) quotaReset(args []string) error {
+	const usage = "Usage: dieter quota reset openai --account KEY --confirm RESET\n"
+	set := flags("quota reset")
+	account := set.String("account", "", "opaque OpenAI account key returned by quota list --format json")
+	confirm := set.String("confirm", "", "required exact confirmation phrase RESET")
+	help, err := parse(set, args, usage, c.Out)
+	if help || err != nil {
+		return err
+	}
+	provider, err := quotaProviderArgument(set.Args())
+	if err != nil {
+		return err
+	}
+	if provider != gatewayv1.ProviderQuotaProvider_PROVIDER_QUOTA_PROVIDER_OPENAI_CODEX || strings.TrimSpace(*account) == "" {
+		return errors.New("openai and --account KEY are required")
+	}
+	if *confirm != "RESET" {
+		return errors.New("reset consumes one credit; pass --confirm RESET")
+	}
+	idempotencyKey, err := quotaResetUUID()
+	if err != nil {
+		return err
+	}
+	ctx, cancel := c.commandContext()
+	defer cancel()
+	gateway, err := c.dialGateway(ctx)
+	if err != nil {
+		return err
+	}
+	response, err := gateway.client.ConsumeProviderQuotaReset(ctx, &gatewayv1.ConsumeProviderQuotaResetRequest{
+		Provider: provider, AccountKey: strings.TrimSpace(*account), IdempotencyKey: idempotencyKey,
+	})
+	if err != nil {
+		return err
+	}
+	if !response.GetAccepted() {
+		return errors.New("no online daemon with access to that OpenAI account accepted the reset")
+	}
+	fmt.Fprintf(c.Out, "Reset requested for %s. Idempotency key: %s\n", shortAccountKey(*account), idempotencyKey)
+	return nil
+}
+
+func quotaResetUUID() (string, error) {
+	value := make([]byte, 16)
+	if _, err := rand.Read(value); err != nil {
+		return "", fmt.Errorf("create reset idempotency key: %w", err)
+	}
+	value[6] = value[6]&0x0f | 0x40
+	value[8] = value[8]&0x3f | 0x80
+	return fmt.Sprintf("%x-%x-%x-%x-%x", value[0:4], value[4:6], value[6:8], value[8:10], value[10:16]), nil
 }
 
 func (c *CLI) quotaList(args []string) error {
@@ -183,17 +280,21 @@ func (c *CLI) writeQuotaGroups(groups []*gatewayv1.ProviderQuotaGroup, format st
 		return nil
 	}
 	writer := tabwriter.NewWriter(c.Out, 0, 3, 2, ' ', 0)
-	fmt.Fprintln(writer, "PROVIDER\tACCOUNT\tPLAN\tSTATUS\tWINDOW\tREMAINING\tRESETS")
+	fmt.Fprintln(writer, "PROVIDER\tACCOUNT\tEMAIL\tPLAN\tSUMMARY\tSTATUS\tWINDOW\tREMAINING\tRESETS")
 	for _, group := range groups {
 		provider := quotaProviderName(group.GetProvider())
 		if len(group.GetAccounts()) == 0 {
-			fmt.Fprintf(writer, "%s\t—\t—\tunavailable\t—\t—\t—\n", provider)
+			fmt.Fprintf(writer, "%s\t—\t—\t—\t—\tunavailable\t—\t—\t—\n", provider)
 			continue
 		}
 		for _, account := range group.GetAccounts() {
 			key := shortAccountKey(account.GetAccountKey())
+			summaryMembership := "included"
+			if account.IncludedInSummary != nil && !account.GetIncludedInSummary() {
+				summaryMembership = "excluded"
+			}
 			if len(account.GetWindows()) == 0 {
-				fmt.Fprintf(writer, "%s\t%s\t%s\t%s\t—\t—\t%s\n", provider, key, account.GetPlan(), quotaAvailabilityName(account.GetAvailability()), account.GetNextResetAt())
+				fmt.Fprintf(writer, "%s\t%s\t%s\t%s\t%s\t%s\t—\t—\t%s\n", provider, key, account.GetDisplayEmail(), account.GetPlan(), summaryMembership, quotaAvailabilityName(account.GetAvailability()), account.GetNextResetAt())
 				continue
 			}
 			for _, window := range account.GetWindows() {
@@ -205,7 +306,7 @@ func (c *CLI) writeQuotaGroups(groups []*gatewayv1.ProviderQuotaGroup, format st
 				if label == "" {
 					label = strings.TrimPrefix(strings.ToLower(window.GetKind().String()), "provider_quota_window_kind_")
 				}
-				fmt.Fprintf(writer, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", provider, key, account.GetPlan(), quotaAvailabilityName(account.GetAvailability()), label, remaining, window.GetResetsAt())
+				fmt.Fprintf(writer, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", provider, key, account.GetDisplayEmail(), account.GetPlan(), summaryMembership, quotaAvailabilityName(account.GetAvailability()), label, remaining, window.GetResetsAt())
 			}
 		}
 	}

@@ -194,6 +194,7 @@ CREATE TABLE IF NOT EXISTS provider_accounts (
   next_attempt_at TEXT NOT NULL DEFAULT '',
   failure_count INTEGER NOT NULL DEFAULT 0,
   last_failure_code TEXT NOT NULL DEFAULT '',
+  summary_included INTEGER NOT NULL DEFAULT 1,
   PRIMARY KEY(github_id, provider, account_key)
 );
 CREATE TABLE IF NOT EXISTS provider_account_sources (
@@ -214,6 +215,14 @@ CREATE TABLE IF NOT EXISTS provider_account_sources (
 );
 CREATE INDEX IF NOT EXISTS provider_account_sources_daemon
   ON provider_account_sources(daemon_id);
+CREATE TABLE IF NOT EXISTS provider_account_preferences (
+  github_id INTEGER NOT NULL,
+  provider INTEGER NOT NULL,
+  account_key TEXT NOT NULL,
+  summary_included INTEGER NOT NULL DEFAULT 1,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY(github_id, provider, account_key)
+);
 CREATE TABLE IF NOT EXISTS provider_quota_snapshots (
   github_id INTEGER NOT NULL,
   provider INTEGER NOT NULL,
@@ -238,6 +247,9 @@ CREATE TABLE IF NOT EXISTS provider_quota_snapshots (
 	if err := s.ensureDaemonColumn("api_version", `TEXT NOT NULL DEFAULT ''`); err != nil {
 		return fmt.Errorf("migrate gateway database: %w", err)
 	}
+	if err := s.ensureProviderAccountColumn("summary_included", `INTEGER NOT NULL DEFAULT 1`); err != nil {
+		return fmt.Errorf("migrate gateway database: %w", err)
+	}
 	if info, statErr := os.Stat(filepath.Join(s.Root, "gateway.db")); statErr == nil && info.Mode().Perm() != 0o600 {
 		_ = os.Chmod(filepath.Join(s.Root, "gateway.db"), 0o600)
 	}
@@ -245,7 +257,15 @@ CREATE TABLE IF NOT EXISTS provider_quota_snapshots (
 }
 
 func (s *Store) ensureDaemonColumn(name, declaration string) error {
-	rows, err := s.DB.Query(`PRAGMA table_info(daemons)`)
+	return s.ensureTableColumn("daemons", name, declaration)
+}
+
+func (s *Store) ensureProviderAccountColumn(name, declaration string) error {
+	return s.ensureTableColumn("provider_accounts", name, declaration)
+}
+
+func (s *Store) ensureTableColumn(table, name, declaration string) error {
+	rows, err := s.DB.Query(`PRAGMA table_info(` + table + `)`)
 	if err != nil {
 		return err
 	}
@@ -270,7 +290,7 @@ func (s *Store) ensureDaemonColumn(name, declaration string) error {
 		return nil
 	}
 	// name and declaration are internal constants, never request data.
-	_, err = s.DB.Exec(`ALTER TABLE daemons ADD COLUMN ` + name + ` ` + declaration)
+	_, err = s.DB.Exec(`ALTER TABLE ` + table + ` ADD COLUMN ` + name + ` ` + declaration)
 	return err
 }
 

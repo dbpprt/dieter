@@ -50,7 +50,7 @@ func TestCorrelateAccountIsStableProviderScopedAndOpaque(t *testing.T) {
 func TestNormalizeSnapshotPreservesMultipleWindows(t *testing.T) {
 	now := time.Date(2026, 9, 19, 12, 0, 0, 0, time.UTC)
 	result := probeResult{
-		StableAccountID: "account-1", AccountKind: "subscription", Plan: "plus", Availability: "available",
+		StableAccountID: "account-1", DisplayEmail: "person@example.com", AccountKind: "subscription", Plan: "plus", Availability: "available",
 		Windows: []probeWindow{
 			{ID: "five-hour", Label: "5 hour", Kind: "five_hour", UsedPercent: proto.Uint32(30), ResetsAt: now.Add(time.Hour).Format(time.RFC3339)},
 			{ID: "weekly", Label: "Weekly", Kind: "weekly", RemainingPercent: proto.Uint32(62), ResetsAt: now.Add(48 * time.Hour).Format(time.RFC3339)},
@@ -65,6 +65,20 @@ func TestNormalizeSnapshotPreservesMultipleWindows(t *testing.T) {
 	}
 	if got, want := snapshot.GetNextResetWindowId(), "five-hour"; got != want {
 		t.Fatalf("next reset window = %q, want %q", got, want)
+	}
+	if got, want := snapshot.GetDisplayEmail(), "person@example.com"; got != want {
+		t.Fatalf("display email = %q, want %q", got, want)
+	}
+}
+
+func TestResetIdempotencyKeyValidation(t *testing.T) {
+	if !validIdempotencyKey("123e4567-e89b-42d3-a456-426614174000") {
+		t.Fatal("valid reset UUID was rejected")
+	}
+	for _, value := range []string{"", "not-a-uuid", "123e4567-e89b-12d3-a456-42661417400z"} {
+		if validIdempotencyKey(value) {
+			t.Fatalf("invalid reset idempotency key %q was accepted", value)
+		}
 	}
 }
 

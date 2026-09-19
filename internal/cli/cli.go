@@ -200,7 +200,7 @@ Commands:
   machine      List, route, rename, revoke, inspect, or control machines
   status       Show target daemon health, runtime, route, and state counts
   harness      List target daemon harnesses, models, and options
-  quota        Show and refresh provider-account usage quotas
+  quota        Show, summarize, refresh, and reset provider-account quotas
   project      Create, browse, map hostnames, relocate, archive, and restore projects
   board        Manage boards, hostnames, retention, workflows, and labels
   card         Create, edit, present files, merge, and manage board conversations

@@ -66,9 +66,35 @@ func TestReplaceProviderAccountPresenceSeparatesMultipleAccounts(t *testing.T) {
 		t.Fatal("distinct provider accounts were collapsed")
 	}
 	for _, record := range records {
+		if !record.SummaryIncluded {
+			t.Fatalf("new account %s was excluded by default", record.Account.GetAccountKey())
+		}
 		if got, want := len(record.Sources), 1; got != want {
 			t.Fatalf("sources for %s = %d, want %d", record.Account.GetAccountKey(), got, want)
 		}
+	}
+	if err := store.SetProviderQuotaSummaryIncluded(owner, gatewayv1.ProviderQuotaProvider_PROVIDER_QUOTA_PROVIDER_OPENAI_CODEX, accounts[1].GetAccountKey(), false); err != nil {
+		t.Fatal(err)
+	}
+	records, err = store.ListProviderQuotaRecords(owner, gatewayv1.ProviderQuotaProvider_PROVIDER_QUOTA_PROVIDER_OPENAI_CODEX)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if records[1].SummaryIncluded {
+		t.Fatal("summary exclusion was not persisted")
+	}
+	if err := store.ReplaceProviderAccountPresence(owner, daemonID, accounts[:1], now.Add(time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.ReplaceProviderAccountPresence(owner, daemonID, accounts, now.Add(2*time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	records, err = store.ListProviderQuotaRecords(owner, gatewayv1.ProviderQuotaProvider_PROVIDER_QUOTA_PROVIDER_OPENAI_CODEX)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if records[1].SummaryIncluded {
+		t.Fatal("summary exclusion was lost when the account source temporarily disappeared")
 	}
 	firstKey := accounts[0].GetAccountKey()
 	if err := store.SaveProviderQuotaSnapshot(owner, daemonID, &gatewayv1.ProviderQuotaSnapshot{

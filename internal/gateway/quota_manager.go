@@ -18,6 +18,7 @@ import (
 
 const (
 	providerQuotaCapability        = "provider_quota_v1"
+	providerQuotaResetCapability   = "provider_quota_reset_v1"
 	providerQuotaRefreshInterval   = time.Minute
 	providerQuotaRequestTimeout    = 15 * time.Second
 	providerQuotaScheduleTick      = time.Second
@@ -26,6 +27,7 @@ const (
 	maxProviderResetCreditDetails  = 32
 	maxProviderLabelBytes          = 128
 	maxProviderStatusCodeBytes     = 64
+	maxProviderEmailBytes          = 320
 	maxProviderQuotaFrameBytes     = 64 << 10
 	maxConcurrentProviderRefreshes = 8
 	maxProviderRefreshesPerDaemon  = 2
@@ -38,6 +40,7 @@ type pendingProviderRefresh struct {
 	daemonID   string
 	startedAt  time.Time
 	failures   int
+	kind       string
 }
 
 type QuotaManager struct {
@@ -123,6 +126,21 @@ func validAccountKey(value string) bool {
 	return true
 }
 
+func validProviderResetIdempotencyKey(value string) bool {
+	if len(value) != 36 || value[8] != '-' || value[13] != '-' || value[18] != '-' || value[23] != '-' {
+		return false
+	}
+	for index, character := range value {
+		if index == 8 || index == 13 || index == 18 || index == 23 {
+			continue
+		}
+		if !((character >= '0' && character <= '9') || (character >= 'a' && character <= 'f') || (character >= 'A' && character <= 'F')) {
+			return false
+		}
+	}
+	return true
+}
+
 func validateProviderAccountPresence(account *gatewayv1.ProviderAccountPresence) error {
 	if account == nil || !validProvider(account.GetProvider()) || !validAccountKey(account.GetAccountKey()) {
 		return errors.New("provider account presence is invalid")
@@ -152,6 +170,10 @@ func validateProviderQuotaSnapshot(snapshot *gatewayv1.ProviderQuotaSnapshot) er
 	}
 	if len(snapshot.GetPlan()) > maxProviderLabelBytes || !utf8.ValidString(snapshot.GetPlan()) || len(snapshot.GetWindows()) > maxProviderQuotaWindows {
 		return errors.New("provider quota snapshot exceeds its bounds")
+	}
+	if len(snapshot.GetDisplayEmail()) > maxProviderEmailBytes || !utf8.ValidString(snapshot.GetDisplayEmail()) ||
+		strings.ContainsAny(snapshot.GetDisplayEmail(), "\r\n") {
+		return errors.New("provider quota display email is invalid")
 	}
 	seen := map[string]struct{}{}
 	for _, window := range snapshot.GetWindows() {
@@ -214,6 +236,9 @@ func (m *QuotaManager) HandleResult(record DaemonRecord, daemonID, requestID str
 	if !exists || pending.githubID != record.GitHubID || pending.daemonID != daemonID {
 		return errors.New("provider quota result does not match a pending request")
 	}
+	if pending.kind != "refresh" {
+		return errors.New("provider quota result has the wrong operation kind")
+	}
 	now := m.now().UTC()
 	if snapshot := result.GetSnapshot(); snapshot != nil {
 		if snapshot.GetProvider() != pending.provider || snapshot.GetAccountKey() != pending.accountKey {
@@ -235,6 +260,51 @@ func (m *QuotaManager) HandleResult(record DaemonRecord, daemonID, requestID str
 		if delay > time.Hour {
 			delay = time.Hour
 		}
+	}
+	if err := m.store.MarkProviderQuotaFailure(record.GitHubID, daemonID, pending.provider, pending.accountKey, code, now.Add(delay)); err != nil {
+		return err
+	}
+	m.signalChanged()
+	return nil
+}
+
+func (m *QuotaManager) HandleResetResult(record DaemonRecord, daemonID, requestID string, result *gatewayv1.ProviderQuotaResetResult) error {
+	if requestID == "" || result == nil || proto.Size(result) > maxProviderQuotaFrameBytes {
+		return errors.New("provider quota reset result is invalid")
+	}
+	m.mu.Lock()
+	pending, exists := m.pending[requestID]
+	if exists {
+		delete(m.pending, requestID)
+		delete(m.byAccount, providerAccountIndex(pending.githubID, pending.provider, pending.accountKey))
+	}
+	m.mu.Unlock()
+	if !exists || pending.githubID != record.GitHubID || pending.daemonID != daemonID || pending.kind != "reset" {
+		return errors.New("provider quota reset result does not match a pending request")
+	}
+	now := m.now().UTC()
+	if snapshot := result.GetSnapshot(); snapshot != nil {
+		if snapshot.GetProvider() != pending.provider || snapshot.GetAccountKey() != pending.accountKey {
+			return errors.New("provider quota reset result account does not match its request")
+		}
+		switch result.GetOutcome() {
+		case "reset", "nothingToReset", "noCredit", "alreadyRedeemed":
+		default:
+			return errors.New("provider quota reset result has an invalid outcome")
+		}
+		if err := m.store.SaveProviderQuotaSnapshot(record.GitHubID, daemonID, snapshot, now); err != nil {
+			return err
+		}
+		m.signalChanged()
+		return nil
+	}
+	code := strings.TrimSpace(result.GetErrorCode())
+	if code == "" {
+		code = "reset_failed"
+	}
+	delay := providerFailureBackoff(pending.failures + 1)
+	if seconds := result.GetRetryAfterSeconds(); seconds > 0 {
+		delay = min(time.Duration(seconds)*time.Second, time.Hour)
 	}
 	if err := m.store.MarkProviderQuotaFailure(record.GitHubID, daemonID, pending.provider, pending.accountKey, code, now.Add(delay)); err != nil {
 		return err
@@ -342,7 +412,7 @@ func (m *QuotaManager) startRefresh(record ProviderQuotaRecord) (bool, error) {
 	requestID := randomID("quota_")
 	pending := pendingProviderRefresh{
 		githubID: record.GitHubID, provider: record.Account.GetProvider(), accountKey: record.Account.GetAccountKey(),
-		daemonID: source.DaemonID, startedAt: m.now().UTC(), failures: record.FailureCount,
+		daemonID: source.DaemonID, startedAt: m.now().UTC(), failures: record.FailureCount, kind: "refresh",
 	}
 	m.mu.Lock()
 	if _, exists := m.byAccount[accountIndex]; exists {
@@ -379,11 +449,112 @@ func (m *QuotaManager) startRefresh(record ProviderQuotaRecord) (bool, error) {
 	return true, nil
 }
 
+func (m *QuotaManager) SetSummaryIncluded(githubID int64, provider gatewayv1.ProviderQuotaProvider, accountKey string, included bool) error {
+	if err := m.store.SetProviderQuotaSummaryIncluded(githubID, provider, accountKey, included); err != nil {
+		return err
+	}
+	m.signalChanged()
+	return nil
+}
+
+func (m *QuotaManager) ConsumeReset(githubID int64, provider gatewayv1.ProviderQuotaProvider, accountKey, idempotencyKey string) (bool, error) {
+	if provider != gatewayv1.ProviderQuotaProvider_PROVIDER_QUOTA_PROVIDER_OPENAI_CODEX {
+		return false, errors.New("reset credits are only supported for OpenAI accounts")
+	}
+	if !validAccountKey(accountKey) || !validProviderResetIdempotencyKey(idempotencyKey) {
+		return false, errors.New("provider quota reset request is invalid")
+	}
+	records, err := m.store.ListProviderQuotaRecords(githubID, provider)
+	if err != nil {
+		return false, err
+	}
+	for _, record := range records {
+		if record.Account.GetAccountKey() == accountKey {
+			return m.startReset(record, idempotencyKey)
+		}
+	}
+	return false, errors.New("provider account was not found")
+}
+
+func (m *QuotaManager) startReset(record ProviderQuotaRecord, idempotencyKey string) (bool, error) {
+	if record.Account == nil || record.Account.GetAvailability() != gatewayv1.ProviderQuotaAvailability_PROVIDER_QUOTA_AVAILABILITY_AVAILABLE {
+		return false, nil
+	}
+	accountIndex := providerAccountIndex(record.GitHubID, record.Account.GetProvider(), record.Account.GetAccountKey())
+	m.mu.Lock()
+	if _, exists := m.byAccount[accountIndex]; exists {
+		m.mu.Unlock()
+		return false, errors.New("provider account already has an operation in progress")
+	}
+	if len(m.pending) >= maxConcurrentProviderRefreshes {
+		m.mu.Unlock()
+		return false, errors.New("provider quota operation concurrency is exhausted")
+	}
+	m.mu.Unlock()
+	source := m.chooseResetSource(record.Sources)
+	if source == nil {
+		return false, nil
+	}
+	requestID := randomID("quota_reset_")
+	pending := pendingProviderRefresh{
+		githubID: record.GitHubID, provider: record.Account.GetProvider(), accountKey: record.Account.GetAccountKey(),
+		daemonID: source.DaemonID, startedAt: m.now().UTC(), failures: record.FailureCount, kind: "reset",
+	}
+	m.mu.Lock()
+	if _, exists := m.byAccount[accountIndex]; exists {
+		m.mu.Unlock()
+		return false, errors.New("provider account already has an operation in progress")
+	}
+	activeForDaemon := 0
+	for _, active := range m.pending {
+		if active.daemonID == source.DaemonID {
+			activeForDaemon++
+		}
+	}
+	if activeForDaemon >= maxProviderRefreshesPerDaemon {
+		m.mu.Unlock()
+		return false, errors.New("provider quota source is busy")
+	}
+	m.pending[requestID], m.byAccount[accountIndex] = pending, requestID
+	m.mu.Unlock()
+	if err := m.hub.SendProviderQuotaReset(source.DaemonID, requestID, &gatewayv1.ProviderQuotaResetRequest{
+		Provider: record.Account.GetProvider(), AccountKey: record.Account.GetAccountKey(), IdempotencyKey: idempotencyKey,
+	}); err != nil {
+		m.mu.Lock()
+		delete(m.pending, requestID)
+		delete(m.byAccount, accountIndex)
+		m.mu.Unlock()
+		return false, err
+	}
+	m.signalChanged()
+	return true, nil
+}
+
 func (m *QuotaManager) chooseSource(sources []ProviderQuotaSourceRecord) *ProviderQuotaSourceRecord {
 	eligible := make([]ProviderQuotaSourceRecord, 0, len(sources))
 	for _, source := range sources {
 		if source.RefreshSupported && source.Availability == gatewayv1.ProviderQuotaAvailability_PROVIDER_QUOTA_AVAILABILITY_AVAILABLE &&
 			m.hub.SupportsProviderQuotas(source.DaemonID) {
+			eligible = append(eligible, source)
+		}
+	}
+	if len(eligible) == 0 {
+		return nil
+	}
+	sort.SliceStable(eligible, func(i, j int) bool {
+		if !eligible[i].LastSuccessAt.Equal(eligible[j].LastSuccessAt) {
+			return eligible[i].LastSuccessAt.After(eligible[j].LastSuccessAt)
+		}
+		return eligible[i].DaemonID < eligible[j].DaemonID
+	})
+	return &eligible[0]
+}
+
+func (m *QuotaManager) chooseResetSource(sources []ProviderQuotaSourceRecord) *ProviderQuotaSourceRecord {
+	eligible := make([]ProviderQuotaSourceRecord, 0, len(sources))
+	for _, source := range sources {
+		if source.RefreshSupported && source.Availability == gatewayv1.ProviderQuotaAvailability_PROVIDER_QUOTA_AVAILABILITY_AVAILABLE &&
+			m.hub.SupportsProviderQuotaReset(source.DaemonID) {
 			eligible = append(eligible, source)
 		}
 	}
@@ -423,6 +594,7 @@ func (m *QuotaManager) Catalog(githubID int64, provider gatewayv1.ProviderQuotaP
 		snapshot.AccountKind = record.Account.GetAccountKind()
 		snapshot.Plan = record.Account.GetPlan()
 		snapshot.Availability = record.Account.GetAvailability()
+		snapshot.IncludedInSummary = proto.Bool(record.SummaryIncluded)
 		online := 0
 		for _, source := range record.Sources {
 			if source.RefreshSupported && source.Availability == gatewayv1.ProviderQuotaAvailability_PROVIDER_QUOTA_AVAILABILITY_AVAILABLE &&
@@ -485,6 +657,11 @@ func summarizeProviderQuotas(accounts []*gatewayv1.ProviderQuotaSnapshot, now ti
 	}
 	var selected *candidate
 	for _, account := range accounts {
+		if account.IncludedInSummary != nil && !account.GetIncludedInSummary() {
+			summary.ExcludedAccountCount++
+			continue
+		}
+		summary.IncludedAccountCount++
 		hasNumeric := false
 		for _, window := range account.GetWindows() {
 			if window.RemainingPercent == nil || window.GetRemainingPercent() > 100 {

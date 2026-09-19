@@ -236,6 +236,31 @@ package final class DieterRPC: Sendable {
         )
     }
 
+    package func setProviderQuotaSummaryInclusion(
+        provider: Dieter_Gateway_V1_ProviderQuotaProvider,
+        accountKey: String,
+        included: Bool
+    ) async throws -> Dieter_Gateway_V1_SetProviderQuotaSummaryInclusionResponse {
+        var request = Dieter_Gateway_V1_SetProviderQuotaSummaryInclusionRequest()
+        request.provider = provider
+        request.accountKey = accountKey
+        request.included = included
+        return try await gatewayService.setProviderQuotaSummaryInclusion(
+            request: .init(message: request), options: Self.boundedUnaryCallOptions())
+    }
+
+    package func consumeProviderQuotaReset(
+        accountKey: String,
+        idempotencyKey: String
+    ) async throws -> Dieter_Gateway_V1_ConsumeProviderQuotaResetResponse {
+        var request = Dieter_Gateway_V1_ConsumeProviderQuotaResetRequest()
+        request.provider = .openaiCodex
+        request.accountKey = accountKey
+        request.idempotencyKey = idempotencyKey
+        return try await gatewayService.consumeProviderQuotaReset(
+            request: .init(message: request), options: Self.boundedUnaryCallOptions())
+    }
+
     package func route(daemonID: String) async throws -> Dieter_Gateway_V1_DaemonRoute {
         var request = Dieter_Gateway_V1_DaemonRef()
         request.daemonID = daemonID

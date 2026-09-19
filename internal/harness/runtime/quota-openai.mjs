@@ -130,6 +130,7 @@ function normalizeRateLimits(account, response) {
     : undefined;
   return {
     stableAccountID: response?.accountId,
+    displayEmail: account?.type === 'chatgpt' ? account.email || undefined : undefined,
     accountKind: account?.type === 'apiKey' ? 'api' : 'subscription',
     plan,
     availability: 'available',
@@ -152,11 +153,35 @@ try {
   if (!accountResponse?.account) {
     process.stdout.write(`${JSON.stringify({ availability: 'signed_out' })}\n`);
   } else {
-    const limits = await request('account/rateLimits/read', {
-      excludeResetCreditDetails: false,
-      supportsLunaReserve: false,
-    });
-    process.stdout.write(`${JSON.stringify(normalizeRateLimits(accountResponse.account, limits))}\n`);
+    let resetOutcome;
+    let limits;
+    if (process.env.DIETER_QUOTA_ACTION === 'consume_reset') {
+      const idempotencyKey = process.env.DIETER_QUOTA_IDEMPOTENCY_KEY;
+      if (!idempotencyKey) throw new Error('reset idempotency key is required');
+      const expectedAccountID = process.env.DIETER_QUOTA_EXPECTED_ACCOUNT_ID;
+      const before = await request('account/rateLimits/read', {
+        excludeResetCreditDetails: true,
+        supportsLunaReserve: false,
+      });
+      if (!expectedAccountID || before?.accountId !== expectedAccountID) {
+        throw new Error('account identity changed before reset');
+      }
+      const reset = await request('account/rateLimitResetCredit/consume', { idempotencyKey });
+      resetOutcome = reset?.outcome;
+      limits = await request('account/rateLimits/read', {
+        excludeResetCreditDetails: false,
+        supportsLunaReserve: false,
+      });
+    } else {
+      limits = await request('account/rateLimits/read', {
+        excludeResetCreditDetails: false,
+        supportsLunaReserve: false,
+      });
+    }
+    process.stdout.write(`${JSON.stringify({
+      ...normalizeRateLimits(accountResponse.account, limits),
+      resetOutcome,
+    })}\n`);
   }
 } catch {
   process.stderr.write('OpenAI quota probe failed\n');

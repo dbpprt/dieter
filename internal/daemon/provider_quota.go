@@ -13,3 +13,10 @@ type ProviderQuotaSource interface {
 	Discover(context.Context, []byte) (*gatewayv1.ProviderAccountsPresence, error)
 	Refresh(context.Context, []byte, *gatewayv1.ProviderQuotaRefreshRequest) (*gatewayv1.ProviderQuotaRefreshResult, error)
 }
+
+// ProviderQuotaResetSource is intentionally capability-gated separately from
+// read-only quota collection so mixed-version daemons never receive a reset
+// request they cannot understand.
+type ProviderQuotaResetSource interface {
+	ConsumeReset(context.Context, []byte, *gatewayv1.ProviderQuotaResetRequest) (*gatewayv1.ProviderQuotaResetResult, error)
+}

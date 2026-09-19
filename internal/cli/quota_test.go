@@ -31,6 +31,16 @@ func TestQuotaProviderArgumentAliases(t *testing.T) {
 	}
 }
 
+func TestQuotaResetUUIDIsValid(t *testing.T) {
+	value, err := quotaResetUUID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(value) != 36 || value[8] != '-' || value[13] != '-' || value[18] != '-' || value[23] != '-' {
+		t.Fatalf("reset UUID = %q", value)
+	}
+}
+
 func TestQuotaTableKeepsAccountsSeparateAndAbbreviatesKeys(t *testing.T) {
 	var output bytes.Buffer
 	client := New(store.New(t.TempDir()))

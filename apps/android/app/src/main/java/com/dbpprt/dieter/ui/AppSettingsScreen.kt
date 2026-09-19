@@ -176,6 +176,8 @@ fun AppSettingsScreen(
                 QUOTAS_TAB -> ProviderQuotaDetails(
                     state = state,
                     onRefresh = { model.refreshProviderQuotas() },
+                    onSetSummaryInclusion = model::setProviderQuotaSummaryInclusion,
+                    onUseReset = model::consumeProviderQuotaReset,
                     modifier = Modifier.fillMaxSize().padding(20.dp),
                 )
                 UPDATES_TAB -> UpdateSettings(updateManager)

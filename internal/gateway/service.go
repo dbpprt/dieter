@@ -187,6 +187,50 @@ func (s *Service) RefreshProviderQuotas(ctx context.Context, request *gatewayv1.
 	return &gatewayv1.RefreshProviderQuotasResponse{Groups: groups, Revision: s.quota.Revision(), Accepted: accepted}, nil
 }
 
+func (s *Service) SetProviderQuotaSummaryInclusion(ctx context.Context, request *gatewayv1.SetProviderQuotaSummaryInclusionRequest) (*gatewayv1.SetProviderQuotaSummaryInclusionResponse, error) {
+	principal, ok := PrincipalFromContext(ctx)
+	if !ok {
+		return nil, status.Error(codes.Unauthenticated, "authentication required")
+	}
+	if request == nil || !validProvider(request.GetProvider()) || !validAccountKey(request.GetAccountKey()) {
+		return nil, status.Error(codes.InvalidArgument, "a valid provider and account key are required")
+	}
+	if s.quota == nil {
+		return nil, status.Error(codes.Unimplemented, "provider quota service is unavailable")
+	}
+	if err := s.quota.SetSummaryIncluded(principal.GitHubID, request.GetProvider(), request.GetAccountKey(), request.GetIncluded()); err != nil {
+		return nil, status.Error(codes.NotFound, err.Error())
+	}
+	groups, err := s.quota.Catalog(principal.GitHubID, request.GetProvider())
+	if err != nil {
+		return nil, status.Error(codes.Internal, "list provider quotas")
+	}
+	return &gatewayv1.SetProviderQuotaSummaryInclusionResponse{Groups: groups, Revision: s.quota.Revision()}, nil
+}
+
+func (s *Service) ConsumeProviderQuotaReset(ctx context.Context, request *gatewayv1.ConsumeProviderQuotaResetRequest) (*gatewayv1.ConsumeProviderQuotaResetResponse, error) {
+	principal, ok := PrincipalFromContext(ctx)
+	if !ok {
+		return nil, status.Error(codes.Unauthenticated, "authentication required")
+	}
+	if request == nil || request.GetProvider() != gatewayv1.ProviderQuotaProvider_PROVIDER_QUOTA_PROVIDER_OPENAI_CODEX ||
+		!validAccountKey(request.GetAccountKey()) || !validProviderResetIdempotencyKey(request.GetIdempotencyKey()) {
+		return nil, status.Error(codes.InvalidArgument, "a valid OpenAI account and UUID idempotency key are required")
+	}
+	if s.quota == nil {
+		return nil, status.Error(codes.Unimplemented, "provider quota service is unavailable")
+	}
+	accepted, err := s.quota.ConsumeReset(principal.GitHubID, request.GetProvider(), request.GetAccountKey(), request.GetIdempotencyKey())
+	if err != nil {
+		return nil, status.Error(codes.FailedPrecondition, err.Error())
+	}
+	groups, err := s.quota.Catalog(principal.GitHubID, request.GetProvider())
+	if err != nil {
+		return nil, status.Error(codes.Internal, "list provider quotas")
+	}
+	return &gatewayv1.ConsumeProviderQuotaResetResponse{Groups: groups, Revision: s.quota.Revision(), Accepted: accepted}, nil
+}
+
 func gatewayBuildInformation() *gatewayv1.GatewayInformation {
 	return &gatewayv1.GatewayInformation{
 		ReleaseVersion: buildinfo.ReleaseVersion,

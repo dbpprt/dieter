@@ -72,6 +72,7 @@ final class AppSession {
     var providerQuotaGroups: [Dieter_Gateway_V1_ProviderQuotaGroup] = []
     var providerQuotasLoading = false
     var providerQuotaError: String?
+    var providerQuotaMutatingAccounts: Set<String> = []
     var machineInformationLoading = false
     var machineInformationError: String?
     var machineOperationMessage: String?

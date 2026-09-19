@@ -392,6 +392,8 @@ enum DieterTheme {
     static var eyes: Color { state.colors.eyes }
     static var amber: Color { state.colors.amber }
     static var coral: Color { state.colors.coral }
+    /// OpenAI account quota bars stay blue across every decorative palette.
+    static var openAIQuota: Color { Color(rgb: 0x2588F5) }
 
     /// Machine reachability must remain immediately recognizable in every
     /// decorative palette and appearance.

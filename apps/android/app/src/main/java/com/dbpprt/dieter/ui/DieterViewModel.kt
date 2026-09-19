@@ -21,6 +21,7 @@ import com.dbpprt.dieter.data.DIETER_LOCAL_ENDPOINT
 import com.dbpprt.dieter.data.DieterEndpoint
 import com.dbpprt.dieter.data.DieterRepository
 import com.dbpprt.dieter.gateway.v1.ProviderQuotaGroup
+import com.dbpprt.dieter.gateway.v1.ProviderQuotaProvider
 import com.dbpprt.dieter.settings.AppPreferences
 import com.dbpprt.dieter.settings.ConversationCreationPreferences
 import com.dbpprt.dieter.settings.DEFAULT_PANE_LEADING_FRACTION
@@ -83,6 +84,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withContext
 import java.time.ZoneId
+import java.util.UUID
 
 private const val CONVERSATION_PAGE_SIZE = 30
 private const val SCHEDULE_PAGE_SIZE = 50
@@ -178,6 +180,7 @@ data class DieterUiState(
     val providerQuotaGroups: List<ProviderQuotaGroup> = emptyList(),
     val providerQuotasLoading: Boolean = false,
     val providerQuotaError: String? = null,
+    val providerQuotaMutatingAccounts: Set<String> = emptySet(),
     val projects: List<Project> = emptyList(),
     val projectOrder: List<String> = emptyList(),
     val collapsedChatProjectIds: Set<String> = emptySet(),
@@ -732,6 +735,7 @@ class DieterViewModel internal constructor(
                 providerQuotaGroups = if (gatewayChanged) emptyList() else current.providerQuotaGroups,
                 providerQuotasLoading = if (gatewayChanged) false else current.providerQuotasLoading,
                 providerQuotaError = if (gatewayChanged) null else current.providerQuotaError,
+                providerQuotaMutatingAccounts = if (gatewayChanged) emptySet() else current.providerQuotaMutatingAccounts,
                 chats = connection.chats,
                 projects = orderedProjects(connection.projects, current.projectOrder),
                 projectHosts = connection.projectHosts,
@@ -814,6 +818,64 @@ class DieterViewModel internal constructor(
                     )
                 }
             }
+        }
+    }
+
+    fun setProviderQuotaSummaryInclusion(
+        provider: ProviderQuotaProvider,
+        accountKey: String,
+        included: Boolean,
+    ) {
+        mutateProviderQuotaAccount(accountKey) {
+            repository.setProviderQuotaSummaryInclusion(provider, accountKey, included).groupsList
+        }
+    }
+
+    fun consumeProviderQuotaReset(accountKey: String) {
+        mutateProviderQuotaAccount(accountKey) {
+            val response = repository.consumeProviderQuotaReset(accountKey, UUID.randomUUID().toString())
+            check(response.accepted) { "No online machine with access to this OpenAI account accepted the reset." }
+            response.groupsList
+        }
+    }
+
+    private fun mutateProviderQuotaAccount(
+        accountKey: String,
+        operation: suspend () -> List<ProviderQuotaGroup>,
+    ) {
+        if (accountKey in _state.value.providerQuotaMutatingAccounts) return
+        val gatewayId = _state.value.activeGatewayId
+        _state.update {
+            it.copy(
+                providerQuotaMutatingAccounts = it.providerQuotaMutatingAccounts + accountKey,
+                providerQuotaError = null,
+            )
+        }
+        viewModelScope.launch {
+            runCatching { operation() }
+                .onSuccess { groups ->
+                    if (_state.value.activeGatewayId != gatewayId) return@onSuccess
+                    val providers = groups.map { it.provider }.toSet()
+                    _state.update { current ->
+                        current.copy(
+                            providerQuotaGroups = (
+                                current.providerQuotaGroups.filterNot { it.provider in providers } + groups
+                            ).sortedBy { it.providerValue },
+                            providerQuotaMutatingAccounts = current.providerQuotaMutatingAccounts - accountKey,
+                            providerQuotaError = null,
+                        )
+                    }
+                }
+                .onFailure { error ->
+                    if (error is CancellationException) throw error
+                    if (_state.value.activeGatewayId != gatewayId) return@onFailure
+                    _state.update {
+                        it.copy(
+                            providerQuotaMutatingAccounts = it.providerQuotaMutatingAccounts - accountKey,
+                            providerQuotaError = error.message ?: "Provider quota operation failed.",
+                        )
+                    }
+                }
         }
     }
 

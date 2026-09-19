@@ -264,6 +264,9 @@ func (h *Hub) connect(stream grpc.BidiStreamingServer[gatewayv1.DaemonLinkFrame,
 		}
 		ack.Capabilities = append(ack.Capabilities, providerQuotaCapability)
 		ack.ProviderAccountCorrelationKey = correlationKey
+		if link.capabilities[providerQuotaResetCapability] {
+			ack.Capabilities = append(ack.Capabilities, providerQuotaResetCapability)
+		}
 	}
 	link.sendControlFrame(ack)
 
@@ -322,6 +325,15 @@ func (h *Hub) connect(stream grpc.BidiStreamingServer[gatewayv1.DaemonLinkFrame,
 					return
 				}
 				if err := h.quota.HandleResult(record, identity, frame.GetRequestId(), frame.GetProviderQuotaRefreshResult()); err != nil {
+					recvErr <- status.Error(codes.InvalidArgument, err.Error())
+					return
+				}
+			case gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_PROVIDER_QUOTA_RESET_RESULT:
+				if h.quota == nil || !link.capabilities[providerQuotaResetCapability] || frame.GetDaemonId() != identity {
+					recvErr <- status.Error(codes.PermissionDenied, "provider quota reset capability was not negotiated")
+					return
+				}
+				if err := h.quota.HandleResetResult(record, identity, frame.GetRequestId(), frame.GetProviderQuotaResetResult()); err != nil {
 					recvErr <- status.Error(codes.InvalidArgument, err.Error())
 					return
 				}
@@ -405,6 +417,13 @@ func (h *Hub) SupportsProviderQuotas(id string) bool {
 	return link != nil && link.isAlive(time.Now()) && link.capabilities[providerQuotaCapability]
 }
 
+func (h *Hub) SupportsProviderQuotaReset(id string) bool {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	link := h.links[id]
+	return link != nil && link.isAlive(time.Now()) && link.capabilities[providerQuotaResetCapability]
+}
+
 func (h *Hub) SendProviderQuotaRefresh(daemonID, requestID string, request *gatewayv1.ProviderQuotaRefreshRequest) error {
 	if requestID == "" || request == nil || proto.Size(request) > maxProviderQuotaFrameBytes {
 		return status.Error(codes.InvalidArgument, "provider quota refresh request is invalid")
@@ -418,6 +437,22 @@ func (h *Hub) SendProviderQuotaRefresh(daemonID, requestID string, request *gate
 	return link.sendQuotaFrame(&gatewayv1.DaemonLinkFrame{
 		Kind:     gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_PROVIDER_QUOTA_REFRESH_REQUEST,
 		DaemonId: daemonID, RequestId: requestID, ProviderQuotaRefreshRequest: request,
+	})
+}
+
+func (h *Hub) SendProviderQuotaReset(daemonID, requestID string, request *gatewayv1.ProviderQuotaResetRequest) error {
+	if requestID == "" || request == nil || proto.Size(request) > maxProviderQuotaFrameBytes {
+		return status.Error(codes.InvalidArgument, "provider quota reset request is invalid")
+	}
+	h.mu.RLock()
+	link := h.links[daemonID]
+	h.mu.RUnlock()
+	if link == nil || !link.isAlive(time.Now()) || !link.capabilities[providerQuotaResetCapability] {
+		return status.Error(codes.Unavailable, "provider quota reset source is offline")
+	}
+	return link.sendQuotaFrame(&gatewayv1.DaemonLinkFrame{
+		Kind:     gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_PROVIDER_QUOTA_RESET_REQUEST,
+		DaemonId: daemonID, RequestId: requestID, ProviderQuotaResetRequest: request,
 	})
 }
 

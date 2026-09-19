@@ -12,6 +12,12 @@ private struct InitialConnectionState {
     let state: Dieter_V1_State
 }
 
+private enum ProviderQuotaClientError: LocalizedError {
+    case noGateway
+
+    var errorDescription: String? { "No gateway is configured." }
+}
+
 extension DieterStore {
     func connect(to newEndpoint: DieterEndpoint? = nil, automatic: Bool = false) async {
         if let syncRestoreTask {
@@ -777,6 +783,7 @@ extension DieterStore {
         providerQuotaGroups.removeAll()
         providerQuotasLoading = false
         providerQuotaError = nil
+        providerQuotaMutatingAccounts.removeAll()
         closeConversation()
         syncProjection = .empty
         syncSnapshot = nil
@@ -1208,6 +1215,72 @@ extension DieterStore {
             else { return }
             providerQuotaError = DieterRPCFailure.message(for: error)
         }
+    }
+
+    func setProviderQuotaSummaryInclusion(
+        provider: Dieter_Gateway_V1_ProviderQuotaProvider,
+        accountKey: String,
+        included: Bool
+    ) async {
+        guard providerQuotaMutatingAccounts.insert(accountKey).inserted else { return }
+        defer { providerQuotaMutatingAccounts.remove(accountKey) }
+        do {
+            let (client, origin, runner) = try await providerQuotaClient()
+            defer {
+                runner.cancel()
+                client.shutdown()
+            }
+            let response = try await client.setProviderQuotaSummaryInclusion(
+                provider: provider, accountKey: accountKey, included: included)
+            guard origin.credentialID == activeGateway.credentialID else { return }
+            replaceProviderQuotaGroups(response.groups, provider: provider)
+            providerQuotaError = nil
+        } catch {
+            providerQuotaError = DieterRPCFailure.message(for: error)
+        }
+    }
+
+    func consumeProviderQuotaReset(accountKey: String) async {
+        guard providerQuotaMutatingAccounts.insert(accountKey).inserted else { return }
+        defer { providerQuotaMutatingAccounts.remove(accountKey) }
+        do {
+            let (client, origin, runner) = try await providerQuotaClient()
+            defer {
+                runner.cancel()
+                client.shutdown()
+            }
+            let response = try await client.consumeProviderQuotaReset(
+                accountKey: accountKey, idempotencyKey: UUID().uuidString.lowercased())
+            guard origin.credentialID == activeGateway.credentialID else { return }
+            replaceProviderQuotaGroups(response.groups, provider: .openaiCodex)
+            providerQuotaError =
+                response.accepted
+                ? nil : "No online machine with access to this OpenAI account accepted the reset."
+        } catch {
+            providerQuotaError = DieterRPCFailure.message(for: error)
+        }
+    }
+
+    private func providerQuotaClient() async throws -> (
+        DieterRPC, DieterEndpoint, Task<Void, Never>
+    ) {
+        guard
+            let origin = gatewayOrigins.first(where: { $0.credentialID == activeGateway.credentialID })
+                ?? gatewayOrigins.first
+        else { throw ProviderQuotaClientError.noGateway }
+        let client = try environment.clients.client(
+            endpoint: origin, accessToken: await accessToken(for: origin))
+        let runner = Task<Void, Never> { _ = try? await client.run() }
+        return (client, origin, runner)
+    }
+
+    private func replaceProviderQuotaGroups(
+        _ groups: [Dieter_Gateway_V1_ProviderQuotaGroup],
+        provider: Dieter_Gateway_V1_ProviderQuotaProvider
+    ) {
+        providerQuotaGroups.removeAll { $0.provider == provider }
+        providerQuotaGroups.append(contentsOf: groups)
+        providerQuotaGroups.sort { $0.provider.rawValue < $1.provider.rawValue }
     }
 
     func loadMachine(_ machine: DieterEndpoint, includeArchivedChats: Bool) async throws

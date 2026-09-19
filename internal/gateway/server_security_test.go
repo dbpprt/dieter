@@ -77,7 +77,7 @@ func TestGatewayRejectsUnauthenticatedProviderQuotaRPCsBeforeReadingBody(t *test
 	}
 	defer server.APIGRPC.Stop()
 	defer server.RelayGRPC.Stop()
-	for _, method := range []string{"ListProviderQuotas", "WatchProviderQuotas", "RefreshProviderQuotas"} {
+	for _, method := range []string{"ListProviderQuotas", "WatchProviderQuotas", "RefreshProviderQuotas", "SetProviderQuotaSummaryInclusion", "ConsumeProviderQuotaReset"} {
 		t.Run(method, func(t *testing.T) {
 			body := &repeatedBody{}
 			request := httptest.NewRequest(http.MethodPost, "https://gateway.example/dieter.gateway.v1.GatewayService/"+method, body)

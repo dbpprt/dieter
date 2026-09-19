@@ -306,6 +306,8 @@ public nonisolated enum Dieter_Gateway_V1_DaemonLinkFrameKind: SwiftProtobuf.Enu
   case providerAccounts // = 16
   case providerQuotaRefreshRequest // = 17
   case providerQuotaRefreshResult // = 18
+  case providerQuotaResetRequest // = 19
+  case providerQuotaResetResult // = 20
   case UNRECOGNIZED(Int)
 
   public init() {
@@ -333,6 +335,8 @@ public nonisolated enum Dieter_Gateway_V1_DaemonLinkFrameKind: SwiftProtobuf.Enu
     case 16: self = .providerAccounts
     case 17: self = .providerQuotaRefreshRequest
     case 18: self = .providerQuotaRefreshResult
+    case 19: self = .providerQuotaResetRequest
+    case 20: self = .providerQuotaResetResult
     default: self = .UNRECOGNIZED(rawValue)
     }
   }
@@ -358,6 +362,8 @@ public nonisolated enum Dieter_Gateway_V1_DaemonLinkFrameKind: SwiftProtobuf.Enu
     case .providerAccounts: return 16
     case .providerQuotaRefreshRequest: return 17
     case .providerQuotaRefreshResult: return 18
+    case .providerQuotaResetRequest: return 19
+    case .providerQuotaResetResult: return 20
     case .UNRECOGNIZED(let i): return i
     }
   }
@@ -383,6 +389,8 @@ public nonisolated enum Dieter_Gateway_V1_DaemonLinkFrameKind: SwiftProtobuf.Enu
     .providerAccounts,
     .providerQuotaRefreshRequest,
     .providerQuotaRefreshResult,
+    .providerQuotaResetRequest,
+    .providerQuotaResetResult,
   ]
 
 }
@@ -919,7 +927,8 @@ public nonisolated struct Dieter_Gateway_V1_ProviderResetCredits: Sendable {
 
 /// ProviderQuotaSnapshot is normalized provider data for exactly one account.
 /// account_key is an opaque, gateway-account-scoped HMAC and is not a provider
-/// account identifier, email address, credential, or display name.
+/// account identifier or credential. display_email is optional display-only
+/// metadata from the provider's structured account API.
 public nonisolated struct Dieter_Gateway_V1_ProviderQuotaSnapshot: @unchecked Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
@@ -1036,6 +1045,20 @@ public nonisolated struct Dieter_Gateway_V1_ProviderQuotaSnapshot: @unchecked Se
     set {_uniqueStorage()._statusCode = newValue}
   }
 
+  public var displayEmail: String {
+    get {_storage._displayEmail}
+    set {_uniqueStorage()._displayEmail = newValue}
+  }
+
+  public var includedInSummary: Bool {
+    get {_storage._includedInSummary ?? false}
+    set {_uniqueStorage()._includedInSummary = newValue}
+  }
+  /// Returns true if `includedInSummary` has been explicitly set.
+  public var hasIncludedInSummary: Bool {_storage._includedInSummary != nil}
+  /// Clears the value of `includedInSummary`. Subsequent reads from it will return its default value.
+  public mutating func clearIncludedInSummary() {_uniqueStorage()._includedInSummary = nil}
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
@@ -1077,6 +1100,10 @@ public nonisolated struct Dieter_Gateway_V1_ProviderQuotaSummary: Sendable {
   public var resetsAt: String = String()
 
   public var freshness: Dieter_Gateway_V1_ProviderQuotaFreshness = .unspecified
+
+  public var includedAccountCount: UInt32 = 0
+
+  public var excludedAccountCount: UInt32 = 0
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -1207,6 +1234,69 @@ public nonisolated struct Dieter_Gateway_V1_RefreshProviderQuotasResponse: Senda
   public init() {}
 }
 
+public nonisolated struct Dieter_Gateway_V1_SetProviderQuotaSummaryInclusionRequest: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var provider: Dieter_Gateway_V1_ProviderQuotaProvider = .unspecified
+
+  public var accountKey: String = String()
+
+  public var included: Bool = false
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct Dieter_Gateway_V1_SetProviderQuotaSummaryInclusionResponse: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var groups: [Dieter_Gateway_V1_ProviderQuotaGroup] = []
+
+  public var revision: UInt64 = 0
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct Dieter_Gateway_V1_ConsumeProviderQuotaResetRequest: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var provider: Dieter_Gateway_V1_ProviderQuotaProvider = .unspecified
+
+  public var accountKey: String = String()
+
+  /// Reuse the same UUID when retrying an uncertain request.
+  public var idempotencyKey: String = String()
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct Dieter_Gateway_V1_ConsumeProviderQuotaResetResponse: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var groups: [Dieter_Gateway_V1_ProviderQuotaGroup] = []
+
+  public var revision: UInt64 = 0
+
+  public var accepted: Bool = false
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
 public nonisolated struct Dieter_Gateway_V1_ProviderAccountPresence: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
@@ -1268,6 +1358,49 @@ public nonisolated struct Dieter_Gateway_V1_ProviderQuotaRefreshResult: Sendable
   public var hasSnapshot: Bool {self._snapshot != nil}
   /// Clears the value of `snapshot`. Subsequent reads from it will return its default value.
   public mutating func clearSnapshot() {self._snapshot = nil}
+
+  public var errorCode: String = String()
+
+  public var retryAfterSeconds: UInt32 = 0
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+
+  fileprivate var _snapshot: Dieter_Gateway_V1_ProviderQuotaSnapshot? = nil
+}
+
+public nonisolated struct Dieter_Gateway_V1_ProviderQuotaResetRequest: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var provider: Dieter_Gateway_V1_ProviderQuotaProvider = .unspecified
+
+  public var accountKey: String = String()
+
+  public var idempotencyKey: String = String()
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct Dieter_Gateway_V1_ProviderQuotaResetResult: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var snapshot: Dieter_Gateway_V1_ProviderQuotaSnapshot {
+    get {_snapshot ?? Dieter_Gateway_V1_ProviderQuotaSnapshot()}
+    set {_snapshot = newValue}
+  }
+  /// Returns true if `snapshot` has been explicitly set.
+  public var hasSnapshot: Bool {self._snapshot != nil}
+  /// Clears the value of `snapshot`. Subsequent reads from it will return its default value.
+  public mutating func clearSnapshot() {self._snapshot = nil}
+
+  public var outcome: String = String()
 
   public var errorCode: String = String()
 
@@ -1416,6 +1549,24 @@ public nonisolated struct Dieter_Gateway_V1_DaemonLinkFrame: @unchecked Sendable
   /// Clears the value of `providerQuotaRefreshResult`. Subsequent reads from it will return its default value.
   public mutating func clearProviderQuotaRefreshResult() {_uniqueStorage()._providerQuotaRefreshResult = nil}
 
+  public var providerQuotaResetRequest: Dieter_Gateway_V1_ProviderQuotaResetRequest {
+    get {_storage._providerQuotaResetRequest ?? Dieter_Gateway_V1_ProviderQuotaResetRequest()}
+    set {_uniqueStorage()._providerQuotaResetRequest = newValue}
+  }
+  /// Returns true if `providerQuotaResetRequest` has been explicitly set.
+  public var hasProviderQuotaResetRequest: Bool {_storage._providerQuotaResetRequest != nil}
+  /// Clears the value of `providerQuotaResetRequest`. Subsequent reads from it will return its default value.
+  public mutating func clearProviderQuotaResetRequest() {_uniqueStorage()._providerQuotaResetRequest = nil}
+
+  public var providerQuotaResetResult: Dieter_Gateway_V1_ProviderQuotaResetResult {
+    get {_storage._providerQuotaResetResult ?? Dieter_Gateway_V1_ProviderQuotaResetResult()}
+    set {_uniqueStorage()._providerQuotaResetResult = newValue}
+  }
+  /// Returns true if `providerQuotaResetResult` has been explicitly set.
+  public var hasProviderQuotaResetResult: Bool {_storage._providerQuotaResetResult != nil}
+  /// Clears the value of `providerQuotaResetResult`. Subsequent reads from it will return its default value.
+  public mutating func clearProviderQuotaResetResult() {_uniqueStorage()._providerQuotaResetResult = nil}
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
@@ -1452,7 +1603,7 @@ nonisolated extension Dieter_Gateway_V1_ProviderQuotaFreshness: SwiftProtobuf._P
 }
 
 nonisolated extension Dieter_Gateway_V1_DaemonLinkFrameKind: SwiftProtobuf._ProtoNameProviding {
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0DAEMON_LINK_FRAME_KIND_UNSPECIFIED\0\u{1}DAEMON_LINK_FRAME_KIND_HELLO\0\u{1}DAEMON_LINK_FRAME_KIND_HELLO_ACK\0\u{1}DAEMON_LINK_FRAME_KIND_HEARTBEAT\0\u{1}DAEMON_LINK_FRAME_KIND_ROUTES\0\u{1}DAEMON_LINK_FRAME_KIND_OPEN_RPC\0\u{1}DAEMON_LINK_FRAME_KIND_REQUEST_MESSAGE\0\u{1}DAEMON_LINK_FRAME_KIND_REQUEST_END\0\u{1}DAEMON_LINK_FRAME_KIND_CANCEL_RPC\0\u{1}DAEMON_LINK_FRAME_KIND_RESPONSE_HEADER\0\u{1}DAEMON_LINK_FRAME_KIND_RESPONSE_MESSAGE\0\u{1}DAEMON_LINK_FRAME_KIND_RESPONSE_END\0\u{1}DAEMON_LINK_FRAME_KIND_RPC_ERROR\0\u{1}DAEMON_LINK_FRAME_KIND_WINDOW_UPDATE\0\u{1}DAEMON_LINK_FRAME_KIND_PING\0\u{1}DAEMON_LINK_FRAME_KIND_PONG\0\u{1}DAEMON_LINK_FRAME_KIND_PROVIDER_ACCOUNTS\0\u{1}DAEMON_LINK_FRAME_KIND_PROVIDER_QUOTA_REFRESH_REQUEST\0\u{1}DAEMON_LINK_FRAME_KIND_PROVIDER_QUOTA_REFRESH_RESULT\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0DAEMON_LINK_FRAME_KIND_UNSPECIFIED\0\u{1}DAEMON_LINK_FRAME_KIND_HELLO\0\u{1}DAEMON_LINK_FRAME_KIND_HELLO_ACK\0\u{1}DAEMON_LINK_FRAME_KIND_HEARTBEAT\0\u{1}DAEMON_LINK_FRAME_KIND_ROUTES\0\u{1}DAEMON_LINK_FRAME_KIND_OPEN_RPC\0\u{1}DAEMON_LINK_FRAME_KIND_REQUEST_MESSAGE\0\u{1}DAEMON_LINK_FRAME_KIND_REQUEST_END\0\u{1}DAEMON_LINK_FRAME_KIND_CANCEL_RPC\0\u{1}DAEMON_LINK_FRAME_KIND_RESPONSE_HEADER\0\u{1}DAEMON_LINK_FRAME_KIND_RESPONSE_MESSAGE\0\u{1}DAEMON_LINK_FRAME_KIND_RESPONSE_END\0\u{1}DAEMON_LINK_FRAME_KIND_RPC_ERROR\0\u{1}DAEMON_LINK_FRAME_KIND_WINDOW_UPDATE\0\u{1}DAEMON_LINK_FRAME_KIND_PING\0\u{1}DAEMON_LINK_FRAME_KIND_PONG\0\u{1}DAEMON_LINK_FRAME_KIND_PROVIDER_ACCOUNTS\0\u{1}DAEMON_LINK_FRAME_KIND_PROVIDER_QUOTA_REFRESH_REQUEST\0\u{1}DAEMON_LINK_FRAME_KIND_PROVIDER_QUOTA_REFRESH_RESULT\0\u{1}DAEMON_LINK_FRAME_KIND_PROVIDER_QUOTA_RESET_REQUEST\0\u{1}DAEMON_LINK_FRAME_KIND_PROVIDER_QUOTA_RESET_RESULT\0")
 }
 
 nonisolated extension Dieter_Gateway_V1_Account: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
@@ -2601,7 +2752,7 @@ nonisolated extension Dieter_Gateway_V1_ProviderResetCredits: SwiftProtobuf.Mess
 
 nonisolated extension Dieter_Gateway_V1_ProviderQuotaSnapshot: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".ProviderQuotaSnapshot"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}provider\0\u{3}account_key\0\u{3}account_kind\0\u{1}plan\0\u{1}availability\0\u{1}windows\0\u{3}next_reset_at\0\u{3}next_reset_window_id\0\u{1}credits\0\u{3}spend_allowance\0\u{3}reset_credits\0\u{3}ordinary_usage_allowed\0\u{3}refreshed_at\0\u{3}next_refresh_at\0\u{3}fresh_until\0\u{3}last_success_at\0\u{3}refresh_state\0\u{3}online_source_count\0\u{3}status_code\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}provider\0\u{3}account_key\0\u{3}account_kind\0\u{1}plan\0\u{1}availability\0\u{1}windows\0\u{3}next_reset_at\0\u{3}next_reset_window_id\0\u{1}credits\0\u{3}spend_allowance\0\u{3}reset_credits\0\u{3}ordinary_usage_allowed\0\u{3}refreshed_at\0\u{3}next_refresh_at\0\u{3}fresh_until\0\u{3}last_success_at\0\u{3}refresh_state\0\u{3}online_source_count\0\u{3}status_code\0\u{3}display_email\0\u{3}included_in_summary\0")
 
   fileprivate class _StorageClass {
     var _provider: Dieter_Gateway_V1_ProviderQuotaProvider = .unspecified
@@ -2623,6 +2774,8 @@ nonisolated extension Dieter_Gateway_V1_ProviderQuotaSnapshot: SwiftProtobuf.Mes
     var _refreshState: Dieter_Gateway_V1_ProviderQuotaRefreshState = .unspecified
     var _onlineSourceCount: UInt32 = 0
     var _statusCode: String = String()
+    var _displayEmail: String = String()
+    var _includedInSummary: Bool? = nil
 
       // This property is used as the initial default value for new instances of the type.
       // The type itself is protecting the reference to its storage via CoW semantics.
@@ -2652,6 +2805,8 @@ nonisolated extension Dieter_Gateway_V1_ProviderQuotaSnapshot: SwiftProtobuf.Mes
       _refreshState = source._refreshState
       _onlineSourceCount = source._onlineSourceCount
       _statusCode = source._statusCode
+      _displayEmail = source._displayEmail
+      _includedInSummary = source._includedInSummary
     }
   }
 
@@ -2689,6 +2844,8 @@ nonisolated extension Dieter_Gateway_V1_ProviderQuotaSnapshot: SwiftProtobuf.Mes
         case 17: try { try decoder.decodeSingularEnumField(value: &_storage._refreshState) }()
         case 18: try { try decoder.decodeSingularUInt32Field(value: &_storage._onlineSourceCount) }()
         case 19: try { try decoder.decodeSingularStringField(value: &_storage._statusCode) }()
+        case 20: try { try decoder.decodeSingularStringField(value: &_storage._displayEmail) }()
+        case 21: try { try decoder.decodeSingularBoolField(value: &_storage._includedInSummary) }()
         default: break
         }
       }
@@ -2758,6 +2915,12 @@ nonisolated extension Dieter_Gateway_V1_ProviderQuotaSnapshot: SwiftProtobuf.Mes
       if !_storage._statusCode.isEmpty {
         try visitor.visitSingularStringField(value: _storage._statusCode, fieldNumber: 19)
       }
+      if !_storage._displayEmail.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._displayEmail, fieldNumber: 20)
+      }
+      try { if let v = _storage._includedInSummary {
+        try visitor.visitSingularBoolField(value: v, fieldNumber: 21)
+      } }()
     }
     try unknownFields.traverse(visitor: &visitor)
   }
@@ -2786,6 +2949,8 @@ nonisolated extension Dieter_Gateway_V1_ProviderQuotaSnapshot: SwiftProtobuf.Mes
         if _storage._refreshState != rhs_storage._refreshState {return false}
         if _storage._onlineSourceCount != rhs_storage._onlineSourceCount {return false}
         if _storage._statusCode != rhs_storage._statusCode {return false}
+        if _storage._displayEmail != rhs_storage._displayEmail {return false}
+        if _storage._includedInSummary != rhs_storage._includedInSummary {return false}
         return true
       }
       if !storagesAreEqual {return false}
@@ -2797,7 +2962,7 @@ nonisolated extension Dieter_Gateway_V1_ProviderQuotaSnapshot: SwiftProtobuf.Mes
 
 nonisolated extension Dieter_Gateway_V1_ProviderQuotaSummary: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".ProviderQuotaSummary"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}total_account_count\0\u{3}numeric_account_count\0\u{3}unavailable_account_count\0\u{3}remaining_percent\0\u{3}summary_account_key\0\u{3}summary_window_id\0\u{3}summary_window_kind\0\u{3}summary_window_label\0\u{3}resets_at\0\u{1}freshness\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}total_account_count\0\u{3}numeric_account_count\0\u{3}unavailable_account_count\0\u{3}remaining_percent\0\u{3}summary_account_key\0\u{3}summary_window_id\0\u{3}summary_window_kind\0\u{3}summary_window_label\0\u{3}resets_at\0\u{1}freshness\0\u{3}included_account_count\0\u{3}excluded_account_count\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -2815,6 +2980,8 @@ nonisolated extension Dieter_Gateway_V1_ProviderQuotaSummary: SwiftProtobuf.Mess
       case 8: try { try decoder.decodeSingularStringField(value: &self.summaryWindowLabel) }()
       case 9: try { try decoder.decodeSingularStringField(value: &self.resetsAt) }()
       case 10: try { try decoder.decodeSingularEnumField(value: &self.freshness) }()
+      case 11: try { try decoder.decodeSingularUInt32Field(value: &self.includedAccountCount) }()
+      case 12: try { try decoder.decodeSingularUInt32Field(value: &self.excludedAccountCount) }()
       default: break
       }
     }
@@ -2855,6 +3022,12 @@ nonisolated extension Dieter_Gateway_V1_ProviderQuotaSummary: SwiftProtobuf.Mess
     if self.freshness != .unspecified {
       try visitor.visitSingularEnumField(value: self.freshness, fieldNumber: 10)
     }
+    if self.includedAccountCount != 0 {
+      try visitor.visitSingularUInt32Field(value: self.includedAccountCount, fieldNumber: 11)
+    }
+    if self.excludedAccountCount != 0 {
+      try visitor.visitSingularUInt32Field(value: self.excludedAccountCount, fieldNumber: 12)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -2869,6 +3042,8 @@ nonisolated extension Dieter_Gateway_V1_ProviderQuotaSummary: SwiftProtobuf.Mess
     if lhs.summaryWindowLabel != rhs.summaryWindowLabel {return false}
     if lhs.resetsAt != rhs.resetsAt {return false}
     if lhs.freshness != rhs.freshness {return false}
+    if lhs.includedAccountCount != rhs.includedAccountCount {return false}
+    if lhs.excludedAccountCount != rhs.excludedAccountCount {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -3142,6 +3317,161 @@ nonisolated extension Dieter_Gateway_V1_RefreshProviderQuotasResponse: SwiftProt
   }
 }
 
+nonisolated extension Dieter_Gateway_V1_SetProviderQuotaSummaryInclusionRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".SetProviderQuotaSummaryInclusionRequest"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}provider\0\u{3}account_key\0\u{1}included\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularEnumField(value: &self.provider) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.accountKey) }()
+      case 3: try { try decoder.decodeSingularBoolField(value: &self.included) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if self.provider != .unspecified {
+      try visitor.visitSingularEnumField(value: self.provider, fieldNumber: 1)
+    }
+    if !self.accountKey.isEmpty {
+      try visitor.visitSingularStringField(value: self.accountKey, fieldNumber: 2)
+    }
+    if self.included != false {
+      try visitor.visitSingularBoolField(value: self.included, fieldNumber: 3)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Dieter_Gateway_V1_SetProviderQuotaSummaryInclusionRequest, rhs: Dieter_Gateway_V1_SetProviderQuotaSummaryInclusionRequest) -> Bool {
+    if lhs.provider != rhs.provider {return false}
+    if lhs.accountKey != rhs.accountKey {return false}
+    if lhs.included != rhs.included {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Dieter_Gateway_V1_SetProviderQuotaSummaryInclusionResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".SetProviderQuotaSummaryInclusionResponse"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}groups\0\u{1}revision\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeRepeatedMessageField(value: &self.groups) }()
+      case 2: try { try decoder.decodeSingularUInt64Field(value: &self.revision) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.groups.isEmpty {
+      try visitor.visitRepeatedMessageField(value: self.groups, fieldNumber: 1)
+    }
+    if self.revision != 0 {
+      try visitor.visitSingularUInt64Field(value: self.revision, fieldNumber: 2)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Dieter_Gateway_V1_SetProviderQuotaSummaryInclusionResponse, rhs: Dieter_Gateway_V1_SetProviderQuotaSummaryInclusionResponse) -> Bool {
+    if lhs.groups != rhs.groups {return false}
+    if lhs.revision != rhs.revision {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Dieter_Gateway_V1_ConsumeProviderQuotaResetRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".ConsumeProviderQuotaResetRequest"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}provider\0\u{3}account_key\0\u{3}idempotency_key\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularEnumField(value: &self.provider) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.accountKey) }()
+      case 3: try { try decoder.decodeSingularStringField(value: &self.idempotencyKey) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if self.provider != .unspecified {
+      try visitor.visitSingularEnumField(value: self.provider, fieldNumber: 1)
+    }
+    if !self.accountKey.isEmpty {
+      try visitor.visitSingularStringField(value: self.accountKey, fieldNumber: 2)
+    }
+    if !self.idempotencyKey.isEmpty {
+      try visitor.visitSingularStringField(value: self.idempotencyKey, fieldNumber: 3)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Dieter_Gateway_V1_ConsumeProviderQuotaResetRequest, rhs: Dieter_Gateway_V1_ConsumeProviderQuotaResetRequest) -> Bool {
+    if lhs.provider != rhs.provider {return false}
+    if lhs.accountKey != rhs.accountKey {return false}
+    if lhs.idempotencyKey != rhs.idempotencyKey {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Dieter_Gateway_V1_ConsumeProviderQuotaResetResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".ConsumeProviderQuotaResetResponse"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}groups\0\u{1}revision\0\u{1}accepted\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeRepeatedMessageField(value: &self.groups) }()
+      case 2: try { try decoder.decodeSingularUInt64Field(value: &self.revision) }()
+      case 3: try { try decoder.decodeSingularBoolField(value: &self.accepted) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.groups.isEmpty {
+      try visitor.visitRepeatedMessageField(value: self.groups, fieldNumber: 1)
+    }
+    if self.revision != 0 {
+      try visitor.visitSingularUInt64Field(value: self.revision, fieldNumber: 2)
+    }
+    if self.accepted != false {
+      try visitor.visitSingularBoolField(value: self.accepted, fieldNumber: 3)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Dieter_Gateway_V1_ConsumeProviderQuotaResetResponse, rhs: Dieter_Gateway_V1_ConsumeProviderQuotaResetResponse) -> Bool {
+    if lhs.groups != rhs.groups {return false}
+    if lhs.revision != rhs.revision {return false}
+    if lhs.accepted != rhs.accepted {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
 nonisolated extension Dieter_Gateway_V1_ProviderAccountPresence: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".ProviderAccountPresence"
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}provider\0\u{3}account_key\0\u{3}account_kind\0\u{1}plan\0\u{1}availability\0\u{3}refresh_supported\0")
@@ -3306,9 +3636,98 @@ nonisolated extension Dieter_Gateway_V1_ProviderQuotaRefreshResult: SwiftProtobu
   }
 }
 
+nonisolated extension Dieter_Gateway_V1_ProviderQuotaResetRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".ProviderQuotaResetRequest"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}provider\0\u{3}account_key\0\u{3}idempotency_key\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularEnumField(value: &self.provider) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.accountKey) }()
+      case 3: try { try decoder.decodeSingularStringField(value: &self.idempotencyKey) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if self.provider != .unspecified {
+      try visitor.visitSingularEnumField(value: self.provider, fieldNumber: 1)
+    }
+    if !self.accountKey.isEmpty {
+      try visitor.visitSingularStringField(value: self.accountKey, fieldNumber: 2)
+    }
+    if !self.idempotencyKey.isEmpty {
+      try visitor.visitSingularStringField(value: self.idempotencyKey, fieldNumber: 3)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Dieter_Gateway_V1_ProviderQuotaResetRequest, rhs: Dieter_Gateway_V1_ProviderQuotaResetRequest) -> Bool {
+    if lhs.provider != rhs.provider {return false}
+    if lhs.accountKey != rhs.accountKey {return false}
+    if lhs.idempotencyKey != rhs.idempotencyKey {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Dieter_Gateway_V1_ProviderQuotaResetResult: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".ProviderQuotaResetResult"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}snapshot\0\u{1}outcome\0\u{3}error_code\0\u{3}retry_after_seconds\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularMessageField(value: &self._snapshot) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.outcome) }()
+      case 3: try { try decoder.decodeSingularStringField(value: &self.errorCode) }()
+      case 4: try { try decoder.decodeSingularUInt32Field(value: &self.retryAfterSeconds) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    // The use of inline closures is to circumvent an issue where the compiler
+    // allocates stack space for every if/case branch local when no optimizations
+    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+    // https://github.com/apple/swift-protobuf/issues/1182
+    try { if let v = self._snapshot {
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 1)
+    } }()
+    if !self.outcome.isEmpty {
+      try visitor.visitSingularStringField(value: self.outcome, fieldNumber: 2)
+    }
+    if !self.errorCode.isEmpty {
+      try visitor.visitSingularStringField(value: self.errorCode, fieldNumber: 3)
+    }
+    if self.retryAfterSeconds != 0 {
+      try visitor.visitSingularUInt32Field(value: self.retryAfterSeconds, fieldNumber: 4)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Dieter_Gateway_V1_ProviderQuotaResetResult, rhs: Dieter_Gateway_V1_ProviderQuotaResetResult) -> Bool {
+    if lhs._snapshot != rhs._snapshot {return false}
+    if lhs.outcome != rhs.outcome {return false}
+    if lhs.errorCode != rhs.errorCode {return false}
+    if lhs.retryAfterSeconds != rhs.retryAfterSeconds {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
 nonisolated extension Dieter_Gateway_V1_DaemonLinkFrame: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".DaemonLinkFrame"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}kind\0\u{3}stream_id\0\u{3}daemon_id\0\u{3}request_id\0\u{1}method\0\u{1}payload\0\u{3}payload_sha256\0\u{3}delegation_assertion\0\u{3}deadline_unix_millis\0\u{3}status_code\0\u{3}status_message\0\u{1}metadata\0\u{3}window_bytes\0\u{1}version\0\u{1}generation\0\u{3}direct_candidates\0\u{3}remote_desktop\0\u{3}api_version\0\u{1}capabilities\0\u{3}provider_account_correlation_key\0\u{3}provider_accounts\0\u{3}provider_quota_refresh_request\0\u{3}provider_quota_refresh_result\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}kind\0\u{3}stream_id\0\u{3}daemon_id\0\u{3}request_id\0\u{1}method\0\u{1}payload\0\u{3}payload_sha256\0\u{3}delegation_assertion\0\u{3}deadline_unix_millis\0\u{3}status_code\0\u{3}status_message\0\u{1}metadata\0\u{3}window_bytes\0\u{1}version\0\u{1}generation\0\u{3}direct_candidates\0\u{3}remote_desktop\0\u{3}api_version\0\u{1}capabilities\0\u{3}provider_account_correlation_key\0\u{3}provider_accounts\0\u{3}provider_quota_refresh_request\0\u{3}provider_quota_refresh_result\0\u{3}provider_quota_reset_request\0\u{3}provider_quota_reset_result\0")
 
   fileprivate class _StorageClass {
     var _kind: Dieter_Gateway_V1_DaemonLinkFrameKind = .unspecified
@@ -3334,6 +3753,8 @@ nonisolated extension Dieter_Gateway_V1_DaemonLinkFrame: SwiftProtobuf.Message, 
     var _providerAccounts: Dieter_Gateway_V1_ProviderAccountsPresence? = nil
     var _providerQuotaRefreshRequest: Dieter_Gateway_V1_ProviderQuotaRefreshRequest? = nil
     var _providerQuotaRefreshResult: Dieter_Gateway_V1_ProviderQuotaRefreshResult? = nil
+    var _providerQuotaResetRequest: Dieter_Gateway_V1_ProviderQuotaResetRequest? = nil
+    var _providerQuotaResetResult: Dieter_Gateway_V1_ProviderQuotaResetResult? = nil
 
       // This property is used as the initial default value for new instances of the type.
       // The type itself is protecting the reference to its storage via CoW semantics.
@@ -3367,6 +3788,8 @@ nonisolated extension Dieter_Gateway_V1_DaemonLinkFrame: SwiftProtobuf.Message, 
       _providerAccounts = source._providerAccounts
       _providerQuotaRefreshRequest = source._providerQuotaRefreshRequest
       _providerQuotaRefreshResult = source._providerQuotaRefreshResult
+      _providerQuotaResetRequest = source._providerQuotaResetRequest
+      _providerQuotaResetResult = source._providerQuotaResetResult
     }
   }
 
@@ -3408,6 +3831,8 @@ nonisolated extension Dieter_Gateway_V1_DaemonLinkFrame: SwiftProtobuf.Message, 
         case 21: try { try decoder.decodeSingularMessageField(value: &_storage._providerAccounts) }()
         case 22: try { try decoder.decodeSingularMessageField(value: &_storage._providerQuotaRefreshRequest) }()
         case 23: try { try decoder.decodeSingularMessageField(value: &_storage._providerQuotaRefreshResult) }()
+        case 24: try { try decoder.decodeSingularMessageField(value: &_storage._providerQuotaResetRequest) }()
+        case 25: try { try decoder.decodeSingularMessageField(value: &_storage._providerQuotaResetResult) }()
         default: break
         }
       }
@@ -3489,6 +3914,12 @@ nonisolated extension Dieter_Gateway_V1_DaemonLinkFrame: SwiftProtobuf.Message, 
       try { if let v = _storage._providerQuotaRefreshResult {
         try visitor.visitSingularMessageField(value: v, fieldNumber: 23)
       } }()
+      try { if let v = _storage._providerQuotaResetRequest {
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 24)
+      } }()
+      try { if let v = _storage._providerQuotaResetResult {
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 25)
+      } }()
     }
     try unknownFields.traverse(visitor: &visitor)
   }
@@ -3521,6 +3952,8 @@ nonisolated extension Dieter_Gateway_V1_DaemonLinkFrame: SwiftProtobuf.Message, 
         if _storage._providerAccounts != rhs_storage._providerAccounts {return false}
         if _storage._providerQuotaRefreshRequest != rhs_storage._providerQuotaRefreshRequest {return false}
         if _storage._providerQuotaRefreshResult != rhs_storage._providerQuotaRefreshResult {return false}
+        if _storage._providerQuotaResetRequest != rhs_storage._providerQuotaResetRequest {return false}
+        if _storage._providerQuotaResetResult != rhs_storage._providerQuotaResetResult {return false}
         return true
       }
       if !storagesAreEqual {return false}

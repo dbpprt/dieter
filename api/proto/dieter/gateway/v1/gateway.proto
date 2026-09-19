@@ -31,6 +31,8 @@ service GatewayService {
   rpc ListProviderQuotas(ListProviderQuotasRequest) returns (ListProviderQuotasResponse);
   rpc WatchProviderQuotas(WatchProviderQuotasRequest) returns (stream ProviderQuotaUpdate);
   rpc RefreshProviderQuotas(RefreshProviderQuotasRequest) returns (RefreshProviderQuotasResponse);
+  rpc SetProviderQuotaSummaryInclusion(SetProviderQuotaSummaryInclusionRequest) returns (SetProviderQuotaSummaryInclusionResponse);
+  rpc ConsumeProviderQuotaReset(ConsumeProviderQuotaResetRequest) returns (ConsumeProviderQuotaResetResponse);
 }
 
 // DaemonLinkService is a persistent daemon-initiated reverse tunnel. Every
@@ -272,7 +274,8 @@ message ProviderResetCredits {
 
 // ProviderQuotaSnapshot is normalized provider data for exactly one account.
 // account_key is an opaque, gateway-account-scoped HMAC and is not a provider
-// account identifier, email address, credential, or display name.
+// account identifier or credential. display_email is optional display-only
+// metadata from the provider's structured account API.
 message ProviderQuotaSnapshot {
   ProviderQuotaProvider provider = 1;
   string account_key = 2;
@@ -293,6 +296,8 @@ message ProviderQuotaSnapshot {
   ProviderQuotaRefreshState refresh_state = 17;
   uint32 online_source_count = 18;
   string status_code = 19;
+  string display_email = 20;
+  optional bool included_in_summary = 21;
 }
 
 // ProviderQuotaSummary drives the one compact bar shown for a provider. The
@@ -309,6 +314,8 @@ message ProviderQuotaSummary {
   string summary_window_label = 8;
   string resets_at = 9;
   ProviderQuotaFreshness freshness = 10;
+  uint32 included_account_count = 11;
+  uint32 excluded_account_count = 12;
 }
 
 message ProviderQuotaGroup {
@@ -349,6 +356,30 @@ message RefreshProviderQuotasResponse {
   bool accepted = 3;
 }
 
+message SetProviderQuotaSummaryInclusionRequest {
+  ProviderQuotaProvider provider = 1;
+  string account_key = 2;
+  bool included = 3;
+}
+
+message SetProviderQuotaSummaryInclusionResponse {
+  repeated ProviderQuotaGroup groups = 1;
+  uint64 revision = 2;
+}
+
+message ConsumeProviderQuotaResetRequest {
+  ProviderQuotaProvider provider = 1;
+  string account_key = 2;
+  // Reuse the same UUID when retrying an uncertain request.
+  string idempotency_key = 3;
+}
+
+message ConsumeProviderQuotaResetResponse {
+  repeated ProviderQuotaGroup groups = 1;
+  uint64 revision = 2;
+  bool accepted = 3;
+}
+
 message ProviderAccountPresence {
   ProviderQuotaProvider provider = 1;
   string account_key = 2;
@@ -373,6 +404,19 @@ message ProviderQuotaRefreshResult {
   uint32 retry_after_seconds = 3;
 }
 
+message ProviderQuotaResetRequest {
+  ProviderQuotaProvider provider = 1;
+  string account_key = 2;
+  string idempotency_key = 3;
+}
+
+message ProviderQuotaResetResult {
+  ProviderQuotaSnapshot snapshot = 1;
+  string outcome = 2;
+  string error_code = 3;
+  uint32 retry_after_seconds = 4;
+}
+
 enum DaemonLinkFrameKind {
   DAEMON_LINK_FRAME_KIND_UNSPECIFIED = 0;
   DAEMON_LINK_FRAME_KIND_HELLO = 1;
@@ -393,6 +437,8 @@ enum DaemonLinkFrameKind {
   DAEMON_LINK_FRAME_KIND_PROVIDER_ACCOUNTS = 16;
   DAEMON_LINK_FRAME_KIND_PROVIDER_QUOTA_REFRESH_REQUEST = 17;
   DAEMON_LINK_FRAME_KIND_PROVIDER_QUOTA_REFRESH_RESULT = 18;
+  DAEMON_LINK_FRAME_KIND_PROVIDER_QUOTA_RESET_REQUEST = 19;
+  DAEMON_LINK_FRAME_KIND_PROVIDER_QUOTA_RESET_RESULT = 20;
 }
 
 message DaemonLinkFrame {
@@ -419,4 +465,6 @@ message DaemonLinkFrame {
   ProviderAccountsPresence provider_accounts = 21;
   ProviderQuotaRefreshRequest provider_quota_refresh_request = 22;
   ProviderQuotaRefreshResult provider_quota_refresh_result = 23;
+  ProviderQuotaResetRequest provider_quota_reset_request = 24;
+  ProviderQuotaResetResult provider_quota_reset_result = 25;
 }

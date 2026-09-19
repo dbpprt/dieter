@@ -85,6 +85,7 @@ type probeResetCredits struct {
 
 type probeResult struct {
 	StableAccountID      string               `json:"stableAccountID"`
+	DisplayEmail         string               `json:"displayEmail"`
 	AccountKind          string               `json:"accountKind"`
 	Plan                 string               `json:"plan"`
 	Availability         string               `json:"availability"`
@@ -93,6 +94,7 @@ type probeResult struct {
 	SpendAllowance       *probeSpendAllowance `json:"spendAllowance"`
 	ResetCredits         *probeResetCredits   `json:"resetCredits"`
 	OrdinaryUsageAllowed *bool                `json:"ordinaryUsageAllowed"`
+	ResetOutcome         string               `json:"resetOutcome"`
 }
 
 func New(root string, logger *slog.Logger) *Manager {
@@ -226,6 +228,43 @@ func (m *Manager) Refresh(ctx context.Context, correlationKey []byte, request *g
 	return &gatewayv1.ProviderQuotaRefreshResult{Snapshot: snapshot}, nil
 }
 
+func (m *Manager) ConsumeReset(ctx context.Context, correlationKey []byte, request *gatewayv1.ProviderQuotaResetRequest) (*gatewayv1.ProviderQuotaResetResult, error) {
+	if len(correlationKey) != 32 || request == nil || request.GetProvider() != gatewayv1.ProviderQuotaProvider_PROVIDER_QUOTA_PROVIDER_OPENAI_CODEX ||
+		!validIdempotencyKey(request.GetIdempotencyKey()) {
+		return nil, errors.New("provider quota reset request is invalid")
+	}
+	m.mu.Lock()
+	handle, exists := m.handles[request.GetAccountKey()]
+	m.mu.Unlock()
+	if !exists {
+		return &gatewayv1.ProviderQuotaResetResult{ErrorCode: "account_not_found"}, nil
+	}
+	result, err := m.runProbe(ctx, handle.profileRoot, "consume_reset", request.GetIdempotencyKey(), handle.stableAccountID)
+	if err != nil {
+		return &gatewayv1.ProviderQuotaResetResult{ErrorCode: "temporarily_unavailable"}, nil
+	}
+	if result.StableAccountID == "" || result.StableAccountID != handle.stableAccountID ||
+		correlateAccount(correlationKey, request.GetProvider(), result.StableAccountID) != request.GetAccountKey() {
+		return &gatewayv1.ProviderQuotaResetResult{ErrorCode: "identity_mismatch"}, nil
+	}
+	switch result.ResetOutcome {
+	case "reset", "nothingToReset", "noCredit", "alreadyRedeemed":
+	default:
+		return &gatewayv1.ProviderQuotaResetResult{ErrorCode: "invalid_reset_outcome"}, nil
+	}
+	m.mu.Lock()
+	if current, ok := m.handles[request.GetAccountKey()]; ok && current.stableAccountID == handle.stableAccountID {
+		current.lastProbe = result
+		current.probedAt = m.now().UTC()
+		m.handles[request.GetAccountKey()] = current
+	}
+	m.mu.Unlock()
+	return &gatewayv1.ProviderQuotaResetResult{
+		Snapshot: normalizeSnapshot(request.GetAccountKey(), result, m.now().UTC()),
+		Outcome:  result.ResetOutcome,
+	}, nil
+}
+
 func correlateAccount(key []byte, provider gatewayv1.ProviderQuotaProvider, stableID string) string {
 	mac := hmac.New(sha256.New, key)
 	_, _ = mac.Write([]byte(provider.String()))
@@ -297,6 +336,10 @@ func (w *cappedBuffer) Write(value []byte) (int, error) {
 }
 
 func (m *Manager) probe(ctx context.Context, profileRoot string) (probeResult, error) {
+	return m.runProbe(ctx, profileRoot, "read", "", "")
+}
+
+func (m *Manager) runProbe(ctx context.Context, profileRoot, action, idempotencyKey, expectedAccountID string) (probeResult, error) {
 	var result probeResult
 	runtimeDirectory, err := m.runner.RuntimeDirectory(ctx)
 	if err != nil {
@@ -306,6 +349,13 @@ func (m *Manager) probe(ctx context.Context, profileRoot string) (probeResult, e
 	command.Dir = runtimeDirectory
 	command.WaitDelay = 2 * time.Second
 	command.Env = environmentWithCodexHome(os.Environ(), profileRoot)
+	command.Env = append(command.Env, "DIETER_QUOTA_ACTION="+action)
+	if idempotencyKey != "" {
+		command.Env = append(command.Env, "DIETER_QUOTA_IDEMPOTENCY_KEY="+idempotencyKey)
+	}
+	if expectedAccountID != "" {
+		command.Env = append(command.Env, "DIETER_QUOTA_EXPECTED_ACCOUNT_ID="+expectedAccountID)
+	}
 	var output cappedBuffer
 	command.Stdout, command.Stderr = &output, io.Discard
 	if err := command.Run(); err != nil {
@@ -318,6 +368,21 @@ func (m *Manager) probe(ctx context.Context, profileRoot string) (probeResult, e
 		return result, errors.New("OpenAI quota probe returned invalid data")
 	}
 	return result, nil
+}
+
+func validIdempotencyKey(value string) bool {
+	if len(value) != 36 || value[8] != '-' || value[13] != '-' || value[18] != '-' || value[23] != '-' {
+		return false
+	}
+	for index, character := range value {
+		if index == 8 || index == 13 || index == 18 || index == 23 {
+			continue
+		}
+		if !((character >= '0' && character <= '9') || (character >= 'a' && character <= 'f') || (character >= 'A' && character <= 'F')) {
+			return false
+		}
+	}
+	return true
 }
 
 func environmentWithCodexHome(environment []string, profileRoot string) []string {
@@ -372,6 +437,7 @@ func normalizeSnapshot(accountKey string, result probeResult, now time.Time) *ga
 	snapshot := &gatewayv1.ProviderQuotaSnapshot{
 		Provider:   gatewayv1.ProviderQuotaProvider_PROVIDER_QUOTA_PROVIDER_OPENAI_CODEX,
 		AccountKey: accountKey, AccountKind: accountKind(result.AccountKind), Plan: bounded(result.Plan, 128),
+		DisplayEmail: bounded(result.DisplayEmail, 320),
 		Availability: availability(result.Availability), RefreshState: gatewayv1.ProviderQuotaRefreshState_PROVIDER_QUOTA_REFRESH_STATE_IDLE,
 	}
 	var earliest time.Time

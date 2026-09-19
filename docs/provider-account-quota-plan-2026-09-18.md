@@ -207,8 +207,8 @@ ProviderQuotaSummary
 ```
 
 The gateway derives `summary` from its account catalog so Mac, Android, CLI,
-and future clients agree. Consider every valid percentage from every quota
-window of every distinct account, including a retained stale snapshot, and
+and future clients agree. Consider every valid percentage from every included
+quota window of every distinct account, including a retained stale snapshot, and
 select the lowest remaining percentage. This is a conservative warning about
 the most constrained account/window, not an estimate of interchangeable pooled
 capacity. Break ties by window reset time (earliest first), then account key
@@ -223,7 +223,7 @@ group atomically.
 ## Private account correlation
 
 The gateway needs to recognize the same provider account on two machines
-without learning its email or provider identifier.
+without relying on its email or uploading its provider identifier.
 
 1. Generate and persist a random 256-bit correlation key per authenticated
    GitHub account in the gateway store.
@@ -235,12 +235,14 @@ without learning its email or provider identifier.
 
 Do not hash an access token or refresh token. If a provider supplies no stable
 account ID, that adapter is not eligible for cross-daemon refresh until the
-structured provider integration supplies one. Account email can be an HMAC
-input only as a documented fallback and must never be uploaded or logged.
+structured provider integration supplies one. Account email is never used as
+the correlation input. When the structured account API returns it, the daemon
+may include a bounded display-only email in the normalized snapshot; it remains
+owner-scoped and must never be logged.
 
-The UI initially identifies rows by provider and plan, with a short digest
-suffix only when more than one account for the same provider exists. Optional
-user-defined nicknames can be a later gateway-owned feature.
+The UI identifies rows by provider, plan, optional provider-supplied display
+email, and a short digest suffix. Optional user-defined nicknames can be a later
+gateway-owned feature.
 
 ## Daemon collection service
 
@@ -332,6 +334,9 @@ Persist only the current normalized snapshot and account/source directory:
 provider_accounts
   (github_id, provider, account_key, account_kind, plan,
    first_seen_at, last_seen_at)
+
+provider_account_preferences
+  (github_id, provider, account_key, summary_included, updated_at)
 
 provider_account_sources
   (github_id, provider, account_key, daemon_id, capability,
@@ -693,6 +698,15 @@ must confirm that no provider request consumes model usage.
   narrow layouts, and Reduce Motion.
 - OpenAI shows all returned windows, reset times, credit state, available reset
   count, and expiry without exposing redemption IDs.
+- OpenAI quota bars stay blue. The header uses the conservative minimum across
+  accounts whose gateway-owned `summary_included` preference is enabled; the
+  popover keeps excluded accounts visible and offers an immediate inclusion
+  toggle.
+- An authenticated user can consume one OpenAI reset credit for an exact
+  account after confirmation. The gateway preserves a UUID idempotency key and
+  routes the request only to an online capability-advertising daemon that has
+  that account; the daemon consumes through the structured app-server API and
+  returns a refreshed normalized snapshot.
 - Claude shows provider-authoritative plan windows through a structured,
   token-free integration; terminal parsing is not accepted.
 - When supplied by either provider, the five-hour window has a dedicated row

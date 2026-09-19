@@ -38,6 +38,7 @@ private func quotaPreviewWindow(
 
 private func availableQuotaPreviewAccount(
     key: String,
+    email: String,
     plan: String,
     fiveHourRemaining: UInt32,
     weeklyRemaining: UInt32
@@ -45,6 +46,8 @@ private func availableQuotaPreviewAccount(
     var account = Dieter_Gateway_V1_ProviderQuotaSnapshot()
     account.provider = .openaiCodex
     account.accountKey = key
+    account.displayEmail = email
+    account.includedInSummary = true
     account.accountKind = .subscription
     account.plan = plan
     account.availability = .available
@@ -78,6 +81,7 @@ private func availableQuotaPreviewAccount(
 private func quotaPreviewGroup() -> Dieter_Gateway_V1_ProviderQuotaGroup {
     var plus = availableQuotaPreviewAccount(
         key: "acct_8d9c1a2b3c4d",
+        email: "michael@example.com",
         plan: "plus",
         fiveHourRemaining: 18,
         weeklyRemaining: 64
@@ -92,6 +96,7 @@ private func quotaPreviewGroup() -> Dieter_Gateway_V1_ProviderQuotaGroup {
 
     var team = availableQuotaPreviewAccount(
         key: "acct_1f2e3d4c5b6a",
+        email: "team@example.com",
         plan: "team",
         fiveHourRemaining: 72,
         weeklyRemaining: 91
@@ -102,6 +107,7 @@ private func quotaPreviewGroup() -> Dieter_Gateway_V1_ProviderQuotaGroup {
     spend.currency = "USD"
     spend.remainingPercent = 82
     team.spendAllowance = spend
+    team.includedInSummary = false
 
     var signedOut = Dieter_Gateway_V1_ProviderQuotaSnapshot()
     signedOut.provider = .openaiCodex
@@ -110,6 +116,8 @@ private func quotaPreviewGroup() -> Dieter_Gateway_V1_ProviderQuotaGroup {
     signedOut.plan = "free"
     signedOut.availability = .signedOut
     signedOut.statusCode = "signed_out"
+    signedOut.displayEmail = "archive@example.com"
+    signedOut.includedInSummary = true
 
     var summary = Dieter_Gateway_V1_ProviderQuotaSummary()
     summary.totalAccountCount = 3
@@ -122,6 +130,8 @@ private func quotaPreviewGroup() -> Dieter_Gateway_V1_ProviderQuotaGroup {
     summary.summaryWindowLabel = "5 hour"
     summary.resetsAt = plus.windows[0].resetsAt
     summary.freshness = .fresh
+    summary.includedAccountCount = 2
+    summary.excludedAccountCount = 1
 
     var group = Dieter_Gateway_V1_ProviderQuotaGroup()
     group.provider = .openaiCodex

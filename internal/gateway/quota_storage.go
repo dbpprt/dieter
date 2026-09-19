@@ -11,7 +11,7 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-const providerQuotaSchemaVersion = 1
+const providerQuotaSchemaVersion = 2
 
 type ProviderQuotaSourceRecord struct {
 	DaemonID         string
@@ -32,6 +32,7 @@ type ProviderQuotaRecord struct {
 	NextAttemptAt   time.Time
 	FailureCount    int
 	LastFailureCode string
+	SummaryIncluded bool
 }
 
 func parseStoredTime(value string) time.Time {
@@ -201,15 +202,18 @@ func (s *Store) ListProviderQuotaOwners() ([]int64, error) {
 }
 
 func (s *Store) ListProviderQuotaRecords(githubID int64, provider gatewayv1.ProviderQuotaProvider) ([]ProviderQuotaRecord, error) {
-	query := `SELECT github_id, provider, account_key, account_kind, plan, availability,
-		first_seen_at, last_seen_at, next_attempt_at, failure_count, last_failure_code
-		FROM provider_accounts WHERE github_id=?`
+	query := `SELECT accounts.github_id, accounts.provider, accounts.account_key, accounts.account_kind, accounts.plan, accounts.availability,
+		accounts.first_seen_at, accounts.last_seen_at, accounts.next_attempt_at, accounts.failure_count, accounts.last_failure_code,
+		COALESCE((SELECT preferences.summary_included FROM provider_account_preferences preferences
+			WHERE preferences.github_id=accounts.github_id AND preferences.provider=accounts.provider
+			  AND preferences.account_key=accounts.account_key), accounts.summary_included)
+		FROM provider_accounts accounts WHERE accounts.github_id=?`
 	args := []any{githubID}
 	if provider != gatewayv1.ProviderQuotaProvider_PROVIDER_QUOTA_PROVIDER_UNSPECIFIED {
-		query += ` AND provider=?`
+		query += ` AND accounts.provider=?`
 		args = append(args, provider)
 	}
-	query += ` ORDER BY provider, account_key`
+	query += ` ORDER BY accounts.provider, accounts.account_key`
 	rows, err := s.DB.Query(query, args...)
 	if err != nil {
 		return nil, err
@@ -219,8 +223,9 @@ func (s *Store) ListProviderQuotaRecords(githubID int64, provider gatewayv1.Prov
 		var record ProviderQuotaRecord
 		var providerValue, kindValue, availabilityValue int32
 		var accountKey, plan, firstSeen, lastSeen, nextAttempt string
+		var summaryIncluded int
 		if err := rows.Scan(&record.GitHubID, &providerValue, &accountKey, &kindValue, &plan, &availabilityValue,
-			&firstSeen, &lastSeen, &nextAttempt, &record.FailureCount, &record.LastFailureCode); err != nil {
+			&firstSeen, &lastSeen, &nextAttempt, &record.FailureCount, &record.LastFailureCode, &summaryIncluded); err != nil {
 			rows.Close()
 			return nil, err
 		}
@@ -230,6 +235,7 @@ func (s *Store) ListProviderQuotaRecords(githubID int64, provider gatewayv1.Prov
 			Availability: gatewayv1.ProviderQuotaAvailability(availabilityValue),
 		}
 		record.FirstSeenAt, record.LastSeenAt, record.NextAttemptAt = parseStoredTime(firstSeen), parseStoredTime(lastSeen), parseStoredTime(nextAttempt)
+		record.SummaryIncluded = summaryIncluded != 0
 		records = append(records, record)
 	}
 	if err := rows.Err(); err != nil {
@@ -278,6 +284,29 @@ func (s *Store) ListProviderQuotaRecords(githubID int64, provider gatewayv1.Prov
 		}
 	}
 	return records, nil
+}
+
+func (s *Store) SetProviderQuotaSummaryIncluded(githubID int64, provider gatewayv1.ProviderQuotaProvider, accountKey string, included bool) error {
+	tx, err := s.DB.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var exists int
+	if err := tx.QueryRow(`SELECT COUNT(*) FROM provider_accounts WHERE github_id=? AND provider=? AND account_key=?`,
+		githubID, provider, accountKey).Scan(&exists); err != nil {
+		return err
+	}
+	if exists != 1 {
+		return errors.New("provider account was not found")
+	}
+	if _, err := tx.Exec(`INSERT INTO provider_account_preferences(github_id, provider, account_key, summary_included, updated_at)
+		VALUES(?, ?, ?, ?, ?) ON CONFLICT(github_id, provider, account_key) DO UPDATE SET
+		summary_included=excluded.summary_included, updated_at=excluded.updated_at`, githubID, provider, accountKey,
+		boolToInt(included), time.Now().UTC().Format(time.RFC3339Nano)); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (s *Store) SaveProviderQuotaSnapshot(githubID int64, daemonID string, snapshot *gatewayv1.ProviderQuotaSnapshot, now time.Time) error {

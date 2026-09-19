@@ -71,13 +71,19 @@ dieter quota list
 dieter quota list openai --format json
 dieter quota watch --count 3
 dieter quota refresh openai
+dieter quota exclude openai --account <opaque-key>
+dieter quota include openai --account <opaque-key>
+dieter quota reset openai --account <opaque-key> --confirm RESET
 ```
 
 The table abbreviates opaque account keys. JSON retains the opaque key so it
-can be passed to `quota refresh --account KEY`; it is an owner-scoped HMAC, not
-an email address or provider account ID. Provider summaries choose the lowest
-remaining percentage across all account windows and never sum or average
-separate account allowances.
+can be passed to account-specific commands; it is an owner-scoped HMAC, not a
+provider account ID. OpenAI rows may also include the bounded display email
+returned by the structured account API. Provider summaries choose the lowest remaining percentage
+across included account windows and never sum or average separate allowances.
+Use `quota include` or `quota exclude` to change summary membership. OpenAI
+`quota reset` consumes one reset credit, requires `--confirm RESET`, and is
+routed to an online daemon that currently has the exact account.
 
 Machine restart, shutdown, and daemon update require the exact confirmation
 phrases shown by `--help` and are available only when the target daemon reports
