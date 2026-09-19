@@ -1590,12 +1590,11 @@ func (s *Service) CancelCard(ref string) error {
 		return nil
 	}
 	active.cancel()
-	select {
-	case <-active.done:
-		return nil
-	case <-time.After(10 * time.Second):
-		return errors.New("timed out waiting for the agent turn to stop")
-	}
+	// Cancellation is an admission command, not a join. Some providers only
+	// return from an in-flight tool call after their own bounded cleanup. The
+	// owning runTurn goroutine keeps the active-turn barrier in place and starts
+	// the next queued message once that cleanup actually finishes.
+	return nil
 }
 
 func (s *Service) clearActive(cardID, turnID string) {

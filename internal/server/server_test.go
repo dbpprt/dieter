@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -89,6 +90,26 @@ func testRepository(t *testing.T) string {
 		t.Fatal(err)
 	}
 	return repo
+}
+
+func waitForCanceledCard(t *testing.T, data *store.Store, cardID string) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	var card model.Card
+	var conversation model.Conversation
+	var cardErr, conversationErr, leaseErr error
+	var leased bool
+	for time.Now().Before(deadline) {
+		card, cardErr = data.ResolveCard(cardID)
+		conversation, conversationErr = data.Conversation(cardID)
+		leased, leaseErr = data.CardHasRuntimeLease(cardID)
+		if cardErr == nil && conversationErr == nil && leaseErr == nil &&
+			card.Runtime != "running" && conversation.Status != "running" && conversation.ActiveTurn == nil && !leased {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatalf("canceled turn did not finish cleanup: card=%#v conversation=%#v leased=%v errors=%v", card, conversation, leased, errors.Join(cardErr, conversationErr, leaseErr))
 }
 
 func TestConnectConversationEndToEnd(t *testing.T) {
@@ -446,26 +467,5 @@ func TestConnectCancellationInterruptsActiveTurn(t *testing.T) {
 	if _, err := client.CancelCard(ctx, connect.NewRequest(&dieterv1.GetCardRequest{CardId: card.Msg.GetId()})); err != nil {
 		t.Fatal(err)
 	}
-	var conversation model.Conversation
-	deadline = time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
-		conversation, err = data.Conversation(card.Msg.GetId())
-		if err == nil && conversation.Status != "running" {
-			break
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
-	if err != nil || conversation.Status == "running" {
-		t.Fatalf("conversation=%#v err=%v", conversation, err)
-	}
-	leasePath := filepath.Join(data.RuntimeDir(), "leases", workspace.Msg.GetProject().GetId()+".json")
-	deadline = time.Now().Add(time.Second)
-	for time.Now().Before(deadline) {
-		_, leaseErr := os.Stat(leasePath)
-		_, lockErr := os.Stat(filepath.Join(data.Root, ".write-lock"))
-		if os.IsNotExist(leaseErr) && os.IsNotExist(lockErr) {
-			break
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
+	waitForCanceledCard(t, data, card.Msg.GetId())
 }

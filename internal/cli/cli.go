@@ -1136,7 +1136,7 @@ Actions:
   comment      Add a non-triggering Dieter annotation
   move         Move to todo, running, review, or done
   labels       Assign board labels to a card
-  cancel       Cancel an active local turn
+  cancel       Request cancellation of an active local turn
   rename       Rename the card
   archive      Archive the card
   unarchive    Restore the card

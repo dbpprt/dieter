@@ -229,6 +229,10 @@ queue. Native clients can steer the next message, discard any queued message,
 or return it to the composer for editing. Automation can dequeue the complete
 payload (including attachments) as JSON:
 
+Steering acknowledges as soon as cancellation is requested. The queued message
+stays durable and starts only after the active turn has actually finished its
+provider cleanup, even when that cleanup takes longer than the client request.
+
 ```sh
 dieter card queue remove --message <message-id> <card-id>
 ```

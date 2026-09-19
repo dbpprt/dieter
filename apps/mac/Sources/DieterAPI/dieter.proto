@@ -74,6 +74,9 @@ service DieterService {
   // the agent turn to finish.
   rpc StartCard(StartCardRequest) returns (StartCardResponse);
   rpc SetCardLabels(SetCardLabelsRequest) returns (Card);
+  // CancelCard acknowledges after signaling the active turn. The turn keeps
+  // its runtime barrier until provider cleanup finishes, then promotes the
+  // next durable queued message if one exists.
   rpc CancelCard(GetCardRequest) returns (google.protobuf.Empty);
   rpc RenameCard(RenameCardRequest) returns (Card);
   rpc UpdateCard(UpdateCardRequest) returns (Card);

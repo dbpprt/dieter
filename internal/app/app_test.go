@@ -142,6 +142,14 @@ type interruptQueueRunner struct {
 	started  chan int
 }
 
+type delayedInterruptQueueRunner struct {
+	mu          sync.Mutex
+	runs        int
+	started     chan int
+	release     chan struct{}
+	releaseOnce sync.Once
+}
+
 type restartRunner struct {
 	mu          sync.Mutex
 	requests    []harness.Request
@@ -296,6 +304,36 @@ func (runner *interruptQueueRunner) Run(ctx context.Context, request harness.Req
 		}
 	}
 	return nil
+}
+
+func (runner *delayedInterruptQueueRunner) Run(ctx context.Context, request harness.Request, emit func(harness.Output) error) error {
+	runner.mu.Lock()
+	runner.runs++
+	run := runner.runs
+	runner.mu.Unlock()
+	runner.started <- run
+	if run == 1 {
+		// Model a provider that observes cancellation immediately but cannot
+		// return until an in-flight tool call has completed its own cleanup.
+		<-runner.release
+		return ctx.Err()
+	}
+	for _, chunk := range []string{
+		`{"type":"start","messageId":"queued-assistant"}`,
+		`{"type":"text-start","id":"text"}`,
+		`{"type":"text-delta","id":"text","delta":"queued turn complete"}`,
+		`{"type":"text-end","id":"text"}`,
+		`{"type":"finish","finishReason":"stop"}`,
+	} {
+		if err := emit(harness.Output{Type: "chunk", Chunk: json.RawMessage(chunk)}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (runner *delayedInterruptQueueRunner) finishCleanup() {
+	runner.releaseOnce.Do(func() { close(runner.release) })
 }
 
 func (runner *interruptQueueRunner) prompts() []string {
@@ -1437,6 +1475,69 @@ func TestFirstTurnCanExplicitlyRestoreAdapterDefaultEffort(t *testing.T) {
 	if stored.Effort != "" || fake.request(0).Effort != "" {
 		t.Fatalf("stored effort=%q request effort=%q", stored.Effort, fake.request(0).Effort)
 	}
+}
+
+func TestCancelCardAcknowledgesBeforeSlowTurnStopsAndPromotesQueue(t *testing.T) {
+	service, _, project, board := appSetup(t)
+	runner := &delayedInterruptQueueRunner{
+		started: make(chan int, 2),
+		release: make(chan struct{}),
+	}
+	service.Runner = runner
+	t.Cleanup(runner.finishCleanup)
+	card, err := service.CreateCard(context.Background(), CardInput{
+		Project: project.ID, Board: board.ID, Lane: model.LaneRunning,
+		Title: "Slow interrupt", Prompt: "Keep working", Provider: "codex", DeferStart: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	updates, err := service.StartCard(card.ID, "", card.Provider, card.Model, card.Effort)
+	if err != nil {
+		t.Fatal(err)
+	}
+	go drainTurnUpdates(updates)
+	if run := <-runner.started; run != 1 {
+		t.Fatalf("first run=%d", run)
+	}
+	queued, err := service.SubmitCard(card.ID, "Use this next", card.Provider, card.Model, card.Effort)
+	if err != nil || !queued {
+		t.Fatalf("queued=%v err=%v", queued, err)
+	}
+
+	canceled := make(chan error, 1)
+	go func() { canceled <- service.CancelCard(card.ID) }()
+	select {
+	case err := <-canceled:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("cancellation waited for provider cleanup")
+	}
+	conversation, err := service.Store.Conversation(card.ID)
+	if err != nil || len(conversation.Queue) != 1 || conversation.Queue[0].Text != "Use this next" {
+		t.Fatalf("queued handoff was not preserved: conversation=%#v err=%v", conversation, err)
+	}
+	select {
+	case run := <-runner.started:
+		t.Fatalf("queued run %d started before active cleanup finished", run)
+	default:
+	}
+
+	runner.finishCleanup()
+	select {
+	case run := <-runner.started:
+		if run != 2 {
+			t.Fatalf("queued run=%d", run)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("queued run did not start after active cleanup")
+	}
+	waitFor(t, func() bool {
+		conversation, conversationErr := service.Store.Conversation(card.ID)
+		return conversationErr == nil && conversation.Status == "idle" && len(conversation.Queue) == 0 && !hasActiveTurn(service, project.ID)
+	})
 }
 
 func TestQueuedMessageStartsAfterInterruptWithoutRecordingFailure(t *testing.T) {
