@@ -204,6 +204,11 @@ not started yet—and receive its complete text and attachments as JSON—with:
 dieter card queue remove --message <message-id> <card-id>
 ```
 
+`card cancel` acknowledges after it has signaled the active turn. If messages
+are queued, the first stays durable and starts only after the interrupted turn
+has finished provider cleanup; a slow provider shutdown does not make the
+cancellation request fail.
+
 For an existing card or chat, `send --model MODEL --effort EFFORT` changes the
 next message's selection within the same provider when its harness advertises
 `model-selection` / `effort-selection` with level `between-turns`. Codex,

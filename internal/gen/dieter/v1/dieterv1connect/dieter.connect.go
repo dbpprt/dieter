@@ -418,6 +418,9 @@ type DieterServiceClient interface {
 	// the agent turn to finish.
 	StartCard(context.Context, *connect.Request[v1.StartCardRequest]) (*connect.Response[v1.StartCardResponse], error)
 	SetCardLabels(context.Context, *connect.Request[v1.SetCardLabelsRequest]) (*connect.Response[v1.Card], error)
+	// CancelCard acknowledges after signaling the active turn. The turn keeps
+	// its runtime barrier until provider cleanup finishes, then promotes the
+	// next durable queued message if one exists.
 	CancelCard(context.Context, *connect.Request[v1.GetCardRequest]) (*connect.Response[emptypb.Empty], error)
 	RenameCard(context.Context, *connect.Request[v1.RenameCardRequest]) (*connect.Response[v1.Card], error)
 	UpdateCard(context.Context, *connect.Request[v1.UpdateCardRequest]) (*connect.Response[v1.Card], error)
@@ -1905,6 +1908,9 @@ type DieterServiceHandler interface {
 	// the agent turn to finish.
 	StartCard(context.Context, *connect.Request[v1.StartCardRequest]) (*connect.Response[v1.StartCardResponse], error)
 	SetCardLabels(context.Context, *connect.Request[v1.SetCardLabelsRequest]) (*connect.Response[v1.Card], error)
+	// CancelCard acknowledges after signaling the active turn. The turn keeps
+	// its runtime barrier until provider cleanup finishes, then promotes the
+	// next durable queued message if one exists.
 	CancelCard(context.Context, *connect.Request[v1.GetCardRequest]) (*connect.Response[emptypb.Empty], error)
 	RenameCard(context.Context, *connect.Request[v1.RenameCardRequest]) (*connect.Response[v1.Card], error)
 	UpdateCard(context.Context, *connect.Request[v1.UpdateCardRequest]) (*connect.Response[v1.Card], error)

@@ -2538,6 +2538,12 @@ extension Dieter_V1_DieterService {
 
         /// Call the "CancelCard" method.
         ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > CancelCard acknowledges after signaling the active turn. The turn keeps
+        /// > its runtime barrier until provider cleanup finishes, then promotes the
+        /// > next durable queued message if one exists.
+        ///
         /// - Parameters:
         ///   - request: A request containing a single `Dieter_V1_GetCardRequest` message.
         ///   - serializer: A serializer for `Dieter_V1_GetCardRequest` messages.
@@ -5234,6 +5240,12 @@ extension Dieter_V1_DieterService {
         }
 
         /// Call the "CancelCard" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > CancelCard acknowledges after signaling the active turn. The turn keeps
+        /// > its runtime barrier until provider cleanup finishes, then promotes the
+        /// > next durable queued message if one exists.
         ///
         /// - Parameters:
         ///   - request: A request containing a single `Dieter_V1_GetCardRequest` message.
@@ -8365,6 +8377,12 @@ extension Dieter_V1_DieterService.ClientProtocol {
 
     /// Call the "CancelCard" method.
     ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > CancelCard acknowledges after signaling the active turn. The turn keeps
+    /// > its runtime barrier until provider cleanup finishes, then promotes the
+    /// > next durable queued message if one exists.
+    ///
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_GetCardRequest` message.
     ///   - options: Options to apply to this RPC.
@@ -11370,6 +11388,12 @@ extension Dieter_V1_DieterService.ClientProtocol {
     }
 
     /// Call the "CancelCard" method.
+    ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > CancelCard acknowledges after signaling the active turn. The turn keeps
+    /// > its runtime barrier until provider cleanup finishes, then promotes the
+    /// > next durable queued message if one exists.
     ///
     /// - Parameters:
     ///   - message: request message to send.
