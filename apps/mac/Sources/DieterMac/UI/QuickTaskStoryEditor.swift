@@ -152,7 +152,7 @@ final class QuickTaskStoryEditorContainer: NSScrollView {
 }
 
 @MainActor
-final class QuickTaskStoryTextView: NSTextView {
+final class QuickTaskStoryTextView: NSTextView, AttachmentPasteFirstResponder {
     var canPasteAttachment: ((NSPasteboard) -> Bool)?
     var pasteAttachment: ((NSPasteboard) -> Bool)?
 
