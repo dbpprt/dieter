@@ -98,19 +98,22 @@ final class RemoteNodeUITests: XCTestCase {
     private func fillTask(_ app: XCUIApplication, title: String, prompt: String) {
         // Configure the isolated provider while submission is still disabled.
         // A compact iPad sheet scrolls the Agent section beneath its fixed footer.
-        let provider = element(app, "ios.create.provider")
-        XCTAssertTrue(provider.waitForExistence(timeout: 10))
+        let form = app.collectionViews.firstMatch
+        XCTAssertTrue(form.waitForExistence(timeout: 10), "The task form must appear.\n\(app.debugDescription)")
+        let footer = element(app, "ios.create.run")
+        var provider = element(app, "ios.create.provider")
         // Keep this query independent of the Picker's transient automation type.
         // Xcode 26.5 can expose it as a Button before selection and a PopUpButton
         // afterwards, which makes a containing(.button, ...) query fail when its
         // frame is read again while scrolling back to the title field.
-        let form = app.collectionViews.firstMatch
-        let footer = element(app, "ios.create.run")
-        for _ in 0..<4 {
-            if provider.frame.maxY < footer.frame.minY - 8 && provider.isHittable { break }
-            XCTAssertTrue(form.exists)
+        // SwiftUI can also keep the off-screen Agent rows out of the iPad
+        // accessibility hierarchy until the form scrolls near them.
+        for _ in 0..<6 {
+            if provider.exists, provider.frame.maxY < footer.frame.minY - 8, provider.isHittable { break }
             form.swipeUp()
+            provider = element(app, "ios.create.provider")
         }
+        XCTAssertTrue(provider.exists, "The Provider row must appear after scrolling.\n\(app.debugDescription)")
         XCTAssertLessThan(
             provider.frame.maxY, footer.frame.minY - 8, "Provider must be above the footer before tapping.")
         XCTAssertGreaterThanOrEqual(
