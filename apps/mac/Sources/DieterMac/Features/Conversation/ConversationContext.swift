@@ -35,6 +35,7 @@ final class ConversationContext {
         self.pendingMessage = pendingMessage; self.acceptedItem = acceptedItem; self.failedItem = failedItem;
         self.creationError = creationError
     }
+    @ObservationIgnored var deliveryStatus: () -> ConversationDeliveryStatus? = { nil }
     var selectedCard: Dieter_V1_Card? { card() }
     var selectedProjectID: String { projectID() }
     var harnessCatalog: Dieter_V1_HarnessCatalog { catalog() }

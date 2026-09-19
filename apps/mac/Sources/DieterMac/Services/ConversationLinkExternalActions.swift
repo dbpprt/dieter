@@ -1,18 +1,20 @@
 import AppKit
+import DieterAPI
 import Foundation
 
 extension DieterStore {
     @MainActor
     func externalConversationLink(_ url: URL, cardID: String) async -> ConversationLinkExternalTarget {
         let isWeb = ["http", "https"].contains(url.scheme?.lowercased() ?? "")
-        guard (selectedCardID ?? selectedChatID) == cardID, let rpc else {
+        guard (selectedCardID ?? selectedChatID) == cardID else {
             return .unavailable("This conversation's machine is unavailable.", isFile: !isWeb)
         }
+        let selectedRPC = rpc
         let endpointID = endpoint.id
         let isCurrent: @MainActor () -> Bool = { [weak self] in
             guard let self else { return false }
             return (self.selectedCardID ?? self.selectedChatID) == cardID
-                && self.endpoint.id == endpointID && self.rpc === rpc
+                && self.endpoint.id == endpointID && self.rpc === selectedRPC
         }
         if isWeb {
             guard case .web = try? ConversationContentLink.resolve(url, workspaceRoot: "") else {
@@ -31,6 +33,7 @@ extension DieterStore {
                     } catch { return nil }
                 })
         }
+        guard let rpc = selectedRPC else { return .unavailable("This conversation's machine is unavailable.") }
         do {
             let scope = try await conversationContext.content.prepareScope(cardID)
             guard isCurrent(), scope.client === rpc, scope.target.endpointID == endpointID,
@@ -41,6 +44,16 @@ extension DieterStore {
                 return .unavailable("This link does not identify a workspace file.")
             }
             let verifiedLocal = phase.isConnected && rpc.isLoopbackDataPlane
+            if !verifiedLocal {
+                let copy = try await remoteDocumentCopies.fetch(
+                    client: scope.client, target: scope.target, path: path, isCurrent: isCurrent)
+                return ConversationLinkExternalTarget(
+                    isLocalCopy: true, applications: FileOpeningApplication.available(for: copy),
+                    revalidate: {
+                        guard isCurrent(), FileManager.default.fileExists(atPath: copy.path) else { return nil }
+                        return copy
+                    })
+            }
             var actions = FileExternalActions.resolve(
                 verifiedLocal: verifiedLocal, rootPath: scope.rootPath, relativePath: path)
             actions.loadApplications()

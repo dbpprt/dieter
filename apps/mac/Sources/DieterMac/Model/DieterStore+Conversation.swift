@@ -8,6 +8,12 @@ import UniformTypeIdentifiers
 import UserNotifications
 
 extension DieterStore {
+    func presentNewCard(in laneID: String) {
+        guard selectedBoard?.lanes.contains(where: { $0.id == laneID }) == true else { return }
+        window.newCardLaneID = laneID
+        createConversationPresented = true
+    }
+
     func refreshChats(includeArchived: Bool = true) async {
         guard let rpc else { return }
         chatsRequestGeneration &+= 1

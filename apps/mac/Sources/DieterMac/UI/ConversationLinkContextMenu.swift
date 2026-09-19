@@ -5,6 +5,7 @@ import Foundation
 /// so a menu left open during navigation cannot operate on another workspace.
 struct ConversationLinkExternalTarget {
     var isFile = true
+    var isLocalCopy = false
     var applications: [FileOpeningApplication] = []
     var unavailableReason: String?
     var revalidate: @MainActor () -> URL?
@@ -61,6 +62,10 @@ struct ConversationLinkExternalTarget {
         loadingTask = Task { [weak self] in
             let target = await resolver(url)
             guard let self, !Task.isCancelled, !closed else { return }
+            if target.isLocalCopy {
+                submenu.title = "Open local copy in…"
+                finder.title = "Show local copy in Finder"
+            }
             applications.removeAllItems()
             if let reason = target.unavailableReason {
                 status(reason)

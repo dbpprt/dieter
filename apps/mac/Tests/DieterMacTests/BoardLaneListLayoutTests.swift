@@ -182,3 +182,21 @@ private func boardLaneFixtureCards(count: Int) -> [Dieter_V1_Card] {
     }
     return nil
 }
+
+@Test @MainActor func laneDoubleClickIgnoresNativeCardRowsAndAcceptsUnusedSpace() async throws {
+    let store = boardLaneFixtureStore()
+    let cards = boardLaneFixtureCards(count: 1)
+    store.state.cards = cards
+    let root = NSHostingView(rootView: AnyView(boardLaneFixtureView(cards: cards, store: store)))
+    root.sizingOptions = []
+    let window = boardLaneFixtureWindow(root: root, width: 300, height: 800)
+    defer { window.close() }
+    await settleBoardLane(root)
+    let table = try #require(boardLaneNativeTable(in: root))
+    let row = table.rect(ofRow: 0)
+    let cardPoint = table.convert(NSPoint(x: row.midX, y: row.midY), to: nil)
+    #expect(!BoardLaneDoubleClickHandler.LaneClickView.isUnusedSpace(cardPoint, in: window))
+    let blankPoint = table.convert(NSPoint(x: row.midX, y: row.maxY + 70), to: nil)
+    #expect(table.row(at: table.convert(blankPoint, from: nil)) == -1)
+    #expect(BoardLaneDoubleClickHandler.LaneClickView.isUnusedSpace(blankPoint, in: window))
+}
