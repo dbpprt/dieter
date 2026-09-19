@@ -615,8 +615,8 @@
 
         func createTask(
             projectID: String, boardID: String?, title: String, prompt: String,
-            provider: String, model: String, effort: String,
-            attachments: [Dieter_V1_MessagePart] = [], run: Bool
+            provider: String, model: String, effort: String, labelIDs: [String],
+            providerOptions: [String: String], attachments: [Dieter_V1_MessagePart] = [], run: Bool
         ) async -> String? {
             guard pendingOperations == 0, let rpc = dataPlane?.rpc else { return nil }
             let attempt = connectionID
@@ -640,6 +640,8 @@
             request.provider = provider
             request.model = model
             request.effort = effort
+            request.labelIds = labelIDs
+            request.providerOptions = providerOptions
             request.attachments = attachments
             request.deferStart = !run
             request.workspaceMode = "project"
@@ -648,7 +650,8 @@
                 for: [
                     selectedMachine?.id ?? "", projectID, boardID ?? "", title, prompt, provider, model, effort,
                     String(run),
-                ] + attachments.map(Self.attachmentIdentity))
+                ] + labelIDs + IOSCreateTaskProviderOptions.identity(providerOptions)
+                    + attachments.map(Self.attachmentIdentity))
             do {
                 let card = try await (boardID == nil ? rpc.createChat(request) : rpc.createCard(request))
                 guard owns(attempt) else { return nil }
