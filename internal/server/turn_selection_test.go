@@ -34,6 +34,7 @@ func TestQueuedSelectionSurvivesCommandReplayAndRemoval(t *testing.T) {
 		if err != nil {
 			t.Errorf("stop isolated active turn: %v", err)
 		}
+		waitForCanceledCard(t, data, card.ID)
 	}()
 	if _, err := client.SendMessage(t.Context(), connect.NewRequest(&dieterv1.SendMessageRequest{CardId: card.ID, Parts: []*dieterv1.MessagePart{{Type: "text", Text: "First"}}})); err != nil {
 		t.Fatal(err)

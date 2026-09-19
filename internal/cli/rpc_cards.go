@@ -36,7 +36,7 @@ Actions:
   move         Move a card between workflow lanes
   start        Start a draft card idempotently
   labels       Replace board-label assignments
-  cancel       Cancel the active turn
+  cancel       Request cancellation of the active turn
   rename       Rename a card
   update       Update title and initial prompt
   archive      Archive a card
@@ -840,7 +840,7 @@ func (c *CLI) rpcCardLabels(args []string) error {
 }
 
 func (c *CLI) rpcCardCancel(args []string) error {
-	const usage = "Usage: dieter card cancel CARD\n"
+	const usage = "Usage: dieter card cancel CARD\n\nRequests cancellation and returns once the active turn has been signaled.\nQueued messages start after that turn finishes cleanup.\n"
 	if wantsHelp(args) {
 		fmt.Fprint(c.Out, usage)
 		return nil

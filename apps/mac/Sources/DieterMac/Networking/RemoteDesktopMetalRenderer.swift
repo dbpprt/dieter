@@ -251,8 +251,10 @@ final class RemoteDesktopMetalRenderer: NSObject, CAMetalDisplayLinkDelegate, @u
         // integer pixel rectangle with hit testing and cursor placement.
         let pixels = CGSize(width: drawable.texture.width, height: drawable.texture.height)
         let content = RemoteDesktopVideoGeometry.contentRect(pixelSize: pixels, videoSize: videoSize)
-        encoder.setViewport(MTLViewport(originX: content.minX, originY: pixels.height - content.maxY,
-            width: content.width, height: content.height, znear: 0, zfar: 1))
+        encoder.setViewport(
+            MTLViewport(
+                originX: content.minX, originY: pixels.height - content.maxY,
+                width: content.width, height: content.height, znear: 0, zfar: 1))
         var geometry = SIMD4<Float>(1, 1, Float(frame.rotation.rawValue / 90), 0)
         let matrix = CVBufferCopyAttachment(pixel, kCVImageBufferYCbCrMatrixKey, nil) as? String
         var coefficients =

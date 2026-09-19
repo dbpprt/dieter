@@ -198,6 +198,9 @@ type DieterServiceClient interface {
 	// the agent turn to finish.
 	StartCard(ctx context.Context, in *StartCardRequest, opts ...grpc.CallOption) (*StartCardResponse, error)
 	SetCardLabels(ctx context.Context, in *SetCardLabelsRequest, opts ...grpc.CallOption) (*Card, error)
+	// CancelCard acknowledges after signaling the active turn. The turn keeps
+	// its runtime barrier until provider cleanup finishes, then promotes the
+	// next durable queued message if one exists.
 	CancelCard(ctx context.Context, in *GetCardRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	RenameCard(ctx context.Context, in *RenameCardRequest, opts ...grpc.CallOption) (*Card, error)
 	UpdateCard(ctx context.Context, in *UpdateCardRequest, opts ...grpc.CallOption) (*Card, error)
@@ -1518,6 +1521,9 @@ type DieterServiceServer interface {
 	// the agent turn to finish.
 	StartCard(context.Context, *StartCardRequest) (*StartCardResponse, error)
 	SetCardLabels(context.Context, *SetCardLabelsRequest) (*Card, error)
+	// CancelCard acknowledges after signaling the active turn. The turn keeps
+	// its runtime barrier until provider cleanup finishes, then promotes the
+	// next durable queued message if one exists.
 	CancelCard(context.Context, *GetCardRequest) (*emptypb.Empty, error)
 	RenameCard(context.Context, *RenameCardRequest) (*Card, error)
 	UpdateCard(context.Context, *UpdateCardRequest) (*Card, error)
