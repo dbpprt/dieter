@@ -22,7 +22,7 @@ class NotificationActionReceiver : BroadcastReceiver() {
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 if (projectId.isNotBlank()) {
-                    runCatching { container.connectionManager.ensureProjectRoute(projectId) }
+                    runCatching { container.connectionManager.ensureReplicaRoute(projectId) }
                 }
                 val state = container.connectionManager.state.value
                 val card = state.cards.firstOrNull { it.id == cardId }

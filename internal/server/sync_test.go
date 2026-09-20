@@ -634,7 +634,7 @@ func TestOnePassGlobalStateMatchesPerProjectProjection(t *testing.T) {
 		}
 	}
 
-	expected := &dieterv1.State{StorePath: data.Root}
+	expected := &dieterv1.State{StorePath: data.Root, Archives: &dieterv1.SharedArchives{}}
 	projects, err := data.ListProjects()
 	if err != nil {
 		t.Fatal(err)

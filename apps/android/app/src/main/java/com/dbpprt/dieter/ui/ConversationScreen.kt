@@ -124,7 +124,7 @@ internal fun ConversationBody(state: DieterUiState, model: DieterViewModel, modi
     val conversation = state.conversation?.conversation
     val queuedMessages = conversation?.queueList.orEmpty()
     val card = state.conversation?.detail?.card ?: state.selectedCard
-    val host = card?.projectId?.let(state.projectHosts::get)
+    val host = card?.let(state::conversationHost)
     val storageQueue = host?.endpointId?.let(state.machineOutboxSummaries::get)?.takeIf { it.storageBlocked && !it.failed }
     val draft = state.composerDraft
     val text = draft.text

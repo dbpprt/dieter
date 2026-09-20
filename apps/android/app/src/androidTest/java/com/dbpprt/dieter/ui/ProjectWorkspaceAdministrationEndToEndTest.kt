@@ -52,7 +52,7 @@ class ProjectWorkspaceAdministrationEndToEndTest {
         val token = arguments.getString("isolatedGatewayToken").orEmpty()
         assumeTrue("Pass isolatedGatewayToken for the isolated gateway", token.isNotBlank())
         val origin = DieterEndpoint(
-            id = "android_project_admin_e2e",
+            id = "android_project_admin_e2e_${UUID.randomUUID()}",
             label = "Isolated project gateway",
             host = arguments.getString("isolatedGatewayHost")?.takeIf(String::isNotBlank) ?: "10.0.2.2",
             port = arguments.getString("isolatedGatewayPort")?.toIntOrNull() ?: 14243,
@@ -76,7 +76,7 @@ class ProjectWorkspaceAdministrationEndToEndTest {
         }
         val initialBoard = initial.boards.first()
         val initialProject = initial.projects.first { it.id == initialBoard.projectId }
-        val compatibleHostEndpointId = requireNotNull(initial.projectHosts[initialProject.id]).endpointId
+        val compatibleHostEndpointId = requireNotNull(initial.projectReplicas[initialProject.id]).endpointId
         manager.onAppForegrounded(initialProject.id)
         val nonce = UUID.randomUUID().toString().take(8)
         val projectName = "Android host project $nonce"
@@ -113,7 +113,7 @@ class ProjectWorkspaceAdministrationEndToEndTest {
             projectId = project.id
             assertEquals("main", project.baseBranch)
             assertEquals("git", project.validationCommandsList.single().executable)
-            assertEquals(compatibleHostEndpointId, createdState.projectHosts[project.id]?.endpointId)
+            assertEquals(compatibleHostEndpointId, createdState.projectReplicas[project.id]?.endpointId)
             capture("project-created-on-selected-host-e2e.png")
 
             manager.selectProject(initialProject.id)
@@ -185,11 +185,22 @@ class ProjectWorkspaceAdministrationEndToEndTest {
             assertTrue(updated.validationCommandsList.single().executable == "git")
             capture("project-workspace-settings-saved-e2e.png")
         } finally {
+            // Each journey shares the disposable fixture, so restore its checkout defaults.
+            runBlocking {
+                val checkout = initialProject.checkoutsList.single { !it.detached }
+                manager.ensureCheckoutRoute(initialProject.id, checkout.id)
+                repository.updateProjectWorkspaceSettings(
+                    com.dbpprt.dieter.v1.UpdateProjectWorkspaceSettingsRequest.newBuilder()
+                        .setProjectId(initialProject.id).setCheckoutId(checkout.id)
+                        .setBaseRemote(initialProject.baseRemote).setBaseBranch(initialProject.baseBranch)
+                        .addAllValidationCommands(checkout.validationCommandsList).build(),
+                )
+            }
             cardId?.let {
-                runBlocking { runCatching { manager.ensureProjectRoute(initialProject.id); repository.archiveCard(it, true) } }
+                runBlocking { runCatching { manager.ensureReplicaRoute(initialProject.id); repository.archiveCard(it, true) } }
             }
             projectId?.let { id ->
-                runBlocking { runCatching { manager.ensureProjectRoute(id); repository.archiveProject(id, true) } }
+                runBlocking { runCatching { manager.ensureReplicaRoute(id); repository.archiveProject(id, true) } }
             }
             manager.updateEndpoints(DIETER_ENDPOINTS)
             manager.connect()

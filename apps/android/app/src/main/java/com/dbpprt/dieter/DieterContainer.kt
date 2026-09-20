@@ -40,7 +40,7 @@ class DieterContainer(context: Context) {
         @OptIn(FlowPreview::class)
         widgetScope.launch {
             connectionManager.state
-                .map { state -> Triple(state.cards, state.chats, state.projectHosts) }
+                .map { state -> Triple(state.cards, state.chats, state.projectReplicas) }
                 .distinctUntilChanged()
                 .debounce(1_500)
                 .collect { DieterActivityWidgetProvider.updateAll(appContext) }

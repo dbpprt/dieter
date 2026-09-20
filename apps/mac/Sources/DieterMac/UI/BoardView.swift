@@ -194,6 +194,7 @@ struct BoardView: View {
         BoardConversationOverlay(
             board: AnyView(
                 boardContent.environment(store)
+                    .safeAreaInset(edge: .top) { SharedConflictsButton(keys: store.selectedBoard?.conflictKeys ?? []) }
                     .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity)
                     .background(DieterTheme.surface)
                     .smokeTarget("board.canvas")
@@ -293,6 +294,20 @@ struct BoardHeader: View {
         return parts.joined(separator: " · ")
     }
 
+    private var machineFilterMenu: some View {
+        Menu {
+            Button("All machines") { store.machineFilter = "" }
+            ForEach(Array(Set(store.boardCards.map(\.ownerDaemonID))).filter { !$0.isEmpty }.sorted(), id: \.self) { id in
+                Button(store.endpoints.first { $0.daemonID == id }?.name ?? id) { store.machineFilter = id }
+            }
+        } label: {
+            Text(store.machineFilter.isEmpty ? "All machines" : (store.endpoints.first { $0.daemonID == store.machineFilter }?.name ?? store.machineFilter))
+        }
+        .menuStyle(.button)
+        .accessibilityIdentifier("board.filter.machine")
+        .help("Filter cards by their execution machine")
+    }
+
     private var stateFilterTitle: String {
         store.runtimeFilter.isEmpty ? "All states" : store.runtimeFilter.capitalized
     }
@@ -327,14 +342,9 @@ struct BoardHeader: View {
                         .tint(store.runtimeFilter.isEmpty ? nil : Color.accentColor)
                         .fixedSize()
                         .accessibilityIdentifier("board.filter.state")
+                        machineFilterMenu
 
-                        Button {
-                            store.archivePolicyPresented = true
-                        } label: {
-                            Label("Board settings", systemImage: "gearshape")
-                        }
-                        .accessibilityIdentifier("board.settings")
-                        .smokeTarget("board.settings")
+                        boardSettingsButton
 
                         Button {
                             store.labelsPresented = true
@@ -359,7 +369,6 @@ struct BoardHeader: View {
                         Menu {
                             stateFilterOptions
                             Divider()
-                            Button("Board settings…") { store.archivePolicyPresented = true }
                             Button("Manage labels…") { store.labelsPresented = true }
                         } label: {
                             Label(
@@ -370,6 +379,8 @@ struct BoardHeader: View {
                         .tint(store.runtimeFilter.isEmpty ? nil : Color.accentColor)
                         .fixedSize()
                         .accessibilityIdentifier("board.filter.state")
+                        machineFilterMenu
+                        boardSettingsButton.labelStyle(.iconOnly)
 
                         Menu {
                             Button("New card…") { store.createConversationPresented = true }
@@ -395,6 +406,18 @@ struct BoardHeader: View {
                 store.labelFilter = ""
             }
         }
+    }
+
+    private var boardSettingsButton: some View {
+        Button {
+            store.archivePolicyPresented = true
+        } label: {
+            Label("Board settings", systemImage: "gearshape")
+        }
+        .fixedSize()
+        .help("Board settings")
+        .accessibilityIdentifier("board.settings")
+        .smokeTarget("board.settings")
     }
 
     private func allCardsButton(compact: Bool) -> some View {
@@ -1445,6 +1468,9 @@ struct BoardCardView: View {
                             .top, 5
                         )
                         .accessibilityLabel(BoardAgentStatus.resolve(card).label)
+                    }
+                    if let machine = store.machine(for: card) {
+                        ProjectMachineBadge(machine: machine, online: store.machineIsAvailable(machine), compact: true)
                     }
                     if !card.summary.isEmpty {
                         Text(card.summary).font(.system(size: 11)).foregroundStyle(DieterTheme.subtle)

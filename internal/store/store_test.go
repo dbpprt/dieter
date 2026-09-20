@@ -667,7 +667,7 @@ func TestDoneArchivePolicyHidesAndRestoresCompletedCards(t *testing.T) {
 	if _, err := s.UpdateBoardDoneArchivePolicy(board.ID, model.DoneArchiveImmediately); err != nil {
 		t.Fatal(err)
 	}
-	archived, err = s.ArchiveDoneCards(now.Add(time.Second))
+	archived, err = s.ArchiveDoneCards(time.Now().UTC())
 	if err != nil || len(archived) != 1 || archived[0].ID != youngCard.ID {
 		t.Fatalf("immediate archive: %#v err=%v", archived, err)
 	}
@@ -1149,14 +1149,14 @@ func TestArchivedCardsLeaveTheActiveScanAndRemainResolvable(t *testing.T) {
 	}
 }
 
-func TestEnsureMigratesLegacyArchivedCards(t *testing.T) {
+func TestArchiveSurvivesStoreRestart(t *testing.T) {
 	s, project, board := setup(t, model.WorkflowReview)
 	card, err := s.CreateCard(CreateCardInput{Project: project.ID, Board: board.ID, ID: "legacy-archived", Title: "Legacy"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	card.Archived = true
-	if err := writeMarkdown(filepath.Join(s.cardDir(), card.ID+".md"), card, card.InitialPrompt); err != nil {
+	if err := s.writeCard(card); err != nil {
 		t.Fatal(err)
 	}
 	reopened := New(s.Root)

@@ -126,10 +126,10 @@ func splitRemoteCommand(args []string) ([]string, []string, bool) {
 }
 
 func (c *CLI) rpcRemoteExec(args []string) error {
-	const usage = "Usage: dieter remote exec (--project PROJECT|--card CARD) [options] -- COMMAND [ARG...]\n\nOptions: --name NAME --directory PATH --env KEY=VALUE --input TEXT --input-file FILE|- --stdin --keep-input --timeout DURATION --idempotency-key KEY --pty --columns N --rows N --max-output BYTES --detach --format content|jsonl|json|id\n"
+	const usage = "Usage: dieter remote exec (--project PROJECT|--card CARD) [--checkout ID] [options] -- COMMAND [ARG...]\n\nOptions: --name NAME --directory PATH --env KEY=VALUE --input TEXT --input-file FILE|- --stdin --keep-input --timeout DURATION --idempotency-key KEY --pty --columns N --rows N --max-output BYTES --detach --format content|jsonl|json|id\n"
 	flagArgs, argv, separated := splitRemoteCommand(args)
 	set := flags("remote exec")
-	project, card := addFileScopeFlags(set)
+	project, card, checkout := addFileScopeFlags(set)
 	name := set.String("name", "", "execution display name")
 	directory := set.String("directory", "", "working directory within project/workspace")
 	var environment repeatedRemoteValues
@@ -171,7 +171,7 @@ func (c *CLI) rpcRemoteExec(args []string) error {
 	if err != nil {
 		return err
 	}
-	value, err := client.StartExecution(rpcCtx, &dieterv1.StartExecutionRequest{
+	value, err := client.StartExecution(rpcCtx, &dieterv1.StartExecutionRequest{CheckoutId: *checkout,
 		ProjectId: projectID, CardId: cardID, Name: *name, Argv: append([]string(nil), argv...), WorkingDirectory: *directory,
 		Environment: environmentMap, Stdin: raw, StdinEof: !*keepInput, TimeoutMs: timeout.Milliseconds(),
 		IdempotencyKey: *idempotency, Pty: *ptyMode, Columns: int32(*columns), Rows: int32(*rows), MaxOutputBytes: *maxOutput,
@@ -197,9 +197,9 @@ func (c *CLI) rpcRemoteExec(args []string) error {
 }
 
 func (c *CLI) rpcRemoteShell(args []string) error {
-	const usage = "Usage: dieter remote shell (--project PROJECT|--card CARD) [--name NAME] [--shell PATH] [--directory PATH] [--env KEY=VALUE] [--columns N] [--rows N] [--timeout DURATION] [--idempotency-key KEY] [--detach] [--format content|jsonl|json|id]\n"
+	const usage = "Usage: dieter remote shell (--project PROJECT|--card CARD) [--checkout ID] [--name NAME] [--shell PATH] [--directory PATH] [--env KEY=VALUE] [--columns N] [--rows N] [--timeout DURATION] [--idempotency-key KEY] [--detach] [--format content|jsonl|json|id]\n"
 	set := flags("remote shell")
-	project, card := addFileScopeFlags(set)
+	project, card, checkout := addFileScopeFlags(set)
 	name := set.String("name", "shell", "execution display name")
 	shell := set.String("shell", "/bin/sh", "shell executable on the daemon host")
 	directory := set.String("directory", "", "working directory within project/workspace")
@@ -232,7 +232,7 @@ func (c *CLI) rpcRemoteShell(args []string) error {
 	if err != nil {
 		return err
 	}
-	value, err := client.StartExecution(rpcCtx, &dieterv1.StartExecutionRequest{
+	value, err := client.StartExecution(rpcCtx, &dieterv1.StartExecutionRequest{CheckoutId: *checkout,
 		ProjectId: projectID, CardId: cardID, Name: *name, Argv: []string{*shell, "-l"}, WorkingDirectory: *directory,
 		Environment: environmentMap, TimeoutMs: timeout.Milliseconds(), IdempotencyKey: *idempotency,
 		Pty: true, Columns: int32(*columns), Rows: int32(*rows), MaxOutputBytes: 8 << 20,
@@ -339,7 +339,7 @@ func (c *CLI) resolveExecution(rpcCtx context.Context, client dieterv1.DieterSer
 func (c *CLI) rpcRemoteList(args []string) error {
 	const usage = "Usage: dieter remote list [--project PROJECT|--card CARD] [--status STATUS] [--format table|json|jsonl|ids]\n"
 	set := flags("remote list")
-	project, card := addFileScopeFlags(set)
+	project, card, checkout := addFileScopeFlags(set)
 	requestedStatus := set.String("status", "", "filter by exact execution status")
 	format := set.String("format", "table", "table, json, jsonl, or ids")
 	help, err := parse(set, args, usage, c.Out)
@@ -362,7 +362,7 @@ func (c *CLI) rpcRemoteList(args []string) error {
 			return err
 		}
 	}
-	value, err := client.ListExecutions(rpcCtx, &dieterv1.ListExecutionsRequest{ProjectId: projectID, CardId: cardID, Status: *requestedStatus})
+	value, err := client.ListExecutions(rpcCtx, &dieterv1.ListExecutionsRequest{CheckoutId: *checkout, ProjectId: projectID, CardId: cardID, Status: *requestedStatus})
 	if err != nil {
 		return err
 	}

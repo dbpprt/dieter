@@ -308,7 +308,7 @@
             refreshTask?.cancel(); refreshTask = nil
             reconnectTask?.cancel(); reconnectTask = nil
             dataPlane?.shutdown(); dataPlane = nil
-            clearNodeContent()
+            harnesses = []; routeDescription = ""; closeConversation()
             selectedMachineID = machine.daemonID
             phase = .connecting
             errorMessage = nil
@@ -371,7 +371,8 @@
                 currentOrigin: connectedOrigin, currentDaemonID: selectedMachineID,
                 requestedOrigin: machine.gatewayEndpoint, requestedDaemonID: machine.daemonID)
             {
-                clearNodeContent()
+                if connectedOrigin?.credentialID != machine.gatewayEndpoint.credentialID { clearNodeContent() }
+                else { harnesses = []; closeConversation() }
             }
             selectedMachineID = machine.daemonID
             guard IOSMachinePolicy.isCompatible(machine) else { throw IOSStoreError.incompatible(machine.apiVersion) }
@@ -429,10 +430,19 @@
 
         private func applyState(_ value: Dieter_V1_State) {
             guard !value.notModified else { return }
-            projects = value.projects.filter { !$0.archived }
-            boards = value.boards
-            cards = value.cards.filter { !$0.archived }
-            chats = value.chats.filter { !$0.archived }
+            let current = MachineDirectoryProjection(
+                projects: Dictionary(projects.map { ($0.id, $0) }, uniquingKeysWith: { _, b in b }),
+                projectReplicaEndpointIDs: [:], boards: Dictionary(grouping: boards, by: \.projectID),
+                cards: Dictionary(grouping: cards, by: \.projectID), chats: chats)
+            if let machine = selectedMachine {
+                let next = MachineDirectoryReducer.merging(current, snapshots: [MachineSnapshot(
+                    endpoint: machine, connection: .init(route: .gateway, latencyMilliseconds: 0),
+                    projects: value.projects, boards: value.boards, cards: value.cards, chats: value.chats, archives: value.archives)])
+                projects = next.sortedProjects.filter { !$0.archived }
+                boards = next.boards.values.flatMap { $0 }
+                cards = next.cards.values.flatMap { $0 }.filter { !$0.archived }
+                chats = next.chats.filter { !$0.archived }
+            }
             if let selected = selectedCard, let current = (cards + chats).first(where: { $0.id == selected.card.id }) {
                 selectedCard?.card = current
             }
@@ -542,6 +552,13 @@
         }
 
         func selectCard(id: String) async {
+            if let owner = (cards + chats).first(where: { $0.id == id })?.ownerDaemonID,
+                !owner.isEmpty, owner != selectedMachineID {
+                guard machines.contains(where: { $0.daemonID == owner && $0.online }) else {
+                    errorMessage = "This conversation’s machine is offline."; return
+                }
+                await selectMachine(id: owner)
+            }
             let hasReadableSnapshot = selectedCard?.card.id == id && conversation?.cardID == id
             if hasReadableSnapshot, transcriptTask != nil { return }
             if hasReadableSnapshot {
@@ -658,12 +675,32 @@
                 transcript.page.hasMore_p && (conversation?.messages.count ?? 0) < IOSTranscript.maximumMessages
         }
 
+        private func checkoutConnection(projectID: String, checkoutID: String) async throws -> DataPlaneConnection {
+            guard let checkout = projects.first(where: { $0.id == projectID })?.checkouts.first(where: { $0.id == checkoutID && !$0.detached }),
+                let machine = machines.first(where: { $0.daemonID == checkout.daemonID }), machine.online,
+                let gateway, let accessToken else {
+                throw NSError(domain: "Checkout", code: 1, userInfo: [NSLocalizedDescriptionKey: "Choose an available checkout and machine."])
+            }
+            guard IOSMachinePolicy.isCompatible(machine) else { throw IOSStoreError.incompatible(machine.apiVersion) }
+            var candidateScope = DirectCandidateScope.nonLoopback
+            #if DEBUG
+                if ProcessInfo.processInfo.environment["DIETER_IOS_TEST_GATEWAY"] != nil { candidateScope = .all }
+            #endif
+            return try await connections.selectDataPlane(gateway: gateway, target: machine, gatewayAccessToken: accessToken, directCandidateScope: candidateScope)
+        }
+
+        func creationHarnesses(projectID: String, checkoutID: String) async throws -> [Dieter_V1_Harness] {
+            let plane = try await checkoutConnection(projectID: projectID, checkoutID: checkoutID)
+            defer { plane.shutdown() }
+            return try await plane.rpc.harnesses().harnesses
+        }
+
         func createTask(
-            projectID: String, boardID: String?, title: String, prompt: String,
+            projectID: String, checkoutID: String, boardID: String?, title: String, prompt: String,
             provider: String, model: String, effort: String, labelIDs: [String],
             providerOptions: [String: String], attachments: [Dieter_V1_MessagePart] = [], run: Bool
         ) async -> String? {
-            guard pendingOperations == 0, let rpc = dataPlane?.rpc else { return nil }
+            guard pendingOperations == 0 else { return nil }
             let attempt = connectionID
             let prompt = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
             let title = title.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -676,6 +713,7 @@
             defer { pendingOperations -= 1 }
             var request = Dieter_V1_CreateConversationRequest()
             request.projectID = projectID
+            request.checkoutID = checkoutID
             request.boardID = boardID ?? ""
             request.lane = run ? "running" : "todo"
             request.title =
@@ -693,12 +731,14 @@
             request.clientID = clientID
             request.commandID = createIdentity.command(
                 for: [
-                    selectedMachine?.id ?? "", projectID, boardID ?? "", title, prompt, provider, model, effort,
+                    checkoutID, projectID, boardID ?? "", title, prompt, provider, model, effort,
                     String(run),
                 ] + labelIDs + IOSCreateTaskProviderOptions.identity(providerOptions)
                     + attachments.map(Self.attachmentIdentity))
             do {
-                let card = try await (boardID == nil ? rpc.createChat(request) : rpc.createCard(request))
+                let plane = try await checkoutConnection(projectID: projectID, checkoutID: checkoutID)
+                defer { plane.shutdown() }
+                let card = try await (boardID == nil ? plane.rpc.createChat(request) : plane.rpc.createCard(request))
                 guard owns(attempt) else { return nil }
                 createIdentity.acknowledge(command: request.commandID)
                 if boardID == nil {
@@ -830,13 +870,14 @@
             }
         }
 
-        func listFiles(projectID: String, cardID: String = "", path: String = "") async -> Dieter_V1_FileList? {
-            guard let rpc = dataPlane?.rpc else { return nil }
+        func listFiles(projectID: String, checkoutID: String, cardID: String = "", path: String = "") async -> Dieter_V1_FileList? {
             let attempt = connectionID
             var request = Dieter_V1_ListFilesRequest()
-            request.projectID = projectID; request.cardID = cardID; request.path = path
+            request.projectID = projectID; request.checkoutID = checkoutID; request.cardID = cardID; request.path = path
             do {
-                let value = try await rpc.listFiles(request)
+                let plane = try await checkoutConnection(projectID: projectID, checkoutID: checkoutID)
+                defer { plane.shutdown() }
+                let value = try await plane.rpc.listFiles(request)
                 return owns(attempt) ? value : nil
             } catch {
                 if owns(attempt) { errorMessage = IOSUserError.message(error) }
@@ -844,13 +885,14 @@
             }
         }
 
-        func readFile(projectID: String, cardID: String = "", path: String) async -> Dieter_V1_FileDocument? {
-            guard let rpc = dataPlane?.rpc else { return nil }
+        func readFile(projectID: String, checkoutID: String, cardID: String = "", path: String) async -> Dieter_V1_FileDocument? {
             let attempt = connectionID
             var request = Dieter_V1_ReadFileRequest()
-            request.projectID = projectID; request.cardID = cardID; request.path = path
+            request.projectID = projectID; request.checkoutID = checkoutID; request.cardID = cardID; request.path = path
             do {
-                let value = try await rpc.readFile(request)
+                let plane = try await checkoutConnection(projectID: projectID, checkoutID: checkoutID)
+                defer { plane.shutdown() }
+                let value = try await plane.rpc.readFile(request)
                 return owns(attempt) ? value : nil
             } catch {
                 if owns(attempt) { errorMessage = IOSUserError.message(error) }
@@ -882,16 +924,18 @@
             }
         }
 
-        func saveFile(projectID: String, cardID: String = "", document: Dieter_V1_FileDocument, content: String) async
+        func saveFile(projectID: String, checkoutID: String, cardID: String = "", document: Dieter_V1_FileDocument, content: String) async
             -> Dieter_V1_FileDocument?
         {
-            guard let rpc = dataPlane?.rpc, !document.binary else { return nil }
+            guard !document.binary else { return nil }
             let attempt = connectionID
             var request = Dieter_V1_SaveFileRequest()
-            request.projectID = projectID; request.cardID = cardID; request.path = document.path
+            request.projectID = projectID; request.checkoutID = checkoutID; request.cardID = cardID; request.path = document.path
             request.content = content; request.revision = document.revision
             do {
-                let value = try await rpc.saveFile(request)
+                let plane = try await checkoutConnection(projectID: projectID, checkoutID: checkoutID)
+                defer { plane.shutdown() }
+                let value = try await plane.rpc.saveFile(request)
                 return owns(attempt) ? value : nil
             } catch {
                 if owns(attempt) {

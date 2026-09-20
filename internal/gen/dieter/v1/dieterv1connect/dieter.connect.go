@@ -34,6 +34,24 @@ const (
 // reflection-formatted method names, remove the leading slash and convert the remaining slash to a
 // period.
 const (
+	// DieterServiceGetPeerChangesProcedure is the fully-qualified name of the DieterService's
+	// GetPeerChanges RPC.
+	DieterServiceGetPeerChangesProcedure = "/dieter.v1.DieterService/GetPeerChanges"
+	// DieterServiceGetPeerRecordProcedure is the fully-qualified name of the DieterService's
+	// GetPeerRecord RPC.
+	DieterServiceGetPeerRecordProcedure = "/dieter.v1.DieterService/GetPeerRecord"
+	// DieterServiceGetPeerStoreStatusProcedure is the fully-qualified name of the DieterService's
+	// GetPeerStoreStatus RPC.
+	DieterServiceGetPeerStoreStatusProcedure = "/dieter.v1.DieterService/GetPeerStoreStatus"
+	// DieterServiceListPeerRecordsProcedure is the fully-qualified name of the DieterService's
+	// ListPeerRecords RPC.
+	DieterServiceListPeerRecordsProcedure = "/dieter.v1.DieterService/ListPeerRecords"
+	// DieterServicePutPeerRecordProcedure is the fully-qualified name of the DieterService's
+	// PutPeerRecord RPC.
+	DieterServicePutPeerRecordProcedure = "/dieter.v1.DieterService/PutPeerRecord"
+	// DieterServiceMergePeerRecordsProcedure is the fully-qualified name of the DieterService's
+	// MergePeerRecords RPC.
+	DieterServiceMergePeerRecordsProcedure = "/dieter.v1.DieterService/MergePeerRecords"
 	// DieterServiceHealthProcedure is the fully-qualified name of the DieterService's Health RPC.
 	DieterServiceHealthProcedure = "/dieter.v1.DieterService/Health"
 	// DieterServiceGetRuntimeStatusProcedure is the fully-qualified name of the DieterService's
@@ -91,6 +109,18 @@ const (
 	// DieterServiceListDirectoriesProcedure is the fully-qualified name of the DieterService's
 	// ListDirectories RPC.
 	DieterServiceListDirectoriesProcedure = "/dieter.v1.DieterService/ListDirectories"
+	// DieterServiceConsolidateProjectProcedure is the fully-qualified name of the DieterService's
+	// ConsolidateProject RPC.
+	DieterServiceConsolidateProjectProcedure = "/dieter.v1.DieterService/ConsolidateProject"
+	// DieterServiceAttachCheckoutProcedure is the fully-qualified name of the DieterService's
+	// AttachCheckout RPC.
+	DieterServiceAttachCheckoutProcedure = "/dieter.v1.DieterService/AttachCheckout"
+	// DieterServiceDetachCheckoutProcedure is the fully-qualified name of the DieterService's
+	// DetachCheckout RPC.
+	DieterServiceDetachCheckoutProcedure = "/dieter.v1.DieterService/DetachCheckout"
+	// DieterServiceListCheckoutsProcedure is the fully-qualified name of the DieterService's
+	// ListCheckouts RPC.
+	DieterServiceListCheckoutsProcedure = "/dieter.v1.DieterService/ListCheckouts"
 	// DieterServiceCreateProjectProcedure is the fully-qualified name of the DieterService's
 	// CreateProject RPC.
 	DieterServiceCreateProjectProcedure = "/dieter.v1.DieterService/CreateProject"
@@ -341,6 +371,9 @@ const (
 	// DieterServiceListSchedulesProcedure is the fully-qualified name of the DieterService's
 	// ListSchedules RPC.
 	DieterServiceListSchedulesProcedure = "/dieter.v1.DieterService/ListSchedules"
+	// DieterServiceGetScheduleProcedure is the fully-qualified name of the DieterService's GetSchedule
+	// RPC.
+	DieterServiceGetScheduleProcedure = "/dieter.v1.DieterService/GetSchedule"
 	// DieterServicePreviewScheduleProcedure is the fully-qualified name of the DieterService's
 	// PreviewSchedule RPC.
 	DieterServicePreviewScheduleProcedure = "/dieter.v1.DieterService/PreviewSchedule"
@@ -366,6 +399,12 @@ const (
 
 // DieterServiceClient is a client for the dieter.v1.DieterService service.
 type DieterServiceClient interface {
+	GetPeerChanges(context.Context, *connect.Request[v1.PeerChangesRequest]) (*connect.Response[v1.PeerChangesResponse], error)
+	GetPeerRecord(context.Context, *connect.Request[v1.PeerRecordRef]) (*connect.Response[v1.PeerRecord], error)
+	GetPeerStoreStatus(context.Context, *connect.Request[emptypb.Empty]) (*connect.Response[v1.PeerStoreStatus], error)
+	ListPeerRecords(context.Context, *connect.Request[v1.PeerSnapshotRequest]) (*connect.Response[v1.PeerSnapshot], error)
+	PutPeerRecord(context.Context, *connect.Request[v1.PutPeerRecordRequest]) (*connect.Response[v1.PeerRecord], error)
+	MergePeerRecords(context.Context, *connect.Request[v1.MergePeerRecordsRequest]) (*connect.Response[emptypb.Empty], error)
 	Health(context.Context, *connect.Request[emptypb.Empty]) (*connect.Response[v1.HealthResponse], error)
 	GetRuntimeStatus(context.Context, *connect.Request[emptypb.Empty]) (*connect.Response[v1.RuntimeStatus], error)
 	// Data-only WebRTC carries the existing authenticated TLS/gRPC byte stream.
@@ -393,6 +432,10 @@ type DieterServiceClient interface {
 	SetBoardPromptTemplate(context.Context, *connect.Request[v1.SetScopedPromptTemplateRequest]) (*connect.Response[v1.Board], error)
 	PreviewPrompt(context.Context, *connect.Request[v1.PreviewPromptRequest]) (*connect.Response[v1.PromptPreview], error)
 	ListDirectories(context.Context, *connect.Request[v1.ListDirectoriesRequest]) (*connect.Response[v1.DirectoryListing], error)
+	ConsolidateProject(context.Context, *connect.Request[v1.ConsolidateProjectRequest]) (*connect.Response[v1.Project], error)
+	AttachCheckout(context.Context, *connect.Request[v1.AttachCheckoutRequest]) (*connect.Response[v1.Checkout], error)
+	DetachCheckout(context.Context, *connect.Request[v1.CheckoutRef]) (*connect.Response[emptypb.Empty], error)
+	ListCheckouts(context.Context, *connect.Request[v1.ProjectRef]) (*connect.Response[v1.CheckoutsResponse], error)
 	CreateProject(context.Context, *connect.Request[v1.CreateProjectRequest]) (*connect.Response[v1.CreateProjectResponse], error)
 	UpdateProject(context.Context, *connect.Request[v1.UpdateProjectRequest]) (*connect.Response[v1.Project], error)
 	UpdateProjectWorkspaceSettings(context.Context, *connect.Request[v1.UpdateProjectWorkspaceSettingsRequest]) (*connect.Response[v1.Project], error)
@@ -500,6 +543,7 @@ type DieterServiceClient interface {
 	ExchangeRemoteDesktopClipboard(context.Context, *connect.Request[v1.RemoteDesktopClipboardRequest]) (*connect.Response[v1.RemoteDesktopClipboardResponse], error)
 	CloseRemoteDesktop(context.Context, *connect.Request[v1.RemoteDesktopRef]) (*connect.Response[emptypb.Empty], error)
 	ListSchedules(context.Context, *connect.Request[v1.ListSchedulesRequest]) (*connect.Response[v1.SchedulesResponse], error)
+	GetSchedule(context.Context, *connect.Request[v1.ScheduleRef]) (*connect.Response[v1.Schedule], error)
 	PreviewSchedule(context.Context, *connect.Request[v1.PreviewScheduleRequest]) (*connect.Response[v1.SchedulePreview], error)
 	CreateSchedule(context.Context, *connect.Request[v1.SaveScheduleRequest]) (*connect.Response[v1.Schedule], error)
 	UpdateSchedule(context.Context, *connect.Request[v1.SaveScheduleRequest]) (*connect.Response[v1.Schedule], error)
@@ -520,6 +564,42 @@ func NewDieterServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 	baseURL = strings.TrimRight(baseURL, "/")
 	dieterServiceMethods := v1.File_dieter_v1_dieter_proto.Services().ByName("DieterService").Methods()
 	return &dieterServiceClient{
+		getPeerChanges: connect.NewClient[v1.PeerChangesRequest, v1.PeerChangesResponse](
+			httpClient,
+			baseURL+DieterServiceGetPeerChangesProcedure,
+			connect.WithSchema(dieterServiceMethods.ByName("GetPeerChanges")),
+			connect.WithClientOptions(opts...),
+		),
+		getPeerRecord: connect.NewClient[v1.PeerRecordRef, v1.PeerRecord](
+			httpClient,
+			baseURL+DieterServiceGetPeerRecordProcedure,
+			connect.WithSchema(dieterServiceMethods.ByName("GetPeerRecord")),
+			connect.WithClientOptions(opts...),
+		),
+		getPeerStoreStatus: connect.NewClient[emptypb.Empty, v1.PeerStoreStatus](
+			httpClient,
+			baseURL+DieterServiceGetPeerStoreStatusProcedure,
+			connect.WithSchema(dieterServiceMethods.ByName("GetPeerStoreStatus")),
+			connect.WithClientOptions(opts...),
+		),
+		listPeerRecords: connect.NewClient[v1.PeerSnapshotRequest, v1.PeerSnapshot](
+			httpClient,
+			baseURL+DieterServiceListPeerRecordsProcedure,
+			connect.WithSchema(dieterServiceMethods.ByName("ListPeerRecords")),
+			connect.WithClientOptions(opts...),
+		),
+		putPeerRecord: connect.NewClient[v1.PutPeerRecordRequest, v1.PeerRecord](
+			httpClient,
+			baseURL+DieterServicePutPeerRecordProcedure,
+			connect.WithSchema(dieterServiceMethods.ByName("PutPeerRecord")),
+			connect.WithClientOptions(opts...),
+		),
+		mergePeerRecords: connect.NewClient[v1.MergePeerRecordsRequest, emptypb.Empty](
+			httpClient,
+			baseURL+DieterServiceMergePeerRecordsProcedure,
+			connect.WithSchema(dieterServiceMethods.ByName("MergePeerRecords")),
+			connect.WithClientOptions(opts...),
+		),
 		health: connect.NewClient[emptypb.Empty, v1.HealthResponse](
 			httpClient,
 			baseURL+DieterServiceHealthProcedure,
@@ -638,6 +718,30 @@ func NewDieterServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 			httpClient,
 			baseURL+DieterServiceListDirectoriesProcedure,
 			connect.WithSchema(dieterServiceMethods.ByName("ListDirectories")),
+			connect.WithClientOptions(opts...),
+		),
+		consolidateProject: connect.NewClient[v1.ConsolidateProjectRequest, v1.Project](
+			httpClient,
+			baseURL+DieterServiceConsolidateProjectProcedure,
+			connect.WithSchema(dieterServiceMethods.ByName("ConsolidateProject")),
+			connect.WithClientOptions(opts...),
+		),
+		attachCheckout: connect.NewClient[v1.AttachCheckoutRequest, v1.Checkout](
+			httpClient,
+			baseURL+DieterServiceAttachCheckoutProcedure,
+			connect.WithSchema(dieterServiceMethods.ByName("AttachCheckout")),
+			connect.WithClientOptions(opts...),
+		),
+		detachCheckout: connect.NewClient[v1.CheckoutRef, emptypb.Empty](
+			httpClient,
+			baseURL+DieterServiceDetachCheckoutProcedure,
+			connect.WithSchema(dieterServiceMethods.ByName("DetachCheckout")),
+			connect.WithClientOptions(opts...),
+		),
+		listCheckouts: connect.NewClient[v1.ProjectRef, v1.CheckoutsResponse](
+			httpClient,
+			baseURL+DieterServiceListCheckoutsProcedure,
+			connect.WithSchema(dieterServiceMethods.ByName("ListCheckouts")),
 			connect.WithClientOptions(opts...),
 		),
 		createProject: connect.NewClient[v1.CreateProjectRequest, v1.CreateProjectResponse](
@@ -1162,6 +1266,12 @@ func NewDieterServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 			connect.WithSchema(dieterServiceMethods.ByName("ListSchedules")),
 			connect.WithClientOptions(opts...),
 		),
+		getSchedule: connect.NewClient[v1.ScheduleRef, v1.Schedule](
+			httpClient,
+			baseURL+DieterServiceGetScheduleProcedure,
+			connect.WithSchema(dieterServiceMethods.ByName("GetSchedule")),
+			connect.WithClientOptions(opts...),
+		),
 		previewSchedule: connect.NewClient[v1.PreviewScheduleRequest, v1.SchedulePreview](
 			httpClient,
 			baseURL+DieterServicePreviewScheduleProcedure,
@@ -1209,6 +1319,12 @@ func NewDieterServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 
 // dieterServiceClient implements DieterServiceClient.
 type dieterServiceClient struct {
+	getPeerChanges                  *connect.Client[v1.PeerChangesRequest, v1.PeerChangesResponse]
+	getPeerRecord                   *connect.Client[v1.PeerRecordRef, v1.PeerRecord]
+	getPeerStoreStatus              *connect.Client[emptypb.Empty, v1.PeerStoreStatus]
+	listPeerRecords                 *connect.Client[v1.PeerSnapshotRequest, v1.PeerSnapshot]
+	putPeerRecord                   *connect.Client[v1.PutPeerRecordRequest, v1.PeerRecord]
+	mergePeerRecords                *connect.Client[v1.MergePeerRecordsRequest, emptypb.Empty]
 	health                          *connect.Client[emptypb.Empty, v1.HealthResponse]
 	getRuntimeStatus                *connect.Client[emptypb.Empty, v1.RuntimeStatus]
 	startControlConnection          *connect.Client[v1.StartControlConnectionRequest, v1.ControlConnection]
@@ -1229,6 +1345,10 @@ type dieterServiceClient struct {
 	setBoardPromptTemplate          *connect.Client[v1.SetScopedPromptTemplateRequest, v1.Board]
 	previewPrompt                   *connect.Client[v1.PreviewPromptRequest, v1.PromptPreview]
 	listDirectories                 *connect.Client[v1.ListDirectoriesRequest, v1.DirectoryListing]
+	consolidateProject              *connect.Client[v1.ConsolidateProjectRequest, v1.Project]
+	attachCheckout                  *connect.Client[v1.AttachCheckoutRequest, v1.Checkout]
+	detachCheckout                  *connect.Client[v1.CheckoutRef, emptypb.Empty]
+	listCheckouts                   *connect.Client[v1.ProjectRef, v1.CheckoutsResponse]
 	createProject                   *connect.Client[v1.CreateProjectRequest, v1.CreateProjectResponse]
 	updateProject                   *connect.Client[v1.UpdateProjectRequest, v1.Project]
 	updateProjectWorkspaceSettings  *connect.Client[v1.UpdateProjectWorkspaceSettingsRequest, v1.Project]
@@ -1316,6 +1436,7 @@ type dieterServiceClient struct {
 	exchangeRemoteDesktopClipboard  *connect.Client[v1.RemoteDesktopClipboardRequest, v1.RemoteDesktopClipboardResponse]
 	closeRemoteDesktop              *connect.Client[v1.RemoteDesktopRef, emptypb.Empty]
 	listSchedules                   *connect.Client[v1.ListSchedulesRequest, v1.SchedulesResponse]
+	getSchedule                     *connect.Client[v1.ScheduleRef, v1.Schedule]
 	previewSchedule                 *connect.Client[v1.PreviewScheduleRequest, v1.SchedulePreview]
 	createSchedule                  *connect.Client[v1.SaveScheduleRequest, v1.Schedule]
 	updateSchedule                  *connect.Client[v1.SaveScheduleRequest, v1.Schedule]
@@ -1323,6 +1444,36 @@ type dieterServiceClient struct {
 	runSchedule                     *connect.Client[v1.ScheduleRef, v1.ScheduleRun]
 	setScheduleEnabled              *connect.Client[v1.SetScheduleEnabledRequest, v1.Schedule]
 	listScheduleRuns                *connect.Client[v1.ListScheduleRunsRequest, v1.ScheduleRunsResponse]
+}
+
+// GetPeerChanges calls dieter.v1.DieterService.GetPeerChanges.
+func (c *dieterServiceClient) GetPeerChanges(ctx context.Context, req *connect.Request[v1.PeerChangesRequest]) (*connect.Response[v1.PeerChangesResponse], error) {
+	return c.getPeerChanges.CallUnary(ctx, req)
+}
+
+// GetPeerRecord calls dieter.v1.DieterService.GetPeerRecord.
+func (c *dieterServiceClient) GetPeerRecord(ctx context.Context, req *connect.Request[v1.PeerRecordRef]) (*connect.Response[v1.PeerRecord], error) {
+	return c.getPeerRecord.CallUnary(ctx, req)
+}
+
+// GetPeerStoreStatus calls dieter.v1.DieterService.GetPeerStoreStatus.
+func (c *dieterServiceClient) GetPeerStoreStatus(ctx context.Context, req *connect.Request[emptypb.Empty]) (*connect.Response[v1.PeerStoreStatus], error) {
+	return c.getPeerStoreStatus.CallUnary(ctx, req)
+}
+
+// ListPeerRecords calls dieter.v1.DieterService.ListPeerRecords.
+func (c *dieterServiceClient) ListPeerRecords(ctx context.Context, req *connect.Request[v1.PeerSnapshotRequest]) (*connect.Response[v1.PeerSnapshot], error) {
+	return c.listPeerRecords.CallUnary(ctx, req)
+}
+
+// PutPeerRecord calls dieter.v1.DieterService.PutPeerRecord.
+func (c *dieterServiceClient) PutPeerRecord(ctx context.Context, req *connect.Request[v1.PutPeerRecordRequest]) (*connect.Response[v1.PeerRecord], error) {
+	return c.putPeerRecord.CallUnary(ctx, req)
+}
+
+// MergePeerRecords calls dieter.v1.DieterService.MergePeerRecords.
+func (c *dieterServiceClient) MergePeerRecords(ctx context.Context, req *connect.Request[v1.MergePeerRecordsRequest]) (*connect.Response[emptypb.Empty], error) {
+	return c.mergePeerRecords.CallUnary(ctx, req)
 }
 
 // Health calls dieter.v1.DieterService.Health.
@@ -1423,6 +1574,26 @@ func (c *dieterServiceClient) PreviewPrompt(ctx context.Context, req *connect.Re
 // ListDirectories calls dieter.v1.DieterService.ListDirectories.
 func (c *dieterServiceClient) ListDirectories(ctx context.Context, req *connect.Request[v1.ListDirectoriesRequest]) (*connect.Response[v1.DirectoryListing], error) {
 	return c.listDirectories.CallUnary(ctx, req)
+}
+
+// ConsolidateProject calls dieter.v1.DieterService.ConsolidateProject.
+func (c *dieterServiceClient) ConsolidateProject(ctx context.Context, req *connect.Request[v1.ConsolidateProjectRequest]) (*connect.Response[v1.Project], error) {
+	return c.consolidateProject.CallUnary(ctx, req)
+}
+
+// AttachCheckout calls dieter.v1.DieterService.AttachCheckout.
+func (c *dieterServiceClient) AttachCheckout(ctx context.Context, req *connect.Request[v1.AttachCheckoutRequest]) (*connect.Response[v1.Checkout], error) {
+	return c.attachCheckout.CallUnary(ctx, req)
+}
+
+// DetachCheckout calls dieter.v1.DieterService.DetachCheckout.
+func (c *dieterServiceClient) DetachCheckout(ctx context.Context, req *connect.Request[v1.CheckoutRef]) (*connect.Response[emptypb.Empty], error) {
+	return c.detachCheckout.CallUnary(ctx, req)
+}
+
+// ListCheckouts calls dieter.v1.DieterService.ListCheckouts.
+func (c *dieterServiceClient) ListCheckouts(ctx context.Context, req *connect.Request[v1.ProjectRef]) (*connect.Response[v1.CheckoutsResponse], error) {
+	return c.listCheckouts.CallUnary(ctx, req)
 }
 
 // CreateProject calls dieter.v1.DieterService.CreateProject.
@@ -1860,6 +2031,11 @@ func (c *dieterServiceClient) ListSchedules(ctx context.Context, req *connect.Re
 	return c.listSchedules.CallUnary(ctx, req)
 }
 
+// GetSchedule calls dieter.v1.DieterService.GetSchedule.
+func (c *dieterServiceClient) GetSchedule(ctx context.Context, req *connect.Request[v1.ScheduleRef]) (*connect.Response[v1.Schedule], error) {
+	return c.getSchedule.CallUnary(ctx, req)
+}
+
 // PreviewSchedule calls dieter.v1.DieterService.PreviewSchedule.
 func (c *dieterServiceClient) PreviewSchedule(ctx context.Context, req *connect.Request[v1.PreviewScheduleRequest]) (*connect.Response[v1.SchedulePreview], error) {
 	return c.previewSchedule.CallUnary(ctx, req)
@@ -1897,6 +2073,12 @@ func (c *dieterServiceClient) ListScheduleRuns(ctx context.Context, req *connect
 
 // DieterServiceHandler is an implementation of the dieter.v1.DieterService service.
 type DieterServiceHandler interface {
+	GetPeerChanges(context.Context, *connect.Request[v1.PeerChangesRequest]) (*connect.Response[v1.PeerChangesResponse], error)
+	GetPeerRecord(context.Context, *connect.Request[v1.PeerRecordRef]) (*connect.Response[v1.PeerRecord], error)
+	GetPeerStoreStatus(context.Context, *connect.Request[emptypb.Empty]) (*connect.Response[v1.PeerStoreStatus], error)
+	ListPeerRecords(context.Context, *connect.Request[v1.PeerSnapshotRequest]) (*connect.Response[v1.PeerSnapshot], error)
+	PutPeerRecord(context.Context, *connect.Request[v1.PutPeerRecordRequest]) (*connect.Response[v1.PeerRecord], error)
+	MergePeerRecords(context.Context, *connect.Request[v1.MergePeerRecordsRequest]) (*connect.Response[emptypb.Empty], error)
 	Health(context.Context, *connect.Request[emptypb.Empty]) (*connect.Response[v1.HealthResponse], error)
 	GetRuntimeStatus(context.Context, *connect.Request[emptypb.Empty]) (*connect.Response[v1.RuntimeStatus], error)
 	// Data-only WebRTC carries the existing authenticated TLS/gRPC byte stream.
@@ -1924,6 +2106,10 @@ type DieterServiceHandler interface {
 	SetBoardPromptTemplate(context.Context, *connect.Request[v1.SetScopedPromptTemplateRequest]) (*connect.Response[v1.Board], error)
 	PreviewPrompt(context.Context, *connect.Request[v1.PreviewPromptRequest]) (*connect.Response[v1.PromptPreview], error)
 	ListDirectories(context.Context, *connect.Request[v1.ListDirectoriesRequest]) (*connect.Response[v1.DirectoryListing], error)
+	ConsolidateProject(context.Context, *connect.Request[v1.ConsolidateProjectRequest]) (*connect.Response[v1.Project], error)
+	AttachCheckout(context.Context, *connect.Request[v1.AttachCheckoutRequest]) (*connect.Response[v1.Checkout], error)
+	DetachCheckout(context.Context, *connect.Request[v1.CheckoutRef]) (*connect.Response[emptypb.Empty], error)
+	ListCheckouts(context.Context, *connect.Request[v1.ProjectRef]) (*connect.Response[v1.CheckoutsResponse], error)
 	CreateProject(context.Context, *connect.Request[v1.CreateProjectRequest]) (*connect.Response[v1.CreateProjectResponse], error)
 	UpdateProject(context.Context, *connect.Request[v1.UpdateProjectRequest]) (*connect.Response[v1.Project], error)
 	UpdateProjectWorkspaceSettings(context.Context, *connect.Request[v1.UpdateProjectWorkspaceSettingsRequest]) (*connect.Response[v1.Project], error)
@@ -2031,6 +2217,7 @@ type DieterServiceHandler interface {
 	ExchangeRemoteDesktopClipboard(context.Context, *connect.Request[v1.RemoteDesktopClipboardRequest]) (*connect.Response[v1.RemoteDesktopClipboardResponse], error)
 	CloseRemoteDesktop(context.Context, *connect.Request[v1.RemoteDesktopRef]) (*connect.Response[emptypb.Empty], error)
 	ListSchedules(context.Context, *connect.Request[v1.ListSchedulesRequest]) (*connect.Response[v1.SchedulesResponse], error)
+	GetSchedule(context.Context, *connect.Request[v1.ScheduleRef]) (*connect.Response[v1.Schedule], error)
 	PreviewSchedule(context.Context, *connect.Request[v1.PreviewScheduleRequest]) (*connect.Response[v1.SchedulePreview], error)
 	CreateSchedule(context.Context, *connect.Request[v1.SaveScheduleRequest]) (*connect.Response[v1.Schedule], error)
 	UpdateSchedule(context.Context, *connect.Request[v1.SaveScheduleRequest]) (*connect.Response[v1.Schedule], error)
@@ -2047,6 +2234,42 @@ type DieterServiceHandler interface {
 // and JSON codecs. They also support gzip compression.
 func NewDieterServiceHandler(svc DieterServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
 	dieterServiceMethods := v1.File_dieter_v1_dieter_proto.Services().ByName("DieterService").Methods()
+	dieterServiceGetPeerChangesHandler := connect.NewUnaryHandler(
+		DieterServiceGetPeerChangesProcedure,
+		svc.GetPeerChanges,
+		connect.WithSchema(dieterServiceMethods.ByName("GetPeerChanges")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dieterServiceGetPeerRecordHandler := connect.NewUnaryHandler(
+		DieterServiceGetPeerRecordProcedure,
+		svc.GetPeerRecord,
+		connect.WithSchema(dieterServiceMethods.ByName("GetPeerRecord")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dieterServiceGetPeerStoreStatusHandler := connect.NewUnaryHandler(
+		DieterServiceGetPeerStoreStatusProcedure,
+		svc.GetPeerStoreStatus,
+		connect.WithSchema(dieterServiceMethods.ByName("GetPeerStoreStatus")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dieterServiceListPeerRecordsHandler := connect.NewUnaryHandler(
+		DieterServiceListPeerRecordsProcedure,
+		svc.ListPeerRecords,
+		connect.WithSchema(dieterServiceMethods.ByName("ListPeerRecords")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dieterServicePutPeerRecordHandler := connect.NewUnaryHandler(
+		DieterServicePutPeerRecordProcedure,
+		svc.PutPeerRecord,
+		connect.WithSchema(dieterServiceMethods.ByName("PutPeerRecord")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dieterServiceMergePeerRecordsHandler := connect.NewUnaryHandler(
+		DieterServiceMergePeerRecordsProcedure,
+		svc.MergePeerRecords,
+		connect.WithSchema(dieterServiceMethods.ByName("MergePeerRecords")),
+		connect.WithHandlerOptions(opts...),
+	)
 	dieterServiceHealthHandler := connect.NewUnaryHandler(
 		DieterServiceHealthProcedure,
 		svc.Health,
@@ -2165,6 +2388,30 @@ func NewDieterServiceHandler(svc DieterServiceHandler, opts ...connect.HandlerOp
 		DieterServiceListDirectoriesProcedure,
 		svc.ListDirectories,
 		connect.WithSchema(dieterServiceMethods.ByName("ListDirectories")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dieterServiceConsolidateProjectHandler := connect.NewUnaryHandler(
+		DieterServiceConsolidateProjectProcedure,
+		svc.ConsolidateProject,
+		connect.WithSchema(dieterServiceMethods.ByName("ConsolidateProject")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dieterServiceAttachCheckoutHandler := connect.NewUnaryHandler(
+		DieterServiceAttachCheckoutProcedure,
+		svc.AttachCheckout,
+		connect.WithSchema(dieterServiceMethods.ByName("AttachCheckout")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dieterServiceDetachCheckoutHandler := connect.NewUnaryHandler(
+		DieterServiceDetachCheckoutProcedure,
+		svc.DetachCheckout,
+		connect.WithSchema(dieterServiceMethods.ByName("DetachCheckout")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dieterServiceListCheckoutsHandler := connect.NewUnaryHandler(
+		DieterServiceListCheckoutsProcedure,
+		svc.ListCheckouts,
+		connect.WithSchema(dieterServiceMethods.ByName("ListCheckouts")),
 		connect.WithHandlerOptions(opts...),
 	)
 	dieterServiceCreateProjectHandler := connect.NewUnaryHandler(
@@ -2689,6 +2936,12 @@ func NewDieterServiceHandler(svc DieterServiceHandler, opts ...connect.HandlerOp
 		connect.WithSchema(dieterServiceMethods.ByName("ListSchedules")),
 		connect.WithHandlerOptions(opts...),
 	)
+	dieterServiceGetScheduleHandler := connect.NewUnaryHandler(
+		DieterServiceGetScheduleProcedure,
+		svc.GetSchedule,
+		connect.WithSchema(dieterServiceMethods.ByName("GetSchedule")),
+		connect.WithHandlerOptions(opts...),
+	)
 	dieterServicePreviewScheduleHandler := connect.NewUnaryHandler(
 		DieterServicePreviewScheduleProcedure,
 		svc.PreviewSchedule,
@@ -2733,6 +2986,18 @@ func NewDieterServiceHandler(svc DieterServiceHandler, opts ...connect.HandlerOp
 	)
 	return "/dieter.v1.DieterService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case DieterServiceGetPeerChangesProcedure:
+			dieterServiceGetPeerChangesHandler.ServeHTTP(w, r)
+		case DieterServiceGetPeerRecordProcedure:
+			dieterServiceGetPeerRecordHandler.ServeHTTP(w, r)
+		case DieterServiceGetPeerStoreStatusProcedure:
+			dieterServiceGetPeerStoreStatusHandler.ServeHTTP(w, r)
+		case DieterServiceListPeerRecordsProcedure:
+			dieterServiceListPeerRecordsHandler.ServeHTTP(w, r)
+		case DieterServicePutPeerRecordProcedure:
+			dieterServicePutPeerRecordHandler.ServeHTTP(w, r)
+		case DieterServiceMergePeerRecordsProcedure:
+			dieterServiceMergePeerRecordsHandler.ServeHTTP(w, r)
 		case DieterServiceHealthProcedure:
 			dieterServiceHealthHandler.ServeHTTP(w, r)
 		case DieterServiceGetRuntimeStatusProcedure:
@@ -2773,6 +3038,14 @@ func NewDieterServiceHandler(svc DieterServiceHandler, opts ...connect.HandlerOp
 			dieterServicePreviewPromptHandler.ServeHTTP(w, r)
 		case DieterServiceListDirectoriesProcedure:
 			dieterServiceListDirectoriesHandler.ServeHTTP(w, r)
+		case DieterServiceConsolidateProjectProcedure:
+			dieterServiceConsolidateProjectHandler.ServeHTTP(w, r)
+		case DieterServiceAttachCheckoutProcedure:
+			dieterServiceAttachCheckoutHandler.ServeHTTP(w, r)
+		case DieterServiceDetachCheckoutProcedure:
+			dieterServiceDetachCheckoutHandler.ServeHTTP(w, r)
+		case DieterServiceListCheckoutsProcedure:
+			dieterServiceListCheckoutsHandler.ServeHTTP(w, r)
 		case DieterServiceCreateProjectProcedure:
 			dieterServiceCreateProjectHandler.ServeHTTP(w, r)
 		case DieterServiceUpdateProjectProcedure:
@@ -2947,6 +3220,8 @@ func NewDieterServiceHandler(svc DieterServiceHandler, opts ...connect.HandlerOp
 			dieterServiceCloseRemoteDesktopHandler.ServeHTTP(w, r)
 		case DieterServiceListSchedulesProcedure:
 			dieterServiceListSchedulesHandler.ServeHTTP(w, r)
+		case DieterServiceGetScheduleProcedure:
+			dieterServiceGetScheduleHandler.ServeHTTP(w, r)
 		case DieterServicePreviewScheduleProcedure:
 			dieterServicePreviewScheduleHandler.ServeHTTP(w, r)
 		case DieterServiceCreateScheduleProcedure:
@@ -2969,6 +3244,30 @@ func NewDieterServiceHandler(svc DieterServiceHandler, opts ...connect.HandlerOp
 
 // UnimplementedDieterServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedDieterServiceHandler struct{}
+
+func (UnimplementedDieterServiceHandler) GetPeerChanges(context.Context, *connect.Request[v1.PeerChangesRequest]) (*connect.Response[v1.PeerChangesResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.GetPeerChanges is not implemented"))
+}
+
+func (UnimplementedDieterServiceHandler) GetPeerRecord(context.Context, *connect.Request[v1.PeerRecordRef]) (*connect.Response[v1.PeerRecord], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.GetPeerRecord is not implemented"))
+}
+
+func (UnimplementedDieterServiceHandler) GetPeerStoreStatus(context.Context, *connect.Request[emptypb.Empty]) (*connect.Response[v1.PeerStoreStatus], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.GetPeerStoreStatus is not implemented"))
+}
+
+func (UnimplementedDieterServiceHandler) ListPeerRecords(context.Context, *connect.Request[v1.PeerSnapshotRequest]) (*connect.Response[v1.PeerSnapshot], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.ListPeerRecords is not implemented"))
+}
+
+func (UnimplementedDieterServiceHandler) PutPeerRecord(context.Context, *connect.Request[v1.PutPeerRecordRequest]) (*connect.Response[v1.PeerRecord], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.PutPeerRecord is not implemented"))
+}
+
+func (UnimplementedDieterServiceHandler) MergePeerRecords(context.Context, *connect.Request[v1.MergePeerRecordsRequest]) (*connect.Response[emptypb.Empty], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.MergePeerRecords is not implemented"))
+}
 
 func (UnimplementedDieterServiceHandler) Health(context.Context, *connect.Request[emptypb.Empty]) (*connect.Response[v1.HealthResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.Health is not implemented"))
@@ -3048,6 +3347,22 @@ func (UnimplementedDieterServiceHandler) PreviewPrompt(context.Context, *connect
 
 func (UnimplementedDieterServiceHandler) ListDirectories(context.Context, *connect.Request[v1.ListDirectoriesRequest]) (*connect.Response[v1.DirectoryListing], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.ListDirectories is not implemented"))
+}
+
+func (UnimplementedDieterServiceHandler) ConsolidateProject(context.Context, *connect.Request[v1.ConsolidateProjectRequest]) (*connect.Response[v1.Project], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.ConsolidateProject is not implemented"))
+}
+
+func (UnimplementedDieterServiceHandler) AttachCheckout(context.Context, *connect.Request[v1.AttachCheckoutRequest]) (*connect.Response[v1.Checkout], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.AttachCheckout is not implemented"))
+}
+
+func (UnimplementedDieterServiceHandler) DetachCheckout(context.Context, *connect.Request[v1.CheckoutRef]) (*connect.Response[emptypb.Empty], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.DetachCheckout is not implemented"))
+}
+
+func (UnimplementedDieterServiceHandler) ListCheckouts(context.Context, *connect.Request[v1.ProjectRef]) (*connect.Response[v1.CheckoutsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.ListCheckouts is not implemented"))
 }
 
 func (UnimplementedDieterServiceHandler) CreateProject(context.Context, *connect.Request[v1.CreateProjectRequest]) (*connect.Response[v1.CreateProjectResponse], error) {
@@ -3396,6 +3711,10 @@ func (UnimplementedDieterServiceHandler) CloseRemoteDesktop(context.Context, *co
 
 func (UnimplementedDieterServiceHandler) ListSchedules(context.Context, *connect.Request[v1.ListSchedulesRequest]) (*connect.Response[v1.SchedulesResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.ListSchedules is not implemented"))
+}
+
+func (UnimplementedDieterServiceHandler) GetSchedule(context.Context, *connect.Request[v1.ScheduleRef]) (*connect.Response[v1.Schedule], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.GetSchedule is not implemented"))
 }
 
 func (UnimplementedDieterServiceHandler) PreviewSchedule(context.Context, *connect.Request[v1.PreviewScheduleRequest]) (*connect.Response[v1.SchedulePreview], error) {

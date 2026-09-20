@@ -13,6 +13,7 @@ import (
 // RPC must have an equivalent, documented CLI entry point. Adding an RPC makes
 // this test fail until the feature team wires and documents its CLI operation.
 var rpcCommand = map[string]string{
+	"GetPeerRecord": "peer show", "GetPeerChanges": "peer changes", "GetPeerStoreStatus": "peer status", "ListPeerRecords": "peer list", "PutPeerRecord": "peer put", "MergePeerRecords": "peer merge",
 	"StartControlConnection": "machine connection start", "GetControlConnection": "machine connection show", "CloseControlConnection": "machine connection close",
 	"ListRemoteDesktopDisplayModes":   "screen resolution modes",
 	"SetRemoteDesktopDisplayMode":     "screen resolution set",
@@ -22,6 +23,8 @@ var rpcCommand = map[string]string{
 	"UpdateBoardHostnames":            "board hostnames",
 	"Health":                          "status", "GetRuntimeStatus": "status", "GetMachineInformation": "machine info", "PerformMachineOperation": "machine restart",
 	"GetState": "status", "WatchState": "watch state", "WatchSync": "watch sync", "GetHarnesses": "harness list",
+	"ConsolidateProject": "project consolidate",
+	"AttachCheckout":     "project attach", "DetachCheckout": "project detach", "ListCheckouts": "project checkouts",
 	"GetSettings": "settings show", "GetSettingsOptions": "settings options", "UpdateSettings": "settings update",
 	"GetPromptSettings": "prompt show", "UpdatePromptSettings": "prompt update", "SetProjectPromptTemplate": "prompt project", "SetBoardPromptTemplate": "prompt board", "PreviewPrompt": "prompt preview",
 	"ListDirectories": "project directories", "CreateProject": "project open", "UpdateProject": "project update", "UpdateProjectWorkspaceSettings": "project workspace", "ArchiveProject": "project remove", "ListArchivedProjects": "project list",
@@ -35,7 +38,7 @@ var rpcCommand = map[string]string{
 	"SetRemoteDesktopControl":        "screen control",
 	"ExchangeRemoteDesktopClipboard": "screen clipboard",
 	"GetRemoteDesktopSession":        "screen status", "UpdateRemoteDesktopSession": "screen configure",
-	"ListSchedules": "schedule list", "PreviewSchedule": "schedule preview", "CreateSchedule": "schedule create", "UpdateSchedule": "schedule update", "DeleteSchedule": "schedule delete", "RunSchedule": "schedule run", "SetScheduleEnabled": "schedule pause", "ListScheduleRuns": "schedule runs",
+	"GetSchedule": "schedule show", "ListSchedules": "schedule list", "PreviewSchedule": "schedule preview", "CreateSchedule": "schedule create", "UpdateSchedule": "schedule update", "DeleteSchedule": "schedule delete", "RunSchedule": "schedule run", "SetScheduleEnabled": "schedule pause", "ListScheduleRuns": "schedule runs",
 }
 
 func TestEveryDaemonRPCMapsToCLICommand(t *testing.T) {
@@ -60,6 +63,7 @@ func TestEveryDaemonRPCMapsToCLICommand(t *testing.T) {
 
 func TestEveryDaemonCLICommandHasOfflineHelp(t *testing.T) {
 	paths := []string{
+		"peer", "peer show", "peer changes", "peer status", "peer list", "peer put", "peer delete", "peer merge",
 		"machine connection", "machine connection start", "machine connection show", "machine connection close",
 		"screen resolution", "screen resolution modes", "screen resolution set", "screen resolution restore",
 		"card present", "chat present",
@@ -77,9 +81,9 @@ func TestEveryDaemonCLICommandHasOfflineHelp(t *testing.T) {
 		"remote", "remote exec", "remote shell", "remote list", "remote show", "remote watch", "remote wait", "remote attach", "remote input", "remote signal", "remote resize", "remote cancel", "remote close",
 		"screen", "screen clipboard", "screen clipboard read", "screen clipboard write", "screen clipboard paste", "screen clipboard copy", "screen clipboard cut", "screen clipboard enable", "screen clipboard disable", "screen sessions", "screen control", "screen control take", "screen control release", "screen capabilities", "screen permissions", "screen settings", "screen update", "screen start", "screen signal", "screen close", "screen status", "screen configure", "screen refresh",
 		"schedule", "schedule create", "schedule list", "schedule show", "schedule preview", "schedule update", "schedule run", "schedule pause", "schedule resume", "schedule runs", "schedule delete",
-		"settings", "settings show", "settings options", "settings update",
+		"project consolidate", "project attach", "project detach", "project checkouts", "settings", "settings show", "settings options", "settings update",
 		"prompt", "prompt show", "prompt update", "prompt project", "prompt board", "prompt preview",
-		"daemon", "daemon start", "daemon service", "daemon service install", "daemon service start", "daemon service restart", "daemon service stop", "daemon service status", "daemon service uninstall", "daemon enroll", "daemon unenroll", "daemon status", "daemon logs", "daemon permissions", "doctor", "setup", "serve",
+		"daemon", "daemon import-store", "daemon start", "daemon service", "daemon service install", "daemon service start", "daemon service restart", "daemon service stop", "daemon service status", "daemon service uninstall", "daemon enroll", "daemon unenroll", "daemon status", "daemon logs", "daemon permissions", "doctor", "setup", "serve",
 	}
 	for _, path := range paths {
 		t.Run(strings.ReplaceAll(path, " ", "/"), func(t *testing.T) {

@@ -149,14 +149,8 @@ internal fun ChatsList(state: DieterUiState, model: DieterViewModel, modifier: M
     val otherChats = remember(chats, projectIds) {
         chats.filter { chat -> !chat.pinned && chat.projectId !in projectIds }
     }
-    val projectLabels = remember(state.projects, state.presentedProjectHosts) {
-        val showHosts = state.presentedProjectHosts.values.map { it.daemonId }.distinct().size > 1
-        state.projects.associate { project ->
-            project.id to buildString {
-                append(project.name.ifBlank { "Project" })
-                if (showHosts) state.presentedProjectHosts[project.id]?.hostname?.let { append(" · ").append(it) }
-            }
-        }
+    val projectLabels = remember(state.projects) {
+        state.projects.associate { it.id to it.name.ifBlank { "Project" } }
     }
     LaunchedEffect(state.chats, state.pinnedChatOrder) {
         if (state.pinnedChatOrder.isEmpty()) {
@@ -249,7 +243,6 @@ internal fun ChatsList(state: DieterUiState, model: DieterViewModel, modifier: M
                                 ListSectionLabel(
                                     buildString {
                                         append(project.name)
-                                        state.presentedProjectHosts[project.id]?.let { append(" · ").append(it.hostname) }
                                         append(" · ").append(projectChats.size)
                                     },
                                     Modifier.weight(1f),
@@ -369,7 +362,7 @@ internal fun ChatRow(
                     .padding(horizontal = 12.dp, vertical = 11.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                ChatRowContent(chat, running, projectLabel, dragHandleModifier)
+                ChatRowContent(chat, running, projectLabel + " · " + (model.state.value.conversationHost(chat)?.hostname ?: chat.ownerDaemonId), dragHandleModifier)
             }
             DropdownMenu(expanded = actionsOpen, onDismissRequest = { actionsOpen = false }) {
                 DropdownMenuItem(

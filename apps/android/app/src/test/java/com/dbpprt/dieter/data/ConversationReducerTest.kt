@@ -73,7 +73,7 @@ class ConversationReducerTest {
         assertEquals("127.0.0.1:4242", DIETER_LOCAL_ENDPOINT)
         assertEquals(listOf("https://board.dbpprt.com:443"), DIETER_ENDPOINTS.map { it.address })
         assertEquals(true, DIETER_ENDPOINTS.single().secure)
-        assertEquals("3", DIETER_API_VERSION)
+        assertEquals("4", DIETER_API_VERSION)
     }
 
     private fun snapshot(vararg messages: UiMessage): ConversationSnapshot = ConversationSnapshot.newBuilder()

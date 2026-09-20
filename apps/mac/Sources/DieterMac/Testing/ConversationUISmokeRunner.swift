@@ -2363,7 +2363,7 @@
                     // event monitors. Exercise the transcript's edge intent too.
                     var pending = [content]
                     while let view = pending.popLast() {
-                        (view as? ConversationScrollIntentProbe.MonitorView)?.handleScrollEvent(event)
+                        (view as? ConversationScrollBridge.MonitorView)?.handleScrollEvent(event, in: view.window)
                         pending.append(contentsOf: view.subviews)
                     }
                     scroll.scrollWheel(with: event)

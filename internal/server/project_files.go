@@ -15,6 +15,7 @@ import (
 	"strings"
 
 	"github.com/dbpprt/dieter/internal/model"
+	"github.com/dbpprt/dieter/internal/store"
 )
 
 const maxProjectFileSize = 5 << 20
@@ -23,7 +24,7 @@ const projectTimeFormat = "2006-01-02T15:04:05.999999999Z07:00"
 func (s *Server) scopedProject(ctx context.Context, projectID, cardID string) (model.Project, error) {
 	cardID = strings.TrimSpace(cardID)
 	if cardID == "" {
-		return s.store.ResolveProject(strings.TrimSpace(projectID))
+		return s.store.ProjectForCheckout(strings.TrimSpace(projectID), store.CheckoutFromContext(ctx))
 	}
 	card, err := s.store.ResolveCard(cardID)
 	if err != nil {
@@ -31,6 +32,12 @@ func (s *Server) scopedProject(ctx context.Context, projectID, cardID string) (m
 	}
 	if projectID != "" && strings.TrimSpace(projectID) != card.ProjectID {
 		return model.Project{}, errors.New("card does not belong to the requested project")
+	}
+	if err = s.store.RequireLocalCard(card); err != nil {
+		return model.Project{}, err
+	}
+	if checkout := store.CheckoutFromContext(ctx); checkout != "" && checkout != card.CheckoutID {
+		return model.Project{}, errors.New("checkout does not match conversation")
 	}
 	value, err := s.workspaces.Ensure(ctx, card.ID)
 	if err != nil {

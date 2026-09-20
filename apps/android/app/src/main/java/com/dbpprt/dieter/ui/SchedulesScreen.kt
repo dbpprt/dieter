@@ -67,6 +67,7 @@ import com.dbpprt.dieter.ui.theme.DieterAbyss
 fun SchedulesScreen(state: DieterUiState, model: DieterViewModel, contentPadding: PaddingValues) {
     Box(Modifier.fillMaxSize().padding(contentPadding)) {
         Column(Modifier.fillMaxSize()) {
+        ProjectCheckoutSelector(state, model)
             SimpleScreenHeader(
                 "Schedules",
                 "${state.project?.name?.lowercase() ?: "project"} · ${state.schedulesTotalCount} configured",

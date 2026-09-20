@@ -11,6 +11,15 @@ struct ScheduleEditorContext {
     let harnessCatalog: Dieter_V1_HarnessCatalog
 }
 
+@MainActor
+struct ScheduleOwnerConnection {
+    let reader: any DieterScheduleRPC
+    let writer: any ScheduleCommandsRPC
+    let detail: (String) async throws -> Dieter_V1_Schedule
+    let release: () -> Void
+    var catalog: (() async throws -> Dieter_V1_HarnessCatalog)? = nil
+}
+
 @MainActor @Observable
 final class SchedulesModel {
     private(set) var target = WorkspaceTarget(endpointID: "", projectID: "")
@@ -29,6 +38,7 @@ final class SchedulesModel {
     var schedulesLoadedEndpointID = ""
     var schedulesError: String?
     var errorMessage: String?
+    @ObservationIgnored var ownerConnection: ((String, String) async throws -> ScheduleOwnerConnection)?
     @ObservationIgnored private var reader: (any DieterScheduleRPC)?
     @ObservationIgnored private var writer: (any ScheduleCommandsRPC)?
     private(set) var connectionGeneration: UInt64 = 0
@@ -148,6 +158,17 @@ final class SchedulesModel {
         }
     }
 
+    func editorSchedule(_ schedule: Dieter_V1_Schedule) async -> Dieter_V1_Schedule? {
+        do {
+            guard let ownerConnection else { return schedule }
+            let connection = try await ownerConnection(schedule.ownerDaemonID, schedule.checkoutID)
+            defer { connection.release() }
+            let detail = try await connection.detail(schedule.id)
+            upsertLoadedSchedule(detail)
+            return detail
+        } catch { report(error); return nil }
+    }
+
     func selectSchedule(_ id: String) async {
         guard schedulesAreLoaded, schedules.contains(where: { $0.id == id }) else { return }
         selectedScheduleID = id
@@ -172,7 +193,10 @@ final class SchedulesModel {
             scheduleRunsLoadingMore = false
         }
         do {
-            let response = try await client.scheduleRuns(
+            let schedule = schedules.first { $0.id == scheduleID }
+            let owner = try await ownerConnection?(schedule?.ownerDaemonID ?? "", schedule?.checkoutID ?? "")
+            defer { owner?.release() }
+            let response = try await (owner?.reader ?? client).scheduleRuns(
                 id: scheduleID, pageSize: schedulePageSize, pageToken: pageToken)
             guard binding == connectionGeneration, generation == scheduleRunsRequestGeneration,
                 target.projectID == projectID, target.endpointID == endpointID,
@@ -217,15 +241,30 @@ final class SchedulesModel {
         }
     }
 
+    func editorContext(schedule: Dieter_V1_Schedule?, base: ScheduleEditorContext) async -> ScheduleEditorContext? {
+        guard let ownerConnection else { return base }
+        do {
+            let checkoutID = schedule?.checkoutID ?? base.target.checkoutID
+            let owner = try await ownerConnection(schedule?.ownerDaemonID ?? "", checkoutID)
+            defer { owner.release() }
+            let catalog = try await owner.catalog?() ?? base.harnessCatalog
+            return ScheduleEditorContext(target: WorkspaceTarget(endpointID: base.target.endpointID, projectID: base.target.projectID, checkoutID: checkoutID), projectName: base.projectName, boards: base.boards, selectedBoardID: schedule?.boardID ?? base.selectedBoardID, harnessCatalog: catalog)
+        } catch { report(error); return nil }
+    }
+
     @discardableResult
     func saveSchedule(id: String?, draft: Dieter_V1_ScheduleDraft, expectedTarget: WorkspaceTarget? = nil) async -> Bool
     {
-        guard expectedTarget == nil || expectedTarget == target, draft.projectID == target.projectID,
+        guard expectedTarget == nil || (expectedTarget?.projectID == target.projectID && expectedTarget?.endpointID == target.endpointID), draft.projectID == target.projectID,
             let rpc = writer
         else { return false }
         let binding = connectionGeneration
         var request = Dieter_V1_SaveScheduleRequest(); request.scheduleID = id ?? ""; request.schedule = draft
         do {
+            let schedule = schedules.first { $0.id == id }
+            let owner = try await ownerConnection?(schedule?.ownerDaemonID ?? "", draft.checkoutID)
+            defer { owner?.release() }
+            let rpc = owner?.writer ?? rpc
             let saved = try await (id == nil ? rpc.createSchedule(request) : rpc.updateSchedule(request))
             guard binding == connectionGeneration else { return false }
             upsertLoadedSchedule(saved)
@@ -242,6 +281,9 @@ final class SchedulesModel {
         guard schedule.projectID == target.projectID, let rpc = writer else { return }
         let binding = connectionGeneration
         do {
+            let owner = try await ownerConnection?(schedule.ownerDaemonID, schedule.checkoutID)
+            defer { owner?.release() }
+            let rpc = owner?.writer ?? rpc
             let saved = try await rpc.setScheduleEnabled(id: schedule.id, enabled: !schedule.enabled)
             guard binding == connectionGeneration else { return }
             upsertLoadedSchedule(saved)
@@ -252,6 +294,9 @@ final class SchedulesModel {
         guard schedule.projectID == target.projectID, let rpc = writer else { return }
         let binding = connectionGeneration
         do {
+            let owner = try await ownerConnection?(schedule.ownerDaemonID, schedule.checkoutID)
+            defer { owner?.release() }
+            let rpc = owner?.writer ?? rpc
             _ = try await rpc.runSchedule(id: schedule.id)
             guard binding == connectionGeneration else { return }
             selectedScheduleID = schedule.id
@@ -263,6 +308,9 @@ final class SchedulesModel {
         guard schedule.projectID == target.projectID, let rpc = writer else { return }
         let binding = connectionGeneration
         do {
+            let owner = try await ownerConnection?(schedule.ownerDaemonID, schedule.checkoutID)
+            defer { owner?.release() }
+            let rpc = owner?.writer ?? rpc
             try await rpc.deleteSchedule(id: schedule.id)
             guard binding == connectionGeneration else { return }
             let removed = schedules.contains { $0.id == schedule.id }

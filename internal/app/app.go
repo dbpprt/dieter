@@ -307,6 +307,9 @@ func (s *Service) resumeOrphanedTurn(ref string) error {
 	if err != nil {
 		return err
 	}
+	if lease.Detail != nil {
+		detail = *lease.Detail
+	}
 	turnID, responseMessageID := newRuntimeID("turn_"), newRuntimeID("msg_")
 	if conversation.ActiveTurn != nil {
 		if conversation.ActiveTurn.ID != "" {
@@ -337,6 +340,9 @@ func (s *Service) resumeOrphanedTurn(ref string) error {
 		return store.ErrCardActive
 	}
 	now := time.Now()
+	if lease.Detail != nil {
+		detail = *lease.Detail
+	}
 	s.active[detail.Card.ID] = &activeTurn{selection: selection, cancel: cancel, cardID: detail.Card.ID, turnID: turnID, lease: lease, done: done, startedAt: now, lastProgress: now}
 	s.mu.Unlock()
 	updates := make(chan TurnUpdate, 1024)
@@ -490,9 +496,10 @@ func (s *Service) SuspendActiveTurns(ctx context.Context) error {
 }
 
 type ProjectInput struct {
-	Path, Name, Summary, Prompt, BaseRemote, BaseBranch string
-	ValidationCommands                                  []model.ValidationCommand
-	Create                                              bool
+	OperationID, InitialBoardName, InitialWorkflow, InitialRemotePublishMode string
+	Path, Name, Summary, Prompt, BaseRemote, BaseBranch                      string
+	ValidationCommands                                                       []model.ValidationCommand
+	Create                                                                   bool
 }
 
 func (s *Service) RegisterProject(ctx context.Context, input ProjectInput) (model.Project, error) {
@@ -519,12 +526,14 @@ func (s *Service) RegisterProject(ctx context.Context, input ProjectInput) (mode
 		return model.Project{}, errors.New("project path must be an existing Git working tree")
 	}
 	return s.Store.CreateProject(store.CreateProjectInput{
+		OperationID: input.OperationID, InitialBoardName: input.InitialBoardName, InitialWorkflow: input.InitialWorkflow, InitialRemotePublishMode: input.InitialRemotePublishMode,
 		Name: input.Name, Path: abs, Summary: input.Summary, Prompt: input.Prompt,
 		BaseRemote: input.BaseRemote, BaseBranch: input.BaseBranch, ValidationCommands: input.ValidationCommands,
 	})
 }
 
 type CardInput struct {
+	CheckoutID                                                   string
 	Project, Board, Lane, Title, Prompt, Provider, Model, Effort string
 	WorkspaceMode, WorkspaceBranch, WorkspaceBaseBranch          string
 	WorkspaceBaseRemote, RemotePublishMode                       string
@@ -605,7 +614,7 @@ func (s *Service) createConversation(ctx context.Context, input CardInput, scope
 			return model.Card{}, err
 		}
 	}
-	createInput := store.CreateCardInput{Project: project.ID, Board: input.Board, ID: input.ID, Lane: input.Lane, Title: input.Title, Prompt: input.Prompt, Provider: provider, Model: input.Model, Effort: input.Effort, ProviderOptions: input.ProviderOptions, LabelIDs: input.LabelIDs, Origin: input.Origin, WorkspaceMode: input.WorkspaceMode, WorkspaceBranch: input.WorkspaceBranch, WorkspaceBaseBranch: input.WorkspaceBaseBranch, WorkspaceBaseRemote: input.WorkspaceBaseRemote, RemotePublishMode: input.RemotePublishMode}
+	createInput := store.CreateCardInput{CheckoutID: input.CheckoutID, Project: project.ID, Board: input.Board, ID: input.ID, Lane: input.Lane, Title: input.Title, Prompt: input.Prompt, Provider: provider, Model: input.Model, Effort: input.Effort, ProviderOptions: input.ProviderOptions, LabelIDs: input.LabelIDs, Origin: input.Origin, WorkspaceMode: input.WorkspaceMode, WorkspaceBranch: input.WorkspaceBranch, WorkspaceBaseBranch: input.WorkspaceBaseBranch, WorkspaceBaseRemote: input.WorkspaceBaseRemote, RemotePublishMode: input.RemotePublishMode}
 	var card model.Card
 	if scope == model.ConversationScopeChat {
 		card, err = s.Store.CreateChat(createInput)
@@ -822,6 +831,9 @@ func (s *Service) startCard(ref, content string, parts []model.UIMessagePart, pr
 		cancel()
 		return nil, err
 	}
+	if lease.Detail != nil {
+		detail = *lease.Detail
+	}
 	s.active[detail.Card.ID] = &activeTurn{selection: selection, cancel: cancel, cardID: detail.Card.ID, turnID: turnID, lease: lease, done: done, startedAt: now, lastProgress: now}
 	s.mu.Unlock()
 	workspaceValue, err := s.Workspaces.Ensure(context.Background(), detail.Card.ID)
@@ -859,7 +871,7 @@ func (s *Service) startCard(ref, content string, parts []model.UIMessagePart, pr
 	for _, label := range resolution.AppliedLabels {
 		labelIDs = append(labelIDs, label.ID)
 	}
-	if _, startErr = s.Store.SetConversationActiveTurn(detail.Card.ID, model.ConversationTurn{ID: turnID, UserMessageID: messageID, ResponseMessageID: responseMessageID, Instructions: resolution.Instructions, InstructionSource: resolution.Source, InstructionLabels: labelIDs, Selection: &selection}); startErr != nil {
+	if _, startErr = s.Store.SetConversationActiveTurn(detail.Card.ID, model.ConversationTurn{ID: turnID, UserMessageID: messageID, ResponseMessageID: responseMessageID, Instructions: resolution.Instructions, InstructionSource: resolution.Source, InstructionLabels: labelIDs, Selection: &selection, SettingsRevisions: lease.SettingsRevisions}); startErr != nil {
 		cancel()
 		s.clearActive(detail.Card.ID, turnID)
 		close(done)

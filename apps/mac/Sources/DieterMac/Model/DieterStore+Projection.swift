@@ -147,9 +147,11 @@ extension DieterStore {
         }
     }
 
-    func machine(forProjectID projectID: String) -> DieterEndpoint? {
-        guard let endpointID = projectEndpointIDs[projectID] else { return nil }
-        return endpoints.first { $0.id == endpointID }
+    func replica(forProjectID projectID: String) -> DieterEndpoint? {
+        // This selects a replica for shared metadata, never an execution owner.
+        if endpoint.online, phase.isConnected { return endpoint }
+        return endpoints.first { $0.online && $0.daemonID != nil && $0.apiCompatibility == .compatible }
+
     }
 
     func connectionStatus(for machine: DieterEndpoint) -> MachineConnectionStatus? {
@@ -195,7 +197,8 @@ extension DieterStore {
             boardID: selectedBoardID,
             runtimeFilter: runtimeFilter,
             labelFilter: labelFilter,
-            query: query
+            query: query,
+            machineFilter: machineFilter
         )
         if next != boardProjection { boardProjection = next }
     }

@@ -552,7 +552,7 @@ type Daemon struct {
 	// api_version is the daemon data-plane compatibility version returned by
 	// DieterService.Health. It is separate from the release version above so
 	// clients can route mixed-version machine fleets without probing each one.
-	ApiVersion    string `protobuf:"bytes,9,opt,name=api_version,json=apiVersion,proto3" json:"api_version,omitempty"`
+	ApiVersion    string `protobuf:"bytes,9,opt,name=api_version,json=apiVersion,proto3" json:"api_version,omitempty"` // Live, authenticated enrollment capability; false on older/offline daemons.
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }

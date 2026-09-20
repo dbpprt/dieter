@@ -11,6 +11,12 @@ import "google/protobuf/empty.proto";
 import "gateway.proto";
 
 service DieterService {
+  rpc GetPeerChanges(PeerChangesRequest) returns (PeerChangesResponse);
+  rpc GetPeerRecord(PeerRecordRef) returns (PeerRecord);
+  rpc GetPeerStoreStatus(google.protobuf.Empty) returns (PeerStoreStatus);
+  rpc ListPeerRecords(PeerSnapshotRequest) returns (PeerSnapshot);
+  rpc PutPeerRecord(PutPeerRecordRequest) returns (PeerRecord);
+  rpc MergePeerRecords(MergePeerRecordsRequest) returns (google.protobuf.Empty);
   rpc Health(google.protobuf.Empty) returns (HealthResponse);
   rpc GetRuntimeStatus(google.protobuf.Empty) returns (RuntimeStatus);
   // Data-only WebRTC carries the existing authenticated TLS/gRPC byte stream.
@@ -39,6 +45,10 @@ service DieterService {
   rpc PreviewPrompt(PreviewPromptRequest) returns (PromptPreview);
 
   rpc ListDirectories(ListDirectoriesRequest) returns (DirectoryListing);
+  rpc ConsolidateProject(ConsolidateProjectRequest) returns (Project);
+  rpc AttachCheckout(AttachCheckoutRequest) returns (Checkout);
+  rpc DetachCheckout(CheckoutRef) returns (google.protobuf.Empty);
+  rpc ListCheckouts(ProjectRef) returns (CheckoutsResponse);
   rpc CreateProject(CreateProjectRequest) returns (CreateProjectResponse);
   rpc UpdateProject(UpdateProjectRequest) returns (Project);
   rpc UpdateProjectWorkspaceSettings(UpdateProjectWorkspaceSettingsRequest) returns (Project);
@@ -160,6 +170,7 @@ service DieterService {
       returns (google.protobuf.Empty);
 
   rpc ListSchedules(ListSchedulesRequest) returns (SchedulesResponse);
+  rpc GetSchedule(ScheduleRef) returns (Schedule);
   rpc PreviewSchedule(PreviewScheduleRequest) returns (SchedulePreview);
   rpc CreateSchedule(SaveScheduleRequest) returns (Schedule);
   rpc UpdateSchedule(SaveScheduleRequest) returns (Schedule);
@@ -337,6 +348,13 @@ message WatchStateRequest {
   int32 interval_ms = 2;
 }
 
+// Explicit shared archive state distinguishes deletion from a lagging replica's
+// missing dependency. Empty presence clears previous archive state after restore.
+message SharedArchives {
+  repeated string project_ids = 1;
+  repeated string item_ids = 2;
+}
+
 message State {
   string store_path = 1;
   repeated Project projects = 2;
@@ -346,6 +364,7 @@ message State {
   repeated Card chats = 6;
   SyncCursor cursor = 7;
   bool not_modified = 8;
+  SharedArchives archives = 9;
 }
 
 message SyncCursor {
@@ -413,6 +432,7 @@ message GlobalDelta {
   Settings settings = 13;
   repeated ConversationSnapshot conversations = 14;
   repeated string removed_conversation_ids = 15;
+  SharedArchives archives = 16;
 }
 
 message SyncFrame {
@@ -437,7 +457,24 @@ message CardsResponse {
   repeated Card cards = 1;
 }
 
+message Checkout {
+ string id = 1;
+ string project_id = 2;
+ string daemon_id = 3;
+ string name = 4;
+ string path = 5;
+ bool detached = 6;
+ // Returned only by the owner; never part of the replicated registration.
+ repeated ValidationCommand validation_commands = 7;
+}
+message ConsolidateProjectRequest { string source_project_id = 1; string destination_project_id = 2; }
+message AttachCheckoutRequest { string project_id = 1; string path = 2; string name = 3; }
+message CheckoutRef { string checkout_id = 1; }
+message CheckoutsResponse { repeated Checkout checkouts = 1; }
+
 message Project {
+ repeated Checkout checkouts = 18;
+ repeated string conflict_keys = 19;
   reserved 13;
   reserved "default_workspace_mode";
 
@@ -460,6 +497,7 @@ message Project {
 }
 
 message Board {
+ repeated string conflict_keys = 15;
   string id = 1;
   string project_id = 2;
   string name = 3;
@@ -498,6 +536,11 @@ message TokenUsage {
 }
 
 message Card {
+ string owner_daemon_id = 38;
+ string checkout_id = 39;
+ string order_key = 40;
+ string placement_revision = 42;
+ repeated string conflict_keys = 41;
   string id = 1;
   string scope = 2;
   string project_id = 3;
@@ -783,9 +826,9 @@ message EffortConfig {
 }
 
 message Settings {
-  int32 global_parallel_limit = 1;
-  map<string, int32> agent_parallel_limits = 2;
-  map<string, int32> board_parallel_limits = 3;
+  string prompt_template = 5;
+  string board_skill_template = 6;
+  string chat_skill_template = 7;
   string updated_at = 4;
 }
 
@@ -865,6 +908,7 @@ message DirectoryListing {
 }
 
 message CreateProjectRequest {
+  string operation_id = 16;
   reserved 8;
   reserved "default_workspace_mode";
 
@@ -909,6 +953,7 @@ message ValidationCommand {
 }
 
 message UpdateProjectWorkspaceSettingsRequest {
+  string checkout_id = 50;
   reserved 2;
   reserved "default_workspace_mode";
 
@@ -973,6 +1018,7 @@ message EffortOption {
 }
 
 message CreateConversationRequest {
+ string checkout_id = 24;
   string project_id = 1;
   string board_id = 2;
   string lane = 3;
@@ -1106,7 +1152,10 @@ message AddCommentRequest {
 message MoveCardRequest {
   string card_id = 1;
   string lane = 2;
-  optional int64 position = 3;
+  reserved 3;
+  string after_card_id = 4;
+  string before_card_id = 5;
+  string expected_revision = 6;
 }
 
 message StartCardRequest {
@@ -1163,6 +1212,7 @@ message PinChatRequest {
 }
 
 message ProjectRef {
+  string checkout_id = 50;
   string project_id = 1;
 }
 
@@ -1287,11 +1337,13 @@ message Changeset {
 }
 
 message GetChangesetRequest {
+  string checkout_id = 50;
   string card_id = 1;
   string project_id = 2;
 }
 
 message GetDiffRequest {
+  string checkout_id = 50;
   string card_id = 1;
   string path = 2;
   string commit_sha = 3;
@@ -1415,6 +1467,7 @@ message GitOperation {
 }
 
 message StartGitOperationRequest {
+  string checkout_id = 50;
   string card_id = 1;
   string kind = 2;
   string expected_revision = 3;
@@ -1445,6 +1498,7 @@ message GitOperationFrame {
 }
 
 message ListFilesRequest {
+  string checkout_id = 50;
   string project_id = 1;
   string path = 2;
   bool show_hidden = 3;
@@ -1467,6 +1521,7 @@ message FileList {
 }
 
 message ReadFileRequest {
+  string checkout_id = 50;
   string project_id = 1;
   string path = 2;
   string card_id = 3;
@@ -1506,6 +1561,7 @@ message TerminalRef {
 }
 
 message ListTerminalsRequest {
+  string checkout_id = 50;
   string project_id = 1;
   string card_id = 2;
 }
@@ -1515,6 +1571,7 @@ message TerminalsResponse {
 }
 
 message CreateTerminalRequest {
+  string checkout_id = 50;
   string project_id = 1;
   string name = 2;
   string shell = 3;
@@ -1608,6 +1665,7 @@ message ExecutionRef {
 }
 
 message ListExecutionsRequest {
+  string checkout_id = 50;
   string project_id = 1;
   string card_id = 2;
   string status = 3;
@@ -1618,6 +1676,7 @@ message ExecutionsResponse {
 }
 
 message StartExecutionRequest {
+  string checkout_id = 50;
   string project_id = 1;
   string card_id = 2;
   string name = 3;
@@ -2102,6 +2161,7 @@ message RemoteDesktopSignal {
 }
 
 message SaveFileRequest {
+  string checkout_id = 50;
   string project_id = 1;
   string path = 2;
   string content = 3;
@@ -2110,6 +2170,7 @@ message SaveFileRequest {
 }
 
 message CreateFileRequest {
+  string checkout_id = 50;
   string project_id = 1;
   string path = 2;
   string kind = 3;
@@ -2118,6 +2179,7 @@ message CreateFileRequest {
 }
 
 message MoveFileRequest {
+  string checkout_id = 50;
   string project_id = 1;
   string source = 2;
   string destination = 3;
@@ -2130,6 +2192,7 @@ message MoveFileResponse {
 }
 
 message DeleteFileRequest {
+  string checkout_id = 50;
   string project_id = 1;
   string path = 2;
   bool recursive = 3;
@@ -2149,6 +2212,8 @@ message SchedulesResponse {
 }
 
 message Schedule {
+ string owner_daemon_id = 40;
+ string checkout_id = 41;
   string id = 1;
   string project_id = 2;
   string board_id = 3;
@@ -2166,7 +2231,7 @@ message Schedule {
   repeated string label_ids = 15;
   string open_card_policy = 16;
   string misfire_policy = 17;
-  string busy_policy = 18;
+  reserved 18;
   string next_run_at = 19;
   string last_run_at = 20;
   string created_at = 21;
@@ -2177,6 +2242,7 @@ message Schedule {
 }
 
 message ScheduleDraft {
+ string checkout_id = 40;
   string project_id = 1;
   string board_id = 2;
   string name = 3;
@@ -2193,7 +2259,7 @@ message ScheduleDraft {
   repeated string label_ids = 14;
   string open_card_policy = 15;
   string misfire_policy = 16;
-  string busy_policy = 17;
+  reserved 17;
   map<string, string> provider_options = 18;
   string workspace_mode = 19;
 }
@@ -2335,3 +2401,53 @@ message ControlConnection {
   string local_candidate_type = 6;
   string remote_candidate_type = 7;
 }
+
+// Account-local leaderless registers. Concurrent versions are preserved, including deletions.
+message PeerVersion {
+  map<string, uint64> clock = 1;
+  bytes value_json = 2;
+  bool deleted = 3;
+  bytes provenance_json = 4;
+}
+message PeerRecord {
+  string kind = 1;
+  string id = 2;
+  repeated PeerVersion versions = 3;
+  string revision = 4;
+}
+message PeerStoreStatus {
+  string account = 1;
+  string actor = 2;
+  uint32 records = 3;
+  uint32 conflicts = 4;
+  string last_sync_at = 5;
+  string last_peer_id = 6;
+  string last_route = 7;
+}
+message PeerSnapshotRequest {
+  string account = 1;
+  string after_key = 2;
+  string snapshot_revision = 3;
+}
+message PeerSnapshot {
+  string account = 1;
+  repeated PeerRecord records = 2;
+  string next_key = 3;
+  string snapshot_revision = 4;
+}
+message PutPeerRecordRequest {
+  string kind = 1;
+  string id = 2;
+  bytes value_json = 3;
+  bool deleted = 4;
+  // Empty creates a new record; resolving concurrent values requires the current revision.
+  string expected_revision = 5;
+}
+message MergePeerRecordsRequest {
+  string account = 1;
+  repeated PeerRecord records = 2;
+}
+
+message PeerRecordRef { string kind = 1; string id = 2; }
+message PeerChangesRequest { string account = 1; string epoch = 2; uint64 after_sequence = 3; }
+message PeerChangesResponse { string epoch = 1; uint64 after_sequence = 2; bool more = 3; repeated PeerRecord records = 4; }

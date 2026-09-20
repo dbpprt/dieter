@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"errors"
+	"github.com/dbpprt/dieter/internal/protocol"
 	"io/fs"
 	"mime"
 	"net/http"
@@ -24,6 +25,7 @@ import (
 	"github.com/dbpprt/dieter/internal/gitops"
 	"github.com/dbpprt/dieter/internal/harness"
 	"github.com/dbpprt/dieter/internal/model"
+	"github.com/dbpprt/dieter/internal/peerstore"
 	dieterprompt "github.com/dbpprt/dieter/internal/prompt"
 	"github.com/dbpprt/dieter/internal/store"
 	"github.com/dbpprt/dieter/internal/terminal"
@@ -45,7 +47,7 @@ type grpcAPI struct {
 const (
 	// APIVersion is advertised through Health and gateway presence. Native
 	// clients use it to avoid selecting an incompatible daemon in a mixed fleet.
-	APIVersion             = "3"
+	APIVersion             = protocol.Version
 	maxCachedConversations = 12
 )
 
@@ -326,7 +328,12 @@ func (api *grpcAPI) CreateProject(ctx context.Context, request *dieterv1.CreateP
 	if mode != "open" && mode != "create" {
 		return nil, grpcFailure(errors.New("project mode must be open or create"))
 	}
+	boardName := strings.TrimSpace(request.GetBoardName())
+	if boardName == "" {
+		boardName = "Main"
+	}
 	project, err := api.server.app.RegisterProject(ctx, app.ProjectInput{
+		OperationID: request.GetOperationId(), InitialBoardName: boardName, InitialWorkflow: request.GetWorkflow(), InitialRemotePublishMode: request.GetRemotePublishMode(),
 		Path: request.GetPath(), Name: request.GetName(), Summary: request.GetSummary(), Prompt: request.GetPrompt(),
 		Create: mode == "create", BaseRemote: request.GetBaseRemote(), BaseBranch: request.GetBaseBranch(),
 		ValidationCommands: modelValidationCommands(request.GetValidationCommands()),
@@ -334,14 +341,7 @@ func (api *grpcAPI) CreateProject(ctx context.Context, request *dieterv1.CreateP
 	if err != nil {
 		return nil, grpcFailure(err)
 	}
-	boardName := strings.TrimSpace(request.GetBoardName())
-	if boardName == "" {
-		boardName = "Main"
-	}
-	board, err := api.server.store.CreateBoard(store.CreateBoardInput{
-		Project: project.ID, Name: boardName, Workflow: request.GetWorkflow(),
-		BaseRemote: request.GetBaseRemote(), RemotePublishMode: request.GetRemotePublishMode(),
-	})
+	board, err := api.server.store.InitialBoard(project.ID)
 	if err != nil {
 		return nil, grpcFailure(err)
 	}
@@ -362,9 +362,14 @@ func (api *grpcAPI) UpdateProject(_ context.Context, request *dieterv1.UpdatePro
 }
 
 func (api *grpcAPI) UpdateProjectWorkspaceSettings(_ context.Context, request *dieterv1.UpdateProjectWorkspaceSettingsRequest) (*dieterv1.Project, error) {
+	var validation []model.ValidationCommand
+	if request.GetCheckoutId() != "" {
+		validation = append([]model.ValidationCommand{}, modelValidationCommands(request.GetValidationCommands())...)
+	} else if len(request.GetValidationCommands()) > 0 {
+		return nil, status.Error(codes.InvalidArgument, "choose a checkout to update its validation commands")
+	}
 	value, err := api.server.store.UpdateProjectWorkspaceSettings(
-		request.GetProjectId(), request.GetBaseRemote(), request.GetBaseBranch(),
-		modelValidationCommands(request.GetValidationCommands()),
+		request.GetProjectId(), request.GetBaseRemote(), request.GetBaseBranch(), validation, request.GetCheckoutId(),
 	)
 	if err != nil {
 		return nil, grpcFailure(err)
@@ -483,7 +488,7 @@ func conversationInput(request *dieterv1.CreateConversationRequest) (app.CardInp
 		return app.CardInput{}, err
 	}
 	return app.CardInput{
-		Project: request.GetProjectId(), Board: request.GetBoardId(), Lane: request.GetLane(),
+		CheckoutID: request.GetCheckoutId(), Project: request.GetProjectId(), Board: request.GetBoardId(), Lane: request.GetLane(),
 		Title: request.GetTitle(), Prompt: request.GetPrompt(), Provider: request.GetProvider(),
 		Model: request.GetModel(), Effort: request.GetEffort(), ProviderOptions: cloneProtoStringMap(request.GetProviderOptions()),
 		LabelIDs: append([]string(nil), request.GetLabelIds()...), DeferStart: request.GetDeferStart(), AutoGenerateTitle: request.GetAutoGenerateTitle(), Attachments: attachments,
@@ -1081,7 +1086,12 @@ func (api *grpcAPI) MoveCard(_ context.Context, request *dieterv1.MoveCardReques
 	if err != nil {
 		return nil, grpcFailure(err)
 	}
-	value, err := api.server.store.MoveCard(before.ID, request.GetLane(), request.Position)
+	if request.GetLane() == model.LaneRunning && before.InitialPromptSentAt == "" {
+		if err = api.server.store.RequireLocalCard(before); err != nil {
+			return nil, grpcFailure(err)
+		}
+	}
+	value, err := api.server.store.MoveCardBetween(before.ID, request.GetLane(), request.GetAfterCardId(), request.GetBeforeCardId(), request.GetExpectedRevision())
 	if err != nil {
 		return nil, grpcFailure(err)
 	}
@@ -1238,6 +1248,7 @@ func (api *grpcAPI) PinChat(_ context.Context, request *dieterv1.PinChatRequest)
 }
 
 func (api *grpcAPI) ListFiles(ctx context.Context, request *dieterv1.ListFilesRequest) (*dieterv1.FileList, error) {
+	ctx = store.WithCheckout(ctx, request.GetCheckoutId())
 	api.server.filesMu.RLock()
 	defer api.server.filesMu.RUnlock()
 	project, err := api.server.scopedProject(ctx, request.GetProjectId(), request.GetCardId())
@@ -1292,6 +1303,7 @@ func (api *grpcAPI) ListFiles(ctx context.Context, request *dieterv1.ListFilesRe
 }
 
 func (api *grpcAPI) ReadFile(ctx context.Context, request *dieterv1.ReadFileRequest) (*dieterv1.FileDocument, error) {
+	ctx = store.WithCheckout(ctx, request.GetCheckoutId())
 	api.server.filesMu.RLock()
 	defer api.server.filesMu.RUnlock()
 	project, err := api.server.scopedProject(ctx, request.GetProjectId(), request.GetCardId())
@@ -1332,6 +1344,7 @@ func (api *grpcAPI) ReadFile(ctx context.Context, request *dieterv1.ReadFileRequ
 }
 
 func (api *grpcAPI) SaveFile(ctx context.Context, request *dieterv1.SaveFileRequest) (*dieterv1.FileDocument, error) {
+	ctx = store.WithCheckout(ctx, request.GetCheckoutId())
 	api.server.filesMu.Lock()
 	defer api.server.filesMu.Unlock()
 	project, err := api.server.scopedProject(ctx, request.GetProjectId(), request.GetCardId())
@@ -1378,6 +1391,7 @@ func (api *grpcAPI) SaveFile(ctx context.Context, request *dieterv1.SaveFileRequ
 }
 
 func (api *grpcAPI) CreateFile(ctx context.Context, request *dieterv1.CreateFileRequest) (*dieterv1.FileEntry, error) {
+	ctx = store.WithCheckout(ctx, request.GetCheckoutId())
 	api.server.filesMu.Lock()
 	defer api.server.filesMu.Unlock()
 	project, err := api.server.scopedProject(ctx, request.GetProjectId(), request.GetCardId())
@@ -1412,6 +1426,7 @@ func (api *grpcAPI) CreateFile(ctx context.Context, request *dieterv1.CreateFile
 }
 
 func (api *grpcAPI) MoveFile(ctx context.Context, request *dieterv1.MoveFileRequest) (*dieterv1.MoveFileResponse, error) {
+	ctx = store.WithCheckout(ctx, request.GetCheckoutId())
 	api.server.filesMu.Lock()
 	defer api.server.filesMu.Unlock()
 	project, err := api.server.scopedProject(ctx, request.GetProjectId(), request.GetCardId())
@@ -1448,6 +1463,7 @@ func (api *grpcAPI) MoveFile(ctx context.Context, request *dieterv1.MoveFileRequ
 }
 
 func (api *grpcAPI) DeleteFile(ctx context.Context, request *dieterv1.DeleteFileRequest) (*emptypb.Empty, error) {
+	ctx = store.WithCheckout(ctx, request.GetCheckoutId())
 	api.server.filesMu.Lock()
 	defer api.server.filesMu.Unlock()
 	project, err := api.server.scopedProject(ctx, request.GetProjectId(), request.GetCardId())
@@ -1492,6 +1508,14 @@ func (api *grpcAPI) ListSchedules(_ context.Context, request *dieterv1.ListSched
 	return result, nil
 }
 
+func (api *grpcAPI) GetSchedule(_ context.Context, request *dieterv1.ScheduleRef) (*dieterv1.Schedule, error) {
+	value, err := api.server.store.ResolveSchedule(request.GetScheduleId())
+	if err != nil {
+		return nil, grpcFailure(err)
+	}
+	return protoSchedule(value), nil
+}
+
 func (api *grpcAPI) PreviewSchedule(_ context.Context, request *dieterv1.PreviewScheduleRequest) (*dieterv1.SchedulePreview, error) {
 	values, err := api.server.schedules.Preview(request.GetCron(), request.GetTimezone(), int(request.GetCount()))
 	if err != nil {
@@ -1509,14 +1533,14 @@ func scheduleInput(request *dieterv1.SaveScheduleRequest) (store.ScheduleInput, 
 	if strings.TrimSpace(value.GetWorkspaceMode()) == "" || !ok {
 		return store.ScheduleInput{}, errors.New("workspace mode must be selected for each scheduled card")
 	}
-	return store.ScheduleInput{
+	return store.ScheduleInput{CheckoutID: value.GetCheckoutId(),
 		Project: value.GetProjectId(), Board: value.GetBoardId(), Name: value.GetName(),
 		Description: value.GetDescription(), Cron: value.GetCron(), Timezone: value.GetTimezone(),
 		Enabled: value.GetEnabled(), Action: value.GetAction(), TitleTemplate: value.GetTitleTemplate(),
 		PromptTemplate: value.GetPromptTemplate(), Provider: value.GetProvider(), Model: value.GetModel(),
 		Effort: value.GetEffort(), ProviderOptions: cloneProtoStringMap(value.GetProviderOptions()), LabelIDs: append([]string(nil), value.GetLabelIds()...),
 		OpenCardPolicy: value.GetOpenCardPolicy(), MisfirePolicy: value.GetMisfirePolicy(),
-		BusyPolicy: value.GetBusyPolicy(), WorkspaceMode: workspaceMode,
+		WorkspaceMode: workspaceMode,
 	}, nil
 }
 
@@ -1597,10 +1621,16 @@ func grpcFailure(err error) error {
 	if errors.Is(err, context.DeadlineExceeded) {
 		return status.Error(codes.DeadlineExceeded, err.Error())
 	}
+	if errors.Is(err, peerstore.ErrConflict) {
+		return status.Error(codes.Aborted, err.Error())
+	}
+	if errors.Is(err, peerstore.ErrCapacity) {
+		return status.Error(codes.ResourceExhausted, err.Error())
+	}
 	if errors.Is(err, store.ErrNotFound) || errors.Is(err, fs.ErrNotExist) {
 		return status.Error(codes.NotFound, err.Error())
 	}
-	if errors.Is(err, store.ErrCapacity) || errors.Is(err, app.ErrInsufficientStorage) ||
+	if errors.Is(err, app.ErrInsufficientStorage) ||
 		errors.Is(err, syscall.ENOSPC) || errors.Is(err, syscall.EDQUOT) {
 		return status.Error(codes.ResourceExhausted, err.Error())
 	}

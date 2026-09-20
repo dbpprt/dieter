@@ -120,7 +120,7 @@ struct DieterRootView: View {
                             model: store.schedulesModel, context: store.scheduleEditorContext,
                             prepare: {
                                 let projectID = store.selectedProjectID
-                                let connected = await store.ensureProjectConnection(projectID, reportOffline: false)
+                                let connected = await store.ensureReplicaConnection(projectID, reportOffline: false)
                                 guard connected, store.selectedProjectID == projectID, store.section == .schedules
                                 else {
                                     if !Task.isCancelled {
@@ -154,6 +154,7 @@ struct DieterRootView: View {
             .allowsHitTesting(false)
         }
         .toolbar {
+            ToolbarSpacer(.flexible)
             ToolbarItemGroup(placement: .primaryAction) {
                 ProviderQuotaCompactView()
                 if store.section != .board || store.selectedCardID == nil {
@@ -788,20 +789,7 @@ private struct SidebarProjectRow: View {
         store.selectedProjectID == project.id && [.board, .files, .schedules].contains(store.section)
     }
 
-    private var projectMachineOnline: Bool? {
-        guard let machine = store.machine(forProjectID: project.id) else { return nil }
-        return store.machineIsAvailable(machine)
-    }
-
-    private var projectMachine: DieterEndpoint? {
-        store.machine(forProjectID: project.id)
-    }
-
-    private var accessibilityLabel: String {
-        guard let projectMachine else { return project.name }
-        let presence = projectMachineOnline == true ? "online" : "offline"
-        return "\(project.name), hosted on \(projectMachine.name), \(presence)"
-    }
+    private var accessibilityLabel: String { "\(project.name), \(project.checkouts.filter { !$0.detached }.count) checkouts" }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
@@ -810,7 +798,7 @@ private struct SidebarProjectRow: View {
                     popoverPresented = true
                 } label: {
                     HStack(spacing: 6) {
-                        ProjectAvatar(name: project.name, online: projectMachineOnline)
+                        ProjectAvatar(name: project.name, online: nil)
                         Text(project.name)
                             .font(.system(size: 12, weight: selected ? .semibold : .medium))
                             .foregroundStyle(selected ? DieterTheme.text : DieterTheme.subtle)
@@ -819,16 +807,7 @@ private struct SidebarProjectRow: View {
                             .layoutPriority(1)
                             .smokeTarget("sidebar.project.\(project.id).name")
                         Spacer(minLength: 0)
-                        if let projectMachine {
-                            ProjectMachineBadge(
-                                machine: projectMachine, online: projectMachineOnline == true, compact: true
-                            )
-                            .layoutPriority(-1)
-                            .accessibilityIdentifier("sidebar.project.\(project.id).machine")
-                            .smokeTarget(
-                                "sidebar.project.\(project.id).machine.\(projectMachineOnline == true ? "online" : "offline")"
-                            )
-                        }
+
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .contentShape(Rectangle())
@@ -1168,7 +1147,7 @@ private struct ProjectQuickNav: View {
     let dismiss: () -> Void
 
     private var projectMachineOnline: Bool? {
-        guard let machine = store.machine(forProjectID: project.id) else { return nil }
+        guard let machine = store.replica(forProjectID: project.id) else { return nil }
         return store.machineIsAvailable(machine)
     }
 
@@ -1178,7 +1157,7 @@ private struct ProjectQuickNav: View {
                 ProjectAvatar(name: project.name, online: projectMachineOnline, size: 26)
                 VStack(alignment: .leading, spacing: 1) {
                     Text(project.name).font(.system(size: 13, weight: .semibold)).lineLimit(1)
-                    if let machine = store.machine(forProjectID: project.id) {
+                    if let machine = store.replica(forProjectID: project.id) {
                         Text("\(machine.name) · \(projectMachineOnline == true ? "Online" : "Offline")")
                             .font(.system(size: 10)).foregroundStyle(DieterTheme.tertiary).lineLimit(1)
                     }

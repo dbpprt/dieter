@@ -327,7 +327,7 @@ func (s *Store) SaveGitOperation(value model.GitOperation) (model.GitOperation, 
 	return value, writeJSON(filepath.Join(s.gitOperationDir(), value.ID+".json"), value)
 }
 
-func (s *Store) ActiveProjectGitOperation(projectRef string) (model.GitOperation, error) {
+func (s *Store) ActiveProjectGitOperation(projectRef string, checkoutIDs ...string) (model.GitOperation, error) {
 	project, err := s.ResolveProject(projectRef)
 	if err != nil {
 		return model.GitOperation{}, err
@@ -337,7 +337,7 @@ func (s *Store) ActiveProjectGitOperation(projectRef string) (model.GitOperation
 		return model.GitOperation{}, err
 	}
 	for _, value := range values {
-		if value.ProjectID == project.ID && value.CardID == "" &&
+		if s.canonicalProjectRef(value.ProjectID) == project.ID && value.CardID == "" && (len(checkoutIDs) == 0 || value.CheckoutID == checkoutIDs[0]) &&
 			(value.Status == model.GitOperationQueued || value.Status == model.GitOperationRunning || value.Status == model.GitOperationWaitingForResolution) {
 			return value, nil
 		}

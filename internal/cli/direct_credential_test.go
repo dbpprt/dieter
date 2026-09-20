@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"github.com/dbpprt/dieter/internal/server"
+	"google.golang.org/protobuf/types/known/emptypb"
 	"net"
 	"sync"
 	"sync/atomic"
@@ -67,6 +69,10 @@ func TestDirectCredentialRejectsInvalidRefresh(t *testing.T) {
 type expiringExecutionServer struct {
 	dieterv1.UnimplementedDieterServiceServer
 	requests chan uint64
+}
+
+func (*expiringExecutionServer) Health(context.Context, *emptypb.Empty) (*dieterv1.HealthResponse, error) {
+	return &dieterv1.HealthResponse{Version: server.APIVersion}, nil
 }
 
 func (*expiringExecutionServer) GetExecution(context.Context, *dieterv1.ExecutionRef) (*dieterv1.Execution, error) {

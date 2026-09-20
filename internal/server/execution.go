@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"errors"
+	"github.com/dbpprt/dieter/internal/store"
 	"strings"
 	"time"
 
@@ -20,6 +21,7 @@ const (
 )
 
 func (api *grpcAPI) ListExecutions(ctx context.Context, request *dieterv1.ListExecutionsRequest) (*dieterv1.ExecutionsResponse, error) {
+	ctx = store.WithCheckout(ctx, request.GetCheckoutId())
 	projectID := strings.TrimSpace(request.GetProjectId())
 	cardID := strings.TrimSpace(request.GetCardId())
 	if projectID != "" || cardID != "" {
@@ -37,6 +39,7 @@ func (api *grpcAPI) ListExecutions(ctx context.Context, request *dieterv1.ListEx
 }
 
 func (api *grpcAPI) StartExecution(ctx context.Context, request *dieterv1.StartExecutionRequest) (*dieterv1.Execution, error) {
+	ctx = store.WithCheckout(ctx, request.GetCheckoutId())
 	timeoutMilliseconds := request.GetTimeoutMs()
 	if timeoutMilliseconds < 0 || timeoutMilliseconds > (7*24*time.Hour).Milliseconds() {
 		return nil, status.Error(codes.InvalidArgument, "execution timeout must be between zero and seven days")

@@ -1369,3 +1369,24 @@ cases. Missing mandatory cases fail; an external-device or optical case is
 reported unavailable. The physical Android fixture uses its own app ID and never
 replaces the operator app. See [decoder adapter contract](apps/android/webrtc-adapter.md)
 and [implementation evidence](docs/screenshare-performance-implementation-2026-09-18.md).
+
+### One project across machines
+
+A project and its boards appear once. Attach each machine's Git checkout to that
+shared project; cards and project chats show their execution machine. Choose a
+checkout when creating work or using files, terminals, or Git. Shared edits remain
+available through another replica while a conversation owner is offline.
+
+Enrolled daemons replicate the account store over direct TLS, WebRTC/TURN, or relay,
+without a native client remaining open. Concurrent settings edits remain visible
+for explicit resolution. No project content is stored on the gateway. Separate
+conversations have no configurable parallel-session caps; each conversation still
+has at most one active turn.
+
+Use `project attach`, `project checkouts`, `project detach`, and `project consolidate`;
+use `--checkout` with machine-local project operations. `card move --after/--before`
+uses stable neighbor IDs. `peer status` reports the last completed peer exchange.
+Contract 4 and storage schema 2 replace the previous application model. Existing
+development data uses the explicit offline `daemon import-store --backup PATH`
+workflow; do not run it against a live daemon. See [peer store](docs/peer-store.md)
+for ownership, conflict semantics, bounds, recovery, and CLI examples.

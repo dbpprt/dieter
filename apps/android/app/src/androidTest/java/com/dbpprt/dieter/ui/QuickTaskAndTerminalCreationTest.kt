@@ -17,7 +17,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
-import com.dbpprt.dieter.connection.ProjectHost
+import com.dbpprt.dieter.connection.ProjectReplica
 import com.dbpprt.dieter.ui.theme.DieterTheme
 import com.dbpprt.dieter.v1.Board
 import com.dbpprt.dieter.v1.Lane
@@ -85,8 +85,8 @@ class QuickTaskAndTerminalCreationTest {
         val laptopProject = Project.newBuilder().setId("p1").setName("Dieter").setPath("/Users/me/Development/dieter").build()
         val studioProject = Project.newBuilder().setId("p2").setName("Dieter").setPath("/Users/me/Development/dieter").build()
         val hosts = mapOf(
-            "p1" to ProjectHost("endpoint-1", "daemon-1", "Laptop", online = true),
-            "p2" to ProjectHost("endpoint-2", "daemon-2", "Studio", online = true),
+            "p1" to ProjectReplica("endpoint-1", "daemon-1", "Laptop", online = true),
+            "p2" to ProjectReplica("endpoint-2", "daemon-2", "Studio", online = true),
         )
         var selectedProjectId by mutableStateOf("p1")
 
@@ -95,7 +95,7 @@ class QuickTaskAndTerminalCreationTest {
                 Surface {
                     TerminalProjectPicker(
                         projects = listOf(laptopProject, studioProject),
-                        projectHosts = hosts,
+                        projectReplicas = hosts,
                         selectedProjectId = selectedProjectId,
                         onProjectChange = { selectedProjectId = it },
                     )

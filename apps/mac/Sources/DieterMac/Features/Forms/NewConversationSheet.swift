@@ -331,7 +331,7 @@ struct NewConversationSheet: View {
             return
         }
         guard !destinationHarnesses.isEmpty else {
-            harnessCatalogError = "No providers are available on this project's machine."
+            harnessCatalogError = "No providers are available on the selected machine."
             return
         }
         let initializing = provider.isEmpty

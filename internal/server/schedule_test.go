@@ -27,14 +27,12 @@ func TestScheduleAndSettingsConnectEndToEnd(t *testing.T) {
 	}
 	project, board := workspace.Msg.GetProject(), workspace.Msg.GetBoard()
 
-	settings, err := client.UpdateSettings(ctx, connect.NewRequest(&dieterv1.UpdateSettingsRequest{Settings: &dieterv1.Settings{
-		GlobalParallelLimit: 3, AgentParallelLimits: map[string]int32{"mock": 1}, BoardParallelLimits: map[string]int32{board.GetId(): 2},
-	}}))
-	if err != nil || settings.Msg.GetGlobalParallelLimit() != 3 || settings.Msg.GetAgentParallelLimits()["mock"] != 1 {
+	settings, err := client.UpdateSettings(ctx, connect.NewRequest(&dieterv1.UpdateSettingsRequest{Settings: &dieterv1.Settings{}}))
+	if err != nil || settings.Msg.GetUpdatedAt() == "" {
 		t.Fatalf("settings=%#v err=%v", settings, err)
 	}
 	loaded, err := client.GetSettings(ctx, connect.NewRequest(&emptypb.Empty{}))
-	if err != nil || loaded.Msg.GetBoardParallelLimits()[board.GetId()] != 2 {
+	if err != nil || loaded.Msg.GetUpdatedAt() != settings.Msg.GetUpdatedAt() {
 		t.Fatalf("loaded settings=%#v err=%v", loaded, err)
 	}
 	options, err := client.GetSettingsOptions(ctx, connect.NewRequest(&emptypb.Empty{}))
@@ -49,7 +47,7 @@ func TestScheduleAndSettingsConnectEndToEnd(t *testing.T) {
 	schedule, err := client.CreateSchedule(ctx, connect.NewRequest(&dieterv1.SaveScheduleRequest{Schedule: &dieterv1.ScheduleDraft{
 		ProjectId: project.GetId(), BoardId: board.GetId(), Name: "Morning", Cron: "0 9 * * 1-5", Timezone: "Europe/Berlin", Enabled: true,
 		Action: model.ScheduleActionRun, TitleTemplate: "Morning · {{date}}", PromptTemplate: "Check {{project}}", Provider: "mock", Model: "mock",
-		OpenCardPolicy: "skip_if_open", MisfirePolicy: "latest", BusyPolicy: "queue", WorkspaceMode: model.WorkspaceModeProject,
+		OpenCardPolicy: "skip_if_open", MisfirePolicy: "latest", WorkspaceMode: model.WorkspaceModeProject,
 	}}))
 	if err != nil {
 		t.Fatal(err)
@@ -105,7 +103,7 @@ func TestSchedulePagesConnectEndToEnd(t *testing.T) {
 			ProjectId: project.GetId(), BoardId: board.GetId(), Name: fmt.Sprintf("Schedule %d", index),
 			Cron: "* * * * *", Timezone: "UTC", Enabled: true, Action: model.ScheduleActionDraft,
 			TitleTemplate: "Run {{date}}", PromptTemplate: "Do work", Provider: "mock", Model: "mock",
-			OpenCardPolicy: "always", MisfirePolicy: "latest", BusyPolicy: "queue", WorkspaceMode: model.WorkspaceModeProject,
+			OpenCardPolicy: "always", MisfirePolicy: "latest", WorkspaceMode: model.WorkspaceModeProject,
 		}}))
 		if createErr != nil {
 			t.Fatal(createErr)

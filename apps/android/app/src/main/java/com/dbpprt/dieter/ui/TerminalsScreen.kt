@@ -66,7 +66,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
-import com.dbpprt.dieter.connection.ProjectHost
+import com.dbpprt.dieter.connection.ProjectReplica
 import com.dbpprt.dieter.ui.theme.DieterAbyss
 import com.dbpprt.dieter.ui.theme.DieterShell
 import com.dbpprt.dieter.ui.theme.DieterCoral
@@ -105,6 +105,7 @@ fun TerminalsScreen(
                 bottom = contentPadding.calculateBottomPadding(),
             ),
     ) {
+        ProjectCheckoutSelector(state, model)
         TerminalHeader(
             terminalCount = state.terminals.size,
             connected = state.terminalStreamConnected,
@@ -186,7 +187,7 @@ fun TerminalsScreen(
             TerminalStatusBar(
                 terminal = selected,
                 project = state.projects.firstOrNull { it.id == selected.projectId },
-                hostname = state.presentedProjectHosts[selected.projectId]?.hostname.orEmpty(),
+                hostname = state.presentedProjectReplicas[selected.projectId]?.hostname.orEmpty(),
                 connected = state.terminalStreamConnected,
             )
         }
@@ -461,7 +462,7 @@ private fun NewTerminalSheet(state: DieterUiState, model: DieterViewModel) {
             }
             TerminalProjectPicker(
                 projects = state.projects,
-                projectHosts = state.presentedProjectHosts,
+                projectReplicas = state.presentedProjectReplicas,
                 selectedProjectId = projectId,
                 onProjectChange = { projectId = it },
             )
@@ -509,7 +510,7 @@ private fun NewTerminalSheet(state: DieterUiState, model: DieterViewModel) {
 @Composable
 internal fun TerminalProjectPicker(
     projects: List<Project>,
-    projectHosts: Map<String, ProjectHost>,
+    projectReplicas: Map<String, ProjectReplica>,
     selectedProjectId: String,
     onProjectChange: (String) -> Unit,
 ) {
@@ -524,7 +525,7 @@ internal fun TerminalProjectPicker(
             Column(Modifier.weight(1f), horizontalAlignment = Alignment.Start) {
                 Text(selectedProject?.name ?: "Choose project", color = DieterText, fontWeight = FontWeight.SemiBold)
                 Text(
-                    selectedProject?.let { terminalProjectDetails(it, projectHosts[it.id]) }.orEmpty(),
+                    selectedProject?.let { terminalProjectDetails(it, projectReplicas[it.id]) }.orEmpty(),
                     color = DieterMuted,
                     fontFamily = FontFamily.Monospace,
                     fontSize = 10.sp,
@@ -540,7 +541,7 @@ internal fun TerminalProjectPicker(
                         Column {
                             Text(candidate.name)
                             Text(
-                                terminalProjectDetails(candidate, projectHosts[candidate.id]),
+                                terminalProjectDetails(candidate, projectReplicas[candidate.id]),
                                 color = DieterMuted,
                                 fontFamily = FontFamily.Monospace,
                                 fontSize = 10.sp,
@@ -560,7 +561,7 @@ internal fun TerminalProjectPicker(
     }
 }
 
-internal fun terminalProjectDetails(project: Project, host: ProjectHost?): String {
+internal fun terminalProjectDetails(project: Project, host: ProjectReplica?): String {
     val machine = host?.hostname?.takeIf(String::isNotBlank) ?: "Unknown machine"
     val availability = if (host?.online == false) "$machine (offline)" else machine
     return listOf(availability, compactProjectPath(project.path).takeIf(String::isNotBlank))

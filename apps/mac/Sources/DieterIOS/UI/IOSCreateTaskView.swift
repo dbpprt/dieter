@@ -14,6 +14,9 @@ import DieterCore
         let created: (String) -> Void
         @State private var projectID: String
         @State private var boardID: String
+        @State private var checkoutID = ""
+        @State private var creationHarnesses: [Dieter_V1_Harness] = []
+        @State private var catalogCheckoutID = ""
         @State private var title = ""
         @State private var prompt = ""
         @State private var provider = ""
@@ -43,10 +46,11 @@ import DieterCore
             _attachments = State(initialValue: initialAttachments)
         }
 
+        private var checkouts: [Dieter_V1_Checkout] { store.projects.first { $0.id == projectID }?.checkouts.filter { !$0.detached } ?? [] }
         private var boards: [Dieter_V1_Board] { store.boards.filter { $0.projectID == projectID } }
         private var selectedBoard: Dieter_V1_Board? { boards.first { $0.id == boardID } }
         private var labels: [Dieter_V1_Label] { chat ? [] : selectedBoard?.labels ?? [] }
-        private var harness: Dieter_V1_Harness? { store.harnesses.first { $0.id == provider } }
+        private var harness: Dieter_V1_Harness? { creationHarnesses.first { $0.id == provider } }
         private var selectedModel: Dieter_V1_HarnessModel? { harness?.models.first { $0.id == model } }
         private var fastModeOption: Dieter_V1_ProviderOption? {
             IOSCreateTaskProviderOptions.fastModeOption(for: harness, model: model)
@@ -58,7 +62,7 @@ import DieterCore
         private var canSubmit: Bool {
             !submitting && store.phase.isConnected && !projectID.isEmpty && (chat || !boardID.isEmpty)
                 && !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                && !provider.isEmpty && !model.isEmpty
+                && !provider.isEmpty && !model.isEmpty && !checkoutID.isEmpty && catalogCheckoutID == checkoutID
         }
         private var hasModifiedProviderOptions: Bool {
             providerOptions
@@ -131,9 +135,14 @@ import DieterCore
                             }
                             .accessibilityIdentifier("ios.create.board")
                         }
-                        if let name = store.selectedMachine?.name {
-                            LabeledContent("Machine", value: name)
+                        Picker("Machine & checkout", selection: $checkoutID) {
+                            Text("Choose a checkout").tag("")
+                            ForEach(checkouts, id: \.id) { checkout in
+                                let machine = store.machines.first { $0.daemonID == checkout.daemonID }
+                                Text("\(machine?.name ?? checkout.daemonID) · \(checkout.name.isEmpty ? checkout.id : checkout.name)\(machine?.online == true ? "" : " · Offline")").tag(checkout.id)
+                            }
                         }
+                        .accessibilityIdentifier("ios.create.checkout")
                     }
                     if !labels.isEmpty {
                         Section("Labels") {
@@ -147,7 +156,7 @@ import DieterCore
                     }
                     Section("Agent") {
                         Picker("Provider", selection: $provider) {
-                            ForEach(store.harnesses, id: \.id) { Text($0.name).tag($0.id) }
+                            ForEach(creationHarnesses, id: \.id) { Text($0.name).tag($0.id) }
                         }
                         .accessibilityIdentifier("ios.create.provider")
                         .accessibilityValue(harness?.name ?? provider)
@@ -265,12 +274,24 @@ import DieterCore
             .task {
                 if projectID.isEmpty { projectID = store.projects.first?.id ?? "" }
                 if !boards.contains(where: { $0.id == boardID }) { boardID = boards.first?.id ?? "" }
-                if provider.isEmpty { provider = store.harnesses.first?.id ?? ""; resetModel() }
+                if checkouts.count == 1 { checkoutID = checkouts[0].id }
+            }
+            .task(id: checkoutID) {
+                catalogCheckoutID = ""; creationHarnesses = []
+                guard !checkoutID.isEmpty else { return }
+                let requested = checkoutID
+                do {
+                    let catalog = try await store.creationHarnesses(projectID: projectID, checkoutID: requested)
+                    guard !Task.isCancelled, checkoutID == requested else { return }
+                    creationHarnesses = catalog; catalogCheckoutID = requested
+                    provider = catalog.first?.id ?? ""; resetModel()
+                } catch { if !Task.isCancelled { store.errorMessage = error.localizedDescription } }
             }
             .onChange(of: projectID) { _, _ in
                 focusedField = nil
                 selectedLabelIDs.removeAll()
                 boardID = boards.first?.id ?? ""
+                checkoutID = checkouts.count == 1 ? checkouts[0].id : ""
             }
             .onChange(of: boardID) { _, _ in
                 focusedField = nil
@@ -380,7 +401,7 @@ import DieterCore
                 for: harness, model: model, saved: providerOptions)
             Task {
                 let id = await store.createTask(
-                    projectID: projectID, boardID: chat ? nil : boardID, title: title, prompt: prompt,
+                    projectID: projectID, checkoutID: checkoutID, boardID: chat ? nil : boardID, title: title, prompt: prompt,
                     provider: provider, model: model, effort: effort, labelIDs: labelIDs,
                     providerOptions: providerOptions, attachments: attachments, run: run)
                 submitting = false

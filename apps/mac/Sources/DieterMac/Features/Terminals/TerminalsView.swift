@@ -350,7 +350,8 @@ private struct TerminalTab: View {
 private struct NewTerminalSheet: View {
     @Environment(DieterStore.self) private var store
     @Environment(\.dismiss) private var dismiss
-    @State private var projectID = ""
+    @State private var checkoutID = ""
+    private var projectID: String { selectedDestination?.project.id ?? "" }
     @State private var machineID = ""
     @State private var name = ""
     @State private var shell = "zsh"
@@ -365,7 +366,7 @@ private struct NewTerminalSheet: View {
         store.projectDestinationGroups(projects: availableProjects)
     }
     private var selectedDestination: ProjectDestination? {
-        ProjectDestinationCatalog.destination(projectID: projectID, in: destinationGroups)
+        destinationGroups.flatMap(\.destinations).first { $0.checkoutID == checkoutID }
     }
     private var selectedProject: Dieter_V1_Project? { selectedDestination?.project }
     private var machines: [DieterEndpoint] { store.terminalOverviewMachines }
@@ -427,12 +428,12 @@ private struct NewTerminalSheet: View {
                 HStack(spacing: 10) {
                     Image(systemName: machineHome ? "house" : "folder")
                         .foregroundStyle(DieterTheme.shell)
-                    Picker("Project", selection: $projectID) {
+                    Picker("Project & checkout", selection: $checkoutID) {
                         Text("Machine home (no project)").tag("")
                         ForEach(destinationGroups) { group in
                             Section(group.title) {
                                 ForEach(group.destinations) { destination in
-                                    Text(destination.project.name).tag(destination.project.id)
+                                    Text("\(destination.project.name) · \(destination.checkout?.name ?? destination.checkoutID)").tag(destination.checkoutID)
                                 }
                             }
                         }
@@ -562,7 +563,7 @@ private struct NewTerminalSheet: View {
                     creating = true
                     Task {
                         await store.createTerminal(
-                            projectID: projectID,
+                            projectID: projectID, checkoutID: checkoutID,
                             machineID: selectedMachine?.id,
                             machineHome: machineHome,
                             name: name,
@@ -599,27 +600,27 @@ private struct NewTerminalSheet: View {
                     $0.project.id == store.selectedProjectID && $0.machineOnline
                 }) ?? allDestinations.first(where: \.machineOnline)
             if let preferred {
-                projectID = preferred.project.id
+                checkoutID = preferred.checkoutID
                 machineID = preferred.machineID
-                workingDirectory = preferred.project.path
+                workingDirectory = preferred.checkout?.path.isEmpty == false ? preferred.checkout!.path : "."
             } else {
                 machineID =
                     store.terminalOverviewPreferredMachineID
                     ?? machines.first(where: { store.machineIsAvailable($0) })?.id
                     ?? store.endpoint.id
-                projectID = ""
+                checkoutID = ""
                 workingDirectory = "~"
             }
         }
-        .onChange(of: projectID) { _, value in
+        .onChange(of: checkoutID) { _, value in
             guard !value.isEmpty else {
                 workingDirectory = "~"
                 return
             }
-            guard let destination = ProjectDestinationCatalog.destination(projectID: value, in: destinationGroups)
+            guard let destination = destinationGroups.flatMap(\.destinations).first(where: { $0.checkoutID == value })
             else { return }
             machineID = destination.machineID
-            workingDirectory = destination.project.path
+            workingDirectory = destination.checkout?.path.isEmpty == false ? destination.checkout!.path : "."
         }
     }
 

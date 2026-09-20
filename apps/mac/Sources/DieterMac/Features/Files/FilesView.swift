@@ -76,6 +76,7 @@ struct FilesView: View {
                         }
                     } secondary: {
                         HStack(spacing: 8) {
+                            if model.fileScopeCardID == nil { ProjectCheckoutMenu(projectID: model.target.projectID) }
                             Image(
                                 systemName: model.fileScopeCardID == nil
                                     ? (model.filePath.isEmpty ? "folder" : "folder.fill")

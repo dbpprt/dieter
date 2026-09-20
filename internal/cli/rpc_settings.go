@@ -1,13 +1,12 @@
 package cli
 
 import (
-	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
+	"google.golang.org/protobuf/encoding/protojson"
 	"io"
 	"os"
-	"strconv"
 	"strings"
 
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
@@ -17,12 +16,11 @@ import (
 const settingsHelp = `Usage: dieter settings <action>
 
 Actions:
-  show                         Show parallel-session admission settings
+  show                         Show global prompt settings
   options                      List valid projects, boards, and harnesses
-  update [options]             Replace admission settings
+  update [options]             Update global prompt settings
 
-Update accepts --global N, repeated --harness ID=N, repeated --board ID=N,
-or --file FILE containing the Settings JSON object emitted by "show".
+Update requires --file FILE containing the Settings JSON object emitted by "show".
 `
 
 func (c *CLI) rpcSettings(args []string) error {
@@ -78,34 +76,10 @@ func (c *CLI) rpcSettings(args []string) error {
 	}
 }
 
-type limitFlags map[string]int32
-
-func (values *limitFlags) String() string { return "ID=N" }
-
-func (values *limitFlags) Set(raw string) error {
-	key, value, found := strings.Cut(raw, "=")
-	if !found || strings.TrimSpace(key) == "" {
-		return errors.New("limits must be ID=N")
-	}
-	parsed, err := strconv.ParseInt(value, 10, 32)
-	if err != nil || parsed < 0 {
-		return fmt.Errorf("invalid non-negative limit %q", value)
-	}
-	if *values == nil {
-		*values = map[string]int32{}
-	}
-	(*values)[strings.TrimSpace(key)] = int32(parsed)
-	return nil
-}
-
 func (c *CLI) rpcSettingsUpdate(args []string) error {
-	const usage = "Usage: dieter settings update [--global N] [--harness ID=N ...] [--board ID=N ...] [--file FILE]\n"
+	const usage = "Usage: dieter settings update --file FILE\n"
 	set := flags("settings update")
-	global := set.Int("global", -1, "global parallel-session limit")
 	file := set.String("file", "", "Settings JSON file or - for stdin")
-	harnessLimits, boardLimits := limitFlags{}, limitFlags{}
-	set.Var(&harnessLimits, "harness", "harness limit ID=N; repeatable")
-	set.Var(&boardLimits, "board", "board limit ID=N; repeatable")
 	help, err := parse(set, args, usage, c.Out)
 	if help || err != nil {
 		return err
@@ -136,26 +110,11 @@ func (c *CLI) rpcSettingsUpdate(args []string) error {
 		if err != nil {
 			return err
 		}
-		var decoded struct {
-			GlobalParallelLimit int32            `json:"globalParallelLimit"`
-			AgentParallelLimits map[string]int32 `json:"agentParallelLimits"`
-			BoardParallelLimits map[string]int32 `json:"boardParallelLimits"`
-		}
-		if err := json.Unmarshal(raw, &decoded); err != nil {
+		if err := protojson.Unmarshal(raw, value); err != nil {
 			return fmt.Errorf("decode settings JSON: %w", err)
 		}
-		value.GlobalParallelLimit = decoded.GlobalParallelLimit
-		value.AgentParallelLimits = decoded.AgentParallelLimits
-		value.BoardParallelLimits = decoded.BoardParallelLimits
-	}
-	if *global >= 0 {
-		value.GlobalParallelLimit = int32(*global)
-	}
-	if len(harnessLimits) > 0 {
-		value.AgentParallelLimits = map[string]int32(harnessLimits)
-	}
-	if len(boardLimits) > 0 {
-		value.BoardParallelLimits = map[string]int32(boardLimits)
+	} else {
+		return errors.New("settings update requires --file")
 	}
 	updated, err := client.UpdateSettings(rpcCtx, &dieterv1.UpdateSettingsRequest{Settings: value})
 	if err != nil {

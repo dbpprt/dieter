@@ -158,6 +158,53 @@ func assertScreenSessionCLI(t *testing.T, client *CLI, output *bytes.Buffer, con
 	if viewer.RemoteDescription() == nil {
 		t.Fatal("CLI start did not return the answer")
 	}
+	addCandidate := func(signal *dieterv1.RemoteDesktopSignal) error {
+		candidate := signal.GetCandidate()
+		if candidate == nil {
+			return nil
+		}
+		mid, username := candidate.GetSdpMid(), candidate.GetUsernameFragment()
+		index := uint16(max(0, int(candidate.GetSdpMlineIndex())))
+		return viewer.AddICECandidate(webrtc.ICECandidateInit{Candidate: candidate.GetCandidate(), SDPMid: &mid, SDPMLineIndex: &index, UsernameFragment: &username})
+	}
+	for _, line := range lines {
+		var signal dieterv1.RemoteDesktopSignal
+		if err = protojson.Unmarshal([]byte(line), &signal); err != nil {
+			t.Fatal(err)
+		}
+		if err = addCandidate(&signal); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Reattach signaling while exercising the unary CLI commands. The initial
+	// collector deliberately disconnects after the answer; leaving it detached
+	// races the production grace timeout on slower race-enabled test runs.
+	request.ReferenceRecovery = true
+	observerCtx, cancelObserver := context.WithCancel(context.Background())
+	defer cancelObserver()
+	observer, err := client.transport.client.StartRemoteDesktop(client.transport.context(observerCtx), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstSignal, err := observer.Recv()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = addCandidate(firstSignal); err != nil {
+		t.Fatal(err)
+	}
+	observerDone := make(chan struct{})
+	go func() {
+		defer close(observerDone)
+		for {
+			signal, err := observer.Recv()
+			if err != nil {
+				return
+			}
+			_ = addCandidate(signal)
+		}
+	}()
+	defer func() { cancelObserver(); <-observerDone }()
 	var modes dieterv1.RemoteDesktopDisplayModes
 	if err := protojson.Unmarshal([]byte(runDaemonCLI(t, client, output, "screen", "resolution", "modes", id)), &modes); err != nil {
 		t.Fatal(err)
@@ -192,7 +239,7 @@ func assertScreenSessionCLI(t *testing.T, client *CLI, output *bytes.Buffer, con
 	}
 	// Encoder diagnostics are asynchronous, and only exist after ICE starts
 	// the capture source. Exercise the real status operation on every route.
-	for deadline := time.Now().Add(5 * time.Second); state.GetEncoderConfiguration() == "" && time.Now().Before(deadline); {
+	for deadline := time.Now().Add(10 * time.Second); state.GetEncoderConfiguration() == "" && time.Now().Before(deadline); {
 		time.Sleep(20 * time.Millisecond)
 		if err := protojson.Unmarshal([]byte(runDaemonCLI(t, client, output, "screen", "status", id)), &state); err != nil {
 			t.Fatal(err)

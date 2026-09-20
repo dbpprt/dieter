@@ -1,6 +1,6 @@
 package com.dbpprt.dieter.ui
 
-import com.dbpprt.dieter.connection.ProjectHost
+import com.dbpprt.dieter.connection.ProjectReplica
 import com.dbpprt.dieter.v1.Card
 import com.dbpprt.dieter.v1.Project
 import org.junit.Assert.assertEquals
@@ -30,15 +30,15 @@ class ChatProjectPolicyTest {
     fun `new chat selector includes projects without chats`() {
         val options = chatProjectOptions(
             projects = listOf(activeProject, emptyProject),
-            projectHosts = mapOf(
-                emptyProject.id to ProjectHost("endpoint", "daemon", "workstation", true),
+            projectReplicas = mapOf(
+                emptyProject.id to ProjectReplica("endpoint", "daemon", "workstation", true),
             ),
         )
 
         assertEquals(
             listOf(
                 activeProject.id to "Active project",
-                emptyProject.id to "Empty project · workstation",
+                emptyProject.id to "Empty project",
             ),
             options,
         )

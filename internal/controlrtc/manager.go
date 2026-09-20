@@ -278,7 +278,17 @@ func (m *Manager) Close() {
 // Dial negotiates one byte stream. TLS identity and RPC bearer validation are
 // still performed by the ordinary direct transport above this connection.
 func Dial(ctx context.Context, configuration *gatewayv1.RTCConfiguration, start func(context.Context, *dieterv1.StartControlConnectionRequest) (*dieterv1.ControlConnection, error)) (net.Conn, *dieterv1.ControlConnection, error) {
-	pc, err := webrtc.NewPeerConnection(Configuration(configuration))
+	return DialWithPolicy(ctx, configuration, start, false)
+}
+
+// DialWithPolicy allows a caller to require TURN without changing signed remote
+// configuration. TLS and RPC authorization remain mandatory on the returned stream.
+func DialWithPolicy(ctx context.Context, configuration *gatewayv1.RTCConfiguration, start func(context.Context, *dieterv1.StartControlConnectionRequest) (*dieterv1.ControlConnection, error), relayOnly bool) (net.Conn, *dieterv1.ControlConnection, error) {
+	config := Configuration(configuration)
+	if relayOnly {
+		config.ICETransportPolicy = webrtc.ICETransportPolicyRelay
+	}
+	pc, err := webrtc.NewPeerConnection(config)
 	if err != nil {
 		return nil, nil, err
 	}

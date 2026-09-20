@@ -9,14 +9,41 @@ struct ProjectContextSheet: View {
     @State private var draft = ProjectSettingsDraft()
     @State private var workspacesPresented = false
     @State private var saving = false
+    @State private var destinationID = ""
+    @State private var confirmConsolidation = false
 
     var body: some View {
         NavigationStack {
             Form {
+                SharedConflictsButton(keys: store.selectedProject?.conflictKeys ?? [])
                 ProjectContextFields(
                     name: $draft.name, summary: $draft.summary, prompt: $draft.prompt,
                     baseRemote: $draft.baseRemote, baseBranch: $draft.baseBranch,
                     validationCommands: $draft.validationCommands, workspacesPresented: $workspacesPresented)
+                Section("Checkouts & machines") {
+                    ProjectCheckoutMenu(projectID: store.selectedProjectID)
+                    ForEach(store.selectedProject?.checkouts.filter { !$0.detached } ?? [], id: \.id) { checkout in
+                        HStack {
+                            VStack(alignment: .leading) {
+                                Text("\(store.endpoints.first(where: { $0.daemonID == checkout.daemonID })?.name ?? checkout.daemonID) · \(checkout.name)")
+                                if !checkout.path.isEmpty { Text(checkout.path).font(.caption.monospaced()) }
+                            }
+                            Spacer()
+                            Button("Detach", role: .destructive) { Task { await store.detachCheckout(checkout) } }
+                        }
+                    }
+                    Text("Attach another checkout from Add project by choosing this existing project.").font(.caption)
+                }
+                Section("Consolidate projects") {
+                    Picker("Destination", selection: $destinationID) {
+                        Text("Choose project").tag("")
+                        ForEach(store.projectDirectory.values.filter { $0.id != store.selectedProjectID }.sorted { $0.name < $1.name }, id: \.id) { project in
+                            Text(project.name).tag(project.id)
+                        }
+                    }
+                    Text("Keep destination settings. Move all boards and checkout registrations into that project, preserving conversations and their machines.").font(.caption)
+                    Button("Consolidate…") { confirmConsolidation = true }.disabled(destinationID.isEmpty)
+                }
             }.formStyle(.grouped).navigationTitle("Project context")
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) {
@@ -27,10 +54,19 @@ struct ProjectContextSheet: View {
                     }
                 }
         }
+        .confirmationDialog("Consolidate into the selected project?", isPresented: $confirmConsolidation) {
+            Button("Consolidate") { Task {
+                if await store.consolidateProject(source: store.selectedProjectID, destination: destinationID) { dismiss() }
+            } }
+        }
         .frame(width: 620, height: 620)
         .onAppear {
             guard let project = store.selectedProject else { return }
             draft = ProjectSettingsDraft(project: project)
+            draft.validationCommands = (store.checkout(forProjectID: project.id)?.validationCommands ?? []).map(ValidationCommandDraft.init)
+        }
+        .onChange(of: store.checkout(forProjectID: store.selectedProjectID)?.validationCommands) { _, commands in
+            draft.validationCommands = (commands ?? []).map(ValidationCommandDraft.init)
         }
         .sheet(isPresented: $workspacesPresented) { ProjectWorkspacesSheet().environment(store) }
     }
@@ -82,10 +118,10 @@ struct ProjectContextFields: View {
                     TextField("Name", text: $name)
                     TextField("Short summary", text: $summary)
                     if let project = store.selectedProject {
-                        LabeledContent(
-                            "Host", value: store.machine(forProjectID: project.id)?.name ?? store.endpoint.name)
-                        Text(project.path).font(.caption.monospaced()).textSelection(.enabled)
-                            .accessibilityLabel("Git working tree path")
+                        ForEach(project.checkouts.filter { !$0.detached }, id: \.id) { checkout in
+                            LabeledContent(checkout.name, value: store.endpoints.first(where: { $0.daemonID == checkout.daemonID })?.name ?? checkout.daemonID)
+                            if !checkout.path.isEmpty { Text(checkout.path).font(.caption.monospaced()).textSelection(.enabled) }
+                        }
                     }
                 }
             }

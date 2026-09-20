@@ -123,8 +123,8 @@ class DieterActivityWidgetProvider : AppWidgetProvider() {
             (context.applicationContext as DieterApplication).container.connectionManager.state.value
 
         internal fun hostname(context: Context, state: DieterConnectionState): String? =
-            state.projectHosts.values.firstOrNull { it.online }?.hostname
-                ?: state.projectHosts.values.firstOrNull()?.hostname
+            state.projectReplicas.values.firstOrNull { it.online }?.hostname
+                ?: state.projectReplicas.values.firstOrNull()?.hostname
                 // Offline the manager drops hosts for cached projects; the
                 // persisted machine directory still knows the machine name.
                 ?: DieterSyncStore(context.applicationContext)

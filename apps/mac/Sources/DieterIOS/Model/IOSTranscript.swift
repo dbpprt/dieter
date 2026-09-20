@@ -125,7 +125,7 @@ struct IOSMutationIdentity {
 }
 
 enum IOSMachinePolicy {
-    static let apiVersion = "3"
+    static let apiVersion = DieterContract.version
 
     static func isCompatible(_ machine: DieterEndpoint) -> Bool {
         machine.apiVersion.isEmpty || machine.apiVersion == apiVersion

@@ -110,7 +110,6 @@
                 draft.effort = "low"
                 draft.openCardPolicy = "skip_if_open"
                 draft.misfirePolicy = "latest"
-                draft.busyPolicy = "queue"
                 draft.workspaceMode = "worktree"
                 if await store.saveSchedule(id: nil, draft: draft) {
                     scheduleFixtureID = store.selectedScheduleID
@@ -1222,9 +1221,8 @@
             try? await DieterTaskSleep.milliseconds(500)
             await captureAppearances(window, named: "13d-standalone-chat-renamed.png", in: output)
 
-            // A repository can be registered on several enrolled machines. Render
-            // the real new-chat surface with a duplicate project name and require
-            // its selected destination to retain the owning machine identity.
+            // One shared project offers a checkout on each machine. Render the
+            // real new-chat surface and preserve the selected execution owner.
             // The extra machine exists only in this renderer fixture. Pause the
             // gateway directory poll so its authoritative response cannot remove
             // the injected endpoint while the view settles or screenshots render.
@@ -1240,19 +1238,21 @@
                 online: false,
                 version: "v0.4.57"
             )
-            var duplicateProject = project
-            duplicateProject.id = "p_duplicate_machine_ui_smoke"
-            duplicateProject.path = "/Users/smoke/Development/\(project.name)"
+            let savedProject = store.projectDirectory[project.id] ?? project
+            var sharedProject = savedProject
+            var remoteCheckout = Dieter_V1_Checkout()
+            remoteCheckout.id = "co_remote_machine_ui_smoke"
+            remoteCheckout.projectID = project.id
+            remoteCheckout.daemonID = duplicateMachine.daemonID!
+            remoteCheckout.name = "Remote checkout"
+            sharedProject.checkouts.append(remoteCheckout)
             store.endpoints.append(duplicateMachine)
-            store.projectDirectory[duplicateProject.id] = duplicateProject
-            store.projectEndpointIDs[duplicateProject.id] = duplicateMachine.id
-            store.beginStandaloneChat(projectID: duplicateProject.id)
+            store.projectDirectory[project.id] = sharedProject
+            store.creationCheckoutIDs[project.id] = remoteCheckout.id
+            store.beginStandaloneChat(projectID: project.id)
             try? await DieterTaskSleep.milliseconds(700)
             let destinationGroups = store.projectDestinationGroups()
-            let duplicateDestination = ProjectDestinationCatalog.destination(
-                projectID: duplicateProject.id,
-                in: destinationGroups
-            )
+            let duplicateDestination = destinationGroups.flatMap(\.destinations).first { $0.checkoutID == remoteCheckout.id }
             let duplicateNamesAreGrouped =
                 destinationGroups.filter {
                     $0.destinations.contains { $0.project.name == project.name }
@@ -1263,8 +1263,8 @@
                 ? "passed"
                 : "failed: groups=\(destinationGroups.map(\.title)), selection=\(duplicateDestination?.title ?? "none")"
             await captureAppearances(window, named: "13g-new-chat-project-machine.png", in: output)
-            store.projectDirectory.removeValue(forKey: duplicateProject.id)
-            store.projectEndpointIDs.removeValue(forKey: duplicateProject.id)
+            store.projectDirectory[project.id] = savedProject
+            store.creationCheckoutIDs.removeValue(forKey: project.id)
             store.endpoints.removeAll { $0.id == duplicateMachine.id }
             store.newChatProjectID = project.id
             store.selectedProjectID = project.id
@@ -1276,7 +1276,7 @@
                 await store.refreshDaemonPresence()
                 store.startMachineDirectoryRefresh()
                 results["13h-machine-presence-restored"] =
-                    store.machine(forProjectID: project.id)?.online == true
+                    store.replica(forProjectID: project.id)?.online == true
                     ? "passed"
                     : "failed: live fixture machine presence was not restored"
             }
@@ -1309,7 +1309,7 @@
             try? await DieterTaskSleep.milliseconds(350)
 
             let projectParent = URL(fileURLWithPath: project.path).deletingLastPathComponent()
-            let projectMachineID = store.machine(forProjectID: project.id)?.id ?? store.endpoint.id
+            let projectMachineID = store.replica(forProjectID: project.id)?.id ?? store.endpoint.id
             var newProjectDraft = ProjectSetupDraft()
             newProjectDraft.mode = .newRepository
             newProjectDraft.path =
@@ -1421,7 +1421,7 @@
                     "Canceled offline outbox smoke \(UUID().uuidString.lowercased())"
                 let offlineDeliveryMessage =
                     "Offline delivery smoke \(UUID().uuidString.lowercased())"
-                if let liveCard, let machine = store.machine(forProjectID: liveCard.projectID) {
+                if let liveCard, let machine = store.machine(for: liveCard) {
                     store.composerText = canceledOfflineMessage
                     await store.sendComposer()
                     let queued = await waitUntil(timeout: 5) {
@@ -1486,7 +1486,7 @@
                     try? FileManager.default.removeItem(at: trigger)
                     let reconnected = await waitUntil(timeout: 25) { store.phase.isConnected }
                     let delivered = await waitUntil(timeout: 15) {
-                        guard let machine = store.machine(forProjectID: liveCard.projectID) else {
+                        guard let machine = store.machine(for: liveCard) else {
                             return false
                         }
                         return store.outboxSummary(for: machine) == nil

@@ -86,6 +86,12 @@ extension DieterStore {
                     userInfo: [NSLocalizedDescriptionKey: "No Dieter daemons are enrolled for this account."])
             }
             discoveredDirectory = discovered
+            if explicitMachineSelection, let requestedTarget = discovered.first(where: { $0.daemonID == preferredDaemonID }) {
+                attemptedTarget = requestedTarget
+                if requestedTarget.apiCompatibility == .incompatible {
+                    throw DieterStoreConnectionError.incompatible(found: requestedTarget.apiVersion)
+                }
+            }
             let targets = MachineRoutingPolicy.connectionTargets(
                 from: discovered,
                 preferredDaemonID: preferredDaemonID,
@@ -747,7 +753,7 @@ extension DieterStore {
     func clearDeploymentWorkspace() {
         state = Dieter_V1_State()
         projectDirectory.removeAll()
-        projectEndpointIDs.removeAll()
+        projectReplicaEndpointIDs.removeAll()
         harnessCatalogsByEndpoint.removeAll()
         navigationBoards.removeAll()
         navigationCards.removeAll()
@@ -801,8 +807,7 @@ extension DieterStore {
         do {
             try await rpc.revokeDaemon(daemonID: daemonID)
             endpoints.removeAll { $0.daemonID == daemonID }
-            projectEndpointIDs = projectEndpointIDs.filter { $0.value != endpoint.id }
-            projectDirectory = projectDirectory.filter { projectEndpointIDs[$0.key] != nil }
+            projectReplicaEndpointIDs = projectReplicaEndpointIDs.filter { $0.value != endpoint.id }
             persistEndpoints()
             await connect(to: endpoints.first(where: \.online) ?? gatewayOrigins[0])
         } catch { show(error) }
@@ -839,9 +844,9 @@ extension DieterStore {
     }
 
     @discardableResult
-    func ensureProjectConnection(_ projectID: String, reportOffline: Bool = true) async -> Bool {
+    func ensureReplicaConnection(_ projectID: String, reportOffline: Bool = true) async -> Bool {
         guard !Task.isCancelled else { return false }
-        guard let target = machine(forProjectID: projectID) else { return true }
+        guard let target = replica(forProjectID: projectID) else { return true }
         guard target.apiCompatibility != .incompatible else {
             machineConnectionErrors[target.id] = target.incompatibilityDescription
             return false
@@ -864,11 +869,8 @@ extension DieterStore {
     }
 
     func cachedHarnessCatalog(forProjectID projectID: String) -> Dieter_V1_HarnessCatalog? {
-        let endpointID = ConversationHarnessCatalogDirectory.endpointID(
-            projectID: projectID,
-            activeEndpointID: endpoint.id,
-            projectEndpointIDs: projectEndpointIDs
-        )
+        let checkout = checkout(forProjectID: projectID)
+        let endpointID = endpoints.first { $0.daemonID == checkout?.daemonID }?.id ?? "unavailable-checkout"
         return ConversationHarnessCatalogDirectory.catalog(
             endpointID: endpointID,
             activeEndpointID: endpoint.id,
@@ -879,11 +881,12 @@ extension DieterStore {
 
     func loadHarnessCatalog(forProjectID projectID: String) async throws -> Dieter_V1_HarnessCatalog {
         try Task.checkCancellation()
-        let endpointID = ConversationHarnessCatalogDirectory.endpointID(
-            projectID: projectID,
-            activeEndpointID: endpoint.id,
-            projectEndpointIDs: projectEndpointIDs
-        )
+        guard let checkout = checkout(forProjectID: projectID) else {
+            throw NSError(
+                domain: "DieterHarnessCatalog", code: 2,
+                userInfo: [NSLocalizedDescriptionKey: "Choose a machine and checkout to load models."])
+        }
+        let endpointID = endpoints.first { $0.daemonID == checkout.daemonID }?.id ?? "unavailable-checkout"
         if let cached = harnessCatalogsByEndpoint[endpointID], !cached.harnesses.isEmpty {
             return cached
         }
@@ -904,7 +907,7 @@ extension DieterStore {
         guard let machine = endpoints.first(where: { $0.id == endpointID }), machine.online else {
             throw NSError(
                 domain: "DieterHarnessCatalog", code: 2,
-                userInfo: [NSLocalizedDescriptionKey: "The project's machine is offline."])
+                userInfo: [NSLocalizedDescriptionKey: "The selected checkout’s machine is offline."])
         }
         let catalog: Dieter_V1_HarnessCatalog
         do {
@@ -990,7 +993,7 @@ extension DieterStore {
 
         let current = MachineDirectoryProjection(
             projects: projectDirectory,
-            projectEndpointIDs: projectEndpointIDs,
+            projectReplicaEndpointIDs: projectReplicaEndpointIDs,
             boards: navigationBoards,
             cards: navigationCards,
             chats: chats
@@ -1019,7 +1022,8 @@ extension DieterStore {
                 boards: machine.boards,
                 cards: machine.cards,
                 chats: machine.chats,
-                cursor: machine.cursor
+                cursor: machine.cursor,
+                archives: machine.archives
             )
         }.value
         guard !Task.isCancelled, generation == connectionGeneration,
@@ -1037,16 +1041,16 @@ extension DieterStore {
     func startMachineDirectoryRefresh(refreshImmediately: Bool = false) {
         machineDirectoryTask?.cancel()
         machineDirectoryTask = Task { [weak self] in
-            if refreshImmediately {
-                guard !Task.isCancelled, let self else { return }
-                await self.refreshMachineDirectory()
-            }
-            while !Task.isCancelled {
-                try? await DieterTaskSleep.seconds(15)
-                guard !Task.isCancelled, let self else { return }
-                await self.refreshDaemonPresence()
-                await self.refreshMachineDirectory()
-            }
+            await MachineDirectoryRefreshLoop.run(
+                refreshImmediately: refreshImmediately,
+                refreshPresence: { [weak self] in await self?.refreshDaemonPresence() },
+                refreshDirectory: { [weak self] in
+                    guard let self else { return }
+                    await self.refreshMachineDirectory()
+                    guard !Task.isCancelled else { return }
+                    await self.loadProviderQuotas()
+                }
+            )
         }
     }
 
@@ -1137,13 +1141,6 @@ extension DieterStore {
             else { return }
             if directory.hasGatewayInformation {
                 gatewayInformation[origin.credentialID] = directory.gatewayInformation
-            }
-            if let quotas = try? await client.providerQuotas(), !Task.isCancelled,
-                generation == connectionGeneration,
-                origin.credentialID == activeGateway.credentialID
-            {
-                providerQuotaGroups = quotas.groups
-                providerQuotaError = nil
             }
             let previous = Dictionary(
                 uniqueKeysWithValues: endpoints.compactMap { item in item.daemonID.map { ($0, item) } })
@@ -1329,22 +1326,7 @@ extension DieterStore {
         var boards = root.boards
         var cards = root.cards
         var chats = root.chats
-        // Older remote daemons ignore all_projects. Retain a bounded
-        // compatibility path until every enrolled machine has upgraded.
-        if root.cursor.epoch.isEmpty {
-            boards = []
-            cards = []
-            for project in projects {
-                var legacy = Dieter_V1_GetStateRequest()
-                legacy.projectID = project.id
-                legacy.limit = 500
-                let snapshot = try await client.state(legacy)
-                boards.append(contentsOf: snapshot.boards)
-                cards.append(contentsOf: snapshot.cards)
-            }
-            let chatResponse = try await client.chats(includeArchived: includeArchivedChats)
-            chats = chatResponse.chats
-        } else if includeArchivedChats {
+        if includeArchivedChats {
             let chatResponse = try await client.chats(includeArchived: true)
             chats = chatResponse.chats
         }
@@ -1355,7 +1337,8 @@ extension DieterStore {
             boards: Array(boards.reduce(into: [String: Dieter_V1_Board]()) { $0[$1.id] = $1 }.values),
             cards: Array(cards.reduce(into: [String: Dieter_V1_Card]()) { $0[$1.id] = $1 }.values),
             chats: chats,
-            cursor: cursor
+            cursor: cursor,
+            archives: root.archives
         )
     }
 

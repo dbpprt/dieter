@@ -23,9 +23,9 @@ internal fun connectionNotificationFingerprint(
             it.status.equals("running", true) || it.status.equals("pending", true)
         }
     }
-    val hostname = state.projectHosts.values.firstOrNull { host ->
+    val hostname = state.projectReplicas.values.firstOrNull { host ->
         host.online && (state.endpoint == null || host.endpointId == state.endpoint.id)
-    }?.hostname ?: state.projectHosts.values.firstOrNull { it.online }?.hostname
+    }?.hostname ?: state.projectReplicas.values.firstOrNull { it.online }?.hostname
     return listOf(
         state.phase,
         state.backgroundSyncMode,

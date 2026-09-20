@@ -22,7 +22,8 @@ struct ScheduleEditor: View {
         self.model = model
         self.context = context
         self.schedule = schedule
-        let draft = ScheduleEditorDraft.make(from: schedule)
+        var draft = ScheduleEditorDraft.make(from: schedule)
+        draft.checkoutID = schedule?.checkoutID ?? context.target.checkoutID
         let timing = ScheduleTiming.parse(draft.cron)
         _draft = State(initialValue: draft)
         _cadence = State(initialValue: timing.cadence)
@@ -76,7 +77,7 @@ struct ScheduleEditor: View {
                         .font(DieterFont.sectionLabel).tracking(1.2).foregroundStyle(DieterTheme.tertiary)
                     Text(schedule == nil ? "Create schedule" : draft.name.ifBlank("Edit schedule"))
                         .font(.system(size: 21, weight: .bold))
-                    Text("Runs on the project daemon · all times use \(draft.timezone)")
+                    Text("Runs on the selected checkout’s machine · all times use \(draft.timezone)")
                         .font(.caption).foregroundStyle(DieterTheme.tertiary)
                 }
                 Spacer()
@@ -213,7 +214,7 @@ struct ScheduleEditor: View {
                                 .accessibilityIdentifier("schedule-editor.workspace")
                                 Label(
                                     draft.action == "run"
-                                        ? "Creates the card and asks the daemon to start its agent turn. If the project is busy, it follows the policy below."
+                                        ? "Creates the card and starts its agent turn on this schedule’s machine."
                                         : "Creates a draft card in Todo. Its agent will not start until you start the card.",
                                     systemImage: draft.action == "run" ? "bolt.fill" : "tray.full.fill"
                                 )
@@ -309,7 +310,7 @@ struct ScheduleEditor: View {
                         }
 
                         ScheduleEditorSection(
-                            title: "Delivery & safety", subtitle: "Control duplicate work and project admission",
+                            title: "Delivery & safety", subtitle: "Control duplicate work",
                             symbol: "checkmark.shield"
                         ) {
                             VStack(alignment: .leading, spacing: 10) {
@@ -318,10 +319,6 @@ struct ScheduleEditor: View {
                                 ) {
                                     Text("Skip this occurrence").tag("skip_if_open")
                                     Text("Always create another card").tag("always")
-                                }
-                                Picker("When the project is busy", selection: $draft.busyPolicy) {
-                                    Text("Queue until available").tag("queue")
-                                    Text("Skip this occurrence").tag("skip")
                                 }
                                 Text("Missed occurrences are collapsed to the latest one after the daemon returns.")
                                     .font(.caption).foregroundStyle(DieterTheme.tertiary)

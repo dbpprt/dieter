@@ -29,9 +29,9 @@ import Testing
     store.globalSyncing = true
     #expect(!store.hasLiveBoardProjection(projectID: project.id))
     store.globalSyncing = false
-    store.projectEndpointIDs[project.id] = "another-machine"
-    #expect(!store.hasLiveBoardProjection(projectID: project.id))
-    store.projectEndpointIDs.removeAll()
+    store.projectReplicaEndpointIDs[project.id] = "another-machine"
+    #expect(store.hasLiveBoardProjection(projectID: project.id))
+    store.projectReplicaEndpointIDs.removeAll()
     store.syncSnapshot = nil
     #expect(!store.hasLiveBoardProjection(projectID: project.id))
 }

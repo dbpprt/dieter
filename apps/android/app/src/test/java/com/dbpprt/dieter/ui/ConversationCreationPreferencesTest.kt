@@ -1,6 +1,6 @@
 package com.dbpprt.dieter.ui
 
-import com.dbpprt.dieter.connection.ProjectHost
+import com.dbpprt.dieter.connection.ProjectReplica
 import com.dbpprt.dieter.settings.ConversationCreationPreferences
 import com.dbpprt.dieter.v1.EffortOption
 import com.dbpprt.dieter.v1.Harness
@@ -82,8 +82,8 @@ class ConversationCreationPreferencesTest {
     @Test
     fun catalogMustBelongToTheSelectedProjectsDaemon() {
         val hosts = mapOf(
-            "project-a" to ProjectHost("gateway#mac", "mac", "Studio Mac", true),
-            "project-b" to ProjectHost("gateway#server", "server", "Build server", true),
+            "project-a" to ProjectReplica("gateway#mac", "mac", "Studio Mac", true),
+            "project-b" to ProjectReplica("gateway#server", "server", "Build server", true),
         )
 
         assertTrue(harnessCatalogMatchesProject("project-a", "gateway#mac", hosts))

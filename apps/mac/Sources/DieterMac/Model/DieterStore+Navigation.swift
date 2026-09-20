@@ -16,7 +16,7 @@ private struct TerminalOverviewMachineResult: Sendable {
 
 extension DieterStore {
     func selectProject(_ id: String) async {
-        guard await ensureProjectConnection(id) else { return }
+        guard await ensureReplicaConnection(id) else { return }
         selectedProjectID = id
         selectedBoardID = boards(for: id).first?.id ?? ""
         resetFileSurface()
@@ -41,7 +41,7 @@ extension DieterStore {
         query = ""
         runtimeFilter = ""
         labelFilter = ""
-        guard await ensureProjectConnection(projectID, reportOffline: false) else { return }
+        guard await ensureReplicaConnection(projectID, reportOffline: false) else { return }
         guard generation == boardSelectionGeneration, section == .board else { return }
         selectCachedBoard(boardID, projectID: projectID)
         // WatchSync already owns this live project's state. A board click must
@@ -50,7 +50,7 @@ extension DieterStore {
     }
 
     func hasLiveBoardProjection(projectID: String) -> Bool {
-        workspaceIsLive && (projectEndpointIDs[projectID] ?? endpoint.id) == endpoint.id
+        workspaceIsLive
             && syncSnapshot?.state.projects.contains(where: { $0.id == projectID }) == true
     }
 
@@ -81,7 +81,10 @@ extension DieterStore {
         updateSelectedState()
         // Schedules owns connection preparation and its paginated reads.
         if destination == .schedules { return }
-        guard await ensureProjectConnection(projectID, reportOffline: false),
+        let ready: Bool
+        if destination == .files || destination == .changes { ready = await ensureCheckoutConnection(projectID) }
+        else { ready = await ensureReplicaConnection(projectID, reportOffline: false) }
+        guard ready,
             generation == boardSelectionGeneration,
             selectedProjectID == projectID, section == destination
         else {
@@ -118,7 +121,7 @@ extension DieterStore {
     }
 
     func openWorkspaceFiles(card: Dieter_V1_Card, opening path: String? = nil) async {
-        guard await ensureProjectConnection(card.projectID) else { return }
+        guard await ensureConversationConnection(card) else { return }
         selectedProjectID = card.projectID
         fileScopeCardID = card.id
         resetFileSurface()
@@ -133,7 +136,7 @@ extension DieterStore {
     }
 
     func openWorkspaceTerminal(card: Dieter_V1_Card) async {
-        guard await ensureProjectConnection(card.projectID), let rpc else { return }
+        guard await ensureConversationConnection(card), let rpc else { return }
         selectedProjectID = card.projectID
         terminalScopeCardID = card.id
         var request = Dieter_V1_CreateTerminalRequest()
@@ -371,12 +374,12 @@ extension DieterStore {
         terminalsModel.selectTerminal(id)
     }
     func createTerminal(
-        projectID: String, machineID: String? = nil, machineHome: Bool = false,
+        projectID: String, checkoutID: String = "", machineID: String? = nil, machineHome: Bool = false,
         name: String, shell: String, workingDirectory: String
     ) async {
         if terminalScopeCardID == nil {
             await createOverviewTerminal(
-                projectID: projectID, machineID: machineID, machineHome: machineHome,
+                projectID: projectID, checkoutID: checkoutID, machineID: machineID, machineHome: machineHome,
                 name: name, shell: shell, workingDirectory: workingDirectory)
             return
         }
@@ -402,8 +405,11 @@ extension DieterStore {
                 await connect(to: machine)
                 guard phase.isConnected, endpoint.id == machine.id else { return }
             }
+        } else if let cardID = terminalScopeCardID, let card = synchronizedCardValues().first(where: { $0.id == cardID }) {
+            guard await ensureConversationConnection(card) else { return }
         } else {
-            guard await ensureProjectConnection(projectID) else { return }
+            if !checkoutID.isEmpty { creationCheckoutIDs[projectID] = checkoutID }
+            guard await ensureCheckoutConnection(projectID) else { return }
         }
         bindTerminals()
         await terminalsModel.createTerminal(
@@ -577,7 +583,7 @@ extension DieterStore {
     }
 
     private func createOverviewTerminal(
-        projectID: String, machineID: String?, machineHome: Bool,
+        projectID: String, checkoutID: String, machineID: String?, machineHome: Bool,
         name: String, shell: String, workingDirectory: String
     ) async {
         let destination = machineID.flatMap { id in terminalOverviewMachines.first(where: { $0.id == id }) }
@@ -601,6 +607,7 @@ extension DieterStore {
             defer { lease?.release() }
             var request = Dieter_V1_CreateTerminalRequest()
             request.projectID = projectID
+            request.checkoutID = machineHome ? "" : checkoutID
             request.name = name.trimmingCharacters(in: .whitespacesAndNewlines)
             request.shell = shell
             request.workingDirectory = workingDirectory.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -663,7 +670,7 @@ extension DieterStore {
 
     func presentNewBoard(projectID: String) {
         Task {
-            guard await ensureProjectConnection(projectID) else { return }
+            guard await ensureReplicaConnection(projectID) else { return }
             selectedProjectID = projectID
             selectedBoardID = boards(for: projectID).first?.id ?? ""
             createBoardPresented = true
@@ -672,7 +679,7 @@ extension DieterStore {
 
     func presentRenameProject(projectID: String) {
         Task {
-            guard await ensureProjectConnection(projectID) else { return }
+            guard await ensureReplicaConnection(projectID) else { return }
             selectedProjectID = projectID
             renameProjectTargetID = projectID
             renameProjectPresented = true
@@ -681,7 +688,7 @@ extension DieterStore {
 
     func presentProjectEditor(projectID: String) {
         Task {
-            guard await ensureProjectConnection(projectID) else { return }
+            guard await ensureReplicaConnection(projectID) else { return }
             selectedProjectID = projectID
             projectContextPresented = true
         }
@@ -690,7 +697,7 @@ extension DieterStore {
     func presentRenameBoard(boardID: String) {
         guard let target = board(id: boardID) else { return }
         Task {
-            guard await ensureProjectConnection(target.projectID) else { return }
+            guard await ensureReplicaConnection(target.projectID) else { return }
             renameBoardTargetID = boardID
             renameBoardPresented = true
         }

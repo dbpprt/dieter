@@ -11,12 +11,14 @@ import (
 	"time"
 
 	"github.com/dbpprt/dieter/internal/model"
+	"github.com/dbpprt/dieter/internal/peerstore"
 	dieterprompt "github.com/dbpprt/dieter/internal/prompt"
 )
 
 type CreateProjectInput struct {
-	ID, Name, Path, Summary, Prompt, BaseRemote, BaseBranch string
-	ValidationCommands                                      []model.ValidationCommand
+	OperationID, InitialBoardName, InitialWorkflow, InitialRemotePublishMode string
+	ID, Name, Path, Summary, Prompt, BaseRemote, BaseBranch                  string
+	ValidationCommands                                                       []model.ValidationCommand
 }
 
 func validFileID(id string) bool {
@@ -39,20 +41,48 @@ func (s *Store) CreateProject(input CreateProjectInput) (model.Project, error) {
 	if name == "" {
 		name = filepath.Base(path)
 	}
+	if err := s.Ensure(); err != nil {
+		return model.Project{}, err
+	}
 	release, err := s.beginWrite()
 	if err != nil {
 		return model.Project{}, err
 	}
 	defer release()
-	if err := s.Ensure(); err != nil {
+	identity, err := s.sharedIdentity()
+	if err != nil {
 		return model.Project{}, err
+	}
+	request := input
+	request.ID, request.Path = "", path
+	fingerprint := peerstore.Revision(request)
+	receiptPath := ""
+	if input.OperationID != "" {
+		if !peerstore.ValidID(input.OperationID) {
+			return model.Project{}, errors.New("invalid operation ID")
+		}
+		receiptPath = "receipts/project-" + peerstore.Revision([]string{identity.Account, input.OperationID}) + ".json"
+		var receipt projectReceipt
+		if err := readJSON(filepath.Join(s.Root, receiptPath), &receipt); err == nil {
+			if receipt.Fingerprint != fingerprint {
+				return model.Project{}, errors.New("operation ID reused with a different project request")
+			}
+			return s.ResolveProjectIncludingArchived(receipt.ProjectID)
+		} else if !errors.Is(err, os.ErrNotExist) && !errors.Is(err, ErrNotFound) {
+			return model.Project{}, err
+		}
 	}
 	projects, err := s.listProjects()
 	if err != nil {
 		return model.Project{}, err
 	}
 	for _, candidate := range projects {
-		if candidate.ID == input.ID || candidate.Path == path {
+		for _, checkout := range candidate.Checkouts {
+			if checkout.Path == path && !checkout.Detached {
+				return model.Project{}, fmt.Errorf("path is already attached to project %s", candidate.ID)
+			}
+		}
+		if candidate.ID == input.ID {
 			return model.Project{}, fmt.Errorf("project already registered as %s", candidate.ID)
 		}
 	}
@@ -66,27 +96,47 @@ func (s *Store) CreateProject(input CreateProjectInput) (model.Project, error) {
 		BaseRemote: strings.TrimSpace(input.BaseRemote), BaseBranch: strings.TrimSpace(input.BaseBranch),
 		ValidationCommands: validation, CreatedAt: now, UpdatedAt: now,
 	}
-	return project, writeMarkdown(filepath.Join(s.projectDir(), project.ID+".md"), project, project.Prompt)
+	checkout := model.Checkout{ID: newID("co_"), ProjectID: project.ID, DaemonID: identity.DaemonID, Name: filepath.Base(path), Path: path, ValidationCommands: validation}
+	data, err := s.PeerData(identity.Account)
+	if err != nil {
+		return model.Project{}, err
+	}
+	data.State = clonePeerState(data.State)
+	fields := pickFields(project, "project")
+	fields["identity"] = rawValue(map[string]string{"id": project.ID, "createdAt": now})
+	if err = applyFields(&data, identity, "project", project.ID, nil, fields); err != nil {
+		return model.Project{}, err
+	}
+	if err = applyFields(&data, identity, "checkout", checkout.ID, nil, checkoutFields(checkout)); err != nil {
+		return model.Project{}, err
+	}
+	if input.InitialBoardName != "" {
+		workflow, err := normalizeWorkflow(input.InitialWorkflow)
+		if err != nil {
+			return model.Project{}, err
+		}
+		mode, err := normalizeRemotePublishMode(input.InitialRemotePublishMode)
+		if err != nil {
+			return model.Project{}, err
+		}
+		board := model.Board{ID: initialBoardID(project.ID), ProjectID: project.ID, Name: input.InitialBoardName, Workflow: workflow, DoneArchivePolicy: model.DoneArchiveNever, BaseRemote: project.BaseRemote, RemotePublishMode: mode, CreatedAt: now, UpdatedAt: now}
+		fields := pickFields(board, "board")
+		fields["identity"] = rawValue(map[string]string{"id": board.ID, "projectId": project.ID, "createdAt": now})
+		if err = applyFields(&data, identity, "board", board.ID, nil, fields); err != nil {
+			return model.Project{}, err
+		}
+	}
+	effects := []localEffect{{Path: "checkouts/" + checkout.ID + ".json", Value: rawValue(checkout)}}
+	if receiptPath != "" {
+		effects = append(effects, localEffect{Path: receiptPath, Value: rawValue(projectReceipt{project.ID, fingerprint})})
+	}
+	if err = s.writePeerState(identity.Account, data, effects...); err != nil {
+		return model.Project{}, err
+	}
+	return s.ResolveProject(project.ID)
 }
 
-func (s *Store) listProjects() ([]model.Project, error) {
-	paths, err := listMarkdown(s.projectDir())
-	if err != nil {
-		return nil, err
-	}
-	result := make([]model.Project, 0, len(paths))
-	for _, path := range paths {
-		var item model.Project
-		body, readErr := readMarkdown(path, &item)
-		if readErr != nil {
-			return nil, readErr
-		}
-		item.Prompt = body
-		result = append(result, item)
-	}
-	sort.Slice(result, func(i, j int) bool { return strings.ToLower(result[i].Name) < strings.ToLower(result[j].Name) })
-	return result, nil
-}
+func (s *Store) listProjects() ([]model.Project, error) { return s.sharedProjects() }
 
 func (s *Store) ListProjects() ([]model.Project, error) {
 	projects, err := s.listProjects()
@@ -149,7 +199,7 @@ func (s *Store) ResolveProject(ref string) (model.Project, error) {
 	if err != nil {
 		return model.Project{}, err
 	}
-	return resolveProject(filterProjectsByArchived(projects, false), ref)
+	return resolveProject(filterProjectsByArchived(projects, false), s.canonicalProjectRef(ref))
 }
 
 func (s *Store) ResolveProjectIncludingArchived(ref string) (model.Project, error) {
@@ -157,7 +207,7 @@ func (s *Store) ResolveProjectIncludingArchived(ref string) (model.Project, erro
 	if err != nil {
 		return model.Project{}, err
 	}
-	return resolveProject(projects, ref)
+	return resolveProject(projects, s.canonicalProjectRef(ref))
 }
 
 func resolveProject(projects []model.Project, ref string) (model.Project, error) {
@@ -166,6 +216,9 @@ func resolveProject(projects []model.Project, ref string) (model.Project, error)
 		cwd, _ := os.Getwd()
 		var matches []model.Project
 		for _, project := range projects {
+			if project.Path == "" {
+				continue
+			}
 			rel, relErr := filepath.Rel(project.Path, cwd)
 			if relErr == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 				matches = append(matches, project)
@@ -211,7 +264,7 @@ func (s *Store) ArchiveProject(ref string, archived bool) (model.Project, error)
 	}
 	project.Archived = archived
 	project.UpdatedAt = timestamp()
-	return project, writeMarkdown(filepath.Join(s.projectDir(), project.ID+".md"), project, project.Prompt)
+	return s.saveProject(project)
 }
 
 func (s *Store) UpdateProject(ref string, name, summary, prompt *string, paths ...*string) (model.Project, error) {
@@ -255,6 +308,14 @@ func (s *Store) UpdateProjectWithHostnames(ref string, name, summary, prompt, pa
 				return model.Project{}, fmt.Errorf("project path is already registered as %s", candidate.ID)
 			}
 		}
+		checkout, err := s.localCheckout(project.ID, "")
+		if err != nil {
+			return model.Project{}, err
+		}
+		checkout.Path = path
+		if err = writeJSON(filepath.Join(s.Root, "checkouts", checkout.ID+".json"), checkout); err != nil {
+			return model.Project{}, err
+		}
 		project.Path = path
 	}
 	if hostnames != nil {
@@ -265,7 +326,7 @@ func (s *Store) UpdateProjectWithHostnames(ref string, name, summary, prompt, pa
 		project.Hostnames = normalized
 	}
 	project.UpdatedAt = timestamp()
-	return project, writeMarkdown(filepath.Join(s.projectDir(), project.ID+".md"), project, project.Prompt)
+	return s.saveProject(project)
 }
 
 func (s *Store) UpdateProjectPromptTemplate(ref, template string) (model.Project, error) {
@@ -285,10 +346,11 @@ func (s *Store) UpdateProjectPromptTemplate(ref, template string) (model.Project
 		return model.Project{}, err
 	}
 	project.PromptTemplate, project.UpdatedAt = template, timestamp()
-	return project, writeMarkdown(filepath.Join(s.projectDir(), project.ID+".md"), project, project.Prompt)
+	return s.saveProject(project)
 }
 
-func (s *Store) UpdateProjectWorkspaceSettings(ref, baseRemote, baseBranch string, validation []model.ValidationCommand) (model.Project, error) {
+func (s *Store) UpdateProjectWorkspaceSettings(ref, baseRemote, baseBranch string, validation []model.ValidationCommand, checkoutIDs ...string) (model.Project, error) {
+	updateValidation := validation != nil
 	validation, err := normalizeValidationCommands(validation)
 	if err != nil {
 		return model.Project{}, err
@@ -304,9 +366,22 @@ func (s *Store) UpdateProjectWorkspaceSettings(ref, baseRemote, baseBranch strin
 	}
 	project.BaseRemote = strings.TrimSpace(baseRemote)
 	project.BaseBranch = strings.TrimSpace(baseBranch)
-	project.ValidationCommands = append([]model.ValidationCommand(nil), validation...)
+	var effects []localEffect
+	if updateValidation {
+		selected := ""
+		if len(checkoutIDs) > 0 {
+			selected = checkoutIDs[0]
+		}
+		checkout, err := s.localCheckout(project.ID, selected)
+		if err != nil {
+			return model.Project{}, err
+		}
+		checkout.ValidationCommands = validation
+		effects = append(effects, localEffect{Path: "checkouts/" + checkout.ID + ".json", Value: rawValue(checkout)})
+		project.ValidationCommands = append([]model.ValidationCommand(nil), validation...)
+	}
 	project.UpdatedAt = timestamp()
-	return project, writeMarkdown(filepath.Join(s.projectDir(), project.ID+".md"), project, project.Prompt)
+	return s.saveProject(project, effects...)
 }
 
 func normalizeValidationCommands(values []model.ValidationCommand) ([]model.ValidationCommand, error) {
@@ -450,7 +525,7 @@ func (s *Store) CreateBoard(input CreateBoardInput) (model.Board, error) {
 		baseRemote = strings.TrimSpace(project.BaseRemote)
 	}
 	item := model.Board{ID: newID("b_"), ProjectID: project.ID, Name: strings.TrimSpace(input.Name), Workflow: workflow, Description: strings.TrimSpace(input.Description), DoneArchivePolicy: archivePolicy, BaseRemote: baseRemote, RemotePublishMode: remotePublishMode, CreatedAt: now, UpdatedAt: now}
-	err = writeMarkdown(filepath.Join(s.boardDir(), item.ID+".md"), item, item.Description)
+	err = s.writeBoard(item)
 	return hydrateBoard(item), err
 }
 
@@ -472,7 +547,7 @@ func (s *Store) RenameBoard(ref, name string) (model.Board, error) {
 		return board, nil
 	}
 	board.Name, board.UpdatedAt = name, timestamp()
-	return board, writeMarkdown(filepath.Join(s.boardDir(), board.ID+".md"), board, board.Description)
+	return s.saveBoard(board)
 }
 
 func (s *Store) UpdateBoardDoneArchivePolicy(ref, policy string) (model.Board, error) {
@@ -490,7 +565,7 @@ func (s *Store) UpdateBoardDoneArchivePolicy(ref, policy string) (model.Board, e
 		return model.Board{}, err
 	}
 	board.DoneArchivePolicy, board.UpdatedAt = policy, timestamp()
-	return board, writeMarkdown(filepath.Join(s.boardDir(), board.ID+".md"), board, board.Description)
+	return s.saveBoard(board)
 }
 
 func (s *Store) UpdateBoardGitSettings(ref, baseRemote, remotePublishMode string) (model.Board, error) {
@@ -510,7 +585,7 @@ func (s *Store) UpdateBoardGitSettings(ref, baseRemote, remotePublishMode string
 	board.BaseRemote = strings.TrimSpace(baseRemote)
 	board.RemotePublishMode = remotePublishMode
 	board.UpdatedAt = timestamp()
-	return hydrateBoard(board), writeMarkdown(filepath.Join(s.boardDir(), board.ID+".md"), board, board.Description)
+	return s.saveBoard(board)
 }
 
 func (s *Store) UpdateBoardPromptTemplate(ref, template string) (model.Board, error) {
@@ -530,27 +605,10 @@ func (s *Store) UpdateBoardPromptTemplate(ref, template string) (model.Board, er
 		return model.Board{}, err
 	}
 	board.PromptTemplate, board.UpdatedAt = template, timestamp()
-	return hydrateBoard(board), writeMarkdown(filepath.Join(s.boardDir(), board.ID+".md"), board, board.Description)
+	return s.saveBoard(board)
 }
 
-func (s *Store) listBoards() ([]model.Board, error) {
-	paths, err := listMarkdown(s.boardDir())
-	if err != nil {
-		return nil, err
-	}
-	result := make([]model.Board, 0, len(paths))
-	for _, path := range paths {
-		var item model.Board
-		body, readErr := readMarkdown(path, &item)
-		if readErr != nil {
-			return nil, readErr
-		}
-		item.Description = body
-		result = append(result, hydrateBoard(item))
-	}
-	sort.Slice(result, func(i, j int) bool { return strings.ToLower(result[i].Name) < strings.ToLower(result[j].Name) })
-	return result, nil
-}
+func (s *Store) listBoards() ([]model.Board, error) { return s.sharedBoards() }
 
 func (s *Store) ListBoards(projectRef string) ([]model.Board, error) {
 	projectID := ""
@@ -607,6 +665,7 @@ func (s *Store) ResolveBoard(projectRef, ref string) (model.Board, error) {
 
 type CreateCardInput struct {
 	Project, Board, ID, Lane, Title, Prompt, Provider, Model, Effort string
+	CheckoutID                                                       string
 	WorkspaceMode, WorkspaceBranch, WorkspaceBaseBranch              string
 	WorkspaceBaseRemote, RemotePublishMode                           string
 	LabelIDs                                                         []string
@@ -668,7 +727,7 @@ func (s *Store) CreateCard(input CreateCardInput) (model.Card, error) {
 	if !validFileID(input.ID) {
 		return model.Card{}, errors.New("card ID is invalid")
 	}
-	project, err := s.ResolveProject(input.Project)
+	project, err := s.ProjectForCheckout(input.Project, input.CheckoutID)
 	if err != nil {
 		return model.Card{}, err
 	}
@@ -720,9 +779,17 @@ func (s *Store) CreateCard(input CreateCardInput) (model.Card, error) {
 	if strings.TrimSpace(input.RemotePublishMode) == "" {
 		remotePublishMode = board.RemotePublishMode
 	}
+	checkout, err := s.localCheckout(project.ID, input.CheckoutID)
+	if err != nil {
+		return model.Card{}, err
+	}
 	now := timestamp()
-	item := model.Card{ID: input.ID, Scope: model.ConversationScopeBoard, ProjectID: project.ID, BoardID: board.ID, Lane: canonicalLane(board, lane), Position: int64(len(existing)+1) * 1024, Title: strings.TrimSpace(input.Title), InitialPrompt: strings.TrimSpace(input.Prompt), Provider: input.Provider, Model: input.Model, Effort: input.Effort, ProviderOptions: cloneStringMap(input.ProviderOptions), Runtime: "idle", RuntimeUpdatedAt: now, LastActivityAt: now, PhaseChangedAt: now, CreatedAt: now, UpdatedAt: now, LabelIDs: labelIDs, Origin: input.Origin, WorkspaceMode: workspaceMode, WorkspaceBranch: strings.TrimSpace(input.WorkspaceBranch), WorkspaceBaseBranch: strings.TrimSpace(input.WorkspaceBaseBranch), WorkspaceBaseRemote: baseRemote, RemotePublishMode: remotePublishMode}
-	return item, writeMarkdown(filepath.Join(s.cardDir(), item.ID+".md"), item, item.InitialPrompt)
+	item := model.Card{ID: input.ID, OwnerDaemonID: checkout.DaemonID, CheckoutID: checkout.ID, Scope: model.ConversationScopeBoard, ProjectID: project.ID, BoardID: board.ID, Lane: canonicalLane(board, lane), Position: int64(len(existing)+1) * 1024, Title: strings.TrimSpace(input.Title), InitialPrompt: strings.TrimSpace(input.Prompt), Provider: input.Provider, Model: input.Model, Effort: input.Effort, ProviderOptions: cloneStringMap(input.ProviderOptions), Runtime: "idle", RuntimeUpdatedAt: now, LastActivityAt: now, PhaseChangedAt: now, CreatedAt: now, UpdatedAt: now, LabelIDs: labelIDs, Origin: input.Origin, WorkspaceMode: workspaceMode, WorkspaceBranch: strings.TrimSpace(input.WorkspaceBranch), WorkspaceBaseBranch: strings.TrimSpace(input.WorkspaceBaseBranch), WorkspaceBaseRemote: baseRemote, RemotePublishMode: remotePublishMode}
+	item.OrderKey, err = s.moveOrderKey(item, nil)
+	if err != nil {
+		return model.Card{}, err
+	}
+	return s.saveCard(item)
 }
 
 func (s *Store) CreateChat(input CreateCardInput) (model.Card, error) {
@@ -732,7 +799,7 @@ func (s *Store) CreateChat(input CreateCardInput) (model.Card, error) {
 	if !validFileID(input.ID) {
 		return model.Card{}, errors.New("chat ID is invalid")
 	}
-	project, err := s.ResolveProject(input.Project)
+	project, err := s.ProjectForCheckout(input.Project, input.CheckoutID)
 	if err != nil {
 		return model.Card{}, err
 	}
@@ -764,9 +831,17 @@ func (s *Store) CreateChat(input CreateCardInput) (model.Card, error) {
 	if err != nil {
 		return model.Card{}, err
 	}
+	checkout, err := s.localCheckout(project.ID, input.CheckoutID)
+	if err != nil {
+		return model.Card{}, err
+	}
 	now := timestamp()
-	item := model.Card{ID: input.ID, Scope: model.ConversationScopeChat, ProjectID: project.ID, Position: int64(len(existing)+1) * 1024, Title: title, InitialPrompt: strings.TrimSpace(input.Prompt), Provider: input.Provider, Model: input.Model, Effort: input.Effort, ProviderOptions: cloneStringMap(input.ProviderOptions), Runtime: "idle", RuntimeUpdatedAt: now, LastActivityAt: now, PhaseChangedAt: now, CreatedAt: now, UpdatedAt: now, WorkspaceMode: workspaceMode, WorkspaceBranch: strings.TrimSpace(input.WorkspaceBranch), WorkspaceBaseBranch: strings.TrimSpace(input.WorkspaceBaseBranch), WorkspaceBaseRemote: baseRemote, RemotePublishMode: remotePublishMode}
-	return item, writeMarkdown(filepath.Join(s.cardDir(), item.ID+".md"), item, item.InitialPrompt)
+	item := model.Card{ID: input.ID, OwnerDaemonID: checkout.DaemonID, CheckoutID: checkout.ID, Scope: model.ConversationScopeChat, ProjectID: project.ID, Position: int64(len(existing)+1) * 1024, Title: title, InitialPrompt: strings.TrimSpace(input.Prompt), Provider: input.Provider, Model: input.Model, Effort: input.Effort, ProviderOptions: cloneStringMap(input.ProviderOptions), Runtime: "idle", RuntimeUpdatedAt: now, LastActivityAt: now, PhaseChangedAt: now, CreatedAt: now, UpdatedAt: now, WorkspaceMode: workspaceMode, WorkspaceBranch: strings.TrimSpace(input.WorkspaceBranch), WorkspaceBaseBranch: strings.TrimSpace(input.WorkspaceBaseBranch), WorkspaceBaseRemote: baseRemote, RemotePublishMode: remotePublishMode}
+	item.OrderKey, err = s.moveOrderKey(item, nil)
+	if err != nil {
+		return model.Card{}, err
+	}
+	return s.saveCard(item)
 }
 
 func (s *Store) cardExists(id string) bool {
@@ -822,11 +897,36 @@ func (s *Store) listCardsContext(ctx context.Context, includeArchived bool) ([]m
 			return nil, err
 		}
 		item, err := s.readCard(path)
+		if errors.Is(err, ErrNotFound) {
+			continue
+		}
 		if err != nil {
 			return nil, err
 		}
-		result = append(result, item)
+		if includeArchived || !item.Archived {
+			result = append(result, item)
+		}
 	}
+	_, data, err := s.sharedData()
+	if err != nil {
+		return nil, err
+	}
+	seen := map[string]bool{}
+	for _, card := range result {
+		seen[card.ID] = true
+	}
+	for _, id := range entityIDs(data, "item", "identity") {
+		if !seen[id] {
+			card, ready, err := sharedCard(data, id, model.Card{})
+			if err != nil {
+				return nil, err
+			}
+			if ready && (includeArchived || !card.Archived) {
+				result = append(result, card)
+			}
+		}
+	}
+	materializeCardPositions(result)
 	return result, nil
 }
 
@@ -873,7 +973,7 @@ func (s *Store) readCard(path string) (model.Card, error) {
 	comments, _ := listMarkdown(filepath.Join(s.commentDir(), item.ID))
 	item.CommentCount = len(comments)
 	item.TokenUsage = s.cardTokenUsage(item.ID)
-	return item, nil
+	return s.overlayCard(item)
 }
 
 func (s *Store) ListCards(filter CardFilter) ([]model.Card, error) {
@@ -1003,7 +1103,7 @@ func (s *Store) CreateBoardLabel(boardRef, name, color string, instructions ...s
 	}
 	board.Labels = append(board.Labels, model.Label{ID: newID("label_"), Name: name, Color: color, Instructions: prompt})
 	board.UpdatedAt = timestamp()
-	err = writeMarkdown(filepath.Join(s.boardDir(), board.ID+".md"), board, board.Description)
+	err = s.writeBoard(board)
 	return hydrateBoard(board), err
 }
 
@@ -1042,7 +1142,7 @@ func (s *Store) UpdateBoardLabel(boardRef, labelID, name, color, instructions st
 		return model.Board{}, fmt.Errorf("label %q: %w", labelID, ErrNotFound)
 	}
 	board.UpdatedAt = timestamp()
-	return hydrateBoard(board), writeMarkdown(filepath.Join(s.boardDir(), board.ID+".md"), board, board.Description)
+	return s.saveBoard(board)
 }
 
 func (s *Store) DeleteBoardLabel(boardRef, labelID string) (model.Board, error) {
@@ -1069,7 +1169,7 @@ func (s *Store) DeleteBoardLabel(boardRef, labelID string) (model.Board, error) 
 	}
 	board.Labels = labels
 	board.UpdatedAt = timestamp()
-	if err := writeMarkdown(filepath.Join(s.boardDir(), board.ID+".md"), board, board.Description); err != nil {
+	if err := s.writeBoard(board); err != nil {
 		return model.Board{}, err
 	}
 	cards, _ := s.ListCards(CardFilter{Board: board.ID})
@@ -1112,7 +1212,7 @@ func (s *Store) SetCardLabels(cardRef string, requested []string) (model.Card, e
 		return model.Card{}, err
 	}
 	card.LabelIDs, card.UpdatedAt = labels, timestamp()
-	return card, s.writeCard(card)
+	return s.saveCard(card)
 }
 
 func (s *Store) ResolveCard(ref string) (model.Card, error) {
@@ -1127,25 +1227,27 @@ func (s *Store) ResolveCard(ref string) (model.Card, error) {
 			}
 		}
 	}
+	_, data, err := s.sharedData()
+	if err != nil {
+		return model.Card{}, err
+	}
+	if card, ok, err := sharedCard(data, ref, model.Card{}); err != nil {
+		return model.Card{}, err
+	} else if ok {
+		return card, nil
+	}
 	return model.Card{}, fmt.Errorf("card %q: %w", ref, ErrNotFound)
 }
 
-func (s *Store) writeCard(item model.Card) error {
-	targetDir, staleDir := s.cardDir(), s.archivedCardDir()
-	if item.Archived {
-		targetDir, staleDir = staleDir, targetDir
-	}
-	if err := writeMarkdown(filepath.Join(targetDir, item.ID+".md"), item, item.InitialPrompt); err != nil {
-		return err
-	}
-	err := os.Remove(filepath.Join(staleDir, item.ID+".md"))
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return err
-	}
-	return nil
+func (s *Store) MoveCard(ref, lane string, position *int64) (model.Card, error) {
+	return s.moveCard(ref, lane, position, "", "", "")
 }
 
-func (s *Store) MoveCard(ref, lane string, position *int64) (model.Card, error) {
+func (s *Store) MoveCardBetween(ref, lane, after, before, expected string) (model.Card, error) {
+	return s.moveCard(ref, lane, nil, after, before, expected)
+}
+
+func (s *Store) moveCard(ref, lane string, position *int64, after, before, expected string) (model.Card, error) {
 	release, err := s.beginWrite()
 	if err != nil {
 		return model.Card{}, err
@@ -1158,6 +1260,10 @@ func (s *Store) MoveCard(ref, lane string, position *int64) (model.Card, error) 
 	if item.Scope != model.ConversationScopeBoard {
 		return model.Card{}, errors.New("chat conversations do not belong to board lanes")
 	}
+	if expected != "" && item.PlacementRevision != expected {
+		return model.Card{}, peerstore.ErrConflict
+	}
+
 	board, err := s.ResolveBoard(item.ProjectID, item.BoardID)
 	if err != nil {
 		return model.Card{}, err
@@ -1171,17 +1277,19 @@ func (s *Store) MoveCard(ref, lane string, position *int64) (model.Card, error) 
 	if laneChanged {
 		item.DoneArchiveExempt = false
 	}
-	if position != nil {
-		item.Position = *position
+	if after != "" || before != "" {
+		item.OrderKey, err = s.orderKeyBetweenItems(item, after, before)
 	} else {
-		peers, _ := s.ListCards(CardFilter{Board: board.ID, Lane: item.Lane})
-		item.Position = int64(len(peers)+1) * 1024
+		item.OrderKey, err = s.moveOrderKey(item, position)
+	}
+	if err != nil {
+		return model.Card{}, err
 	}
 	item.UpdatedAt = timestamp()
 	if laneChanged {
 		item.PhaseChangedAt = item.UpdatedAt
 	}
-	return item, s.writeCard(item)
+	return s.saveCard(item)
 }
 
 type CardCacheInput struct {
@@ -1199,6 +1307,9 @@ func (s *Store) UpdateCardCache(ref string, input CardCacheInput) (model.Card, e
 	defer release()
 	item, err := s.ResolveCard(ref)
 	if err != nil {
+		return model.Card{}, err
+	}
+	if err = s.RequireLocalCard(item); err != nil {
 		return model.Card{}, err
 	}
 	title := item.Title
@@ -1238,7 +1349,7 @@ func (s *Store) UpdateCardCache(ref string, input CardCacheInput) (model.Card, e
 	item.Title = title
 	item.Provider, item.ProviderAccountKey, item.Model, item.Effort, item.ProviderOptions, item.Runtime, item.Summary = provider, providerAccountKey, modelName, effort, providerOptions, runtime, summary
 	item.RuntimeUpdatedAt, item.UpdatedAt = timestamp(), timestamp()
-	return item, s.writeCard(item)
+	return s.saveCard(item)
 }
 
 func (s *Store) MarkPromptSent(ref string) (model.Card, error) {
@@ -1251,14 +1362,21 @@ func (s *Store) MarkPromptSent(ref string) (model.Card, error) {
 	if err != nil {
 		return model.Card{}, err
 	}
+	if err = s.RequireLocalCard(item); err != nil {
+		return model.Card{}, err
+	}
 	if item.InitialPromptSentAt == "" {
 		item.InitialPromptSentAt = timestamp()
 	}
-	if item.Scope == model.ConversationScopeBoard {
+	if item.Scope == model.ConversationScopeBoard && item.Lane != model.LaneRunning {
 		item.Lane = model.LaneRunning
+		item.OrderKey, err = s.moveOrderKey(item, nil)
+		if err != nil {
+			return model.Card{}, err
+		}
 	}
 	item.Runtime, item.PhaseChangedAt, item.UpdatedAt = "starting", timestamp(), timestamp()
-	return item, s.writeCard(item)
+	return s.saveCard(item)
 }
 
 func (s *Store) RenameCard(ref, title string) (model.Card, error) {
@@ -1279,7 +1397,7 @@ func (s *Store) RenameCard(ref, title string) (model.Card, error) {
 	}
 	item.Title, item.UpdatedAt = strings.TrimSpace(title), timestamp()
 	item.TitleRevision++
-	return item, s.writeCard(item)
+	return s.saveCard(item)
 }
 
 type DraftAgentSettings struct {
@@ -1302,6 +1420,9 @@ func (s *Store) UpdateCard(ref, title, initialPrompt string, settings ...DraftAg
 	defer release()
 	item, err := s.ResolveCard(ref)
 	if err != nil {
+		return model.Card{}, err
+	}
+	if err = s.RequireLocalCard(item); err != nil {
 		return model.Card{}, err
 	}
 	if initialPrompt != item.InitialPrompt && item.InitialPromptSentAt != "" {
@@ -1329,7 +1450,7 @@ func (s *Store) UpdateCard(ref, title, initialPrompt string, settings ...DraftAg
 	}
 	item.Title, item.InitialPrompt, item.UpdatedAt = title, initialPrompt, timestamp()
 	item.TitleRevision++
-	return item, s.writeCard(item)
+	return s.saveCard(item)
 }
 
 func (s *Store) PinChat(ref string, pinned bool) (model.Card, error) {
@@ -1349,7 +1470,7 @@ func (s *Store) PinChat(ref string, pinned bool) (model.Card, error) {
 		item.LastActivityAt = item.UpdatedAt
 	}
 	item.Pinned, item.UpdatedAt = pinned, timestamp()
-	return item, s.writeCard(item)
+	return s.saveCard(item)
 }
 
 func (s *Store) UpdateCardWorkspaceSelection(ref, mode, branch, baseBranch, baseRemote, remotePublishMode string, allowStarted bool) (model.Card, error) {
@@ -1370,6 +1491,9 @@ func (s *Store) UpdateCardWorkspaceSelection(ref, mode, branch, baseBranch, base
 	if err != nil {
 		return model.Card{}, err
 	}
+	if err = s.RequireLocalCard(item); err != nil {
+		return model.Card{}, err
+	}
 	if !allowStarted && item.InitialPromptSentAt != "" {
 		return model.Card{}, errors.New("workspace mode is locked after the first agent turn")
 	}
@@ -1383,7 +1507,7 @@ func (s *Store) UpdateCardWorkspaceSelection(ref, mode, branch, baseBranch, base
 	item.WorkspaceBaseRemote = strings.TrimSpace(baseRemote)
 	item.RemotePublishMode = remotePublishMode
 	item.UpdatedAt = timestamp()
-	return item, s.writeCard(item)
+	return s.saveCard(item)
 }
 
 func (s *Store) ArchiveCard(ref string, archived bool) (model.Card, error) {
@@ -1410,7 +1534,7 @@ func (s *Store) ArchiveCard(ref string, archived bool) (model.Card, error) {
 	item.Archived = archived
 	item.DoneArchiveExempt = !archived && item.Scope == model.ConversationScopeBoard && item.Lane == model.LaneDone
 	item.UpdatedAt = timestamp()
-	return item, s.writeCard(item)
+	return s.saveCard(item)
 }
 
 func (s *Store) ArchiveDoneCards(now time.Time) ([]model.Card, error) {
@@ -1490,6 +1614,9 @@ func (s *Store) doneCardsEligibleForArchive(now time.Time, activeCards map[strin
 	}
 	due := make([]model.Card, 0)
 	for _, card := range cards {
+		if s.RequireLocalCard(card) != nil {
+			continue
+		}
 		delay, enabled := delays[card.BoardID]
 		if !enabled || card.Scope != model.ConversationScopeBoard || card.Lane != model.LaneDone || card.Archived || card.DoneArchiveExempt || activeCards[card.ID] || card.Runtime == "running" || card.Runtime == "starting" {
 			continue
@@ -1507,11 +1634,19 @@ func (s *Store) doneCardsEligibleForArchive(now time.Time, activeCards map[strin
 }
 
 func (s *Store) CardDetail(ref string) (model.CardDetail, error) {
+	owner, err := s.ResolveCard(ref)
+	if err != nil {
+		return model.CardDetail{}, err
+	}
+	if err = s.RequireLocalCard(owner); err != nil {
+		return model.CardDetail{}, err
+	}
+
 	card, err := s.ResolveCard(ref)
 	if err != nil {
 		return model.CardDetail{}, err
 	}
-	project, err := s.ResolveProject(card.ProjectID)
+	project, err := s.ProjectForCheckout(card.ProjectID, card.CheckoutID)
 	if err != nil {
 		return model.CardDetail{}, err
 	}
@@ -1690,7 +1825,7 @@ func (s *Store) materializeGlobalStateContext(ctx context.Context) (model.State,
 	if err != nil {
 		return model.State{}, err
 	}
-	cards, err := s.listCardsContext(ctx, false)
+	cards, err := s.listCardsContext(ctx, true)
 	if err != nil {
 		return model.State{}, err
 	}
@@ -1710,6 +1845,7 @@ func (s *Store) materializeGlobalStateContext(ctx context.Context) (model.State,
 	chatsByProject := make(map[string][]model.Card, len(projects))
 	for _, card := range cards {
 		if card.Archived {
+			result.ArchivedItemIDs = append(result.ArchivedItemIDs, card.ID)
 			continue
 		}
 		if card.Scope == model.ConversationScopeChat {
@@ -1723,7 +1859,7 @@ func (s *Store) materializeGlobalStateContext(ctx context.Context) (model.State,
 			if items[i].Lane != items[j].Lane {
 				return items[i].Lane < items[j].Lane
 			}
-			return items[i].Position < items[j].Position
+			return cardOrderLess(items[i], items[j])
 		})
 	}
 	for projectID := range cardsByProject {
@@ -1734,6 +1870,7 @@ func (s *Store) materializeGlobalStateContext(ctx context.Context) (model.State,
 	}
 	for _, project := range projects {
 		if project.Archived {
+			result.ArchivedProjectIDs = append(result.ArchivedProjectIDs, project.ID)
 			continue
 		}
 		projectBoards := boardsByProject[project.ID]
@@ -1747,11 +1884,15 @@ func (s *Store) materializeGlobalStateContext(ctx context.Context) (model.State,
 		result.Cards = append(result.Cards, projectCards...)
 		result.Chats = append(result.Chats, projectChats...)
 	}
+	sort.Strings(result.ArchivedItemIDs)
+	sort.Strings(result.ArchivedProjectIDs)
 	return result, nil
 }
 
 func cloneState(value model.State) model.State {
 	result := value
+	result.ArchivedProjectIDs = append([]string(nil), value.ArchivedProjectIDs...)
+	result.ArchivedItemIDs = append([]string(nil), value.ArchivedItemIDs...)
 	result.Projects = append([]model.Project(nil), value.Projects...)
 	result.Boards = append([]model.Board(nil), value.Boards...)
 	result.Cards = append([]model.Card(nil), value.Cards...)
@@ -1781,5 +1922,5 @@ func (s *Store) UpdateBoardHostnames(ref string, values []string, appendValues b
 		return model.Board{}, err
 	}
 	board.UpdatedAt = timestamp()
-	return board, writeMarkdown(filepath.Join(s.boardDir(), board.ID+".md"), board, board.Description)
+	return s.saveBoard(board)
 }

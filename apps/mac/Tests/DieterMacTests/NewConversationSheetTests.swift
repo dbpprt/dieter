@@ -78,7 +78,7 @@ private final class NewConversationSheetFixture {
         store.selectedProjectID = project.id
         store.selectedBoardID = board.id
         let endpointID = "native-creation-machine"
-        store.projectEndpointIDs[project.id] = endpointID
+        store.projectReplicaEndpointIDs[project.id] = endpointID
         store.harnessCatalogsByEndpoint[endpointID] = Self.catalog
         self.store = store
 

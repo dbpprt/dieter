@@ -566,7 +566,7 @@ private fun NotificationSettings(state: DieterUiState, model: DieterViewModel) {
     val boards = (state.spaceBoards + state.boards).distinctBy { it.id }.sortedWith(
         compareBy(
             { board -> state.projects.firstOrNull { it.id == board.projectId }?.name.orEmpty().lowercase() },
-            { board -> state.projectHosts[board.projectId]?.hostname.orEmpty().lowercase() },
+            { board -> state.projectReplicas[board.projectId]?.hostname.orEmpty().lowercase() },
             { board -> board.name.lowercase() },
         ),
     )
@@ -683,7 +683,7 @@ private fun NotificationSettings(state: DieterUiState, model: DieterViewModel) {
                         HorizontalDivider(color = DieterDivider)
                         val projectName = state.projects.firstOrNull { it.id == board.projectId }?.name
                             ?.takeIf(String::isNotBlank) ?: "Workspace"
-                        val hostname = state.projectHosts[board.projectId]?.hostname?.takeIf(String::isNotBlank)
+                        val hostname = state.projectReplicas[board.projectId]?.hostname?.takeIf(String::isNotBlank)
                         NotificationBoardRow(
                             boardName = board.name.ifBlank { "Untitled board" },
                             projectName = listOfNotNull(projectName, hostname).distinct().joinToString(" · "),

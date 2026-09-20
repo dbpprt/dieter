@@ -1,7 +1,7 @@
 package com.dbpprt.dieter.ui
 
 import com.dbpprt.dieter.connection.ConnectionPhase
-import com.dbpprt.dieter.connection.ProjectHost
+import com.dbpprt.dieter.connection.ProjectReplica
 import com.dbpprt.dieter.v1.Project
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -14,11 +14,11 @@ class ProjectScopedNavigationTest {
     fun `files and schedules stay muted when every known project host is offline`() {
         val offline = DieterUiState(
             projects = listOf(project),
-            projectHosts = mapOf(project.id to ProjectHost("endpoint", "daemon", "machine", false)),
+            projectReplicas = mapOf(project.id to ProjectReplica("endpoint", "daemon", "machine", false)),
         )
         val online = offline.copy(
             connectionPhase = ConnectionPhase.CONNECTED,
-            projectHosts = mapOf(project.id to ProjectHost("endpoint", "daemon", "machine", true)),
+            projectReplicas = mapOf(project.id to ProjectReplica("endpoint", "daemon", "machine", true)),
         )
 
         assertFalse(projectScopedNavigationEnabled(offline))

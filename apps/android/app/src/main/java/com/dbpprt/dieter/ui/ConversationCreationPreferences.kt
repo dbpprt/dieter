@@ -1,6 +1,6 @@
 package com.dbpprt.dieter.ui
 
-import com.dbpprt.dieter.connection.ProjectHost
+import com.dbpprt.dieter.connection.ProjectReplica
 import com.dbpprt.dieter.settings.ConversationCreationPreferences
 import com.dbpprt.dieter.v1.Harness
 
@@ -14,10 +14,10 @@ internal data class ResolvedConversationCreationPreferences(
 internal fun harnessCatalogMatchesProject(
     projectId: String,
     catalogEndpointId: String?,
-    projectHosts: Map<String, ProjectHost>,
+    projectReplicas: Map<String, ProjectReplica>,
 ): Boolean {
     if (projectId.isBlank() || catalogEndpointId.isNullOrBlank()) return false
-    return projectHosts[projectId]?.endpointId?.let(catalogEndpointId::equals) ?: true
+    return projectReplicas[projectId]?.endpointId?.let(catalogEndpointId::equals) ?: true
 }
 
 internal fun harnessCatalogSupportsSelection(

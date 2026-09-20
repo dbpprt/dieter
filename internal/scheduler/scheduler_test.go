@@ -233,16 +233,13 @@ func TestDueRunUsesLatestMisfireAndAdvancesCursor(t *testing.T) {
 	}
 }
 
-func TestAutoRunWaitsForGlobalCapacityThenStarts(t *testing.T) {
+func TestAutoRunStartsAlongsideOtherConversations(t *testing.T) {
 	manager, data, project, board := setup(t)
-	if _, err := data.UpdateSettings(model.Settings{GlobalParallelLimit: 1}); err != nil {
-		t.Fatal(err)
-	}
 	hold, err := data.AcquireRuntimeLeaseFor("another-project", "another-board", "hold", "mock")
 	if err != nil {
 		t.Fatal(err)
 	}
-	schedule, err := manager.Create(store.ScheduleInput{Project: project.ID, Board: board.ID, Name: "Agent", Cron: "0 9 * * *", Timezone: "UTC", Enabled: true, Action: "run", TitleTemplate: "Run", PromptTemplate: "Do it", Provider: "mock", Model: "mock", BusyPolicy: "queue", OpenCardPolicy: "always"})
+	schedule, err := manager.Create(store.ScheduleInput{Project: project.ID, Board: board.ID, Name: "Agent", Cron: "0 9 * * *", Timezone: "UTC", Enabled: true, Action: "run", TitleTemplate: "Run", PromptTemplate: "Do it", Provider: "mock", Model: "mock", OpenCardPolicy: "always"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -250,19 +247,9 @@ func TestAutoRunWaitsForGlobalCapacityThenStarts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if run.Status != model.ScheduleRunWaitingForProject {
-		t.Fatalf("waiting run=%#v", run)
-	}
-	card, _ := data.ResolveCard(run.CardID)
-	if card.Lane != model.LaneTodo || card.InitialPromptSentAt != "" {
-		t.Fatalf("waiting card=%#v", card)
-	}
-	if err := data.ReleaseRuntimeLease(hold); err != nil {
-		t.Fatal(err)
-	}
-	manager.Tick()
+	defer data.ReleaseRuntimeLease(hold)
 	completed := waitRun(t, data, run.ID, model.ScheduleRunCompleted)
-	card, _ = data.ResolveCard(completed.CardID)
+	card, _ := data.ResolveCard(completed.CardID)
 	if card.InitialPromptSentAt == "" || card.Lane != model.LaneRunning {
 		t.Fatalf("started card=%#v", card)
 	}

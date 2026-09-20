@@ -42,7 +42,11 @@ func fixturePair(t *testing.T, version string) string {
 }
 
 func TestRuntimeHardensExistingRoot(t *testing.T) {
-	root := filepath.Join(t.TempDir(), "service")
+	parent, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := filepath.Join(parent, "service")
 	if err := os.Mkdir(root, 0o755); err != nil {
 		t.Fatal(err)
 	}

@@ -6,6 +6,7 @@ import (
 	"crypto/x509"
 	"errors"
 	"fmt"
+	"github.com/dbpprt/dieter/internal/protocol"
 	"log/slog"
 	"net"
 	"net/http"
@@ -36,7 +37,7 @@ type Server struct {
 // GatewayAPIVersion identifies the authenticated gateway control-plane
 // contract. It is intentionally distinct from daemon API compatibility and
 // the daemon-link framing version.
-const GatewayAPIVersion = "3"
+const GatewayAPIVersion = protocol.Version
 
 func NewServer(config Config, store *Store, logger *slog.Logger) (*Server, error) {
 	keys, err := LoadOrCreateKeys(store.Root)

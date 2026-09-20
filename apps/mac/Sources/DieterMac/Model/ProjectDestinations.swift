@@ -7,13 +7,15 @@ struct ProjectDestination: Identifiable, Equatable {
     let machineName: String
     let machineOnline: Bool
     let machineVersion: String
+    var checkoutID: String = ""
 
-    var id: String { project.id }
+    var id: String { checkoutID.isEmpty ? project.id : checkoutID }
+    var checkout: Dieter_V1_Checkout? { project.checkouts.first { $0.id == checkoutID } }
     var title: String { "\(project.name) · \(machineName)" }
     var machineStatus: String { machineOnline ? "Online" : "Offline" }
 
     var detail: String {
-        let path = (project.path as NSString).abbreviatingWithTildeInPath
+        let path = ((checkout?.path ?? "") as NSString).abbreviatingWithTildeInPath
         return path.isEmpty ? machineStatus : "\(machineStatus) · \(path)"
     }
 }
@@ -32,24 +34,19 @@ struct ProjectDestinationGroup: Identifiable, Equatable {
 enum ProjectDestinationCatalog {
     static func groups(
         projects: [Dieter_V1_Project],
-        projectEndpointIDs: [String: String],
+        projectReplicaEndpointIDs: [String: String],
         endpoints: [DieterEndpoint],
         fallbackEndpoint: DieterEndpoint
     ) -> [ProjectDestinationGroup] {
-        let endpointByID = Dictionary(endpoints.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         let fallbackMachine = fallbackEndpoint.daemonID == nil ? nil : fallbackEndpoint
-        let destinations = projects.map { project in
-            let mappedID = projectEndpointIDs[project.id]
-            let machine =
-                mappedID.flatMap { endpointByID[$0] }
-                ?? (mappedID == fallbackMachine?.id || mappedID == nil ? fallbackMachine : nil)
-            return ProjectDestination(
-                project: project,
-                machineID: mappedID ?? machine?.id ?? "unassigned",
-                machineName: machine?.name ?? "Unknown machine",
-                machineOnline: machine?.online ?? false,
-                machineVersion: machine?.version ?? ""
-            )
+        let destinations = projects.flatMap { project -> [ProjectDestination] in
+            project.checkouts.filter { !$0.detached }.map { checkout in
+                let machine = endpoints.first { $0.daemonID == checkout.daemonID }
+                    ?? (fallbackMachine?.daemonID == checkout.daemonID ? fallbackMachine : nil)
+                return ProjectDestination(project: project, machineID: machine?.id ?? "unavailable:\(checkout.daemonID)",
+                    machineName: machine?.name ?? checkout.daemonID, machineOnline: machine?.online ?? false,
+                    machineVersion: machine?.version ?? "", checkoutID: checkout.id)
+            }
         }
         let grouped = Dictionary(grouping: destinations, by: \ProjectDestination.machineID)
         return grouped.compactMap { machineID, values in
@@ -74,7 +71,7 @@ enum ProjectDestinationCatalog {
     private static func destinationOrder(_ lhs: ProjectDestination, _ rhs: ProjectDestination) -> Bool {
         let nameOrder = lhs.project.name.localizedCaseInsensitiveCompare(rhs.project.name)
         if nameOrder != .orderedSame { return nameOrder == .orderedAscending }
-        let pathOrder = lhs.project.path.localizedCaseInsensitiveCompare(rhs.project.path)
+        let pathOrder = (lhs.checkout?.path ?? lhs.checkoutID).localizedCaseInsensitiveCompare(rhs.checkout?.path ?? rhs.checkoutID)
         if pathOrder != .orderedSame { return pathOrder == .orderedAscending }
         return lhs.project.id < rhs.project.id
     }
@@ -93,7 +90,7 @@ extension DieterStore {
     ) -> [ProjectDestinationGroup] {
         ProjectDestinationCatalog.groups(
             projects: candidates ?? projects.filter { !$0.archived },
-            projectEndpointIDs: projectEndpointIDs,
+            projectReplicaEndpointIDs: projectReplicaEndpointIDs,
             endpoints: endpoints,
             fallbackEndpoint: endpoint
         )

@@ -139,6 +139,9 @@ func (c *CLI) Run(args []string) error {
 		}
 		args = append(append([]string(nil), args[1:]...), "--help")
 	}
+	if len(args) > 1 && args[0] == "daemon" && args[1] == "import-store" {
+		return c.importStore(args[2:])
+	}
 	if err := c.Store.Ensure(); err != nil {
 		return err
 	}
@@ -212,7 +215,8 @@ Commands:
   remote       Run resumable commands and native shells on a daemon host
   screen       Share screens/clipboard, tune quality, inspect latency and recovery
   schedule     Create, preview, dispatch, pause, and inspect schedules
-  settings     Inspect and update parallel-session admission limits
+  peer         Inspect and edit account peer settings (leaderless sync)
+  settings     Inspect and update prompt and daemon settings
   prompt       Inspect, update, scope, and preview prompt templates
   watch        Stream daemon state or sync frames as JSON Lines
   storage      Print the target daemon's central storage path
@@ -369,6 +373,7 @@ func (c *CLI) daemon(args []string) error {
 		fmt.Fprint(c.Out, `Usage: dieter daemon <action>
 
 Actions:
+  import-store Review or apply the offline shared-project storage conversion
   start        Run the local data plane and persistent gateway tunnel
   service      Install and manage the platform daemon service
   enroll       Enroll this machine with the Dieter gateway
@@ -557,6 +562,7 @@ Service startup activates a staged verified release there before workers begin.
 				cancel()
 			}
 		}()
+		go (&dieterdaemon.PeerSync{Identity: identity, Store: c.Store, Log: logger}).Run(ctx)
 	} else if identityErr != nil && !errors.Is(identityErr, os.ErrNotExist) {
 		return identityErr
 	} else {
@@ -1671,9 +1677,8 @@ Options:
   --provider AGENT --model MODEL --effort EFFORT
   --enabled=true|false
   --open-card skip_if_open|always
-  --busy queue|skip
 `
-	defaults := model.Schedule{Enabled: true, Cron: "0 9 * * 1-5", Timezone: "UTC", Action: model.ScheduleActionDraft, OpenCardPolicy: "skip_if_open", MisfirePolicy: "latest", BusyPolicy: "queue", WorkspaceMode: model.WorkspaceModeWorktree}
+	defaults := model.Schedule{Enabled: true, Cron: "0 9 * * 1-5", Timezone: "UTC", Action: model.ScheduleActionDraft, OpenCardPolicy: "skip_if_open", MisfirePolicy: "latest", WorkspaceMode: model.WorkspaceModeWorktree}
 	if current != nil {
 		defaults = *current
 	}
@@ -1695,7 +1700,7 @@ Options:
 	labels := set.String("labels", strings.Join(defaults.LabelIDs, ","), "labels")
 	enabled := set.Bool("enabled", defaults.Enabled, "enabled")
 	openCard := set.String("open-card", defaults.OpenCardPolicy, "open-card policy")
-	busy := set.String("busy", defaults.BusyPolicy, "busy policy")
+
 	help, err := parse(set, args, usage, c.Out)
 	if help || err != nil {
 		return err
@@ -1715,7 +1720,7 @@ Options:
 	if err != nil {
 		return err
 	}
-	input := store.ScheduleInput{Project: *project, Board: *board, Name: *name, Description: *description, Cron: *expression, Timezone: *timezone, Action: *action, TitleTemplate: *title, PromptTemplate: promptValue, Provider: *provider, Model: *modelName, Effort: *effort, LabelIDs: splitCSV(*labels), Enabled: *enabled, OpenCardPolicy: *openCard, MisfirePolicy: "latest", BusyPolicy: *busy, WorkspaceMode: *workspaceMode}
+	input := store.ScheduleInput{Project: *project, Board: *board, Name: *name, Description: *description, Cron: *expression, Timezone: *timezone, Action: *action, TitleTemplate: *title, PromptTemplate: promptValue, Provider: *provider, Model: *modelName, Effort: *effort, LabelIDs: splitCSV(*labels), Enabled: *enabled, OpenCardPolicy: *openCard, MisfirePolicy: "latest", WorkspaceMode: *workspaceMode}
 	manager := scheduler.New(c.Store, c.service())
 	var item model.Schedule
 	if current == nil {
@@ -1765,63 +1770,4 @@ func (c *CLI) scheduleList(args []string) error {
 	return writer.Flush()
 }
 
-func (c *CLI) settings(args []string) error {
-	if len(args) == 0 || args[0] == "show" || args[0] == "list" {
-		value, err := c.Store.Settings()
-		if err != nil {
-			return err
-		}
-		return jsonOut(c.Out, value)
-	}
-	if args[0] != "set" && args[0] != "update" {
-		return errors.New("Usage: dieter settings show | dieter settings set [--global N] [--agents ID=N,...] [--boards ID=N,...]")
-	}
-	current, err := c.Store.Settings()
-	if err != nil {
-		return err
-	}
-	set := flags("settings set")
-	global := set.Int("global", current.GlobalParallelLimit, "global limit")
-	agents := set.String("agents", "", "agent limits ID=N,...")
-	boards := set.String("boards", "", "board limits ID=N,...")
-	help, err := parse(set, args[1:], "Usage: dieter settings set [--global N] [--agents ID=N,...] [--boards ID=N,...]\n", c.Out)
-	if help || err != nil {
-		return err
-	}
-	current.GlobalParallelLimit = *global
-	set.Visit(func(item *flag.Flag) {
-		if err != nil {
-			return
-		}
-		switch item.Name {
-		case "agents":
-			current.AgentParallelLimits, err = parseLimitMap(*agents)
-		case "boards":
-			current.BoardParallelLimits, err = parseLimitMap(*boards)
-		}
-	})
-	if err != nil {
-		return err
-	}
-	updated, err := c.Store.UpdateSettings(current)
-	if err != nil {
-		return err
-	}
-	return jsonOut(c.Out, updated)
-}
-
-func parseLimitMap(value string) (map[string]int, error) {
-	result := map[string]int{}
-	for _, part := range splitCSV(value) {
-		id, raw, ok := strings.Cut(part, "=")
-		if !ok || strings.TrimSpace(id) == "" {
-			return nil, fmt.Errorf("invalid limit %q; expected ID=N", part)
-		}
-		limit, err := strconv.Atoi(strings.TrimSpace(raw))
-		if err != nil || limit < 0 {
-			return nil, fmt.Errorf("invalid limit %q; N must be non-negative", part)
-		}
-		result[strings.TrimSpace(id)] = limit
-	}
-	return result, nil
-}
+func (c *CLI) settings(args []string) error { return c.rpcSettings(args) }

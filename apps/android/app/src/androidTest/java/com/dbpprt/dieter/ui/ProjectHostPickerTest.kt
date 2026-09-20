@@ -14,7 +14,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
 
-class ProjectHostPickerTest {
+class ProjectReplicaPickerTest {
     @get:Rule
     val composeRule = createComposeRule()
 
@@ -50,7 +50,7 @@ class ProjectHostPickerTest {
         )
 
         composeRule.setContent {
-            DieterTheme { ProjectHostPicker(machines, selectedId = selected, onSelected = { selected = it }) }
+            DieterTheme { ProjectReplicaPicker(machines, selectedId = selected, onSelected = { selected = it }) }
         }
 
         composeRule.onNodeWithText("Studio").assertIsDisplayed()

@@ -193,14 +193,14 @@ class RealDieterIntegrationTest {
                     it.phase == ConnectionPhase.CONNECTED &&
                         it.projects.isNotEmpty() &&
                         it.projects.all { project ->
-                            it.projectHosts[project.id]?.daemonId?.isNotBlank() == true
+                            it.projectReplicas[project.id]?.daemonId?.isNotBlank() == true
                         }
                 }.first()
             }
             assertTrue(connected.endpointConnections.any { it.daemonId != null && it.online })
             assertEquals(BackgroundSyncMode.LIVE, connected.backgroundSyncMode)
             assertTrue(connected.projects.all { project ->
-                connected.projectHosts[project.id]?.daemonId?.isNotBlank() == true
+                connected.projectReplicas[project.id]?.daemonId?.isNotBlank() == true
             })
             assertTrue(connected.chats.all { it.scope == "chat" && it.boardId.isBlank() })
 

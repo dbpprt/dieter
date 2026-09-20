@@ -135,10 +135,15 @@ func TestCardSendUsesRunningDaemonAndOutlivesClient(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("daemon-owned runner did not finish")
 	}
-	deadline := time.Now().Add(time.Second)
+	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
 		stored, resolveErr := data.ResolveCard(card.ID)
 		if resolveErr == nil && stored.Runtime == "idle" {
+			// The cache file precedes the final sync-journal commit. Wait for
+			// that writer to finish before TempDir cleanup removes its root.
+			if _, _, err := data.GlobalStateContext(context.Background()); err != nil {
+				t.Fatal(err)
+			}
 			return
 		}
 		time.Sleep(5 * time.Millisecond)

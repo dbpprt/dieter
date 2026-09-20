@@ -156,11 +156,6 @@
             .onChange(of: selectedTaskID) { _, id in
                 if id != nil { preferredColumn = .detail } else { store.closeConversation() }
             }
-            .onChange(of: store.selectedMachine?.id) { _, _ in
-                selectedTaskID = nil
-                destination = nil
-                preferredColumn = .sidebar
-            }
         }
 
         private var sidebar: some View {
@@ -195,7 +190,7 @@
                 }
                 Section("Projects") {
                     if store.projects.isEmpty {
-                        Text(store.busy ? "Loading projects…" : "No projects on this machine")
+                        Text(store.busy ? "Loading projects…" : "No projects")
                             .font(.subheadline).foregroundStyle(.secondary)
                     }
                     ForEach(store.projects, id: \.id) { project in
@@ -205,8 +200,14 @@
                         }
                         .accessibilityIdentifier("ios.project.\(project.id)")
                         .contextMenu {
-                            Button("Browse files", systemImage: "folder") { openProjectFiles(project) }
-                                .disabled(!store.phase.isConnected)
+                            Menu("Browse files", systemImage: "folder") {
+                                ForEach(project.checkouts.filter { !$0.detached }, id: \.id) { checkout in
+                                    let machine = store.machines.first { $0.daemonID == checkout.daemonID }
+                                    Button("\(machine?.name ?? checkout.daemonID) · \(checkout.name)") {
+                                        openProjectFiles(project, checkout: checkout)
+                                    }.disabled(machine?.online != true)
+                                }
+                            }
                         }
                         ForEach(store.boards.filter { $0.projectID == project.id }, id: \.id) { board in
                             NavigationLink(value: IOSWorkspaceDestination.board(board.id)) {
@@ -385,15 +386,15 @@
             }
         }
 
-        private func openProjectFiles(_ project: Dieter_V1_Project) {
+        private func openProjectFiles(_ project: Dieter_V1_Project, checkout: Dieter_V1_Checkout) {
             fileScope = IOSFileScope(
-                machineID: store.selectedMachine?.id ?? "", projectID: project.id, cardID: "", title: project.name)
+                machineID: checkout.daemonID, projectID: project.id, checkoutID: checkout.id, cardID: "", title: project.name)
         }
 
         private func openFiles(for card: Dieter_V1_Card?) {
             guard let card else { return }
             fileScope = IOSFileScope(
-                machineID: store.selectedMachine?.id ?? "", projectID: card.projectID, cardID: card.id,
+                machineID: card.ownerDaemonID, projectID: card.projectID, checkoutID: card.checkoutID, cardID: card.id,
                 title: card.title)
         }
     }
@@ -505,7 +506,9 @@
             List(selection: $selectedTaskID) {
                 ForEach(tasks, id: \.id) { card in
                     NavigationLink(value: card.id) {
-                        IOSTaskRow(card: card, projectName: store.projects.first { $0.id == card.projectID }?.name)
+                        IOSTaskRow(card: card, projectName: store.projects.first { $0.id == card.projectID }?.name,
+                            machineName: store.machines.first { $0.daemonID == card.ownerDaemonID }?.name,
+                            machineOnline: store.machines.first { $0.daemonID == card.ownerDaemonID }?.online == true)
                     }
                     .accessibilityIdentifier("ios.task.\(card.id)")
                 }

@@ -59,7 +59,7 @@ class WorkspaceChangesEndToEndTest {
         val token = arguments.getString("isolatedGatewayToken").orEmpty()
         assumeTrue("Pass isolatedGatewayToken for the isolated gateway", token.isNotBlank())
         val endpoint = DieterEndpoint(
-            id = "android_workspace_changes_e2e",
+            id = "android_workspace_changes_e2e_${UUID.randomUUID()}",
             label = "Isolated workspace gateway",
             host = arguments.getString("isolatedGatewayHost")?.takeIf(String::isNotBlank) ?: "10.0.2.2",
             port = arguments.getString("isolatedGatewayPort")?.toIntOrNull() ?: 14243,
@@ -221,7 +221,7 @@ class WorkspaceChangesEndToEndTest {
 
             val projectChanges = runBlocking {
                 retryTransient {
-                    manager.ensureProjectRoute(project.id)
+                    manager.ensureReplicaRoute(project.id)
                     repository.projectChangeset(project.id)
                 }
             }
@@ -245,7 +245,7 @@ class WorkspaceChangesEndToEndTest {
             capture(screenshotDirectory, "project-changes-committed-e2e.png")
             val cleanProject = runBlocking {
                 retryTransient {
-                    manager.ensureProjectRoute(project.id)
+                    manager.ensureReplicaRoute(project.id)
                     repository.projectChangeset(project.id)
                 }
             }
@@ -254,7 +254,7 @@ class WorkspaceChangesEndToEndTest {
             val discarded = "android-discard-${UUID.randomUUID().toString().take(8)}.txt"
             runBlocking {
                 retryTransient {
-                    manager.ensureProjectRoute(project.id)
+                    manager.ensureReplicaRoute(project.id)
                     repository.createFile(project.id, discarded, "file", "discard me\n")
                 }
             }
@@ -267,7 +267,7 @@ class WorkspaceChangesEndToEndTest {
                 "Discard must remove the untracked project file",
                 runBlocking {
                     retryTransient {
-                        manager.ensureProjectRoute(project.id)
+                        manager.ensureReplicaRoute(project.id)
                         repository.projectChangeset(project.id)
                     }
                 }.filesCount == 0,

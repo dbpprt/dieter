@@ -232,6 +232,7 @@ internal fun SwipeableWorkCard(
     operation: CardOperation?,
     operationError: String?,
     activityNow: Instant,
+    machineName: String = "",
     revealed: Boolean,
     onReveal: () -> Unit,
     onCloseActions: () -> Unit,
@@ -317,6 +318,7 @@ internal fun SwipeableWorkCard(
             operation = operation,
             operationError = operationError,
             activityNow = activityNow,
+            machineName = machineName,
             modifier = Modifier
                 .offset { IntOffset(dragOffset.toInt(), 0) }
                 .draggable(
@@ -482,6 +484,7 @@ internal fun WorkCard(
     operation: CardOperation?,
     operationError: String?,
     activityNow: Instant,
+    machineName: String = "",
     modifier: Modifier = Modifier,
     onStart: (() -> Unit)? = null,
     onClick: () -> Unit,
@@ -531,6 +534,8 @@ internal fun WorkCard(
                         )
                     }
                 }
+                Text(machineName.ifBlank { card.ownerDaemonId }, color = DieterMuted, fontSize = 11.sp,
+                    modifier = Modifier.semantics { contentDescription = "Machine ${machineName.ifBlank { card.ownerDaemonId }}" })
                 if (card.summary.isNotBlank()) {
                     Text(
                         card.summary,

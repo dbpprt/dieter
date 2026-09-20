@@ -152,7 +152,6 @@ import javax.net.ssl.TrustManagerFactory
 const val DIETER_LOCAL_HOST = "127.0.0.1"
 const val DIETER_LOCAL_PORT = 4242
 const val DIETER_LOCAL_ENDPOINT = "$DIETER_LOCAL_HOST:$DIETER_LOCAL_PORT"
-const val DIETER_API_VERSION = "3"
 
 data class DieterEndpoint(
     val id: String,
@@ -218,6 +217,7 @@ private object DaemonTLSProviders {
 }
 
 interface DieterRepository {
+    fun selectCheckout(projectId: String, checkoutId: String) {}
     val endpoints: List<DieterEndpoint>
     val activeEndpoint: DieterEndpoint
     fun replaceEndpoints(endpoints: List<DieterEndpoint>)
@@ -254,6 +254,13 @@ interface DieterRepository {
     suspend fun listDirectories(path: String = ""): DirectoryListing
     suspend fun listDirectoriesOn(endpointId: String, path: String = ""): DirectoryListing
     suspend fun createProject(request: CreateProjectRequest): CreateProjectResponse
+    suspend fun peerRecord(kind: String, id: String): com.dbpprt.dieter.v1.PeerRecord { error("Peer store unavailable") }
+    suspend fun resolvePeerRecord(request: com.dbpprt.dieter.v1.PutPeerRecordRequest): com.dbpprt.dieter.v1.PeerRecord { error("Peer store unavailable") }
+    suspend fun attachCheckoutOn(endpointId: String, request: com.dbpprt.dieter.v1.AttachCheckoutRequest): com.dbpprt.dieter.v1.Checkout {
+        error("Checkout attachment unavailable")
+    }
+    suspend fun detachCheckout(checkoutId: String) { error("Checkout unavailable") }
+    suspend fun consolidateProject(source: String, destination: String): Project { error("Project unavailable") }
     suspend fun createProjectOn(endpointId: String, request: CreateProjectRequest): CreateProjectResponse
     suspend fun updateProject(request: UpdateProjectRequest): Project
     suspend fun updateProjectWorkspaceSettings(request: UpdateProjectWorkspaceSettingsRequest): Project
@@ -289,7 +296,7 @@ interface DieterRepository {
     suspend fun sendMessage(request: SendMessageRequest): SendMessageResponse
     suspend fun removeQueuedMessage(cardId: String, messageId: String): QueuedMessage
     suspend fun addComment(cardId: String, text: String, name: String = "You"): Comment
-    suspend fun moveCard(cardId: String, lane: String, position: Long? = null): Card
+    suspend fun moveCard(cardId: String, lane: String, after: String = "", before: String = "", revision: String = ""): Card
     suspend fun startCard(request: StartCardRequest): StartCardResponse
     suspend fun setCardLabels(cardId: String, labelIds: List<String>): Card
     suspend fun cancelCard(cardId: String)
@@ -329,6 +336,7 @@ interface DieterRepository {
     suspend fun renameTerminal(terminalId: String, name: String): Terminal
     suspend fun closeTerminal(terminalId: String)
 
+    suspend fun schedule(scheduleId: String): Schedule { error("Schedule details unavailable") }
     suspend fun schedules(projectId: String, pageSize: Int = 50, pageToken: String = ""): SchedulesResponse
     suspend fun previewSchedule(cron: String, timezone: String, count: Int = 5): SchedulePreview
     suspend fun saveSchedule(scheduleId: String = "", request: SaveScheduleRequest): Schedule
@@ -342,6 +350,10 @@ interface DieterRepository {
 }
 
 class GrpcDieterRepository(context: Context) : DieterRepository {
+    private val checkoutSelections = java.util.concurrent.ConcurrentHashMap<String, String>()
+    override fun selectCheckout(projectId: String, checkoutId: String) { checkoutSelections[projectId] = checkoutId }
+    private fun checkoutId(projectId: String, cardId: String = "") = if (cardId.isBlank()) checkoutSelections[projectId].orEmpty() else ""
+
     private val appContext = context.applicationContext
     private val lock = Any()
     private var channel: ManagedChannel? = null
@@ -832,9 +844,21 @@ class GrpcDieterRepository(context: Context) : DieterRepository {
 
     override suspend fun createProject(request: CreateProjectRequest): CreateProjectResponse = unary().createProject(request)
 
+    override suspend fun peerRecord(kind: String, id: String): com.dbpprt.dieter.v1.PeerRecord = unary().getPeerRecord(
+        com.dbpprt.dieter.v1.PeerRecordRef.newBuilder().setKind(kind).setId(id).build())
+    override suspend fun resolvePeerRecord(request: com.dbpprt.dieter.v1.PutPeerRecordRequest): com.dbpprt.dieter.v1.PeerRecord = unary().putPeerRecord(request)
+
+    override suspend fun attachCheckoutOn(endpointId: String, request: com.dbpprt.dieter.v1.AttachCheckoutRequest): com.dbpprt.dieter.v1.Checkout =
+        withMachine(endpointId, deadlineSeconds = 60) { attachCheckout(request) }
+
     override suspend fun createProjectOn(endpointId: String, request: CreateProjectRequest): CreateProjectResponse =
         withMachine(endpointId, deadlineSeconds = 60) { createProject(request) }
 
+    override suspend fun detachCheckout(checkoutId: String) {
+        unary().detachCheckout(com.dbpprt.dieter.v1.CheckoutRef.newBuilder().setCheckoutId(checkoutId).build())
+    }
+    override suspend fun consolidateProject(source: String, destination: String): Project = unary().consolidateProject(
+        com.dbpprt.dieter.v1.ConsolidateProjectRequest.newBuilder().setSourceProjectId(source).setDestinationProjectId(destination).build())
     override suspend fun updateProject(request: UpdateProjectRequest): Project = unary().updateProject(request)
 
     override suspend fun updateProjectWorkspaceSettings(request: UpdateProjectWorkspaceSettingsRequest): Project =
@@ -948,9 +972,9 @@ class GrpcDieterRepository(context: Context) : DieterRepository {
         AddCommentRequest.newBuilder().setCardId(cardId).setMessage(text).setName(name).build(),
     )
 
-    override suspend fun moveCard(cardId: String, lane: String, position: Long?): Card {
+    override suspend fun moveCard(cardId: String, lane: String, after: String, before: String, revision: String): Card {
         val request = MoveCardRequest.newBuilder().setCardId(cardId).setLane(lane)
-        if (position != null) request.position = position
+            .setAfterCardId(after).setBeforeCardId(before).setExpectedRevision(revision)
         return unary().moveCard(request.build())
     }
 
@@ -1015,11 +1039,11 @@ class GrpcDieterRepository(context: Context) : DieterRepository {
         unary(deadlineSeconds = 30).getChangeset(GetChangesetRequest.newBuilder().setCardId(cardId).build())
 
     override suspend fun projectChangeset(projectId: String): Changeset =
-        unary(deadlineSeconds = 30).getChangeset(GetChangesetRequest.newBuilder().setProjectId(projectId).build())
+        unary(deadlineSeconds = 30).getChangeset(GetChangesetRequest.newBuilder().setProjectId(projectId).setCheckoutId(checkoutId(projectId)).build())
 
-    override suspend fun fileDiff(request: GetDiffRequest): FileDiff = unary(deadlineSeconds = 30).getFileDiff(request)
+    override suspend fun fileDiff(request: GetDiffRequest): FileDiff = unary(deadlineSeconds = 30).getFileDiff(request.toBuilder().setCheckoutId(request.checkoutId.ifBlank { checkoutId(request.projectId, request.cardId) }).build())
 
-    override suspend fun commitDiff(request: GetDiffRequest): FileDiff = unary(deadlineSeconds = 30).getCommitDiff(request)
+    override suspend fun commitDiff(request: GetDiffRequest): FileDiff = unary(deadlineSeconds = 30).getCommitDiff(request.toBuilder().setCheckoutId(request.checkoutId.ifBlank { checkoutId(request.projectId, request.cardId) }).build())
 
     override suspend fun addChangeComment(request: AddChangeCommentRequest): ChangeComment =
         unary().addChangeComment(request)
@@ -1054,7 +1078,7 @@ class GrpcDieterRepository(context: Context) : DieterRepository {
         parameters: Map<String, String>,
     ): GitOperation = unary().startGitOperation(
         StartGitOperationRequest.newBuilder()
-            .setProjectId(projectId)
+            .setProjectId(projectId).setCheckoutId(checkoutId(projectId))
             .setKind(kind)
             .setExpectedRevision(expectedRevision)
             .putAllParameters(parameters)
@@ -1079,7 +1103,7 @@ class GrpcDieterRepository(context: Context) : DieterRepository {
 
     override suspend fun files(projectId: String, path: String, showHidden: Boolean, cardId: String): FileList = unary().listFiles(
         ListFilesRequest.newBuilder()
-            .setProjectId(projectId)
+            .setProjectId(projectId).setCheckoutId(checkoutId(projectId, cardId))
             .setPath(path)
             .setShowHidden(showHidden)
             .setCardId(cardId)
@@ -1087,13 +1111,13 @@ class GrpcDieterRepository(context: Context) : DieterRepository {
     )
 
     override suspend fun readFile(projectId: String, path: String, cardId: String): FileDocument = unary().readFile(
-        ReadFileRequest.newBuilder().setProjectId(projectId).setPath(path).setCardId(cardId).build(),
+        ReadFileRequest.newBuilder().setProjectId(projectId).setCheckoutId(checkoutId(projectId, cardId)).setPath(path).setCardId(cardId).build(),
     )
 
     override suspend fun saveFile(projectId: String, path: String, content: String, revision: String, cardId: String): FileDocument =
         unary().saveFile(
             SaveFileRequest.newBuilder()
-                .setProjectId(projectId)
+                .setProjectId(projectId).setCheckoutId(checkoutId(projectId, cardId))
                 .setPath(path)
                 .setContent(content)
                 .setRevision(revision)
@@ -1104,7 +1128,7 @@ class GrpcDieterRepository(context: Context) : DieterRepository {
     override suspend fun createFile(projectId: String, path: String, kind: String, content: String, cardId: String): FileEntry =
         unary().createFile(
             CreateFileRequest.newBuilder()
-                .setProjectId(projectId)
+                .setProjectId(projectId).setCheckoutId(checkoutId(projectId, cardId))
                 .setPath(path)
                 .setKind(kind)
                 .setContent(content)
@@ -1115,7 +1139,7 @@ class GrpcDieterRepository(context: Context) : DieterRepository {
     override suspend fun moveFile(projectId: String, source: String, destination: String): MoveFileResponse =
         unary().moveFile(
             MoveFileRequest.newBuilder()
-                .setProjectId(projectId)
+                .setProjectId(projectId).setCheckoutId(checkoutId(projectId))
                 .setSource(source)
                 .setDestination(destination)
                 .build(),
@@ -1124,7 +1148,7 @@ class GrpcDieterRepository(context: Context) : DieterRepository {
     override suspend fun deleteFile(projectId: String, path: String, recursive: Boolean) {
         unary().deleteFile(
             DeleteFileRequest.newBuilder()
-                .setProjectId(projectId)
+                .setProjectId(projectId).setCheckoutId(checkoutId(projectId))
                 .setPath(path)
                 .setRecursive(recursive)
                 .build(),
@@ -1132,10 +1156,10 @@ class GrpcDieterRepository(context: Context) : DieterRepository {
     }
 
     override suspend fun terminals(projectId: String): TerminalsResponse = unary().listTerminals(
-        ListTerminalsRequest.newBuilder().setProjectId(projectId).build(),
+        ListTerminalsRequest.newBuilder().setProjectId(projectId).setCheckoutId(checkoutId(projectId)).build(),
     )
 
-    override suspend fun createTerminal(request: CreateTerminalRequest): Terminal = unary().createTerminal(request)
+    override suspend fun createTerminal(request: CreateTerminalRequest): Terminal = unary().createTerminal(request.toBuilder().setCheckoutId(request.checkoutId.ifBlank { checkoutId(request.projectId, request.cardId) }).build())
 
     override fun watchTerminal(terminalId: String, afterSequence: Long): Flow<TerminalFrame> = flow {
         streaming().watchTerminal(
@@ -1169,6 +1193,8 @@ class GrpcDieterRepository(context: Context) : DieterRepository {
     override suspend fun closeTerminal(terminalId: String) {
         unary().closeTerminal(TerminalRef.newBuilder().setTerminalId(terminalId).build())
     }
+
+    override suspend fun schedule(scheduleId: String): Schedule = unary().getSchedule(scheduleRequest(scheduleId))
 
     override suspend fun schedules(projectId: String, pageSize: Int, pageToken: String): SchedulesResponse = unary().listSchedules(
         ListSchedulesRequest.newBuilder().setProjectId(projectId).setPageSize(pageSize).setPageToken(pageToken).build(),

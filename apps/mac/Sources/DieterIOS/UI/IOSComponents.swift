@@ -28,6 +28,8 @@
     struct IOSTaskRow: View {
         let card: Dieter_V1_Card
         var projectName: String?
+        var machineName: String?
+        var machineOnline = false
 
         var body: some View {
             VStack(alignment: .leading, spacing: 8) {
@@ -37,6 +39,10 @@
                     .foregroundStyle(.primary)
                 if let projectName, !projectName.isEmpty {
                     Text(projectName).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                }
+                if !card.ownerDaemonID.isEmpty {
+                    Label("\(machineName ?? card.ownerDaemonID)\(machineOnline ? "" : " · Offline")", systemImage: "desktopcomputer")
+                        .font(.caption).foregroundStyle(.secondary).lineLimit(1)
                 }
                 HStack(spacing: 10) {
                     IOSStatusBadge(state: card.runtime)
@@ -105,8 +111,9 @@
     struct IOSFileScope: Identifiable {
         let machineID: String
         let projectID: String
+        let checkoutID: String
         let cardID: String
         let title: String
-        var id: String { machineID + ":" + projectID + ":" + cardID }
+        var id: String { machineID + ":" + checkoutID + ":" + cardID }
     }
 #endif

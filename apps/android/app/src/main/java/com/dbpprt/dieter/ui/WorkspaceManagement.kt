@@ -80,7 +80,6 @@ import com.dbpprt.dieter.v1.Workspace
 private enum class ManagementSection(val label: String) {
     PROJECT("Project"),
     BOARD("Board"),
-    LIMITS("Limits"),
     ARCHIVES("Archives"),
 }
 
@@ -118,7 +117,7 @@ fun WorkspaceManagementScreen(
         snapshotFlow { pagerState.settledPage }
             .distinctUntilChanged()
             .collect { page ->
-                if (sections[page] == ManagementSection.ARCHIVES || sections[page] == ManagementSection.LIMITS) {
+                if (sections[page] == ManagementSection.ARCHIVES) {
                     model.loadAdministration()
                 }
             }
@@ -137,6 +136,9 @@ fun WorkspaceManagementScreen(
             },
         )
         SurfaceErrorBanner(state.error, model::clearError)
+        SharedConflicts(state, model)
+        val conflicts = state.project?.conflictKeysList.orEmpty() + state.board?.conflictKeysList.orEmpty()
+        if (conflicts.isNotEmpty()) TextButton(onClick = { model.loadSharedConflicts(conflicts) }) { Text("Resolve shared edits (${conflicts.size})") }
         PrimaryTabRow(
             selectedTabIndex = pagerState.currentPage,
             containerColor = MaterialTheme.colorScheme.background,
@@ -159,7 +161,6 @@ fun WorkspaceManagementScreen(
                 when (sections[page]) {
                     ManagementSection.PROJECT -> ProjectManagement(state, model)
                     ManagementSection.BOARD -> BoardManagement(state, model)
-                    ManagementSection.LIMITS -> LimitsManagement(state, model)
                     ManagementSection.ARCHIVES -> ArchivesManagement(state, model)
                 }
                 Spacer(Modifier.height(32.dp))
@@ -202,8 +203,9 @@ private fun ProjectManagement(state: DieterUiState, model: DieterViewModel) {
     var baseBranch by remember(project?.id, project?.baseBranch) {
         mutableStateOf(project?.baseBranch?.ifBlank { "main" }.orEmpty())
     }
-    var validationCommands by remember(project?.id, project?.updatedAt) {
-        mutableStateOf(project?.validationCommandsList.orEmpty().map(::ValidationCommandDraft))
+    val checkout = project?.checkoutsList?.filterNot { it.detached }?.let { list -> list.firstOrNull { it.id == state.creationCheckoutId } ?: list.singleOrNull() }
+    var validationCommands by remember(checkout?.id, checkout?.validationCommandsList) {
+        mutableStateOf(checkout?.validationCommandsList.orEmpty().map(::ValidationCommandDraft))
     }
     var showWorkspaces by remember(project?.id) { mutableStateOf(false) }
     var confirmArchive by remember { mutableStateOf(false) }
@@ -223,6 +225,30 @@ private fun ProjectManagement(state: DieterUiState, model: DieterViewModel) {
         minLines = 4,
         modifier = Modifier.fillMaxWidth().testTag("project-instructions"),
     )
+    SectionTitle("Checkouts & machines")
+    ProjectCheckoutSelector(state, model)
+    project.checkoutsList.filterNot { it.detached }.forEach { checkout ->
+        val owner = state.presentedEndpointConnections.firstOrNull { it.daemonId == checkout.daemonId }
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text("${owner?.label ?: checkout.daemonId} · ${checkout.name}", modifier = Modifier.weight(1f))
+            TextButton(onClick = { model.detachCheckout(checkout.id) }, enabled = owner?.online == true) { Text("Detach") }
+        }
+    }
+    TextButton(onClick = { model.openSurface(AppSurface.NEW_PROJECT) }) { Text("Attach another checkout…") }
+    var consolidationTarget by remember(project.id) { mutableStateOf("") }
+    var confirmConsolidation by remember { mutableStateOf(false) }
+    SectionTitle("Consolidate projects")
+    state.projects.filter { it.id != project.id }.forEach { destination ->
+        TextButton(onClick = { consolidationTarget = destination.id; confirmConsolidation = true }) {
+            Text("Consolidate into ${destination.name}…")
+        }
+    }
+    if (confirmConsolidation) {
+        AlertDialog(onDismissRequest = { confirmConsolidation = false }, title = { Text("Consolidate project?") },
+            text = { Text("Keep destination settings and all boards. Conversations retain their IDs, checkouts, and machines. Repository files are unchanged.") },
+            confirmButton = { Button(onClick = { confirmConsolidation = false; model.consolidateProject(consolidationTarget) }) { Text("Consolidate") } },
+            dismissButton = { TextButton(onClick = { confirmConsolidation = false }) { Text("Cancel") } })
+    }
     SectionTitle("Workspace defaults")
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         OutlinedTextField(
@@ -639,64 +665,6 @@ private fun ManagementLabelPill(name: String, colorValue: String) {
 }
 
 @Composable
-private fun LimitsManagement(state: DieterUiState, model: DieterViewModel) {
-    val current = state.settings
-    val options = state.settingsOptions
-    var global by remember(current?.updatedAt) { mutableStateOf((current?.globalParallelLimit ?: 0).toString()) }
-    var agentLimits by remember(current?.updatedAt, options) {
-        mutableStateOf(current?.agentParallelLimitsMap.orEmpty().mapValues { it.value.toString() })
-    }
-    var boardLimits by remember(current?.updatedAt, options) {
-        mutableStateOf(current?.boardParallelLimitsMap.orEmpty().mapValues { it.value.toString() })
-    }
-    SectionTitle("Admission limits")
-    Text("All HTTP, CLI, Android, and scheduled starts share these limits.", color = DieterMuted)
-    OutlinedTextField(
-        global,
-        { global = it.filter(Char::isDigit) },
-        label = { Text("Global parallel sessions") },
-        modifier = Modifier.fillMaxWidth(),
-    )
-    SectionTitle("Per agent")
-    options?.agents?.harnessesList.orEmpty().forEach { harness ->
-        OutlinedTextField(
-            value = agentLimits[harness.id] ?: "0",
-            onValueChange = { value -> agentLimits = agentLimits + (harness.id to value.filter(Char::isDigit)) },
-            label = { Text("${harness.name} sessions") },
-            supportingText = { Text(harness.id) },
-            modifier = Modifier.fillMaxWidth(),
-        )
-    }
-    SectionTitle("Per board")
-    options?.boardsList.orEmpty().forEach { board ->
-        val project = options?.projectsList?.firstOrNull { it.id == board.projectId }?.name.orEmpty()
-        OutlinedTextField(
-            value = boardLimits[board.id] ?: "0",
-            onValueChange = { value -> boardLimits = boardLimits + (board.id to value.filter(Char::isDigit)) },
-            label = { Text("${board.name} sessions") },
-            supportingText = { if (project.isNotBlank()) Text(project) },
-            modifier = Modifier.fillMaxWidth(),
-        )
-    }
-    Button(
-        onClick = {
-            val value = global.toIntOrNull() ?: return@Button
-            val updated = (current ?: Settings.getDefaultInstance()).toBuilder()
-                .setGlobalParallelLimit(value)
-                .clearAgentParallelLimits()
-                .putAllAgentParallelLimits(agentLimits.mapValues { it.value.toIntOrNull() ?: 0 })
-                .clearBoardParallelLimits()
-                .putAllBoardParallelLimits(boardLimits.mapValues { it.value.toIntOrNull() ?: 0 })
-                .build()
-            model.updateSettings(updated)
-        },
-        enabled = global.toIntOrNull() != null && !state.working,
-        modifier = Modifier.padding(top = 8.dp),
-    ) { Text("Save limits") }
-    Text("Use 0 for no override.", color = DieterMuted, style = MaterialTheme.typography.bodySmall)
-}
-
-@Composable
 private fun ArchivesManagement(state: DieterUiState, model: DieterViewModel) {
     SectionTitle("Archived projects")
     if (state.archivedProjects.isEmpty()) Text("No archived projects", color = DieterMuted)
@@ -720,7 +688,7 @@ internal fun EndpointConnection.usableForProjectCreation(): Boolean = online &&
     daemonId != null && (apiVersion.isBlank() || apiVersion == DIETER_API_VERSION)
 
 @Composable
-internal fun ProjectHostPicker(
+internal fun ProjectReplicaPicker(
     machines: List<EndpointConnection>,
     selectedId: String,
     onSelected: (String) -> Unit,
@@ -733,7 +701,7 @@ internal fun ProjectHostPicker(
             modifier = Modifier.fillMaxWidth().height(56.dp).testTag("new-project-machine"),
         ) {
             Column(Modifier.weight(1f), horizontalAlignment = Alignment.Start) {
-                Text(selected?.label ?: "Choose a project host", fontWeight = FontWeight.SemiBold)
+                Text(selected?.label ?: "Choose a machine", fontWeight = FontWeight.SemiBold)
                 Text(
                     when {
                         selected == null -> "No machine selected"
@@ -777,6 +745,7 @@ internal fun ProjectHostPicker(
 
 @Composable
 private fun AddProjectManagement(state: DieterUiState, model: DieterViewModel) {
+    var existingProjectId by remember { mutableStateOf("") }
     var mode by remember { mutableStateOf("open") }
     var path by remember { mutableStateOf("") }
     var name by remember { mutableStateOf("") }
@@ -791,6 +760,12 @@ private fun AddProjectManagement(state: DieterUiState, model: DieterViewModel) {
     var endpointId by remember { mutableStateOf("") }
     var workflowOpen by remember { mutableStateOf(false) }
     var showBrowser by remember { mutableStateOf(false) }
+    Row(Modifier.horizontalScroll(rememberScrollState())) {
+        TextButton(onClick = { existingProjectId = "" }) { Text(if (existingProjectId.isBlank()) "✓ New project" else "New project") }
+        state.projects.forEach { project ->
+            TextButton(onClick = { existingProjectId = project.id; mode = "open" }) { Text((if (existingProjectId == project.id) "✓ " else "") + "Attach to ${project.name}") }
+        }
+    }
     val machines = state.presentedEndpointConnections.filter { it.daemonId != null }
     val selectedMachine = machines.firstOrNull { it.id == endpointId }
     val listing = state.directoryListing.takeIf { state.directoryListingEndpointId == endpointId }
@@ -805,23 +780,25 @@ private fun AddProjectManagement(state: DieterUiState, model: DieterViewModel) {
         if (!showBrowser) return@LaunchedEffect
         listing?.path?.takeIf { it.isNotBlank() }?.let { path = it }
     }
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        FilterChip(
-            selected = mode == "open",
-            onClick = { mode = "open" },
-            label = { Text("✓  Existing Git repo") },
-            modifier = Modifier.weight(1f).testTag("new-project-mode-open"),
-        )
-        FilterChip(
-            selected = mode == "create",
-            onClick = { mode = "create" },
-            label = { Text("New Git project") },
-            modifier = Modifier.weight(1f).testTag("new-project-mode-create"),
-        )
+    if (existingProjectId.isBlank()) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FilterChip(
+                selected = mode == "open",
+                onClick = { mode = "open" },
+                label = { Text("✓  Existing Git repo") },
+                modifier = Modifier.weight(1f).testTag("new-project-mode-open"),
+            )
+            FilterChip(
+                selected = mode == "create",
+                onClick = { mode = "create" },
+                label = { Text("New Git project") },
+                modifier = Modifier.weight(1f).testTag("new-project-mode-create"),
+            )
+        }
     }
     Spacer(Modifier.height(10.dp))
-    Text("Project host", color = DieterMuted, style = MaterialTheme.typography.labelMedium)
-    ProjectHostPicker(machines, endpointId) { selectedId ->
+    Text("Checkout machine", color = DieterMuted, style = MaterialTheme.typography.labelMedium)
+    ProjectReplicaPicker(machines, endpointId) { selectedId ->
         endpointId = selectedId
         path = ""
         showBrowser = false
@@ -874,69 +851,73 @@ private fun AddProjectManagement(state: DieterUiState, model: DieterViewModel) {
         }
     }
     Spacer(Modifier.height(10.dp))
-    OutlinedTextField(name, { name = it }, label = { Text("Project name") }, modifier = Modifier.fillMaxWidth().testTag("new-project-name"))
+    OutlinedTextField(name, { name = it }, label = { Text(if (existingProjectId.isBlank()) "Project name" else "Checkout name") }, modifier = Modifier.fillMaxWidth().testTag("new-project-name"))
     Text("Optional; the directory name is used by default.", color = DieterMuted, style = MaterialTheme.typography.bodySmall)
-    OutlinedTextField(summary, { summary = it }, label = { Text("Summary") }, modifier = Modifier.fillMaxWidth().testTag("new-project-summary"))
-    Spacer(Modifier.height(14.dp))
-    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        OutlinedTextField(boardName, { boardName = it }, label = { Text("First board") }, modifier = Modifier.weight(1f).testTag("new-project-board"))
-        Box(Modifier.weight(1f)) {
-            OutlinedButton(onClick = { workflowOpen = true }, modifier = Modifier.fillMaxWidth().height(56.dp)) {
-                Text(if (workflow == "review") "With review" else "Direct workflow")
-            }
-            DropdownMenu(expanded = workflowOpen, onDismissRequest = { workflowOpen = false }) {
-                DropdownMenuItem(text = { Text("With review") }, onClick = { workflow = "review"; workflowOpen = false })
-                DropdownMenuItem(text = { Text("Direct workflow") }, onClick = { workflow = "direct"; workflowOpen = false })
+    val validationError = validationCommandsError(validationCommands)
+    if (existingProjectId.isBlank()) {
+        OutlinedTextField(summary, { summary = it }, label = { Text("Summary") }, modifier = Modifier.fillMaxWidth().testTag("new-project-summary"))
+        Spacer(Modifier.height(14.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            OutlinedTextField(boardName, { boardName = it }, label = { Text("First board") }, modifier = Modifier.weight(1f).testTag("new-project-board"))
+            Box(Modifier.weight(1f)) {
+                OutlinedButton(onClick = { workflowOpen = true }, modifier = Modifier.fillMaxWidth().height(56.dp)) {
+                    Text(if (workflow == "review") "With review" else "Direct workflow")
+                }
+                DropdownMenu(expanded = workflowOpen, onDismissRequest = { workflowOpen = false }) {
+                    DropdownMenuItem(text = { Text("With review") }, onClick = { workflow = "review"; workflowOpen = false })
+                    DropdownMenuItem(text = { Text("Direct workflow") }, onClick = { workflow = "direct"; workflowOpen = false })
+                }
             }
         }
-    }
-    Spacer(Modifier.height(8.dp))
-    SectionTitle("Agent workspaces")
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        OutlinedTextField(
-            baseRemote,
-            { baseRemote = it },
-            label = { Text("Base remote") },
-            singleLine = true,
-            modifier = Modifier.weight(1f).testTag("new-project-base-remote"),
-        )
-        OutlinedTextField(
-            baseBranch,
-            { baseBranch = it },
-            label = { Text("Base branch") },
-            singleLine = true,
-            modifier = Modifier.weight(1f).testTag("new-project-base-branch"),
-        )
-    }
-    Text("First-board publishing", color = DieterMuted, modifier = Modifier.padding(top = 6.dp))
-    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        listOf("manual" to "Manual", "pull_request" to "Pull request", "push_base" to "Push base").forEach { option ->
-            FilterChip(
-                selected = remotePublishMode == option.first,
-                onClick = { remotePublishMode = option.first },
-                label = { Text(option.second) },
+        Spacer(Modifier.height(8.dp))
+        SectionTitle("Agent workspaces")
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedTextField(
+                baseRemote,
+                { baseRemote = it },
+                label = { Text("Base remote") },
+                singleLine = true,
+                modifier = Modifier.weight(1f).testTag("new-project-base-remote"),
+            )
+            OutlinedTextField(
+                baseBranch,
+                { baseBranch = it },
+                label = { Text("Base branch") },
+                singleLine = true,
+                modifier = Modifier.weight(1f).testTag("new-project-base-branch"),
             )
         }
+        Text("First-board publishing", color = DieterMuted, modifier = Modifier.padding(top = 6.dp))
+        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            listOf("manual" to "Manual", "pull_request" to "Pull request", "push_base" to "Push base").forEach { option ->
+                FilterChip(
+                    selected = remotePublishMode == option.first,
+                    onClick = { remotePublishMode = option.first },
+                    label = { Text(option.second) },
+                )
+            }
+        }
+        SectionTitle("Validation commands")
+        ValidationCommandsEditor(validationCommands, onChange = { validationCommands = it }, enabled = !state.working)
+        validationError?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+        Spacer(Modifier.height(8.dp))
+        OutlinedTextField(
+            prompt,
+            { prompt = it },
+            label = { Text("Project instructions") },
+            placeholder = { Text("How should agents work in this project?") },
+            minLines = 7,
+            modifier = Modifier.fillMaxWidth().testTag("new-project-instructions"),
+        )
+        Text("Stored centrally and included in every new card conversation.", color = DieterMuted, style = MaterialTheme.typography.bodySmall)
     }
-    SectionTitle("Validation commands")
-    ValidationCommandsEditor(validationCommands, onChange = { validationCommands = it }, enabled = !state.working)
-    val validationError = validationCommandsError(validationCommands)
-    validationError?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
-    Spacer(Modifier.height(8.dp))
-    OutlinedTextField(
-        prompt,
-        { prompt = it },
-        label = { Text("Project instructions") },
-        placeholder = { Text("How should agents work in this project?") },
-        minLines = 7,
-        modifier = Modifier.fillMaxWidth().testTag("new-project-instructions"),
-    )
-    Text("Stored centrally and included in every new card conversation.", color = DieterMuted, style = MaterialTheme.typography.bodySmall)
     Row(Modifier.fillMaxWidth().padding(top = 18.dp), horizontalArrangement = Arrangement.End) {
         TextButton(onClick = { model.openSurface(AppSurface.WORKSPACE) }) { Text("Cancel") }
         Button(
             onClick = {
-                model.createProject(
+                if (existingProjectId.isNotBlank()) {
+                    model.attachCheckout(existingProjectId, endpointId, path, name)
+                } else model.createProject(
                     endpointId = endpointId,
                     mode = mode,
                     path = path,
@@ -951,14 +932,34 @@ private fun AddProjectManagement(state: DieterUiState, model: DieterViewModel) {
                     remotePublishMode = remotePublishMode,
                 )
             },
-            enabled = selectedMachine?.usableForProjectCreation() == true && path.isNotBlank() && boardName.isNotBlank() &&
-                baseBranch.isNotBlank() && validationError == null && !state.working,
+            enabled = selectedMachine?.usableForProjectCreation() == true && path.isNotBlank() &&
+                (existingProjectId.isNotBlank() || boardName.isNotBlank() && baseBranch.isNotBlank() && validationError == null) && !state.working,
             modifier = Modifier.testTag("new-project-submit"),
-        ) { Text("＋  Add project") }
+        ) { Text(if (existingProjectId.isBlank()) "＋ Add project" else "Attach checkout") }
     }
 }
 
 @Composable
 private fun SectionTitle(value: String) {
     Text(value, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(vertical = 8.dp))
+}
+
+@Composable
+fun ProjectCheckoutSelector(state: DieterUiState, model: DieterViewModel) {
+    var expanded by remember { mutableStateOf(false) }
+    val checkouts = state.project?.checkoutsList.orEmpty().filterNot { it.detached }
+    val selected = checkouts.firstOrNull { it.id == state.creationCheckoutId } ?: checkouts.singleOrNull()
+    val owner = state.presentedEndpointConnections.firstOrNull { it.daemonId == selected?.daemonId }
+    Box(Modifier.padding(horizontal = 12.dp, vertical = 4.dp)) {
+        OutlinedButton(onClick = { expanded = true }, modifier = Modifier.testTag("project-checkout-selector")) {
+            Text(selected?.let { "${owner?.label ?: it.daemonId} · ${it.name}" } ?: "Choose machine & checkout")
+        }
+        DropdownMenu(expanded, onDismissRequest = { expanded = false }) {
+            checkouts.forEach { checkout ->
+                val machine = state.presentedEndpointConnections.firstOrNull { it.daemonId == checkout.daemonId }
+                DropdownMenuItem(text = { Text("${machine?.label ?: checkout.daemonId} · ${checkout.name}${if (machine?.online == true) "" else " · Offline"}") },
+                    onClick = { expanded = false; model.selectCreationCheckout(checkout.id) }, enabled = machine?.online == true)
+            }
+        }
+    }
 }

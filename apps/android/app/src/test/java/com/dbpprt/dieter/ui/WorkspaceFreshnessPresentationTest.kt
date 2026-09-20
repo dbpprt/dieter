@@ -4,7 +4,7 @@ import com.dbpprt.dieter.connection.ConnectionPhase
 import com.dbpprt.dieter.connection.EndpointConnection
 import com.dbpprt.dieter.connection.EndpointPhase
 import com.dbpprt.dieter.connection.MachineOutboxSummary
-import com.dbpprt.dieter.connection.ProjectHost
+import com.dbpprt.dieter.connection.ProjectReplica
 import com.dbpprt.dieter.v1.Project
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -126,8 +126,8 @@ class WorkspaceFreshnessPresentationTest {
         val state = DieterUiState(
             connectionPhase = ConnectionPhase.RECONNECTING,
             projects = listOf(project),
-            projectHosts = mapOf(
-                project.id to ProjectHost("machine-one", "daemon-one", "Studio Mac", online = true),
+            projectReplicas = mapOf(
+                project.id to ProjectReplica("machine-one", "daemon-one", "Studio Mac", online = true),
             ),
             endpointConnections = listOf(
                 EndpointConnection(
@@ -143,13 +143,13 @@ class WorkspaceFreshnessPresentationTest {
             ),
         )
 
-        assertFalse(state.presentedProjectHosts.getValue(project.id).online)
+        assertFalse(state.presentedProjectReplicas.getValue(project.id).online)
         assertFalse(state.presentedEndpointConnections.single().online)
         assertEquals(EndpointPhase.PENDING, state.presentedEndpointConnections.single().phase)
         assertFalse(projectScopedNavigationEnabled(state))
 
         val live = state.copy(connectionPhase = ConnectionPhase.CONNECTED)
-        assertTrue(live.presentedProjectHosts.getValue(project.id).online)
+        assertTrue(live.presentedProjectReplicas.getValue(project.id).online)
         assertEquals(EndpointPhase.CONNECTED, live.presentedEndpointConnections.single().phase)
         assertTrue(projectScopedNavigationEnabled(live))
     }
@@ -159,8 +159,8 @@ class WorkspaceFreshnessPresentationTest {
         val state = DieterUiState(
             connectionPhase = ConnectionPhase.RECONNECTING,
             endpointConnections = listOf(EndpointConnection("gateway", "Gateway", "https://example.test")),
-            projectHosts = mapOf(
-                "project-one" to ProjectHost("gateway#machine-one", "machine-one", "Studio Mac", online = false),
+            projectReplicas = mapOf(
+                "project-one" to ProjectReplica("gateway#machine-one", "machine-one", "Studio Mac", online = false),
             ),
             machineOutboxSummaries = mapOf(
                 "gateway#machine-one" to MachineOutboxSummary(1, 0, retrying = false, failed = false),

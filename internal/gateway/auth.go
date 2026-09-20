@@ -2,9 +2,11 @@ package gateway
 
 import (
 	"context"
+	"crypto/ed25519"
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -21,6 +23,7 @@ import (
 	"time"
 
 	"github.com/dbpprt/dieter/internal/buildinfo"
+	"github.com/dbpprt/dieter/internal/linkauth"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -155,6 +158,34 @@ func (a *Auth) AuthenticateBearer(raw string) (Principal, bool) {
 	raw = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(raw), "Bearer "))
 	if raw == "" {
 		return Principal{}, false
+	}
+	if strings.HasPrefix(raw, linkauth.PeerPrefix) {
+		claims, _, _, err := linkauth.ParsePeer(raw)
+		if err != nil {
+			return Principal{}, false
+		}
+		record, err := a.store.Daemon(claims.DaemonID)
+		if err != nil || record.Revoked || !a.config.AllowsGitHubUser(record.GitHubID) {
+			return Principal{}, false
+		}
+		certificateDER, _ := pemDecode(record.Certificate)
+		certificate, certErr := x509.ParseCertificate(certificateDER)
+		now := time.Now()
+		if certErr != nil || now.Before(certificate.NotBefore) || !now.Before(certificate.NotAfter) {
+			return Principal{}, false
+		}
+		key, err := x509.ParsePKIXPublicKey(record.PublicKey)
+		if err != nil {
+			return Principal{}, false
+		}
+		public, ok := key.(ed25519.PublicKey)
+		if !ok {
+			return Principal{}, false
+		}
+		if _, err = linkauth.VerifyPeer(public, raw, a.config.PublicURL.String(), record.Generation, time.Now()); err != nil {
+			return Principal{}, false
+		}
+		return Principal{GitHubID: record.GitHubID, Login: record.Login}, true
 	}
 	digest := a.digest(raw)
 	state, err := a.store.AuthState()

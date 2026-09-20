@@ -64,6 +64,7 @@ message Daemon {
   // DieterService.Health. It is separate from the release version above so
   // clients can route mixed-version machine fleets without probing each one.
   string api_version = 9;
+  // Live, authenticated enrollment capability; false on older/offline daemons.
 }
 
 // RemoteDesktopPresence is intentionally coarse gateway metadata. Display

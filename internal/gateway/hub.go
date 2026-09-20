@@ -154,6 +154,9 @@ func (h *Hub) handshake(stream grpc.BidiStreamingServer[gatewayv1.DaemonLinkFram
 	if err := linkauth.VerifyCertificate(record.Certificate, h.config.PublicURL.String(), identity, challenge, proof.GetPayload()); err != nil {
 		return daemonHandshake{err: status.Error(codes.Unauthenticated, "daemon challenge response is invalid")}
 	}
+	if hello.GetApiVersion() != GatewayAPIVersion {
+		return daemonHandshake{err: status.Error(codes.FailedPrecondition, "application contract mismatch; update Dieter gateway and machines together")}
+	}
 	return daemonHandshake{hello: hello, record: record}
 }
 

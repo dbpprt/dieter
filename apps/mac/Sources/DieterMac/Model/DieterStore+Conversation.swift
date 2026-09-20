@@ -23,10 +23,10 @@ extension DieterStore {
             let refreshedChats = reconcilePendingChatPins(response.chats)
             notifyTransitions(refreshedChats, endpointID: endpoint.id)
             let previousProjectIDs = Set(
-                projectEndpointIDs.compactMap { $0.value == endpoint.id ? $0.key : nil })
+                projectReplicaEndpointIDs.compactMap { $0.value == endpoint.id ? $0.key : nil })
             for project in response.projects {
                 projectDirectory[project.id] = project
-                projectEndpointIDs[project.id] = endpoint.id
+                projectReplicaEndpointIDs[project.id] = endpoint.id
             }
             let combined = chats.filter { !previousProjectIDs.contains($0.projectID) } + refreshedChats
             let nextChats = Array(
@@ -63,7 +63,7 @@ extension DieterStore {
         let opensChat =
             chat || knownChat != nil || card?.scope.caseInsensitiveCompare("chat") == .orderedSame
         let projectID = card?.projectID ?? ""
-        let endpointID = projectEndpointIDs[projectID] ?? endpoint.id
+        let endpointID = endpointID(for: card)
         stopTerminalWatch()
         section = opensChat ? .chats : .board
         if !projectID.isEmpty {
@@ -126,7 +126,7 @@ extension DieterStore {
         }
         guard selectionGeneration == conversationSelectionGeneration else { return }
         conversationSyncing = true
-        if !projectID.isEmpty, !(await ensureProjectConnection(projectID, reportOffline: false)) {
+        if let card, !(await ensureConversationConnection(card, reportOffline: false)) {
             guard selectionGeneration == conversationSelectionGeneration,
                 (selectedCardID ?? selectedChatID) == cardID
             else { return }
@@ -253,7 +253,7 @@ extension DieterStore {
         guard !text.isEmpty || !composerAttachments.isEmpty, let id = selectedCardID ?? selectedChatID
         else { return }
         let projectID = (selectedCard ?? selectedDetail?.card)?.projectID ?? ""
-        let targetEndpointID = projectEndpointIDs[projectID] ?? endpoint.id
+        let targetEndpointID = endpointID(for: selectedCard ?? selectedDetail?.card)
         let draft = composer.draft
         guard !draft.sending else { return }
         draft.sending = true
@@ -311,7 +311,7 @@ extension DieterStore {
             let id = selectedCardID ?? selectedChatID,
             let card = selectedCard ?? selectedDetail?.card
         else { return false }
-        let targetEndpointID = projectEndpointIDs[card.projectID] ?? endpoint.id
+        let targetEndpointID = endpointID(for: card)
         var request = Dieter_V1_SendMessageRequest()
         request.cardID = id
         request.parts = failure.retryParts
@@ -575,6 +575,11 @@ extension DieterStore {
         let destinationProjectID = projectID ?? selectedProjectID
         var request = Dieter_V1_CreateConversationRequest()
         request.projectID = destinationProjectID
+        let checkouts = projectDirectory[destinationProjectID]?.checkouts.filter { !$0.detached } ?? []
+        let chosen = checkouts.first { $0.id == creationCheckoutIDs[destinationProjectID] }
+            ?? checkouts.first { $0.daemonID == endpoint.daemonID }
+            ?? checkouts.first
+        request.checkoutID = chosen?.id ?? ""
         request.boardID = chat ? "" : selectedBoardID
         request.lane = lane ?? selectedBoard?.lanes.first?.id ?? "backlog"
         request.title = title
@@ -597,14 +602,15 @@ extension DieterStore {
                 let optimisticID = DieterOutboxPolicy.expectedConversationID(
                     clientID: request.clientID, commandID: request.commandID)
             else { throw CocoaError(.validationMissingMandatoryProperty) }
-            let target = projectEndpointIDs[destinationProjectID].flatMap { id in
-                endpoints.first { $0.id == id }
+            let target = endpoints.first { $0.daemonID == chosen?.daemonID }
+            guard let target, target.online else {
+                errorMessage = "Choose an online checkout for this conversation."; return false
             }
             try await enqueueOutbox(
                 DieterOutboxEntry(
                     commandID: request.commandID,
                     clientID: syncClientID,
-                    endpointID: target?.id ?? endpoint.id,
+                    endpointID: target.id,
                     kind: chat ? .createChat : .createCard,
                     request: try request.serializedData(),
                     optimisticID: optimisticID,
@@ -647,6 +653,11 @@ extension DieterStore {
     }
 
     func move(_ card: Dieter_V1_Card, lane: String, position: Int64? = nil) async {
+        if lane == "running" && card.initialPromptSentAt.isEmpty {
+            guard await ensureConversationConnection(card) else { return }
+        } else {
+            guard await ensureReplicaConnection(card.projectID) else { return }
+        }
         guard selectedProjectIsLive, let rpc else { return }
         let original = state.cards.first(where: { $0.id == card.id }) ?? card
         let optimisticPosition =
@@ -671,7 +682,12 @@ extension DieterStore {
         var request = Dieter_V1_MoveCardRequest()
         request.cardID = card.id
         request.lane = lane
-        if let position { request.position = position }
+        request.expectedRevision = original.placementRevision
+        if let position {
+            let peers = boardCards.filter { $0.id != card.id && $0.lane == lane }.sorted { $0.position < $1.position }
+            request.afterCardID = peers.last { $0.position < position }?.id ?? ""
+            request.beforeCardID = peers.first { $0.position >= position }?.id ?? ""
+        }
         do {
             let moved = try await rpc.moveCard(request)
             if var pending = pendingCardMoves[card.id], pending.operationID == operationID {
@@ -694,7 +710,7 @@ extension DieterStore {
 
     func start(_ card: Dieter_V1_Card) async {
         guard isConversationServerBacked(card.id) else { return }
-        guard await ensureProjectConnection(card.projectID) else { return }
+        if cardStartRPCOverride == nil { guard await ensureConversationConnection(card) else { return } }
         guard let client = cardStartRPCOverride ?? rpc else { return }
         let current = state.cards.first(where: { $0.id == card.id }) ?? card
         let board = board(id: current.boardID)
@@ -756,7 +772,7 @@ extension DieterStore {
     }
 
     func rename(_ card: Dieter_V1_Card, title: String) async {
-        guard await ensureProjectConnection(card.projectID) else { return }
+        guard await ensureReplicaConnection(card.projectID) else { return }
         guard let rpc else { return }
         var request = Dieter_V1_RenameCardRequest()
         request.cardID = card.id
@@ -769,7 +785,7 @@ extension DieterStore {
     }
 
     func merge(_ source: Dieter_V1_Card, into target: Dieter_V1_Card) async {
-        guard await ensureProjectConnection(source.projectID), let rpc else { return }
+        guard await ensureConversationConnection(source), let rpc else { return }
         var request = Dieter_V1_MergeCardRequest()
         request.cardID = source.id
         request.targetCardID = target.id
@@ -784,7 +800,7 @@ extension DieterStore {
         _ card: Dieter_V1_Card, title: String, initialPrompt: String,
         agentSettings: Dieter_V1_DraftAgentSettings? = nil
     ) async -> Bool {
-        guard await ensureProjectConnection(card.projectID), let rpc else { return false }
+        guard await ensureConversationConnection(card), let rpc else { return false }
         var request = Dieter_V1_UpdateCardRequest()
         request.cardID = card.id
         request.title = title
@@ -801,7 +817,7 @@ extension DieterStore {
     }
 
     func archive(_ card: Dieter_V1_Card, archived: Bool) async {
-        guard await ensureProjectConnection(card.projectID) else { return }
+        guard await ensureReplicaConnection(card.projectID) else { return }
         guard let rpc else { return }
         var request = Dieter_V1_ArchiveCardRequest()
         request.cardID = card.id
@@ -823,7 +839,7 @@ extension DieterStore {
     }
 
     func pin(_ card: Dieter_V1_Card, pinned: Bool) async {
-        guard await ensureProjectConnection(card.projectID) else { return }
+        guard await ensureReplicaConnection(card.projectID) else { return }
         guard let client = chatPinRPCOverride ?? rpc else { return }
         let original =
             chats.first(where: { $0.id == card.id })
@@ -888,7 +904,7 @@ extension DieterStore {
     }
 
     func fork(_ card: Dieter_V1_Card, at messageID: String = "") async {
-        guard await ensureProjectConnection(card.projectID), let rpc else { return }
+        guard await ensureConversationConnection(card), let rpc else { return }
         var request = Dieter_V1_ForkChatRequest()
         request.sourceCardID = card.id
         request.messageID = messageID
@@ -902,7 +918,7 @@ extension DieterStore {
     }
 
     func cancel(_ card: Dieter_V1_Card) async {
-        guard await ensureProjectConnection(card.projectID), workspaceIsLive else { return }
+        guard await ensureConversationConnection(card), workspaceIsLive else { return }
         do {
             try await rpc?.cancelCard(id: card.id)
             await refreshState()

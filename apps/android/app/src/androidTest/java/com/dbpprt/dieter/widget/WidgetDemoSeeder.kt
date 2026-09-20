@@ -5,7 +5,7 @@ import android.content.ComponentName
 import android.content.Context
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import com.dbpprt.dieter.data.CachedProjectHost
+import com.dbpprt.dieter.data.CachedProjectReplica
 import com.dbpprt.dieter.data.DieterSyncStore
 import com.dbpprt.dieter.v1.Board
 import com.dbpprt.dieter.v1.Card
@@ -68,8 +68,8 @@ class WidgetDemoSeeder {
             "gateway",
             state,
             mapOf(
-                "p1" to CachedProjectHost(endpointId, "demo", "mac-mini"),
-                "p2" to CachedProjectHost(endpointId, "demo", "mac-mini"),
+                "p1" to CachedProjectReplica(endpointId, "demo", "mac-mini"),
+                "p2" to CachedProjectReplica(endpointId, "demo", "mac-mini"),
             ),
         )
 

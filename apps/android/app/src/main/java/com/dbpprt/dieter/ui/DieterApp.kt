@@ -147,7 +147,7 @@ internal fun shouldShowInitialWorkspaceSync(
     (loading || phase != ConnectionPhase.CONNECTED)
 
 internal fun projectScopedNavigationEnabled(state: DieterUiState): Boolean =
-    state.projects.any { state.presentedProjectHosts[it.id]?.online != false }
+    state.projects.any { state.presentedProjectReplicas[it.id]?.online != false }
 
 internal const val TABLET_LAYOUT_MIN_WIDTH_DP = 600
 

@@ -472,7 +472,7 @@ struct DieterThemePerformanceTests {
             project.id = "project-\(projectIndex)"
             project.name = "Project \(projectIndex)"
             store.projectDirectory[project.id] = project
-            store.projectEndpointIDs[project.id] = store.endpoint.id
+            store.projectReplicaEndpointIDs[project.id] = store.endpoint.id
 
             for chatIndex in 0..<5 {
                 var chat = Dieter_V1_Card()

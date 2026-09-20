@@ -2,29 +2,29 @@ import AppKit
 import Testing
 @testable import DieterMac
 
-@Test @MainActor func historyAnchorAtNewerEdgeExcludesRowsBehindTheComposer() throws {
+@Test @MainActor func readingPositionExcludesRowsBehindTheComposer() throws {
     let fixture = HistoryAnchorFixture()
     for index in 0..<10 {
         _ = fixture.row(id: "message-\(index)", y: CGFloat(index) * 180, height: 180)
     }
     fixture.scroll(to: 758)
     #expect(fixture.scrollView.contentInsets.bottom == 80)
-    let anchor = try #require(fixture.controller.capture(preferBottom: true))
+    let position = try #require(fixture.controller.capture())
     // Row 6 intersects the native viewport but lies entirely under its 80pt
-    // composer inset. The last readable row is the one we preserve.
-    #expect(anchor.messageID == "message-5")
-    #expect(abs(anchor.offset - 142) < 1)
+    // composer inset. Only readable rows can anchor the reader.
+    #expect(position.anchors.map(\.messageIDs) == [["message-4"], ["message-5"]])
+    #expect(abs(position.anchors[0].top + 38) < 1)
+    #expect(abs(position.anchors[1].top - 142) < 1)
 }
 
-@Test @MainActor func historyAnchorPreservesPartialRowOffsetAcrossBoundedPageReplacement() throws {
+@Test @MainActor func heldReadingPositionSurvivesWindowReplacementInsideTheLayoutPass() throws {
     let fixture = HistoryAnchorFixture()
     let rows = (0..<10).map { index in
         fixture.row(id: "message-\(index)", y: CGFloat(index) * 180, height: 180)
     }
     fixture.scroll(to: 758)
-    let anchor = try #require(fixture.controller.capture())
-    #expect(anchor.messageID == "message-4")
-    #expect(abs(anchor.offset + 38) < 1)
+    #expect(!fixture.controller.isFollowing, "Scrolling away from the end stops following")
+    fixture.controller.holdReadingPosition()
 
     // Replace the window around the reader: remove two oldest rows and add
     // a different-height older row. The visible row moves in the document.
@@ -35,14 +35,14 @@ import Testing
     for row in rows.dropFirst(2) { row.frame.origin.y -= 230 }
     _ = fixture.row(id: "older-page", y: 0, height: 130)
     fixture.document.frame.size.height -= 230
-    #expect(fixture.controller.restore(anchor))
-    let restored = try #require(fixture.controller.capture())
-    #expect(restored.messageID == anchor.messageID)
-    #expect(abs(restored.offset - anchor.offset) < 1)
+    // No explicit restore: the document's frame change is the layout pass.
     #expect(abs(fixture.scrollView.contentView.bounds.minY - 528) < 1)
+    let restored = try #require(fixture.controller.capture())
+    #expect(restored.anchors.first?.messageIDs == ["message-4"])
+    #expect(abs((restored.anchors.first?.top ?? 0) + 38) < 1)
 }
 
-@Test @MainActor func historyAnchorUsesVisibleMessageInsideARegroupedExpandedActivity() throws {
+@Test @MainActor func readingPositionUsesVisibleMessageInsideARegroupedExpandedActivity() throws {
     let fixture = HistoryAnchorFixture()
     let group = fixture.row(id: "message-0", y: 0, height: 1000)
     fixture.controller.register(group, messageIDs: (0..<10).map { "message-\($0)" })
@@ -53,9 +53,7 @@ import Testing
         return row
     }
     fixture.scroll(to: 235)
-    let anchor = try #require(fixture.controller.capture())
-    #expect(anchor.messageID == "message-2")
-    #expect(abs(anchor.offset + 35) < 1)
+    let position = try #require(fixture.controller.capture())
 
     // Prepending activity changes the outer group identity and height, while
     // the message the user is reading keeps its own stable anchor.
@@ -63,15 +61,34 @@ import Testing
     for row in rows { row.frame.origin.y += 140 }
     fixture.controller.register(group, messageIDs: ["older-activity"] + (0..<10).map { "message-\($0)" })
     fixture.document.frame.size.height += 140
-    #expect(fixture.controller.restore(anchor))
-    let restored = try #require(fixture.controller.capture())
-    #expect(restored.messageID == anchor.messageID)
-    #expect(abs(restored.offset - anchor.offset) < 1)
+    #expect(fixture.controller.restore(position))
     #expect(abs(fixture.scrollView.contentView.bounds.minY - 375) < 1)
 }
 
+@Test @MainActor func followingPinsGrowthInsideTheLayoutPassUntilTheUserScrollsAway() throws {
+    let fixture = HistoryAnchorFixture()
+    _ = fixture.row(id: "message-0", y: 0, height: 1800)
+    #expect(fixture.controller.isFollowing)
+    fixture.document.frame.size.height += 300
+    #expect(abs(fixture.scrollView.contentView.bounds.minY - (2100 - 400 + 80)) < 1)
+
+    fixture.scroll(to: 900)
+    #expect(!fixture.controller.isFollowing)
+    fixture.document.frame.size.height += 300
+    #expect(abs(fixture.scrollView.contentView.bounds.minY - 900) < 1, "A detached reader is never moved by growth")
+
+    // Reaching the rendered end only rejoins the tail when it is the live end.
+    fixture.controller.rendersLatest = false
+    fixture.scroll(to: 2400 - 400 + 80)
+    #expect(!fixture.controller.isFollowing)
+    fixture.controller.rendersLatest = true
+    fixture.scroll(to: 1900)
+    fixture.scroll(to: 2400 - 400 + 80)
+    #expect(fixture.controller.isFollowing)
+}
+
 @MainActor private final class HistoryAnchorFixture {
-    let controller = ConversationScrollAnchorController()
+    let controller = ConversationScrollController()
     let scrollView = NSScrollView(frame: NSRect(x: 0, y: 0, width: 500, height: 400))
     let document = FlippedHistoryView(frame: NSRect(x: 0, y: 0, width: 480, height: 1800))
 

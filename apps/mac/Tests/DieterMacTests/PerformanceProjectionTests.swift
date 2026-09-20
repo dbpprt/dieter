@@ -198,12 +198,35 @@ import Testing
 }
 
 @Test func conversationRenderWindowBoundsTheLiveView() {
-    #expect(ConversationRenderWindow.range(messageCount: 20, requestedStart: nil) == 0..<20)
-    #expect(ConversationRenderWindow.range(messageCount: 500, requestedStart: nil) == 440..<500)
-    #expect(ConversationRenderWindow.range(messageCount: 500, requestedStart: 0) == 0..<60)
-    #expect(ConversationRenderWindow.range(messageCount: 500, requestedStart: 450) == 440..<500)
-    #expect(ConversationRenderWindow.range(messageCount: 500, position: .pagingEarlier(from: 440)) == 410..<470)
-    #expect(ConversationRenderWindow.range(messageCount: 500, position: .pagingLater(from: 469)) == 439..<499)
+    func messages(_ count: Int) -> [Dieter_V1_UiMessage] {
+        (0..<count).map { index in
+            var message = Dieter_V1_UiMessage()
+            message.id = "message-\(index)"
+            return message
+        }
+    }
+    let page = ConversationRenderWindow.maximumMessages
+    let retained = page * ConversationRenderWindow.retainedPages
+    #expect(ConversationRenderWindow.range(messages: messages(20), position: .latest) == 0..<20)
+    let long = messages(500)
+    #expect(ConversationRenderWindow.range(messages: long, position: .latest) == (500 - page)..<500)
+    #expect(ConversationRenderWindow.range(messages: long, position: .from(messageID: "message-0")) == 0..<retained)
+    #expect(
+        ConversationRenderWindow.range(messages: long, position: .through(messageID: "message-499"))
+            == (500 - retained)..<500)
+    // An identity that left the loaded transcript falls back to the live tail.
+    #expect(ConversationRenderWindow.range(messages: long, position: .from(messageID: "gone")) == (500 - page)..<500)
+
+    // Scrolling back grows the window by a page and keeps the rows being read.
+    let tail = ConversationRenderWindow.range(messages: long, position: .latest)
+    let earlier = ConversationRenderWindow.extendingEarlier(messages: long, renderedRange: tail)
+    #expect(earlier == .from(messageID: "message-\(500 - 2 * page)"))
+    #expect(ConversationRenderWindow.range(messages: long, position: earlier ?? .latest) == (500 - 2 * page)..<500)
+    #expect(ConversationRenderWindow.extendingEarlier(messages: long, renderedRange: 0..<page) == nil)
+    #expect(ConversationRenderWindow.extendingLater(messages: long, renderedRange: tail) == nil)
+    let later = ConversationRenderWindow.extendingLater(messages: long, renderedRange: 0..<retained)
+    #expect(later == .through(messageID: "message-\(retained + page - 1)"))
+    #expect(ConversationRenderWindow.range(messages: long, position: later ?? .latest) == page..<(retained + page))
 }
 
 @Test func diffProjectionIndexesCommentsWhileBuildingRows() {

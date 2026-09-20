@@ -2,6 +2,7 @@ import Darwin
 import DieterAPI
 import DieterCore
 import Foundation
+import Synchronization
 import GRPCCore
 import GRPCNIOTransportHTTP2
 import GRPCProtobuf
@@ -14,6 +15,15 @@ package final class DieterRPC: Sendable {
     package typealias Transport = HTTP2ClientTransport.Posix
     package typealias Service = Dieter_V1_DieterService.Client<Transport>
     package typealias GatewayService = Dieter_Gateway_V1_GatewayService.Client<Transport>
+
+    private let checkoutSelections = Mutex<[String: String]>([:])
+    package func selectCheckout(projectID: String, checkoutID: String) {
+        checkoutSelections.withLock { $0[projectID] = checkoutID }
+    }
+    private func checkoutID(projectID: String, cardID: String = "") -> String {
+        guard cardID.isEmpty else { return "" }
+        return checkoutSelections.withLock { $0[projectID] ?? "" }
+    }
 
     package let endpoint: DieterEndpoint
     /// Whether this data plane actually connects to this Mac's loopback,
@@ -441,6 +451,25 @@ package final class DieterRPC: Sendable {
         try await service.listDirectories(request: .init(message: request))
     }
 
+    package func peerRecord(_ request: Dieter_V1_PeerRecordRef) async throws -> Dieter_V1_PeerRecord {
+        try await service.getPeerRecord(request: .init(message: request))
+    }
+    package func putPeerRecord(_ request: Dieter_V1_PutPeerRecordRequest) async throws -> Dieter_V1_PeerRecord {
+        try await service.putPeerRecord(request: .init(message: request))
+    }
+
+    package func consolidateProject(source: String, destination: String) async throws -> Dieter_V1_Project {
+        var request = Dieter_V1_ConsolidateProjectRequest()
+        request.sourceProjectID = source; request.destinationProjectID = destination
+        return try await service.consolidateProject(request: .init(message: request))
+    }
+    package func attachCheckout(_ request: Dieter_V1_AttachCheckoutRequest) async throws -> Dieter_V1_Checkout {
+        try await service.attachCheckout(request: .init(message: request))
+    }
+    package func detachCheckout(_ request: Dieter_V1_CheckoutRef) async throws -> Google_Protobuf_Empty {
+        try await service.detachCheckout(request: .init(message: request))
+    }
+
     package func createProject(_ request: Dieter_V1_CreateProjectRequest) async throws
         -> Dieter_V1_CreateProjectResponse
     {
@@ -680,6 +709,7 @@ package final class DieterRPC: Sendable {
     package func projectWorkspaces(projectID: String) async throws -> Dieter_V1_WorkspacesResponse {
         var request = Dieter_V1_ProjectRef()
         request.projectID = projectID
+        request.checkoutID = checkoutID(projectID: projectID)
         return try await service.listProjectWorkspaces(request: .init(message: request))
     }
 
@@ -692,15 +722,20 @@ package final class DieterRPC: Sendable {
     package func changeset(projectID: String) async throws -> Dieter_V1_Changeset {
         var request = Dieter_V1_GetChangesetRequest()
         request.projectID = projectID
+        request.checkoutID = checkoutID(projectID: projectID)
         return try await service.getChangeset(request: .init(message: request))
     }
 
     package func fileDiff(_ request: Dieter_V1_GetDiffRequest) async throws -> Dieter_V1_FileDiff {
-        try await service.getFileDiff(request: .init(message: request))
+        var request = request
+        if request.checkoutID.isEmpty { request.checkoutID = checkoutID(projectID: request.projectID, cardID: request.cardID) }
+        return try await service.getFileDiff(request: .init(message: request))
     }
 
     package func commitDiff(_ request: Dieter_V1_GetDiffRequest) async throws -> Dieter_V1_FileDiff {
-        try await service.getCommitDiff(request: .init(message: request))
+        var request = request
+        if request.checkoutID.isEmpty { request.checkoutID = checkoutID(projectID: request.projectID, cardID: request.cardID) }
+        return try await service.getCommitDiff(request: .init(message: request))
     }
 
     package func addChangeComment(_ request: Dieter_V1_AddChangeCommentRequest) async throws
@@ -727,7 +762,9 @@ package final class DieterRPC: Sendable {
     package func startGitOperation(_ request: Dieter_V1_StartGitOperationRequest) async throws
         -> Dieter_V1_GitOperation
     {
-        try await service.startGitOperation(request: .init(message: request))
+        var request = request
+        if request.checkoutID.isEmpty { request.checkoutID = checkoutID(projectID: request.projectID, cardID: request.cardID) }
+        return try await service.startGitOperation(request: .init(message: request))
     }
 
     package func gitOperation(id: String) async throws -> Dieter_V1_GitOperation {
@@ -760,32 +797,44 @@ package final class DieterRPC: Sendable {
     }
 
     package func listFiles(_ request: Dieter_V1_ListFilesRequest) async throws -> Dieter_V1_FileList {
-        try await service.listFiles(
+        var request = request
+        if request.checkoutID.isEmpty { request.checkoutID = checkoutID(projectID: request.projectID, cardID: request.cardID) }
+        return try await service.listFiles(
             request: .init(message: request), options: Self.boundedUnaryCallOptions())
     }
 
     package func readFile(_ request: Dieter_V1_ReadFileRequest) async throws -> Dieter_V1_FileDocument {
-        try await service.readFile(
+        var request = request
+        if request.checkoutID.isEmpty { request.checkoutID = checkoutID(projectID: request.projectID, cardID: request.cardID) }
+        return try await service.readFile(
             request: .init(message: request), options: Self.boundedUnaryCallOptions())
     }
 
     package func saveFile(_ request: Dieter_V1_SaveFileRequest) async throws -> Dieter_V1_FileDocument {
-        try await service.saveFile(request: .init(message: request))
+        var request = request
+        if request.checkoutID.isEmpty { request.checkoutID = checkoutID(projectID: request.projectID, cardID: request.cardID) }
+        return try await service.saveFile(request: .init(message: request))
     }
 
     package func createFile(_ request: Dieter_V1_CreateFileRequest) async throws
         -> Dieter_V1_FileEntry
     {
-        try await service.createFile(request: .init(message: request))
+        var request = request
+        if request.checkoutID.isEmpty { request.checkoutID = checkoutID(projectID: request.projectID, cardID: request.cardID) }
+        return try await service.createFile(request: .init(message: request))
     }
 
     package func moveFile(_ request: Dieter_V1_MoveFileRequest) async throws
         -> Dieter_V1_MoveFileResponse
     {
-        try await service.moveFile(request: .init(message: request))
+        var request = request
+        if request.checkoutID.isEmpty { request.checkoutID = checkoutID(projectID: request.projectID, cardID: request.cardID) }
+        return try await service.moveFile(request: .init(message: request))
     }
 
     package func deleteFile(_ request: Dieter_V1_DeleteFileRequest) async throws {
+        var request = request
+        if request.checkoutID.isEmpty { request.checkoutID = checkoutID(projectID: request.projectID, cardID: request.cardID) }
         _ = try await service.deleteFile(request: .init(message: request)) as Google_Protobuf_Empty
     }
 
@@ -794,6 +843,7 @@ package final class DieterRPC: Sendable {
     {
         var request = Dieter_V1_ListTerminalsRequest()
         request.projectID = projectID
+        request.checkoutID = checkoutID(projectID: projectID)
         request.cardID = cardID
         return try await service.listTerminals(
             request: .init(message: request), options: Self.boundedUnaryCallOptions())
@@ -802,7 +852,9 @@ package final class DieterRPC: Sendable {
     package func createTerminal(_ request: Dieter_V1_CreateTerminalRequest) async throws
         -> Dieter_V1_Terminal
     {
-        try await service.createTerminal(request: .init(message: request))
+        var request = request
+        if request.checkoutID.isEmpty { request.checkoutID = checkoutID(projectID: request.projectID, cardID: request.cardID) }
+        return try await service.createTerminal(request: .init(message: request))
     }
 
     package func watchTerminal(
@@ -939,6 +991,11 @@ package final class DieterRPC: Sendable {
             try await service.closeRemoteDesktop(
                 request: .init(message: request), options: Self.remoteDesktopControlCallOptions()
             ) as Google_Protobuf_Empty
+    }
+
+    package func schedule(id: String) async throws -> Dieter_V1_Schedule {
+        var request = Dieter_V1_ScheduleRef(); request.scheduleID = id
+        return try await service.getSchedule(request: .init(message: request), options: Self.boundedUnaryCallOptions())
     }
 
     package func schedules(projectID: String, pageSize: Int32 = 50, pageToken: String = "")

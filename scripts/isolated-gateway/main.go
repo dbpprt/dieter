@@ -35,6 +35,7 @@ import (
 	"github.com/dbpprt/dieter/internal/harness"
 	"github.com/dbpprt/dieter/internal/machine"
 	"github.com/dbpprt/dieter/internal/model"
+	"github.com/dbpprt/dieter/internal/peerstore"
 	"github.com/dbpprt/dieter/internal/server"
 	boardstore "github.com/dbpprt/dieter/internal/store"
 )
@@ -127,7 +128,7 @@ func run(address, home, offlineTrigger, daemonRestartTrigger string, boardStress
 	go func() { _ = gatewayServer.Serve(gatewayListener) }()
 	defer gatewayListener.Close()
 
-	identity, err := daemon.LoadOrCreateEnrollmentIdentity(filepath.Join(home, "daemon"), "Isolated E2E machine", publicURL.String())
+	identity, err := daemon.LoadOrCreateEnrollmentIdentity(filepath.Join(home, "dieter"), "Isolated E2E machine", publicURL.String())
 	if err != nil {
 		return err
 	}
@@ -152,6 +153,11 @@ func run(address, home, offlineTrigger, daemonRestartTrigger string, boardStress
 
 	data := boardstore.New(filepath.Join(home, "dieter"))
 	if err = data.Ensure(); err != nil {
+		return err
+	}
+	subject := fmt.Sprintf("github:%d", config.AllowedUserID)
+	account := peerstore.Revision([]string{identity.GatewayURL, subject})
+	if _, err = data.BindPeerAccount(account, subject, identity.ID, identity.GatewayURL); err != nil {
 		return err
 	}
 	repository := filepath.Join(home, "repo")
@@ -268,8 +274,9 @@ func run(address, home, offlineTrigger, daemonRestartTrigger string, boardStress
 	var secondHandler *replaceableHandler
 	var newSecondServer func() *server.Server
 	var secondServer *server.Server
+	var secondData *boardstore.Store
 	if daemonRestartTrigger != "" {
-		secondData := boardstore.New(filepath.Join(home, "second-dieter"))
+		secondData = boardstore.New(filepath.Join(home, "second-dieter"))
 		if err = secondData.Ensure(); err != nil {
 			return err
 		}
@@ -332,9 +339,9 @@ func run(address, home, offlineTrigger, daemonRestartTrigger string, boardStress
 		}()
 	}
 
-	// Keep an online legacy daemon in the directory to exercise mixed-version
-	// client routing. It shares the disposable data plane, but advertises API 2;
-	// a compatible client must reject it from presence metadata before dialing.
+	// Keep an enrolled incompatible machine in discovery. The gateway rejects
+	// its obsolete contract, so it must remain offline rather than opening a
+	// fake legacy tunnel against the current data plane.
 	legacyIdentity, err := daemon.LoadOrCreateEnrollmentIdentity(filepath.Join(home, "legacy-daemon"), "Legacy API 2 machine", publicURL.String())
 	if err != nil {
 		return err
@@ -357,15 +364,14 @@ func run(address, home, offlineTrigger, daemonRestartTrigger string, boardStress
 	if err = legacyIdentity.SaveCredential(legacyCredential.GetDaemonId(), legacyCredential.GetDaemonName(), legacyCredential.GetCertificatePem(), legacyCredential.GetDaemonCaPem(), legacyCredential.GetGatewaySigningPublicKey(), legacyCredential.GetExpiresAt(), legacyCredential.GetGeneration()); err != nil {
 		return err
 	}
-	legacyTunnel := &daemon.GatewayClient{
-		Identity: legacyIdentity, LocalTarget: boardListener.Addr().String(), Version: "legacy-e2e", APIVersion: "2", Log: logger,
+	if err = gatewayStore.MarkDaemonSeen(legacyIdentity.ID, "legacy-e2e", "2", []byte("[]"), []byte("{}")); err != nil {
+		return err
 	}
-	go func() { _ = legacyTunnel.Run(ctx) }()
 
 	secondDaemonID := ""
 	if daemonRestartTrigger != "" {
 		secondIdentity, identityErr := daemon.LoadOrCreateEnrollmentIdentity(
-			filepath.Join(home, "second-daemon"), "Projectless E2E machine", publicURL.String())
+			filepath.Join(home, "second-dieter"), "Projectless E2E machine", publicURL.String())
 		if identityErr != nil {
 			return identityErr
 		}
@@ -391,6 +397,9 @@ func run(address, home, offlineTrigger, daemonRestartTrigger string, boardStress
 			secondCredential.GetDaemonCaPem(), secondCredential.GetGatewaySigningPublicKey(),
 			secondCredential.GetExpiresAt(), secondCredential.GetGeneration(),
 		); err != nil {
+			return err
+		}
+		if _, err = secondData.BindPeerAccount(account, subject, secondIdentity.ID, secondIdentity.GatewayURL); err != nil {
 			return err
 		}
 		secondDaemonID = secondIdentity.ID
@@ -489,13 +498,13 @@ func run(address, home, offlineTrigger, daemonRestartTrigger string, boardStress
 	}
 
 	deadline := time.Now().Add(10 * time.Second)
-	for (!gatewayServer.Hub.Online(identity.ID) || !gatewayServer.Hub.Online(legacyIdentity.ID) ||
+	for (!gatewayServer.Hub.Online(identity.ID) ||
 		(secondDaemonID != "" && !gatewayServer.Hub.Online(secondDaemonID))) && time.Now().Before(deadline) {
 		time.Sleep(20 * time.Millisecond)
 	}
-	if !gatewayServer.Hub.Online(identity.ID) || !gatewayServer.Hub.Online(legacyIdentity.ID) ||
+	if !gatewayServer.Hub.Online(identity.ID) ||
 		(secondDaemonID != "" && !gatewayServer.Hub.Online(secondDaemonID)) {
-		return fmt.Errorf("mixed-version daemon tunnels did not come online")
+		return fmt.Errorf("compatible daemon tunnels did not come online")
 	}
 
 	fmt.Printf("DIETER_ISOLATED_ADDR=%s\n", gatewayListener.Addr().String())

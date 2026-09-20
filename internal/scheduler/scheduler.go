@@ -131,7 +131,7 @@ func (m *Manager) List(projectRef string) ([]model.Schedule, error) {
 }
 
 func (m *Manager) ListPage(projectRef string, pageSize int, pageToken string) (store.SchedulePage, error) {
-	page, err := m.store.ListSchedulesPage(projectRef, pageSize, pageToken)
+	page, err := m.store.ListSharedSchedulesPage(projectRef, pageSize, pageToken)
 	if err != nil {
 		return store.SchedulePage{}, err
 	}
@@ -201,7 +201,7 @@ func (m *Manager) Tick() {
 		return
 	}
 	for _, run := range runs {
-		if run.Status == model.ScheduleRunPending || run.Status == model.ScheduleRunWaitingForProject {
+		if run.Status == model.ScheduleRunPending {
 			m.processRun(run)
 		}
 	}
@@ -248,7 +248,7 @@ func (m *Manager) processRun(run model.ScheduleRun) {
 			"project": project.Name, "board": board.Name, "schedule": schedule.Name,
 		}
 		origin := &model.CardOrigin{Kind: "schedule", ScheduleID: schedule.ID, ScheduleRunID: run.ID, ScheduledFor: run.ScheduledFor}
-		card, err = m.app.CreateCard(context.Background(), app.CardInput{
+		card, err = m.app.CreateCard(context.Background(), app.CardInput{CheckoutID: schedule.CheckoutID,
 			ID: run.CardID, Project: schedule.ProjectID, Board: schedule.BoardID, Lane: model.LaneTodo,
 			Title: render(schedule.TitleTemplate, variables), Prompt: render(schedule.PromptTemplate, variables),
 			Provider: schedule.Provider, Model: schedule.Model, Effort: schedule.Effort, ProviderOptions: schedule.ProviderOptions, LabelIDs: schedule.LabelIDs, Origin: origin, DeferStart: true,
@@ -264,12 +264,8 @@ func (m *Manager) processRun(run model.ScheduleRun) {
 		return
 	}
 	updates, err := m.app.StartCard(card.ID, "", card.Provider, card.Model, card.Effort)
-	if errors.Is(err, store.ErrCapacity) || strings.Contains(errString(err), "project already has an active turn") {
-		if schedule.BusyPolicy == "skip" {
-			_, _ = m.store.UpdateScheduleRun(run.ID, model.ScheduleRunSkipped, err.Error())
-		} else {
-			_, _ = m.store.UpdateScheduleRun(run.ID, model.ScheduleRunWaitingForProject, err.Error())
-		}
+	if errors.Is(err, store.ErrCardActive) {
+		_, _ = m.store.UpdateScheduleRun(run.ID, model.ScheduleRunInterrupted, "conversation already has an active turn; dispatch was not replayed")
 		return
 	}
 	if err != nil {

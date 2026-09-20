@@ -192,7 +192,8 @@ package enum DieterSyncProjectionCache {
         boards: [Dieter_V1_Board],
         cards: [Dieter_V1_Card],
         chats: [Dieter_V1_Card],
-        cursor: Data? = nil
+        cursor: Data? = nil,
+        archives: Dieter_V1_SharedArchives = .init()
     ) -> DieterSyncProjection {
         var snapshot =
             projection.snapshot
@@ -202,6 +203,7 @@ package enum DieterSyncProjectionCache {
         snapshot.state.boards = boards
         snapshot.state.cards = cards
         snapshot.state.chats = chats
+        snapshot.state.archives = archives
         snapshot.schedules = []
         snapshot.scheduleRuns = []
         return DieterSyncProjection(
@@ -238,7 +240,7 @@ package enum GlobalProjectionReducer {
     package static func changesProjection(_ delta: Dieter_V1_GlobalDelta) -> Bool {
         !delta.projects.isEmpty || !delta.removedProjectIds.isEmpty || !delta.boards.isEmpty
             || !delta.removedBoardIds.isEmpty || !delta.cards.isEmpty || !delta.removedCardIds.isEmpty
-            || !delta.chats.isEmpty || !delta.removedChatIds.isEmpty || delta.hasSettings
+            || !delta.chats.isEmpty || !delta.removedChatIds.isEmpty || delta.hasSettings || delta.hasArchives
             || !delta.conversations.isEmpty || !delta.removedConversationIds.isEmpty
     }
 
@@ -290,13 +292,14 @@ package enum GlobalProjectionReducer {
             )
         }
         if delta.hasSettings { next.settings = delta.settings }
+        if delta.hasArchives { next.state.archives = delta.archives }
         return next
     }
 
     package static func changesWorkspace(_ delta: Dieter_V1_GlobalDelta) -> Bool {
         !delta.projects.isEmpty || !delta.removedProjectIds.isEmpty || !delta.boards.isEmpty
             || !delta.removedBoardIds.isEmpty || !delta.cards.isEmpty || !delta.removedCardIds.isEmpty
-            || !delta.chats.isEmpty || !delta.removedChatIds.isEmpty || delta.hasSettings
+            || !delta.chats.isEmpty || !delta.removedChatIds.isEmpty || delta.hasSettings || delta.hasArchives
     }
 
     package static func changesConversationDirectory(_ delta: Dieter_V1_GlobalDelta) -> Bool {

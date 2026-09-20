@@ -2,6 +2,8 @@
 
 package com.dbpprt.dieter.ui
 
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -28,7 +30,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -107,7 +108,7 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.sp
-import com.dbpprt.dieter.connection.ProjectHost
+import com.dbpprt.dieter.connection.ProjectReplica
 import androidx.compose.ui.zIndex
 import androidx.core.graphics.toColorInt
 import com.dbpprt.dieter.ui.theme.DieterAmber
@@ -244,7 +245,7 @@ internal fun SpacesOverview(state: DieterUiState, model: DieterViewModel, modifi
             }
         }
         if (searchOpen) CompactSearchField(query, { query = it }, "Search projects and boards")
-        val showProjectHosts = state.presentedProjectHosts.values.map { it.daemonId }.distinct().size > 1
+        val showProjectReplicas = state.presentedProjectReplicas.values.map { it.daemonId }.distinct().size > 1
         if (state.spacesLoading) LinearProgressIndicator(Modifier.fillMaxWidth().height(2.dp), color = DieterShell)
         SurfaceErrorBanner(state.error, model::clearError)
         if (!state.connected && state.projects.isEmpty()) {
@@ -265,7 +266,7 @@ internal fun SpacesOverview(state: DieterUiState, model: DieterViewModel, modifi
                     }
                     ProjectSpaceCard(
                         project = project,
-                        host = state.presentedProjectHosts[project.id]?.takeIf { showProjectHosts },
+                        host = null,
                         boards = boardsByProject[project.id].orEmpty(),
                         cards = cardsByProject[project.id].orEmpty(),
                         dragged = dragged,
@@ -331,7 +332,7 @@ internal fun SpacesOverview(state: DieterUiState, model: DieterViewModel, modifi
 @Composable
 internal fun ProjectSpaceCard(
     project: Project,
-    host: ProjectHost?,
+    host: ProjectReplica?,
     boards: List<Board>,
     cards: List<BoardCard>,
     dragged: Boolean,
@@ -369,7 +370,7 @@ internal fun ProjectSpaceCard(
                         Text(compactProjectPath(project.path), color = DieterMuted, fontSize = 11.sp, fontFamily = FontFamily.Monospace, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
                         host?.let {
                             Spacer(Modifier.width(7.dp))
-                            ProjectHostBadge(it)
+                            ProjectReplicaBadge(it)
                         }
                     }
                 }
@@ -526,7 +527,7 @@ internal class PinnedChatDragState {
 }
 
 @Composable
-internal fun ProjectHostBadge(host: ProjectHost) {
+internal fun ProjectReplicaBadge(host: ProjectReplica) {
     Surface(shape = RoundedCornerShape(50), color = (if (host.online) DieterEyes else DieterMuted).copy(alpha = 0.1f)) {
         Row(Modifier.padding(horizontal = 7.dp, vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.size(5.dp).background(if (host.online) DieterEyes else DieterMuted, CircleShape))
@@ -658,7 +659,7 @@ internal fun BoardQuickSwitcher(state: DieterUiState, model: DieterViewModel, on
                     Text(
                         buildString {
                             append(project.name)
-                            state.presentedProjectHosts[project.id]?.let { append("  ·  ").append(it.hostname) }
+                            state.presentedProjectReplicas[project.id]?.let { append("  ·  ").append(it.hostname) }
                             append("  ·  ").append(compactProjectPath(project.path))
                         }.uppercase(),
                         color = DieterMuted,
@@ -747,7 +748,7 @@ internal fun ProjectPickerSheet(
             )
             state.projects.forEach { project ->
                 val selected = project.id == state.selectedProjectId
-                val projectOnline = state.presentedProjectHosts[project.id]?.online != false
+                val projectOnline = state.presentedProjectReplicas[project.id]?.online != false
                 Row(
                     Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
                         .then(
@@ -770,7 +771,7 @@ internal fun ProjectPickerSheet(
                         Text(project.name, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal)
                         Text(
                             buildString {
-                                state.presentedProjectHosts[project.id]?.let { append(it.hostname).append("  ·  ") }
+                                state.presentedProjectReplicas[project.id]?.let { append(it.hostname).append("  ·  ") }
                                 append(compactProjectPath(project.path))
                                 if (!projectOnline) append("  ·  Offline")
                             },
@@ -829,12 +830,14 @@ internal fun BoardList(state: DieterUiState, model: DieterViewModel, modifier: M
     var searchOpen by remember { mutableStateOf(false) }
     var query by remember(state.selectedBoardId) { mutableStateOf("") }
     var selectedLabelId by remember(state.selectedBoardId) { mutableStateOf("") }
+    var selectedMachineId by remember(state.selectedBoardId) { mutableStateOf("") }
     val labelDragState = remember(state.selectedBoardId) { BoardLabelDragState() }
     var boardListOrigin by remember { mutableStateOf(Offset.Zero) }
     val dragPreviewOffsetPx = with(LocalDensity.current) { 18.dp.roundToPx() }
-    val boardCards = remember(state.cards, state.selectedBoardId, selectedLabelId, query) {
+    val boardCards = remember(state.cards, state.selectedBoardId, selectedLabelId, selectedMachineId, query) {
         state.cards.filter { card ->
             card.boardId == state.selectedBoardId &&
+                (selectedMachineId.isBlank() || selectedMachineId == card.ownerDaemonId) &&
                 (selectedLabelId.isBlank() || selectedLabelId in card.labelIdsList) &&
                 (query.isBlank() || card.title.contains(query, ignoreCase = true) || card.summary.contains(query, ignoreCase = true))
         }
@@ -862,6 +865,17 @@ internal fun BoardList(state: DieterUiState, model: DieterViewModel, modifier: M
                 onSelect = { selectedLabelId = it },
                 onDrop = { cardId, labelId -> model.assignLabelToBoardCard(cardId, labelId) },
             )
+            val machineIDs = state.cards.filter { it.boardId == state.selectedBoardId }.map { it.ownerDaemonId }.distinct().sorted()
+            if (machineIDs.size > 1) {
+                Row(Modifier.horizontalScroll(rememberScrollState())) {
+                    TextButton(onClick = { selectedMachineId = "" }) { Text(if (selectedMachineId.isEmpty()) "✓ All machines" else "All machines") }
+                    machineIDs.forEach { id ->
+                        TextButton(onClick = { selectedMachineId = id }) {
+                            Text((if (selectedMachineId == id) "✓ " else "") + (state.presentedEndpointConnections.firstOrNull { it.daemonId == id }?.label ?: id))
+                        }
+                    }
+                }
+            }
             LaneTabs(state, model, boardCards)
             val lanes = state.board?.lanesList.orEmpty()
             if (state.loading && lanes.isEmpty()) {
@@ -1113,6 +1127,7 @@ internal fun BoardLanePager(
                     items(visible, key = { it.id }) { card ->
                         SwipeableWorkCard(
                             card = card,
+                            machineName = state.conversationHost(card)?.hostname ?: card.ownerDaemonId,
                             board = state.board,
                             selected = card.id == state.selectedCardId,
                             pending = card.id in state.pendingCardIds,

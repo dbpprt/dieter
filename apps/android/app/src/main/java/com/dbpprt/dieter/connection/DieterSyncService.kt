@@ -475,9 +475,9 @@ class DieterSyncService : Service() {
             snapshot.conversation.subagentsList.count { it.status == "running" || it.status == "pending" }
         }
         val reviews = state.cards.count { it.lane.equals("review", true) }
-        val hostname = state.projectHosts.values.firstOrNull { host ->
+        val hostname = state.projectReplicas.values.firstOrNull { host ->
             host.online && (endpoint == null || host.endpointId == endpoint.id)
-        }?.hostname ?: state.projectHosts.values.firstOrNull { it.online }?.hostname
+        }?.hostname ?: state.projectReplicas.values.firstOrNull { it.online }?.hostname
         val title = when (state.phase) {
             ConnectionPhase.CONNECTED -> "Connected to ${hostname ?: endpoint?.label ?: "Dieter"}"
             ConnectionPhase.SYNCING -> "Synchronizing Dieter"

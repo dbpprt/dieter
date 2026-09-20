@@ -8,7 +8,7 @@ import (
 
 func TestEnsureMigratesMetadataPermissionsWithoutChangingWorktrees(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "dieter")
-	metadata := filepath.Join(root, "projects", "project.md")
+	metadata := filepath.Join(root, "cards", "card.md")
 	logFile := filepath.Join(root, "logs", "daemon.log")
 	leaseFile := filepath.Join(root, "runtime", "leases", "card.json")
 	worktreeFile := filepath.Join(root, "worktrees", "project", "script.sh")

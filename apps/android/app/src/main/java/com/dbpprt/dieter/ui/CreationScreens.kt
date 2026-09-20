@@ -108,11 +108,10 @@ fun NewConversationScreen(
 ) {
     var title by remember { mutableStateOf("") }
     var prompt by remember { mutableStateOf("") }
-    val catalogReady = harnessCatalogMatchesProject(
-        projectId = state.selectedProjectId,
-        catalogEndpointId = state.harnessesEndpointId,
-        projectHosts = state.projectHosts,
-    )
+    val eligibleCheckouts = state.project?.checkoutsList.orEmpty().filterNot { it.detached }
+    val chosenCheckout = eligibleCheckouts.firstOrNull { it.id == state.creationCheckoutId } ?: eligibleCheckouts.singleOrNull()
+    val chosenEndpoint = state.presentedEndpointConnections.firstOrNull { it.daemonId == chosenCheckout?.daemonId }
+    val catalogReady = chosenEndpoint != null && chosenEndpoint.id == state.harnessesEndpointId
     val destinationHarnesses = if (catalogReady) state.harnesses else emptyList()
     val creationDefaults = remember(destinationHarnesses) {
         resolveConversationCreationPreferences(model.conversationCreationPreferences, destinationHarnesses)
@@ -198,8 +197,17 @@ fun NewConversationScreen(
             },
         )
         SurfaceErrorBanner(state.error, model::clearError)
+        val checkouts = state.project?.checkoutsList.orEmpty().filterNot { it.detached }
+        Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
+            checkouts.forEach { checkout ->
+                val machine = state.presentedEndpointConnections.firstOrNull { it.daemonId == checkout.daemonId }
+                TextButton(onClick = { model.selectCreationCheckout(checkout.id) }, enabled = machine?.online == true) {
+                    Text((if (state.creationCheckoutId == checkout.id) "✓ " else "") + "${machine?.label ?: checkout.daemonId} · ${checkout.name}")
+                }
+            }
+        }
         if (!catalogReady) {
-            val destination = state.projectHosts[state.selectedProjectId]?.hostname
+            val destination = chosenEndpoint?.label
                 ?.takeIf(String::isNotBlank)
                 ?: state.project?.name
                 ?: "the selected project"
@@ -374,13 +382,8 @@ private fun NewChatBody(
         }
         SelectorField(
             label = "Project",
-            value = state.project?.let { project ->
-                state.presentedProjectHosts[project.id]?.hostname
-                    ?.takeIf(String::isNotBlank)
-                    ?.let { host -> "${project.name} · $host" }
-                    ?: project.name
-            } ?: "Select a project",
-            options = chatProjectOptions(state.projects, state.presentedProjectHosts),
+            value = state.project?.name ?: "Select a project",
+            options = chatProjectOptions(state.projects, state.presentedProjectReplicas),
             onSelect = onProjectChange,
             modifier = Modifier.fillMaxWidth().testTag("chat-project-selector"),
         )
@@ -666,7 +669,6 @@ fun ScheduleEditorScreen(
     }
     val labelIds = remember(schedule?.id) { mutableStateListOf<String>().also { it += schedule?.labelIdsList.orEmpty() } }
     var openPolicy by remember(schedule?.id) { mutableStateOf(schedule?.openCardPolicy ?: "skip_if_open") }
-    var busyPolicy by remember(schedule?.id) { mutableStateOf(schedule?.busyPolicy ?: "queue") }
     var workspaceMode by remember(schedule?.id) {
         mutableStateOf(schedule?.let { ConversationWorkspaceMode.resolve(it.workspaceMode) } ?: ConversationWorkspaceMode.WORKTREE)
     }
@@ -699,7 +701,6 @@ fun ScheduleEditorScreen(
                 .putAllProviderOptions(providerOptions)
                 .setOpenCardPolicy(openPolicy)
                 .setMisfirePolicy("latest")
-                .setBusyPolicy(busyPolicy)
                 .setWorkspaceMode(workspaceMode.wire)
                 .addAllLabelIds(labelIds)
                 .build(),
@@ -710,7 +711,7 @@ fun ScheduleEditorScreen(
         CreationHeader(
             eyebrow = if (schedule == null) "New automation" else "Edit automation",
             title = if (schedule == null) "New schedule" else "Edit schedule",
-            subtitle = "Runs on the project daemon · $timezone",
+            subtitle = "Runs on the selected checkout’s machine · $timezone",
             onClose = model::closeSurface,
             trailing = {
                 Button(onClick = ::save, enabled = canSave && !state.working) {
@@ -887,8 +888,6 @@ fun ScheduleEditorScreen(
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     FilterChip(selected = openPolicy == "skip_if_open", onClick = { openPolicy = "skip_if_open" }, label = { Text("Skip if open") })
                     FilterChip(selected = openPolicy == "always", onClick = { openPolicy = "always" }, label = { Text("Always create") })
-                    FilterChip(selected = busyPolicy == "queue", onClick = { busyPolicy = "queue" }, label = { Text("Queue if busy") })
-                    FilterChip(selected = busyPolicy == "skip", onClick = { busyPolicy = "skip" }, label = { Text("Skip if busy") })
                 }
             }
             Spacer(Modifier.height(24.dp))

@@ -15,7 +15,7 @@ func scheduleFixtureInput(projectID, boardID, name string) ScheduleInput {
 		Project: projectID, Board: boardID, Name: name, Cron: "* * * * *", Timezone: "UTC",
 		Enabled: true, Action: model.ScheduleActionDraft, TitleTemplate: name,
 		PromptTemplate: "Run " + name, Provider: "codex", Model: "gpt-5.5",
-		OpenCardPolicy: "always", BusyPolicy: "queue", WorkspaceMode: model.WorkspaceModeProject,
+		OpenCardPolicy: "always", WorkspaceMode: model.WorkspaceModeProject,
 	}
 }
 
@@ -148,7 +148,7 @@ func TestOccurrencePagesOrderMixedTimestampPrecisionChronologically(t *testing.T
 	}
 }
 
-func TestRunnableBatchReservesCapacityForPendingAndWaitingRuns(t *testing.T) {
+func TestRunnableBatchIsBoundedAndDoesNotReplayInterruptedRuns(t *testing.T) {
 	data, project, board := setup(t, model.WorkflowReview)
 	schedule, err := data.CreateSchedule(scheduleFixtureInput(project.ID, board.ID, "Fair queue"))
 	if err != nil {
@@ -163,7 +163,7 @@ func TestRunnableBatchReservesCapacityForPendingAndWaitingRuns(t *testing.T) {
 		status := model.ScheduleRunPending
 		nextAttemptAt := ""
 		if index >= 60 {
-			status = model.ScheduleRunWaitingForProject
+			status = model.ScheduleRunInterrupted
 			nextAttemptAt = base.Add(-time.Minute).Format(time.RFC3339Nano)
 		}
 		scheduledFor := base.Add(time.Duration(index) * time.Minute).Format(time.RFC3339Nano)
@@ -183,14 +183,15 @@ func TestRunnableBatchReservesCapacityForPendingAndWaitingRuns(t *testing.T) {
 	for _, run := range runs {
 		counts[run.Status]++
 	}
-	if len(runs) != 100 || counts[model.ScheduleRunPending] != 50 || counts[model.ScheduleRunWaitingForProject] != 50 {
+	if len(runs) != 60 || counts[model.ScheduleRunPending] != 60 || counts[model.ScheduleRunInterrupted] != 0 {
 		t.Fatalf("runnable batch=%d statuses=%v", len(runs), counts)
 	}
 }
 
-func TestLegacyScheduleMarkdownMigratesOnce(t *testing.T) {
+func TestOfflineLegacyScheduleMarkdownImportRunsOnce(t *testing.T) {
 	root := t.TempDir()
 	data := New(root)
+	data.importing = true
 	if err := osMkdirAll(data.scheduleDir()); err != nil {
 		t.Fatal(err)
 	}

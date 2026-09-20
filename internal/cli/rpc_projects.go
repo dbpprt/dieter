@@ -15,6 +15,10 @@ import (
 const projectHelp = `Usage: dieter project <action>
 
 Actions:
+  consolidate SOURCE DESTINATION  Combine project identities; retain all boards and owners
+  attach PROJECT PATH  Attach this machine’s checkout to an existing shared project
+  checkouts PROJECT    List checkouts across machines
+  detach CHECKOUT      Detach a local checkout
   create PATH       Create and register a Git working tree on the target daemon
   open PATH         Register an existing Git working tree on the target daemon
   directories PATH  Browse daemon-host directories and Git repositories
@@ -32,6 +36,10 @@ func (c *CLI) rpcProject(args []string) error {
 		return nil
 	}
 	switch args[0] {
+	case "consolidate":
+		return c.rpcProjectConsolidate(args[1:])
+	case "attach", "detach", "checkouts":
+		return c.rpcProjectCheckouts(args[0], args[1:])
 	case "create":
 		return c.rpcProjectCreate(args[1:], "create")
 	case "open", "add":
@@ -74,6 +82,7 @@ func (c *CLI) rpcProjectCreate(args []string, mode string) error {
 	usage := fmt.Sprintf(`Usage: dieter project %s [options] PATH
 
 Options:
+  --operation-id ID           Reuse for a safe retry of project creation
   --name NAME                 Project display name
   --summary TEXT              Project summary
   --prompt TEXT               Project instructions
@@ -87,6 +96,7 @@ Options:
   --format json|id            Output format
 `, mode)
 	set := flags("project " + mode)
+	operationID := set.String("operation-id", "", "idempotency key")
 	name := set.String("name", "", "project name")
 	summary := set.String("summary", "", "project summary")
 	prompt := set.String("prompt", "", "project instructions")
@@ -120,7 +130,7 @@ Options:
 		return err
 	}
 	response, err := client.CreateProject(rpcCtx, &dieterv1.CreateProjectRequest{
-		Mode: mode, Path: set.Arg(0), Name: *name, Summary: *summary, Prompt: promptValue,
+		OperationId: *operationID, Mode: mode, Path: set.Arg(0), Name: *name, Summary: *summary, Prompt: promptValue,
 		BoardName: *boardName, Workflow: *workflow, BaseRemote: *baseRemote, BaseBranch: *baseBranch,
 		ValidationCommands: validation, RemotePublishMode: *remotePublish,
 	})
@@ -312,11 +322,12 @@ func (c *CLI) rpcProjectUpdate(args []string) error {
 }
 
 func (c *CLI) rpcProjectWorkspace(args []string) error {
-	const usage = "Usage: dieter project workspace [--base-remote REMOTE] [--base-branch BRANCH] [--validation-file FILE] PROJECT\n"
+	const usage = "Usage: dieter project workspace [--base-remote REMOTE] [--base-branch BRANCH] [--validation-file FILE --checkout ID] PROJECT\n"
 	set := flags("project workspace")
 	remote := set.String("base-remote", "", "Git base remote")
 	branch := set.String("base-branch", "", "Git base branch")
 	validationFile := set.String("validation-file", "", "validation command JSON")
+	checkout := set.String("checkout", "", "checkout to update local validation commands (required with --validation-file)")
 	help, err := parse(set, args, usage, c.Out)
 	if help || err != nil {
 		return err
@@ -336,7 +347,10 @@ func (c *CLI) rpcProjectWorkspace(args []string) error {
 	if *branch == "" {
 		*branch = project.GetBaseBranch()
 	}
-	validation := project.GetValidationCommands()
+	var validation []*dieterv1.ValidationCommand
+	if (*validationFile == "") != (*checkout == "") {
+		return errors.New("--checkout and --validation-file must be supplied together")
+	}
 	if *validationFile != "" {
 		validation, err = readRPCValidationCommands(*validationFile)
 		if err != nil {
@@ -348,7 +362,7 @@ func (c *CLI) rpcProjectWorkspace(args []string) error {
 		return err
 	}
 	value, err := client.UpdateProjectWorkspaceSettings(rpcCtx, &dieterv1.UpdateProjectWorkspaceSettingsRequest{
-		ProjectId: project.GetId(), BaseRemote: *remote, BaseBranch: *branch, ValidationCommands: validation,
+		ProjectId: project.GetId(), CheckoutId: *checkout, BaseRemote: *remote, BaseBranch: *branch, ValidationCommands: validation,
 	})
 	if err != nil {
 		return err
@@ -808,6 +822,75 @@ func (c *CLI) rpcBoardHostnames(args []string) error {
 		return err
 	}
 	value, err := client.UpdateBoardHostnames(rpcCtx, &dieterv1.UpdateBoardHostnamesRequest{BoardId: board.GetId(), Hostnames: hosts, Append: *add})
+	if err != nil {
+		return err
+	}
+	return protoJSONOut(c.Out, value)
+}
+
+func (c *CLI) rpcProjectCheckouts(action string, args []string) error {
+	usage := "Usage: dieter project " + action + " [--name NAME] PROJECT PATH\nAttach an existing Git working tree on the selected machine to a shared project.\n"
+	if action == "checkouts" {
+		usage = "Usage: dieter project checkouts PROJECT\nList the shared checkout directory; paths are shown only for the selected machine.\n"
+	}
+	if action == "detach" {
+		usage = "Usage: dieter project detach CHECKOUT\nDetach a checkout on the selected machine without deleting project or conversation data.\n"
+	}
+	set := flags("project " + action)
+	name := set.String("name", "", "checkout display name")
+	help, err := parse(set, args, usage, c.Out)
+	if help || err != nil {
+		return err
+	}
+	required := 1
+	if action == "attach" {
+		required = 2
+	}
+	if set.NArg() != required {
+		return errors.New(usage)
+	}
+	ctx, cancel := c.commandContext()
+	defer cancel()
+	client, rpcCtx, err := c.rpc(ctx)
+	if err != nil {
+		return err
+	}
+	switch action {
+	case "attach":
+		value, err := client.AttachCheckout(rpcCtx, &dieterv1.AttachCheckoutRequest{ProjectId: set.Arg(0), Path: set.Arg(1), Name: *name})
+		if err != nil {
+			return err
+		}
+		return protoJSONOut(c.Out, value)
+	case "detach":
+		_, err := client.DetachCheckout(rpcCtx, &dieterv1.CheckoutRef{CheckoutId: set.Arg(0)})
+		return err
+	default:
+		value, err := client.ListCheckouts(rpcCtx, &dieterv1.ProjectRef{ProjectId: set.Arg(0)})
+		if err != nil {
+			return err
+		}
+		return protoJSONOut(c.Out, value)
+	}
+}
+
+func (c *CLI) rpcProjectConsolidate(args []string) error {
+	const usage = "Usage: dieter project consolidate SOURCE DESTINATION\nKeep destination project defaults and retain every source board, label, checkout, and conversation with its existing ID and machine owner. Source references become durable redirects.\n"
+	set := flags("project consolidate")
+	help, err := parse(set, args, usage, c.Out)
+	if help || err != nil {
+		return err
+	}
+	if set.NArg() != 2 {
+		return errors.New(usage)
+	}
+	ctx, cancel := c.commandContext()
+	defer cancel()
+	client, rpcCtx, err := c.rpc(ctx)
+	if err != nil {
+		return err
+	}
+	value, err := client.ConsolidateProject(rpcCtx, &dieterv1.ConsolidateProjectRequest{SourceProjectId: set.Arg(0), DestinationProjectId: set.Arg(1)})
 	if err != nil {
 		return err
 	}

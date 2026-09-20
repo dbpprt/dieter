@@ -31,5 +31,5 @@ func (s *Store) ApplyGeneratedCardTitle(ref, expectedTitle string, expectedRevis
 	}
 	item.Title, item.UpdatedAt = title, timestamp()
 	item.TitleRevision++
-	return item, s.writeCard(item)
+	return s.saveCard(item)
 }

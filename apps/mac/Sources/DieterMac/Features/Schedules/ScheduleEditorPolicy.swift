@@ -35,7 +35,6 @@ enum ScheduleEditorDraft {
         } else {
             draft.misfirePolicy = "latest"
         }
-        draft.busyPolicy = schedule?.busyPolicy == "skip" ? "skip" : "queue"
         draft.providerOptions = schedule?.providerOptions ?? [:]
         draft.workspaceMode =
             schedule.map { ConversationWorkspaceMode.selectable($0.workspaceMode).rawValue } ?? "worktree"

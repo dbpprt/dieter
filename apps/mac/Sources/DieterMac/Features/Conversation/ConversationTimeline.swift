@@ -68,25 +68,21 @@ struct ConversationTimeline: View {
     var onViewportObservation: ((ConversationViewportObservation) -> Void)?
     @State private var historyLoadInFlight = false
     @State private var loadingEarlier = true
+    @State private var historyRequestID: UUID?
     @State private var contentCanScroll = true
-    @State private var blockedHistoryEdge: Bool?
-    @State private var restoringOffset: CGFloat?
-    @State private var isAtRenderedEnd = true
-    @State private var userScrollInProgress = false
-    @State private var earlierScrollIntent: Bool?
-    @State private var scrollInputGeneration = 0
     @State private var viewportMode = ConversationViewportMode.awaitingInitial(conversationID: "")
     @State private var presentedFailureLog: String?
     @State private var retryingFailureLog: String?
+    // The mounted rows and the window they were built from change together.
+    // Everything that affects layout reads these, never the requested window,
+    // so nothing moves before the scroll controller holds the reading position.
     @State private var projection = ConversationTimelineProjection.empty
     @State private var projectionConversationID = ""
-    @State private var renderWindowPosition = ConversationRenderWindow.Position.latest
-    @State private var pendingWindowAnchor: ConversationScrollAnchorController.Anchor?
-    @State private var scrollAnchors = ConversationScrollAnchorController()
-    @State private var windowChangeInFlight = false
-    @State private var historyRequestID: UUID?
-    @State private var tailScrollRequest = 0
-    @State private var tailScrollRequestPending = false
+    @State private var renderedPosition = ConversationRenderWindow.Position.latest
+    @State private var renderedHasEarlier = false
+    @State private var renderedThroughLatest = true
+    @State private var windowPosition = ConversationRenderWindow.Position.latest
+    @State private var scroller = ConversationScrollController()
     @State private var jumpToLatestHovered = false
 
     private var messages: [Dieter_V1_UiMessage] { context.conversationMessages }
@@ -98,10 +94,11 @@ struct ConversationTimeline: View {
     }
     private var timelineGroups: [ConversationTimelineDisplayGroup] { projection.displayGroups }
     private var renderRange: Range<Int> {
-        ConversationRenderWindow.range(messages: messages, position: renderWindowPosition)
+        ConversationRenderWindow.range(messages: messages, position: windowPosition)
     }
+    private var windowChangePending: Bool { renderedPosition != windowPosition }
     private var isAtLatest: Bool {
-        isAtRenderedEnd && renderRange.upperBound == messages.count && !context.model.browsingEarlierHistory
+        viewportMode == .followingLatest && renderedThroughLatest && !context.model.browsingEarlierHistory
     }
     private var projectionKey: ConversationPresentationKey {
         ConversationPresentationKey(
@@ -162,323 +159,219 @@ struct ConversationTimeline: View {
     }
 
     var body: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                // The server delivers a bounded page, so eager layout is both
-                // affordable and avoids the macOS LazyVStack/SelectionOverlay
-                // anchor-translation cycle that can trap AttributeGraph in one
-                // transaction indefinitely.
-                VStack(alignment: .leading, spacing: 15) {
-                    if projectionConversationID != conversationID && !messages.isEmpty {
-                        LoadFeedback(title: "Preparing conversation…", compact: true)
-                            .accessibilityIdentifier("conversation.preparing")
-                    }
-                    if renderRange.lowerBound > 0 || context.conversationHistoryHasMore {
-                        historyEdge(loading: historyLoadInFlight && loadingEarlier, earlier: true)
-                    }
+        ScrollView {
+            // The server delivers a bounded page, so eager layout is both
+            // affordable and avoids the macOS LazyVStack/SelectionOverlay
+            // anchor-translation cycle that can trap AttributeGraph in one
+            // transaction indefinitely.
+            VStack(alignment: .leading, spacing: 15) {
+                if projectionConversationID != conversationID && !messages.isEmpty {
+                    LoadFeedback(title: "Preparing conversation…", compact: true)
+                        .accessibilityIdentifier("conversation.preparing")
+                }
+                // Always mounted at a fixed height: the last older page
+                // arriving must not shift the rows underneath the reader.
+                historyEdge(
+                    loading: historyLoadInFlight && loadingEarlier, earlier: true,
+                    available: renderedHasEarlier || context.conversationHistoryHasMore)
 
-                    if messages.isEmpty && !agentIsWorking {
-                        EmptyConversationView(
-                            standalone: context.selectedCard?.scope == "chat",
-                            prompt: draftPrompt,
-                            attachments: draftAttachments
-                        )
-                    }
+                if messages.isEmpty && !agentIsWorking {
+                    EmptyConversationView(
+                        standalone: context.selectedCard?.scope == "chat",
+                        prompt: draftPrompt,
+                        attachments: draftAttachments
+                    )
+                }
 
-                    ForEach(timelineGroups) { group in
-                        ConversationTimelineDisplayGroupView(
-                            group: group, showReasoning: context.showReasoning,
-                            isLatest: !context.model.browsingEarlierHistory && renderRange.upperBound == messages.count
-                                && group.id == timelineGroups.last?.id,
-                            scrollAnchors: scrollAnchors
-                        )
-                        .id(group.id)
-                        .background {
-                            ConversationScrollAnchorProbe(
-                                controller: scrollAnchors,
-                                messageIDs: group.rows.flatMap(\.item.messages).map(\.id))
-                        }
+                ForEach(timelineGroups) { group in
+                    ConversationTimelineDisplayGroupView(
+                        group: group, showReasoning: context.showReasoning,
+                        isLatest: renderedThroughLatest && group.id == timelineGroups.last?.id,
+                        scrollAnchors: scroller
+                    )
+                    .id(group.id)
+                    .background {
+                        ConversationScrollAnchorProbe(
+                            controller: scroller,
+                            messageIDs: group.rows.flatMap(\.item.messages).map(\.id))
                     }
+                }
 
-                    ForEach(projection.unattachedPlans, id: \.id) {
-                        TaskPlanView(plan: $0)
-                    }
+                ForEach(projection.unattachedPlans, id: \.id) {
+                    TaskPlanView(plan: $0)
+                }
 
-                    if !pendingTools.isEmpty {
-                        PendingToolGroupView(tools: pendingTools)
-                    }
-                    if agentIsWorking {
-                        ConversationAgentWorkingIndicator(
-                            label: ConversationActivityPresentation.liveLabel(
-                                messages: liveMessages, pendingTools: pendingTools, plans: plans,
-                                showReasoning: context.showReasoning,
-                                conversationStatus: context.conversation?.conversation.status ?? "",
-                                cardRuntime: (context.selectedCard ?? context.selectedDetail?.card)?.runtime ?? ""),
-                            startedAt: ConversationActivityPresentation.turnStart(
-                                messages: liveMessages,
-                                runtimeUpdatedAt: (context.selectedCard ?? context.selectedDetail?.card)?
-                                    .runtimeUpdatedAt ?? "")
-                        )
-                        .id("conversation.agent-working")
-                    }
-                    if let creationFailure {
-                        CreationFailureBanner(
-                            failure: creationFailure,
-                            onRetry: { Task { await context.retryOutboxItem(conversationID) } },
-                            onDiscard: { Task { await context.discardOutboxItem(conversationID) } }
-                        )
-                        .id("conversation.creation-failure")
-                    } else if let turnFailure {
-                        TurnFailureBanner(
-                            failure: turnFailure,
-                            retrying: retryingFailureLog == turnFailure.log,
-                            onViewLog: { presentedFailureLog = turnFailure.log },
-                            onRetry: {
-                                guard retryingFailureLog == nil else { return }
-                                retryingFailureLog = turnFailure.log
-                                Task { @MainActor in
-                                    if !(await context.retryFailedTurn(turnFailure)) {
-                                        retryingFailureLog = nil
-                                    }
+                if !pendingTools.isEmpty {
+                    PendingToolGroupView(tools: pendingTools)
+                }
+                if agentIsWorking {
+                    ConversationAgentWorkingIndicator(
+                        label: ConversationActivityPresentation.liveLabel(
+                            messages: liveMessages, pendingTools: pendingTools, plans: plans,
+                            showReasoning: context.showReasoning,
+                            conversationStatus: context.conversation?.conversation.status ?? "",
+                            cardRuntime: (context.selectedCard ?? context.selectedDetail?.card)?.runtime ?? ""),
+                        startedAt: ConversationActivityPresentation.turnStart(
+                            messages: liveMessages,
+                            runtimeUpdatedAt: (context.selectedCard ?? context.selectedDetail?.card)?
+                                .runtimeUpdatedAt ?? "")
+                    )
+                    .id("conversation.agent-working")
+                }
+                if let creationFailure {
+                    CreationFailureBanner(
+                        failure: creationFailure,
+                        onRetry: { Task { await context.retryOutboxItem(conversationID) } },
+                        onDiscard: { Task { await context.discardOutboxItem(conversationID) } }
+                    )
+                    .id("conversation.creation-failure")
+                } else if let turnFailure {
+                    TurnFailureBanner(
+                        failure: turnFailure,
+                        retrying: retryingFailureLog == turnFailure.log,
+                        onViewLog: { presentedFailureLog = turnFailure.log },
+                        onRetry: {
+                            guard retryingFailureLog == nil else { return }
+                            retryingFailureLog = turnFailure.log
+                            Task { @MainActor in
+                                if !(await context.retryFailedTurn(turnFailure)) {
+                                    retryingFailureLog = nil
                                 }
                             }
-                        )
-                        .id("conversation.turn-failure")
-                    }
-                    if renderRange.upperBound < messages.count || context.model.browsingEarlierHistory {
-                        historyEdge(loading: historyLoadInFlight && !loadingEarlier, earlier: false)
-                    }
-                    Color.clear.frame(height: 17).id(ConversationScrollBehavior.bottomID)
-                }
-                .padding(.horizontal, 18).padding(.top, 17)
-                // The first projection is laid out at the scroll view's default
-                // origin before ScrollViewProxy can move it to the tail. Keep
-                // that intermediate top-of-history frame mounted for layout but
-                // invisible until the native viewport confirms its final edge.
-                .opacity(timelineReadyForDisplay ? 1 : 0)
-                .accessibilityHidden(!timelineReadyForDisplay)
-                .allowsHitTesting(timelineReadyForDisplay)
-            }
-            .defaultScrollAnchor(.bottom, for: .initialOffset)
-            // Growing messages must not move the reading position after a user
-            // scrolls away. Live following is driven explicitly by tail requests.
-            .defaultScrollAnchor(.top, for: .sizeChanges)
-            .scrollEdgeEffectStyle(.soft, for: .bottom)
-            .textSelection(.enabled)
-            .background(background)
-            .background {
-                ConversationScrollIntentProbe(controller: scrollAnchors, onScrollIntent: handleUserScrollIntent)
-            }
-            .smokeTarget("conversation.viewport")
-            .onScrollGeometryChange(for: ConversationScrollSample.self) { geometry in
-                ConversationScrollSample(geometry)
-            } action: { previous, current in
-                isAtRenderedEnd = current.atEnd
-                contentCanScroll = current.canScroll
-                if current.atEnd,
-                    projectionConversationID == conversationID,
-                    viewportMode == .awaitingInitial(conversationID: conversationID)
-                {
-                    viewportMode = .followingLatest
-                }
-                if let restoringOffset {
-                    if abs(current.offset - restoringOffset) < 2 { self.restoringOffset = nil }
-                    return
-                }
-                guard !windowChangeInFlight, !historyLoadInFlight else { return }
-                if userScrollInProgress {
-                    updateViewportAfterUserScroll()
-                    if current.offset < previous.offset, earlierScrollIntent != false, current.nearStart {
-                        showEarlierMessages()
-                    } else if current.offset > previous.offset, earlierScrollIntent != true, current.nearEnd {
-                        showLaterMessages()
-                    }
-                } else if !current.atEnd, current.layout != previous.layout,
-                    ConversationScrollBehavior.followsLatest(viewportMode)
-                {
-                    requestTailScroll()
-                }
-            }
-            .onScrollPhaseChange { oldPhase, newPhase in
-                let wasUserDriven = ConversationScrollBehavior.isUserDriven(oldPhase)
-                let isUserDriven = ConversationScrollBehavior.isUserDriven(newPhase)
-                userScrollInProgress = isUserDriven
-                defer { if !isUserDriven { earlierScrollIntent = nil } }
-                if isUserDriven && !wasUserDriven { scrollInputGeneration &+= 1 }
-                if !isUserDriven || !wasUserDriven { restoringOffset = nil }
-                guard !windowChangeInFlight, !historyLoadInFlight else { return }
-                if isUserDriven, !isAtLatest {
-                    updateViewportAfterUserScroll()
-                } else if wasUserDriven, !isUserDriven {
-                    updateViewportAfterUserScroll()
-                }
-            }
-            .overlay(alignment: .bottom) {
-                if showsJumpToLatest {
-                    Button {
-                        returnToLatest()
-                        scrollToLatest(proxy)
-                        requestTailScroll()
-                    } label: {
-                        Label("Jump to latest", systemImage: "arrow.down")
-                            .font(.caption.weight(.semibold))
-                            .padding(.horizontal, 13)
-                            .frame(height: 34)
-                            .dieterGlass(.regular.interactive(), in: Capsule())
-                    }
-                    .buttonStyle(.plain)
-                    .padding(.bottom, 12)
-                    .accessibilityIdentifier("conversation.jump-to-latest")
-                    .smokeTarget("conversation.jump-to-latest")
-                    .onHover(perform: updateJumpToLatestCursor)
-                    .onDisappear { updateJumpToLatestCursor(false) }
-                }
-            }
-            .onChange(of: showsJumpToLatest) { _, visible in
-                #if DIETER_UI_SMOKE
-                    ConversationUISmokeRunner.recordJumpToLatestVisibility(visible, conversationID: conversationID)
-                #endif
-            }
-            .onChange(of: viewportObservation, initial: true) { _, observation in
-                onViewportObservation?(observation)
-                #if DIETER_UI_SMOKE
-                    ConversationUISmokeRunner.recordViewportObservation(
-                        conversationID: observation.conversationID,
-                        isAtLatest: observation.isAtLatest,
-                        followsLatest: observation.followsLatest,
-                        initialPositionComplete: observation.initialPositionComplete
-                    )
-                #endif
-            }
-            .onChange(of: turnFailure?.log) { _, log in
-                if log == nil { retryingFailureLog = nil }
-            }
-            .onChange(of: conversationID, initial: true) { _, selectedID in
-                renderWindowPosition = .latest
-                pendingWindowAnchor = nil
-                historyLoadInFlight = false
-                windowChangeInFlight = false
-                historyRequestID = nil
-                blockedHistoryEdge = nil
-                restoringOffset = nil
-                tailScrollRequestPending = false
-                contentCanScroll = true
-                projection = .empty
-                projectionConversationID = ""
-                viewportMode = .awaitingInitial(conversationID: selectedID)
-                isAtRenderedEnd = false
-                userScrollInProgress = false
-                earlierScrollIntent = nil
-                scrollInputGeneration &+= 1
-            }
-            .task(id: projectionKey) {
-                let key = projectionKey
-                let range = renderRange
-                let source = Array(messages[range])
-                let allMessageIDs = Set(messages.lazy.map(\.id).filter { !$0.isEmpty })
-                let plans = plans
-                let subagents = subagents
-                let queue = queuedMessages
-                let showReasoning = context.showReasoning
-                guard
-                    let next = try? await BackgroundPreparation.run({
-                        for message in source {
-                            for part in message.parts where !part.text.isEmpty {
-                                try Task.checkCancellation()
-                                _ = try ConversationRenderCache.prepare(ConversationRenderCache.preview(part.text))
-                            }
                         }
-                        return ConversationTimelineProjection.build(
-                            messages: source,
-                            allMessageIDs: allMessageIDs,
-                            plans: plans,
-                            subagents: subagents,
-                            queue: queue,
-                            showReasoning: showReasoning
-                        )
-                    })
-                else { return }
-                guard !Task.isCancelled,
-                    key == projectionKey,
-                    key.conversationID == conversationID
-                else { return }
-                // Preparation leaves the old rows mounted. Capture where the
-                // reader is now, not where the paging request began.
-                if windowChangeInFlight, pendingWindowAnchor != nil,
-                    let current = scrollAnchors.capture(preferBottom: !loadingEarlier)
-                {
-                    if !source.contains(where: { $0.id == current.messageID }),
-                        let index = messages.firstIndex(where: { $0.id == current.messageID })
-                    {
-                        pendingWindowAnchor = current
-                        renderWindowPosition = loadingEarlier ? .pagingEarlier(from: index) : .pagingLater(from: index)
-                        return
-                    }
-                    pendingWindowAnchor = current
+                    )
+                    .id("conversation.turn-failure")
                 }
-                let inputGeneration = scrollInputGeneration
-                projection = next
-                projectionConversationID = key.conversationID
-                if windowChangeInFlight {
-                    let anchor = pendingWindowAnchor
-                    renderWindowPosition = renderWindowPosition.afterUserScroll(
-                        isAtLatest: false, renderedRange: range)
-                    await Task.yield()
-                    guard !Task.isCancelled, key == projectionKey, key.conversationID == conversationID else { return }
-                    if inputGeneration == scrollInputGeneration, let anchor, scrollAnchors.restore(anchor) {
-                        restoringOffset = scrollAnchors.lastRestoredOffset
-                    }
-                    await Task.yield()
-                    guard !Task.isCancelled, key == projectionKey, key.conversationID == conversationID else { return }
-                    pendingWindowAnchor = nil
-                    windowChangeInFlight = false
-                    restoringOffset = nil
+                if !renderedThroughLatest {
+                    historyEdge(loading: historyLoadInFlight && !loadingEarlier, earlier: false, available: true)
                 }
-                if ConversationScrollBehavior.followsLatest(viewportMode) {
-                    requestTailScroll()
-                }
+                Color.clear.frame(height: 17).id(ConversationScrollBehavior.bottomID)
+                    // Keeps the controller attached while no message rows exist.
+                    .background { ConversationScrollAnchorProbe(controller: scroller, messageIDs: []) }
             }
-            .task(
-                id: ConversationTailScrollKey(
-                    conversationID: conversationID,
-                    request: tailScrollRequest
+            .padding(.horizontal, 18).padding(.top, 8)
+            // The first projection is laid out at the scroll view's default
+            // origin before the controller pins it to the tail. Keep that
+            // intermediate frame mounted for layout but invisible.
+            .opacity(timelineReadyForDisplay ? 1 : 0)
+            .accessibilityHidden(!timelineReadyForDisplay)
+            .allowsHitTesting(timelineReadyForDisplay)
+        }
+        .defaultScrollAnchor(.bottom, for: .initialOffset)
+        // Growing messages must not move the reading position after a user
+        // scrolls away. Live following is owned by the scroll controller.
+        .defaultScrollAnchor(.top, for: .sizeChanges)
+        .scrollEdgeEffectStyle(.soft, for: .bottom)
+        .textSelection(.enabled)
+        .background(background)
+        .background {
+            ConversationScrollBridge(
+                controller: scroller,
+                rendersLatest: renderedThroughLatest,
+                onFollowingChange: handleFollowingChange,
+                onUserScroll: handleUserScroll,
+                onScrollableChange: { contentCanScroll = $0 },
+                onScrollIntent: handleUserScrollIntent,
+                onTailCorrection: onTailScroll)
+        }
+        .smokeTarget("conversation.viewport")
+        .overlay(alignment: .bottom) {
+            if showsJumpToLatest {
+                Button {
+                    returnToLatest()
+                } label: {
+                    Label("Jump to latest", systemImage: "arrow.down")
+                        .font(.caption.weight(.semibold))
+                        .padding(.horizontal, 13)
+                        .frame(height: 34)
+                        .dieterGlass(.regular.interactive(), in: Capsule())
+                }
+                .buttonStyle(.plain)
+                .padding(.bottom, 12)
+                .accessibilityIdentifier("conversation.jump-to-latest")
+                .smokeTarget("conversation.jump-to-latest")
+                .onHover(perform: updateJumpToLatestCursor)
+                .onDisappear { updateJumpToLatestCursor(false) }
+            }
+        }
+        .onChange(of: showsJumpToLatest) { _, visible in
+            #if DIETER_UI_SMOKE
+                ConversationUISmokeRunner.recordJumpToLatestVisibility(visible, conversationID: conversationID)
+            #endif
+        }
+        .onChange(of: viewportObservation, initial: true) { _, observation in
+            onViewportObservation?(observation)
+            #if DIETER_UI_SMOKE
+                ConversationUISmokeRunner.recordViewportObservation(
+                    conversationID: observation.conversationID,
+                    isAtLatest: observation.isAtLatest,
+                    followsLatest: observation.followsLatest,
+                    initialPositionComplete: observation.initialPositionComplete
                 )
-            ) {
-                let request = tailScrollRequest
-                let inputGeneration = scrollInputGeneration
-                defer {
-                    if request == tailScrollRequest {
-                        tailScrollRequestPending = false
+            #endif
+        }
+        .onChange(of: turnFailure?.log) { _, log in
+            if log == nil { retryingFailureLog = nil }
+        }
+        .onChange(of: conversationID, initial: true) { _, selectedID in
+            windowPosition = .latest
+            renderedPosition = .latest
+            renderedHasEarlier = false
+            renderedThroughLatest = true
+            historyLoadInFlight = false
+            historyRequestID = nil
+            contentCanScroll = true
+            projection = .empty
+            projectionConversationID = ""
+            viewportMode = .awaitingInitial(conversationID: selectedID)
+            scroller.reset()
+        }
+        .task(id: projectionKey) {
+            let key = projectionKey
+            let range = renderRange
+            let source = Array(messages[range])
+            let allMessageIDs = Set(messages.lazy.map(\.id).filter { !$0.isEmpty })
+            let throughLatest = range.upperBound == messages.count && !context.model.browsingEarlierHistory
+            let plans = plans
+            let subagents = subagents
+            let queue = queuedMessages
+            let showReasoning = context.showReasoning
+            guard
+                let next = try? await BackgroundPreparation.run({
+                    for message in source {
+                        for part in message.parts where !part.text.isEmpty {
+                            try Task.checkCancellation()
+                            _ = try ConversationRenderCache.prepare(ConversationRenderCache.preview(part.text))
+                        }
                     }
-                }
-                guard tailScrollRequest > 0,
-                    projectionConversationID == conversationID,
-                    ConversationScrollBehavior.followsLatest(viewportMode)
-                else { return }
+                    return ConversationTimelineProjection.build(
+                        messages: source,
+                        allMessageIDs: allMessageIDs,
+                        plans: plans,
+                        subagents: subagents,
+                        queue: queue,
+                        showReasoning: showReasoning
+                    )
+                })
+            else { return }
+            guard !Task.isCancelled, key == projectionKey, key.conversationID == conversationID else { return }
+            // The old rows are still mounted and the user may have kept
+            // scrolling during preparation: hold where the reader is now.
+            scroller.holdReadingPosition()
+            scroller.rendersLatest = throughLatest
+            projection = next
+            projectionConversationID = key.conversationID
+            renderedPosition = windowPosition
+            renderedHasEarlier = range.lowerBound > 0
+            renderedThroughLatest = throughLatest
+            guard viewportMode == .awaitingInitial(conversationID: key.conversationID) else { return }
+            // Reveal the transcript once its first layout is pinned to the tail.
+            for _ in 0..<8 {
                 await Task.yield()
-                guard !Task.isCancelled, request == tailScrollRequest,
-                    inputGeneration == scrollInputGeneration,
-                    projectionConversationID == conversationID,
-                    ConversationScrollBehavior.followsLatest(viewportMode),
-                    !userScrollInProgress
-                else { return }
-                scrollToLatest(proxy)
-                if viewportMode == .awaitingInitial(conversationID: conversationID) {
-                    // ScrollViewProxy schedules the native clip-view movement.
-                    // Do not reveal the transcript until that movement has
-                    // landed; otherwise one frame of the history's top leaks.
-                    await Task.yield()
-                    guard !Task.isCancelled, request == tailScrollRequest,
-                        inputGeneration == scrollInputGeneration,
-                        projectionConversationID == conversationID,
-                        viewportMode == .awaitingInitial(conversationID: conversationID),
-                        !userScrollInProgress
-                    else { return }
-                    if scrollAnchors.isAtEdge(earlier: false) || !contentCanScroll {
-                        viewportMode = .followingLatest
-                    }
-                }
+                guard viewportMode == .awaitingInitial(conversationID: key.conversationID) else { return }
+                if scroller.scrollView != nil, scroller.isAtEdge(earlier: false) { break }
             }
+            viewportMode = scroller.isFollowing ? .followingLatest : .detached
         }
         .sheet(
             isPresented: Binding(
@@ -490,186 +383,140 @@ struct ConversationTimeline: View {
         }
     }
 
-    private func scrollToLatest(_ proxy: ScrollViewProxy) {
-        guard !scrollAnchors.isAtEdge(earlier: false) else { return }
-        onTailScroll?()
-        proxy.scrollTo(ConversationScrollBehavior.bottomID, anchor: .bottom)
-    }
-
-    private func updateViewportAfterUserScroll() {
-        guard !windowChangeInFlight, !historyLoadInFlight else { return }
-        if isAtLatest, earlierScrollIntent != true {
+    private func handleFollowingChange(_ following: Bool) {
+        if following {
             returnToLatest()
-            return
+        } else {
+            guard ConversationScrollBehavior.initialPositionComplete(viewportMode) else { return }
+            viewportMode = .detached
+            // Freeze the rendered start so appends cannot evict the text being read.
+            setWindowPosition(
+                ConversationRenderWindow.detached(
+                    from: windowPosition, messages: messages, renderedRange: renderRange))
         }
-        guard !isAtLatest else { return }
-        viewportMode = ConversationScrollBehavior.afterUserScroll(isAtLatest: isAtLatest)
-        renderWindowPosition = renderWindowPosition.afterUserScroll(
-            isAtLatest: isAtLatest, renderedRange: renderRange)
     }
 
-    private func requestTailScroll() {
-        // Geometry, projection, and transcript updates can all request the
-        // same initial scroll during one frame. One in-flight task is enough;
-        // repeatedly changing the task identity makes SwiftUI restart it and
-        // produces "updated multiple times per frame" feedback loops.
-        guard !tailScrollRequestPending else { return }
-        tailScrollRequestPending = true
-        tailScrollRequest &+= 1
-    }
-
-    private func returnToLatest() {
-        guard
-            viewportMode != .followingLatest || renderWindowPosition != .latest
-                || context.model.browsingEarlierHistory || !context.model.olderConversationMessages.isEmpty
-        else { return }
-        earlierScrollIntent = nil
-        historyRequestID = nil
-        historyLoadInFlight = false
-        blockedHistoryEdge = nil
-        restoringOffset = nil
-        pendingWindowAnchor = nil
-        windowChangeInFlight = false
-        viewportMode = .followingLatest
-        renderWindowPosition = .latest
-        // Release pages collected during scrollback and rejoin the live window,
-        // including after the bounded history cache has evicted its newer end.
-        context.model.returnToLatest()
-        requestTailScroll()
-    }
-
-    private func historyEdge(loading: Bool, earlier: Bool) -> some View {
-        HStack(spacing: 8) {
-            if loading {
-                ProgressView().controlSize(.small)
-                Text(earlier ? "Loading earlier messages…" : "Loading later messages…")
-                    .font(.caption).foregroundStyle(DieterTheme.tertiary)
-            } else if !contentCanScroll || blockedHistoryEdge == earlier {
-                // A collapsed activity group or hidden reasoning may not be
-                // tall enough to scroll. Keep that history reachable as well.
-                Button(earlier ? "Load earlier messages" : "Load later messages") {
-                    if earlier {
-                        showEarlierMessages(preservingPosition: false)
-                    } else {
-                        showLaterMessages(preservingPosition: false)
-                    }
-                }
-                .buttonStyle(.borderless).font(.caption)
-            } else {
-                Color.clear
-            }
-        }
-        .frame(maxWidth: .infinity).frame(height: 18)
-        .accessibilityElement(children: .combine)
-        .accessibilityIdentifier(earlier ? "conversation.history.earlier" : "conversation.history.later")
-        .smokeTarget(earlier ? "conversation.history.earlier" : "conversation.history.later")
-        .accessibilityLabel(earlier ? "Earlier conversation history" : "Later conversation history")
-        .accessibilityAction(named: earlier ? "Load earlier messages" : "Load later messages") {
-            if earlier {
-                showEarlierMessages(preservingPosition: false)
-            } else {
-                showLaterMessages(preservingPosition: false)
-            }
+    private func handleUserScroll(_ proximity: ConversationScrollController.EdgeProximity) {
+        if proximity.movedEarlier, proximity.nearStart {
+            showEarlierMessages()
+        } else if !proximity.movedEarlier, proximity.nearEnd {
+            showLaterMessages()
         }
     }
 
     private func handleUserScrollIntent(_ delta: CGFloat) {
         let earlier = delta > 0
-        earlierScrollIntent = earlier
-        scrollInputGeneration &+= 1
         // The native monitor runs before AppKit moves the clip view. Relinquish
-        // the tail now, before a queued SwiftUI task can undo this gesture.
-        if earlier, contentCanScroll {
-            viewportMode = .detached
-            if !windowChangeInFlight {
-                renderWindowPosition = renderWindowPosition.afterUserScroll(
-                    isAtLatest: false, renderedRange: renderRange)
-            }
-        }
-        guard !windowChangeInFlight, !historyLoadInFlight else { return }
-        guard scrollAnchors.isAtEdge(earlier: earlier) else { return }
-        restoringOffset = nil
+        // the tail now, before content streaming in can undo this gesture.
+        if earlier, scroller.contentCanScroll { scroller.detach() }
+        // A clamped edge produces no movement to observe; act on intent.
+        guard scroller.isAtEdge(earlier: earlier) else { return }
         if earlier {
             showEarlierMessages()
-        } else if renderRange.upperBound == messages.count, !context.model.browsingEarlierHistory {
-            returnToLatest()
+        } else if renderedThroughLatest {
+            scroller.follow()
         } else {
             showLaterMessages()
         }
     }
 
-    private func showEarlierMessages(preservingPosition: Bool = true) {
-        guard !windowChangeInFlight, !historyLoadInFlight else { return }
-        if renderRange.lowerBound == 0 {
-            if context.conversationHistoryHasMore { loadHistory(earlier: true) }
-            return
+    private func returnToLatest() {
+        historyRequestID = nil
+        historyLoadInFlight = false
+        viewportMode = .followingLatest
+        setWindowPosition(.latest)
+        scroller.follow()
+        // Release pages collected during scrollback and rejoin the live window,
+        // including after the bounded history cache has evicted its newer end.
+        if context.model.browsingEarlierHistory || !context.model.olderConversationMessages.isEmpty {
+            context.model.returnToLatest()
         }
-        moveRenderWindow(earlier: true, preservingPosition: preservingPosition)
     }
 
-    private func showLaterMessages(preservingPosition: Bool = true) {
-        guard !windowChangeInFlight, !historyLoadInFlight else { return }
-        if renderRange.upperBound == messages.count {
-            if context.model.browsingEarlierHistory { loadHistory(earlier: false) }
-            return
+    private func historyEdge(loading: Bool, earlier: Bool, available: Bool) -> some View {
+        HStack(spacing: 8) {
+            if !available {
+                Color.clear
+            } else if loading {
+                ProgressView().controlSize(.small)
+                Text(earlier ? "Loading earlier messages…" : "Loading later messages…")
+                    .font(.caption).foregroundStyle(DieterTheme.tertiary)
+            } else {
+                // Scrolling loads history well before this edge is reached.
+                // The button keeps it reachable when the transcript is too
+                // short to scroll or a request failed.
+                Button(earlier ? "Load earlier messages" : "Load later messages") {
+                    if earlier { showEarlierMessages() } else { showLaterMessages() }
+                }
+                .buttonStyle(.borderless).font(.caption)
+            }
         }
-        moveRenderWindow(earlier: false, preservingPosition: preservingPosition)
+        .frame(maxWidth: .infinity).frame(height: 18)
+        .accessibilityElement(children: .combine)
+        .accessibilityHidden(!available)
+        .accessibilityIdentifier(earlier ? "conversation.history.earlier" : "conversation.history.later")
+        .smokeTarget(earlier ? "conversation.history.earlier" : "conversation.history.later")
+        .accessibilityLabel(earlier ? "Earlier conversation history" : "Later conversation history")
+        .accessibilityAction(named: earlier ? "Load earlier messages" : "Load later messages") {
+            if earlier { showEarlierMessages() } else { showLaterMessages() }
+        }
     }
 
-    private func moveRenderWindow(earlier: Bool, preservingPosition: Bool) {
-        let anchor = preservingPosition ? scrollAnchors.capture(preferBottom: !earlier) : nil
-        let fallback = earlier ? renderRange.lowerBound : max(renderRange.lowerBound, renderRange.upperBound - 1)
-        let index = fallback
-        let next: ConversationRenderWindow.Position = earlier ? .pagingEarlier(from: index) : .pagingLater(from: index)
-        let nextRange = ConversationRenderWindow.range(messages: messages, position: next)
-        guard earlier ? nextRange.lowerBound < renderRange.lowerBound : nextRange.upperBound > renderRange.upperBound
-        else { return }
-        if let anchor, !messages[nextRange].contains(where: { $0.id == anchor.messageID }) {
-            // Wait until the reader reaches the retained overlap instead of
-            // evicting a partly visible oversized message. A fallback remains
-            // available when hidden messages make that overlap unreachable.
-            blockedHistoryEdge = earlier
-            return
+    private func showEarlierMessages() {
+        guard !windowChangePending, !historyLoadInFlight, projectionConversationID == conversationID else { return }
+        if let next = ConversationRenderWindow.extendingEarlier(messages: messages, renderedRange: renderRange) {
+            leaveLatest()
+            setWindowPosition(next)
+        } else if context.conversationHistoryHasMore {
+            loadHistory(earlier: true)
         }
-        blockedHistoryEdge = nil
-        loadingEarlier = earlier
-        viewportMode = .detached
-        pendingWindowAnchor = anchor
-        windowChangeInFlight = true
-        renderWindowPosition = next
+    }
+
+    private func showLaterMessages() {
+        guard !windowChangePending, !historyLoadInFlight, projectionConversationID == conversationID else { return }
+        if let next = ConversationRenderWindow.extendingLater(messages: messages, renderedRange: renderRange) {
+            setWindowPosition(next)
+        } else if context.model.browsingEarlierHistory {
+            loadHistory(earlier: false)
+        }
+    }
+
+    /// A request that leaves the rendered range unchanged has nothing to
+    /// build, so it is already rendered; otherwise the projection task lands it.
+    private func setWindowPosition(_ next: ConversationRenderWindow.Position) {
+        guard next != windowPosition else { return }
+        let unchanged =
+            !windowChangePending
+            && ConversationRenderWindow.range(messages: messages, position: next) == renderRange
+        windowPosition = next
+        if unchanged { renderedPosition = next }
+    }
+
+    private func leaveLatest() {
+        scroller.detach()
+        if ConversationScrollBehavior.initialPositionComplete(viewportMode) { viewportMode = .detached }
     }
 
     private func loadHistory(earlier: Bool) {
-        guard !historyLoadInFlight, !windowChangeInFlight else { return }
         let requestID = UUID()
         historyRequestID = requestID
         historyLoadInFlight = true
         loadingEarlier = earlier
-        blockedHistoryEdge = nil
-        viewportMode = .detached
+        leaveLatest()
         let selectedID = conversationID
-        let anchor = scrollAnchors.capture(preferBottom: !earlier)
-        let fallbackID = earlier ? messages.first?.id : messages.last?.id
         Task { @MainActor in
             let loaded = earlier ? await context.loadEarlierMessages() : await context.model.loadLaterMessages()
             guard historyRequestID == requestID, selectedID == conversationID else { return }
             historyRequestID = nil
-            if loaded {
-                // The user may keep scrolling during the network request. The
-                // old projection is still mounted here; retain its current
-                // visible point rather than restoring the request's old offset.
-                let anchor = scrollAnchors.capture(preferBottom: !earlier) ?? anchor
-                let anchorID = anchor?.messageID ?? fallbackID
-                let index = anchorID.flatMap { id in messages.firstIndex { $0.id == id } }
-                pendingWindowAnchor = anchor
-                windowChangeInFlight = true
-                if let index {
-                    renderWindowPosition = earlier ? .pagingEarlier(from: index) : .pagingLater(from: index)
-                } else {
-                    renderWindowPosition = earlier ? .startingAt(0) : .latest
-                }
-            }
             historyLoadInFlight = false
+            guard loaded else { return }
+            // Message identities keep the window where the reader is while
+            // the loaded page shifts every index; mount one more page of it.
+            let next =
+                earlier
+                ? ConversationRenderWindow.extendingEarlier(messages: messages, renderedRange: renderRange)
+                : ConversationRenderWindow.extendingLater(messages: messages, renderedRange: renderRange)
+            if let next { setWindowPosition(next) }
         }
     }
 

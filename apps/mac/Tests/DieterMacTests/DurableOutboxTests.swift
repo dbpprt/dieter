@@ -190,7 +190,7 @@ func synchronizedCreateRemovesOptimisticRowBeforeOutboxJournalAcknowledgement(ch
     var project = Dieter_V1_Project()
     project.id = "project"
     store.projectDirectory = [project.id: project]
-    store.projectEndpointIDs = [project.id: store.endpoint.id]
+    store.projectReplicaEndpointIDs = [project.id: store.endpoint.id]
     store.selectedProjectID = project.id
     var request = Dieter_V1_CreateConversationRequest()
     request.projectID = project.id
@@ -389,7 +389,7 @@ func savedDraftDoesNotAcknowledgeRequiredFirstTurn(mode: String) async throws {
     var project = Dieter_V1_Project()
     project.id = "project"
     store.projectDirectory = [project.id: project]
-    store.projectEndpointIDs = [project.id: store.endpoint.id]
+    store.projectReplicaEndpointIDs = [project.id: store.endpoint.id]
     store.selectedProjectID = project.id
     let chat = mode == "chat" || mode == "deferred"
     let requiresStart = mode == "chat" || mode == "running"

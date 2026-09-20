@@ -6,6 +6,8 @@ import UniformTypeIdentifiers
 struct NewProjectSheet: View {
     @Environment(DieterStore.self) private var store
     @Environment(\.dismiss) private var dismiss
+    @State private var operationID = UUID().uuidString
+    @State private var existingProjectID = ""
     @State private var machineID = ""
     @State private var draft = ProjectSetupDraft()
     @State private var browserPresented = false
@@ -20,6 +22,10 @@ struct NewProjectSheet: View {
 
     private var selectedMachine: DieterEndpoint? {
         availableMachines.first { $0.id == machineID }
+    }
+
+    private var canSubmit: Bool {
+        existingProjectID.isEmpty ? draft.canSubmit : !draft.path.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     var body: some View {
@@ -43,20 +49,26 @@ struct NewProjectSheet: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 17) {
-                    Picker("Project type", selection: $draft.mode) {
-                        ForEach(ProjectSetupMode.allCases) { mode in
-                            Text(mode.title).tag(mode)
+                    if existingProjectID.isEmpty {
+                        Picker("Project type", selection: $draft.mode) {
+                            ForEach(ProjectSetupMode.allCases) { mode in
+                                Text(mode.title).tag(mode)
+                            }
                         }
+                        .pickerStyle(.segmented)
+                        .labelsHidden()
+                        .accessibilityIdentifier("new-project.mode")
                     }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
-                    .accessibilityIdentifier("new-project.mode")
 
-                    projectLabel("Project host")
+                    Picker("Project", selection: $existingProjectID) {
+                        Text("Create a new project").tag("")
+                        ForEach(store.projects, id: \.id) { project in Text("Attach to \(project.name)").tag(project.id) }
+                    }
+                    projectLabel("Checkout machine")
                     Menu {
                         ForEach(availableMachines) { machine in
                             Button {
-                                if machine.online { machineID = machine.id }
+                                if machine.online && machine.apiCompatibility != .incompatible { machineID = machine.id }
                             } label: {
                                 if machine.id == machineID {
                                     Label(machine.name, systemImage: "checkmark")
@@ -64,13 +76,14 @@ struct NewProjectSheet: View {
                                     Text(machine.online ? machine.name : "\(machine.name) · Offline")
                                 }
                             }
+                            .disabled(!machine.online || machine.apiCompatibility == .incompatible)
                         }
                     } label: {
                         HStack(spacing: 9) {
                             Circle().fill(selectedMachine?.online == true ? DieterTheme.eyes : DieterTheme.tertiary)
                                 .frame(width: 7, height: 7)
                             VStack(alignment: .leading, spacing: 1) {
-                                Text(selectedMachine?.name ?? "Choose a project host").font(
+                                Text(selectedMachine?.name ?? "Choose a machine").font(
                                     .system(size: 13, weight: .semibold))
                                 Text(
                                     selectedMachine?.online == true
@@ -104,99 +117,103 @@ struct NewProjectSheet: View {
                         .buttonStyle(DieterSecondaryButtonStyle())
                         .accessibilityIdentifier("new-project.browse")
                         .smokeTarget("new-project.browse")
-                        .disabled(submitting || machineID.isEmpty || selectedMachine?.online != true)
+                        .disabled(submitting || machineID.isEmpty || selectedMachine?.online != true || selectedMachine?.apiCompatibility == .incompatible)
                     }
                     Text(pathHelp)
                         .font(.caption2).foregroundStyle(DieterTheme.tertiary)
 
                     HStack(alignment: .top, spacing: 12) {
                         VStack(alignment: .leading, spacing: 7) {
-                            projectLabel("Project name")
+                            projectLabel(existingProjectID.isEmpty ? "Project name" : "Checkout name")
                             projectTextField("Directory name by default", text: $draft.name)
                                 .accessibilityIdentifier("new-project.name")
                             Text("Optional; the directory name is used by default.")
                                 .font(.caption2).foregroundStyle(DieterTheme.tertiary)
                         }
-                        VStack(alignment: .leading, spacing: 7) {
-                            projectLabel("Summary")
-                            projectTextField("What is this repository?", text: $draft.summary)
-                                .accessibilityIdentifier("new-project.summary")
+                        if existingProjectID.isEmpty {
+                            VStack(alignment: .leading, spacing: 7) {
+                                projectLabel("Summary")
+                                projectTextField("What is this repository?", text: $draft.summary)
+                                    .accessibilityIdentifier("new-project.summary")
+                            }
                         }
                     }
 
-                    HStack(alignment: .top, spacing: 12) {
-                        VStack(alignment: .leading, spacing: 7) {
-                            projectLabel("First board")
-                            projectTextField("Main", text: $draft.boardName)
-                                .accessibilityIdentifier("new-project.board-name")
+                    if existingProjectID.isEmpty {
+                        HStack(alignment: .top, spacing: 12) {
+                            VStack(alignment: .leading, spacing: 7) {
+                                projectLabel("First board")
+                                projectTextField("Main", text: $draft.boardName)
+                                    .accessibilityIdentifier("new-project.board-name")
+                            }
+                            VStack(alignment: .leading, spacing: 7) {
+                                projectLabel("Workflow")
+                                Menu {
+                                    ForEach(BoardWorkflow.allCases) { option in
+                                        Button(option.title) { draft.workflow = option.rawValue }
+                                    }
+                                } label: {
+                                    HStack {
+                                        Text(BoardWorkflow(rawValue: draft.workflow)?.title ?? "With review")
+                                        Spacer()
+                                        Image(systemName: "chevron.down").font(.system(size: 8, weight: .bold))
+                                            .foregroundStyle(DieterTheme.tertiary)
+                                    }
+                                    .font(.system(size: 13, weight: .medium)).foregroundStyle(DieterTheme.subtle)
+                                    .padding(.horizontal, 12).frame(height: 40)
+                                    .background(DieterTheme.input, in: RoundedRectangle(cornerRadius: 8))
+                                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(DieterTheme.strongBorder))
+                                }
+                                .menuStyle(.borderlessButton).menuIndicator(.hidden)
+                                .accessibilityIdentifier("new-project.workflow")
+                            }
                         }
-                        VStack(alignment: .leading, spacing: 7) {
-                            projectLabel("Workflow")
-                            Menu {
-                                ForEach(BoardWorkflow.allCases) { option in
-                                    Button(option.title) { draft.workflow = option.rawValue }
-                                }
-                            } label: {
-                                HStack {
-                                    Text(BoardWorkflow(rawValue: draft.workflow)?.title ?? "With review")
-                                    Spacer()
-                                    Image(systemName: "chevron.down").font(.system(size: 8, weight: .bold))
-                                        .foregroundStyle(DieterTheme.tertiary)
-                                }
-                                .font(.system(size: 13, weight: .medium)).foregroundStyle(DieterTheme.subtle)
-                                .padding(.horizontal, 12).frame(height: 40)
-                                .background(DieterTheme.input, in: RoundedRectangle(cornerRadius: 8))
-                                .overlay(RoundedRectangle(cornerRadius: 8).stroke(DieterTheme.strongBorder))
-                            }
-                            .menuStyle(.borderlessButton).menuIndicator(.hidden)
-                            .accessibilityIdentifier("new-project.workflow")
-                        }
-                    }
-                    Text(BoardWorkflow(rawValue: draft.workflow)?.laneDescription ?? "")
-                        .font(.caption2).foregroundStyle(DieterTheme.tertiary)
-
-                    DisclosureGroup(isExpanded: $workspaceSettingsExpanded) {
-                        VStack(alignment: .leading, spacing: 11) {
-                            HStack(spacing: 12) {
-                                VStack(alignment: .leading, spacing: 7) {
-                                    projectLabel("Workspace base")
-                                    Text("Configured independently on every chat and card.")
-                                        .font(.caption2).foregroundStyle(DieterTheme.tertiary)
-                                }
-                            }
-                            HStack(spacing: 12) {
-                                VStack(alignment: .leading, spacing: 7) {
-                                    projectLabel("Base remote")
-                                    projectTextField("origin", text: $draft.baseRemote)
-                                }
-                                VStack(alignment: .leading, spacing: 7) {
-                                    projectLabel("Base branch")
-                                    projectTextField("main", text: $draft.baseBranch)
-                                }
-                            }
-                            Text(
-                                "Each chat and card chooses its own workspace mode. Git operations run on the selected project host."
-                            )
+                        Text(BoardWorkflow(rawValue: draft.workflow)?.laneDescription ?? "")
                             .font(.caption2).foregroundStyle(DieterTheme.tertiary)
-                        }
-                        .padding(.top, 10)
-                    } label: {
-                        Label("Agent workspaces", systemImage: "square.stack.3d.up")
-                            .font(.system(size: 12, weight: .semibold))
-                    }
-                    .accessibilityIdentifier("new-project.workspace-settings")
 
-                    projectLabel("Project instructions")
-                    TextField("How should agents work in this project?", text: $draft.prompt, axis: .vertical)
-                        .textFieldStyle(.plain)
-                        .font(.system(size: 13)).lineSpacing(3).lineLimit(1...5)
-                        .padding(.horizontal, 12).padding(.vertical, 13)
-                        .frame(height: 105)
-                        .background(DieterTheme.input, in: RoundedRectangle(cornerRadius: 9))
-                        .overlay(RoundedRectangle(cornerRadius: 9).stroke(DieterTheme.strongBorder))
-                        .accessibilityIdentifier("new-project.instructions")
-                    Text("Stored centrally and included in every new card conversation for this project.")
-                        .font(.caption2).foregroundStyle(DieterTheme.tertiary)
+                        DisclosureGroup(isExpanded: $workspaceSettingsExpanded) {
+                            VStack(alignment: .leading, spacing: 11) {
+                                HStack(spacing: 12) {
+                                    VStack(alignment: .leading, spacing: 7) {
+                                        projectLabel("Workspace base")
+                                        Text("Configured independently on every chat and card.")
+                                            .font(.caption2).foregroundStyle(DieterTheme.tertiary)
+                                    }
+                                }
+                                HStack(spacing: 12) {
+                                    VStack(alignment: .leading, spacing: 7) {
+                                        projectLabel("Base remote")
+                                        projectTextField("origin", text: $draft.baseRemote)
+                                    }
+                                    VStack(alignment: .leading, spacing: 7) {
+                                        projectLabel("Base branch")
+                                        projectTextField("main", text: $draft.baseBranch)
+                                    }
+                                }
+                                Text(
+                                    "Each chat and card chooses its own workspace mode. Git operations run on the selected checkout’s machine."
+                                )
+                                .font(.caption2).foregroundStyle(DieterTheme.tertiary)
+                            }
+                            .padding(.top, 10)
+                        } label: {
+                            Label("Agent workspaces", systemImage: "square.stack.3d.up")
+                                .font(.system(size: 12, weight: .semibold))
+                        }
+                        .accessibilityIdentifier("new-project.workspace-settings")
+
+                        projectLabel("Project instructions")
+                        TextField("How should agents work in this project?", text: $draft.prompt, axis: .vertical)
+                            .textFieldStyle(.plain)
+                            .font(.system(size: 13)).lineSpacing(3).lineLimit(1...5)
+                            .padding(.horizontal, 12).padding(.vertical, 13)
+                            .frame(height: 105)
+                            .background(DieterTheme.input, in: RoundedRectangle(cornerRadius: 9))
+                            .overlay(RoundedRectangle(cornerRadius: 9).stroke(DieterTheme.strongBorder))
+                            .accessibilityIdentifier("new-project.instructions")
+                        Text("Stored centrally and included in every new card conversation for this project.")
+                            .font(.caption2).foregroundStyle(DieterTheme.tertiary)
+                    }
 
                     if !errorMessage.isEmpty {
                         HStack(alignment: .top, spacing: 8) {
@@ -226,14 +243,14 @@ struct NewProjectSheet: View {
                     if submitting {
                         HStack(spacing: 7) {
                             ProgressView().controlSize(.small)
-                            Text(draft.mode == .existing ? "Adding…" : "Creating…")
+                            Text(!existingProjectID.isEmpty ? "Attaching…" : draft.mode == .existing ? "Adding…" : "Creating…")
                         }
                     } else {
-                        Label(draft.mode.submitTitle, systemImage: "plus")
+                        Label(existingProjectID.isEmpty ? draft.mode.submitTitle : "Attach checkout", systemImage: "plus")
                     }
                 }
                 .buttonStyle(DieterPrimaryButtonStyle())
-                .disabled(submitting || !draft.canSubmit || selectedMachine?.online != true)
+                .disabled(submitting || !canSubmit || selectedMachine?.online != true || selectedMachine?.apiCompatibility == .incompatible)
                 .accessibilityIdentifier("new-project.submit")
             }
             .padding(.horizontal, 24).padding(.vertical, 14)
@@ -246,6 +263,10 @@ struct NewProjectSheet: View {
                     availableMachines.first(where: { $0.id == store.endpoint.id })?.id ?? availableMachines.first(
                         where: \.online)?.id ?? ""
             }
+        }
+        .onChange(of: existingProjectID) { _, value in
+            if !value.isEmpty { draft.mode = .existing }
+            errorMessage = ""
         }
         .onChange(of: machineID) { _, _ in
             draft.path = ""
@@ -283,12 +304,18 @@ struct NewProjectSheet: View {
     }
 
     private func submit() {
-        guard !submitting, draft.canSubmit else { return }
+        guard !submitting, canSubmit else { return }
         submitting = true
         errorMessage = ""
         Task {
             do {
-                _ = try await store.createProject(draft, machineID: machineID)
+                if existingProjectID.isEmpty {
+                    _ = try await store.createProject(draft, machineID: machineID, operationID: operationID)
+                } else {
+                    guard await store.attachCheckout(projectID: existingProjectID, path: draft.path, name: draft.name, machineID: machineID) else {
+                        submitting = false; errorMessage = store.errorMessage ?? "Could not attach checkout"; return
+                    }
+                }
                 submitting = false
                 dismiss()
             } catch {

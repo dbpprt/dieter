@@ -27,7 +27,15 @@ var (
 )
 
 type Store struct {
-	Root string
+	peerWakeOnce     sync.Once
+	peerWake         chan struct{}
+	importing        bool
+	peerCacheMu      sync.Mutex
+	peerCacheAccount string
+	peerDBMu         sync.Mutex
+	peerDBs          map[string]*sql.DB
+	peerCacheData    PeerData
+	Root             string
 
 	conversations conversationCache
 	statuses      conversationStatusCache
@@ -69,6 +77,9 @@ func New(root string) *Store {
 }
 
 func (s *Store) Ensure() error {
+	if err := s.checkStorageSchema(); err != nil {
+		return err
+	}
 	if err := os.MkdirAll(s.Root, 0o700); err != nil {
 		return err
 	}
@@ -92,7 +103,12 @@ func (s *Store) Ensure() error {
 	if _, err := s.ensureSyncEpoch(); err != nil {
 		return err
 	}
-	return s.migrateArchivedCards()
+	release, err := s.beginWriteLock()
+	if err != nil {
+		return err
+	}
+	defer release()
+	return s.recoverCardWrites()
 }
 
 // beginWriteLock serializes access both within the process and across CLI/server
@@ -137,6 +153,11 @@ func (s *Store) beginWriteLockContext(ctx context.Context) (func(), error) {
 				_ = os.Remove(lockPath)
 				return nil, err
 			}
+			if err := s.establishStorageSchema(); err != nil {
+				_ = os.Remove(filepath.Join(lockPath, "owner"))
+				_ = os.Remove(lockPath)
+				return nil, err
+			}
 			acquiredAt := time.Now()
 			releaseProcess = false
 			return func() {
@@ -176,12 +197,23 @@ func (s *Store) beginWriteKind(kind string) (func(), error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := s.flushScheduleOutbox(); err != nil {
+		release()
+		return nil, err
+	}
+	if err := s.recoverCardWrites(); err != nil {
+		release()
+		return nil, err
+	}
 	event, err := s.prepareSyncMutation(kind)
 	if err != nil {
 		release()
 		return nil, err
 	}
 	return func() {
+		if err := s.flushScheduleOutbox(); err != nil {
+			slog.Error("schedule publication deferred to recovery", "error", err)
+		}
 		// A failed publication leaves the durable pending marker for reader/next
 		// writer recovery. Domain data is already durable; never hide a partial write.
 		if err := s.commitSyncMutation(event); err != nil {
@@ -256,7 +288,15 @@ func atomicWriteMode(path string, data []byte, mode os.FileMode) error {
 	if err := tmp.Close(); err != nil {
 		return err
 	}
-	return os.Rename(tmpName, path)
+	if err := os.Rename(tmpName, path); err != nil {
+		return err
+	}
+	dir, err := os.Open(filepath.Dir(path))
+	if err != nil {
+		return err
+	}
+	defer dir.Close()
+	return dir.Sync()
 }
 
 func writeMarkdown(path string, value any, body string) error {

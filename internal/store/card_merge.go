@@ -26,6 +26,12 @@ func (s *Store) MergeCard(sourceRef, targetRef string) (model.Card, error) {
 	if err != nil {
 		return model.Card{}, err
 	}
+	if err = s.RequireLocalCard(source); err != nil {
+		return model.Card{}, err
+	}
+	if err = s.RequireLocalCard(target); err != nil {
+		return model.Card{}, err
+	}
 	if source.ID == target.ID || source.BoardID == "" || source.BoardID != target.BoardID || source.ProjectID != target.ProjectID {
 		return model.Card{}, errors.New("merge requires two different cards in the same board")
 	}
@@ -107,9 +113,13 @@ func (s *Store) MergeCard(sourceRef, targetRef string) (model.Card, error) {
 		return model.Card{}, err
 	}
 	source.Position = int64(len(peers)+1) * 1024
+	source.OrderKey, err = s.moveOrderKey(source, nil)
+	if err != nil {
+		return model.Card{}, err
+	}
 	source.UpdatedAt = timestamp()
 	source.PhaseChangedAt = source.UpdatedAt
-	return source, s.writeCard(source)
+	return s.saveCard(source)
 }
 
 // RecoverCardMerges finishes only accepted intents, never resubmitting a receipt.
@@ -120,6 +130,9 @@ func (s *Store) RecoverCardMerges() ([]string, error) {
 	}
 	var targets []string
 	for _, card := range cards {
+		if s.RequireLocalCard(card) != nil {
+			continue
+		}
 		if card.MergedIntoCardID == "" {
 			continue
 		}

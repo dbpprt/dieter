@@ -32,7 +32,7 @@ data class AndroidOutboxEntry(
     val createdAtMillis: Long = System.currentTimeMillis(),
 )
 
-data class CachedProjectHost(
+data class CachedProjectReplica(
     val endpointId: String,
     val daemonId: String,
     val hostname: String,
@@ -40,7 +40,7 @@ data class CachedProjectHost(
 
 data class CachedMachineDirectory(
     val state: State,
-    val hosts: Map<String, CachedProjectHost>,
+    val hosts: Map<String, CachedProjectReplica>,
 )
 
 /** Atomic, disposable native projection plus the durable client outbox. */
@@ -125,7 +125,7 @@ class DieterSyncStore(
                     val item = hosts.getJSONObject(index)
                     put(
                         item.getString("projectId"),
-                        CachedProjectHost(
+                        CachedProjectReplica(
                             endpointId = item.getString("endpointId"),
                             daemonId = item.getString("daemonId"),
                             hostname = item.getString("hostname"),
@@ -138,7 +138,7 @@ class DieterSyncStore(
     }
 
     @Synchronized
-    fun saveMachineDirectory(scope: String, state: State, hosts: Map<String, CachedProjectHost>) {
+    fun saveMachineDirectory(scope: String, state: State, hosts: Map<String, CachedProjectReplica>) {
         val encodedHosts = JSONArray().apply {
             hosts.toSortedMap().forEach { (projectId, host) ->
                 put(

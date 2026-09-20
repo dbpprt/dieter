@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"github.com/dbpprt/dieter/internal/store"
 	"strings"
 	"time"
 
@@ -51,12 +52,16 @@ func (api *grpcAPI) ListProjectWorkspaces(_ context.Context, request *dieterv1.P
 	}
 	result := &dieterv1.WorkspacesResponse{}
 	for _, value := range values {
+		if request.GetCheckoutId() != "" && value.CheckoutID != request.GetCheckoutId() {
+			continue
+		}
 		result.Workspaces = append(result.Workspaces, protoWorkspace(value))
 	}
 	return result, nil
 }
 
 func (api *grpcAPI) GetChangeset(ctx context.Context, request *dieterv1.GetChangesetRequest) (*dieterv1.Changeset, error) {
+	ctx = store.WithCheckout(ctx, request.GetCheckoutId())
 	value, err := api.server.changesets.GetTarget(ctx, request.GetCardId(), request.GetProjectId())
 	if err != nil {
 		return nil, grpcFailure(err)
@@ -75,6 +80,7 @@ func (api *grpcAPI) GetChangeset(ctx context.Context, request *dieterv1.GetChang
 }
 
 func (api *grpcAPI) GetFileDiff(ctx context.Context, request *dieterv1.GetDiffRequest) (*dieterv1.FileDiff, error) {
+	ctx = store.WithCheckout(ctx, request.GetCheckoutId())
 	value, err := api.server.changesets.FileDiffTarget(
 		ctx, request.GetCardId(), request.GetProjectId(), request.GetExpectedRevision(), request.GetPath(), "", request.GetSection(), int(request.GetOffset()), int(request.GetLimit()),
 	)
@@ -85,6 +91,7 @@ func (api *grpcAPI) GetFileDiff(ctx context.Context, request *dieterv1.GetDiffRe
 }
 
 func (api *grpcAPI) GetCommitDiff(ctx context.Context, request *dieterv1.GetDiffRequest) (*dieterv1.FileDiff, error) {
+	ctx = store.WithCheckout(ctx, request.GetCheckoutId())
 	if strings.TrimSpace(request.GetCommitSha()) == "" {
 		return nil, status.Error(codes.InvalidArgument, "commit SHA is required")
 	}
@@ -138,6 +145,7 @@ func (api *grpcAPI) GetSCMCapabilities(ctx context.Context, request *dieterv1.Co
 }
 
 func (api *grpcAPI) StartGitOperation(ctx context.Context, request *dieterv1.StartGitOperationRequest) (*dieterv1.GitOperation, error) {
+	ctx = store.WithCheckout(ctx, request.GetCheckoutId())
 	value, err := api.server.gitOperations.Start(ctx, gitops.Request{
 		CardID: request.GetCardId(), ProjectID: request.GetProjectId(), Kind: request.GetKind(), ExpectedRevision: request.GetExpectedRevision(),
 		Parameters: cloneProtoStringMap(request.GetParameters()),

@@ -44,7 +44,7 @@ package final class WorkspaceReplica {
             }
         }
     }
-    package var projectEndpointIDs: [String: String] = [:]
+    package var projectReplicaEndpointIDs: [String: String] = [:]
     package var navigationBoards: [String: [Dieter_V1_Board]] = [:] {
         didSet { if navigationBoards != oldValue { commandSearchRevision &+= 1 } }
     }
@@ -94,38 +94,26 @@ package final class WorkspaceReplica {
 
     package var directory: MachineDirectoryProjection {
         MachineDirectoryProjection(
-            projects: projectDirectory, projectEndpointIDs: projectEndpointIDs,
+            projects: projectDirectory, projectReplicaEndpointIDs: projectReplicaEndpointIDs,
             boards: navigationBoards, cards: navigationCards, chats: chats)
     }
 
     package func accept(_ projection: MachineDirectoryProjection) {
         if projectDirectory != projection.projects { projectDirectory = projection.projects }
-        if projectEndpointIDs != projection.projectEndpointIDs { projectEndpointIDs = projection.projectEndpointIDs }
+        if projectReplicaEndpointIDs != projection.projectReplicaEndpointIDs { projectReplicaEndpointIDs = projection.projectReplicaEndpointIDs }
         if navigationBoards != projection.boards { navigationBoards = projection.boards }
         if navigationCards != projection.cards { navigationCards = projection.cards }
         if chats != projection.chats { chats = projection.chats }
         if chatProjects != projects { chatProjects = projects }
     }
 
-    package func replaceMetadata(_ incoming: Dieter_V1_State, endpointID: String) {
-        let previousIDs = Set(projectEndpointIDs.compactMap { $0.value == endpointID ? $0.key : nil })
-        var next = directory
-        for id in previousIDs {
-            next.projects.removeValue(forKey: id); next.projectEndpointIDs.removeValue(forKey: id)
-            next.boards.removeValue(forKey: id); next.cards.removeValue(forKey: id)
-        }
-        let boards = Dictionary(grouping: incoming.boards, by: \.projectID)
-        let cards = Dictionary(grouping: incoming.cards, by: \.projectID)
-        for project in incoming.projects {
-            next.projects[project.id] = project; next.projectEndpointIDs[project.id] = endpointID
-            next.boards[project.id] = boards[project.id] ?? []; next.cards[project.id] = cards[project.id] ?? []
-        }
-        let merged = next.chats.filter { !previousIDs.contains($0.projectID) } + incoming.chats
-        next.chats = Array(merged.reduce(into: [String: Dieter_V1_Card]()) { $0[$1.id] = $1 }.values).sorted {
-            let left = $0.lastActivityAt.isEmpty ? $0.updatedAt : $0.lastActivityAt
-            let right = $1.lastActivityAt.isEmpty ? $1.updatedAt : $1.lastActivityAt
-            return left == right ? $0.id < $1.id : left > right
-        }
+    package func replaceMetadata(_ incoming: Dieter_V1_State, endpoint: DieterEndpoint, endpointID: String) {
+        // Preserve the routing key passed by the caller; the synthetic snapshot
+        // does not assert execution ownership.
+        let snapshot = MachineSnapshot(endpoint: endpoint, connection: .init(route: .local, latencyMilliseconds: 0),
+            projects: incoming.projects, boards: incoming.boards, cards: incoming.cards, chats: incoming.chats, replicaID: endpointID, archives: incoming.archives)
+        var next = MachineDirectoryReducer.merging(directory, snapshots: [snapshot])
+        for project in incoming.projects { next.projectReplicaEndpointIDs[project.id] = endpointID }
         accept(next)
     }
 

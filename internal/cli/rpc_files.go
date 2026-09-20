@@ -70,8 +70,8 @@ func fileTextValue(inline, path string, in io.Reader) (string, error) {
 	return string(raw), err
 }
 
-func addFileScopeFlags(set *flag.FlagSet) (*string, *string) {
-	return set.String("project", "", "project ID or unique name"), set.String("card", "", "card/chat ID; operates in its selected workspace")
+func addFileScopeFlags(set *flag.FlagSet) (*string, *string, *string) {
+	return set.String("project", "", "project ID or unique name"), set.String("card", "", "card/chat ID; operates in its selected workspace"), set.String("checkout", "", "explicit local checkout ID for project scope")
 }
 
 func (c *CLI) resolveFileScope(ctx context.Context, client dieterv1.DieterServiceClient, rpcCtx context.Context, projectRef, cardID string) (string, string, error) {
@@ -94,9 +94,9 @@ func (c *CLI) resolveFileScope(ctx context.Context, client dieterv1.DieterServic
 }
 
 func (c *CLI) rpcFileList(args []string) error {
-	const usage = "Usage: dieter file list (--project PROJECT|--card CARD) [--hidden] [--format table|json|jsonl] [PATH]\n"
+	const usage = "Usage: dieter file list (--project PROJECT|--card CARD) [--checkout ID] [--hidden] [--format table|json|jsonl] [PATH]\n"
 	set := flags("file list")
-	project, card := addFileScopeFlags(set)
+	project, card, checkout := addFileScopeFlags(set)
 	hidden := set.Bool("hidden", false, "include dotfiles")
 	format := set.String("format", "table", "table, json, or jsonl")
 	help, err := parse(set, args, usage, c.Out)
@@ -120,7 +120,7 @@ func (c *CLI) rpcFileList(args []string) error {
 	if err != nil {
 		return err
 	}
-	value, err := client.ListFiles(rpcCtx, &dieterv1.ListFilesRequest{ProjectId: projectID, CardId: cardID, Path: path, ShowHidden: *hidden})
+	value, err := client.ListFiles(rpcCtx, &dieterv1.ListFilesRequest{CheckoutId: *checkout, ProjectId: projectID, CardId: cardID, Path: path, ShowHidden: *hidden})
 	if err != nil {
 		return err
 	}
@@ -141,9 +141,9 @@ func (c *CLI) rpcFileList(args []string) error {
 }
 
 func (c *CLI) rpcFileRead(args []string) error {
-	const usage = "Usage: dieter file read (--project PROJECT|--card CARD) [--output FILE|-] [--format content|json] PATH\n"
+	const usage = "Usage: dieter file read (--project PROJECT|--card CARD) [--checkout ID] [--output FILE|-] [--format content|json] PATH\n"
 	set := flags("file read")
-	project, card := addFileScopeFlags(set)
+	project, card, checkout := addFileScopeFlags(set)
 	output := set.String("output", "-", "write content to FILE or stdout (-)")
 	format := set.String("format", "content", "content or json")
 	help, err := parse(set, args, usage, c.Out)
@@ -163,7 +163,7 @@ func (c *CLI) rpcFileRead(args []string) error {
 	if err != nil {
 		return err
 	}
-	value, err := client.ReadFile(rpcCtx, &dieterv1.ReadFileRequest{ProjectId: projectID, CardId: cardID, Path: set.Arg(0)})
+	value, err := client.ReadFile(rpcCtx, &dieterv1.ReadFileRequest{CheckoutId: *checkout, ProjectId: projectID, CardId: cardID, Path: set.Arg(0)})
 	if err != nil {
 		return err
 	}
@@ -182,9 +182,9 @@ func (c *CLI) rpcFileRead(args []string) error {
 }
 
 func (c *CLI) rpcFileSave(args []string) error {
-	const usage = "Usage: dieter file save (--project PROJECT|--card CARD) (--content TEXT|--file FILE|--file -) [--revision REVISION|--revision auto] PATH\n"
+	const usage = "Usage: dieter file save (--project PROJECT|--card CARD) [--checkout ID] (--content TEXT|--file FILE|--file -) [--revision REVISION|--revision auto] PATH\n"
 	set := flags("file save")
-	project, card := addFileScopeFlags(set)
+	project, card, checkout := addFileScopeFlags(set)
 	content := set.String("content", "", "replacement text content")
 	file := set.String("file", "", "read replacement text from FILE or stdin (-)")
 	revision := set.String("revision", "auto", "expected file revision; auto reads the current revision")
@@ -210,13 +210,13 @@ func (c *CLI) rpcFileSave(args []string) error {
 		return err
 	}
 	if *revision == "auto" {
-		current, readErr := client.ReadFile(rpcCtx, &dieterv1.ReadFileRequest{ProjectId: projectID, CardId: cardID, Path: set.Arg(0)})
+		current, readErr := client.ReadFile(rpcCtx, &dieterv1.ReadFileRequest{CheckoutId: *checkout, ProjectId: projectID, CardId: cardID, Path: set.Arg(0)})
 		if readErr != nil {
 			return readErr
 		}
 		*revision = current.GetRevision()
 	}
-	updated, err := client.SaveFile(rpcCtx, &dieterv1.SaveFileRequest{ProjectId: projectID, CardId: cardID, Path: set.Arg(0), Content: value, Revision: *revision})
+	updated, err := client.SaveFile(rpcCtx, &dieterv1.SaveFileRequest{CheckoutId: *checkout, ProjectId: projectID, CardId: cardID, Path: set.Arg(0), Content: value, Revision: *revision})
 	if err != nil {
 		return err
 	}
@@ -224,9 +224,9 @@ func (c *CLI) rpcFileSave(args []string) error {
 }
 
 func (c *CLI) rpcFileCreate(args []string) error {
-	const usage = "Usage: dieter file create (--project PROJECT|--card CARD) [--kind file|directory] [--content TEXT|--file FILE] PATH\n"
+	const usage = "Usage: dieter file create (--project PROJECT|--card CARD) [--checkout ID] [--kind file|directory] [--content TEXT|--file FILE] PATH\n"
 	set := flags("file create")
-	project, card := addFileScopeFlags(set)
+	project, card, checkout := addFileScopeFlags(set)
 	kind := set.String("kind", "file", "file or directory")
 	content := set.String("content", "", "initial text content")
 	file := set.String("file", "", "read initial text from FILE or stdin (-)")
@@ -251,7 +251,7 @@ func (c *CLI) rpcFileCreate(args []string) error {
 	if err != nil {
 		return err
 	}
-	created, err := client.CreateFile(rpcCtx, &dieterv1.CreateFileRequest{ProjectId: projectID, CardId: cardID, Path: set.Arg(0), Kind: *kind, Content: value})
+	created, err := client.CreateFile(rpcCtx, &dieterv1.CreateFileRequest{CheckoutId: *checkout, ProjectId: projectID, CardId: cardID, Path: set.Arg(0), Kind: *kind, Content: value})
 	if err != nil {
 		return err
 	}
@@ -259,9 +259,9 @@ func (c *CLI) rpcFileCreate(args []string) error {
 }
 
 func (c *CLI) rpcFileMove(args []string) error {
-	const usage = "Usage: dieter file move (--project PROJECT|--card CARD) SOURCE DESTINATION\n"
+	const usage = "Usage: dieter file move (--project PROJECT|--card CARD) [--checkout ID] SOURCE DESTINATION\n"
 	set := flags("file move")
-	project, card := addFileScopeFlags(set)
+	project, card, checkout := addFileScopeFlags(set)
 	help, err := parse(set, args, usage, c.Out)
 	if help || err != nil {
 		return err
@@ -279,7 +279,7 @@ func (c *CLI) rpcFileMove(args []string) error {
 	if err != nil {
 		return err
 	}
-	value, err := client.MoveFile(rpcCtx, &dieterv1.MoveFileRequest{ProjectId: projectID, CardId: cardID, Source: set.Arg(0), Destination: set.Arg(1)})
+	value, err := client.MoveFile(rpcCtx, &dieterv1.MoveFileRequest{CheckoutId: *checkout, ProjectId: projectID, CardId: cardID, Source: set.Arg(0), Destination: set.Arg(1)})
 	if err != nil {
 		return err
 	}
@@ -287,9 +287,9 @@ func (c *CLI) rpcFileMove(args []string) error {
 }
 
 func (c *CLI) rpcFileDelete(args []string) error {
-	const usage = "Usage: dieter file delete (--project PROJECT|--card CARD) [--recursive] PATH\n"
+	const usage = "Usage: dieter file delete (--project PROJECT|--card CARD) [--checkout ID] [--recursive] PATH\n"
 	set := flags("file delete")
-	project, card := addFileScopeFlags(set)
+	project, card, checkout := addFileScopeFlags(set)
 	recursive := set.Bool("recursive", false, "delete a directory tree")
 	help, err := parse(set, args, usage, c.Out)
 	if help || err != nil {
@@ -308,6 +308,6 @@ func (c *CLI) rpcFileDelete(args []string) error {
 	if err != nil {
 		return err
 	}
-	_, err = client.DeleteFile(rpcCtx, &dieterv1.DeleteFileRequest{ProjectId: projectID, CardId: cardID, Path: set.Arg(0), Recursive: *recursive})
+	_, err = client.DeleteFile(rpcCtx, &dieterv1.DeleteFileRequest{CheckoutId: *checkout, ProjectId: projectID, CardId: cardID, Path: set.Arg(0), Recursive: *recursive})
 	return err
 }

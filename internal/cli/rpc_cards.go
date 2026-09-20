@@ -174,6 +174,7 @@ Options:
 		usage = strings.Replace(usage, "card create --project PROJECT --board BOARD", "chat create --project PROJECT", 1)
 	}
 	set := flags(group + " create")
+	checkout := set.String("checkout", "", "local checkout ID; required when the project has multiple checkouts here")
 	projectRef := set.String("project", "", "project ID or name")
 	boardRef := set.String("board", "", "board ID or name")
 	title := set.String("title", "", "conversation title")
@@ -237,7 +238,7 @@ Options:
 	if err != nil {
 		return err
 	}
-	request := &dieterv1.CreateConversationRequest{
+	request := &dieterv1.CreateConversationRequest{CheckoutId: *checkout,
 		ProjectId: project.GetId(), BoardId: boardID, Lane: *lane, Title: *title, Prompt: promptValue,
 		Provider: *provider, Model: *modelName, Effort: *effort, ProviderOptions: providerOptions,
 		LabelIds: splitCSV(*labels), DeferStart: !chat && *lane != "running", Attachments: messageParts(attachments),
@@ -761,10 +762,12 @@ func (c *CLI) rpcCardMerge(args []string) error {
 }
 
 func (c *CLI) rpcCardMove(args []string) error {
-	const usage = "Usage: dieter card move --lane todo|running|review|done [--position N] CARD\n"
+	const usage = "Usage: dieter card move --lane todo|running|review|done [--after CARD] [--before CARD] [--revision REV] CARD\n"
 	set := flags("card move")
 	lane := set.String("lane", "", "workflow lane")
-	position := set.Int64("position", -1, "fixed lane position")
+	after := set.String("after", "", "place after this card ID (empty means lane start)")
+	before := set.String("before", "", "place before this card ID (empty means lane end)")
+	revision := set.String("revision", "", "observed placement revision; reject a stale move")
 	help, err := parse(set, args, usage, c.Out)
 	if help || err != nil {
 		return err
@@ -772,10 +775,7 @@ func (c *CLI) rpcCardMove(args []string) error {
 	if set.NArg() != 1 || *lane == "" {
 		return errors.New("CARD and --lane are required")
 	}
-	request := &dieterv1.MoveCardRequest{CardId: set.Arg(0), Lane: *lane}
-	if *position >= 0 {
-		request.Position = position
-	}
+	request := &dieterv1.MoveCardRequest{CardId: set.Arg(0), Lane: *lane, AfterCardId: *after, BeforeCardId: *before, ExpectedRevision: *revision}
 	ctx, cancel := c.commandContext()
 	defer cancel()
 	client, rpcCtx, err := c.rpc(ctx)

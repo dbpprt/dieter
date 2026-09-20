@@ -469,19 +469,8 @@ private struct ChatProjectGroup: View {
     @State private var pageIndex = 0
     @State private var dropTargeted = false
 
-    private var projectMachine: DieterEndpoint? {
-        store.machine(forProjectID: project.id)
-    }
-
-    private var projectMachineOnline: Bool? {
-        projectMachine.map(store.machineIsAvailable)
-    }
-
     private var headerAccessibilityLabel: String {
-        let action = collapsed ? "Expand \(project.name) chats" : "Collapse \(project.name) chats"
-        guard let projectMachine else { return action }
-        let presence = projectMachineOnline == true ? "online" : "offline"
-        return "\(action). Hosted on \(projectMachine.name), \(presence)"
+        collapsed ? "Expand \(project.name) chats" : "Collapse \(project.name) chats"
     }
 
     private var displayed: [Dieter_V1_Card] {
@@ -508,13 +497,7 @@ private struct ChatProjectGroup: View {
                             .foregroundStyle(DieterTheme.subtle)
                         Text("· \(chats.count)").font(.system(size: 10)).foregroundStyle(DieterTheme.tertiary)
                         Spacer(minLength: 4)
-                        if let projectMachine {
-                            ProjectMachineBadge(machine: projectMachine, online: projectMachineOnline == true)
-                                .accessibilityIdentifier("chats.project.\(project.id).machine")
-                                .smokeTarget(
-                                    "chats.project.\(project.id).machine.\(projectMachineOnline == true ? "online" : "offline")"
-                                )
-                        }
+
                     }
                     .contentShape(Rectangle())
                 }
@@ -800,8 +783,7 @@ struct ChatRow: View {
     private var unread: Bool { store.isChatUnread(card) }
     private var running: Bool { ChatRuntimePresentation.isActive(card.runtime) }
     private var pinnedMachine: DieterEndpoint? {
-        guard showsPinnedDragHandle else { return nil }
-        return store.machine(forProjectID: card.projectID)
+        return store.machine(for: card)
     }
     private var pinnedMachineOnline: Bool {
         pinnedMachine.map(store.machineIsAvailable) == true
@@ -1373,7 +1355,7 @@ private struct StandaloneChatStartView: View {
             if harnessCatalogLoading {
                 HStack(spacing: 7) {
                     ProgressView().controlSize(.small)
-                    Text("Loading models from this project's machine…")
+                    Text("Loading models from the selected machine…")
                 }
                 .font(.caption2).foregroundStyle(DieterTheme.tertiary)
                 .accessibilityIdentifier("chats.new.harness-loading")

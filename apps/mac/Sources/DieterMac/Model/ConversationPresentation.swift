@@ -132,115 +132,69 @@ enum ConversationRenderWindow {
     static let maximumMessages = 60
     static let maximumTextBytes = 16_000
     static let maximumParts = 160
+    /// A detached reader keeps several pages mounted. Scrolling back therefore
+    /// grows the transcript like an ordinary document; rows are released only
+    /// far outside the viewport, never underneath the text being read.
+    static let retainedPages = 4
 
+    /// Windows are keyed by message identity. History pages and retention
+    /// trimming shift array indices underneath a reader; identities do not.
     enum Position: Equatable {
         case latest
-        case startingAt(Int, minimumMessages: Int = 1)
-        case pagingEarlier(from: Int)
-        case pagingLater(from: Int)
-
-        func afterUserScroll(isAtLatest: Bool, renderedRange: Range<Int>) -> Self {
-            if isAtLatest { return .latest }
-            // Freeze the chosen start so appends cannot evict the text being
-            // read. Paging retains its two-message overlap even for large rows.
-            switch self {
-            case .latest:
-                return .startingAt(renderedRange.lowerBound)
-            case .pagingEarlier, .pagingLater:
-                return .startingAt(renderedRange.lowerBound, minimumMessages: 2)
-            case .startingAt:
-                return self
-            }
-        }
+        /// Pinned start; extends toward newer messages up to the retained budget.
+        case from(messageID: String)
+        /// Pinned end; extends toward older messages up to the retained budget.
+        case through(messageID: String)
     }
 
     static func range(messages: [Dieter_V1_UiMessage], position: Position) -> Range<Int> {
         guard !messages.isEmpty else { return 0..<0 }
         switch position {
-        case .pagingEarlier(let requestedAnchor):
-            let anchor = min(max(0, requestedAnchor), messages.count - 1)
-            return centeredRange(messages: messages, anchor: anchor, requiredIndex: max(0, anchor - 1))
-        case .pagingLater(let requestedAnchor):
-            let anchor = min(max(0, requestedAnchor), messages.count - 1)
-            return centeredRange(
-                messages: messages,
-                anchor: anchor,
-                requiredIndex: min(messages.count - 1, anchor + 1)
-            )
-        case .latest, .startingAt:
-            break
-        }
-        let anchor: Int
-        switch position {
         case .latest:
-            anchor = messages.count - 1
-        case .startingAt(let index, let minimumMessages):
-            return forwardRange(
-                messages: messages, start: min(max(0, index), messages.count - 1),
-                minimumMessages: minimumMessages)
-        case .pagingEarlier, .pagingLater:
-            preconditionFailure("paging windows return before directional layout")
-        }
-        var lower = anchor, upper = anchor, bytes = 0, parts = 0
-        let candidates = Array(max(0, anchor - maximumMessages + 1)...anchor).reversed().map { $0 }
-        for index in candidates {
-            let message = messages[index]
-            let cost = message.parts.reduce(0) {
-                $0 + min($1.text.utf8.count, ConversationRenderCache.maximumPreviewCharacters)
+            break
+        case .from(let messageID):
+            if let start = index(of: messageID, in: messages) {
+                return forwardRange(messages: messages, start: start, pages: retainedPages)
             }
-            if upper > lower && (bytes + cost > maximumTextBytes || parts + message.parts.count > maximumParts) {
-                break
+        case .through(let messageID):
+            if let last = index(of: messageID, in: messages) {
+                return backwardRange(messages: messages, end: last + 1, pages: retainedPages)
             }
-            bytes += cost
-            parts += message.parts.count
-            lower = min(lower, index)
-            upper = max(upper, index + 1)
         }
-        return lower..<upper
+        return backwardRange(messages: messages, end: messages.count, pages: 1)
     }
 
-    private static func centeredRange(
-        messages: [Dieter_V1_UiMessage],
-        anchor: Int,
-        requiredIndex: Int
-    ) -> Range<Int> {
-        var lower = min(anchor, requiredIndex)
-        var upper = max(anchor, requiredIndex) + 1
-        var bytes = 0
-        var parts = 0
-        for index in lower..<upper {
-            bytes += messageTextCost(messages[index])
-            parts += messages[index].parts.count
-        }
+    /// Freezes the rendered start when the reader leaves the live tail, so
+    /// appends cannot evict the text being read.
+    static func detached(
+        from position: Position, messages: [Dieter_V1_UiMessage], renderedRange: Range<Int>
+    ) -> Position {
+        guard position == .latest, messages.indices.contains(renderedRange.lowerBound),
+            !messages[renderedRange.lowerBound].id.isEmpty
+        else { return position }
+        return .from(messageID: messages[renderedRange.lowerBound].id)
+    }
 
-        // Expand around the retained overlap instead of choosing an ideal
-        // index distance and then falling back to only two messages. With
-        // large rows, the old fallback advanced one message per page and
-        // rebuilt/restored the viewport continuously while the user scrolled.
-        var preferEarlier = requiredIndex < anchor
-        while upper - lower < maximumMessages {
-            let candidates = preferEarlier ? [lower - 1, upper] : [upper, lower - 1]
-            var added = false
-            for index in candidates where messages.indices.contains(index) {
-                let cost = messageTextCost(messages[index])
-                let partCount = messages[index].parts.count
-                guard bytes + cost <= maximumTextBytes,
-                    parts + partCount <= maximumParts
-                else { continue }
-                if index < lower {
-                    lower = index
-                } else {
-                    upper = index + 1
-                }
-                bytes += cost
-                parts += partCount
-                preferEarlier.toggle()
-                added = true
-                break
-            }
-            if !added { break }
-        }
-        return lower..<upper
+    /// One more page of older messages above the rendered range, or nil when
+    /// the loaded transcript has none.
+    static func extendingEarlier(messages: [Dieter_V1_UiMessage], renderedRange: Range<Int>) -> Position? {
+        guard renderedRange.lowerBound > 0, renderedRange.lowerBound <= messages.count else { return nil }
+        let start = backwardRange(messages: messages, end: renderedRange.lowerBound, pages: 1).lowerBound
+        guard !messages[start].id.isEmpty else { return nil }
+        return .from(messageID: messages[start].id)
+    }
+
+    /// One more page of newer messages below the rendered range, or nil when
+    /// the range already reaches the newest loaded message.
+    static func extendingLater(messages: [Dieter_V1_UiMessage], renderedRange: Range<Int>) -> Position? {
+        guard renderedRange.upperBound < messages.count else { return nil }
+        let end = forwardRange(messages: messages, start: renderedRange.upperBound, pages: 1).upperBound
+        guard !messages[end - 1].id.isEmpty else { return .latest }
+        return .through(messageID: messages[end - 1].id)
+    }
+
+    private static func index(of messageID: String, in messages: [Dieter_V1_UiMessage]) -> Int? {
+        messageID.isEmpty ? nil : messages.firstIndex { $0.id == messageID }
     }
 
     private static func messageTextCost(_ message: Dieter_V1_UiMessage) -> Int {
@@ -249,49 +203,33 @@ enum ConversationRenderWindow {
         }
     }
 
-    private static func forwardRange(
-        messages: [Dieter_V1_UiMessage],
-        start: Int,
-        minimumMessages: Int = 1
-    ) -> Range<Int> {
-        var upper = start, bytes = 0, parts = 0
-        for index in start..<min(messages.count, start + maximumMessages) {
-            let message = messages[index]
-            let cost = message.parts.reduce(0) {
-                $0 + min($1.text.utf8.count, ConversationRenderCache.maximumPreviewCharacters)
-            }
-            if upper - start >= minimumMessages,
-                bytes + cost > maximumTextBytes || parts + message.parts.count > maximumParts
-            {
+    private static func backwardRange(messages: [Dieter_V1_UiMessage], end: Int, pages: Int) -> Range<Int> {
+        var lower = end, bytes = 0, parts = 0
+        for index in stride(from: end - 1, through: max(0, end - maximumMessages * pages), by: -1) {
+            let cost = messageTextCost(messages[index])
+            let partCount = messages[index].parts.count
+            if lower < end, bytes + cost > maximumTextBytes * pages || parts + partCount > maximumParts * pages {
                 break
             }
             bytes += cost
-            parts += message.parts.count
+            parts += partCount
+            lower = index
+        }
+        return lower..<end
+    }
+
+    private static func forwardRange(messages: [Dieter_V1_UiMessage], start: Int, pages: Int) -> Range<Int> {
+        var upper = start, bytes = 0, parts = 0
+        for index in start..<min(messages.count, start + maximumMessages * pages) {
+            let cost = messageTextCost(messages[index])
+            let partCount = messages[index].parts.count
+            if upper > start, bytes + cost > maximumTextBytes * pages || parts + partCount > maximumParts * pages {
+                break
+            }
+            bytes += cost
+            parts += partCount
             upper = index + 1
         }
         return start..<upper
-    }
-
-    static func range(messages: [Dieter_V1_UiMessage], requestedStart: Int?) -> Range<Int> {
-        range(messages: messages, position: requestedStart.map { Position.startingAt($0) } ?? .latest)
-    }
-
-    static func range(messageCount: Int, position: Position) -> Range<Int> {
-        guard messageCount > 0 else { return 0..<0 }
-        switch position {
-        case .latest:
-            return max(0, messageCount - maximumMessages)..<messageCount
-        case .startingAt(let requestedStart, _):
-            let start = min(max(0, requestedStart), max(0, messageCount - maximumMessages))
-            return start..<min(messageCount, start + maximumMessages)
-        case .pagingEarlier(let requestedAnchor), .pagingLater(let requestedAnchor):
-            let anchor = min(max(0, requestedAnchor), messageCount - 1)
-            let start = max(0, min(anchor - maximumMessages / 2, messageCount - maximumMessages))
-            return start..<min(messageCount, start + maximumMessages)
-        }
-    }
-
-    static func range(messageCount: Int, requestedStart: Int?) -> Range<Int> {
-        range(messageCount: messageCount, position: requestedStart.map { Position.startingAt($0) } ?? .latest)
     }
 }

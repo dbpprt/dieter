@@ -188,6 +188,9 @@ func (api *grpcAPI) globalSnapshotContext(ctx context.Context, limit, recent int
 
 func globalDelta(previous, current *dieterv1.GlobalSnapshot) *dieterv1.GlobalDelta {
 	delta := &dieterv1.GlobalDelta{}
+	if !proto.Equal(previous.GetState().GetArchives(), current.GetState().GetArchives()) {
+		delta.Archives = current.GetState().GetArchives()
+	}
 	previousProjects := make(map[string]*dieterv1.Project, len(previous.GetState().GetProjects()))
 	for _, value := range previous.GetState().GetProjects() {
 		previousProjects[value.GetId()] = value

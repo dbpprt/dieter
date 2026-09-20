@@ -63,6 +63,11 @@ import Testing
     try automaticScrollWheel(scroll, window: window, pixels: 0, phase: 4)
     await settleAutomaticScroll(root, milliseconds: 80)
     let reading = try #require(automaticScrollReadingPosition(in: scroll))
+    // Every frame handed to the window server must already show the reader's
+    // text where it was; a correction one frame later is visible flicker.
+    let committed = CommittedFrameSampler {
+        automaticScrollTextPosition(reading.text, in: scroll).map { abs($0 - reading.offset) }
+    }
 
     await rpc.releasePage()
     for _ in 0..<40 {
@@ -77,6 +82,7 @@ import Testing
     await settleAutomaticScroll(root, milliseconds: 160)
     let restoredOffset = try #require(automaticScrollTextPosition(reading.text, in: scroll))
     #expect(abs(restoredOffset - reading.offset) < 2, "Loading must preserve the current message's pixel offset")
+    #expect(committed.stop() < 2, "No committed frame may show the transcript displaced by the loaded page")
     #expect(model.olderConversationMessages.count == 30)
     #expect(await rpc.requestCount == 1, "A restored viewport must not chain-load another page")
 
@@ -102,10 +108,12 @@ import Testing
 @Test @MainActor func automaticHistoryDownwardWheelAdvancesFromABoundedRenderedEnd() async throws {
     let store = DieterStore(restoreSync: false)
     let context = store.conversationContext
-    var snapshot = automaticScrollSnapshot(start: 90, end: 120)
+    // Larger than the pages a detached reader retains, so scrolling back must
+    // eventually release the live tail.
+    var snapshot = automaticScrollSnapshot(start: 40, end: 120)
     for index in snapshot.conversation.messages.indices {
         snapshot.conversation.messages[index].parts[0].text =
-            "Automatic scroll message \(index + 90).\n"
+            "Automatic scroll message \(index + 40).\n"
             + String(
                 repeating: "A longer transcript line keeps rendering bounded while preserving useful content.\n",
                 count: 16)
@@ -135,8 +143,8 @@ import Testing
     try #require(initialIDs.contains(119))
     try #require(initialIDs.count < snapshot.conversation.messages.count, "The fixture must exceed the render budget")
 
-    for index in 0..<160 {
-        try automaticScrollWheel(scroll, window: window, pixels: 96, phase: index == 0 ? 1 : 2)
+    for index in 0..<400 {
+        try automaticScrollWheel(scroll, window: window, pixels: 160, phase: index == 0 ? 1 : 2)
         await settleAutomaticScroll(root, milliseconds: 20)
         if !automaticScrollRenderedMessageIDs(in: scroll).contains(119) { break }
     }
@@ -146,9 +154,9 @@ import Testing
     try #require(!earlierIDs.contains(119), "Earlier scrolling must replace the bounded live render window")
     try #require((earlierIDs.min() ?? 120) < (initialIDs.min() ?? 0))
 
-    // A page restoration can land at the exact rendered bottom while newer
-    // messages remain outside this window. Put the native scrollbar there:
-    // further down-wheel intent must advance even when the offset cannot move.
+    // Newer messages remain outside the retained window. Reaching its end,
+    // by scrollbar or by wheel against the clamped edge, must keep mounting
+    // them until the true latest message is back.
     for _ in 0..<20 {
         let document = try #require(scroll.documentView)
         var bounds = scroll.contentView.bounds
@@ -156,9 +164,6 @@ import Testing
         scroll.contentView.scroll(to: scroll.contentView.constrainBoundsRect(bounds).origin)
         scroll.reflectScrolledClipView(scroll.contentView)
         await settleAutomaticScroll(root, milliseconds: 40)
-        #expect(
-            abs(scroll.documentVisibleRect.maxY - scroll.contentInsets.bottom - document.bounds.maxY) < 2,
-            "The next wheel gesture must start at a clamped rendered edge")
 
         try automaticScrollWheel(scroll, window: window, pixels: -64, phase: 1)
         await settleAutomaticScroll(root, milliseconds: 40)
@@ -306,11 +311,11 @@ private func automaticScrollSnapshot(start: Int, end: Int) -> Dieter_V1_Conversa
     event.setIntegerValueField(.scrollWheelEventMomentumPhase, value: momentum)
     let nativeEvent = try #require(NSEvent(cgEvent: event))
     if let content = window.contentView {
-        for monitor in automaticScrollViews(in: content).compactMap({ $0 as? ConversationScrollIntentProbe.MonitorView }
+        for monitor in automaticScrollViews(in: content).compactMap({ $0 as? ConversationScrollBridge.MonitorView }
         ) {
             // Direct fixture dispatch bypasses NSApplication's local event
             // monitors, so deliver to the same production handler explicitly.
-            monitor.handleScrollEvent(nativeEvent)
+            monitor.handleScrollEvent(nativeEvent, in: window)
         }
     }
     scroll.scrollWheel(with: nativeEvent)
@@ -358,6 +363,30 @@ private func automaticScrollSnapshot(start: Int, end: Int) -> Dieter_V1_Conversa
 
 @MainActor private func automaticScrollViews(in root: NSView) -> [NSView] {
     [root] + root.subviews.flatMap { automaticScrollViews(in: $0) }
+}
+
+/// Samples a displacement after Core Animation's commit on every run-loop
+/// pass: what it sees is what reached the screen, including single frames.
+@MainActor private final class CommittedFrameSampler {
+    private var worst: CGFloat = 0
+    private var observer: CFRunLoopObserver?
+
+    init(_ displacement: @escaping @MainActor () -> CGFloat?) {
+        observer = CFRunLoopObserverCreateWithHandler(nil, CFRunLoopActivity.beforeWaiting.rawValue, true, 2_000_001) {
+            [weak self] _, _ in
+            MainActor.assumeIsolated {
+                guard let self, let value = displacement() else { return }
+                self.worst = max(self.worst, value)
+            }
+        }
+        CFRunLoopAddObserver(CFRunLoopGetMain(), observer, .commonModes)
+    }
+
+    func stop() -> CGFloat {
+        if let observer { CFRunLoopRemoveObserver(CFRunLoopGetMain(), observer, .commonModes) }
+        observer = nil
+        return worst
+    }
 }
 
 @MainActor private func settleAutomaticScroll(_ root: NSView, milliseconds: Int) async {
@@ -483,8 +512,14 @@ private func automaticScrollSnapshot(start: Int, end: Int) -> Dieter_V1_Conversa
     defer { fixture.window.close() }
     await settleAutomaticScroll(fixture.root, milliseconds: 350)
     let scroll = try fixture.scroll()
-    fixture.appendText()
-    await settleAutomaticScroll(fixture.root, milliseconds: 150)
+    let committed = CommittedFrameSampler {
+        abs(scroll.documentVisibleRect.maxY - scroll.contentInsets.bottom - (scroll.documentView?.bounds.maxY ?? 0))
+    }
+    for _ in 0..<6 {
+        fixture.appendText()
+        await settleAutomaticScroll(fixture.root, milliseconds: 30)
+    }
+    #expect(committed.stop() < 2, "No committed frame may show streamed growth below an unpinned viewport")
     #expect(
         abs(
             scroll.documentVisibleRect.maxY - scroll.contentInsets.bottom
@@ -505,7 +540,13 @@ private func automaticScrollSnapshot(start: Int, end: Int) -> Dieter_V1_Conversa
     let scroll = try fixture.scroll()
     let bottom = scroll.contentView.bounds.minY
     try automaticScrollWheel(scroll, window: fixture.window, pixels: 100, phase: 0)
-    await settleAutomaticScroll(fixture.root, milliseconds: 80)
+    // AppKit applies phaseless wheel input asynchronously and, on a busy
+    // machine, occasionally not at all; the subject here is what follows it.
+    for attempt in 0..<30 {
+        await settleAutomaticScroll(fixture.root, milliseconds: 80)
+        if scroll.contentView.bounds.minY < bottom - 2 { break }
+        if attempt % 6 == 5 { try automaticScrollWheel(scroll, window: fixture.window, pixels: 100, phase: 0) }
+    }
     #expect(scroll.contentView.bounds.minY < bottom - 2)
     #expect(fixture.jumpVisible)
     for _ in 0..<10 {

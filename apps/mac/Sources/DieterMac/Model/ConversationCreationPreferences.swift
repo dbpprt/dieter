@@ -62,9 +62,9 @@ enum ConversationHarnessCatalogDirectory {
     static func endpointID(
         projectID: String,
         activeEndpointID: String,
-        projectEndpointIDs: [String: String]
+        projectReplicaEndpointIDs: [String: String]
     ) -> String {
-        projectEndpointIDs[projectID] ?? activeEndpointID
+        projectReplicaEndpointIDs[projectID] ?? activeEndpointID
     }
 
     static func catalog(

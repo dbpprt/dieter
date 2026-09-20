@@ -98,7 +98,7 @@ import Testing
     snapshot.detail.project = project
     snapshot.conversation.cardID = card.id
     store.projectDirectory = [project.id: project]
-    store.projectEndpointIDs = [project.id: store.endpoint.id]
+    store.projectReplicaEndpointIDs = [project.id: store.endpoint.id]
     store.state.chats = [card]
     store.chats = [card]
     store.selectedChatID = card.id

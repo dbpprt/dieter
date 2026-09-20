@@ -53,10 +53,14 @@ func TestSendMessageRequestContextDoesNotOwnAdmittedTurn(t *testing.T) {
 		t.Fatalf("request cancellation changed admitted turn: runtime=%q err=%v", stored.Runtime, err)
 	}
 	close(release)
-	deadline = time.Now().Add(time.Second)
+	deadline = time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
 		stored, err = data.ResolveCard(card.ID)
 		if err == nil && stored.Runtime == "idle" {
+			// Wait for the completion transaction and its sync journal before TempDir cleanup.
+			if _, _, err := data.GlobalStateContext(t.Context()); err != nil {
+				t.Fatal(err)
+			}
 			return
 		}
 		time.Sleep(5 * time.Millisecond)

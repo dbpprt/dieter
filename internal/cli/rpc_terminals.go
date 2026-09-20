@@ -92,7 +92,7 @@ func (c *CLI) resolveTerminal(ctx context.Context, client dieterv1.DieterService
 func (c *CLI) rpcTerminalList(args []string) error {
 	const usage = "Usage: dieter terminal list [--project PROJECT|--card CARD] [--format table|json|jsonl|ids]\n"
 	set := flags("terminal list")
-	project, card := addFileScopeFlags(set)
+	project, card, checkout := addFileScopeFlags(set)
 	format := set.String("format", "table", "table, json, jsonl, or ids")
 	help, err := parse(set, args, usage, c.Out)
 	if help || err != nil {
@@ -111,7 +111,7 @@ func (c *CLI) rpcTerminalList(args []string) error {
 	if err != nil {
 		return err
 	}
-	value, err := client.ListTerminals(rpcCtx, &dieterv1.ListTerminalsRequest{ProjectId: projectID, CardId: cardID})
+	value, err := client.ListTerminals(rpcCtx, &dieterv1.ListTerminalsRequest{CheckoutId: *checkout, ProjectId: projectID, CardId: cardID})
 	if err != nil {
 		return err
 	}
@@ -140,7 +140,7 @@ func (c *CLI) rpcTerminalList(args []string) error {
 func (c *CLI) rpcTerminalCreate(args []string) error {
 	const usage = "Usage: dieter terminal create (--project PROJECT|--card CARD|--home) [--name NAME] [--shell PATH] [--directory PATH] [--columns N] [--rows N] [--format json|id]\n"
 	set := flags("terminal create")
-	project, card := addFileScopeFlags(set)
+	project, card, checkout := addFileScopeFlags(set)
 	home := set.Bool("home", false, "start a machine-scoped shell in the target daemon user's home")
 	name := set.String("name", "", "terminal display name")
 	shell := set.String("shell", "", "shell executable; daemon default when empty")
@@ -177,7 +177,7 @@ func (c *CLI) rpcTerminalCreate(args []string) error {
 			return err
 		}
 	}
-	value, err := client.CreateTerminal(rpcCtx, &dieterv1.CreateTerminalRequest{ProjectId: projectID, CardId: cardID, MachineHome: *home, Name: *name, Shell: *shell, WorkingDirectory: *directory, Columns: int32(*columns), Rows: int32(*rows)})
+	value, err := client.CreateTerminal(rpcCtx, &dieterv1.CreateTerminalRequest{CheckoutId: *checkout, ProjectId: projectID, CardId: cardID, MachineHome: *home, Name: *name, Shell: *shell, WorkingDirectory: *directory, Columns: int32(*columns), Rows: int32(*rows)})
 	if err != nil {
 		return err
 	}

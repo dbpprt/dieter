@@ -45,8 +45,13 @@ struct SchedulesView: View {
                         }
                         .buttonStyle(DieterIconButtonStyle())
                         .disabled(model.schedulesLoading)
+                        ProjectCheckoutMenu(projectID: context.target.projectID)
                         Button {
-                            editorPresentation = ScheduleEditorPresentation(schedule: nil, context: context)
+                            Task {
+                                if let prepared = await model.editorContext(schedule: nil, base: context) {
+                                    editorPresentation = ScheduleEditorPresentation(schedule: nil, context: prepared)
+                                }
+                            }
                         } label: {
                             Label("New", systemImage: "plus")
                         }
@@ -108,7 +113,11 @@ struct SchedulesView: View {
             if let schedule = model.selectedSchedule {
                 ScheduleDetail(
                     model: model, schedule: schedule, openCard: openCard,
-                    edit: { editorPresentation = ScheduleEditorPresentation(schedule: schedule, context: context) })
+                    edit: { Task {
+                        if let detail = await model.editorSchedule(schedule), let prepared = await model.editorContext(schedule: detail, base: context) {
+                            editorPresentation = ScheduleEditorPresentation(schedule: detail, context: prepared)
+                        }
+                    } })
             } else {
                 VStack(spacing: 0) {
                     FluidPaneChrome {

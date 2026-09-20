@@ -16,6 +16,7 @@ import (
 	dieterdaemon "github.com/dbpprt/dieter/internal/daemon"
 	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
+	"github.com/dbpprt/dieter/internal/protocol"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
@@ -289,5 +290,13 @@ func (c *CLI) rpc(ctx context.Context) (dieterv1.DieterServiceClient, context.Co
 	if err != nil {
 		return nil, ctx, err
 	}
-	return transport.client, transport.context(ctx), nil
+	rpcCtx := transport.context(ctx)
+	health, err := transport.client.Health(rpcCtx, &emptypb.Empty{})
+	if err != nil {
+		return nil, ctx, err
+	}
+	if health.GetVersion() != protocol.Version {
+		return nil, ctx, fmt.Errorf("Dieter update required: daemon contract %q, client contract %s", health.GetVersion(), protocol.Version)
+	}
+	return transport.client, rpcCtx, nil
 }

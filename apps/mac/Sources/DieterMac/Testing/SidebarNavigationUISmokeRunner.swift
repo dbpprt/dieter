@@ -56,14 +56,11 @@
                 sidebarMachineNames == expectedMachineNames
                 ? "passed"
                 : "failed: \(sidebarMachineNames.joined(separator: ","))"
-            let expectedProjectMachinePresence = ["online", "offline", "online"]
-            let projectMachinePresence = zip(projectIDs, expectedProjectMachinePresence).map { projectID, status in
-                NativeUIAccessibility.find("sidebar.project.\(projectID).machine.\(status)", in: window) != nil
+            let projectHasNoSingleMachine = projectIDs.allSatisfy { projectID in
+                NativeUIAccessibility.find("sidebar.project.\(projectID).machine.online", in: window) == nil
+                    && NativeUIAccessibility.find("sidebar.project.\(projectID).machine.offline", in: window) == nil
             }
-            results["project-machine-presence"] =
-                projectMachinePresence.allSatisfy { $0 }
-                ? "passed"
-                : "failed: \(projectMachinePresence)"
+            results["shared-project-navigation"] = projectHasNoSingleMachine ? "passed" : "failed: project has an owner badge"
             switch phase {
             case "prepare":
                 await recordProjectRowLayout(store: store, window: window, results: &results)
@@ -444,7 +441,7 @@
             store.navigationCards = Dictionary(uniqueKeysWithValues: projectIDs.map { ($0, []) })
             store.endpoint = machine
             store.endpoints = machines
-            store.projectEndpointIDs = Dictionary(
+            store.projectReplicaEndpointIDs = Dictionary(
                 uniqueKeysWithValues: zip(projectIDs, machines).map { pair in (pair.0, pair.1.id) })
             store.machineConnectionStatuses = Dictionary(
                 uniqueKeysWithValues: machines.map {

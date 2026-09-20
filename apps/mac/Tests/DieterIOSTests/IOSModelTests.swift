@@ -308,8 +308,8 @@ struct IOSModelTests {
 
     @Test func mixedFleetSelectionSkipsLegacyAndOfflineNodes() {
         let legacy = machine(id: "legacy", api: "2")
-        let offline = machine(id: "offline", api: "3", online: false)
-        let current = machine(id: "current", api: "3")
+        let offline = machine(id: "offline", api: DieterContract.version, online: false)
+        let current = machine(id: "current", api: DieterContract.version)
         #expect(
             IOSMachinePolicy.preferred(in: [legacy, offline, current], preferredID: "legacy")?.daemonID == "current")
         #expect(IOSMachinePolicy.preferred(in: [legacy, offline], preferredID: nil) == nil)

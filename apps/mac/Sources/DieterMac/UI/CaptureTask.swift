@@ -267,15 +267,13 @@ final class CaptureTaskController {
                 let boards = store.projects.filter { !$0.archived }.flatMap { store.boards(for: $0.id) }
                 let boardMatches = browser.matchingBoards(boards)
                 let projectMatches = browser.matchingProjects(store.projects)
+                // Capturing stages a local draft against the shared catalog.
+                // The task form chooses and connects to its execution checkout
+                // when saving; a project has no machine to connect to here.
                 if boardMatches.count == 1, let board = boardMatches.first {
-                    await store.selectProject(board.projectID)
-                    if store.selectedProjectID == board.projectID, store.phase.isConnected {
-                        await store.selectBoard(board.id)
-                    } else {
-                        store.selectedProjectID = ""; store.selectedBoardID = ""
-                    }
+                    store.selectCachedBoard(board.id, projectID: board.projectID)
                 } else if boardMatches.isEmpty, projectMatches.count == 1, let project = projectMatches.first {
-                    await store.selectProject(project.id)
+                    store.selectCachedBoard(store.boards(for: project.id).first?.id ?? "", projectID: project.id)
                 } else {
                     // Stage the capture without guessing a destination.
                     store.selectedProjectID = ""

@@ -13,7 +13,7 @@ import com.dbpprt.dieter.data.DieterEndpoint
 import com.dbpprt.dieter.data.DieterRepository
 import com.dbpprt.dieter.data.AndroidOutboxEntry
 import com.dbpprt.dieter.data.CachedMachineDirectory
-import com.dbpprt.dieter.data.CachedProjectHost
+import com.dbpprt.dieter.data.CachedProjectReplica
 import com.dbpprt.dieter.data.DieterSyncStore
 import com.dbpprt.dieter.data.OutboxKind
 import com.dbpprt.dieter.data.OutboxState
@@ -125,7 +125,7 @@ data class EndpointConnection(
     val remoteDesktopPlatform: String = "",
 )
 
-data class ProjectHost(
+data class ProjectReplica(
     val endpointId: String,
     val daemonId: String,
     val hostname: String,
@@ -150,7 +150,7 @@ data class DieterConnectionState(
     val harnessesEndpointId: String? = null,
     val selectedState: State? = null,
     val projects: List<Project> = emptyList(),
-    val projectHosts: Map<String, ProjectHost> = emptyMap(),
+    val projectReplicas: Map<String, ProjectReplica> = emptyMap(),
     val boards: List<Board> = emptyList(),
     val cards: List<Card> = emptyList(),
     val chats: List<Card> = emptyList(),
@@ -398,7 +398,10 @@ class DieterConnectionManager(
     }
 
     fun selectProject(projectId: String) {
-        val nextEndpoint = endpointForProjectSelection(projectId, repository.activeEndpoint.id, _state.value.projectHosts)
+        val currentReplicaHasProject = _state.value.phase in setOf(ConnectionPhase.SYNCING, ConnectionPhase.CONNECTED) &&
+            globalSnapshot?.state?.projectsList?.any { it.id == projectId } == true
+        val nextEndpoint = if (currentReplicaHasProject) null else
+            endpointForProjectSelection(projectId, repository.activeEndpoint.id, _state.value.projectReplicas)
         val endpointChanged = nextEndpoint != null
         val projectChanged = synchronized(lock) {
             if (selectedProjectId == projectId) false else {
@@ -414,16 +417,60 @@ class DieterConnectionManager(
         else if (projectChanged) updateSelectedState()
     }
 
-    suspend fun ensureProjectRoute(projectId: String) {
+    private val checkoutSelections = mutableMapOf<String, String>()
+
+    suspend fun ensureCheckoutRoute(projectId: String, requestedCheckoutId: String = ""): String {
+        val values = _state.value.projects.firstOrNull { it.id == projectId }?.checkoutsList.orEmpty().filterNot { it.detached }
+        val selected = requestedCheckoutId.ifBlank { checkoutSelections[projectId].orEmpty() }
+        val checkout = if (selected.isNotBlank()) values.firstOrNull { it.id == selected } else values.singleOrNull()
+        checkNotNull(checkout) { "Choose a machine and checkout for this project" }
+        val machine = discoveredEndpoints.firstOrNull { it.daemonId == checkout.daemonId }
+            ?: error("The checkout’s machine is unavailable")
+        ensureMachineRoute(machine.id)
+        checkoutSelections[projectId] = checkout.id
+        repository.selectCheckout(projectId, checkout.id)
+        return checkout.id
+    }
+
+    suspend fun ensureScheduleRoute(ownerDaemonId: String) {
+        val machine = discoveredEndpoints.firstOrNull { it.daemonId == ownerDaemonId }
+            ?: error("This schedule’s machine is unavailable")
+        ensureMachineRoute(machine.id)
+    }
+
+    suspend fun ensureReplicaRoute(projectId: String) {
         if (projectId.isBlank()) return
-        val target = _state.value.projectHosts[projectId] ?: return
-        if (projectRouteIsReady(target.endpointId, repository.activeEndpoint.id, _state.value.phase)) return
-        if (!target.online) error("${target.hostname} is offline. Start Dieter on that machine to continue.")
-        selectProject(projectId)
+        if (_state.value.phase == ConnectionPhase.CONNECTED) return
+        val target = discoveredEndpoints.firstOrNull { it.online && it.daemonId != null && it.apiVersion == DIETER_API_VERSION }
+            ?: error("No project replica is online")
+        ensureMachineRoute(target.id)
+    }
+
+    fun endpointForCard(cardId: String): String? {
+        val current = _state.value
+        val card = (current.cards + current.chats).firstOrNull { it.id == cardId }
+            ?: current.activeConversations[cardId]?.detail?.card
+            ?: cachedDirectory?.state?.let { (it.cardsList + it.chatsList).firstOrNull { card -> card.id == cardId } }
+            ?: return null
+        if (card.ownerDaemonId.isBlank()) return repository.activeEndpoint.id
+        return discoveredEndpoints.firstOrNull { it.daemonId == card.ownerDaemonId }?.id
+    }
+
+    suspend fun ensureConversationRoute(cardId: String) {
+        val target = endpointForCard(cardId) ?: error("Conversation owner is unavailable")
+        ensureMachineRoute(target)
+    }
+
+    suspend fun ensureMachineRoute(endpointId: String) {
+        if (projectRouteIsReady(endpointId, repository.activeEndpoint.id, _state.value.phase)) return
+        val target = discoveredEndpoints.firstOrNull { it.id == endpointId }
+            ?: error("Machine is unavailable")
+        check(target.online) { "${target.label} is offline" }
+        preferredEndpointId = endpointId
+        preferences.edit().putString(KEY_PREFERRED_ENDPOINT, preferredEndpointId).apply()
+        if (shouldRun()) restart()
         withTimeout(20_000) {
-            state.first { connection ->
-                projectRouteIsReady(target.endpointId, connection.endpoint?.id, connection.phase)
-            }
+            state.first { projectRouteIsReady(endpointId, it.endpoint?.id, it.phase) }
         }
     }
 
@@ -444,7 +491,7 @@ class DieterConnectionManager(
     /** Makes a newly created remote project routable before its daemon's next
      * global sync frame arrives. This updates only the combined directory; the
      * foreground connection is switched by [selectProject] afterwards. */
-    fun registerProjectHost(project: Project, endpointId: String, board: Board? = null) {
+    fun registerProjectReplica(project: Project, endpointId: String, board: Board? = null) {
         val endpoint = discoveredEndpoints.firstOrNull { it.id == endpointId }
             ?: repository.endpoints.firstOrNull { it.id == endpointId }
             ?: error("The selected Dieter machine is no longer available")
@@ -455,8 +502,8 @@ class DieterConnectionManager(
             val updated = current.copy(
                 projects = projects,
                 boards = if (board == null) current.boards else current.boards.filterNot { it.id == board.id } + board,
-                projectHosts = current.projectHosts + (
-                    project.id to ProjectHost(
+                projectReplicas = current.projectReplicas + (
+                    project.id to ProjectReplica(
                         endpointId = endpoint.id,
                         daemonId = daemonId,
                         hostname = endpoint.label,
@@ -520,7 +567,7 @@ class DieterConnectionManager(
                     endpointConnections = configuredEndpointRows(),
                     selectedState = null,
                     projects = emptyList(),
-                    projectHosts = emptyMap(),
+                    projectReplicas = emptyMap(),
                     boards = emptyList(),
                     cards = emptyList(),
                     chats = emptyList(),
@@ -624,7 +671,7 @@ class DieterConnectionManager(
                 endpoint = if (gatewayChanged) endpoints.first { endpoint -> endpoint.id == nextActive } else it.endpoint,
                 selectedState = if (gatewayChanged) null else it.selectedState,
                 projects = if (gatewayChanged) emptyList() else it.projects,
-                projectHosts = if (gatewayChanged) emptyMap() else it.projectHosts,
+                projectReplicas = if (gatewayChanged) emptyMap() else it.projectReplicas,
                 boards = if (gatewayChanged) emptyList() else it.boards,
                 cards = if (gatewayChanged) emptyList() else it.cards,
                 chats = if (gatewayChanged) emptyList() else it.chats,
@@ -670,7 +717,7 @@ class DieterConnectionManager(
                 endpointConnections = listOf(endpointRow(gateway)),
                 selectedState = null,
                 projects = emptyList(),
-                projectHosts = emptyMap(),
+                projectReplicas = emptyMap(),
                 boards = emptyList(),
                 cards = emptyList(),
                 chats = emptyList(),
@@ -706,8 +753,8 @@ class DieterConnectionManager(
             current.copy(
                 selectedState = directory.state,
                 projects = directory.state.projectsList,
-                projectHosts = directory.hosts.mapValues { (_, host) ->
-                    ProjectHost(host.endpointId, host.daemonId, host.hostname, online = false)
+                projectReplicas = directory.hosts.mapValues { (_, host) ->
+                    ProjectReplica(host.endpointId, host.daemonId, host.hostname, online = false)
                 },
                 boards = directory.state.boardsList,
                 cards = directory.state.cardsList,
@@ -967,7 +1014,7 @@ class DieterConnectionManager(
             val availability = discovered.associate { endpoint -> endpoint.id to endpoint.online }
             it.copy(
                 endpointConnections = discovered.map(::endpointRow),
-                projectHosts = it.projectHosts.mapValues { (_, host) ->
+                projectReplicas = it.projectReplicas.mapValues { (_, host) ->
                     host.copy(online = availability[host.endpointId] ?: false)
                 },
             )
@@ -1221,7 +1268,7 @@ class DieterConnectionManager(
                         else -> endpointRow(endpoint)
                     }
                 },
-                projectHosts = current.projectHosts.mapValues { (_, host) ->
+                projectReplicas = current.projectReplicas.mapValues { (_, host) ->
                     host.copy(
                         online = availability[host.endpointId] == true ||
                             projectRouteIsReady(host.endpointId, current.endpoint?.id, current.phase),
@@ -1239,40 +1286,27 @@ class DieterConnectionManager(
         }
         if (machines.isEmpty()) return
         // Relay calls use independent channels, so fetch machines and their
-        // project partitions concurrently. Keep one shared bound across the
+        // complete catalogs concurrently. Keep one shared bound across the
         // batch to avoid exhausting the gateway's logical-stream allowance.
         val permits = Semaphore(MAX_MACHINE_DIRECTORY_RPCS)
         val snapshots = coroutineScope {
             machines.map { machine ->
                 async {
                     runCatching {
-                        val root = permits.withPermit { repository.relayState(machine) }
-                        val projects = root.projectsList.filterNot(Project::getArchived)
-                        coroutineScope {
-                            val projectStates = projects.map { project ->
-                                async {
-                                    permits.withPermit {
-                                        repository.relayState(
-                                            machine,
-                                            GetStateRequest.newBuilder().setProjectId(project.id).setLimit(500).build(),
-                                        )
-                                    }
-                                }
-                            }
-                            val chats = async {
-                                permits.withPermit {
-                                    repository.relayChats(machine, includeArchived = includeArchivedChats)
-                                }
-                            }
-                            val states = projectStates.awaitAll()
-                            MachineSnapshot(
-                                machine,
-                                projects,
-                                states.flatMap { it.boardsList },
-                                states.flatMap { it.cardsList },
-                                chats.await().chatsList.filter { includeArchivedChats || !it.archived },
-                            )
+                        val root = permits.withPermit {
+                            repository.relayState(machine, GetStateRequest.newBuilder().setAllProjects(true).build())
                         }
+                        val chats = if (includeArchivedChats) permits.withPermit {
+                            repository.relayChats(machine, includeArchived = true).chatsList
+                        } else root.chatsList
+                        MachineSnapshot(
+                            machine,
+                            root.projectsList.filterNot(Project::getArchived),
+                            root.boardsList,
+                            root.cardsList,
+                            chats.filter { includeArchivedChats || !it.archived },
+                            root.archives,
+                        )
                     }.getOrNull()
                 }
             }.awaitAll().filterNotNull()
@@ -1280,14 +1314,21 @@ class DieterConnectionManager(
         if (snapshots.isEmpty()) return
         val refreshedEndpointIDs = snapshots.mapTo(hashSetOf()) { it.endpoint.id }
         _state.update { current ->
-            val retainedProjects = current.projects.filter { current.projectHosts[it.id]?.endpointId !in refreshedEndpointIDs }
+            val incomingProjectIDs = snapshots.flatMap { it.projects }.mapTo(hashSetOf()) { it.id }
+            val retainedProjects = current.projects.filter { it.id in incomingProjectIDs || current.projectReplicas[it.id]?.endpointId !in refreshedEndpointIDs }
             val retainedProjectIDs = retainedProjects.mapTo(hashSetOf()) { it.id }
-            val projects = (retainedProjects + snapshots.flatMap { it.projects }).distinctBy { it.id }
-                .sortedBy { it.name.lowercase() }
-            val hosts = current.projectHosts.filterKeys { it in retainedProjectIDs }.toMutableMap()
+            val archivedProjects = snapshots.flatMap { it.archives.projectIdsList }.toSet()
+            val projects = sharedProjects(retainedProjects + snapshots.flatMap { it.projects }).filter { it.id !in archivedProjects }
+            val allItems = current.cards + current.chats + snapshots.flatMap { it.cards + it.chats }
+            val removedItems = snapshots.flatMap { snapshot ->
+                val present = (snapshot.cards + snapshot.chats).mapTo(hashSetOf()) { it.id }
+                allItems.filter { it.ownerDaemonId == snapshot.endpoint.daemonId && it.id !in present }.map { it.id }
+            }.toSet() + snapshots.flatMap { it.archives.itemIdsList }
+            val combinedItems = sharedItems(allItems).filter { (it.id !in removedItems || it.archived && it.scope == "chat" && it.boardId.isEmpty()) && it.projectId in projects.map { p -> p.id } }
+            val hosts = current.projectReplicas.filterKeys { it in retainedProjectIDs }.toMutableMap()
             snapshots.forEach { snapshot ->
                 snapshot.projects.forEach { project ->
-                    hosts[project.id] = ProjectHost(
+                    hosts[project.id] = ProjectReplica(
                         endpointId = snapshot.endpoint.id,
                         daemonId = requireNotNull(snapshot.endpoint.daemonId),
                         hostname = snapshot.endpoint.label,
@@ -1297,10 +1338,10 @@ class DieterConnectionManager(
             }
             val combined = current.copy(
                 projects = projects,
-                projectHosts = hosts,
-                boards = (current.boards.filter { it.projectId in retainedProjectIDs } + snapshots.flatMap { it.boards }).distinctBy { it.id },
-                cards = (current.cards.filter { it.projectId in retainedProjectIDs } + snapshots.flatMap { it.cards }).distinctBy { it.id },
-                chats = (current.chats.filter { it.projectId in retainedProjectIDs } + snapshots.flatMap { it.chats }).distinctBy { it.id },
+                projectReplicas = hosts,
+                boards = sharedBoards(current.boards.filter { it.projectId in retainedProjectIDs } + snapshots.flatMap { it.boards }),
+                cards = combinedItems.filter { it.scope != "chat" || it.boardId.isNotEmpty() },
+                chats = combinedItems.filter { it.scope == "chat" && it.boardId.isEmpty() },
                 error = null,
             )
             combined.copy(selectedState = selectedState(combined))
@@ -1316,8 +1357,8 @@ class DieterConnectionManager(
             .addAllCards(current.cards)
             .addAllChats(current.chats)
             .build()
-        val hosts = current.projectHosts.mapValues { (_, host) ->
-            CachedProjectHost(host.endpointId, host.daemonId, host.hostname)
+        val hosts = current.projectReplicas.mapValues { (_, host) ->
+            CachedProjectReplica(host.endpointId, host.daemonId, host.hostname)
         }
         syncStore.saveMachineDirectory(activeGatewayId, directoryState, hosts)
         cachedDirectory = syncStore.loadMachineDirectory(activeGatewayId)
@@ -1337,6 +1378,7 @@ class DieterConnectionManager(
             .addAllCards(merge(snapshot.state.cardsList, delta.cardsList, delta.removedCardIdsList.toSet(), Card::getId))
             .clearChats()
             .addAllChats(merge(snapshot.state.chatsList, delta.chatsList, delta.removedChatIdsList.toSet(), Card::getId))
+            .also { if (delta.hasArchives()) it.archives = delta.archives }
             .build()
         return snapshot.toBuilder()
             .setState(state)
@@ -1364,31 +1406,29 @@ class DieterConnectionManager(
             }
             val activeEndpoint = current.endpoint
             val activeEndpointId = activeEndpoint?.id ?: activeProjectionKey
-            val replacedProjectIds = current.projectHosts
+            val replacedProjectIds = current.projectReplicas
                 .filterValues { it.endpointId == activeEndpointId }
                 .keys
             val incomingProjects = snapshot.state.projectsList
             val incomingProjectIds = incomingProjects.mapTo(hashSetOf()) { it.id }
-            val retainedProjects = current.projects.filter { it.id !in replacedProjectIds && it.id !in incomingProjectIds }
-            val projects = (retainedProjects + incomingProjects).distinctBy { it.id }.sortedBy { it.name.lowercase() }
-            val retainedProjectIds = retainedProjects.mapTo(hashSetOf()) { it.id }
-            val boards = (current.boards.filter { it.projectId in retainedProjectIds } + snapshot.state.boardsList)
-                .distinctBy { it.id }
-            val cards = overlayPendingCardStarts(
-                (current.cards.filter { it.projectId in retainedProjectIds } + snapshot.state.cardsList)
-                    .distinctBy { it.id },
-                boards,
-                entries,
-            ).toMutableList()
-            val chats = (current.chats.filter { it.projectId in retainedProjectIds } + snapshot.state.chatsList)
-                .distinctBy { it.id }
-                .toMutableList()
-            val hosts = current.projectHosts
+            val retainedProjects = current.projects.filter { it.id in incomingProjectIds || it.id !in replacedProjectIds }
+            val projects = sharedProjects(retainedProjects + incomingProjects).filter { it.id !in snapshot.state.archives.projectIdsList }
+            val retainedProjectIds = projects.mapTo(hashSetOf()) { it.id }
+            val boards = sharedBoards(current.boards.filter { it.projectId in retainedProjectIds } + snapshot.state.boardsList)
+            val incomingItems = snapshot.state.cardsList + snapshot.state.chatsList
+            val presentIDs = incomingItems.mapTo(hashSetOf()) { it.id }
+            val retainedItems = (current.cards + current.chats).filter {
+                it.projectId in retainedProjectIds && !(it.ownerDaemonId == activeEndpoint?.daemonId && it.id !in presentIDs)
+            }
+            val items = sharedItems(retainedItems + incomingItems).filter { it.id !in snapshot.state.archives.itemIdsList || it.archived && it.scope == "chat" && it.boardId.isEmpty() }
+            val cards = overlayPendingCardStarts(items.filter { it.scope != "chat" || it.boardId.isNotEmpty() }, boards, entries).toMutableList()
+            val chats = items.filter { it.scope == "chat" && it.boardId.isEmpty() }.toMutableList()
+            val hosts = current.projectReplicas
                 .filterKeys { it !in replacedProjectIds && it !in incomingProjectIds }
                 .toMutableMap()
             if (activeEndpoint?.daemonId != null) {
                 incomingProjects.forEach { project ->
-                    hosts[project.id] = ProjectHost(
+                    hosts[project.id] = ProjectReplica(
                         endpointId = activeEndpoint.id,
                         daemonId = activeEndpoint.daemonId,
                         hostname = activeEndpoint.label,
@@ -1497,7 +1537,7 @@ class DieterConnectionManager(
             synchronized(lock) { selectedProjectId = selectedProject }
             val combined = current.copy(
                 projects = projects,
-                projectHosts = hosts,
+                projectReplicas = hosts,
                 boards = boards,
                 cards = cards,
                 chats = chats.sortedByDescending { it.lastActivityAt.ifBlank { it.updatedAt } },
@@ -1599,7 +1639,7 @@ class DieterConnectionManager(
                 .setClientId(syncStore.clientId)
                 .setCommandId(UUID.randomUUID().toString().lowercase())
                 .build()
-            val endpointId = endpointForProject(card.projectId) ?: repository.activeEndpoint.id
+            val endpointId = endpointForCard(card.id) ?: error("Conversation owner unavailable")
             synchronized(outbox) {
                 outbox += AndroidOutboxEntry(
                     commandId = request.commandId,
@@ -1795,7 +1835,10 @@ class DieterConnectionManager(
         val commandId = UUID.randomUUID().toString().lowercase()
         val stable = request.toBuilder().setClientId(syncStore.clientId).setCommandId(commandId).build()
         val optimisticId = "local_${UUID.randomUUID().toString().replace("-", "").lowercase()}"
-        val targetEndpoint = endpointForProject(stable.projectId) ?: repository.activeEndpoint.id
+        val checkout = _state.value.projects.firstOrNull { it.id == stable.projectId }?.checkoutsList
+            ?.firstOrNull { it.id == stable.checkoutId }
+        val targetEndpoint = checkout?.let { chosen -> discoveredEndpoints.firstOrNull { it.daemonId == chosen.daemonId }?.id }
+            ?: repository.activeEndpoint.id
         synchronized(outbox) {
             outbox += AndroidOutboxEntry(
                 commandId = commandId,
@@ -1837,9 +1880,7 @@ class DieterConnectionManager(
             .setCommandId(commandId)
             .setMessageId(messageId)
             .build()
-        val targetEndpoint = projectForCard(cardId)
-            ?.let(::endpointForProject)
-            ?: repository.activeEndpoint.id
+        val targetEndpoint = endpointForCard(cardId) ?: error("Conversation owner unavailable")
         synchronized(outbox) {
             outbox += AndroidOutboxEntry(
                 commandId = commandId,
@@ -1949,7 +1990,7 @@ class DieterConnectionManager(
 
     private fun endpointForProject(projectId: String): String? {
         if (projectId.isBlank()) return null
-        val current = _state.value.projectHosts[projectId]?.endpointId?.takeIf(String::isNotBlank)
+        val current = _state.value.projectReplicas[projectId]?.endpointId?.takeIf(String::isNotBlank)
         val cached = cachedDirectory?.hosts?.get(projectId)?.endpointId?.takeIf(String::isNotBlank)
         return when {
             current != null && (current in discoveredEndpoints.map(DieterEndpoint::id) || '#' in current) -> current
@@ -1958,36 +1999,7 @@ class DieterConnectionManager(
         }
     }
 
-    private fun retargetOutboxToKnownHosts(): Boolean {
-        val current = _state.value
-        val cardProjects = buildMap {
-            cachedDirectory?.state?.let { state ->
-                (state.cardsList + state.chatsList).forEach { card -> put(card.id, card.projectId) }
-            }
-            globalSnapshot?.state?.let { state ->
-                (state.cardsList + state.chatsList).forEach { card -> put(card.id, card.projectId) }
-            }
-            current.activeConversations.forEach { (cardId, snapshot) ->
-                snapshot.detail.card.projectId.takeIf(String::isNotBlank)?.let { put(cardId, it) }
-            }
-            (current.cards + current.chats).forEach { card -> put(card.id, card.projectId) }
-        }
-        val projectIds = buildSet {
-            addAll(cachedDirectory?.hosts?.keys.orEmpty())
-            addAll(current.projectHosts.keys)
-        }
-        val projectEndpoints = projectIds.mapNotNull { projectId ->
-            endpointForProject(projectId)?.let { projectId to it }
-        }.toMap()
-        return synchronized(outbox) {
-            val retargeted = retargetOutboxEndpoints(outbox, cardProjects, projectEndpoints)
-            if (retargeted == outbox) return@synchronized false
-            outbox.clear()
-            outbox.addAll(retargeted)
-            syncStore.saveOutbox(outbox)
-            true
-        }
-    }
+    private fun retargetOutboxToKnownHosts(): Boolean = false
 
     fun retryOutboxItem(id: String) {
         scope.launch {
@@ -2220,6 +2232,7 @@ private data class MachineSnapshot(
     val boards: List<Board>,
     val cards: List<Card>,
     val chats: List<Card>,
+    val archives: com.dbpprt.dieter.v1.SharedArchives = com.dbpprt.dieter.v1.SharedArchives.getDefaultInstance(),
 )
 
 private class DirectCredentialRefresh : RuntimeException()
@@ -2236,8 +2249,8 @@ fun isActiveRuntime(runtime: String): Boolean = runtime.lowercase() in setOf(
 internal fun endpointForProjectSelection(
     projectId: String,
     currentEndpointId: String?,
-    hosts: Map<String, ProjectHost>,
-): String? = hosts[projectId]?.endpointId?.takeUnless { it == currentEndpointId }
+    hosts: Map<String, ProjectReplica>,
+): String? = hosts[projectId]?.takeIf { it.online }?.endpointId?.takeUnless { it == currentEndpointId }
 
 internal fun projectRouteIsReady(
     targetEndpointId: String,

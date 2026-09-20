@@ -100,7 +100,7 @@ func (m *Manager) Ensure(ctx context.Context, cardRef string) (model.Workspace, 
 	}
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 	value := model.Workspace{
-		CardID: detail.Card.ID, ProjectID: detail.Project.ID, Mode: mode, State: model.WorkspaceStateProvisioning,
+		CardID: detail.Card.ID, ProjectID: detail.Project.ID, CheckoutID: detail.Card.CheckoutID, Mode: mode, State: model.WorkspaceStateProvisioning,
 		BaseRemote: strings.TrimSpace(detail.Card.WorkspaceBaseRemote), BaseBranch: strings.TrimSpace(detail.Card.WorkspaceBaseBranch),
 		RemotePublishMode: strings.TrimSpace(detail.Card.RemotePublishMode),
 		Branch:            strings.TrimSpace(detail.Card.WorkspaceBranch), CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
@@ -165,7 +165,7 @@ func (m *Manager) provision(ctx context.Context, detail model.CardDetail, value 
 			value.ManagedBranch = true
 		}
 		value.Path = filepath.Join(m.Store.WorktreeRoot(), detail.Project.ID, detail.Card.ID)
-		release, err := m.lock(ctx, "repository-"+detail.Project.ID)
+		release, err := m.LockRepository(store.WithCheckout(ctx, detail.Card.CheckoutID), detail.Project.ID)
 		if err != nil {
 			return value, err
 		}
@@ -233,7 +233,7 @@ func (m *Manager) Refresh(ctx context.Context, cardRef string, includeSize bool)
 // creating a card-owned workspace record. Project-directory changes are shared
 // project state; cards in project mode are only execution-location selectors.
 func (m *Manager) ProjectCheckout(ctx context.Context, projectRef string, includeSize bool) (model.Workspace, error) {
-	project, err := m.Store.ResolveProject(projectRef)
+	project, err := m.Store.ProjectForCheckout(projectRef, store.CheckoutFromContext(ctx))
 	if err != nil {
 		return model.Workspace{}, err
 	}
@@ -250,8 +250,15 @@ func (m *Manager) ProjectCheckout(ctx context.Context, projectRef string, includ
 		baseRef = "HEAD"
 	}
 	baseSHA, _ := m.output(ctx, project.Path, "rev-parse", "--verify", baseRef+"^{commit}")
+	checkoutID := ""
+	for _, c := range project.Checkouts {
+		if c.Path == project.Path && !c.Detached {
+			checkoutID = c.ID
+			break
+		}
+	}
 	value := model.Workspace{
-		ProjectID: project.ID, Mode: model.WorkspaceModeProject, Path: project.Path,
+		ProjectID: project.ID, CheckoutID: checkoutID, Mode: model.WorkspaceModeProject, Path: project.Path,
 		BaseRemote: strings.TrimSpace(project.BaseRemote), BaseBranch: baseBranch,
 		BaseSHA: baseSHA, CurrentBaseSHA: baseSHA, Branch: branch, State: model.WorkspaceStateReady,
 	}
@@ -368,11 +375,25 @@ func (m *Manager) LockWorkspace(ctx context.Context, cardID string) (func(), err
 }
 
 func (m *Manager) LockRepository(ctx context.Context, projectID string) (func(), error) {
-	return m.lock(ctx, "repository-"+projectID)
+	project, err := m.Store.ProjectForCheckout(projectID, store.CheckoutFromContext(ctx))
+	if err != nil {
+		return nil, err
+	}
+	common, err := m.output(ctx, project.Path, "rev-parse", "--path-format=absolute", "--git-common-dir")
+	if err != nil {
+		return nil, err
+	}
+	hash := sha256.Sum256([]byte(common))
+	return m.lock(ctx, "repository-"+hex.EncodeToString(hash[:16]))
 }
 
 func (m *Manager) LockCheckout(ctx context.Context, projectID string) (func(), error) {
-	return m.lock(ctx, "checkout-"+projectID)
+	project, err := m.Store.ProjectForCheckout(projectID, store.CheckoutFromContext(ctx))
+	if err != nil {
+		return nil, err
+	}
+	hash := sha256.Sum256([]byte(project.Path))
+	return m.lock(ctx, "checkout-"+hex.EncodeToString(hash[:16]))
 }
 
 func (m *Manager) List(ctx context.Context, projectRef string, refresh, includeSize bool) ([]model.Workspace, error) {

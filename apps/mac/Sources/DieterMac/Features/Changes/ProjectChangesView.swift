@@ -38,7 +38,7 @@ struct ProjectChangesView: View {
             return "\(ObjectIdentifier(model))|\(bindingRevision)|\(active)|\(isLive)|\(scenePhase)"
         }
         return
-            "\(store.selectedProjectID)|\(store.endpoint.id)|\(store.connectionGeneration)|\(store.phase.isConnected)|\(scenePhase)"
+            "\(store.selectedProjectID)|\(store.checkout(forProjectID: store.selectedProjectID)?.id ?? "")|\(store.endpoint.id)|\(store.connectionGeneration)|\(store.phase.isConnected)|\(scenePhase)"
     }
     private var ready: Bool {
         injectedModel != nil ? !model.projectID.isEmpty : model.projectID == store.selectedProjectID
@@ -50,6 +50,7 @@ struct ProjectChangesView: View {
         GeometryReader { geometry in
             let compact = geometry.size.width < 900
             VStack(spacing: 0) {
+                if injectedModel == nil { ProjectCheckoutMenu(projectID: store.selectedProjectID).padding(8) }
                 if compact {
                     if showCompactDiff, ready, model.selection != nil { diffPane(compact: true) } else { fileNavigator }
                 } else {
@@ -69,11 +70,7 @@ struct ProjectChangesView: View {
         .task(id: targetKey) {
             guard active, scenePhase == .active else { model.suspend(); return }
             if injectedModel == nil {
-                guard store.phase.isConnected, let rpc = store.rpc else { model.suspend(); return }
-                guard
-                    store.projectEndpointIDs[store.selectedProjectID] == nil
-                        || store.projectEndpointIDs[store.selectedProjectID] == store.endpoint.id
-                else { return }
+                guard await store.ensureCheckoutConnection(store.selectedProjectID), let rpc = store.rpc else { model.suspend(); return }
                 model.bind(projectID: store.selectedProjectID, client: rpc)
             } else if !isLive {
                 model.suspend(); return

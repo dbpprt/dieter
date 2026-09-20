@@ -19,8 +19,8 @@
 
         private enum FileExit { case back, dismiss }
         private var isDirty: Bool { document.map { !$0.binary && text != $0.content } ?? false }
-        private var isCurrentScope: Bool { scope.machineID == store.selectedMachine?.id }
-        private var canAccess: Bool { isCurrentScope && store.phase.isConnected }
+        private var isCurrentScope: Bool { store.machines.contains { $0.daemonID == scope.machineID } }
+        private var canAccess: Bool { store.machines.contains { $0.daemonID == scope.machineID && $0.online } }
 
         var body: some View {
             NavigationStack {
@@ -45,7 +45,7 @@
                                 systemImage: "wifi.exclamationmark"
                             )
                             .font(.caption).foregroundStyle(.orange)
-                        } else if !store.phase.isConnected {
+                        } else if !canAccess {
                             Label("Offline · Your edits remain available", systemImage: "wifi.slash")
                                 .font(.caption).foregroundStyle(.secondary)
                         }
@@ -182,7 +182,7 @@
             loading = true
             failed = false
             defer { loading = false }
-            let result = await store.listFiles(projectID: scope.projectID, cardID: scope.cardID, path: directory)
+            let result = await store.listFiles(projectID: scope.projectID, checkoutID: scope.checkoutID, cardID: scope.cardID, path: directory)
             guard isCurrentScope else { return }
             listing = result
             failed = result == nil
@@ -192,7 +192,7 @@
             guard canAccess, !loading else { return }
             loading = true
             defer { loading = false }
-            if let result = await store.readFile(projectID: scope.projectID, cardID: scope.cardID, path: path),
+            if let result = await store.readFile(projectID: scope.projectID, checkoutID: scope.checkoutID, cardID: scope.cardID, path: path),
                 isCurrentScope
             {
                 document = result
@@ -209,7 +209,7 @@
             let snapshot = text
             guard
                 let saved = await store.saveFile(
-                    projectID: scope.projectID, cardID: scope.cardID, document: current, content: snapshot
+                    projectID: scope.projectID, checkoutID: scope.checkoutID, cardID: scope.cardID, document: current, content: snapshot
                 ), isCurrentScope, document?.path == current.path
             else { return false }
             document = saved

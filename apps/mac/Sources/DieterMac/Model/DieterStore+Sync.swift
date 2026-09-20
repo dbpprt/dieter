@@ -371,9 +371,9 @@ extension DieterStore {
         movingCardIDs = Set(pendingCardMoves.keys)
         labelUpdatingCardIDs = Set(pendingCardLabelUpdates.keys)
         notifyTransitions(global.cards + global.chats, endpointID: endpointID)
-        replica.replaceMetadata(global, endpointID: endpointID)
+        replica.replaceMetadata(global, endpoint: endpoints.first { $0.id == endpointID } ?? DieterEndpoint(name: endpointID, host: "", port: 0), endpointID: endpointID)
         updateSelectedState(base: global)
-        if projectEndpointIDs[selectedProjectID] == endpointID {
+        if projectReplicaEndpointIDs[selectedProjectID] == endpointID {
             boardSettings = snapshot.settings
         }
         if let selectedID = selectedCardID ?? selectedChatID,
@@ -950,13 +950,15 @@ extension DieterStore {
         labelUpdatingCardIDs = Set(pendingCardLabelUpdates.keys)
         notifyTransitions(next.cards + next.chats, endpointID: endpoint.id)
         if state != next { state = next }
-        if !next.project.id.isEmpty {
-            navigationBoards[next.project.id] = next.boards
-            navigationCards[next.project.id] = next.cards
-        }
+        for board in next.boards { replica.upsert(board, selectedProjectID: selectedProjectID) }
+        for card in next.cards + next.chats { replica.upsert(card) }
         for project in next.projects {
-            projectDirectory[project.id] = project
-            projectEndpointIDs[project.id] = endpoint.id
+            projectDirectory[project.id] = MachineDirectoryReducer.mergeProject(projectDirectory[project.id], project)
+            projectReplicaEndpointIDs[project.id] = endpoint.id
+        }
+        if !next.project.id.isEmpty {
+            state.cards = navigationCards[next.project.id] ?? next.cards
+            state.boards = navigationBoards[next.project.id] ?? next.boards
         }
         if selectedProjectID.isEmpty || !next.projects.contains(where: { $0.id == selectedProjectID }) {
             selectedProjectID =

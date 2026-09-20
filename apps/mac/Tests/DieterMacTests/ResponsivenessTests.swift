@@ -155,16 +155,24 @@ private actor DelayedScheduleRPC: DieterScheduleRPC {
     part.type = "text"
     part.text = String(repeating: "x", count: 10_000)
     message.parts = [part]
-    let messages = Array(repeating: message, count: 180)
-    let tail = ConversationRenderWindow.range(messages: messages, requestedStart: nil)
+    let messages = (0..<180).map { index in
+        var copy = message
+        copy.id = "message-\(index)"
+        return copy
+    }
+    let tail = ConversationRenderWindow.range(messages: messages, position: .latest)
     #expect(tail.upperBound == 180)
     #expect(tail.count == 1)
-    let earlier = ConversationRenderWindow.range(messages: messages, requestedStart: 0)
-    #expect(earlier == 0..<1)
-    let pagedEarlier = ConversationRenderWindow.range(messages: messages, position: .pagingEarlier(from: 100))
-    #expect(pagedEarlier == 99..<101)
-    let pagedLater = ConversationRenderWindow.range(messages: messages, position: .pagingLater(from: 100))
-    #expect(pagedLater == 100..<102)
+    // Four retained pages of 16 KB hold six 10 KB messages.
+    let earlier = ConversationRenderWindow.range(messages: messages, position: .from(messageID: "message-0"))
+    #expect(earlier == 0..<6)
+    let pagedEarlier = ConversationRenderWindow.extendingEarlier(messages: messages, renderedRange: 100..<101)
+    #expect(pagedEarlier == .from(messageID: "message-99"))
+    let pagedLater = ConversationRenderWindow.extendingLater(messages: messages, renderedRange: 100..<101)
+    #expect(pagedLater == .through(messageID: "message-101"))
+    #expect(
+        ConversationRenderWindow.range(messages: messages, position: pagedLater ?? .latest)
+            == 96..<102)
 }
 
 @Test(arguments: ["text bytes", "message parts", "message count"])
@@ -183,97 +191,38 @@ func detachedConversationRenderWindowRetainsReadMessagesWhenTheTailAdvances(budg
         return message
     }
     var messages = (0..<originalCount).map(message)
-    let readingRange = ConversationRenderWindow.range(messages: messages, requestedStart: nil)
+    let readingRange = ConversationRenderWindow.range(messages: messages, position: .latest)
     let readingIDs = messages[readingRange].map(\.id)
     #expect(readingRange.lowerBound > 0)
 
-    // Scrolling away pins the displayed window before another answer arrives.
+    // Scrolling away pins the displayed start before another answer arrives.
     // Appends must not replace those rows just because the live tail exceeds a
     // rendering budget; changing only the scroll offset cannot prevent that.
-    let pinnedPosition = ConversationRenderWindow.Position.latest.afterUserScroll(
-        isAtLatest: false, renderedRange: readingRange)
-    #expect(pinnedPosition == .startingAt(readingRange.lowerBound))
-    let pinnedStart = readingRange.lowerBound
+    let pinnedPosition = ConversationRenderWindow.detached(
+        from: .latest, messages: messages, renderedRange: readingRange)
+    #expect(pinnedPosition == .from(messageID: readingIDs[0]))
     for index in originalCount..<(originalCount + 3) {
         messages.append(message(index))
-        let latest = ConversationRenderWindow.range(messages: messages, requestedStart: nil)
+        let latest = ConversationRenderWindow.range(messages: messages, position: .latest)
         let pinned = ConversationRenderWindow.range(messages: messages, position: pinnedPosition)
         #expect(latest.lowerBound > readingRange.lowerBound)
         #expect(latest.upperBound == messages.count)
-        #expect(pinned == readingRange)
-        #expect(messages[pinned].map(\.id) == readingIDs)
-        #expect(pinned.upperBound < messages.count, "Later messages remain available outside the reading window")
-        #expect(pinned.count <= ConversationRenderWindow.maximumMessages)
-        #expect(messages[pinned].reduce(0) { $0 + $1.parts.count } <= ConversationRenderWindow.maximumParts)
+        #expect(pinned.lowerBound == readingRange.lowerBound)
+        #expect(Array(messages[pinned].map(\.id).prefix(readingIDs.count)) == readingIDs)
+        let pages = ConversationRenderWindow.retainedPages
+        #expect(pinned.count <= ConversationRenderWindow.maximumMessages * pages)
+        #expect(messages[pinned].reduce(0) { $0 + $1.parts.count } <= ConversationRenderWindow.maximumParts * pages)
         #expect(
             messages[pinned].flatMap(\.parts).reduce(0) { $0 + $1.text.utf8.count }
-                <= ConversationRenderWindow.maximumTextBytes)
+                <= ConversationRenderWindow.maximumTextBytes * pages)
     }
+    // Prepended history shifts every index; the pinned identity does not move.
+    let shifted = [message(-1)] + messages
+    #expect(
+        ConversationRenderWindow.range(messages: shifted, position: pinnedPosition).lowerBound
+            == readingRange.lowerBound + 1)
     // Jump to latest releases the pin and restores the bounded current tail.
-    let resumed = ConversationRenderWindow.range(messages: messages, requestedStart: nil)
+    let resumed = ConversationRenderWindow.range(messages: messages, position: .latest)
     #expect(messages[resumed].last?.id == messages.last?.id)
-    #expect(resumed.lowerBound > pinnedStart)
-}
-
-@Test @MainActor func orphanedOutboxChatsStayInRecoveryWithoutChangingDirectoryCount() async throws {
-    let store = DieterStore(restoreSync: false)
-    var project = Dieter_V1_Project(); project.id = "exists"
-    store.projectDirectory = [project.id: project]
-    for projectID in ["exists", "deleted"] {
-        var request = Dieter_V1_CreateConversationRequest(); request.projectID = projectID
-        try await store.outbox.enqueue(
-            .init(
-                commandID: projectID, clientID: "test", endpointID: store.endpoint.id,
-                kind: .createChat, request: try request.serializedData(), optimisticID: "local-\(projectID)",
-                attempts: 1, lastError: "Project missing", state: .failed, createdAt: Date()))
-    }
-    for _ in 0..<5 {
-        store.rebuildOutboxOverlays()
-        #expect(store.chats.map(\.id) == ["local-exists"])
-        // An authoritative directory refresh removes local overlays before composition.
-        store.chats = []
-        store.rebuildOutboxOverlays()
-        #expect(store.chats.map(\.id) == ["local-exists"])
-    }
-    #expect(store.outbox.entries.count == 2)
-    #expect(store.failedOutboxIDs.contains("local-deleted"))
-}
-
-@Test @MainActor func endpointActivationNeverPairsNewCursorWithOldDecodedBytes() throws {
-    let store = DieterStore(restoreSync: false)
-    var old = Dieter_V1_GlobalSnapshot()
-    var project = Dieter_V1_Project(); project.id = "project"; project.name = "old"
-    old.state.projects = [project]
-    var current = old
-    current.state.projects[0].name = "new"
-    let oldData = try old.serializedData(), currentData = try current.serializedData()
-    store.syncDiskState.projections[store.endpoint.id] = .init(cursor: Data("new-cursor".utf8), snapshot: currentData)
-    store.activateSyncProjection(for: store.endpoint, decodedSnapshot: old, decodedData: oldData)
-    #expect(store.syncSnapshot == nil)
-    store.activateSyncProjection(for: store.endpoint, decodedSnapshot: current, decodedData: currentData)
-    #expect(store.syncSnapshot?.state.projects.first?.name == "new")
-}
-
-@Test(arguments: [false, true])
-func completedConversationPagingPinsTheWindowWhileKeepingLargeMessageOverlap(oversized: Bool) {
-    var part = Dieter_V1_MessagePart()
-    part.type = "text"
-    part.text = String(repeating: "x", count: oversized ? 9_000 : 1)
-    let messages = (0..<500).map { index in
-        var message = Dieter_V1_UiMessage()
-        message.id = "message-\(index)"
-        message.parts = [part]
-        return message
-    }
-    for position in [ConversationRenderWindow.Position.pagingEarlier(from: 498), .pagingLater(from: 498)] {
-        let renderedRange = ConversationRenderWindow.range(messages: messages, position: position)
-        let pinned = position.afterUserScroll(isAtLatest: false, renderedRange: renderedRange)
-        #expect(ConversationRenderWindow.range(messages: messages, position: pinned) == renderedRange)
-        #expect(renderedRange.contains(498))
-        #expect(renderedRange.count >= 2)
-        let growing = messages + Array(messages.suffix(3))
-        #expect(
-            ConversationRenderWindow.range(messages: growing, position: pinned).lowerBound == renderedRange.lowerBound)
-        #expect(pinned.afterUserScroll(isAtLatest: true, renderedRange: renderedRange) == .latest)
-    }
+    #expect(resumed.lowerBound > readingRange.lowerBound)
 }

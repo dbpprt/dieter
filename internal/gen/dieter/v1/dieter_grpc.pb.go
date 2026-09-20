@@ -20,6 +20,12 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
+	DieterService_GetPeerChanges_FullMethodName                  = "/dieter.v1.DieterService/GetPeerChanges"
+	DieterService_GetPeerRecord_FullMethodName                   = "/dieter.v1.DieterService/GetPeerRecord"
+	DieterService_GetPeerStoreStatus_FullMethodName              = "/dieter.v1.DieterService/GetPeerStoreStatus"
+	DieterService_ListPeerRecords_FullMethodName                 = "/dieter.v1.DieterService/ListPeerRecords"
+	DieterService_PutPeerRecord_FullMethodName                   = "/dieter.v1.DieterService/PutPeerRecord"
+	DieterService_MergePeerRecords_FullMethodName                = "/dieter.v1.DieterService/MergePeerRecords"
 	DieterService_Health_FullMethodName                          = "/dieter.v1.DieterService/Health"
 	DieterService_GetRuntimeStatus_FullMethodName                = "/dieter.v1.DieterService/GetRuntimeStatus"
 	DieterService_StartControlConnection_FullMethodName          = "/dieter.v1.DieterService/StartControlConnection"
@@ -40,6 +46,10 @@ const (
 	DieterService_SetBoardPromptTemplate_FullMethodName          = "/dieter.v1.DieterService/SetBoardPromptTemplate"
 	DieterService_PreviewPrompt_FullMethodName                   = "/dieter.v1.DieterService/PreviewPrompt"
 	DieterService_ListDirectories_FullMethodName                 = "/dieter.v1.DieterService/ListDirectories"
+	DieterService_ConsolidateProject_FullMethodName              = "/dieter.v1.DieterService/ConsolidateProject"
+	DieterService_AttachCheckout_FullMethodName                  = "/dieter.v1.DieterService/AttachCheckout"
+	DieterService_DetachCheckout_FullMethodName                  = "/dieter.v1.DieterService/DetachCheckout"
+	DieterService_ListCheckouts_FullMethodName                   = "/dieter.v1.DieterService/ListCheckouts"
 	DieterService_CreateProject_FullMethodName                   = "/dieter.v1.DieterService/CreateProject"
 	DieterService_UpdateProject_FullMethodName                   = "/dieter.v1.DieterService/UpdateProject"
 	DieterService_UpdateProjectWorkspaceSettings_FullMethodName  = "/dieter.v1.DieterService/UpdateProjectWorkspaceSettings"
@@ -127,6 +137,7 @@ const (
 	DieterService_ExchangeRemoteDesktopClipboard_FullMethodName  = "/dieter.v1.DieterService/ExchangeRemoteDesktopClipboard"
 	DieterService_CloseRemoteDesktop_FullMethodName              = "/dieter.v1.DieterService/CloseRemoteDesktop"
 	DieterService_ListSchedules_FullMethodName                   = "/dieter.v1.DieterService/ListSchedules"
+	DieterService_GetSchedule_FullMethodName                     = "/dieter.v1.DieterService/GetSchedule"
 	DieterService_PreviewSchedule_FullMethodName                 = "/dieter.v1.DieterService/PreviewSchedule"
 	DieterService_CreateSchedule_FullMethodName                  = "/dieter.v1.DieterService/CreateSchedule"
 	DieterService_UpdateSchedule_FullMethodName                  = "/dieter.v1.DieterService/UpdateSchedule"
@@ -140,6 +151,12 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type DieterServiceClient interface {
+	GetPeerChanges(ctx context.Context, in *PeerChangesRequest, opts ...grpc.CallOption) (*PeerChangesResponse, error)
+	GetPeerRecord(ctx context.Context, in *PeerRecordRef, opts ...grpc.CallOption) (*PeerRecord, error)
+	GetPeerStoreStatus(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*PeerStoreStatus, error)
+	ListPeerRecords(ctx context.Context, in *PeerSnapshotRequest, opts ...grpc.CallOption) (*PeerSnapshot, error)
+	PutPeerRecord(ctx context.Context, in *PutPeerRecordRequest, opts ...grpc.CallOption) (*PeerRecord, error)
+	MergePeerRecords(ctx context.Context, in *MergePeerRecordsRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	Health(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*HealthResponse, error)
 	GetRuntimeStatus(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*RuntimeStatus, error)
 	// Data-only WebRTC carries the existing authenticated TLS/gRPC byte stream.
@@ -167,6 +184,10 @@ type DieterServiceClient interface {
 	SetBoardPromptTemplate(ctx context.Context, in *SetScopedPromptTemplateRequest, opts ...grpc.CallOption) (*Board, error)
 	PreviewPrompt(ctx context.Context, in *PreviewPromptRequest, opts ...grpc.CallOption) (*PromptPreview, error)
 	ListDirectories(ctx context.Context, in *ListDirectoriesRequest, opts ...grpc.CallOption) (*DirectoryListing, error)
+	ConsolidateProject(ctx context.Context, in *ConsolidateProjectRequest, opts ...grpc.CallOption) (*Project, error)
+	AttachCheckout(ctx context.Context, in *AttachCheckoutRequest, opts ...grpc.CallOption) (*Checkout, error)
+	DetachCheckout(ctx context.Context, in *CheckoutRef, opts ...grpc.CallOption) (*emptypb.Empty, error)
+	ListCheckouts(ctx context.Context, in *ProjectRef, opts ...grpc.CallOption) (*CheckoutsResponse, error)
 	CreateProject(ctx context.Context, in *CreateProjectRequest, opts ...grpc.CallOption) (*CreateProjectResponse, error)
 	UpdateProject(ctx context.Context, in *UpdateProjectRequest, opts ...grpc.CallOption) (*Project, error)
 	UpdateProjectWorkspaceSettings(ctx context.Context, in *UpdateProjectWorkspaceSettingsRequest, opts ...grpc.CallOption) (*Project, error)
@@ -274,6 +295,7 @@ type DieterServiceClient interface {
 	ExchangeRemoteDesktopClipboard(ctx context.Context, in *RemoteDesktopClipboardRequest, opts ...grpc.CallOption) (*RemoteDesktopClipboardResponse, error)
 	CloseRemoteDesktop(ctx context.Context, in *RemoteDesktopRef, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	ListSchedules(ctx context.Context, in *ListSchedulesRequest, opts ...grpc.CallOption) (*SchedulesResponse, error)
+	GetSchedule(ctx context.Context, in *ScheduleRef, opts ...grpc.CallOption) (*Schedule, error)
 	PreviewSchedule(ctx context.Context, in *PreviewScheduleRequest, opts ...grpc.CallOption) (*SchedulePreview, error)
 	CreateSchedule(ctx context.Context, in *SaveScheduleRequest, opts ...grpc.CallOption) (*Schedule, error)
 	UpdateSchedule(ctx context.Context, in *SaveScheduleRequest, opts ...grpc.CallOption) (*Schedule, error)
@@ -289,6 +311,66 @@ type dieterServiceClient struct {
 
 func NewDieterServiceClient(cc grpc.ClientConnInterface) DieterServiceClient {
 	return &dieterServiceClient{cc}
+}
+
+func (c *dieterServiceClient) GetPeerChanges(ctx context.Context, in *PeerChangesRequest, opts ...grpc.CallOption) (*PeerChangesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PeerChangesResponse)
+	err := c.cc.Invoke(ctx, DieterService_GetPeerChanges_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dieterServiceClient) GetPeerRecord(ctx context.Context, in *PeerRecordRef, opts ...grpc.CallOption) (*PeerRecord, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PeerRecord)
+	err := c.cc.Invoke(ctx, DieterService_GetPeerRecord_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dieterServiceClient) GetPeerStoreStatus(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*PeerStoreStatus, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PeerStoreStatus)
+	err := c.cc.Invoke(ctx, DieterService_GetPeerStoreStatus_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dieterServiceClient) ListPeerRecords(ctx context.Context, in *PeerSnapshotRequest, opts ...grpc.CallOption) (*PeerSnapshot, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PeerSnapshot)
+	err := c.cc.Invoke(ctx, DieterService_ListPeerRecords_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dieterServiceClient) PutPeerRecord(ctx context.Context, in *PutPeerRecordRequest, opts ...grpc.CallOption) (*PeerRecord, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PeerRecord)
+	err := c.cc.Invoke(ctx, DieterService_PutPeerRecord_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dieterServiceClient) MergePeerRecords(ctx context.Context, in *MergePeerRecordsRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(emptypb.Empty)
+	err := c.cc.Invoke(ctx, DieterService_MergePeerRecords_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (c *dieterServiceClient) Health(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*HealthResponse, error) {
@@ -503,6 +585,46 @@ func (c *dieterServiceClient) ListDirectories(ctx context.Context, in *ListDirec
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(DirectoryListing)
 	err := c.cc.Invoke(ctx, DieterService_ListDirectories_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dieterServiceClient) ConsolidateProject(ctx context.Context, in *ConsolidateProjectRequest, opts ...grpc.CallOption) (*Project, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Project)
+	err := c.cc.Invoke(ctx, DieterService_ConsolidateProject_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dieterServiceClient) AttachCheckout(ctx context.Context, in *AttachCheckoutRequest, opts ...grpc.CallOption) (*Checkout, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Checkout)
+	err := c.cc.Invoke(ctx, DieterService_AttachCheckout_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dieterServiceClient) DetachCheckout(ctx context.Context, in *CheckoutRef, opts ...grpc.CallOption) (*emptypb.Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(emptypb.Empty)
+	err := c.cc.Invoke(ctx, DieterService_DetachCheckout_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dieterServiceClient) ListCheckouts(ctx context.Context, in *ProjectRef, opts ...grpc.CallOption) (*CheckoutsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CheckoutsResponse)
+	err := c.cc.Invoke(ctx, DieterService_ListCheckouts_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -1424,6 +1546,16 @@ func (c *dieterServiceClient) ListSchedules(ctx context.Context, in *ListSchedul
 	return out, nil
 }
 
+func (c *dieterServiceClient) GetSchedule(ctx context.Context, in *ScheduleRef, opts ...grpc.CallOption) (*Schedule, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Schedule)
+	err := c.cc.Invoke(ctx, DieterService_GetSchedule_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *dieterServiceClient) PreviewSchedule(ctx context.Context, in *PreviewScheduleRequest, opts ...grpc.CallOption) (*SchedulePreview, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(SchedulePreview)
@@ -1498,6 +1630,12 @@ func (c *dieterServiceClient) ListScheduleRuns(ctx context.Context, in *ListSche
 // All implementations must embed UnimplementedDieterServiceServer
 // for forward compatibility.
 type DieterServiceServer interface {
+	GetPeerChanges(context.Context, *PeerChangesRequest) (*PeerChangesResponse, error)
+	GetPeerRecord(context.Context, *PeerRecordRef) (*PeerRecord, error)
+	GetPeerStoreStatus(context.Context, *emptypb.Empty) (*PeerStoreStatus, error)
+	ListPeerRecords(context.Context, *PeerSnapshotRequest) (*PeerSnapshot, error)
+	PutPeerRecord(context.Context, *PutPeerRecordRequest) (*PeerRecord, error)
+	MergePeerRecords(context.Context, *MergePeerRecordsRequest) (*emptypb.Empty, error)
 	Health(context.Context, *emptypb.Empty) (*HealthResponse, error)
 	GetRuntimeStatus(context.Context, *emptypb.Empty) (*RuntimeStatus, error)
 	// Data-only WebRTC carries the existing authenticated TLS/gRPC byte stream.
@@ -1525,6 +1663,10 @@ type DieterServiceServer interface {
 	SetBoardPromptTemplate(context.Context, *SetScopedPromptTemplateRequest) (*Board, error)
 	PreviewPrompt(context.Context, *PreviewPromptRequest) (*PromptPreview, error)
 	ListDirectories(context.Context, *ListDirectoriesRequest) (*DirectoryListing, error)
+	ConsolidateProject(context.Context, *ConsolidateProjectRequest) (*Project, error)
+	AttachCheckout(context.Context, *AttachCheckoutRequest) (*Checkout, error)
+	DetachCheckout(context.Context, *CheckoutRef) (*emptypb.Empty, error)
+	ListCheckouts(context.Context, *ProjectRef) (*CheckoutsResponse, error)
 	CreateProject(context.Context, *CreateProjectRequest) (*CreateProjectResponse, error)
 	UpdateProject(context.Context, *UpdateProjectRequest) (*Project, error)
 	UpdateProjectWorkspaceSettings(context.Context, *UpdateProjectWorkspaceSettingsRequest) (*Project, error)
@@ -1632,6 +1774,7 @@ type DieterServiceServer interface {
 	ExchangeRemoteDesktopClipboard(context.Context, *RemoteDesktopClipboardRequest) (*RemoteDesktopClipboardResponse, error)
 	CloseRemoteDesktop(context.Context, *RemoteDesktopRef) (*emptypb.Empty, error)
 	ListSchedules(context.Context, *ListSchedulesRequest) (*SchedulesResponse, error)
+	GetSchedule(context.Context, *ScheduleRef) (*Schedule, error)
 	PreviewSchedule(context.Context, *PreviewScheduleRequest) (*SchedulePreview, error)
 	CreateSchedule(context.Context, *SaveScheduleRequest) (*Schedule, error)
 	UpdateSchedule(context.Context, *SaveScheduleRequest) (*Schedule, error)
@@ -1649,6 +1792,24 @@ type DieterServiceServer interface {
 // pointer dereference when methods are called.
 type UnimplementedDieterServiceServer struct{}
 
+func (UnimplementedDieterServiceServer) GetPeerChanges(context.Context, *PeerChangesRequest) (*PeerChangesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetPeerChanges not implemented")
+}
+func (UnimplementedDieterServiceServer) GetPeerRecord(context.Context, *PeerRecordRef) (*PeerRecord, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetPeerRecord not implemented")
+}
+func (UnimplementedDieterServiceServer) GetPeerStoreStatus(context.Context, *emptypb.Empty) (*PeerStoreStatus, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetPeerStoreStatus not implemented")
+}
+func (UnimplementedDieterServiceServer) ListPeerRecords(context.Context, *PeerSnapshotRequest) (*PeerSnapshot, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListPeerRecords not implemented")
+}
+func (UnimplementedDieterServiceServer) PutPeerRecord(context.Context, *PutPeerRecordRequest) (*PeerRecord, error) {
+	return nil, status.Error(codes.Unimplemented, "method PutPeerRecord not implemented")
+}
+func (UnimplementedDieterServiceServer) MergePeerRecords(context.Context, *MergePeerRecordsRequest) (*emptypb.Empty, error) {
+	return nil, status.Error(codes.Unimplemented, "method MergePeerRecords not implemented")
+}
 func (UnimplementedDieterServiceServer) Health(context.Context, *emptypb.Empty) (*HealthResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Health not implemented")
 }
@@ -1708,6 +1869,18 @@ func (UnimplementedDieterServiceServer) PreviewPrompt(context.Context, *PreviewP
 }
 func (UnimplementedDieterServiceServer) ListDirectories(context.Context, *ListDirectoriesRequest) (*DirectoryListing, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListDirectories not implemented")
+}
+func (UnimplementedDieterServiceServer) ConsolidateProject(context.Context, *ConsolidateProjectRequest) (*Project, error) {
+	return nil, status.Error(codes.Unimplemented, "method ConsolidateProject not implemented")
+}
+func (UnimplementedDieterServiceServer) AttachCheckout(context.Context, *AttachCheckoutRequest) (*Checkout, error) {
+	return nil, status.Error(codes.Unimplemented, "method AttachCheckout not implemented")
+}
+func (UnimplementedDieterServiceServer) DetachCheckout(context.Context, *CheckoutRef) (*emptypb.Empty, error) {
+	return nil, status.Error(codes.Unimplemented, "method DetachCheckout not implemented")
+}
+func (UnimplementedDieterServiceServer) ListCheckouts(context.Context, *ProjectRef) (*CheckoutsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListCheckouts not implemented")
 }
 func (UnimplementedDieterServiceServer) CreateProject(context.Context, *CreateProjectRequest) (*CreateProjectResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method CreateProject not implemented")
@@ -1970,6 +2143,9 @@ func (UnimplementedDieterServiceServer) CloseRemoteDesktop(context.Context, *Rem
 func (UnimplementedDieterServiceServer) ListSchedules(context.Context, *ListSchedulesRequest) (*SchedulesResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListSchedules not implemented")
 }
+func (UnimplementedDieterServiceServer) GetSchedule(context.Context, *ScheduleRef) (*Schedule, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetSchedule not implemented")
+}
 func (UnimplementedDieterServiceServer) PreviewSchedule(context.Context, *PreviewScheduleRequest) (*SchedulePreview, error) {
 	return nil, status.Error(codes.Unimplemented, "method PreviewSchedule not implemented")
 }
@@ -2010,6 +2186,114 @@ func RegisterDieterServiceServer(s grpc.ServiceRegistrar, srv DieterServiceServe
 		t.testEmbeddedByValue()
 	}
 	s.RegisterService(&DieterService_ServiceDesc, srv)
+}
+
+func _DieterService_GetPeerChanges_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PeerChangesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DieterServiceServer).GetPeerChanges(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DieterService_GetPeerChanges_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DieterServiceServer).GetPeerChanges(ctx, req.(*PeerChangesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DieterService_GetPeerRecord_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PeerRecordRef)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DieterServiceServer).GetPeerRecord(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DieterService_GetPeerRecord_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DieterServiceServer).GetPeerRecord(ctx, req.(*PeerRecordRef))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DieterService_GetPeerStoreStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(emptypb.Empty)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DieterServiceServer).GetPeerStoreStatus(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DieterService_GetPeerStoreStatus_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DieterServiceServer).GetPeerStoreStatus(ctx, req.(*emptypb.Empty))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DieterService_ListPeerRecords_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PeerSnapshotRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DieterServiceServer).ListPeerRecords(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DieterService_ListPeerRecords_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DieterServiceServer).ListPeerRecords(ctx, req.(*PeerSnapshotRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DieterService_PutPeerRecord_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PutPeerRecordRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DieterServiceServer).PutPeerRecord(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DieterService_PutPeerRecord_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DieterServiceServer).PutPeerRecord(ctx, req.(*PutPeerRecordRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DieterService_MergePeerRecords_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MergePeerRecordsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DieterServiceServer).MergePeerRecords(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DieterService_MergePeerRecords_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DieterServiceServer).MergePeerRecords(ctx, req.(*MergePeerRecordsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
 }
 
 func _DieterService_Health_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
@@ -2354,6 +2638,78 @@ func _DieterService_ListDirectories_Handler(srv interface{}, ctx context.Context
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(DieterServiceServer).ListDirectories(ctx, req.(*ListDirectoriesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DieterService_ConsolidateProject_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ConsolidateProjectRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DieterServiceServer).ConsolidateProject(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DieterService_ConsolidateProject_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DieterServiceServer).ConsolidateProject(ctx, req.(*ConsolidateProjectRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DieterService_AttachCheckout_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AttachCheckoutRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DieterServiceServer).AttachCheckout(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DieterService_AttachCheckout_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DieterServiceServer).AttachCheckout(ctx, req.(*AttachCheckoutRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DieterService_DetachCheckout_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CheckoutRef)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DieterServiceServer).DetachCheckout(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DieterService_DetachCheckout_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DieterServiceServer).DetachCheckout(ctx, req.(*CheckoutRef))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DieterService_ListCheckouts_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ProjectRef)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DieterServiceServer).ListCheckouts(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DieterService_ListCheckouts_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DieterServiceServer).ListCheckouts(ctx, req.(*ProjectRef))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -3889,6 +4245,24 @@ func _DieterService_ListSchedules_Handler(srv interface{}, ctx context.Context, 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _DieterService_GetSchedule_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ScheduleRef)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DieterServiceServer).GetSchedule(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DieterService_GetSchedule_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DieterServiceServer).GetSchedule(ctx, req.(*ScheduleRef))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _DieterService_PreviewSchedule_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(PreviewScheduleRequest)
 	if err := dec(in); err != nil {
@@ -4023,6 +4397,30 @@ var DieterService_ServiceDesc = grpc.ServiceDesc{
 	HandlerType: (*DieterServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
+			MethodName: "GetPeerChanges",
+			Handler:    _DieterService_GetPeerChanges_Handler,
+		},
+		{
+			MethodName: "GetPeerRecord",
+			Handler:    _DieterService_GetPeerRecord_Handler,
+		},
+		{
+			MethodName: "GetPeerStoreStatus",
+			Handler:    _DieterService_GetPeerStoreStatus_Handler,
+		},
+		{
+			MethodName: "ListPeerRecords",
+			Handler:    _DieterService_ListPeerRecords_Handler,
+		},
+		{
+			MethodName: "PutPeerRecord",
+			Handler:    _DieterService_PutPeerRecord_Handler,
+		},
+		{
+			MethodName: "MergePeerRecords",
+			Handler:    _DieterService_MergePeerRecords_Handler,
+		},
+		{
 			MethodName: "Health",
 			Handler:    _DieterService_Health_Handler,
 		},
@@ -4093,6 +4491,22 @@ var DieterService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListDirectories",
 			Handler:    _DieterService_ListDirectories_Handler,
+		},
+		{
+			MethodName: "ConsolidateProject",
+			Handler:    _DieterService_ConsolidateProject_Handler,
+		},
+		{
+			MethodName: "AttachCheckout",
+			Handler:    _DieterService_AttachCheckout_Handler,
+		},
+		{
+			MethodName: "DetachCheckout",
+			Handler:    _DieterService_DetachCheckout_Handler,
+		},
+		{
+			MethodName: "ListCheckouts",
+			Handler:    _DieterService_ListCheckouts_Handler,
 		},
 		{
 			MethodName: "CreateProject",
@@ -4421,6 +4835,10 @@ var DieterService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListSchedules",
 			Handler:    _DieterService_ListSchedules_Handler,
+		},
+		{
+			MethodName: "GetSchedule",
+			Handler:    _DieterService_GetSchedule_Handler,
 		},
 		{
 			MethodName: "PreviewSchedule",

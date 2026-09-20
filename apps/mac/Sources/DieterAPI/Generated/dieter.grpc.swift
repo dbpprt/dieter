@@ -21,6 +21,84 @@ public enum Dieter_V1_DieterService: Sendable {
     public static let descriptor = GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.DieterService")
     /// Namespace for method metadata.
     public enum Method: Sendable {
+        /// Namespace for "GetPeerChanges" metadata.
+        public enum GetPeerChanges: Sendable {
+            /// Request type for "GetPeerChanges".
+            public typealias Input = Dieter_V1_PeerChangesRequest
+            /// Response type for "GetPeerChanges".
+            public typealias Output = Dieter_V1_PeerChangesResponse
+            /// Descriptor for "GetPeerChanges".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.DieterService"),
+                method: "GetPeerChanges",
+                type: .unary
+            )
+        }
+        /// Namespace for "GetPeerRecord" metadata.
+        public enum GetPeerRecord: Sendable {
+            /// Request type for "GetPeerRecord".
+            public typealias Input = Dieter_V1_PeerRecordRef
+            /// Response type for "GetPeerRecord".
+            public typealias Output = Dieter_V1_PeerRecord
+            /// Descriptor for "GetPeerRecord".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.DieterService"),
+                method: "GetPeerRecord",
+                type: .unary
+            )
+        }
+        /// Namespace for "GetPeerStoreStatus" metadata.
+        public enum GetPeerStoreStatus: Sendable {
+            /// Request type for "GetPeerStoreStatus".
+            public typealias Input = SwiftProtobuf.Google_Protobuf_Empty
+            /// Response type for "GetPeerStoreStatus".
+            public typealias Output = Dieter_V1_PeerStoreStatus
+            /// Descriptor for "GetPeerStoreStatus".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.DieterService"),
+                method: "GetPeerStoreStatus",
+                type: .unary
+            )
+        }
+        /// Namespace for "ListPeerRecords" metadata.
+        public enum ListPeerRecords: Sendable {
+            /// Request type for "ListPeerRecords".
+            public typealias Input = Dieter_V1_PeerSnapshotRequest
+            /// Response type for "ListPeerRecords".
+            public typealias Output = Dieter_V1_PeerSnapshot
+            /// Descriptor for "ListPeerRecords".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.DieterService"),
+                method: "ListPeerRecords",
+                type: .unary
+            )
+        }
+        /// Namespace for "PutPeerRecord" metadata.
+        public enum PutPeerRecord: Sendable {
+            /// Request type for "PutPeerRecord".
+            public typealias Input = Dieter_V1_PutPeerRecordRequest
+            /// Response type for "PutPeerRecord".
+            public typealias Output = Dieter_V1_PeerRecord
+            /// Descriptor for "PutPeerRecord".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.DieterService"),
+                method: "PutPeerRecord",
+                type: .unary
+            )
+        }
+        /// Namespace for "MergePeerRecords" metadata.
+        public enum MergePeerRecords: Sendable {
+            /// Request type for "MergePeerRecords".
+            public typealias Input = Dieter_V1_MergePeerRecordsRequest
+            /// Response type for "MergePeerRecords".
+            public typealias Output = SwiftProtobuf.Google_Protobuf_Empty
+            /// Descriptor for "MergePeerRecords".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.DieterService"),
+                method: "MergePeerRecords",
+                type: .unary
+            )
+        }
         /// Namespace for "Health" metadata.
         public enum Health: Sendable {
             /// Request type for "Health".
@@ -278,6 +356,58 @@ public enum Dieter_V1_DieterService: Sendable {
             public static let descriptor = GRPCCore.MethodDescriptor(
                 service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.DieterService"),
                 method: "ListDirectories",
+                type: .unary
+            )
+        }
+        /// Namespace for "ConsolidateProject" metadata.
+        public enum ConsolidateProject: Sendable {
+            /// Request type for "ConsolidateProject".
+            public typealias Input = Dieter_V1_ConsolidateProjectRequest
+            /// Response type for "ConsolidateProject".
+            public typealias Output = Dieter_V1_Project
+            /// Descriptor for "ConsolidateProject".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.DieterService"),
+                method: "ConsolidateProject",
+                type: .unary
+            )
+        }
+        /// Namespace for "AttachCheckout" metadata.
+        public enum AttachCheckout: Sendable {
+            /// Request type for "AttachCheckout".
+            public typealias Input = Dieter_V1_AttachCheckoutRequest
+            /// Response type for "AttachCheckout".
+            public typealias Output = Dieter_V1_Checkout
+            /// Descriptor for "AttachCheckout".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.DieterService"),
+                method: "AttachCheckout",
+                type: .unary
+            )
+        }
+        /// Namespace for "DetachCheckout" metadata.
+        public enum DetachCheckout: Sendable {
+            /// Request type for "DetachCheckout".
+            public typealias Input = Dieter_V1_CheckoutRef
+            /// Response type for "DetachCheckout".
+            public typealias Output = SwiftProtobuf.Google_Protobuf_Empty
+            /// Descriptor for "DetachCheckout".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.DieterService"),
+                method: "DetachCheckout",
+                type: .unary
+            )
+        }
+        /// Namespace for "ListCheckouts" metadata.
+        public enum ListCheckouts: Sendable {
+            /// Request type for "ListCheckouts".
+            public typealias Input = Dieter_V1_ProjectRef
+            /// Response type for "ListCheckouts".
+            public typealias Output = Dieter_V1_CheckoutsResponse
+            /// Descriptor for "ListCheckouts".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.DieterService"),
+                method: "ListCheckouts",
                 type: .unary
             )
         }
@@ -1412,6 +1542,19 @@ public enum Dieter_V1_DieterService: Sendable {
                 type: .unary
             )
         }
+        /// Namespace for "GetSchedule" metadata.
+        public enum GetSchedule: Sendable {
+            /// Request type for "GetSchedule".
+            public typealias Input = Dieter_V1_ScheduleRef
+            /// Response type for "GetSchedule".
+            public typealias Output = Dieter_V1_Schedule
+            /// Descriptor for "GetSchedule".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.DieterService"),
+                method: "GetSchedule",
+                type: .unary
+            )
+        }
         /// Namespace for "PreviewSchedule" metadata.
         public enum PreviewSchedule: Sendable {
             /// Request type for "PreviewSchedule".
@@ -1505,6 +1648,12 @@ public enum Dieter_V1_DieterService: Sendable {
         }
         /// Descriptors for all methods in the "dieter.v1.DieterService" service.
         public static let descriptors: [GRPCCore.MethodDescriptor] = [
+            GetPeerChanges.descriptor,
+            GetPeerRecord.descriptor,
+            GetPeerStoreStatus.descriptor,
+            ListPeerRecords.descriptor,
+            PutPeerRecord.descriptor,
+            MergePeerRecords.descriptor,
             Health.descriptor,
             GetRuntimeStatus.descriptor,
             StartControlConnection.descriptor,
@@ -1525,6 +1674,10 @@ public enum Dieter_V1_DieterService: Sendable {
             SetBoardPromptTemplate.descriptor,
             PreviewPrompt.descriptor,
             ListDirectories.descriptor,
+            ConsolidateProject.descriptor,
+            AttachCheckout.descriptor,
+            DetachCheckout.descriptor,
+            ListCheckouts.descriptor,
             CreateProject.descriptor,
             UpdateProject.descriptor,
             UpdateProjectWorkspaceSettings.descriptor,
@@ -1612,6 +1765,7 @@ public enum Dieter_V1_DieterService: Sendable {
             ExchangeRemoteDesktopClipboard.descriptor,
             CloseRemoteDesktop.descriptor,
             ListSchedules.descriptor,
+            GetSchedule.descriptor,
             PreviewSchedule.descriptor,
             CreateSchedule.descriptor,
             UpdateSchedule.descriptor,
@@ -1638,6 +1792,120 @@ extension Dieter_V1_DieterService {
     /// You don't need to implement this protocol directly, use the generated
     /// implementation, ``Client``.
     public protocol ClientProtocol: Sendable {
+        /// Call the "GetPeerChanges" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_PeerChangesRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_PeerChangesRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_PeerChangesResponse` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func getPeerChanges<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_PeerChangesRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_PeerChangesRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_PeerChangesResponse>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_PeerChangesResponse>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "GetPeerRecord" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_PeerRecordRef` message.
+        ///   - serializer: A serializer for `Dieter_V1_PeerRecordRef` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_PeerRecord` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func getPeerRecord<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_PeerRecordRef>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_PeerRecordRef>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_PeerRecord>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_PeerRecord>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "GetPeerStoreStatus" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `SwiftProtobuf.Google_Protobuf_Empty` message.
+        ///   - serializer: A serializer for `SwiftProtobuf.Google_Protobuf_Empty` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_PeerStoreStatus` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func getPeerStoreStatus<Result>(
+            request: GRPCCore.ClientRequest<SwiftProtobuf.Google_Protobuf_Empty>,
+            serializer: some GRPCCore.MessageSerializer<SwiftProtobuf.Google_Protobuf_Empty>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_PeerStoreStatus>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_PeerStoreStatus>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "ListPeerRecords" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_PeerSnapshotRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_PeerSnapshotRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_PeerSnapshot` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func listPeerRecords<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_PeerSnapshotRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_PeerSnapshotRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_PeerSnapshot>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_PeerSnapshot>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "PutPeerRecord" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_PutPeerRecordRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_PutPeerRecordRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_PeerRecord` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func putPeerRecord<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_PutPeerRecordRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_PutPeerRecordRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_PeerRecord>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_PeerRecord>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "MergePeerRecords" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_MergePeerRecordsRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_MergePeerRecordsRequest` messages.
+        ///   - deserializer: A deserializer for `SwiftProtobuf.Google_Protobuf_Empty` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func mergePeerRecords<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_MergePeerRecordsRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_MergePeerRecordsRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<SwiftProtobuf.Google_Protobuf_Empty>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<SwiftProtobuf.Google_Protobuf_Empty>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
         /// Call the "Health" method.
         ///
         /// - Parameters:
@@ -2032,6 +2300,82 @@ extension Dieter_V1_DieterService {
             deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_DirectoryListing>,
             options: GRPCCore.CallOptions,
             onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_DirectoryListing>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "ConsolidateProject" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_ConsolidateProjectRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_ConsolidateProjectRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_Project` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func consolidateProject<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_ConsolidateProjectRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_ConsolidateProjectRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_Project>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_Project>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "AttachCheckout" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_AttachCheckoutRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_AttachCheckoutRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_Checkout` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func attachCheckout<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_AttachCheckoutRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_AttachCheckoutRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_Checkout>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_Checkout>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "DetachCheckout" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_CheckoutRef` message.
+        ///   - serializer: A serializer for `Dieter_V1_CheckoutRef` messages.
+        ///   - deserializer: A deserializer for `SwiftProtobuf.Google_Protobuf_Empty` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func detachCheckout<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_CheckoutRef>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_CheckoutRef>,
+            deserializer: some GRPCCore.MessageDeserializer<SwiftProtobuf.Google_Protobuf_Empty>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<SwiftProtobuf.Google_Protobuf_Empty>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "ListCheckouts" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_ProjectRef` message.
+        ///   - serializer: A serializer for `Dieter_V1_ProjectRef` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_CheckoutsResponse` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func listCheckouts<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_ProjectRef>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_ProjectRef>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_CheckoutsResponse>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_CheckoutsResponse>) async throws -> Result
         ) async throws -> Result where Result: Sendable
 
         /// Call the "CreateProject" method.
@@ -3731,6 +4075,25 @@ extension Dieter_V1_DieterService {
             onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_SchedulesResponse>) async throws -> Result
         ) async throws -> Result where Result: Sendable
 
+        /// Call the "GetSchedule" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_ScheduleRef` message.
+        ///   - serializer: A serializer for `Dieter_V1_ScheduleRef` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_Schedule` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func getSchedule<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_ScheduleRef>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_ScheduleRef>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_Schedule>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_Schedule>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
         /// Call the "PreviewSchedule" method.
         ///
         /// - Parameters:
@@ -3879,6 +4242,186 @@ extension Dieter_V1_DieterService {
         ///   - client: A `GRPCCore.GRPCClient` providing a communication channel to the service.
         public init(wrapping client: GRPCCore.GRPCClient<Transport>) {
             self.client = client
+        }
+
+        /// Call the "GetPeerChanges" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_PeerChangesRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_PeerChangesRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_PeerChangesResponse` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func getPeerChanges<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_PeerChangesRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_PeerChangesRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_PeerChangesResponse>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_PeerChangesResponse>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Dieter_V1_DieterService.Method.GetPeerChanges.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "GetPeerRecord" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_PeerRecordRef` message.
+        ///   - serializer: A serializer for `Dieter_V1_PeerRecordRef` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_PeerRecord` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func getPeerRecord<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_PeerRecordRef>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_PeerRecordRef>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_PeerRecord>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_PeerRecord>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Dieter_V1_DieterService.Method.GetPeerRecord.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "GetPeerStoreStatus" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `SwiftProtobuf.Google_Protobuf_Empty` message.
+        ///   - serializer: A serializer for `SwiftProtobuf.Google_Protobuf_Empty` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_PeerStoreStatus` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func getPeerStoreStatus<Result>(
+            request: GRPCCore.ClientRequest<SwiftProtobuf.Google_Protobuf_Empty>,
+            serializer: some GRPCCore.MessageSerializer<SwiftProtobuf.Google_Protobuf_Empty>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_PeerStoreStatus>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_PeerStoreStatus>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Dieter_V1_DieterService.Method.GetPeerStoreStatus.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "ListPeerRecords" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_PeerSnapshotRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_PeerSnapshotRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_PeerSnapshot` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func listPeerRecords<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_PeerSnapshotRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_PeerSnapshotRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_PeerSnapshot>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_PeerSnapshot>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Dieter_V1_DieterService.Method.ListPeerRecords.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "PutPeerRecord" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_PutPeerRecordRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_PutPeerRecordRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_PeerRecord` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func putPeerRecord<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_PutPeerRecordRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_PutPeerRecordRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_PeerRecord>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_PeerRecord>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Dieter_V1_DieterService.Method.PutPeerRecord.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "MergePeerRecords" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_MergePeerRecordsRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_MergePeerRecordsRequest` messages.
+        ///   - deserializer: A deserializer for `SwiftProtobuf.Google_Protobuf_Empty` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func mergePeerRecords<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_MergePeerRecordsRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_MergePeerRecordsRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<SwiftProtobuf.Google_Protobuf_Empty>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<SwiftProtobuf.Google_Protobuf_Empty>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Dieter_V1_DieterService.Method.MergePeerRecords.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
         }
 
         /// Call the "Health" method.
@@ -4486,6 +5029,126 @@ extension Dieter_V1_DieterService {
             try await self.client.unary(
                 request: request,
                 descriptor: Dieter_V1_DieterService.Method.ListDirectories.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "ConsolidateProject" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_ConsolidateProjectRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_ConsolidateProjectRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_Project` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func consolidateProject<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_ConsolidateProjectRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_ConsolidateProjectRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_Project>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_Project>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Dieter_V1_DieterService.Method.ConsolidateProject.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "AttachCheckout" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_AttachCheckoutRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_AttachCheckoutRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_Checkout` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func attachCheckout<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_AttachCheckoutRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_AttachCheckoutRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_Checkout>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_Checkout>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Dieter_V1_DieterService.Method.AttachCheckout.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "DetachCheckout" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_CheckoutRef` message.
+        ///   - serializer: A serializer for `Dieter_V1_CheckoutRef` messages.
+        ///   - deserializer: A deserializer for `SwiftProtobuf.Google_Protobuf_Empty` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func detachCheckout<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_CheckoutRef>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_CheckoutRef>,
+            deserializer: some GRPCCore.MessageDeserializer<SwiftProtobuf.Google_Protobuf_Empty>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<SwiftProtobuf.Google_Protobuf_Empty>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Dieter_V1_DieterService.Method.DetachCheckout.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "ListCheckouts" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_ProjectRef` message.
+        ///   - serializer: A serializer for `Dieter_V1_ProjectRef` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_CheckoutsResponse` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func listCheckouts<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_ProjectRef>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_ProjectRef>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_CheckoutsResponse>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_CheckoutsResponse>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Dieter_V1_DieterService.Method.ListCheckouts.descriptor,
                 serializer: serializer,
                 deserializer: deserializer,
                 options: options,
@@ -7137,6 +7800,36 @@ extension Dieter_V1_DieterService {
             )
         }
 
+        /// Call the "GetSchedule" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_ScheduleRef` message.
+        ///   - serializer: A serializer for `Dieter_V1_ScheduleRef` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_Schedule` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func getSchedule<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_ScheduleRef>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_ScheduleRef>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_Schedule>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_Schedule>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Dieter_V1_DieterService.Method.GetSchedule.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
         /// Call the "PreviewSchedule" method.
         ///
         /// - Parameters:
@@ -7352,6 +8045,156 @@ extension Dieter_V1_DieterService {
 // Helpers providing default arguments to 'ClientProtocol' methods.
 @available(macOS 15.0, iOS 18.0, watchOS 11.0, tvOS 18.0, visionOS 2.0, *)
 extension Dieter_V1_DieterService.ClientProtocol {
+    /// Call the "GetPeerChanges" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Dieter_V1_PeerChangesRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func getPeerChanges<Result>(
+        request: GRPCCore.ClientRequest<Dieter_V1_PeerChangesRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_PeerChangesResponse>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.getPeerChanges(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_V1_PeerChangesRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_V1_PeerChangesResponse>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "GetPeerRecord" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Dieter_V1_PeerRecordRef` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func getPeerRecord<Result>(
+        request: GRPCCore.ClientRequest<Dieter_V1_PeerRecordRef>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_PeerRecord>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.getPeerRecord(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_V1_PeerRecordRef>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_V1_PeerRecord>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "GetPeerStoreStatus" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `SwiftProtobuf.Google_Protobuf_Empty` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func getPeerStoreStatus<Result>(
+        request: GRPCCore.ClientRequest<SwiftProtobuf.Google_Protobuf_Empty>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_PeerStoreStatus>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.getPeerStoreStatus(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<SwiftProtobuf.Google_Protobuf_Empty>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_V1_PeerStoreStatus>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "ListPeerRecords" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Dieter_V1_PeerSnapshotRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func listPeerRecords<Result>(
+        request: GRPCCore.ClientRequest<Dieter_V1_PeerSnapshotRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_PeerSnapshot>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.listPeerRecords(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_V1_PeerSnapshotRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_V1_PeerSnapshot>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "PutPeerRecord" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Dieter_V1_PutPeerRecordRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func putPeerRecord<Result>(
+        request: GRPCCore.ClientRequest<Dieter_V1_PutPeerRecordRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_PeerRecord>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.putPeerRecord(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_V1_PutPeerRecordRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_V1_PeerRecord>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "MergePeerRecords" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Dieter_V1_MergePeerRecordsRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func mergePeerRecords<Result>(
+        request: GRPCCore.ClientRequest<Dieter_V1_MergePeerRecordsRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<SwiftProtobuf.Google_Protobuf_Empty>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.mergePeerRecords(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_V1_MergePeerRecordsRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<SwiftProtobuf.Google_Protobuf_Empty>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
     /// Call the "Health" method.
     ///
     /// - Parameters:
@@ -7859,6 +8702,106 @@ extension Dieter_V1_DieterService.ClientProtocol {
             request: request,
             serializer: GRPCProtobuf.ProtobufSerializer<Dieter_V1_ListDirectoriesRequest>(),
             deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_V1_DirectoryListing>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "ConsolidateProject" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Dieter_V1_ConsolidateProjectRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func consolidateProject<Result>(
+        request: GRPCCore.ClientRequest<Dieter_V1_ConsolidateProjectRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_Project>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.consolidateProject(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_V1_ConsolidateProjectRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_V1_Project>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "AttachCheckout" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Dieter_V1_AttachCheckoutRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func attachCheckout<Result>(
+        request: GRPCCore.ClientRequest<Dieter_V1_AttachCheckoutRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_Checkout>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.attachCheckout(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_V1_AttachCheckoutRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_V1_Checkout>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "DetachCheckout" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Dieter_V1_CheckoutRef` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func detachCheckout<Result>(
+        request: GRPCCore.ClientRequest<Dieter_V1_CheckoutRef>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<SwiftProtobuf.Google_Protobuf_Empty>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.detachCheckout(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_V1_CheckoutRef>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<SwiftProtobuf.Google_Protobuf_Empty>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "ListCheckouts" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Dieter_V1_ProjectRef` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func listCheckouts<Result>(
+        request: GRPCCore.ClientRequest<Dieter_V1_ProjectRef>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_CheckoutsResponse>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.listCheckouts(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_V1_ProjectRef>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_V1_CheckoutsResponse>(),
             options: options,
             onResponse: handleResponse
         )
@@ -10073,6 +11016,31 @@ extension Dieter_V1_DieterService.ClientProtocol {
         )
     }
 
+    /// Call the "GetSchedule" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Dieter_V1_ScheduleRef` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func getSchedule<Result>(
+        request: GRPCCore.ClientRequest<Dieter_V1_ScheduleRef>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_Schedule>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.getSchedule(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_V1_ScheduleRef>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_V1_Schedule>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
     /// Call the "PreviewSchedule" method.
     ///
     /// - Parameters:
@@ -10252,6 +11220,180 @@ extension Dieter_V1_DieterService.ClientProtocol {
 // Helpers providing sugared APIs for 'ClientProtocol' methods.
 @available(macOS 15.0, iOS 18.0, watchOS 11.0, tvOS 18.0, visionOS 2.0, *)
 extension Dieter_V1_DieterService.ClientProtocol {
+    /// Call the "GetPeerChanges" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func getPeerChanges<Result>(
+        _ message: Dieter_V1_PeerChangesRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_PeerChangesResponse>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Dieter_V1_PeerChangesRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.getPeerChanges(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "GetPeerRecord" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func getPeerRecord<Result>(
+        _ message: Dieter_V1_PeerRecordRef,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_PeerRecord>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Dieter_V1_PeerRecordRef>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.getPeerRecord(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "GetPeerStoreStatus" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func getPeerStoreStatus<Result>(
+        _ message: SwiftProtobuf.Google_Protobuf_Empty,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_PeerStoreStatus>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<SwiftProtobuf.Google_Protobuf_Empty>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.getPeerStoreStatus(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "ListPeerRecords" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func listPeerRecords<Result>(
+        _ message: Dieter_V1_PeerSnapshotRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_PeerSnapshot>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Dieter_V1_PeerSnapshotRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.listPeerRecords(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "PutPeerRecord" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func putPeerRecord<Result>(
+        _ message: Dieter_V1_PutPeerRecordRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_PeerRecord>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Dieter_V1_PutPeerRecordRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.putPeerRecord(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "MergePeerRecords" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func mergePeerRecords<Result>(
+        _ message: Dieter_V1_MergePeerRecordsRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<SwiftProtobuf.Google_Protobuf_Empty>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Dieter_V1_MergePeerRecordsRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.mergePeerRecords(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
     /// Call the "Health" method.
     ///
     /// - Parameters:
@@ -10838,6 +11980,122 @@ extension Dieter_V1_DieterService.ClientProtocol {
             metadata: metadata
         )
         return try await self.listDirectories(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "ConsolidateProject" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func consolidateProject<Result>(
+        _ message: Dieter_V1_ConsolidateProjectRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_Project>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Dieter_V1_ConsolidateProjectRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.consolidateProject(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "AttachCheckout" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func attachCheckout<Result>(
+        _ message: Dieter_V1_AttachCheckoutRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_Checkout>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Dieter_V1_AttachCheckoutRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.attachCheckout(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "DetachCheckout" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func detachCheckout<Result>(
+        _ message: Dieter_V1_CheckoutRef,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<SwiftProtobuf.Google_Protobuf_Empty>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Dieter_V1_CheckoutRef>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.detachCheckout(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "ListCheckouts" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func listCheckouts<Result>(
+        _ message: Dieter_V1_ProjectRef,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_CheckoutsResponse>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Dieter_V1_ProjectRef>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.listCheckouts(
             request: request,
             options: options,
             onResponse: handleResponse
@@ -13395,6 +14653,35 @@ extension Dieter_V1_DieterService.ClientProtocol {
             metadata: metadata
         )
         return try await self.listSchedules(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "GetSchedule" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func getSchedule<Result>(
+        _ message: Dieter_V1_ScheduleRef,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_Schedule>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Dieter_V1_ScheduleRef>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.getSchedule(
             request: request,
             options: options,
             onResponse: handleResponse

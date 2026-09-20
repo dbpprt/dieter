@@ -93,12 +93,16 @@ extension DieterStore {
         branch: String,
         validationCommands: [Dieter_V1_ValidationCommand]
     ) async -> Bool {
+        let updatesValidation = validationCommands != (checkout(forProjectID: selectedProjectID)?.validationCommands ?? [])
+        if updatesValidation { guard await ensureCheckoutConnection(selectedProjectID) else { return false } }
+        else { guard await ensureReplicaConnection(selectedProjectID) else { return false } }
         guard let rpc, !selectedProjectID.isEmpty else { return false }
         var request = Dieter_V1_UpdateProjectWorkspaceSettingsRequest()
+        request.checkoutID = updatesValidation ? (checkout(forProjectID: selectedProjectID)?.id ?? "") : ""
         request.projectID = selectedProjectID
         request.baseRemote = remote.trimmingCharacters(in: .whitespacesAndNewlines)
         request.baseBranch = branch.trimmingCharacters(in: .whitespacesAndNewlines)
-        request.validationCommands = validationCommands
+        if updatesValidation { request.validationCommands = validationCommands }
         do {
             acceptProject(try await rpc.updateProjectWorkspaceSettings(request))
             return true
@@ -163,7 +167,7 @@ extension DieterStore {
         }
         let card = explicitCard ?? selectedCard ?? selectedDetail?.card
         let targetEndpointID =
-            explicitEndpointID ?? projectEndpointIDs[card?.projectID ?? ""] ?? endpoint.id
+            explicitEndpointID ?? endpointID(for: card)
         var part = Dieter_V1_MessagePart()
         part.type = "text"
         part.text = trimmed
@@ -242,7 +246,7 @@ extension DieterStore {
         return try await lease.rpc.listDirectories(request)
     }
 
-    func createProject(_ draft: ProjectSetupDraft, machineID: String? = nil) async throws
+    func createProject(_ draft: ProjectSetupDraft, machineID: String? = nil, operationID: String = UUID().uuidString) async throws
         -> Dieter_V1_CreateProjectResponse
     {
         let target: DieterEndpoint
@@ -253,7 +257,7 @@ extension DieterStore {
             else {
                 throw NSError(
                     domain: "DieterMachine", code: 1,
-                    userInfo: [NSLocalizedDescriptionKey: "The project host is no longer enrolled."])
+                    userInfo: [NSLocalizedDescriptionKey: "The selected machine is no longer enrolled."])
             }
             target = selected
         } else {
@@ -264,7 +268,8 @@ extension DieterStore {
                 domain: "DieterMachine", code: 2,
                 userInfo: [NSLocalizedDescriptionKey: "\(target.name) is offline."])
         }
-        let request = draft.request()
+        var request = draft.request()
+        request.operationID = operationID
         let response: Dieter_V1_CreateProjectResponse
         if target.id == endpoint.id, let rpc {
             response = try await rpc.createProject(request)
@@ -275,7 +280,7 @@ extension DieterStore {
         }
 
         projectDirectory[response.project.id] = response.project
-        projectEndpointIDs[response.project.id] = target.id
+        projectReplicaEndpointIDs[response.project.id] = target.id
         navigationBoards[response.project.id] = [response.board]
         if target.id != endpoint.id { await connect(to: target) }
         selectedProjectID = response.project.id
@@ -288,7 +293,7 @@ extension DieterStore {
     }
 
     func setProjectArchived(id: String, archived: Bool) async {
-        guard await ensureProjectConnection(id) else { return }
+        guard await ensureReplicaConnection(id) else { return }
         guard let rpc else { return }
         var request = Dieter_V1_ArchiveProjectRequest()
         request.projectID = id
@@ -303,7 +308,7 @@ extension DieterStore {
 
     func renameProject(id: String, name: String) async {
         let normalized = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !normalized.isEmpty, await ensureProjectConnection(id), let rpc else { return }
+        guard !normalized.isEmpty, await ensureReplicaConnection(id), let rpc else { return }
         var request = Dieter_V1_UpdateProjectRequest()
         request.projectID = id
         request.name = normalized
@@ -317,7 +322,7 @@ extension DieterStore {
 
     @discardableResult
     func updateProject(name: String, summary: String, prompt: String) async -> Bool {
-        guard await ensureProjectConnection(selectedProjectID) else { return false }
+        guard await ensureReplicaConnection(selectedProjectID) else { return false }
         guard let rpc else { return false }
         var request = Dieter_V1_UpdateProjectRequest()
         request.projectID = selectedProjectID
@@ -425,7 +430,7 @@ extension DieterStore {
     }
 
     func updateBoardHostnames(_ hostnames: [String], append: Bool = false) async throws {
-        guard let board = selectedBoard, await ensureProjectConnection(board.projectID), let rpc else {
+        guard let board = selectedBoard, await ensureReplicaConnection(board.projectID), let rpc else {
             throw CaptureTaskError.failed("Choose an available project and board first.")
         }
         var request = Dieter_V1_UpdateBoardHostnamesRequest()

@@ -145,6 +145,7 @@ final class AppSession {
     var query = "" {
         didSet { if query != oldValue { refreshBoardProjection() } }
     }
+    var machineFilter = "" { didSet { refreshBoardProjection() } }
     var runtimeFilter = "" {
         didSet { if runtimeFilter != oldValue { refreshBoardProjection() } }
     }
@@ -178,7 +179,7 @@ final class AppSession {
     }
 
     var selectedProjectIsLive: Bool {
-        workspaceIsLive && (projectEndpointIDs[selectedProjectID] ?? endpoint.id) == endpoint.id
+        workspaceIsLive && (projectReplicaEndpointIDs[selectedProjectID] ?? endpoint.id) == endpoint.id
     }
 
     var workspaceIsLive: Bool {
@@ -190,8 +191,10 @@ final class AppSession {
         return machine.id != endpoint.id || phase.isConnected
     }
 
+    var creationCheckoutIDs: [String: String] = [:]
+
     func projectIsAvailable(_ projectID: String) -> Bool {
-        guard let machine = machine(forProjectID: projectID) else { return workspaceIsLive }
+        guard let machine = replica(forProjectID: projectID) else { return workspaceIsLive }
         return machineIsAvailable(machine)
     }
 
@@ -381,7 +384,7 @@ final class AppSession {
         // part of draft identity because global chats can open from any project.
         let projectID =
             selectedCard?.projectID ?? selectedDetail.flatMap { $0.card.id == id ? $0.card.projectID : nil } ?? ""
-        let destination = projectEndpointIDs[projectID] ?? endpoint.id
+        let destination = projectReplicaEndpointIDs[projectID] ?? endpoint.id
         composer.select(id.map { WorkspaceTarget(endpointID: destination, projectID: "", conversationID: $0) })
     }
 

@@ -24,9 +24,10 @@ const (
 )
 
 type ScheduleInput struct {
+	CheckoutID                                                string
 	Project, Board, Name, Description, Cron, Timezone, Action string
 	TitleTemplate, PromptTemplate, Provider, Model, Effort    string
-	OpenCardPolicy, MisfirePolicy, BusyPolicy, NextRunAt      string
+	OpenCardPolicy, MisfirePolicy, NextRunAt                  string
 	WorkspaceMode                                             string
 	LabelIDs                                                  []string
 	ProviderOptions                                           map[string]string
@@ -93,12 +94,6 @@ func normalizeScheduleInput(input ScheduleInput) (ScheduleInput, error) {
 	}
 	if input.MisfirePolicy != "latest" {
 		return input, errors.New("only the latest misfire policy is supported")
-	}
-	if input.BusyPolicy == "" {
-		input.BusyPolicy = "queue"
-	}
-	if input.BusyPolicy != "queue" && input.BusyPolicy != "skip" {
-		return input, errors.New("busy policy must be queue or skip")
 	}
 	return input, nil
 }
@@ -188,6 +183,13 @@ CREATE TABLE IF NOT EXISTS schedules (
   updated_at TEXT NOT NULL,
   document BLOB NOT NULL
 );
+CREATE TABLE IF NOT EXISTS schedule_peer_outbox (id TEXT PRIMARY KEY, document BLOB NOT NULL, deleted INTEGER NOT NULL);
+CREATE TRIGGER IF NOT EXISTS schedules_peer_insert AFTER INSERT ON schedules BEGIN
+ INSERT INTO schedule_peer_outbox VALUES(new.id,new.document,0) ON CONFLICT(id) DO UPDATE SET document=excluded.document,deleted=0; END;
+CREATE TRIGGER IF NOT EXISTS schedules_peer_update AFTER UPDATE ON schedules BEGIN
+ INSERT INTO schedule_peer_outbox VALUES(new.id,new.document,0) ON CONFLICT(id) DO UPDATE SET document=excluded.document,deleted=0; END;
+CREATE TRIGGER IF NOT EXISTS schedules_peer_delete AFTER DELETE ON schedules BEGIN
+ INSERT INTO schedule_peer_outbox VALUES(old.id,old.document,1) ON CONFLICT(id) DO UPDATE SET document=excluded.document,deleted=1; END;
 CREATE INDEX IF NOT EXISTS schedules_project_name ON schedules(project_id, name COLLATE NOCASE, id);
 CREATE INDEX IF NOT EXISTS schedules_due_time ON schedules(enabled, next_run_at_ns, id);
 CREATE TABLE IF NOT EXISTS schedule_runs (
@@ -221,9 +223,11 @@ CREATE INDEX IF NOT EXISTS schedule_runs_card ON schedule_runs(card_id);
 			}
 		}
 	}
-	if err = s.migrateLegacySchedules(database); err != nil {
-		_ = database.Close()
-		return nil, err
+	if s.importing {
+		if err = s.migrateLegacySchedules(database); err != nil {
+			_ = database.Close()
+			return nil, err
+		}
 	}
 	s.scheduleDB = database
 	return database, nil
@@ -363,7 +367,7 @@ func (s *Store) CreateSchedule(input ScheduleInput) (model.Schedule, error) {
 	if err != nil {
 		return model.Schedule{}, err
 	}
-	project, err := s.ResolveProject(input.Project)
+	project, err := s.ProjectForCheckout(input.Project, input.CheckoutID)
 	if err != nil {
 		return model.Schedule{}, err
 	}
@@ -384,15 +388,19 @@ func (s *Store) CreateSchedule(input ScheduleInput) (model.Schedule, error) {
 	if err != nil {
 		return model.Schedule{}, err
 	}
+	checkout, err := s.localCheckout(project.ID, input.CheckoutID)
+	if err != nil {
+		return model.Schedule{}, err
+	}
 	now := timestamp()
 	item := model.Schedule{
-		ID: newID("sch_"), ProjectID: project.ID, BoardID: board.ID, Name: input.Name,
+		ID: newID("sch_"), OwnerDaemonID: checkout.DaemonID, CheckoutID: checkout.ID, ProjectID: project.ID, BoardID: board.ID, Name: input.Name,
 		Description: strings.TrimSpace(input.Description), Cron: input.Cron, Timezone: input.Timezone,
 		Enabled: input.Enabled, Action: input.Action, TitleTemplate: input.TitleTemplate,
 		PromptTemplate: input.PromptTemplate, Provider: input.Provider, Model: input.Model,
 		Effort: strings.TrimSpace(input.Effort), ProviderOptions: cloneStringMap(input.ProviderOptions),
 		LabelIDs: labels, WorkspaceMode: input.WorkspaceMode, OpenCardPolicy: input.OpenCardPolicy,
-		MisfirePolicy: input.MisfirePolicy, BusyPolicy: input.BusyPolicy, NextRunAt: input.NextRunAt,
+		MisfirePolicy: input.MisfirePolicy, NextRunAt: input.NextRunAt,
 		CreatedAt: now, UpdatedAt: now,
 	}
 	return item, insertScheduleDocument(database, item)
@@ -410,7 +418,23 @@ func (s *Store) scheduleByID(id string) (model.Schedule, error) {
 		}
 		return model.Schedule{}, err
 	}
-	return decodeScheduleDocument(raw)
+	item, err := decodeScheduleDocument(raw)
+	if err != nil || s.importing {
+		return item, err
+	}
+	identity, _, err := s.sharedData()
+	if err != nil {
+		return model.Schedule{}, err
+	}
+	if item.OwnerDaemonID != identity.DaemonID {
+		return model.Schedule{}, ErrNotFound
+	}
+	project, err := s.ResolveProjectIncludingArchived(item.ProjectID)
+	if err != nil {
+		return model.Schedule{}, err
+	}
+	item.ProjectID = project.ID
+	return item, nil
 }
 
 func (s *Store) listSchedules() ([]model.Schedule, error) {
@@ -444,47 +468,34 @@ func scanScheduleRows(rows *sql.Rows) ([]model.Schedule, error) {
 
 func (s *Store) ListSchedules(projectRef string) ([]model.Schedule, error) {
 	projectID := ""
-	activeProjects := map[string]bool{}
-	if strings.TrimSpace(projectRef) != "" {
+	if projectRef != "" {
 		project, err := s.ResolveProject(projectRef)
 		if err != nil {
 			return nil, err
 		}
 		projectID = project.ID
-	} else {
-		projects, err := s.ListProjects()
-		if err != nil {
-			return nil, err
-		}
-		for _, project := range projects {
-			activeProjects[project.ID] = true
-		}
 	}
-	database, err := s.scheduleDatabase()
+	identity, data, err := s.sharedData()
 	if err != nil {
 		return nil, err
 	}
-	query := `SELECT document FROM schedules`
-	args := []any{}
-	if projectID != "" {
-		query += ` WHERE project_id = ?`
-		args = append(args, projectID)
-	}
-	query += ` ORDER BY name COLLATE NOCASE, id`
-	rows, err := database.Query(query, args...)
+	items, err := s.listSchedules()
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	items, err := scanScheduleRows(rows)
-	if err != nil || projectID != "" {
-		return items, err
-	}
-	result := items[:0]
+	result := make([]model.Schedule, 0, len(items))
 	for _, item := range items {
-		if activeProjects[item.ProjectID] {
-			result = append(result, item)
+		if item.OwnerDaemonID != identity.DaemonID {
+			continue
 		}
+		item.ProjectID = canonicalProjectID(data, item.ProjectID)
+		if projectID != "" && item.ProjectID != projectID {
+			continue
+		}
+		if _, err := s.ResolveProject(item.ProjectID); err != nil {
+			continue
+		}
+		result = append(result, item)
 	}
 	return result, nil
 }
@@ -591,7 +602,11 @@ func (s *Store) ResolveScheduleIncludingArchived(ref string) (model.Schedule, er
 	if err != nil {
 		return model.Schedule{}, err
 	}
-	return resolveSchedule(items, ref)
+	item, err := resolveSchedule(items, ref)
+	if err != nil {
+		return item, err
+	}
+	return s.scheduleByID(item.ID)
 }
 
 func (s *Store) UpdateSchedule(ref string, input ScheduleInput) (model.Schedule, error) {
@@ -606,6 +621,9 @@ func (s *Store) UpdateSchedule(ref string, input ScheduleInput) (model.Schedule,
 	project, err := s.ResolveProject(input.Project)
 	if err != nil {
 		return model.Schedule{}, err
+	}
+	if input.CheckoutID != "" && input.CheckoutID != current.CheckoutID {
+		return model.Schedule{}, errors.New("schedule checkout is immutable; create a new schedule on the chosen machine")
 	}
 	if project.ID != current.ProjectID {
 		return model.Schedule{}, errors.New("a schedule cannot be moved to another project")
@@ -629,7 +647,7 @@ func (s *Store) UpdateSchedule(ref string, input ScheduleInput) (model.Schedule,
 	current.Provider, current.Model, current.Effort, current.LabelIDs = input.Provider, input.Model, strings.TrimSpace(input.Effort), labels
 	current.ProviderOptions = cloneStringMap(input.ProviderOptions)
 	current.WorkspaceMode = input.WorkspaceMode
-	current.OpenCardPolicy, current.MisfirePolicy, current.BusyPolicy, current.NextRunAt = input.OpenCardPolicy, input.MisfirePolicy, input.BusyPolicy, input.NextRunAt
+	current.OpenCardPolicy, current.MisfirePolicy, current.NextRunAt = input.OpenCardPolicy, input.MisfirePolicy, input.NextRunAt
 	current.UpdatedAt = timestamp()
 	database, err := s.scheduleDatabase()
 	if err != nil {
@@ -771,7 +789,11 @@ func (s *Store) ResolveScheduleRun(ref string) (model.ScheduleRun, error) {
 		}
 		return model.ScheduleRun{}, err
 	}
-	return decodeScheduleRunDocument(raw)
+	run, err := decodeScheduleRunDocument(raw)
+	if err == nil {
+		err = s.requireLocalScheduleHistory(run.ScheduleID)
+	}
+	return run, err
 }
 
 func scanScheduleRunRows(rows *sql.Rows) ([]model.ScheduleRun, error) {
@@ -803,10 +825,15 @@ func (s *Store) ListScheduleRuns(scheduleRef string, limit int) ([]model.Schedul
 	if err != nil {
 		return nil, err
 	}
-	query := `SELECT document FROM schedule_runs`
-	args := []any{}
+	ids, err := s.localScheduleIDs()
+	if err != nil {
+		return nil, err
+	}
+	rawIDs, _ := json.Marshal(ids)
+	query := `SELECT document FROM schedule_runs WHERE schedule_id IN (SELECT value FROM json_each(?))`
+	args := []any{string(rawIDs)}
 	if scheduleID != "" {
-		query += ` WHERE schedule_id = ?`
+		query += ` AND schedule_id = ?`
 		args = append(args, scheduleID)
 	}
 	query += ` ORDER BY scheduled_for_ns DESC, id DESC`
@@ -826,6 +853,9 @@ func (s *Store) ListScheduleRunsPage(scheduleID string, pageSize int, pageToken 
 	scheduleID = strings.TrimSpace(scheduleID)
 	if scheduleID == "" {
 		return ScheduleRunPage{}, errors.New("schedule ID is required")
+	}
+	if err := s.requireLocalScheduleHistory(scheduleID); err != nil {
+		return ScheduleRunPage{}, err
 	}
 	pageSize = boundedSchedulePageSize(pageSize)
 	cursor := scheduleRunPageCursor{ScheduleID: scheduleID}
@@ -865,66 +895,51 @@ func (s *Store) ListScheduleRunsPage(scheduleID string, pageSize int, pageToken 
 }
 
 func (s *Store) ListDueSchedules(now time.Time, limit int) ([]model.Schedule, error) {
-	projects, err := s.ListProjects()
-	if err != nil || len(projects) == 0 {
+	items, err := s.ListSchedules("")
+	if err != nil {
 		return nil, err
 	}
 	if limit <= 0 {
 		limit = scheduleRunnableBatchSize
 	}
-	placeholders := make([]string, len(projects))
-	args := make([]any, 0, len(projects)+2)
-	for index, project := range projects {
-		placeholders[index] = "?"
-		args = append(args, project.ID)
+	var due []model.Schedule
+	for _, item := range items {
+		at := indexedScheduleTime(item.NextRunAt)
+		if item.Enabled && at > 0 && at <= now.UnixNano() {
+			due = append(due, item)
+		}
 	}
-	args = append(args, now.UnixNano(), limit)
-	database, err := s.scheduleDatabase()
-	if err != nil {
-		return nil, err
+	sort.Slice(due, func(i, j int) bool {
+		if due[i].NextRunAt == due[j].NextRunAt {
+			return due[i].ID < due[j].ID
+		}
+		return due[i].NextRunAt < due[j].NextRunAt
+	})
+	if len(due) > limit {
+		due = due[:limit]
 	}
-	query := `SELECT document FROM schedules WHERE project_id IN (` + strings.Join(placeholders, ",") + `)
- AND enabled = 1 AND next_run_at_ns > 0 AND next_run_at_ns <= ? ORDER BY next_run_at_ns, id LIMIT ?`
-	rows, err := database.Query(query, args...)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	return scanScheduleRows(rows)
+	return due, nil
 }
 
 func (s *Store) ListRunnableScheduleRuns(now time.Time, limit int) ([]model.ScheduleRun, error) {
 	if limit <= 0 {
 		limit = scheduleRunnableBatchSize
 	}
-	database, err := s.scheduleDatabase()
+	db, err := s.scheduleDatabase()
 	if err != nil {
 		return nil, err
 	}
-	pendingLimit := (limit + 1) / 2
-	waitingLimit := limit / 2
-	pendingRows, err := database.Query(`SELECT document FROM schedule_runs
- WHERE status = ? ORDER BY scheduled_for_ns, id LIMIT ?`, model.ScheduleRunPending, pendingLimit)
+	ids, err := s.localScheduleIDs()
 	if err != nil {
 		return nil, err
 	}
-	pending, err := scanScheduleRunRows(pendingRows)
-	_ = pendingRows.Close()
-	if err != nil || waitingLimit == 0 {
-		return pending, err
-	}
-	waitingRows, err := database.Query(`SELECT document FROM schedule_runs
- WHERE status = ? AND (next_attempt_at_ns = 0 OR next_attempt_at_ns <= ?)
- ORDER BY next_attempt_at_ns, scheduled_for_ns, id LIMIT ?`, model.ScheduleRunWaitingForProject, now.UnixNano(), waitingLimit)
+	rawIDs, _ := json.Marshal(ids)
+	rows, err := db.Query("SELECT document FROM schedule_runs WHERE status=? AND schedule_id IN (SELECT value FROM json_each(?)) ORDER BY scheduled_for_ns,id LIMIT ?", model.ScheduleRunPending, string(rawIDs), limit)
 	if err != nil {
 		return nil, err
 	}
-	waiting, err := scanScheduleRunRows(waitingRows)
-	_ = waitingRows.Close()
-	if err != nil {
-		return nil, err
-	}
-	return append(pending, waiting...), nil
+	defer rows.Close()
+	return scanScheduleRunRows(rows)
 }
 
 func (s *Store) UpdateScheduleRun(ref, status, message string) (model.ScheduleRun, error) {
@@ -965,12 +980,6 @@ func (s *Store) UpdateScheduleRun(ref, status, message string) (model.ScheduleRu
 		item.FinishedAt = now
 	}
 	nextAttemptAt := ""
-	if status == model.ScheduleRunWaitingForProject {
-		// The scheduler tick itself is the retry backoff. Keeping the row due
-		// preserves the existing explicit Tick semantics used after capacity is
-		// released while the indexed runnable query keeps the work bounded.
-		nextAttemptAt = now
-	}
 	if err := upsertScheduleRunDocument(tx, item, nextAttemptAt); err != nil {
 		return model.ScheduleRun{}, err
 	}

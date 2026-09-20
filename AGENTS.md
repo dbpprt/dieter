@@ -9,8 +9,12 @@ Android clients. Every card is one durable local AI SDK Harness conversation.
 
 - Store all Dieter data centrally under `DIETER_HOME` (default `~/.dieter`). Never
   write Dieter metadata into project repositories.
-- Every project references an existing Git working tree by canonical path and
-  has a Dieter-generated project ID.
+- Every logical project has a Dieter-generated shared identity and may have
+  several checkouts across machines. Each checkout references one existing Git
+  working tree by canonical path on its immutable owner daemon.
+- Shared project, board, label, placement, and portable settings are replicated
+  within the account by the leaderless peer store. No machine owns a project.
+  Conversations and schedules retain one execution owner and checkout.
 - Every card has a Dieter-generated ID and exactly one durable conversation.
 - Dieter owns transcripts, runtime status, harness/model configuration, queues,
   session resume data, comments, board labels, card label assignments, and
@@ -32,11 +36,10 @@ Android clients. Every card is one durable local AI SDK Harness conversation.
   RPC cancels only that transport RPC and must not implicitly stop an agent.
 - Comments never wake the agent or count as approval. Human chat messages
   resume the same harness session.
-- Permit concurrent agent turns in the same registered project folder. Only
-  explicit global, harness, and board parallel-session limits restrict separate
-  chats; a single conversation still has at most one active turn.
-- Enforce global, harness, and board parallel-session limits at runtime lease
-  acquisition so HTTP, CLI, and scheduled starts share one policy.
+- Permit concurrent agent turns in the same registered checkout. There are no
+  global, harness, or board parallel-session caps. Runtime leases enforce at
+  most one active turn per conversation across API, CLI, and scheduled starts.
+  Transport, process, and storage resource bounds still apply.
 - Treat schedule occurrence records as authoritative. Use deterministic card
   identity and never replay a turn that may already have been dispatched.
 - Start the scheduler only with `dieter serve`; constructing an HTTP handler in

@@ -42,8 +42,8 @@ func (s *Store) ConversationByID(cardID string) (model.Conversation, error) {
 	if !validFileID(cardID) {
 		return model.Conversation{}, fmt.Errorf("card %q: %w", cardID, ErrNotFound)
 	}
-	if !s.cardExists(cardID) {
-		return model.Conversation{}, fmt.Errorf("card %q: %w", cardID, ErrNotFound)
+	if _, err := s.ResolveCard(cardID); err != nil {
+		return model.Conversation{}, err
 	}
 	return s.loadConversation(cardID)
 }
@@ -94,7 +94,7 @@ func (s *Store) ForkChat(sourceRef, messageID, title string) (model.Card, error)
 		title = "Fork of " + source.Card.Title
 	}
 	target, err := s.CreateChat(CreateCardInput{
-		Project: source.Project.ID, Title: title, Provider: source.Card.Provider,
+		CheckoutID: source.Card.CheckoutID, Project: source.Project.ID, Title: title, Provider: source.Card.Provider,
 		Model: source.Card.Model, Effort: source.Card.Effort,
 		ProviderOptions: source.Card.ProviderOptions,
 		WorkspaceMode:   source.Card.WorkspaceMode, WorkspaceBaseRemote: source.Card.WorkspaceBaseRemote,
@@ -145,6 +145,22 @@ func (s *Store) ConversationRevisionByID(cardID string) (string, error) {
 }
 
 func (s *Store) loadConversation(cardID string) (model.Conversation, error) {
+	// A replicated directory entry is never a local conversation.
+	if !s.cardExists(cardID) {
+		return model.Conversation{}, ErrRemoteConversation
+	}
+	identity, data, identityErr := s.sharedData()
+	if identityErr != nil {
+		return model.Conversation{}, identityErr
+	}
+	fields, _ := sharedFields(data, "item", cardID)
+	var owner struct {
+		OwnerDaemonID string `json:"ownerDaemonId"`
+	}
+	if json.Unmarshal(fields["identity"], &owner) != nil || owner.OwnerDaemonID != identity.DaemonID {
+		return model.Conversation{}, ErrRemoteConversation
+	}
+
 	snapshotPath := filepath.Join(s.conversationPath(cardID), "snapshot.json")
 	eventsPath := filepath.Join(s.conversationPath(cardID), "events.ndjson")
 	snapshotInfo, err := os.Stat(snapshotPath)

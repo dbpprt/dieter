@@ -7,13 +7,19 @@ import org.junit.Test
 
 class ProjectRoutingTest {
     private val hosts = mapOf(
-        "project-a" to ProjectHost("gateway#mac", "mac", "Studio Mac", true),
-        "project-b" to ProjectHost("gateway#server", "server", "Build server", true),
+        "project-a" to ProjectReplica("gateway#mac", "mac", "Studio Mac", true),
+        "project-b" to ProjectReplica("gateway#server", "server", "Build server", true),
     )
 
     @Test
-    fun selectingRemoteProjectSwitchesToOwningDaemon() {
+    fun selectingUnseenProjectUsesAnAvailableReplica() {
         assertEquals("gateway#server", endpointForProjectSelection("project-b", "gateway#mac", hosts))
+    }
+
+    @Test
+    fun offlineSnapshotSourceDoesNotDisplaceCurrentReplica() {
+        val offline = mapOf("project-a" to hosts.getValue("project-a").copy(online = false))
+        assertNull(endpointForProjectSelection("project-a", "gateway#server", offline))
     }
 
     @Test
@@ -25,7 +31,7 @@ class ProjectRoutingTest {
     @Test
     fun daemonNamesDoNotCollideAcrossGateways() {
         val duplicateDaemon = mapOf(
-            "other-project" to ProjectHost("other-gateway#mac", "mac", "Studio Mac", true),
+            "other-project" to ProjectReplica("other-gateway#mac", "mac", "Studio Mac", true),
         )
         assertEquals(
             "other-gateway#mac",

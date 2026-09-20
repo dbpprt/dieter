@@ -239,7 +239,7 @@ class BackgroundTranscriptSyncIntegrationTest {
             delay(6_000)
             assertFalse(model.state.value.conversationSyncing)
             assertEquals(ConnectionPhase.CONNECTED, manager.state.value.phase)
-            assertEquals(daemon.id, manager.state.value.projectHosts[project.id]?.daemonId)
+            assertEquals(daemon.id, manager.state.value.projectReplicas[project.id]?.daemonId)
             assertFalse("Activation and chat switches must preserve the shared connection", lostConnection.get())
         } finally {
             phaseObserver?.cancel()
@@ -258,7 +258,7 @@ class BackgroundTranscriptSyncIntegrationTest {
     }
 
     private fun isolatedOrigin(): DieterEndpoint = DieterEndpoint(
-        id = "isolated_gateway_bg_sync",
+        id = "isolated_gateway_bg_sync_${UUID.randomUUID()}",
         label = "Isolated Gateway BG Sync",
         host = argument("isolatedGatewayHost").ifBlank { "127.0.0.1" },
         port = argument("isolatedGatewayPort").toIntOrNull() ?: 14243,

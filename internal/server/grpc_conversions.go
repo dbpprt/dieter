@@ -15,7 +15,7 @@ import (
 )
 
 func protoState(value model.State) *dieterv1.State {
-	result := &dieterv1.State{StorePath: value.StorePath}
+	result := &dieterv1.State{StorePath: value.StorePath, Archives: &dieterv1.SharedArchives{ProjectIds: value.ArchivedProjectIDs, ItemIds: value.ArchivedItemIDs}}
 	for _, item := range value.Projects {
 		result.Projects = append(result.Projects, protoProject(item))
 	}
@@ -36,11 +36,14 @@ func protoState(value model.State) *dieterv1.State {
 
 func protoProject(value model.Project) *dieterv1.Project {
 	result := &dieterv1.Project{
-		Id: value.ID, Name: value.Name, Path: value.Path, Summary: value.Summary,
+		Id: value.ID, Name: value.Name, Path: value.Path, Summary: value.Summary, ConflictKeys: value.ConflictKeys,
 		Prompt: value.Prompt, Archived: value.Archived, CreatedAt: value.CreatedAt,
 		UpdatedAt: value.UpdatedAt, BoardCount: int32(value.BoardCount),
 		CardCount: int32(value.CardCount), ChatCount: int32(value.ChatCount), PromptTemplate: value.PromptTemplate,
 		BaseRemote: value.BaseRemote, BaseBranch: value.BaseBranch, Hostnames: append([]string(nil), value.Hostnames...),
+	}
+	for _, checkout := range value.Checkouts {
+		result.Checkouts = append(result.Checkouts, protoCheckout(checkout))
 	}
 	for _, command := range value.ValidationCommands {
 		result.ValidationCommands = append(result.ValidationCommands, protoValidationCommand(command))
@@ -71,7 +74,7 @@ func modelValidationCommands(values []*dieterv1.ValidationCommand) []model.Valid
 
 func protoBoard(value model.Board) *dieterv1.Board {
 	result := &dieterv1.Board{
-		Id: value.ID, ProjectId: value.ProjectID, Name: value.Name,
+		Id: value.ID, ProjectId: value.ProjectID, Name: value.Name, ConflictKeys: value.ConflictKeys,
 		Workflow: value.Workflow, Description: value.Description,
 		DoneArchivePolicy: value.DoneArchivePolicy, CreatedAt: value.CreatedAt,
 		UpdatedAt: value.UpdatedAt, PromptTemplate: value.PromptTemplate,
@@ -88,7 +91,7 @@ func protoBoard(value model.Board) *dieterv1.Board {
 
 func protoCard(value model.Card) *dieterv1.Card {
 	result := &dieterv1.Card{
-		Id: value.ID, Scope: value.Scope, ProjectId: value.ProjectID,
+		Id: value.ID, Scope: value.Scope, ProjectId: value.ProjectID, OwnerDaemonId: value.OwnerDaemonID, CheckoutId: value.CheckoutID, OrderKey: value.OrderKey, PlacementRevision: value.PlacementRevision, ConflictKeys: value.ConflictKeys,
 		BoardId: value.BoardID, Lane: value.Lane, Position: value.Position,
 		Title: value.Title, InitialPrompt: value.InitialPrompt,
 		InitialPromptSentAt: value.InitialPromptSentAt, PhaseChangedAt: value.PhaseChangedAt,
@@ -501,7 +504,7 @@ func dedupeEfforts(values []string) []string {
 }
 
 func protoSchedule(value model.Schedule) *dieterv1.Schedule {
-	return &dieterv1.Schedule{
+	return &dieterv1.Schedule{OwnerDaemonId: value.OwnerDaemonID, CheckoutId: value.CheckoutID,
 		Id: value.ID, ProjectId: value.ProjectID, BoardId: value.BoardID,
 		Name: value.Name, Description: value.Description, Cron: value.Cron,
 		Timezone: value.Timezone, Enabled: value.Enabled, Action: value.Action,
@@ -509,8 +512,8 @@ func protoSchedule(value model.Schedule) *dieterv1.Schedule {
 		Provider: value.Provider, Model: value.Model, Effort: value.Effort,
 		ProviderOptions: cloneProtoStringMap(value.ProviderOptions), WorkspaceMode: value.WorkspaceMode,
 		LabelIds: append([]string(nil), value.LabelIDs...), OpenCardPolicy: value.OpenCardPolicy,
-		MisfirePolicy: value.MisfirePolicy, BusyPolicy: value.BusyPolicy,
-		NextRunAt: value.NextRunAt, LastRunAt: value.LastRunAt,
+		MisfirePolicy: value.MisfirePolicy,
+		NextRunAt:     value.NextRunAt, LastRunAt: value.LastRunAt,
 		CreatedAt: value.CreatedAt, UpdatedAt: value.UpdatedAt,
 		NextRuns: append([]string(nil), value.NextRuns...),
 	}

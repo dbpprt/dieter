@@ -164,7 +164,7 @@ struct ConversationTimelineDisplayGroupView: View {
     let group: ConversationTimelineDisplayGroup
     let showReasoning: Bool
     let isLatest: Bool
-    var scrollAnchors: ConversationScrollAnchorController?
+    var scrollAnchors: ConversationScrollController?
 
     var body: some View {
         if group.isActivity {
@@ -185,7 +185,7 @@ struct ConversationTimelineDisplayGroupView: View {
                             if let scrollAnchors {
                                 ConversationScrollAnchorProbe(
                                     controller: scrollAnchors,
-                                    messageIDs: row.item.messages.map(\.id), priority: 1)
+                                    messageIDs: row.item.messages.map(\.id))
                             }
                         }
                     }

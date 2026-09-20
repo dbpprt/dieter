@@ -21,7 +21,8 @@ struct BoardProjection: Equatable, Sendable {
         boardID: String,
         runtimeFilter: String,
         labelFilter: String,
-        query: String
+        query: String,
+        machineFilter: String = ""
     ) -> BoardProjection {
         let boardCards = boardID.isEmpty ? cards : cards.filter { $0.boardID == boardID }
         var labelCounts: [String: Int] = [:]
@@ -29,7 +30,8 @@ struct BoardProjection: Equatable, Sendable {
             for labelID in card.labelIds { labelCounts[labelID, default: 0] += 1 }
         }
         let displayed = boardCards.filter { card in
-            (runtimeFilter.isEmpty || card.runtime == runtimeFilter)
+            (machineFilter.isEmpty || card.ownerDaemonID == machineFilter)
+                && (runtimeFilter.isEmpty || card.runtime == runtimeFilter)
                 && (labelFilter.isEmpty || card.labelIds.contains(labelFilter))
                 && (query.isEmpty || card.title.localizedCaseInsensitiveContains(query)
                     || card.summary.localizedCaseInsensitiveContains(query))

@@ -97,7 +97,7 @@ func (m *Manager) Start(ctx context.Context, request Request) (model.GitOperatio
 		return model.GitOperation{}, fmt.Errorf("%w: active terminal or process in the checkout", ErrWorkspaceBusy)
 	}
 	if workspaceValue.Mode == model.WorkspaceModeProject || request.Kind == "merge_local" {
-		if active, activeErr := m.Store.ProjectCheckoutHasRuntimeLease(workspaceValue.ProjectID, workspaceValue.CardID); activeErr != nil {
+		if active, activeErr := m.Store.ProjectCheckoutHasRuntimeLease(workspaceValue.ProjectID, workspaceValue.CardID, workspaceValue.CheckoutID); activeErr != nil {
 			return model.GitOperation{}, activeErr
 		} else if active {
 			return model.GitOperation{}, fmt.Errorf("%w: another conversation is active in the shared checkout", ErrWorkspaceBusy)
@@ -113,7 +113,7 @@ func (m *Manager) Start(ctx context.Context, request Request) (model.GitOperatio
 		return model.GitOperation{}, err
 	}
 	if workspaceValue.Mode == model.WorkspaceModeProject {
-		if current, currentErr := m.Store.ActiveProjectGitOperation(workspaceValue.ProjectID); currentErr == nil {
+		if current, currentErr := m.Store.ActiveProjectGitOperation(workspaceValue.ProjectID, workspaceValue.CheckoutID); currentErr == nil {
 			return model.GitOperation{}, fmt.Errorf("project checkout already has active Git operation %s", current.ID)
 		} else if !errors.Is(currentErr, store.ErrNotFound) {
 			return model.GitOperation{}, currentErr
@@ -141,10 +141,11 @@ func (m *Manager) Start(ctx context.Context, request Request) (model.GitOperatio
 	if err != nil {
 		return model.GitOperation{}, err
 	}
+	operation.CheckoutID = workspaceValue.CheckoutID
 	operation.Parameters = cloneMap(request.Parameters)
 	operation.ExpectedBaseSHA, operation.ExpectedHeadSHA = workspaceValue.CurrentBaseSHA, workspaceValue.HeadSHA
 	if request.Kind == "merge_local" && workspaceValue.BaseBranch != "" {
-		if project, projectErr := m.Store.ResolveProject(workspaceValue.ProjectID); projectErr == nil {
+		if project, projectErr := m.Store.ProjectForCheckout(workspaceValue.ProjectID, workspaceValue.CheckoutID); projectErr == nil {
 			if localBase, baseErr := m.gitOutput(ctx, project.Path, "rev-parse", "--verify", workspaceValue.BaseBranch+"^{commit}"); baseErr == nil {
 				operation.ExpectedBaseSHA = localBase
 			}
@@ -224,12 +225,13 @@ func (m *Manager) resolveTarget(ctx context.Context, cardID, projectID string) (
 
 func (m *Manager) lockTarget(ctx context.Context, value model.Workspace) (func(), error) {
 	if value.Mode == model.WorkspaceModeProject {
-		return m.Workspaces.LockCheckout(ctx, value.ProjectID)
+		return m.Workspaces.LockCheckout(store.WithCheckout(ctx, value.CheckoutID), value.ProjectID)
 	}
 	return m.Workspaces.LockWorkspace(ctx, value.CardID)
 }
 
 func (m *Manager) run(ctx context.Context, operation model.GitOperation) {
+	ctx = store.WithCheckout(ctx, operation.CheckoutID)
 	operation.Status, operation.StartedAt = model.GitOperationRunning, now()
 	operation, _ = m.Store.SaveGitOperation(operation)
 	m.appendLog(&operation, "operation started: "+operation.Kind)
@@ -622,7 +624,7 @@ func (m *Manager) validateIfRequested(ctx context.Context, operation *model.GitO
 }
 
 func (m *Manager) validate(ctx context.Context, operation *model.GitOperation, directory, projectID string) error {
-	project, err := m.Store.ResolveProject(projectID)
+	project, err := m.Store.ProjectForCheckout(projectID, store.CheckoutFromContext(ctx))
 	if err != nil {
 		return err
 	}
@@ -692,7 +694,7 @@ func (m *Manager) mergeLocal(ctx context.Context, operation *model.GitOperation,
 	if !clean {
 		return errors.New("workspace changes must be committed before merging")
 	}
-	project, err := m.Store.ResolveProject(value.ProjectID)
+	project, err := m.Store.ProjectForCheckout(value.ProjectID, value.CheckoutID)
 	if err != nil {
 		return err
 	}
@@ -710,7 +712,7 @@ func (m *Manager) mergeLocal(ctx context.Context, operation *model.GitOperation,
 	if operation.ExpectedHeadSHA != "" && headSHA != operation.ExpectedHeadSHA {
 		return errors.New("workspace head moved after the merge was requested")
 	}
-	releaseRepo, err := m.Workspaces.LockRepository(ctx, value.ProjectID)
+	releaseRepo, err := m.Workspaces.LockRepository(store.WithCheckout(ctx, value.CheckoutID), value.ProjectID)
 	if err != nil {
 		return err
 	}
@@ -773,7 +775,7 @@ func (m *Manager) mergeLocal(ctx context.Context, operation *model.GitOperation,
 	if err := m.validateIfRequested(ctx, operation, integrationPath, value.ProjectID); err != nil {
 		return err
 	}
-	releaseCheckout, err := m.Workspaces.LockCheckout(ctx, value.ProjectID)
+	releaseCheckout, err := m.Workspaces.LockCheckout(store.WithCheckout(ctx, value.CheckoutID), value.ProjectID)
 	if err != nil {
 		return err
 	}
@@ -859,7 +861,7 @@ func (m *Manager) cleanup(ctx context.Context, operation *model.GitOperation, va
 		}
 		return m.Store.DeleteWorkspace(value.CardID)
 	}
-	project, err := m.Store.ResolveProject(value.ProjectID)
+	project, err := m.Store.ProjectForCheckout(value.ProjectID, value.CheckoutID)
 	if err != nil {
 		return err
 	}

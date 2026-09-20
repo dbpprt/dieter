@@ -600,7 +600,7 @@ func testDaemonRoutes(t *testing.T, withRTC bool) {
 			_ = directRoute.listener.Close()
 		}
 	}()
-	tunnel := &dieterdaemon.GatewayClient{ControlWebRTC: withRTC, Identity: identity, LocalTarget: localListener.Addr().String(), Version: "test", Routes: []*gatewayv1.DirectCandidate{directRoute.candidate}, Log: logger}
+	tunnel := &dieterdaemon.GatewayClient{ControlWebRTC: withRTC, Identity: identity, LocalTarget: localListener.Addr().String(), Version: "test", APIVersion: server.APIVersion, Routes: []*gatewayv1.DirectCandidate{directRoute.candidate}, Log: logger}
 	go func() { _ = tunnel.Run(ctx) }()
 	deadline := time.Now().Add(5 * time.Second)
 	for !gatewayServer.Hub.Online(identity.ID) && time.Now().Before(deadline) {

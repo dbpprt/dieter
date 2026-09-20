@@ -34,7 +34,6 @@ final class ScheduleEditorTests: XCTestCase {
         schedule.labelIds = ["label_mac"]
         schedule.openCardPolicy = "always"
         schedule.misfirePolicy = "latest"
-        schedule.busyPolicy = "skip"
         schedule.providerOptions = ["personality": "pragmatic"]
 
         let draft = ScheduleEditorDraft.make(from: schedule)
@@ -55,7 +54,6 @@ final class ScheduleEditorTests: XCTestCase {
         expected.labelIds = schedule.labelIds
         expected.openCardPolicy = schedule.openCardPolicy
         expected.misfirePolicy = schedule.misfirePolicy
-        expected.busyPolicy = schedule.busyPolicy
         expected.providerOptions = schedule.providerOptions
         expected.workspaceMode = "project"
 

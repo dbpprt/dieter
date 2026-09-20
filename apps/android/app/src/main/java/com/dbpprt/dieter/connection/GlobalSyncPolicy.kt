@@ -9,7 +9,7 @@ internal fun GlobalDelta.changesProjection(): Boolean =
         boardsCount > 0 || removedBoardIdsCount > 0 ||
         cardsCount > 0 || removedCardIdsCount > 0 ||
         chatsCount > 0 || removedChatIdsCount > 0 ||
-        hasSettings() ||
+        hasSettings() || hasArchives() ||
         conversationsCount > 0 || removedConversationIdsCount > 0
 
 internal fun syncProjectionShouldPersist(lastPersistedAtMillis: Long?, nowMillis: Long): Boolean =

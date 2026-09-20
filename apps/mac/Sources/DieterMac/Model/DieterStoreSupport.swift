@@ -7,7 +7,7 @@ import Observation
 import UniformTypeIdentifiers
 import UserNotifications
 
-let dieterExpectedAPIVersion = "3"
+let dieterExpectedAPIVersion = DieterContract.version
 let conversationPageSize: Int32 = 30
 let schedulePageSize: Int32 = 50
 let syncConversationMessageLimit: Int32 = 30

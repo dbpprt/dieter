@@ -808,3 +808,41 @@ bounded byte framing in `docs/webrtc-control-transport.md`. It carries the
 ordinary authenticated TLS/gRPC connection, not unencrypted protobuf RPCs.
 A close is transport-only. Existing agent turns, terminals and remote executions
 continue; callers resume eligible watches using their existing cursors.
+
+### Shared projects and peer storage
+
+One project can have checkouts on many machines. Use `project attach --name NAME
+PROJECT PATH` on the checkout owner, `project checkouts PROJECT`, `project detach
+CHECKOUT`, and `project consolidate SOURCE DESTINATION`. Consolidation retains the
+destination settings and all boards/conversations; it does not move repository files.
+
+Shared metadata can be read/edited through any replica. Use global `--machine`
+to target the immutable owner for conversation detail, schedules, files, Git,
+terminals, and executions. Supply `--checkout ID` for project-local operations;
+multiple local checkouts require an explicit choice. `project workspace` changes
+portable defaults; `--validation-file FILE --checkout ID` edits local validation.
+`card move --lane LANE --after LEFT --before RIGHT --revision REV CARD` uses stable
+neighbors; no anchors appends. The revision is the card's placementRevision.
+
+`peer status` shows account/actor, record/conflict counts and the last completed
+exchange. It is not acknowledgement by every machine. `peer list` returns a bounded
+snapshot; follow nextKey and snapshotRevision with `--after` and `--snapshot`.
+`peer changes` uses an epoch/sequence checkpoint. All operations use the daemon API.
+
+Use `peer show --kind KIND --id ENTITY.FIELD` to inspect all conflicting versions.
+Resolve with `peer put --kind KIND --id ENTITY.FIELD --revision REV --file value.json`.
+The file holds that field's typed JSON value. Read every sibling before resolving.
+List output is protobuf JSON; valueJson is base64. Do not blindly replay uncertain
+mutations or fabricate clocks. `peer merge --file FILE` joins up to 64 records and
+2 MiB for recovery. Domain operations are preferred over raw record writes.
+
+Daemon synchronization needs no client. Initialized replicas accept offline edits;
+credential discovery and RTC bootstrap may require the gateway. Paths, secrets,
+transcripts, queues, and executable validation stay on the owner. There are no
+parallel-agent caps; one conversation still has one active turn. Transport and
+storage bounds remain. Never edit DIETER_HOME directly. See docs/peer-store.md.
+
+Contract 4 rejects mismatched fleets. Storage schema 2 rejects the old project
+store. `daemon import-store --backup PATH` is an explicit offline dry run; `--apply`
+performs resumable import only after the daemon/workers are stopped by their owner.
+Never stop or replace the operator's daemon as part of testing or implementation.

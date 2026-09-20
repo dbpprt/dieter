@@ -12,7 +12,7 @@ import com.dbpprt.dieter.connection.ConnectionPhase
 import com.dbpprt.dieter.connection.EndpointConnection
 import com.dbpprt.dieter.connection.EndpointPhase
 import com.dbpprt.dieter.connection.MachineOutboxSummary
-import com.dbpprt.dieter.connection.ProjectHost
+import com.dbpprt.dieter.connection.ProjectReplica
 import com.dbpprt.dieter.connection.isServerConversationId
 import com.dbpprt.dieter.connection.resolveConversationId
 import com.dbpprt.dieter.connection.rpcReadFailureIsTransient
@@ -148,6 +148,8 @@ enum class CardOperation { STARTING, MOVING, CANCELLING }
 
 @Immutable
 data class DieterUiState(
+    val sharedConflicts: List<com.dbpprt.dieter.v1.PeerRecord> = emptyList(),
+    val creationCheckoutId: String = "",
     val destination: Destination = Destination.BOARD,
     val appSurface: AppSurface? = null,
     val editingScheduleId: String? = null,
@@ -186,7 +188,7 @@ data class DieterUiState(
     val pinnedChatOrder: List<String> = emptyList(),
     val chatsPaneLeadingFraction: Float = DEFAULT_PANE_LEADING_FRACTION,
     val boardPaneLeadingFraction: Float = DEFAULT_PANE_LEADING_FRACTION,
-    val projectHosts: Map<String, ProjectHost> = emptyMap(),
+    val projectReplicas: Map<String, ProjectReplica> = emptyMap(),
     val boards: List<Board> = emptyList(),
     val cards: List<Card> = emptyList(),
     val spaceBoards: List<Board> = emptyList(),
@@ -256,12 +258,15 @@ data class DieterUiState(
     val cardOperationErrors: Map<String, String> = emptyMap(),
     val workspaceReview: WorkspaceReviewState = WorkspaceReviewState(),
 ) {
+    fun conversationHost(card: Card): ProjectReplica? = presentedEndpointConnections.firstOrNull { it.daemonId == card.ownerDaemonId }?.let {
+        ProjectReplica(it.id, it.daemonId.orEmpty(), it.label, it.online)
+    }
     val connected: Boolean get() = connectionPhase == ConnectionPhase.CONNECTED
     val backgroundSyncEnabled: Boolean get() = backgroundSyncMode.usesBackgroundService
     val hasCachedWorkspace: Boolean
         get() = projects.isNotEmpty() || boards.isNotEmpty() || cards.isNotEmpty() || chats.isNotEmpty()
-    val presentedProjectHosts: Map<String, ProjectHost>
-        get() = if (connected) projectHosts else projectHosts.mapValues { (_, host) -> host.copy(online = false) }
+    val presentedProjectReplicas: Map<String, ProjectReplica>
+        get() = if (connected) projectReplicas else projectReplicas.mapValues { (_, host) -> host.copy(online = false) }
     val presentedEndpointConnections: List<EndpointConnection>
         get() {
             val presented = if (connected) endpointConnections else endpointConnections.map { endpoint ->
@@ -273,7 +278,7 @@ data class DieterUiState(
                 )
             }
             val existingIds = presented.mapTo(hashSetOf(), EndpointConnection::id)
-            val hostsByEndpoint = projectHosts.values.associateBy(ProjectHost::endpointId)
+            val hostsByEndpoint = projectReplicas.values.associateBy(ProjectReplica::endpointId)
             val queuedMachines = machineOutboxSummaries.keys
                 .filterNot(existingIds::contains)
                 .map { endpointId ->
@@ -387,6 +392,7 @@ class DieterViewModel internal constructor(
         get() = appPreferences.conversationCreation.value
 
     private val mutationMutex = Mutex()
+    private var pendingProjectCreation: Pair<CreateProjectRequest, String>? = null
     private var foreground = false
     private var stateJob: Job? = null
     private var providerQuotaWatchJob: Job? = null
@@ -727,7 +733,7 @@ class DieterViewModel internal constructor(
                 providerQuotaMutatingAccounts = if (gatewayChanged) emptySet() else current.providerQuotaMutatingAccounts,
                 chats = connection.chats,
                 projects = orderedProjects(connection.projects, current.projectOrder),
-                projectHosts = connection.projectHosts,
+                projectReplicas = connection.projectReplicas,
                 spaceBoards = connection.boards,
                 spaceCards = reconcileCardsDuringOperations(
                     remoteCards = connection.cards,
@@ -1107,6 +1113,7 @@ class DieterViewModel internal constructor(
         _state.update {
             it.copy(
                 selectedProjectId = id,
+                creationCheckoutId = it.creationCheckoutId.takeIf { selected -> it.projects.firstOrNull { p -> p.id == id }?.checkoutsList?.any { c -> c.id == selected && !c.detached } == true }.orEmpty(),
                 selectedBoardId = "",
                 selectedLane = "",
                 selectedCardId = null,
@@ -1257,6 +1264,17 @@ class DieterViewModel internal constructor(
     fun selectDetailTab(index: Int) = _state.update { it.copy(detailTab = index) }
 
     fun openSurface(surface: AppSurface, schedule: Schedule? = null) {
+        if (schedule != null) {
+            viewModelScope.launch {
+                try {
+                    connectionManager.ensureScheduleRoute(schedule.ownerDaemonId)
+                    val detail = repository.schedule(schedule.id)
+                    upsertLoadedSchedule(detail)
+                    _state.update { it.copy(appSurface = surface, editingScheduleId = detail.id, schedulePreview = emptyList(), error = null) }
+                } catch (error: Throwable) { _state.update { it.copy(error = readableError(error)) } }
+            }
+            return
+        }
         _state.update {
             it.copy(
                 appSurface = surface,
@@ -1348,7 +1366,7 @@ class DieterViewModel internal constructor(
                 ?.projectId
                 .orEmpty()
             try {
-                connectionManager.ensureProjectRoute(projectId)
+                connectionManager.ensureConversationRoute(cardId)
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Throwable) {
@@ -1456,7 +1474,7 @@ class DieterViewModel internal constructor(
                 cancelConversationStream()
                 _state.update { it.copy(conversationRefreshing = true, error = null) }
                 try {
-                    connectionManager.ensureProjectRoute(_state.value.selectedProjectId)
+                    connectionManager.ensureConversationRoute(cardId)
                     val snapshot = connectionManager.acceptConversation(
                         repository.conversation(cardId, limit = CONVERSATION_PAGE_SIZE),
                     )
@@ -1504,7 +1522,7 @@ class DieterViewModel internal constructor(
             if (_state.value.selectedCardId != cardId) return@launch
             _state.update { it.copy(historyLoading = true) }
             try {
-                connectionManager.ensureProjectRoute(_state.value.selectedProjectId)
+                connectionManager.ensureConversationRoute(cardId)
                 val page = repository.conversation(cardId, limit = CONVERSATION_PAGE_SIZE, before = current.historyStart)
                 _state.update { latest ->
                     if (conversationHistoryRequestGeneration != requestGeneration ||
@@ -1535,7 +1553,7 @@ class DieterViewModel internal constructor(
 
     suspend fun loadToolOutput(messageId: String, part: MessagePart): ToolOutput {
         val cardId = _state.value.selectedCardId ?: error("No conversation is selected")
-        connectionManager.ensureProjectRoute(_state.value.selectedProjectId)
+        connectionManager.ensureConversationRoute(cardId)
         return repository.toolOutput(cardId, messageId, part.toolCallId, part.payloadRevision)
     }
 
@@ -1592,7 +1610,7 @@ class DieterViewModel internal constructor(
                         ?.projectId
                         .orEmpty()
                     val snapshot = runCatching {
-                        connectionManager.ensureProjectRoute(projectId)
+                        connectionManager.ensureConversationRoute(cardId)
                         withTimeout(HEDGE_FETCH_TIMEOUT_MS) {
                             repository.conversation(cardId, limit = CONVERSATION_PAGE_SIZE)
                         }
@@ -1632,6 +1650,32 @@ class DieterViewModel internal constructor(
         )
     }
 
+    fun selectCreationCheckout(id: String) = action(ensureReplicaRoute = false) {
+        val checkout = _state.value.projects.flatMap { it.checkoutsList }.firstOrNull { it.id == id }
+            ?: error("Checkout is unavailable")
+        val machine = _state.value.presentedEndpointConnections.firstOrNull { it.daemonId == checkout.daemonId }
+            ?: error("Machine is unavailable")
+        connectionManager.ensureCheckoutRoute(checkout.projectId, checkout.id)
+        _state.update { it.copy(creationCheckoutId = id, fileDocument = null, filePath = "") }
+        refreshStateOnce()
+        if (_state.value.destination == Destination.FILES) loadFiles("")
+    }
+
+    fun detachCheckout(id: String) = action(ensureReplicaRoute = false) {
+        val checkout = _state.value.projects.flatMap { it.checkoutsList }.first { it.id == id }
+        connectionManager.ensureCheckoutRoute(checkout.projectId, checkout.id)
+        repository.detachCheckout(id)
+        _state.update { it.copy(creationCheckoutId = "") }
+        refreshStateOnce()
+        connectionManager.refreshProjectDirectory()
+    }
+
+    fun consolidateProject(destination: String) = action {
+        repository.consolidateProject(_state.value.selectedProjectId, destination)
+        connectionManager.refreshProjectDirectory()
+        selectProject(destination)
+    }
+
     fun createConversation(
         title: String,
         prompt: String,
@@ -1648,11 +1692,13 @@ class DieterViewModel internal constructor(
         workspaceBranch: String = "",
         workspaceBaseBranch: String = "",
         autoGenerateTitle: Boolean = false,
-    ) = action(ensureProjectRoute = false) {
+    ) = action(ensureReplicaRoute = false) {
         val current = _state.value
         check(current.project != null) { "Select a project before creating a conversation." }
+        val checkoutId = connectionManager.ensureCheckoutRoute(current.selectedProjectId, current.creationCheckoutId)
         val selectedWorkspaceMode = ConversationWorkspaceMode.resolve(workspaceMode)
         val request = CreateConversationRequest.newBuilder()
+            .setCheckoutId(checkoutId)
             .setProjectId(current.selectedProjectId)
             .setBoardId(if (chat) "" else current.selectedBoardId)
             .setLane(if (chat) "" else lane)
@@ -1717,7 +1763,7 @@ class DieterViewModel internal constructor(
         effort: String,
         providerOptions: Map<String, String>,
         onSent: () -> Unit = {},
-    ) = action(ensureProjectRoute = false) {
+    ) = action(ensureReplicaRoute = false) {
         val id = _state.value.selectedCardId ?: return@action
         val parts = buildList {
             if (text.isNotBlank()) add(textPart(text))
@@ -1754,7 +1800,7 @@ class DieterViewModel internal constructor(
         publishComposerDraft(cardId, pending)
         viewModelScope.launch {
             try {
-                connectionManager.ensureProjectRoute(conversationProjectId(cardId))
+                connectionManager.ensureConversationRoute(cardId)
                 val removed = repository.removeQueuedMessage(cardId, message.id)
                 publishComposerDraft(
                     cardId,
@@ -1791,7 +1837,7 @@ class DieterViewModel internal constructor(
         }
     }
 
-    fun retryFailedTurn(parts: List<MessagePart>) = action(ensureProjectRoute = false) {
+    fun retryFailedTurn(parts: List<MessagePart>) = action(ensureReplicaRoute = false) {
         val current = _state.value
         val id = current.selectedCardId ?: return@action
         val card = current.conversation?.detail?.card ?: current.selectedCard ?: return@action
@@ -1802,16 +1848,23 @@ class DieterViewModel internal constructor(
 
     fun addComment(text: String) = action {
         val id = _state.value.selectedCardId ?: return@action
+        connectionManager.ensureConversationRoute(id)
         repository.addComment(id, text)
     }
 
     fun moveCard(lane: String, position: Long? = null) = action {
         val id = _state.value.selectedCardId ?: return@action
-        val moved = repository.moveCard(id, lane, position)
+        if (lane == "running") connectionManager.ensureConversationRoute(id)
+        val card = _state.value.cards.firstOrNull { it.id == id }
+        val peers = _state.value.cards.filter { it.id != id && it.boardId == card?.boardId && it.lane == lane }.sortedBy { it.position }
+        val after = position?.let { pos -> peers.lastOrNull { it.position < pos }?.id }.orEmpty()
+        val before = position?.let { pos -> peers.firstOrNull { it.position >= pos }?.id }.orEmpty()
+        val moved = repository.moveCard(id, lane, after, before, card?.placementRevision.orEmpty())
         updateCard(moved)
     }
 
     fun moveBoardCard(cardId: String, lane: String) = action {
+        if (lane == "running") connectionManager.ensureConversationRoute(cardId)
         updateCard(repository.moveCard(cardId, lane))
     }
 
@@ -1863,12 +1916,14 @@ class DieterViewModel internal constructor(
 
     fun forkSelected(messageId: String = "") = action {
         val source = _state.value.selectedCard ?: return@action
+        connectionManager.ensureConversationRoute(source.id)
         val fork = repository.forkChat(source.id, messageId)
         _state.update { current -> current.copy(chats = listOf(fork) + current.chats.filterNot { it.id == fork.id }) }
         openCard(fork, Destination.CHATS)
     }
 
     fun editBoardCard(cardId: String, title: String, initialPrompt: String) = action {
+        connectionManager.ensureConversationRoute(cardId)
         updateCard(repository.updateCard(cardId, title, initialPrompt))
     }
 
@@ -1963,12 +2018,13 @@ class DieterViewModel internal constructor(
     private suspend fun loadFiles(path: String = _state.value.filePath) {
         val projectId = _state.value.selectedProjectId
         if (projectId.isBlank()) return
-        connectionManager.ensureProjectRoute(projectId)
+        connectionManager.ensureCheckoutRoute(projectId)
         val list = repository.files(projectId, path, _state.value.showHiddenFiles)
         _state.update { it.copy(filePath = list.path, files = list.entriesList, fileDocument = null, fileDraft = "", fileDirty = false) }
     }
 
     fun openFile(path: String) = action {
+        connectionManager.ensureCheckoutRoute(_state.value.selectedProjectId)
         val document = repository.readFile(_state.value.selectedProjectId, path)
         _state.update { it.copy(fileDocument = document, fileDraft = document.content, fileDirty = false) }
     }
@@ -1979,7 +2035,7 @@ class DieterViewModel internal constructor(
         val cardId = initial.selectedCardId ?: return null
         if (projectId.isBlank()) return null
         return try {
-            connectionManager.ensureProjectRoute(projectId)
+            connectionManager.ensureConversationRoute(cardId)
             val path = conversationImagePath(destination) ?: run {
                 val workspace = repository.workspace(cardId)
                 conversationImagePath(destination, workspace.path)
@@ -2005,6 +2061,7 @@ class DieterViewModel internal constructor(
     }
 
     fun saveFile() = action {
+        connectionManager.ensureCheckoutRoute(_state.value.selectedProjectId)
         val current = _state.value
         val document = current.fileDocument ?: return@action
         val saved = repository.saveFile(current.selectedProjectId, document.path, current.fileDraft, document.revision)
@@ -2012,18 +2069,21 @@ class DieterViewModel internal constructor(
     }
 
     fun createFile(path: String, directory: Boolean) = action {
+        connectionManager.ensureCheckoutRoute(_state.value.selectedProjectId)
         val current = _state.value
         repository.createFile(current.selectedProjectId, path, if (directory) "directory" else "file")
         loadFiles()
     }
 
     fun moveFile(source: String, destination: String) = action {
+        connectionManager.ensureCheckoutRoute(_state.value.selectedProjectId)
         repository.moveFile(_state.value.selectedProjectId, source, destination)
         _state.update { it.copy(fileDocument = null, fileDraft = "", fileDirty = false) }
         loadFiles()
     }
 
     fun deleteFile(path: String, recursive: Boolean) = action {
+        connectionManager.ensureCheckoutRoute(_state.value.selectedProjectId)
         repository.deleteFile(_state.value.selectedProjectId, path, recursive)
         _state.update { it.copy(fileDocument = null, fileDraft = "", fileDirty = false) }
         loadFiles()
@@ -2090,7 +2150,7 @@ class DieterViewModel internal constructor(
             else current.copy(projectChanges = current.projectChanges.copy(projectId = projectId, loading = true, error = null))
         }
         try {
-            connectionManager.ensureProjectRoute(projectId)
+            connectionManager.ensureCheckoutRoute(projectId)
             val changes = repository.projectChangeset(projectId)
             if (_state.value.selectedProjectId != projectId) return
             val previous = _state.value.projectChanges
@@ -2173,7 +2233,7 @@ class DieterViewModel internal constructor(
         projectDiffJob = viewModelScope.launch {
             _state.update { it.copy(projectChanges = it.projectChanges.copy(diffLoading = true)) }
             try {
-                connectionManager.ensureProjectRoute(projectId)
+                connectionManager.ensureCheckoutRoute(projectId)
                 val request = GetDiffRequest.newBuilder()
                     .setProjectId(projectId)
                     .setPath(path)
@@ -2215,7 +2275,7 @@ class DieterViewModel internal constructor(
         if (projectId.isBlank() || current.projectChanges.operationActive || changes.volatile) return
         viewModelScope.launch {
             try {
-                connectionManager.ensureProjectRoute(projectId)
+                connectionManager.ensureCheckoutRoute(projectId)
                 val operation = repository.startProjectGitOperation(
                     projectId,
                     kind,
@@ -2322,7 +2382,7 @@ class DieterViewModel internal constructor(
         viewModelScope.launch {
             _state.update { it.copy(terminalLoading = true, error = null) }
             try {
-                connectionManager.ensureProjectRoute(projectId)
+                connectionManager.ensureCheckoutRoute(projectId)
                 val terminal = repository.createTerminal(
                     CreateTerminalRequest.newBuilder()
                         .setProjectId(projectId)
@@ -2519,7 +2579,7 @@ class DieterViewModel internal constructor(
             )
         }
         try {
-            connectionManager.ensureProjectRoute(projectId)
+            connectionManager.ensureReplicaRoute(projectId)
             val response = repository.schedules(projectId, SCHEDULE_PAGE_SIZE)
             if (generation != schedulesRequestGeneration || _state.value.selectedProjectId != projectId) return
             _state.update { it.applyingSchedulePage(response, appending = false) }
@@ -2545,7 +2605,7 @@ class DieterViewModel internal constructor(
         viewModelScope.launch {
             _state.update { it.copy(schedulesLoadingMore = true, error = null) }
             try {
-                connectionManager.ensureProjectRoute(projectId)
+                connectionManager.ensureReplicaRoute(projectId)
                 val response = repository.schedules(projectId, SCHEDULE_PAGE_SIZE, pageToken)
                 if (generation != schedulesRequestGeneration || _state.value.selectedProjectId != projectId) return@launch
                 _state.update { it.applyingSchedulePage(response, appending = true) }
@@ -2562,7 +2622,7 @@ class DieterViewModel internal constructor(
     fun previewSchedule(cron: String, timezone: String) {
         viewModelScope.launch {
             try {
-                connectionManager.ensureProjectRoute(_state.value.selectedProjectId)
+                connectionManager.ensureReplicaRoute(_state.value.selectedProjectId)
                 val result = repository.previewSchedule(cron, timezone)
                 _state.update { it.copy(schedulePreview = result.timesList, error = null) }
             } catch (error: Throwable) {
@@ -2588,9 +2648,14 @@ class DieterViewModel internal constructor(
     }
 
     fun saveSchedule(scheduleId: String, draft: ScheduleDraft) = action {
+        val existing = _state.value.schedules.firstOrNull { it.id == scheduleId }
+        val checkoutId = if (existing == null) connectionManager.ensureCheckoutRoute(draft.projectId, draft.checkoutId) else {
+            connectionManager.ensureScheduleRoute(existing.ownerDaemonId)
+            existing.checkoutId
+        }
         val saved = repository.saveSchedule(
             scheduleId,
-            SaveScheduleRequest.newBuilder().setScheduleId(scheduleId).setSchedule(draft).build(),
+            SaveScheduleRequest.newBuilder().setScheduleId(scheduleId).setSchedule(draft.toBuilder().setCheckoutId(checkoutId)).build(),
         )
         upsertLoadedSchedule(saved, select = true)
         _state.update { it.copy(appSurface = null, editingScheduleId = null, schedulePreview = emptyList()) }
@@ -2612,7 +2677,7 @@ class DieterViewModel internal constructor(
         val projectId = _state.value.selectedProjectId
         viewModelScope.launch {
             try {
-                connectionManager.ensureProjectRoute(projectId)
+                connectionManager.ensureScheduleRoute(schedule.ownerDaemonId)
                 val response = repository.scheduleRuns(schedule.id, SCHEDULE_PAGE_SIZE)
                 if (generation != scheduleRunsRequestGeneration || _state.value.selectedScheduleId != schedule.id) return@launch
                 _state.update { it.applyingScheduleRunPage(response, appending = false) }
@@ -2636,7 +2701,7 @@ class DieterViewModel internal constructor(
         viewModelScope.launch {
             _state.update { it.copy(scheduleRunsLoadingMore = true, error = null) }
             try {
-                connectionManager.ensureProjectRoute(projectId)
+                connectionManager.ensureScheduleRoute(current.schedules.first { it.id == scheduleId }.ownerDaemonId)
                 val response = repository.scheduleRuns(scheduleId, SCHEDULE_PAGE_SIZE, pageToken)
                 if (generation != scheduleRunsRequestGeneration || _state.value.selectedScheduleId != scheduleId) return@launch
                 _state.update { it.applyingScheduleRunPage(response, appending = true) }
@@ -2651,15 +2716,18 @@ class DieterViewModel internal constructor(
     }
 
     fun toggleSchedule(schedule: Schedule) = action {
+        connectionManager.ensureScheduleRoute(schedule.ownerDaemonId)
         upsertLoadedSchedule(repository.setScheduleEnabled(schedule.id, !schedule.enabled))
     }
 
     fun runSchedule(schedule: Schedule) = action {
+        connectionManager.ensureScheduleRoute(schedule.ownerDaemonId)
         repository.runSchedule(schedule.id)
         selectSchedule(schedule)
     }
 
     fun deleteSchedule(schedule: Schedule) = action {
+        connectionManager.ensureScheduleRoute(schedule.ownerDaemonId)
         repository.deleteSchedule(schedule.id)
         ++schedulesRequestGeneration
         if (_state.value.selectedScheduleId == schedule.id) ++scheduleRunsRequestGeneration
@@ -2720,7 +2788,7 @@ class DieterViewModel internal constructor(
     private suspend fun refreshWorkspaceSurface(cardId: String) {
         updateWorkspaceReview(cardId) { it.copy(loading = true, error = null) }
         try {
-            connectionManager.ensureProjectRoute(conversationProjectId(cardId))
+            connectionManager.ensureConversationRoute(cardId)
             val (workspace, changes, scm) = coroutineScope {
                 val workspace = async { repository.workspace(cardId) }
                 val changes = async { repository.changeset(cardId) }
@@ -2791,7 +2859,7 @@ class DieterViewModel internal constructor(
         workspaceDiffJob = viewModelScope.launch {
             updateWorkspaceReview(cardId) { it.copy(diffLoading = true) }
             try {
-                connectionManager.ensureProjectRoute(conversationProjectId(cardId))
+                connectionManager.ensureConversationRoute(cardId)
                 val request = GetDiffRequest.newBuilder()
                     .setCardId(cardId)
                     .setPath(path)
@@ -2847,7 +2915,7 @@ class DieterViewModel internal constructor(
         parameters: Map<String, String>,
     ): Boolean {
         return try {
-            connectionManager.ensureProjectRoute(conversationProjectId(cardId))
+            connectionManager.ensureConversationRoute(cardId)
             val revision = _state.value.workspaceReview.changeset?.revision.orEmpty()
             val operation = repository.startGitOperation(cardId, kind, revision, parameters)
             gitOperationLastSequence = 0
@@ -3020,6 +3088,7 @@ class DieterViewModel internal constructor(
 
     fun updateConversationWorkspace(mode: String, branch: String, baseBranch: String) = action {
         val cardId = _state.value.selectedCardId ?: return@action
+        connectionManager.ensureConversationRoute(cardId)
         val selectedWorkspaceMode = ConversationWorkspaceMode.resolve(mode)
         updateCard(repository.updateConversationWorkspace(
             cardId,
@@ -3147,7 +3216,7 @@ class DieterViewModel internal constructor(
     fun loadAdministration() {
         viewModelScope.launch {
             try {
-                connectionManager.ensureProjectRoute(_state.value.selectedProjectId)
+                connectionManager.ensureReplicaRoute(_state.value.selectedProjectId)
                 val (settings, options, archivedProjects) = coroutineScope {
                     val settings = async { repository.settings() }
                     val options = async { repository.settingsOptions() }
@@ -3180,7 +3249,7 @@ class DieterViewModel internal constructor(
     fun listDirectories(endpointId: String, path: String = "") {
         val generation = ++directoryListingGeneration
         if (endpointId.isBlank()) {
-            _state.update { it.copy(error = "Choose an online project host first.") }
+            _state.update { it.copy(error = "Choose an online machine first.") }
             return
         }
         _state.update {
@@ -3208,6 +3277,14 @@ class DieterViewModel internal constructor(
         }
     }
 
+    fun attachCheckout(projectId: String, endpointId: String, path: String, name: String) = action(ensureReplicaRoute = false) {
+        repository.attachCheckoutOn(endpointId, com.dbpprt.dieter.v1.AttachCheckoutRequest.newBuilder()
+            .setProjectId(projectId).setPath(path.trim()).setName(name.trim()).build())
+        connectionManager.refreshMachineDirectory()
+        selectProject(projectId)
+        openSurface(AppSurface.WORKSPACE)
+    }
+
     fun createProject(
         endpointId: String,
         mode: String,
@@ -3221,12 +3298,10 @@ class DieterViewModel internal constructor(
         baseBranch: String,
         validationCommands: List<ValidationCommand>,
         remotePublishMode: String,
-    ) = action(ensureProjectRoute = false) {
-        check(endpointId.isNotBlank()) { "Choose an online project host first." }
+    ) = action(ensureReplicaRoute = false) {
+        check(endpointId.isNotBlank()) { "Choose an online machine first." }
         check(baseBranch.isNotBlank()) { "Enter a workspace base branch." }
-        val created = repository.createProjectOn(
-            endpointId,
-            CreateProjectRequest.newBuilder()
+        val payload = CreateProjectRequest.newBuilder()
                 .setMode(mode)
                 .setPath(path.trim())
                 .setName(name.trim())
@@ -3238,9 +3313,12 @@ class DieterViewModel internal constructor(
                 .setBaseBranch(baseBranch.trim())
                 .addAllValidationCommands(validationCommands)
                 .setRemotePublishMode(remotePublishMode)
-                .build(),
-        )
-        connectionManager.registerProjectHost(created.project, endpointId, created.board)
+                .build()
+        val operationId = pendingProjectCreation?.takeIf { it.first == payload }?.second ?: java.util.UUID.randomUUID().toString()
+        pendingProjectCreation = payload to operationId
+        val created = repository.createProjectOn(endpointId, payload.toBuilder().setOperationId(operationId).build())
+        pendingProjectCreation = null
+        connectionManager.registerProjectReplica(created.project, endpointId, created.board)
         _state.update {
             it.copy(
                 projects = (it.projects.filterNot { project -> project.id == created.project.id } + created.project)
@@ -3272,12 +3350,15 @@ class DieterViewModel internal constructor(
         check(projectId.isNotBlank()) { "Select a project first." }
         check(name.isNotBlank()) { "Enter a project name." }
         check(baseBranch.isNotBlank()) { "Enter a workspace base branch." }
+        val selectedCheckout = _state.value.project?.checkoutsList?.filterNot { it.detached }?.let { list -> list.firstOrNull { it.id == _state.value.creationCheckoutId } ?: list.singleOrNull() }
+        val updatesValidation = validationCommands != selectedCheckout?.validationCommandsList.orEmpty()
+        val checkoutId = if (updatesValidation) connectionManager.ensureCheckoutRoute(projectId, _state.value.creationCheckoutId) else ""
         repository.updateProjectWorkspaceSettings(
-            UpdateProjectWorkspaceSettingsRequest.newBuilder()
+            UpdateProjectWorkspaceSettingsRequest.newBuilder().setCheckoutId(checkoutId)
                 .setProjectId(projectId)
                 .setBaseRemote(baseRemote.trim())
                 .setBaseBranch(baseBranch.trim())
-                .addAllValidationCommands(validationCommands)
+                .addAllValidationCommands(if (updatesValidation) validationCommands else emptyList())
                 .build(),
         )
         repository.updateProject(
@@ -3297,7 +3378,7 @@ class DieterViewModel internal constructor(
         _state.update { it.copy(projectWorkspacesLoading = true) }
         viewModelScope.launch {
             try {
-                connectionManager.ensureProjectRoute(projectId)
+                connectionManager.ensureReplicaRoute(projectId)
                 val workspaces = repository.projectWorkspaces(projectId).workspacesList
                 _state.update { current ->
                     if (current.selectedProjectId != projectId) current
@@ -3326,7 +3407,7 @@ class DieterViewModel internal constructor(
         }
         projectWorkspaceJobs[workspace.cardId] = viewModelScope.launch {
             try {
-                connectionManager.ensureProjectRoute(workspace.projectId)
+                connectionManager.ensureConversationRoute(workspace.cardId)
                 var operation = repository.startGitOperation(workspace.cardId, kind, workspace.revision)
                 while (GitOperationStatuses.active(operation.status)) {
                     delay(500)
@@ -3427,14 +3508,27 @@ class DieterViewModel internal constructor(
         _state.update { it.copy(settings = repository.updateSettings(settings)) }
     }
 
+    fun loadSharedConflicts(keys: List<String>) = action {
+        val records = keys.distinct().map { key -> repository.peerRecord(key.substringBefore('/'), key.substringAfter('/')) }
+        _state.update { it.copy(sharedConflicts = records.filter { record -> record.versionsCount > 1 }) }
+    }
+    fun dismissSharedConflicts() { _state.update { it.copy(sharedConflicts = emptyList()) } }
+    fun resolveSharedConflict(record: com.dbpprt.dieter.v1.PeerRecord, version: com.dbpprt.dieter.v1.PeerVersion) = action {
+        repository.resolvePeerRecord(com.dbpprt.dieter.v1.PutPeerRecordRequest.newBuilder()
+            .setKind(record.kind).setId(record.id).setExpectedRevision(record.revision)
+            .setValueJson(version.valueJson).setDeleted(version.deleted).build())
+        _state.update { it.copy(sharedConflicts = it.sharedConflicts.filterNot { candidate -> candidate.id == record.id }) }
+        refreshStateOnce()
+    }
+
     fun clearError() = _state.update { it.copy(error = null) }
 
-    private fun action(ensureProjectRoute: Boolean = true, block: suspend () -> Unit) {
+    private fun action(ensureReplicaRoute: Boolean = true, block: suspend () -> Unit) {
         viewModelScope.launch {
             mutationMutex.withLock {
                 _state.update { it.copy(working = true, error = null) }
                 try {
-                    if (ensureProjectRoute) connectionManager.ensureProjectRoute(_state.value.selectedProjectId)
+                    if (ensureReplicaRoute) connectionManager.ensureReplicaRoute(_state.value.selectedProjectId)
                     block()
                 } catch (cancelled: CancellationException) {
                     throw cancelled
@@ -3539,7 +3633,6 @@ class DieterViewModel internal constructor(
             .setTitleTemplate("Scheduled work · {{date}}")
             .setOpenCardPolicy("skip_if_open")
             .setMisfirePolicy("latest")
-            .setBusyPolicy("queue")
             .setWorkspaceMode("worktree")
             .build()
     }

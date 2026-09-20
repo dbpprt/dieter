@@ -81,7 +81,7 @@ func (c *CLI) resolveSchedule(rpcCtx context.Context, client dieterv1.DieterServ
 		}
 		for _, item := range value.GetSchedules() {
 			if item.GetId() == reference {
-				return item, nil
+				return client.GetSchedule(rpcCtx, &dieterv1.ScheduleRef{ScheduleId: item.GetId()})
 			}
 			if strings.EqualFold(item.GetName(), reference) {
 				matches = append(matches, item)
@@ -93,7 +93,7 @@ func (c *CLI) resolveSchedule(rpcCtx context.Context, client dieterv1.DieterServ
 		}
 	}
 	if len(matches) == 1 {
-		return matches[0], nil
+		return client.GetSchedule(rpcCtx, &dieterv1.ScheduleRef{ScheduleId: matches[0].GetId()})
 	}
 	if len(matches) > 1 {
 		return nil, fmt.Errorf("schedule name %q is ambiguous; use its exact ID", reference)
@@ -257,14 +257,14 @@ Options:
   --provider-option KEY=VALUE        Repeatable harness option
   --enabled=true|false
   --open-card skip_if_open|always
-  --busy queue|skip
 `, actionName, map[bool]string{true: " SCHEDULE"}[updating])
-	defaults := &dieterv1.Schedule{Enabled: true, Cron: "0 9 * * 1-5", Timezone: "UTC", Action: "draft", OpenCardPolicy: "skip_if_open", MisfirePolicy: "latest", BusyPolicy: "queue", WorkspaceMode: "worktree"}
+	defaults := &dieterv1.Schedule{Enabled: true, Cron: "0 9 * * 1-5", Timezone: "UTC", Action: "draft", OpenCardPolicy: "skip_if_open", MisfirePolicy: "latest", WorkspaceMode: "worktree"}
 	if current != nil && current.GetId() != "" {
 		defaults = current
 	}
 	set := flags("schedule " + actionName)
 	project := set.String("project", defaults.GetProjectId(), "project ID or unique name")
+	checkout := set.String("checkout", defaults.GetCheckoutId(), "execution checkout ID on the target machine")
 	board := set.String("board", defaults.GetBoardId(), "board ID or unique name")
 	name := set.String("name", defaults.GetName(), "schedule name")
 	description := set.String("description", defaults.GetDescription(), "schedule description")
@@ -281,7 +281,7 @@ Options:
 	labels := set.String("labels", strings.Join(defaults.GetLabelIds(), ","), "label IDs")
 	enabled := set.Bool("enabled", defaults.GetEnabled(), "enabled")
 	openCard := set.String("open-card", defaults.GetOpenCardPolicy(), "open-card policy")
-	busy := set.String("busy", defaults.GetBusyPolicy(), "busy policy")
+
 	providerOptions := parameterFlags{}
 	for key, value := range defaults.GetProviderOptions() {
 		providerOptions[key] = value
@@ -327,7 +327,7 @@ Options:
 	if err != nil {
 		return err
 	}
-	draft := &dieterv1.ScheduleDraft{ProjectId: projectValue.GetId(), BoardId: boardValue.GetId(), Name: *name, Description: *description, Cron: *expression, Timezone: *timezone, Enabled: *enabled, Action: *action, TitleTemplate: *title, PromptTemplate: promptValue, Provider: *provider, Model: *modelName, Effort: *effort, LabelIds: splitCSV(*labels), OpenCardPolicy: *openCard, MisfirePolicy: "latest", BusyPolicy: *busy, ProviderOptions: map[string]string(providerOptions), WorkspaceMode: *workspaceMode}
+	draft := &dieterv1.ScheduleDraft{CheckoutId: *checkout, ProjectId: projectValue.GetId(), BoardId: boardValue.GetId(), Name: *name, Description: *description, Cron: *expression, Timezone: *timezone, Enabled: *enabled, Action: *action, TitleTemplate: *title, PromptTemplate: promptValue, Provider: *provider, Model: *modelName, Effort: *effort, LabelIds: splitCSV(*labels), OpenCardPolicy: *openCard, MisfirePolicy: "latest", ProviderOptions: map[string]string(providerOptions), WorkspaceMode: *workspaceMode}
 	request := &dieterv1.SaveScheduleRequest{Schedule: draft}
 	var value *dieterv1.Schedule
 	if updating {

@@ -917,7 +917,7 @@ func liveDirectRouteRejectsTheWrongDaemonIdentity() async throws {
 
     let current = MachineDirectoryProjection(
         projects: [project.id: project],
-        projectEndpointIDs: [project.id: endpoint.id],
+        projectReplicaEndpointIDs: [project.id: endpoint.id],
         boards: [project.id: [board]],
         cards: [project.id: [card]],
         chats: [chat]
@@ -963,7 +963,7 @@ func liveDirectRouteRejectsTheWrongDaemonIdentity() async throws {
 
     let current = MachineDirectoryProjection(
         projects: [activeProject.id: activeProject],
-        projectEndpointIDs: [activeProject.id: activeEndpoint.id],
+        projectReplicaEndpointIDs: [activeProject.id: activeEndpoint.id],
         boards: [activeProject.id: []],
         cards: [activeProject.id: [activeCard]],
         chats: []
@@ -982,7 +982,7 @@ func liveDirectRouteRejectsTheWrongDaemonIdentity() async throws {
         ])
 
     #expect(next.projects[activeProject.id] == activeProject)
-    #expect(next.projectEndpointIDs[activeProject.id] == activeEndpoint.id)
+    #expect(next.projectReplicaEndpointIDs[activeProject.id] == activeEndpoint.id)
     #expect(next.cards[activeProject.id] == [activeCard])
     #expect(next.projects[otherProject.id] == otherProject)
     #expect(next.chats == [otherChat])
@@ -1000,7 +1000,7 @@ func liveDirectRouteRejectsTheWrongDaemonIdentity() async throws {
     project.id = "project-other"
     let current = MachineDirectoryProjection(
         projects: [project.id: project],
-        projectEndpointIDs: [project.id: endpoint.id],
+        projectReplicaEndpointIDs: [project.id: endpoint.id],
         boards: [project.id: []],
         cards: [project.id: []],
         chats: []
@@ -1036,30 +1036,6 @@ private func historyTextMessage(_ id: String, role: String = "assistant") -> Die
     message.role = role
     message.parts = [part]
     return message
-}
-
-@Test func earlierHistoryAnchorSurvivesToolGroupMergesAcrossPageBoundaries() {
-    // Before the earlier page arrives the transcript starts with a tool-only
-    // message; the anchor remembers the message id, not the item id.
-    let visible = ConversationTimelineItem.group([historyToolMessage("m_20"), historyTextMessage("m_21")])
-    let anchorMessageID = visible.first?.messages.first?.id
-    #expect(anchorMessageID == "m_20")
-
-    // Prepending an earlier page that ends in tool calls merges the old first
-    // item into a differently-identified group; the anchor must resolve to
-    // the containing row instead of silently scrolling nowhere.
-    let merged = ConversationTimelineItem.group([
-        historyTextMessage("m_18", role: "user"),
-        historyToolMessage("m_19"),
-        historyToolMessage("m_20"),
-        historyTextMessage("m_21"),
-    ])
-    #expect(ConversationScrollBehavior.anchorItem(containing: anchorMessageID, in: merged) == "tools:m_19")
-
-    // Plain message rows use the same identity for ForEach and ScrollViewReader.
-    #expect(ConversationScrollBehavior.anchorItem(containing: "m_21", in: merged) == "message:m_21")
-    #expect(ConversationScrollBehavior.anchorItem(containing: "gone", in: merged) == nil)
-    #expect(ConversationScrollBehavior.anchorItem(containing: nil, in: merged) == nil)
 }
 
 @Test func conversationViewportTailsUntilTheUserDetaches() {
@@ -1968,7 +1944,7 @@ private func terminalKeyEvent(
     let endpointID = ConversationHarnessCatalogDirectory.endpointID(
         projectID: "p_remote",
         activeEndpointID: "machine-local",
-        projectEndpointIDs: ["p_remote": "machine-remote"]
+        projectReplicaEndpointIDs: ["p_remote": "machine-remote"]
     )
     #expect(endpointID == "machine-remote")
     let selected = try #require(
@@ -2158,15 +2134,17 @@ private func terminalKeyEvent(
     var homeProject = Dieter_V1_Project()
     homeProject.id = "p_home"
     homeProject.name = "dieter"
-    homeProject.path = "/Users/home/Development/dieter"
+    var homeCheckout = Dieter_V1_Checkout(); homeCheckout.id = "co_home"; homeCheckout.daemonID = "home"
+    homeCheckout.path = "/Users/home/Development/dieter"; homeProject.checkouts = [homeCheckout]
     var officeProject = Dieter_V1_Project()
     officeProject.id = "p_office"
     officeProject.name = "dieter"
-    officeProject.path = "/Users/office/Development/dieter"
+    var officeCheckout = Dieter_V1_Checkout(); officeCheckout.id = "co_office"; officeCheckout.daemonID = "office"
+    officeCheckout.path = "/Users/office/Development/dieter"; officeProject.checkouts = [officeCheckout]
 
     let groups = ProjectDestinationCatalog.groups(
         projects: [officeProject, homeProject],
-        projectEndpointIDs: [homeProject.id: home.id, officeProject.id: office.id],
+        projectReplicaEndpointIDs: [homeProject.id: home.id, officeProject.id: office.id],
         endpoints: [office, home],
         fallbackEndpoint: gateway
     )
@@ -2179,7 +2157,7 @@ private func terminalKeyEvent(
     #expect(destination.detail == "Offline · /Users/office/Development/dieter")
 }
 
-@Test func projectDestinationWithoutAnExplicitMappingUsesTheActiveMachine() throws {
+@Test func projectWithoutACheckoutHasNoExecutionDestination() throws {
     let machine = DieterEndpoint(
         name: "Studio Mac", host: "example.com", port: 443, secure: true,
         daemonID: "studio", online: true
@@ -2191,15 +2169,12 @@ private func terminalKeyEvent(
 
     let groups = ProjectDestinationCatalog.groups(
         projects: [project],
-        projectEndpointIDs: [:],
+        projectReplicaEndpointIDs: [:],
         endpoints: [machine],
         fallbackEndpoint: machine
     )
 
-    let group = try #require(groups.first)
-    #expect(group.machineID == machine.id)
-    #expect(group.machineName == "Studio Mac")
-    #expect(group.destinations.first?.title == "Dieter · Studio Mac")
+    #expect(groups.isEmpty)
 }
 
 @Test func boardPresentationUsesLoadingStateUntilASelectionCanBeResolved() {
@@ -2771,7 +2746,7 @@ private func terminalKeyEvent(
     retained.name = "After"
     var added = Dieter_V1_Project(); added.id = "p_add"; added.name = "Added"
     var chat = Dieter_V1_Card(); chat.id = "chat_add"; chat.projectID = added.id
-    var settings = Dieter_V1_Settings(); settings.globalParallelLimit = 7
+    var settings = Dieter_V1_Settings(); settings.updatedAt = "settings-revision"
     var delta = Dieter_V1_GlobalDelta()
     delta.projects = [retained, added]
     delta.removedProjectIds = [removed.id]
@@ -2784,7 +2759,7 @@ private func terminalKeyEvent(
     #expect(reduced.state.projects.first?.name == "After")
     #expect(reduced.state.cards.isEmpty)
     #expect(reduced.state.chats.map(\.id) == ["chat_add"])
-    #expect(reduced.settings.globalParallelLimit == 7)
+    #expect(reduced.settings.updatedAt == "settings-revision")
 }
 
 @Test func emptyGlobalDeltaDoesNotChangeProjection() {
@@ -2822,7 +2797,7 @@ private func terminalKeyEvent(
     cursor.sequence = 42
     var previous = Dieter_V1_GlobalSnapshot()
     var settings = Dieter_V1_Settings()
-    settings.globalParallelLimit = 7
+    settings.updatedAt = "settings-revision"
     previous.settings = settings
     var stale = Dieter_V1_Card()
     stale.id = "stale-card"
@@ -2844,7 +2819,7 @@ private func terminalKeyEvent(
     let data = try #require(replaced.snapshot)
     let snapshot = try Dieter_V1_GlobalSnapshot(serializedBytes: data)
     #expect(snapshot.state.cards.map(\.id) == ["fresh-card"])
-    #expect(snapshot.settings.globalParallelLimit == 7)
+    #expect(snapshot.settings.updatedAt == "settings-revision")
 }
 
 @Test func syncStreamLivenessRebuildsTheConnectionAfterThreeMissedHeartbeats() {

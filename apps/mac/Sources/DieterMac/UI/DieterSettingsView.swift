@@ -31,7 +31,7 @@ enum DieterSettingsSection: String, CaseIterable, Identifiable, Hashable {
         case .prompts: "Global and scoped agent instructions"
         case .notifications: "macOS alerts for agent activity"
         case .island: "Live activity around the notch"
-        case .agents: "Parallel limits and harness capabilities"
+        case .agents: "Harness capabilities"
         case .experimental: "Preview features that are still being refined"
         }
     }
@@ -1111,44 +1111,10 @@ struct ExperimentalSettings: View {
 
 struct AgentSettings: View {
     @Environment(DieterStore.self) private var store
-    @State private var global = 1
-    @State private var agentLimits: [String: Int] = [:]
-    @State private var boardLimits: [String: Int] = [:]
 
     var body: some View {
         SettingsPage {
             VStack(spacing: 14) {
-                SettingsPanel(
-                    title: "Parallel sessions",
-                    subtitle: "Zero on a harness or board means it inherits the global policy."
-                ) {
-                    Stepper("Global limit: \(global)", value: $global, in: 1...64)
-                    Divider().overlay(DieterTheme.border)
-                    ForEach(store.harnessCatalog.harnesses, id: \.id) { harness in
-                        Stepper(
-                            "\(harness.name): \(agentLimits[harness.id, default: 0])",
-                            value: Binding(
-                                get: { agentLimits[harness.id, default: 0] }, set: { agentLimits[harness.id] = $0 }),
-                            in: 0...64)
-                    }
-                    DisclosureGroup("Per-board limits") {
-                        VStack(spacing: 8) {
-                            ForEach(store.settingsOptions.boards, id: \.id) { board in
-                                Stepper(
-                                    "\(board.name): \(boardLimits[board.id, default: 0])",
-                                    value: Binding(
-                                        get: { boardLimits[board.id, default: 0] }, set: { boardLimits[board.id] = $0 }),
-                                    in: 0...64)
-                            }
-                        }.padding(.top, 8)
-                    }
-                    HStack {
-                        Spacer();
-                        Button("Save parallel limits") {
-                            Task { await store.updateLimits(global: global, agents: agentLimits, boards: boardLimits) }
-                        }.buttonStyle(.borderedProminent)
-                    }
-                }
                 SettingsPanel(title: "Harness capabilities") {
                     ForEach(store.harnessCatalog.harnesses, id: \.id) { harness in
                         VStack(alignment: .leading, spacing: 3) {
@@ -1162,11 +1128,6 @@ struct AgentSettings: View {
                     }
                 }
             }
-        }
-        .onAppear {
-            global = max(1, Int(store.boardSettings.globalParallelLimit))
-            agentLimits = store.boardSettings.agentParallelLimits.mapValues(Int.init)
-            boardLimits = store.boardSettings.boardParallelLimits.mapValues(Int.init)
         }
     }
 }

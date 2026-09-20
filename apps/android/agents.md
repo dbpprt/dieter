@@ -113,8 +113,8 @@ repeatedly loading or overwriting broken graphics state.
 2. Confirm the emulator serial with `adb devices -l`. The usual serial is
    `emulator-5554`; pass `-s <serial>` to every command when multiple devices
    are attached.
-3. Sign in to the configured gateway. The app combines projects from every
-   enrolled daemon and routes each request to the project owner automatically.
+3. Sign in to the configured gateway. The app combines shared projects from account replicas and routes execution
+   requests to the conversation or checkout owner automatically.
    Never map the live raw API through `adb reverse`. A temporary reverse of an
    authenticated isolated fixture port is allowed and removed by its test script. Route
    discovery, authenticated direct probing, and relay fallback are automatic.

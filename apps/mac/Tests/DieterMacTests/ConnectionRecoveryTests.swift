@@ -93,7 +93,10 @@ private final class RecoveryProbe: Sendable {
     store.endpoint = target
     store.endpoints = [target]
     store.gatewayOrigins = [target.gatewayEndpoint]
-    store.projectEndpointIDs = ["project": target.id]
+    store.projectReplicaEndpointIDs = ["project": target.id]
+    var checkout = Dieter_V1_Checkout(); checkout.id = "checkout"; checkout.daemonID = "fixture"; checkout.projectID = "project"
+    var project = Dieter_V1_Project(); project.id = "project"; project.checkouts = [checkout]
+    store.projectDirectory = [project.id: project]
     return store
 }
 
@@ -153,7 +156,7 @@ private final class RecoveryProbe: Sendable {
 
     // A matching machine ID is insufficient: pin/archive must not receive the
     // old transport while recovery is in progress.
-    #expect(!(await store.ensureProjectConnection("project")))
+    #expect(!(await store.ensureReplicaConnection("project")))
     #expect(probe.attempts.withLock { $0 } == 1)
     #expect(store.errorMessage != nil)
 }
@@ -165,7 +168,7 @@ private final class RecoveryProbe: Sendable {
     store.rpc = try DieterRPC(endpoint: store.endpoint)
     store.phase = .connected(version: dieterExpectedAPIVersion)
 
-    #expect(await store.ensureProjectConnection("project"))
+    #expect(await store.ensureReplicaConnection("project"))
     #expect(probe.attempts.withLock { $0 } == 0)
 }
 
@@ -241,7 +244,7 @@ private final class RecoveryProbe: Sendable {
     defer { store.disconnect() }
     let task = Task {
         withUnsafeCurrentTask { $0?.cancel() }
-        return await store.ensureProjectConnection("project")
+        return await store.ensureReplicaConnection("project")
     }
     #expect(!(await task.value))
     #expect(probe.attempts.withLock { $0 } == 0)

@@ -32,9 +32,9 @@ extension AppSession {
         get { replica.projectDirectory }
         set { replica.projectDirectory = newValue }
     }
-    var projectEndpointIDs: [String: String] {
-        get { replica.projectEndpointIDs }
-        set { replica.projectEndpointIDs = newValue }
+    var projectReplicaEndpointIDs: [String: String] {
+        get { replica.projectReplicaEndpointIDs }
+        set { replica.projectReplicaEndpointIDs = newValue }
     }
     var selectedProjectID: String {
         get { window.selectedProjectID }

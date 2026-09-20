@@ -89,6 +89,7 @@ func (c *CLI) rpcWorkspaceShow(args []string) error {
 func (c *CLI) rpcWorkspaceList(args []string) error {
 	const usage = "Usage: dieter workspace list --project PROJECT\n"
 	set := flags("workspace list")
+	checkout := set.String("checkout", "", "explicit local checkout ID")
 	projectRef := set.String("project", "", "exact project ID or unique name")
 	help, err := parse(set, args, usage, c.Out)
 	if help || err != nil {
@@ -111,7 +112,7 @@ func (c *CLI) rpcWorkspaceList(args []string) error {
 	if err != nil {
 		return err
 	}
-	value, err := client.ListProjectWorkspaces(rpcCtx, &dieterv1.ProjectRef{ProjectId: project.GetId()})
+	value, err := client.ListProjectWorkspaces(rpcCtx, &dieterv1.ProjectRef{ProjectId: project.GetId(), CheckoutId: *checkout})
 	if err != nil {
 		return err
 	}
@@ -121,6 +122,7 @@ func (c *CLI) rpcWorkspaceList(args []string) error {
 func (c *CLI) rpcWorkspaceChanges(args []string) error {
 	const usage = "Usage: dieter workspace changes [--project PROJECT] [CARD]\n"
 	set := flags("workspace changes")
+	checkout := set.String("checkout", "", "explicit local checkout ID")
 	projectRef := set.String("project", "", "exact project ID or unique name; inspect its registered checkout")
 	help, err := parse(set, args, usage, c.Out)
 	if help || err != nil {
@@ -143,7 +145,7 @@ func (c *CLI) rpcWorkspaceChanges(args []string) error {
 	if err != nil {
 		return err
 	}
-	value, err := client.GetChangeset(rpcCtx, &dieterv1.GetChangesetRequest{CardId: cardID, ProjectId: projectID})
+	value, err := client.GetChangeset(rpcCtx, &dieterv1.GetChangesetRequest{CheckoutId: *checkout, CardId: cardID, ProjectId: projectID})
 	if err != nil {
 		return err
 	}
@@ -153,6 +155,7 @@ func (c *CLI) rpcWorkspaceChanges(args []string) error {
 func (c *CLI) rpcWorkspaceDiff(args []string) error {
 	const usage = "Usage: dieter workspace diff --path PATH [--project PROJECT] [--section combined|staged|unstaged] [--revision REVISION] [--commit SHA] [--offset N] [--limit N] [CARD]\n"
 	set := flags("workspace diff")
+	checkout := set.String("checkout", "", "explicit local checkout ID")
 	projectRef := set.String("project", "", "exact project ID or unique name; inspect its registered checkout")
 	path := set.String("path", "", "workspace-relative file path")
 	section := set.String("section", "combined", "working diff section: combined, staged, or unstaged")
@@ -182,13 +185,13 @@ func (c *CLI) rpcWorkspaceDiff(args []string) error {
 		return err
 	}
 	if strings.TrimSpace(*revision) == "" {
-		changes, readErr := client.GetChangeset(rpcCtx, &dieterv1.GetChangesetRequest{CardId: cardID, ProjectId: projectID})
+		changes, readErr := client.GetChangeset(rpcCtx, &dieterv1.GetChangesetRequest{CheckoutId: *checkout, CardId: cardID, ProjectId: projectID})
 		if readErr != nil {
 			return readErr
 		}
 		*revision = changes.GetRevision()
 	}
-	request := &dieterv1.GetDiffRequest{CardId: cardID, ProjectId: projectID, Path: *path, CommitSha: *commit, ExpectedRevision: *revision, Offset: *offset, Limit: int32(*limit), Section: *section}
+	request := &dieterv1.GetDiffRequest{CheckoutId: *checkout, CardId: cardID, ProjectId: projectID, Path: *path, CommitSha: *commit, ExpectedRevision: *revision, Offset: *offset, Limit: int32(*limit), Section: *section}
 	var value *dieterv1.FileDiff
 	if strings.TrimSpace(*commit) == "" {
 		value, err = client.GetFileDiff(rpcCtx, request)
@@ -342,6 +345,7 @@ func (c *CLI) rpcWorkspaceWatch(args []string) error {
 func (c *CLI) rpcWorkspaceRun(args []string) error {
 	const usage = "Usage: dieter workspace run --kind KIND [--project PROJECT] [--revision REVISION] [--param KEY=VALUE ...] [--wait] [CARD]\n"
 	set := flags("workspace run")
+	checkout := set.String("checkout", "", "explicit local checkout ID")
 	projectRef := set.String("project", "", "exact project ID or unique name; operate on its registered checkout")
 	kind := set.String("kind", "", "operation kind")
 	revision := set.String("revision", "", "expected changeset revision")
@@ -369,7 +373,7 @@ func (c *CLI) rpcWorkspaceRun(args []string) error {
 	if err != nil {
 		return err
 	}
-	value, err := client.StartGitOperation(rpcCtx, &dieterv1.StartGitOperationRequest{CardId: cardID, ProjectId: projectID, Kind: *kind, ExpectedRevision: *revision, Parameters: map[string]string(parameters)})
+	value, err := client.StartGitOperation(rpcCtx, &dieterv1.StartGitOperationRequest{CheckoutId: *checkout, CardId: cardID, ProjectId: projectID, Kind: *kind, ExpectedRevision: *revision, Parameters: map[string]string(parameters)})
 	if err != nil {
 		return err
 	}

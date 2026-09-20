@@ -70,6 +70,7 @@ fun FilesScreen(
     contentPadding: PaddingValues,
 ) {
     Column(Modifier.fillMaxSize().padding(contentPadding)) {
+        ProjectCheckoutSelector(state, model)
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
             horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp),

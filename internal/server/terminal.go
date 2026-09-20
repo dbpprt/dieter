@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"errors"
+	"github.com/dbpprt/dieter/internal/store"
 	"os"
 	"path/filepath"
 	"strings"
@@ -26,6 +27,7 @@ const (
 )
 
 func (api *grpcAPI) ListTerminals(ctx context.Context, request *dieterv1.ListTerminalsRequest) (*dieterv1.TerminalsResponse, error) {
+	ctx = store.WithCheckout(ctx, request.GetCheckoutId())
 	projectID := strings.TrimSpace(request.GetProjectId())
 	cardID := strings.TrimSpace(request.GetCardId())
 	if projectID != "" || cardID != "" {
@@ -43,6 +45,7 @@ func (api *grpcAPI) ListTerminals(ctx context.Context, request *dieterv1.ListTer
 }
 
 func (api *grpcAPI) CreateTerminal(ctx context.Context, request *dieterv1.CreateTerminalRequest) (*dieterv1.Terminal, error) {
+	ctx = store.WithCheckout(ctx, request.GetCheckoutId())
 	projectID, cardID := strings.TrimSpace(request.GetProjectId()), strings.TrimSpace(request.GetCardId())
 	workingDirectory := ""
 	if request.GetMachineHome() {

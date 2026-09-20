@@ -63,7 +63,7 @@ extension DieterStore {
                 self.isConversationServerBacked(id),
                 let card = self.selectedCard ?? self.selectedDetail?.card,
                 card.id == id, let rpc = self.rpc,
-                (self.projectEndpointIDs[card.projectID] ?? self.endpoint.id) == self.endpoint.id
+                (self.projectReplicaEndpointIDs[card.projectID] ?? self.endpoint.id) == self.endpoint.id
             else { throw ConversationContentUnavailable() }
             let target = WorkspaceTarget(
                 endpointID: self.endpoint.id, projectID: card.projectID, conversationID: id)
@@ -100,7 +100,7 @@ extension DieterStore {
             guard ConversationBrowserModel.isLoopback(url) else { return }
             guard let self, (self.selectedCardID ?? self.selectedChatID) == id,
                 let card = self.selectedCard ?? self.selectedDetail?.card,
-                (self.projectEndpointIDs[card.projectID] ?? self.endpoint.id) == self.endpoint.id,
+                (self.projectReplicaEndpointIDs[card.projectID] ?? self.endpoint.id) == self.endpoint.id,
                 self.rpc?.isLoopbackDataPlane == true
             else { throw ConversationLoopbackUnavailable() }
         }

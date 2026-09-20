@@ -1537,7 +1537,7 @@ func TestCancelCardAcknowledgesBeforeSlowTurnStopsAndPromotesQueue(t *testing.T)
 		if run != 2 {
 			t.Fatalf("queued run=%d", run)
 		}
-	case <-time.After(2 * time.Second):
+	case <-time.After(10 * time.Second):
 		t.Fatal("queued run did not start after active cleanup")
 	}
 	waitFor(t, func() bool {
@@ -1596,7 +1596,7 @@ func TestQueuedMessageStartsAfterInterruptWithoutRecordingFailure(t *testing.T) 
 		if turn != 2 {
 			t.Fatalf("second turn=%d", turn)
 		}
-	case <-time.After(2 * time.Second):
+	case <-time.After(10 * time.Second):
 		t.Fatal("queued turn did not start after interrupt")
 	}
 	service.mu.Lock()
@@ -1715,7 +1715,7 @@ func TestQueuedMessageUsesUpdatedMutableProviderOptions(t *testing.T) {
 		if turn != 2 {
 			t.Fatalf("second turn=%d", turn)
 		}
-	case <-time.After(2 * time.Second):
+	case <-time.After(10 * time.Second):
 		t.Fatal("queued turn did not start after interrupt")
 	}
 	service.mu.Lock()

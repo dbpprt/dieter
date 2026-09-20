@@ -12,43 +12,11 @@ import (
 )
 
 func defaultSettings() model.Settings {
-	return dieterprompt.NormalizeSettings(model.Settings{
-		AgentParallelLimits: map[string]int{},
-		BoardParallelLimits: map[string]int{},
-	})
+	return dieterprompt.NormalizeSettings(model.Settings{})
 }
 
 func normalizeSettings(value model.Settings) (model.Settings, error) {
 	value = dieterprompt.NormalizeSettings(value)
-	if value.GlobalParallelLimit < 0 {
-		return model.Settings{}, errors.New("global parallel limit cannot be negative")
-	}
-	if value.AgentParallelLimits == nil {
-		value.AgentParallelLimits = map[string]int{}
-	}
-	if value.BoardParallelLimits == nil {
-		value.BoardParallelLimits = map[string]int{}
-	}
-	for key, limit := range value.AgentParallelLimits {
-		clean := strings.TrimSpace(key)
-		if clean == "" || limit < 0 {
-			return model.Settings{}, errors.New("agent limits require a non-empty ID and a non-negative value")
-		}
-		if clean != key {
-			delete(value.AgentParallelLimits, key)
-			value.AgentParallelLimits[clean] = limit
-		}
-	}
-	for key, limit := range value.BoardParallelLimits {
-		clean := strings.TrimSpace(key)
-		if clean == "" || limit < 0 {
-			return model.Settings{}, errors.New("board limits require a non-empty ID and a non-negative value")
-		}
-		if clean != key {
-			delete(value.BoardParallelLimits, key)
-			value.BoardParallelLimits[clean] = limit
-		}
-	}
 	if err := dieterprompt.ValidateContextTemplate(value.PromptTemplate); err != nil {
 		return model.Settings{}, err
 	}
@@ -85,8 +53,7 @@ func (s *Store) UpdateSettings(value model.Settings) (model.Settings, error) {
 	if err != nil {
 		return model.Settings{}, err
 	}
-	// Older clients only know admission settings. Keep prompt configuration
-	// intact when those clients save their view of Settings.
+	// Empty templates inherit the current global templates.
 	if strings.TrimSpace(value.PromptTemplate) == "" {
 		value.PromptTemplate = current.PromptTemplate
 	}
@@ -96,9 +63,7 @@ func (s *Store) UpdateSettings(value model.Settings) (model.Settings, error) {
 	if strings.TrimSpace(value.ChatSkillTemplate) == "" {
 		value.ChatSkillTemplate = current.ChatSkillTemplate
 	}
-	// Remote desktop has its own settings RPC. Preserve it when older clients
-	// write the admission-settings shape, whose zero values cannot express
-	// whether the fields were omitted.
+	// Remote desktop policy is only changed by its dedicated RPC.
 	value.RemoteDesktopEnabled = current.RemoteDesktopEnabled
 	value.RemoteDesktopControlEnabled = current.RemoteDesktopControlEnabled
 	normalized, err := normalizeSettings(value)

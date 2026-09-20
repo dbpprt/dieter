@@ -84,31 +84,11 @@ func (api *connectAPI) GetHarnesses(ctx context.Context, request *connect.Reques
 }
 
 func protoSettings(value model.Settings) *dieterv1.Settings {
-	agents := make(map[string]int32, len(value.AgentParallelLimits))
-	for key, limit := range value.AgentParallelLimits {
-		agents[key] = int32(limit)
-	}
-	boards := make(map[string]int32, len(value.BoardParallelLimits))
-	for key, limit := range value.BoardParallelLimits {
-		boards[key] = int32(limit)
-	}
-	return &dieterv1.Settings{GlobalParallelLimit: int32(value.GlobalParallelLimit), AgentParallelLimits: agents, BoardParallelLimits: boards, UpdatedAt: value.UpdatedAt}
+	return &dieterv1.Settings{UpdatedAt: value.UpdatedAt, PromptTemplate: value.PromptTemplate, BoardSkillTemplate: value.BoardSkillTemplate, ChatSkillTemplate: value.ChatSkillTemplate}
 }
 
 func modelSettings(value *dieterv1.Settings) model.Settings {
-	result := model.Settings{AgentParallelLimits: map[string]int{}, BoardParallelLimits: map[string]int{}}
-	if value == nil {
-		return result
-	}
-	result.GlobalParallelLimit = int(value.GetGlobalParallelLimit())
-	result.UpdatedAt = value.GetUpdatedAt()
-	for key, limit := range value.GetAgentParallelLimits() {
-		result.AgentParallelLimits[key] = int(limit)
-	}
-	for key, limit := range value.GetBoardParallelLimits() {
-		result.BoardParallelLimits[key] = int(limit)
-	}
-	return result
+	return model.Settings{PromptTemplate: value.GetPromptTemplate(), BoardSkillTemplate: value.GetBoardSkillTemplate(), ChatSkillTemplate: value.GetChatSkillTemplate()}
 }
 
 func (api *connectAPI) GetSettings(ctx context.Context, request *connect.Request[emptypb.Empty]) (*connect.Response[dieterv1.Settings], error) {
@@ -316,6 +296,10 @@ func (api *connectAPI) ListSchedules(ctx context.Context, request *connect.Reque
 	return connectUnary(ctx, request, api.core.ListSchedules)
 }
 
+func (api *connectAPI) GetSchedule(ctx context.Context, request *connect.Request[dieterv1.ScheduleRef]) (*connect.Response[dieterv1.Schedule], error) {
+	return connectUnary(ctx, request, api.core.GetSchedule)
+}
+
 func (api *connectAPI) PreviewSchedule(ctx context.Context, request *connect.Request[dieterv1.PreviewScheduleRequest]) (*connect.Response[dieterv1.SchedulePreview], error) {
 	return connectUnary(ctx, request, api.core.PreviewSchedule)
 }
@@ -363,8 +347,6 @@ func connectFailure(err error) error {
 		code = connect.CodeDeadlineExceeded
 	case errors.Is(err, store.ErrNotFound), errors.Is(err, fs.ErrNotExist):
 		code = connect.CodeNotFound
-	case errors.Is(err, store.ErrCapacity):
-		code = connect.CodeResourceExhausted
 	case errors.Is(err, store.ErrCardActive):
 		code = connect.CodeFailedPrecondition
 	case errors.Is(err, terminal.ErrNotFound):
