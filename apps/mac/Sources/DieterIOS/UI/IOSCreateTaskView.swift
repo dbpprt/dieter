@@ -161,7 +161,7 @@ import DieterCore
                 guard !Task.isCancelled, checkoutID == requested else { return }
                 creationHarnesses = catalog; catalogCheckoutID = requested
                 provider = catalog.first?.id ?? ""; resetModel()
-            } catch { if !Task.isCancelled { store.errorMessage = error.localizedDescription } }
+            } catch { if !Task.isCancelled { store.show(error) } }
         }
 
         private var navigationView: some View {
