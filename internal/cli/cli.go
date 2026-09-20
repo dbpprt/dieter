@@ -69,6 +69,13 @@ func Main(args []string) int {
 		}
 		return 0
 	}
+	if len(args) > 0 && args[0] == "__harness-prepare" {
+		if err := prepareHarnessRuntime(args[1:], os.Stderr); err != nil {
+			fmt.Fprintln(os.Stderr, "error:", err)
+			return 1
+		}
+		return 0
+	}
 	if len(args) > 0 && args[0] == "__daemon-update-worker" {
 		if err := machine.RunDaemonUpdateWorker(args[1:], os.Stderr); err != nil {
 			fmt.Fprintln(os.Stderr, "error:", err)
@@ -528,7 +535,15 @@ Service startup activates a staged verified release there before workers begin.
 
 	var controlRTC *controlrtc.Manager
 	if enrolled {
-		quotaSource = providerquota.New(c.Store.Root, logger)
+		var quotaRuntime interface {
+			RuntimeDirectory(context.Context) (string, error)
+		}
+		if shared, ok := c.Runner.(interface {
+			RuntimeDirectory(context.Context) (string, error)
+		}); ok {
+			quotaRuntime = shared
+		}
+		quotaSource = providerquota.NewWithRuntime(c.Store.Root, logger, quotaRuntime)
 		var routes []*gatewayv1.DirectCandidate
 		loopback, loopbackErr := newDaemonDirectRoute(identity, *addr, "loopback", "127.0.0.1:0", "127.0.0.1", "loopback", 1000)
 		if loopbackErr != nil {
@@ -581,7 +596,7 @@ Service startup activates a staged verified release there before workers begin.
 	if quotaSource != nil {
 		providerAccountKey = quotaSource.ActiveAccountKey
 	}
-	err = server.ListenDaemonReady(ctx, *addr, c.Store, c.Runner, logger, remoteDesktop, ready, providerAccountKey, controlRTC)
+	err = server.ListenDaemonReady(ctx, *addr, c.Store, c.Runner, logger, remoteDesktop, serviceRuntime.Activating(), ready, providerAccountKey, controlRTC)
 	if errors.Is(err, http.ErrServerClosed) {
 		return nil
 	}

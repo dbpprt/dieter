@@ -32,12 +32,16 @@ const (
 )
 
 type Manager struct {
-	runner *harness.SubprocessRunner
+	runner runtimeDirectoryProvider
 	logger *slog.Logger
 	now    func() time.Time
 
 	mu      sync.Mutex
 	handles map[string]accountHandle
+}
+
+type runtimeDirectoryProvider interface {
+	RuntimeDirectory(context.Context) (string, error)
 }
 
 type accountHandle struct {
@@ -100,10 +104,20 @@ type probeResult struct {
 }
 
 func New(root string, logger *slog.Logger) *Manager {
+	return NewWithRuntime(root, logger, nil)
+}
+
+// NewWithRuntime lets daemon quota discovery share the exact runtime manager
+// used by agent turns. The filesystem installer remains cross-process locked;
+// sharing also avoids redundant same-process preparation during startup.
+func NewWithRuntime(root string, logger *slog.Logger, runtimeProvider runtimeDirectoryProvider) *Manager {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &Manager{runner: harness.NewSubprocessRunner(root), logger: logger, now: time.Now, handles: map[string]accountHandle{}}
+	if runtimeProvider == nil {
+		runtimeProvider = harness.NewSubprocessRunner(root)
+	}
+	return &Manager{runner: runtimeProvider, logger: logger, now: time.Now, handles: map[string]accountHandle{}}
 }
 
 // ActiveAccountKey returns the owner-scoped account identity used by new

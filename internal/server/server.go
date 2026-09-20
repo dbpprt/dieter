@@ -278,7 +278,7 @@ func Listen(addr string, data *store.Store, runner harness.Runner, logger *slog.
 	application := newWithAuth(data, logger, runner, manager)
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
-	return run(ctx, addr, data, application, logger)
+	return run(ctx, addr, data, application, logger, false, nil)
 }
 
 // ListenDaemon runs Dieter's machine-local data plane without public OAuth.
@@ -289,12 +289,13 @@ func ListenDaemon(ctx context.Context, addr string, data *store.Store, runner ha
 	if len(remoteDesktop) > 0 {
 		desktop = remoteDesktop[0]
 	}
-	return ListenDaemonReady(ctx, addr, data, runner, logger, desktop, nil, nil, nil)
+	return ListenDaemonReady(ctx, addr, data, runner, logger, desktop, false, nil, nil, nil)
 }
 
-// ListenDaemonReady acknowledges a runtime activation only after initialization
-// and successful listener binding, before any scheduled work is dispatched.
-func ListenDaemonReady(ctx context.Context, addr string, data *store.Store, runner harness.Runner, logger *slog.Logger, remoteDesktop *remotedesktop.Manager, ready func() error, providerAccountKey func(string) string, control *controlrtc.Manager) error {
+// ListenDaemonReady acknowledges a runtime activation only after initialization,
+// successful listener binding, and recovered-worker protocol readiness, before
+// any scheduled work is dispatched.
+func ListenDaemonReady(ctx context.Context, addr string, data *store.Store, runner harness.Runner, logger *slog.Logger, remoteDesktop *remotedesktop.Manager, activating bool, ready func() error, providerAccountKey func(string) string, control *controlrtc.Manager) error {
 	manager, err := newAuthManager(authConfig{}, data)
 	if err != nil {
 		return err
@@ -310,21 +311,16 @@ func ListenDaemonReady(ctx context.Context, addr string, data *store.Store, runn
 	if remoteDesktop != nil {
 		application.remoteDesktop = remoteDesktop
 	}
-	return run(ctx, addr, data, application, logger, ready)
+	return run(ctx, addr, data, application, logger, activating, ready)
 }
 
-func run(ctx context.Context, addr string, data *store.Store, application *Server, logger *slog.Logger, ready ...func() error) error {
+func run(ctx context.Context, addr string, data *store.Store, application *Server, logger *slog.Logger, activating bool, ready func() error) error {
 	listener, err := net.Listen("tcp", addr)
 	if err != nil {
 		return err
 	}
 	defer listener.Close()
-	if len(ready) > 0 && ready[0] != nil {
-		if err := ready[0](); err != nil {
-			return fmt.Errorf("commit service runtime activation: %w", err)
-		}
-	}
-	reconcile := func() {
+	reconcile := func() ([]string, error) {
 		recovered, recoveryErr := application.app.ReconcileOrphanedTurns()
 		if recoveryErr != nil {
 			logger.Warn("some orphaned agent turns could not be fully reconciled", "error", recoveryErr)
@@ -332,12 +328,29 @@ func run(ctx context.Context, addr string, data *store.Store, application *Serve
 		if len(recovered) > 0 {
 			logger.Info("reconciled orphaned agent turns", "cards", recovered)
 		}
+		return recovered, recoveryErr
 	}
-	reconcile()
+	recovered, recoveryErr := reconcile()
+	if activating && recoveryErr != nil {
+		return fmt.Errorf("qualify candidate agent turn recovery: %w", recoveryErr)
+	}
+	if activating && len(recovered) > 0 {
+		readinessCtx, readinessCancel := context.WithTimeout(ctx, 20*time.Second)
+		recoveryErr = application.app.WaitForRecoveredTurns(readinessCtx, recovered)
+		readinessCancel()
+		if recoveryErr != nil {
+			return fmt.Errorf("qualify candidate agent workers: %w", recoveryErr)
+		}
+	}
 	if cleaned, err := application.app.CleanupInactiveProviderBridges(); err != nil {
 		logger.Warn("could not clean inactive provider bridges", "error", err)
 	} else if len(cleaned) > 0 {
 		logger.Info("cleaned inactive provider bridges", "cards", cleaned)
+	}
+	if ready != nil {
+		if err := ready(); err != nil {
+			return fmt.Errorf("commit service runtime activation: %w", err)
+		}
 	}
 	// During a launchd/systemd replacement the previous owner PID can remain
 	// alive for a fraction of a second after the new process starts. Recheck
@@ -348,7 +361,7 @@ func run(ctx context.Context, addr string, data *store.Store, application *Serve
 		select {
 		case <-ctx.Done():
 		case <-timer.C:
-			reconcile()
+			_, _ = reconcile()
 		}
 	}()
 	go func() {
@@ -366,7 +379,7 @@ func run(ctx context.Context, addr string, data *store.Store, application *Serve
 				// card status even though the worker and lease were released. Retry
 				// orphan reconciliation in-process so freeing disk repairs the card
 				// without requiring a daemon restart.
-				reconcile()
+				_, _ = reconcile()
 			}
 		}
 	}()

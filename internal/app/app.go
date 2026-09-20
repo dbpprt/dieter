@@ -162,6 +162,68 @@ func (s *Service) ReconcileOrphanedTurns() ([]string, error) {
 	return uniqueStrings(recovered), errors.Join(recoveryErrors...)
 }
 
+// WaitForRecoveredTurns confirms that every resumed worker has crossed the
+// process protocol boundary. A terminal turn is also ready: it completed
+// durably before the readiness observer saw its first heartbeat. This is used
+// only while qualifying a newly activated daemon binary, before the service
+// runtime discards its rollback candidate.
+func (s *Service) WaitForRecoveredTurns(ctx context.Context, cards []string) error {
+	pending := make(map[string]struct{}, len(cards))
+	for _, cardID := range uniqueStrings(cards) {
+		if cardID != "" {
+			pending[cardID] = struct{}{}
+		}
+	}
+	if len(pending) == 0 {
+		return nil
+	}
+	ticker := time.NewTicker(25 * time.Millisecond)
+	defer ticker.Stop()
+	for len(pending) > 0 {
+		inactive := make([]string, 0)
+		s.mu.Lock()
+		for cardID := range pending {
+			turn := s.active[cardID]
+			if turn == nil {
+				inactive = append(inactive, cardID)
+				continue
+			}
+			if turn.recoveryErr != nil {
+				err := turn.recoveryErr
+				s.mu.Unlock()
+				return fmt.Errorf("recovered turn %s failed before readiness: %w", cardID, err)
+			}
+			if turn.workerObserved {
+				delete(pending, cardID)
+			}
+		}
+		s.mu.Unlock()
+		for _, cardID := range inactive {
+			conversation, err := s.Store.Conversation(cardID)
+			if err != nil {
+				return fmt.Errorf("inspect recovered turn %s: %w", cardID, err)
+			}
+			switch conversation.Status {
+			case "running":
+				return fmt.Errorf("recovered turn %s has no owning worker", cardID)
+			case "failed":
+				return fmt.Errorf("recovered turn %s failed before readiness", cardID)
+			default:
+				delete(pending, cardID)
+			}
+		}
+		if len(pending) == 0 {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("wait for recovered agent workers: %w", ctx.Err())
+		case <-ticker.C:
+		}
+	}
+	return nil
+}
+
 // CleanupInactiveProviderBridges removes detached provider bridges left by a
 // previous worker failure. It runs once during daemon startup, after resumable
 // turns have been reacquired into s.active, so clean restart continuations are
@@ -270,6 +332,14 @@ func hasTurnContinuation(state json.RawMessage) bool {
 	return json.Unmarshal(state, &envelope) == nil && len(envelope.ContinueFrom) > 0 && string(envelope.ContinueFrom) != "null"
 }
 
+func prepareHarnessRuntime(ctx context.Context, runner harness.Runner, digest string) (harness.RuntimeReference, error) {
+	provider, ok := runner.(harness.RuntimeProvider)
+	if !ok {
+		return harness.RuntimeReference{Digest: digest}, nil
+	}
+	return provider.PrepareRuntime(ctx, digest)
+}
+
 func (s *Service) resumeOrphanedTurn(ref string) error {
 	detail, err := s.Store.CardDetail(ref)
 	if err != nil {
@@ -299,6 +369,19 @@ func (s *Service) resumeOrphanedTurn(ref string) error {
 	// rejecting a live continuation against the smaller release fallback list.
 	effort := selection.Effort
 	providerOptions, err := harness.ResolveOptionsForModel(adapter, configuredModel.ID, selection.ProviderOptions)
+	if err != nil {
+		return err
+	}
+	pinnedDigest := ""
+	if conversation.ActiveTurn != nil {
+		pinnedDigest = conversation.ActiveTurn.HarnessRuntimeDigest
+		if protocol := conversation.ActiveTurn.HarnessRuntimeProtocol; protocol != "" && protocol != harness.RuntimeProtocolVersion {
+			return fmt.Errorf("active turn requires harness runtime protocol %s; this daemon supports %s", protocol, harness.RuntimeProtocolVersion)
+		}
+	}
+	runtimeCtx, runtimeCancel := context.WithTimeout(context.Background(), workerStartupTimeout)
+	runtimeReference, err := prepareHarnessRuntime(runtimeCtx, s.Runner, pinnedDigest)
+	runtimeCancel()
 	if err != nil {
 		return err
 	}
@@ -372,7 +455,7 @@ func (s *Service) resumeOrphanedTurn(ref string) error {
 		ContextWindow: configuredModel.ContextWindow, Effort: effort, Options: providerOptions, ResponseMessageID: responseMessageID,
 		Instructions: resolution.Instructions, SessionID: detail.Card.ID, Session: conversation.Session,
 		ProjectPath: workspaceValue.Path, RuntimeRoot: filepath.Join(s.Store.RuntimeDir(), "sessions", detail.Project.ID), Continue: true,
-		ContentPresentationEnabled: true,
+		ContentPresentationEnabled: true, RuntimeDigest: runtimeReference.Digest,
 	}
 	// The card is the active/last-admitted selection shown by clients. Restore
 	// every field from the same snapshot used by the recovered request.
@@ -807,6 +890,12 @@ func (s *Service) startCard(ref, content string, parts []model.UIMessagePart, pr
 	if err := s.ensureStartStorage(s.Store.Root, detail.Project.Path); err != nil {
 		return nil, err
 	}
+	runtimeCtx, runtimeCancel := context.WithTimeout(context.Background(), workerStartupTimeout)
+	runtimeReference, err := prepareHarnessRuntime(runtimeCtx, s.Runner, "")
+	runtimeCancel()
+	if err != nil {
+		return nil, err
+	}
 	if _, err := s.retryStrandedRuntimeLeases(detail.Card.ID); err != nil {
 		return nil, err
 	}
@@ -871,7 +960,12 @@ func (s *Service) startCard(ref, content string, parts []model.UIMessagePart, pr
 	for _, label := range resolution.AppliedLabels {
 		labelIDs = append(labelIDs, label.ID)
 	}
-	if _, startErr = s.Store.SetConversationActiveTurn(detail.Card.ID, model.ConversationTurn{ID: turnID, UserMessageID: messageID, ResponseMessageID: responseMessageID, Instructions: resolution.Instructions, InstructionSource: resolution.Source, InstructionLabels: labelIDs, Selection: &selection, SettingsRevisions: lease.SettingsRevisions}); startErr != nil {
+	if _, startErr = s.Store.SetConversationActiveTurn(detail.Card.ID, model.ConversationTurn{
+		ID: turnID, UserMessageID: messageID, ResponseMessageID: responseMessageID,
+		HarnessRuntimeDigest: runtimeReference.Digest, HarnessRuntimeProtocol: runtimeReference.ProtocolVersion,
+		Instructions: resolution.Instructions, InstructionSource: resolution.Source, InstructionLabels: labelIDs,
+		Selection: &selection, SettingsRevisions: lease.SettingsRevisions,
+	}); startErr != nil {
 		cancel()
 		s.clearActive(detail.Card.ID, turnID)
 		close(done)
@@ -909,6 +1003,7 @@ func (s *Service) startCard(ref, content string, parts []model.UIMessagePart, pr
 		Instructions: resolution.Instructions, SessionID: detail.Card.ID, Session: conversation.Session,
 		ProjectPath:                workspaceValue.Path,
 		RuntimeRoot:                filepath.Join(s.Store.RuntimeDir(), "sessions", detail.Project.ID),
+		RuntimeDigest:              runtimeReference.Digest,
 		ContentPresentationEnabled: true,
 	}
 	request.Prompt = harnessPrompt
@@ -1353,7 +1448,12 @@ func (s *Service) runTurn(ctx context.Context, detail model.CardDetail, turnID s
 						break
 					}
 				}
-				conversation, _ = s.Store.SetConversationActiveTurn(detail.Card.ID, model.ConversationTurn{ID: turnID, UserMessageID: userMessageID, ResponseMessageID: request.ResponseMessageID, Instructions: request.Instructions, Selection: &model.HarnessSelection{Provider: request.Harness, Model: request.ConfiguredModel, Effort: request.Effort, ProviderOptions: request.Options}})
+				conversation, _ = s.Store.SetConversationActiveTurn(detail.Card.ID, model.ConversationTurn{
+					ID: turnID, UserMessageID: userMessageID, ResponseMessageID: request.ResponseMessageID,
+					HarnessRuntimeDigest: request.RuntimeDigest, HarnessRuntimeProtocol: harness.RuntimeProtocolVersion,
+					Instructions: request.Instructions,
+					Selection:    &model.HarnessSelection{Provider: request.Harness, Model: request.ConfiguredModel, Effort: request.Effort, ProviderOptions: request.Options},
+				})
 			}
 			_, _ = s.Store.UpdateCardCache(detail.Card.ID, store.CardCacheInput{Provider: request.Harness, Model: request.ConfiguredModel, Runtime: "running"})
 			_ = finish(false, store.CardCacheInput{})

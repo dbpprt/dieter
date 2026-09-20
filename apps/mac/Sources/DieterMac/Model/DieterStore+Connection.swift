@@ -86,7 +86,9 @@ extension DieterStore {
                     userInfo: [NSLocalizedDescriptionKey: "No Dieter daemons are enrolled for this account."])
             }
             discoveredDirectory = discovered
-            if explicitMachineSelection, let requestedTarget = discovered.first(where: { $0.daemonID == preferredDaemonID }) {
+            if explicitMachineSelection,
+                let requestedTarget = discovered.first(where: { $0.daemonID == preferredDaemonID })
+            {
                 attemptedTarget = requestedTarget
                 if requestedTarget.apiCompatibility == .incompatible {
                     throw DieterStoreConnectionError.incompatible(found: requestedTarget.apiVersion)
@@ -178,7 +180,6 @@ extension DieterStore {
             gatewayTask = nil
             gatewayRPC = nil
 
-            try? await saveSyncPersistence()
             let cachedData =
                 syncDiskState.projections[prepared.target.id]?.snapshot ?? syncDiskState.snapshot
             let decodedSnapshot = await snapshotDecoder.snapshot(
@@ -193,6 +194,23 @@ extension DieterStore {
                 prepared.plane.rpc.shutdown()
                 return
             }
+
+            // Decode the destination first, then retain the outgoing machine as
+            // the final suspension before committing the switch. Otherwise a
+            // live transcript update during decoding could be lost on return.
+            try? await saveSyncPersistence()
+            guard
+                ConnectionAttemptOwnership.mayMutateSharedState(
+                    attemptGeneration: generation, currentGeneration: connectionGeneration)
+            else {
+                prepared.plane.task.cancel()
+                prepared.plane.rpc.shutdown()
+                return
+            }
+
+            let reconnectingActiveMachine = prepared.target.id == endpoint.id
+            let destinationSnapshot = reconnectingActiveMachine ? syncSnapshot : decodedSnapshot
+            let destinationData = reconnectingActiveMachine ? syncProjection.snapshot : cachedData
 
             // Commit the route switch only after the candidate has passed Health and
             // its initial state has loaded. Until this point the previous machine and
@@ -224,7 +242,7 @@ extension DieterStore {
             machineConnectionStatuses[prepared.target.id] = prepared.plane.connection
             machineConnectionErrors.removeValue(forKey: prepared.target.id)
             activateSyncProjection(
-                for: prepared.target, decodedSnapshot: decodedSnapshot, decodedData: cachedData)
+                for: prepared.target, decodedSnapshot: destinationSnapshot, decodedData: destinationData)
             persistEndpoints()
             startMachinePresenceLeaseMonitor()
             if let expiresAt = prepared.plane.directTokenExpiresAt {

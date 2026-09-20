@@ -246,12 +246,16 @@ The remote `machine update --confirm UPDATE` operation is available only when
 the running executable is Dieter's managed Linux runtime and `cosign`,
 `systemctl`, and `systemd-run` are available. The update worker runs in a
 separate systemd unit, downloads only the official GitHub release, verifies its
-Sigstore identity and checksum, stages it, and restarts `dieter.service`.
+Sigstore identity and checksum, prepares the candidate's immutable harness
+runtime, stages it, and restarts `dieter.service`.
 
-The new executable is committed after the API listener binds and systemd
-readiness is sent. A crash or readiness failure leaves an activation journal;
-the next systemd restart swaps the previous verified executable back. Update
-output is retained in `$DIETER_HOME/logs/update.log`.
+An in-flight turn checkpoints and resumes with its pinned runtime digest. That
+affinity ends when the turn finishes; the next message in the same conversation
+uses the current runtime. The new executable is committed after the API listener
+binds, recovered workers report protocol activity, and systemd readiness is sent.
+A crash or readiness failure leaves an activation journal; the next systemd
+restart swaps the previous verified executable back. Update output is retained
+in `$DIETER_HOME/logs/update.log`.
 
 Distribution-managed packages should leave self-update disabled and upgrade
 through their package manager to avoid ownership conflicts.

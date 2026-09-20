@@ -298,8 +298,12 @@ dieter card queue remove --message <message-id> <card-id>
 Automatic daemon update supports Homebrew-managed macOS services and
 Dieter-managed Linux systemd user services. Linux verifies the GitHub OIDC
 Sigstore signature and SHA-256 manifest, stages the static executable in a
-fixed runtime, restarts through a separate systemd update unit, and commits only
-after listener readiness. An unacknowledged activation rolls back on the next
+fixed runtime, and restarts through a separate systemd update unit. Both managed
+updaters prepare the candidate's immutable harness runtime before restarting.
+An in-flight turn checkpoints and resumes on the same runtime digest; once that
+turn finishes, the conversation's next message uses the current runtime. A
+candidate is committed only after its listener binds and recovered workers
+report protocol activity. An unacknowledged activation rolls back on the next
 service start. Foreground and distro-package-managed daemons report why
 self-update is unavailable.
 

@@ -106,6 +106,7 @@ func RunDaemonUpdateWorker(args []string, output io.Writer) error {
 	set := flag.NewFlagSet("daemon update worker", flag.ContinueOnError)
 	set.SetOutput(output)
 	brew := set.String("brew", "", "absolute Homebrew executable")
+	root := set.String("root", "", "absolute DIETER_HOME directory")
 	if err := set.Parse(args); err != nil {
 		return err
 	}
@@ -141,9 +142,55 @@ func RunDaemonUpdateWorker(args []string, output io.Writer) error {
 		if err != nil {
 			return fmt.Errorf("%s: %w", step.name, err)
 		}
+		if step.name == "upgrade Dieter" && *root != "" {
+			if err := prepareHomebrewHarnessRuntime(*root, *brew, output); err != nil {
+				return err
+			}
+		}
 	}
 	_, err := fmt.Fprintf(output, "%s: update command completed\n", time.Now().UTC().Format(time.RFC3339))
 	return err
+}
+
+func prepareHomebrewHarnessRuntime(root, brew string, output io.Writer) error {
+	if !filepath.IsAbs(root) || filepath.Clean(root) != root {
+		return errors.New("update worker requires an absolute --root directory")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	rawPrefix, err := exec.CommandContext(ctx, brew, "--prefix").Output()
+	cancel()
+	if err != nil {
+		return fmt.Errorf("resolve Homebrew prefix: %w", err)
+	}
+	serviceRoot := filepath.Join(strings.TrimSpace(string(rawPrefix)), "var", "dieter", "service")
+	candidate := filepath.Join(serviceRoot, "pending", "dieter")
+	if info, statErr := os.Stat(candidate); statErr != nil || !info.Mode().IsRegular() {
+		candidate = filepath.Join(serviceRoot, "bin", "dieter")
+	}
+	if info, err := os.Stat(candidate); err != nil || !info.Mode().IsRegular() || info.Mode().Perm()&0111 == 0 {
+		return errors.New("staged Dieter candidate is unavailable")
+	}
+	if _, err := fmt.Fprintf(output, "%s: prepare candidate harness runtime\n", time.Now().UTC().Format(time.RFC3339)); err != nil {
+		return err
+	}
+	return prepareCandidateHarnessRuntime(root, candidate, output)
+}
+
+var prepareCandidateHarnessRuntime = func(root, candidate string, output io.Writer) error {
+	prepareCtx, prepareCancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer prepareCancel()
+	command := exec.CommandContext(prepareCtx, candidate, "__harness-prepare", "--root", root)
+	command.Stdin = nil
+	command.Stdout = output
+	command.Stderr = output
+	command.Env = homebrewUpdateEnvironment(true)
+	if err := command.Run(); err != nil {
+		if errors.Is(prepareCtx.Err(), context.DeadlineExceeded) {
+			return errors.New("prepare candidate harness runtime timed out after 10m")
+		}
+		return fmt.Errorf("prepare candidate harness runtime: %w", err)
+	}
+	return nil
 }
 
 func homebrewUpdateEnvironment(noAuto bool) []string {

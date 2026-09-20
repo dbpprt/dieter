@@ -130,13 +130,44 @@ extension DieterStore {
 
     func saveSyncPersistence() async throws {
         try await outbox.restore()
-        let checkpoint = persistenceCheckpoint()
-        syncStateDirty = false
-        do {
-            try await syncPersistence.saveCheckpoint(checkpoint)
-        } catch {
-            syncStateDirty = true
-            throw error
+        // Keep the in-memory machine directory and the durable checkpoint in
+        // agreement. A route switch reads the former, not the persistence file.
+        while true {
+            try Task.checkCancellation()
+            let activeID = endpoint.id
+            let snapshot = syncSnapshot
+            let projection = syncProjection
+            if let snapshot {
+                let data = try await Task.detached(priority: .utility) {
+                    try snapshot.serializedData()
+                }.value
+                try Task.checkCancellation()
+                guard endpoint.id == activeID else { return }
+                guard syncSnapshot == snapshot, syncProjection.cursor == projection.cursor,
+                    syncProjection.snapshot == projection.snapshot,
+                    syncProjection.refreshedAt == projection.refreshedAt
+                else { continue }
+                var retained = projection
+                retained.snapshot = data
+                syncProjection = retained
+                syncDiskState.projections[activeID] = retained
+            }
+            let checkpoint = persistenceCheckpoint()
+            syncStateDirty = false
+            do {
+                try await syncPersistence.saveCheckpoint(checkpoint)
+            } catch {
+                syncStateDirty = true
+                throw error
+            }
+            guard endpoint.id == activeID else { return }
+            // Live frames can arrive during disk I/O. Do not let a switch
+            // discard a transcript newer than the snapshot just retained.
+            if syncSnapshot == snapshot, syncProjection.cursor == projection.cursor,
+                syncProjection.refreshedAt == projection.refreshedAt
+            {
+                return
+            }
         }
     }
 
@@ -309,7 +340,23 @@ extension DieterStore {
             var snapshot = frame.snapshot
             snapshot.schedules = []
             snapshot.scheduleRuns = []
-            markConversationsRefreshed(snapshot.conversations, endpointID: endpointID, at: receivedAt)
+            snapshot.conversations = snapshot.conversations.map { incoming in
+                TranscriptFreshness.merging(
+                    incoming,
+                    with: syncSnapshot?.conversations.first {
+                        $0.detail.card.id == incoming.detail.card.id
+                    })
+            }
+            let incomingIDs = Set(snapshot.conversations.map { $0.detail.card.id })
+            let retained = (syncSnapshot?.conversations ?? []).filter {
+                !incomingIDs.contains($0.detail.card.id)
+            }
+            // Global snapshots carry only a bounded recent set. Omission is
+            // not deletion of a transcript the user explicitly opened.
+            snapshot.conversations = Array((retained + snapshot.conversations).suffix(cachedConversationLimit))
+            markConversationsRefreshed(
+                snapshot.conversations.filter { incomingIDs.contains($0.detail.card.id) },
+                endpointID: endpointID, at: receivedAt)
             if syncSnapshot != snapshot {
                 syncSnapshot = snapshot
                 applyGlobalSnapshot(snapshot, endpointID: endpointID)
@@ -371,7 +418,10 @@ extension DieterStore {
         movingCardIDs = Set(pendingCardMoves.keys)
         labelUpdatingCardIDs = Set(pendingCardLabelUpdates.keys)
         notifyTransitions(global.cards + global.chats, endpointID: endpointID)
-        replica.replaceMetadata(global, endpoint: endpoints.first { $0.id == endpointID } ?? DieterEndpoint(name: endpointID, host: "", port: 0), endpointID: endpointID)
+        replica.replaceMetadata(
+            global,
+            endpoint: endpoints.first { $0.id == endpointID } ?? DieterEndpoint(name: endpointID, host: "", port: 0),
+            endpointID: endpointID)
         updateSelectedState(base: global)
         if projectReplicaEndpointIDs[selectedProjectID] == endpointID {
             boardSettings = snapshot.settings
@@ -391,7 +441,8 @@ extension DieterStore {
         guard let selectedID = selectedCardID ?? selectedChatID,
             let projected = snapshot.conversations.first(where: { $0.detail.card.id == selectedID })
         else { return }
-        if conversation != projected { conversation = projected }
+        let latest = TranscriptFreshness.merging(projected, with: conversation)
+        if conversation != latest { conversation = latest }
         if selectedDetail != projected.detail { selectedDetail = projected.detail }
         conversationLoading = false
         conversationSyncing = false
@@ -468,24 +519,35 @@ extension DieterStore {
         let retainedIDs: Set<String>
         if endpointID == endpoint.id {
             var snapshot = syncSnapshot ?? Dieter_V1_GlobalSnapshot()
+            let retained = TranscriptFreshness.merging(
+                conversation, with: snapshot.conversations.first { $0.detail.card.id == cardID })
             snapshot.conversations.removeAll { $0.detail.card.id == cardID }
-            snapshot.conversations.append(conversation)
+            snapshot.conversations.append(retained)
             if snapshot.conversations.count > cachedConversationLimit {
                 snapshot.conversations.removeFirst(snapshot.conversations.count - cachedConversationLimit)
             }
             syncSnapshot = snapshot
             retainedIDs = Set(snapshot.conversations.map { $0.detail.card.id })
         } else {
-            let projection = syncDiskState.projections[endpointID] ?? .empty
-            let result = await Task.detached(priority: .utility) {
-                DieterSyncProjectionCache.cachingConversation(
-                    conversation,
-                    in: projection,
-                    limit: cachedConversationLimit
-                )
-            }.value
-            syncDiskState.projections[endpointID] = result.projection
-            retainedIDs = result.retainedCardIDs
+            while true {
+                let projection = syncDiskState.projections[endpointID] ?? .empty
+                let result = await Task.detached(priority: .utility) {
+                    DieterSyncProjectionCache.cachingConversation(
+                        conversation, in: projection, limit: cachedConversationLimit)
+                }.value
+                guard !Task.isCancelled else { return }
+                if endpointID == endpoint.id {
+                    await cacheConversation(conversation, endpointID: endpointID, refreshedAt: refreshedAt)
+                    return
+                }
+                let current = syncDiskState.projections[endpointID] ?? .empty
+                // A directory read or another conversation may have committed
+                // during decoding. Rebase rather than overwriting that work.
+                guard current.snapshot == projection.snapshot, current.cursor == projection.cursor else { continue }
+                syncDiskState.projections[endpointID] = result.projection
+                retainedIDs = result.retainedCardIDs
+                break
+            }
         }
         syncStateDirty = true
         markConversationsRefreshed([conversation], endpointID: endpointID, at: refreshedAt)

@@ -171,6 +171,13 @@ type Service struct {
 	token   string
 }
 
+// Activating reports whether this process owns an uncommitted candidate
+// activation. Callers use it to require stronger startup qualification before
+// Ready permanently discards the rollback release.
+func (s *Service) Activating() bool {
+	return s != nil && s.token != ""
+}
+
 // Start acquires the lifetime lock before touching the installed pair. Reexec
 // is returned after either activation or recovery. The lock survives exec and
 // is then marked close-on-exec so ordinary helpers cannot inherit it.
@@ -288,8 +295,9 @@ func (r Runtime) Start(ctx context.Context) (service *Service, reexec bool, err 
 	return service, true, nil
 }
 
-// Ready commits only after the daemon has opened its API listener. Until then
-// launchd can recover the previous signed pair after a failed startup.
+// Ready commits only after the daemon has opened its API listener and any
+// suspended turns have reacquired a reporting worker. Until then launchd or
+// systemd can recover the previous signed pair after a failed startup.
 func (s *Service) Ready() error {
 	if s == nil || s.token == "" {
 		return nil

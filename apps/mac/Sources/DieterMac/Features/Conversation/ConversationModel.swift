@@ -225,6 +225,7 @@ final class ConversationModel {
         refreshedAt: Date? = Date(),
         cache: Bool = true
     ) async {
+        let snapshot = TranscriptFreshness.merging(snapshot, with: conversation)
         if conversation != snapshot {
             resetConversationHistory(from: snapshot)
             conversation = presentSnapshot(snapshot)
@@ -388,8 +389,10 @@ final class ConversationModel {
         return current[..<overlap].filter { !$0.id.isEmpty }
     }
 
-    func apply(_ update: Dieter_V1_ConversationUpdate) {
+    func apply(_ incoming: Dieter_V1_ConversationUpdate) {
+        var update = incoming
         if update.hasSnapshot {
+            update.snapshot = TranscriptFreshness.merging(update.snapshot, with: conversation)
             // The replacement snapshot only carries the server's bounded
             // window. Messages the client already has that precede the new
             // window slide into local history so the transcript never loses
@@ -416,6 +419,10 @@ final class ConversationModel {
         }
         guard var snapshot = conversation else { return }
         var value = snapshot.conversation
+        guard
+            !TranscriptFreshness.isOlder(
+                sequence: update.lastSeq, updatedAt: update.updatedAt, than: value)
+        else { return }
         let removedIDs = Set(update.removedMessageIds)
         // Removed ids are almost always the window sliding forward during a
         // streaming turn, not deletions; keep those messages as history so

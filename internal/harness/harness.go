@@ -521,6 +521,11 @@ type Request struct {
 	ContentPresentationEnabled bool              `json:"contentPresentationEnabled,omitempty"`
 	BackgroundProcessesEnabled bool              `json:"backgroundProcessesEnabled,omitempty"`
 	BackgroundProcess          ProcessHandler    `json:"-"`
+	// RuntimeDigest pins only this active turn to an immutable installed
+	// harness runtime. Completed conversations deliberately do not retain it:
+	// their next turn resolves the then-current runtime and resumes the opaque
+	// provider session with the newer adapter implementation.
+	RuntimeDigest string `json:"-"`
 }
 
 type Attachment struct {
@@ -567,11 +572,27 @@ var runtimeAssets embed.FS
 type SubprocessRunner struct {
 	root string
 	mu   sync.Mutex
-	dir  string
+	dirs map[string]string
 }
 
 func NewSubprocessRunner(root string) *SubprocessRunner {
-	return &SubprocessRunner{root: filepath.Join(root, "runtime", "harness")}
+	return &SubprocessRunner{root: filepath.Join(root, "runtime", "harness"), dirs: map[string]string{}}
+}
+
+const RuntimeProtocolVersion = "1"
+
+// RuntimeReference identifies an immutable installed harness runtime. Digest
+// affinity belongs to one active turn, never to the durable conversation.
+type RuntimeReference struct {
+	Digest          string
+	ProtocolVersion string
+	Directory       string
+}
+
+// RuntimeProvider is implemented by runners that can prepare the current
+// runtime or reopen an older immutable runtime for restart continuation.
+type RuntimeProvider interface {
+	PrepareRuntime(context.Context, string) (RuntimeReference, error)
 }
 
 func stageRuntimeAssets(dir string) error {
@@ -594,53 +615,72 @@ func stageRuntimeAssets(dir string) error {
 	return nil
 }
 
+func embeddedRuntimeDigest() string {
+	digest, err := runtimeSourceDigest(embeddedRuntimeSourceFiles(), func(name string) ([]byte, error) {
+		return runtimeAssets.ReadFile("runtime/" + name)
+	})
+	if err != nil {
+		panic("embedded harness runtime is incomplete: " + err.Error())
+	}
+	return digest
+}
+
 func (r *SubprocessRunner) ensure(ctx context.Context) (string, error) {
+	reference, err := r.PrepareRuntime(ctx, "")
+	if err != nil {
+		return "", err
+	}
+	return reference.Directory, nil
+}
+
+// PrepareRuntime installs the embedded runtime when digest is empty, or
+// validates and reopens an already-published historical runtime when digest is
+// supplied by a suspended active turn. Historical assets are never rewritten.
+func (r *SubprocessRunner) PrepareRuntime(ctx context.Context, digest string) (RuntimeReference, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.dir != "" {
-		return r.dir, nil
-	}
 	if override := strings.TrimSpace(os.Getenv("DIETER_HARNESS_RUNTIME_DIR")); override != "" {
 		absolute, err := filepath.Abs(override)
 		if err != nil {
-			return "", err
+			return RuntimeReference{}, err
 		}
 		if _, err := os.Stat(filepath.Join(absolute, "runner.mjs")); err != nil {
-			return "", fmt.Errorf("DIETER_HARNESS_RUNTIME_DIR: %w", err)
+			return RuntimeReference{}, fmt.Errorf("DIETER_HARNESS_RUNTIME_DIR: %w", err)
 		}
-		r.dir = absolute
-		return absolute, nil
+		const overrideDigest = "override"
+		r.dirs[overrideDigest] = absolute
+		return RuntimeReference{Digest: overrideDigest, ProtocolVersion: RuntimeProtocolVersion, Directory: absolute}, nil
 	}
 	version, err := exec.CommandContext(ctx, "node", "--version").Output()
 	if err != nil {
-		return "", errors.New("AI SDK harnesses require Node.js 22 or newer on PATH")
+		return RuntimeReference{}, errors.New("AI SDK harnesses require Node.js 22 or newer on PATH")
 	}
 	if !supportedNodeVersion(string(version)) {
-		return "", fmt.Errorf("AI SDK harnesses require Node.js 22.19 or newer; found %s", strings.TrimSpace(string(version)))
+		return RuntimeReference{}, fmt.Errorf("AI SDK harnesses require Node.js 22.19 or newer; found %s", strings.TrimSpace(string(version)))
 	}
-	lock, _ := runtimeAssets.ReadFile("runtime/package-lock.json")
-	sum := sha256.Sum256(lock)
-	dir := filepath.Join(r.root, hex.EncodeToString(sum[:8]))
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return "", err
+	currentDigest := embeddedRuntimeDigest()
+	if digest == "" {
+		digest = currentDigest
 	}
-	if err := stageRuntimeAssets(dir); err != nil {
-		return "", fmt.Errorf("stage AI SDK harness runtime: %w", err)
-	}
-	marker := filepath.Join(dir, ".installed")
-	if _, err := os.Stat(marker); errors.Is(err, os.ErrNotExist) {
-		command := exec.CommandContext(ctx, "npm", "ci", "--omit=dev", "--ignore-scripts", "--no-audit", "--no-fund")
-		command.Dir = dir
-		output, installErr := command.CombinedOutput()
-		if installErr != nil {
-			return "", fmt.Errorf("install pinned AI SDK harness runtime: %s: %w", strings.TrimSpace(string(output)), installErr)
+	if dir := r.dirs[digest]; dir != "" {
+		if err := validateRuntimeDirectory(dir, digest); err == nil {
+			return RuntimeReference{Digest: digest, ProtocolVersion: RuntimeProtocolVersion, Directory: dir}, nil
 		}
-		if err := os.WriteFile(marker, []byte("ok\n"), 0o600); err != nil {
-			return "", err
-		}
+		delete(r.dirs, digest)
 	}
-	r.dir = dir
-	return dir, nil
+	dir := filepath.Join(r.root, digest)
+	if digest != currentDigest {
+		if err := validateRuntimeDirectory(dir, digest); err != nil {
+			return RuntimeReference{}, fmt.Errorf("validate pinned AI SDK harness runtime %s: %w", digest, err)
+		}
+		r.dirs[digest] = dir
+		return RuntimeReference{Digest: digest, ProtocolVersion: RuntimeProtocolVersion, Directory: dir}, nil
+	}
+	if err := installRuntimeAtomically(ctx, r.root, dir, digest); err != nil {
+		return RuntimeReference{}, err
+	}
+	r.dirs[digest] = dir
+	return RuntimeReference{Digest: digest, ProtocolVersion: RuntimeProtocolVersion, Directory: dir}, nil
 }
 
 // RuntimeDirectory stages the pinned harness runtime for auxiliary read-only
@@ -651,10 +691,11 @@ func (r *SubprocessRunner) RuntimeDirectory(ctx context.Context) (string, error)
 }
 
 func (r *SubprocessRunner) Run(ctx context.Context, request Request, emit func(Output) error) error {
-	dir, err := r.ensure(ctx)
+	reference, err := r.PrepareRuntime(ctx, request.RuntimeDigest)
 	if err != nil {
 		return err
 	}
+	dir := reference.Directory
 	workerToken := newWorkerToken()
 	command := exec.CommandContext(ctx, "node", filepath.Join(dir, "runner.mjs"), "--board-worker-token="+workerToken)
 	prepareHarnessCommand(command)

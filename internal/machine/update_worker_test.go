@@ -77,3 +77,50 @@ test "$1" != upgrade
 		t.Fatalf("unexpected commands after failure: %q", raw)
 	}
 }
+
+func TestDaemonUpdateWorkerPreparesCandidateRuntimeBeforeRestart(t *testing.T) {
+	directory := t.TempDir()
+	brew := filepath.Join(directory, "brew")
+	prefix := filepath.Join(directory, "prefix")
+	root := filepath.Join(directory, "data")
+	trace := filepath.Join(directory, "trace")
+	if err := os.MkdirAll(filepath.Join(prefix, "var", "dieter", "service", "pending"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	brewScript := `#!/bin/sh
+if [ "$1" = "--prefix" ]; then
+  printf '%s\n' "$DIETER_UPDATE_TEST_PREFIX"
+  exit 0
+fi
+printf 'brew:%s\n' "$*" >>"$DIETER_UPDATE_TEST_TRACE"
+`
+	if err := os.WriteFile(brew, []byte(brewScript), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	candidate := filepath.Join(prefix, "var", "dieter", "service", "pending", "dieter")
+	candidateScript := `#!/bin/sh
+printf 'candidate:%s\n' "$*" >>"$DIETER_UPDATE_TEST_TRACE"
+`
+	if err := os.WriteFile(candidate, []byte(candidateScript), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("DIETER_UPDATE_TEST_PREFIX", prefix)
+	t.Setenv("DIETER_UPDATE_TEST_TRACE", trace)
+	var output bytes.Buffer
+	if err := RunDaemonUpdateWorker([]string{"--brew", brew, "--root", root}, &output); err != nil {
+		t.Fatalf("worker output=%q err=%v", output.String(), err)
+	}
+	raw, err := os.ReadFile(trace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := strings.Join([]string{
+		"brew:update",
+		"brew:upgrade dbpprt/tap/dieter",
+		"candidate:__harness-prepare --root " + root,
+		"brew:services restart dbpprt/tap/dieter",
+	}, "\n") + "\n"
+	if string(raw) != want {
+		t.Fatalf("steps=%q want=%q", raw, want)
+	}
+}

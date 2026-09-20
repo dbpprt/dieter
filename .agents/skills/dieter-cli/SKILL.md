@@ -102,12 +102,17 @@ dieter --machine <machine-id> machine update --confirm UPDATE
 
 The update is detached, non-interactive, and logged on the target under
 `DIETER_HOME/logs/update.log`; a transport disconnect does not imply failure
-because the daemon service intentionally restarts and reconnects.
+because the daemon service intentionally restarts and reconnects. The signed
+candidate prepares its content-addressed harness runtime before restart. An
+in-flight turn checkpoints and remains pinned to that runtime digest across
+recovery; the affinity ends with the turn, so a later message in the same chat
+uses the current runtime.
 
 Linux verifies the release workflow's GitHub OIDC Sigstore identity and signed
 SHA-256 manifest, stages the daemon/capture-helper pair under `DIETER_HOME/service`, and
-restarts from a separate systemd update unit. Listener readiness commits the
-activation; an unacknowledged start rolls back on the next restart. Use
+restarts from a separate systemd update unit. Listener binding plus recovered
+worker protocol activity commits the activation; an unacknowledged start rolls
+back on the next restart. Use
 `dieter doctor` for Node/npm/Git, cosign, systemd, logind, tmux, shell, and
 private-storage and optional Linux screen-backend diagnostics. Manage the user unit with `dieter daemon service`.
 Never run the Linux daemon as root or edit the unit behind Dieter's CLI.
@@ -115,8 +120,9 @@ Never run the Linux daemon as root or edit the unit behind Dieter's CLI.
 Homebrew stages signed daemon/helper releases under
 `$(brew --prefix)/var/dieter/service`; the service runs real files at its fixed
 `bin` path. `brew upgrade` preserves the running pair. `brew services restart`
-activates the staged release; startup failure before listener readiness rolls
-back on the next service start. User data remains under `DIETER_HOME`. Never
+activates the staged release; startup failure before listener and recovered-turn
+readiness rolls back on the next service start. User data remains under
+`DIETER_HOME`. Never
 invoke the internal `__service-stage` packaging command during normal operation.
 
 The initial task should supply an exact card ID. Never guess one. Resolve names

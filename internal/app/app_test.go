@@ -153,11 +153,32 @@ type delayedInterruptQueueRunner struct {
 type restartRunner struct {
 	mu          sync.Mutex
 	requests    []harness.Request
+	prepared    []string
+	runtime     string
 	cleanups    int
 	started     chan struct{}
 	resumed     chan error
 	suspend     chan struct{}
 	suspendOnce sync.Once
+}
+
+func (runner *restartRunner) PrepareRuntime(_ context.Context, digest string) (harness.RuntimeReference, error) {
+	runner.mu.Lock()
+	defer runner.mu.Unlock()
+	if digest == "" {
+		digest = runner.runtime
+		if digest == "" {
+			digest = "runtime-current"
+		}
+	}
+	runner.prepared = append(runner.prepared, digest)
+	return harness.RuntimeReference{Digest: digest, ProtocolVersion: harness.RuntimeProtocolVersion, Directory: "/runtime/" + digest}, nil
+}
+
+func (runner *restartRunner) setRuntime(digest string) {
+	runner.mu.Lock()
+	runner.runtime = digest
+	runner.mu.Unlock()
 }
 
 type failedSuspendCleanerRunner struct {
@@ -207,6 +228,7 @@ func (runner *failedSuspendCleanerRunner) Cleanup(_, _ string) error {
 func (runner *restartRunner) Run(ctx context.Context, request harness.Request, emit func(harness.Output) error) (runErr error) {
 	runner.mu.Lock()
 	runner.requests = append(runner.requests, request)
+	attempt := len(runner.requests)
 	runner.mu.Unlock()
 	if request.Continue {
 		// Always report completion, including a failed durable emit. Buffering
@@ -223,6 +245,20 @@ func (runner *restartRunner) Run(ctx context.Context, request harness.Request, e
 		}
 		if err := emit(harness.Output{Type: "session", State: json.RawMessage(`{"type":"resume-session","data":{"session":"resumed"}}`)}); err != nil {
 			return err
+		}
+		return nil
+	}
+	if attempt > 1 {
+		for _, chunk := range []string{
+			`{"type":"start","messageId":"` + request.ResponseMessageID + `"}`,
+			`{"type":"text-start","id":"text"}`,
+			`{"type":"text-delta","id":"text","delta":"new runtime turn"}`,
+			`{"type":"text-end","id":"text"}`,
+			`{"type":"finish","finishReason":"stop"}`,
+		} {
+			if err := emit(harness.Output{Type: "chunk", Chunk: json.RawMessage(chunk)}); err != nil {
+				return err
+			}
 		}
 		return nil
 	}
@@ -268,6 +304,12 @@ func (runner *restartRunner) snapshotRequests() []harness.Request {
 	runner.mu.Lock()
 	defer runner.mu.Unlock()
 	return append([]harness.Request(nil), runner.requests...)
+}
+
+func (runner *restartRunner) snapshotPrepared() []string {
+	runner.mu.Lock()
+	defer runner.mu.Unlock()
+	return append([]string(nil), runner.prepared...)
 }
 
 func (runner *interruptQueueRunner) Run(ctx context.Context, request harness.Request, emit func(harness.Output) error) error {
@@ -2028,6 +2070,90 @@ func TestGracefulRestartContinuesActiveTurnForEveryProvider(t *testing.T) {
 				t.Fatalf("instruction snapshot changed across restart: first=%q resumed=%q", requests[0].Instructions, requests[1].Instructions)
 			}
 		})
+	}
+}
+
+func TestRestartPinsOnlyActiveTurnThenNextTurnUsesCurrentRuntime(t *testing.T) {
+	const timeout = 10 * time.Second
+	service, _, project, board := appSetup(t)
+	runner := &restartRunner{started: make(chan struct{}), resumed: make(chan error, 1), suspend: make(chan struct{}), runtime: "runtime-a"}
+	service.Runner = runner
+	card, err := service.CreateCard(context.Background(), CardInput{
+		Project: project.ID, Board: board.ID, Lane: model.LaneRunning,
+		Title: "Runtime handoff", Prompt: "Start on A", Provider: "codex", Model: "gpt-5.6-sol", Effort: "low", DeferStart: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	updates, err := service.StartCard(card.ID, "", card.Provider, card.Model, card.Effort)
+	if err != nil {
+		t.Fatal(err)
+	}
+	go drainTurnUpdates(updates)
+	select {
+	case <-runner.started:
+	case <-time.After(timeout):
+		t.Fatal("initial turn did not start")
+	}
+	parkCtx, parkCancel := context.WithTimeout(context.Background(), timeout)
+	if err := service.SuspendActiveTurns(parkCtx); err != nil {
+		parkCancel()
+		t.Fatal(err)
+	}
+	parkCancel()
+	parked, err := service.Store.Conversation(card.ID)
+	if err != nil || parked.ActiveTurn == nil || parked.ActiveTurn.HarnessRuntimeDigest != "runtime-a" {
+		t.Fatalf("parked conversation=%#v err=%v", parked, err)
+	}
+
+	runner.setRuntime("runtime-b")
+	restarted := New(service.Store, runner)
+	recovered, err := restarted.ReconcileOrphanedTurns()
+	if err != nil || len(recovered) != 1 || recovered[0] != card.ID {
+		t.Fatalf("recovered=%#v err=%v", recovered, err)
+	}
+	readyCtx, readyCancel := context.WithTimeout(context.Background(), timeout)
+	if err := restarted.WaitForRecoveredTurns(readyCtx, recovered); err != nil {
+		readyCancel()
+		t.Fatal(err)
+	}
+	readyCancel()
+	select {
+	case err := <-runner.resumed:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(timeout):
+		t.Fatal("continued turn did not finish")
+	}
+	waitFor(t, func() bool {
+		conversation, conversationErr := restarted.Store.Conversation(card.ID)
+		leased, leaseErr := restarted.Store.CardHasRuntimeLease(card.ID)
+		return conversationErr == nil && leaseErr == nil && conversation.Status == "idle" && conversation.ActiveTurn == nil && !leased && !hasActiveTurn(restarted, project.ID)
+	})
+
+	next, err := restarted.StartCard(card.ID, "Continue on B", card.Provider, card.Model, card.Effort)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range next {
+	}
+	requests := runner.snapshotRequests()
+	if len(requests) != 3 {
+		t.Fatalf("requests=%#v", requests)
+	}
+	if requests[0].RuntimeDigest != "runtime-a" || requests[1].RuntimeDigest != "runtime-a" || !requests[1].Continue {
+		t.Fatalf("active turn changed runtime across restart: %#v", requests[:2])
+	}
+	if requests[2].RuntimeDigest != "runtime-b" || requests[2].Continue {
+		t.Fatalf("next turn did not adopt current runtime: %#v", requests[2])
+	}
+	if prepared := runner.snapshotPrepared(); len(prepared) != 3 || prepared[0] != "runtime-a" || prepared[1] != "runtime-a" || prepared[2] != "runtime-b" {
+		t.Fatalf("runtime preparations=%#v", prepared)
+	}
+	conversation, err := restarted.Store.Conversation(card.ID)
+	if err != nil || conversation.Status != "idle" || conversation.ActiveTurn != nil || len(conversation.Messages) != 4 {
+		t.Fatalf("final conversation=%#v err=%v", conversation, err)
 	}
 }
 

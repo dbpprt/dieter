@@ -565,10 +565,15 @@ type ConversationTurn struct {
 	ID                string            `json:"id"`
 	UserMessageID     string            `json:"userMessageId"`
 	ResponseMessageID string            `json:"responseMessageId"`
-	Instructions      string            `json:"instructions,omitempty"`
-	InstructionSource string            `json:"instructionSource,omitempty"`
-	InstructionLabels []string          `json:"instructionLabels,omitempty"`
-	Selection         *HarnessSelection `json:"selection,omitempty"`
+	// Runtime affinity ends with this turn. The durable conversation session
+	// remains provider-owned and is opened by the current runtime when the next
+	// human message starts a new turn.
+	HarnessRuntimeDigest   string            `json:"harnessRuntimeDigest,omitempty"`
+	HarnessRuntimeProtocol string            `json:"harnessRuntimeProtocol,omitempty"`
+	Instructions           string            `json:"instructions,omitempty"`
+	InstructionSource      string            `json:"instructionSource,omitempty"`
+	InstructionLabels      []string          `json:"instructionLabels,omitempty"`
+	Selection              *HarnessSelection `json:"selection,omitempty"`
 }
 
 // HarnessSelection is the immutable configuration admitted for one message.

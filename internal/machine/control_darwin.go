@@ -125,7 +125,7 @@ func startHomebrewUpdateWorker(root, brew string) error {
 		return err
 	}
 	defer logFile.Close()
-	command := exec.Command(executable, "__daemon-update-worker", "--brew", brew)
+	command := exec.Command(executable, "__daemon-update-worker", "--brew", brew, "--root", root)
 	command.Stdin = nil
 	command.Stdout = logFile
 	command.Stderr = logFile

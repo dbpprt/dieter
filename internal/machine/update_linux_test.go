@@ -9,6 +9,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -69,6 +70,16 @@ func containsString(values []string, target string) bool {
 }
 
 func TestLinuxUpdateWorkerDownloadsVerifiesStagesAndRestarts(t *testing.T) {
+	originalPreparer := prepareCandidateHarnessRuntime
+	t.Cleanup(func() { prepareCandidateHarnessRuntime = originalPreparer })
+	prepared := false
+	prepareCandidateHarnessRuntime = func(root, candidate string, output io.Writer) error {
+		prepared = true
+		if filepath.Base(candidate) != "dieter" || !strings.HasPrefix(candidate, root+string(filepath.Separator)) {
+			t.Fatalf("candidate preparation root=%q candidate=%q", root, candidate)
+		}
+		return nil
+	}
 	executable, err := os.Executable()
 	if err != nil {
 		t.Fatal(err)
@@ -109,6 +120,9 @@ func TestLinuxUpdateWorkerDownloadsVerifiesStagesAndRestarts(t *testing.T) {
 	var output strings.Builder
 	if err := RunLinuxDaemonUpdateWorker([]string{"--root", root, "--base-url", server.URL}, &output); err != nil {
 		t.Fatal(err)
+	}
+	if !prepared {
+		t.Fatal("verified candidate harness runtime was not prepared before restart")
 	}
 	installed, err := os.ReadFile(filepath.Join(root, "service", "bin", "dieter"))
 	if err != nil {

@@ -171,6 +171,10 @@ func RunLinuxDaemonUpdateWorker(args []string, output io.Writer) error {
 	if err := extractLinuxDaemon(archive, asset+"/dieter-capture", filepath.Join(stage, "dieter-capture")); err != nil {
 		return err
 	}
+	fmt.Fprintf(output, "%s: prepare candidate harness runtime\n", time.Now().UTC().Format(time.RFC3339))
+	if err := prepareCandidateHarnessRuntime(*root, filepath.Join(stage, "dieter"), output); err != nil {
+		return err
+	}
 	fmt.Fprintf(output, "%s: stage verified release\n", time.Now().UTC().Format(time.RFC3339))
 	if err := serviceruntime.PlatformRuntime(filepath.Join(*root, "service")).Stage(ctx, stage); err != nil {
 		return fmt.Errorf("stage Linux service runtime: %w", err)

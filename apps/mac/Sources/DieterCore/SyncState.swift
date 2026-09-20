@@ -225,8 +225,10 @@ package enum DieterSyncProjectionCache {
             ?? Dieter_V1_GlobalSnapshot()
         snapshot.schedules = []
         snapshot.scheduleRuns = []
+        let retained = TranscriptFreshness.merging(
+            conversation, with: snapshot.conversations.first { $0.detail.card.id == cardID })
         snapshot.conversations.removeAll { $0.detail.card.id == cardID }
-        snapshot.conversations.append(conversation)
+        snapshot.conversations.append(retained)
         if snapshot.conversations.count > limit {
             snapshot.conversations.removeFirst(snapshot.conversations.count - limit)
         }
@@ -286,7 +288,13 @@ package enum GlobalProjectionReducer {
         if !delta.conversations.isEmpty || !delta.removedConversationIds.isEmpty {
             next.conversations = merge(
                 next.conversations,
-                changed: delta.conversations,
+                changed: delta.conversations.map { incoming in
+                    TranscriptFreshness.merging(
+                        incoming,
+                        with: next.conversations.first {
+                            $0.detail.card.id == incoming.detail.card.id
+                        })
+                },
                 removed: Set(delta.removedConversationIds),
                 id: { $0.detail.card.id }
             )
