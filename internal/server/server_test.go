@@ -52,9 +52,15 @@ func (f *fakeRunner) Run(_ context.Context, request harness.Request, emit func(h
 	return emit(harness.Output{Type: "session", State: json.RawMessage(`{"type":"resume-session","data":{"threadId":"thread_live"}}`)})
 }
 
-type gatedRunner struct{ release <-chan struct{} }
+type gatedRunner struct {
+	release <-chan struct{}
+	stopped chan<- struct{}
+}
 
 func (runner gatedRunner) Run(ctx context.Context, request harness.Request, emit func(harness.Output) error) error {
+	if runner.stopped != nil {
+		defer close(runner.stopped)
+	}
 	for _, chunk := range []string{
 		`{"type":"start","messageId":"` + request.ResponseMessageID + `"}`,
 		`{"type":"text-start","id":"text_live"}`,

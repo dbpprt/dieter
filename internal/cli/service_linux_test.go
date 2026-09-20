@@ -117,3 +117,36 @@ func TestNotifySystemdReady(t *testing.T) {
 		t.Fatalf("notification = %q", message)
 	}
 }
+
+func TestManagedServiceStatusRestoresUserBusEnvironment(t *testing.T) {
+	runtimeDirectory := t.TempDir()
+	bus := filepath.Join(runtimeDirectory, "bus")
+	listener, err := net.ListenUnix("unix", &net.UnixAddr{Name: bus, Net: "unix"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+
+	bin := t.TempDir()
+	logPath := filepath.Join(t.TempDir(), "environment.log")
+	systemctl := filepath.Join(bin, "systemctl")
+	script := "#!/bin/sh\nprintf '%s\\n%s\\n' \"$XDG_RUNTIME_DIR\" \"$DBUS_SESSION_BUS_ADDRESS\" > \"$DIETER_TEST_SYSTEMCTL_LOG\"\nprintf 'active\\n'\n"
+	if err := os.WriteFile(systemctl, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+":"+os.Getenv("PATH"))
+	t.Setenv("DIETER_TEST_SYSTEMCTL_LOG", logPath)
+	t.Setenv("XDG_RUNTIME_DIR", runtimeDirectory)
+	t.Setenv("DBUS_SESSION_BUS_ADDRESS", "")
+	if status := managedServiceStatus("systemd-user"); status != "active" {
+		t.Fatalf("service status = %q", status)
+	}
+	raw, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expected := runtimeDirectory + "\nunix:path=" + bus + "\n"
+	if string(raw) != expected {
+		t.Fatalf("systemctl environment = %q, want %q", raw, expected)
+	}
+}

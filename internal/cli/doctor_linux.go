@@ -26,7 +26,9 @@ func platformDoctorChecks() []doctorCheck {
 	manager := doctorCheck{Name: "systemd-user-manager", Required: false, Status: "warning", Detail: "unavailable; foreground mode remains available"}
 	if command, err := systemctlUserCommand("show-environment"); err == nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		environment := command.Env
 		command = exec.CommandContext(ctx, command.Path, command.Args[1:]...)
+		command.Env = environment
 		if err := command.Run(); err == nil {
 			manager.Status, manager.Detail = "ok", "available"
 		}

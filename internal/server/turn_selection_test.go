@@ -12,6 +12,11 @@ import (
 
 func TestQueuedSelectionSurvivesCommandReplayAndRemoval(t *testing.T) {
 	data := store.New(t.TempDir())
+	t.Cleanup(func() {
+		if err := data.Close(); err != nil {
+			t.Errorf("close isolated store: %v", err)
+		}
+	})
 	project, err := data.CreateProject(store.CreateProjectInput{Name: "Selections", Path: testRepository(t)})
 	if err != nil {
 		t.Fatal(err)
@@ -25,7 +30,8 @@ func TestQueuedSelectionSurvivesCommandReplayAndRemoval(t *testing.T) {
 		t.Fatal(err)
 	}
 	release := make(chan struct{})
-	client, _ := newConnectTestClient(t, data, gatedRunner{release: release})
+	stopped := make(chan struct{})
+	client, _ := newConnectTestClient(t, data, gatedRunner{release: release, stopped: stopped})
 	defer func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -33,6 +39,11 @@ func TestQueuedSelectionSurvivesCommandReplayAndRemoval(t *testing.T) {
 		close(release)
 		if err != nil {
 			t.Errorf("stop isolated active turn: %v", err)
+		}
+		select {
+		case <-stopped:
+		case <-ctx.Done():
+			t.Errorf("isolated runner did not stop: %v", ctx.Err())
 		}
 		waitForCanceledCard(t, data, card.ID)
 	}()

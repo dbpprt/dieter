@@ -401,7 +401,38 @@ func systemctlUserCommand(args ...string) (*exec.Cmd, error) {
 		return nil, errors.New("systemctl is required for the Linux user service")
 	}
 	cmd := exec.Command(path, append([]string{"--user"}, args...)...)
+	cmd.Env = systemctlUserEnvironment()
 	return cmd, nil
+}
+
+func systemctlUserEnvironment() []string {
+	environment := os.Environ()
+	runtimeDirectory := strings.TrimSpace(os.Getenv("XDG_RUNTIME_DIR"))
+	if runtimeDirectory == "" {
+		candidate := filepath.Join("/run/user", strconv.Itoa(os.Getuid()))
+		if info, err := os.Stat(candidate); err == nil && info.IsDir() {
+			runtimeDirectory = candidate
+			environment = replaceEnvironmentValue(environment, "XDG_RUNTIME_DIR", candidate)
+		}
+	}
+	if strings.TrimSpace(os.Getenv("DBUS_SESSION_BUS_ADDRESS")) == "" && runtimeDirectory != "" {
+		bus := filepath.Join(runtimeDirectory, "bus")
+		if info, err := os.Stat(bus); err == nil && info.Mode()&os.ModeSocket != 0 {
+			environment = replaceEnvironmentValue(environment, "DBUS_SESSION_BUS_ADDRESS", "unix:path="+bus)
+		}
+	}
+	return environment
+}
+
+func replaceEnvironmentValue(environment []string, key, value string) []string {
+	prefix := key + "="
+	result := make([]string, 0, len(environment)+1)
+	for _, entry := range environment {
+		if !strings.HasPrefix(entry, prefix) {
+			result = append(result, entry)
+		}
+	}
+	return append(result, prefix+value)
 }
 
 func runSystemctlUser(args ...string) error {
@@ -426,7 +457,9 @@ func managedServiceStatus(manager string) string {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
+	environment := cmd.Env
 	cmd = exec.CommandContext(ctx, cmd.Path, cmd.Args[1:]...)
+	cmd.Env = environment
 	raw, err := cmd.Output()
 	status := strings.TrimSpace(string(raw))
 	if status != "" {

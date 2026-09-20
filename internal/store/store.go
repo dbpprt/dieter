@@ -76,6 +76,33 @@ func New(root string) *Store {
 	return &Store{Root: root}
 }
 
+// Close releases database handles owned by the store. Callers must stop
+// background work before closing the store.
+func (s *Store) Close() error {
+	s.peerDBMu.Lock()
+	peerDBs := s.peerDBs
+	s.peerDBs = nil
+	s.peerDBMu.Unlock()
+
+	s.scheduleDBMu.Lock()
+	scheduleDB := s.scheduleDB
+	s.scheduleDB = nil
+	s.scheduleDBMu.Unlock()
+
+	errs := make([]error, 0, len(peerDBs)+1)
+	for _, database := range peerDBs {
+		if err := database.Close(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	if scheduleDB != nil {
+		if err := scheduleDB.Close(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
+}
+
 func (s *Store) Ensure() error {
 	if err := s.checkStorageSchema(); err != nil {
 		return err
