@@ -18,7 +18,6 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -32,14 +31,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.dbpprt.dieter.gateway.v1.ProviderQuotaAvailability
-import com.dbpprt.dieter.gateway.v1.ProviderQuotaFreshness
 import com.dbpprt.dieter.gateway.v1.ProviderQuotaGroup
 import com.dbpprt.dieter.gateway.v1.ProviderQuotaProvider
 import com.dbpprt.dieter.gateway.v1.ProviderQuotaSnapshot
@@ -53,98 +49,6 @@ import com.dbpprt.dieter.ui.theme.DieterRunning
 import com.dbpprt.dieter.ui.theme.DieterSurfaceHigh
 import java.time.Duration
 import java.time.Instant
-
-@Composable
-internal fun ProviderQuotaCompactButton(state: DieterUiState, onClick: () -> Unit) {
-    val groups = state.providerQuotaGroups.filter { it.accountsCount > 0 }
-    if (groups.isEmpty() && !state.providerQuotasLoading) return
-    Surface(
-        onClick = onClick,
-        shape = RoundedCornerShape(18.dp),
-        color = DieterSurfaceHigh,
-        border = BorderStroke(1.dp, DieterOutline),
-        modifier = Modifier.testTag("conversation-provider-quotas").semantics {
-            contentDescription = "Provider quotas"
-        },
-    ) {
-        Row(
-            Modifier.padding(horizontal = 9.dp, vertical = 6.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            if (groups.isEmpty()) {
-                CircularProgressIndicator(strokeWidth = 2.dp, modifier = Modifier.width(14.dp))
-            } else {
-                groups.forEach { group ->
-                    Text(quotaProviderShortName(group.provider), fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
-                    Text(
-                        if (group.hasSummary() && group.summary.hasRemainingPercent()) {
-                            "${group.summary.remainingPercent}%"
-                        } else {
-                            "—"
-                        },
-                        color = if (group.hasSummary() && group.summary.hasRemainingPercent()) {
-                            quotaTint(group.provider, group.summary.remainingPercent)
-                        } else {
-                            DieterMuted
-                        },
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                    )
-                    if (group.hasSummary() && group.summary.hasRemainingPercent()) {
-                        LinearProgressIndicator(
-                            progress = { group.summary.remainingPercent / 100f },
-                            modifier = Modifier.width(30.dp),
-                            color = quotaTint(group.provider, group.summary.remainingPercent),
-                        )
-                    }
-                    if (group.accountsCount > 1) {
-                        Text(
-                            if (group.hasSummary() && group.summary.excludedAccountCount > 0) {
-                                "${group.summary.includedAccountCount}/${group.accountsCount}"
-                            } else {
-                                "${group.accountsCount}"
-                            },
-                            color = DieterMuted,
-                            fontSize = 9.sp,
-                        )
-                    }
-                    if (group.hasSummary() && group.summary.unavailableAccountCount > 0) {
-                        Text(
-                            "!",
-                            color = DieterAmber,
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.semantics {
-                                contentDescription =
-                                    "${group.summary.unavailableAccountCount} account" +
-                                    if (group.summary.unavailableAccountCount == 1) " unavailable" else "s unavailable"
-                            },
-                        )
-                    }
-                    if (group.hasSummary() &&
-                        group.summary.freshness == ProviderQuotaFreshness.PROVIDER_QUOTA_FRESHNESS_STALE
-                    ) {
-                        Text("•", color = DieterAmber, fontSize = 10.sp)
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-internal fun ProviderQuotaSheet(state: DieterUiState, model: DieterViewModel, onDismiss: () -> Unit) {
-    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = MaterialTheme.colorScheme.background) {
-        ProviderQuotaDetails(
-            state = state,
-            onRefresh = { model.refreshProviderQuotas() },
-            onSetSummaryInclusion = model::setProviderQuotaSummaryInclusion,
-            onUseReset = model::consumeProviderQuotaReset,
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 28.dp),
-        )
-    }
-}
 
 @Composable
 internal fun ProviderQuotaDetails(
@@ -297,7 +201,7 @@ private fun ProviderQuotaAccountView(
                 ProviderQuotaMetadata("Reset credits", "${account.resetCredits.availableCount} available")
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Include in header summary", fontSize = 11.sp, modifier = Modifier.weight(1f))
+                Text("Include in usage summary", fontSize = 11.sp, modifier = Modifier.weight(1f))
                 Switch(
                     checked = !account.hasIncludedInSummary() || account.includedInSummary,
                     onCheckedChange = { onSetSummaryInclusion(provider, account.accountKey, it) },
@@ -368,12 +272,6 @@ private fun quotaProviderName(provider: ProviderQuotaProvider): String = when (p
     ProviderQuotaProvider.PROVIDER_QUOTA_PROVIDER_OPENAI_CODEX -> "OpenAI Codex"
     ProviderQuotaProvider.PROVIDER_QUOTA_PROVIDER_ANTHROPIC_CLAUDE -> "Anthropic Claude"
     else -> "Provider"
-}
-
-private fun quotaProviderShortName(provider: ProviderQuotaProvider): String = when (provider) {
-    ProviderQuotaProvider.PROVIDER_QUOTA_PROVIDER_OPENAI_CODEX -> "OA"
-    ProviderQuotaProvider.PROVIDER_QUOTA_PROVIDER_ANTHROPIC_CLAUDE -> "CL"
-    else -> "Q"
 }
 
 private fun quotaAvailability(value: ProviderQuotaAvailability): String = when (value) {

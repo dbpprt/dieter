@@ -87,14 +87,10 @@ capture. The test creates a temporary authenticated loopback service and native
 input window, removes its ADB port mapping on exit, and preserves app credentials
 and the running operator daemon.
 
-App
-Settings opens from Board actions or the server-status sheet and follows the
-native Connections and Display tab references. Display also offers the
-optional glass lens navigation from `Copy of Native Android PWA redesign.pdf`:
-a floating translucent dock, raised active destination, live chat badge,
-dedicated settings and command-center actions, swipe-up gesture, and expanded
-searchable command center. The preference is local to the Android device and
-survives process restarts.
+Chats and Boards are the primary Android destinations. Tools opens a compact,
+opaque panel for Terminal, Files, Schedules, Screens, and Settings. Files and
+Schedules offer a project picker when multiple projects are available. Settings
+uses horizontally scrollable tabs, and Display contains the app's color palettes.
 
 Chats render their cached tail immediately. A tail already covered by the
 healthy Live projection is current on open and resumes from its sequence

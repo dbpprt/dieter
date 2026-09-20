@@ -31,16 +31,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.outlined.DesktopWindows
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.outlined.CalendarMonth
-import androidx.compose.material.icons.outlined.ChatBubbleOutline
-import androidx.compose.material.icons.outlined.FolderOpen
-import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Sync
-import androidx.compose.material.icons.outlined.Terminal
-import androidx.compose.material.icons.outlined.ViewKanban
 import androidx.compose.material.icons.outlined.Wifi
 import androidx.compose.material.icons.outlined.WifiOff
 import androidx.compose.material3.Icon
@@ -49,11 +41,6 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.NavigationBarItemDefaults
-import androidx.compose.material3.NavigationRail
-import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -64,6 +51,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
@@ -72,7 +60,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -89,7 +76,6 @@ import androidx.core.content.ContextCompat
 import com.dbpprt.dieter.DieterContainer
 import com.dbpprt.dieter.connection.ConnectionPhase
 import com.dbpprt.dieter.connection.EndpointPhase
-import com.dbpprt.dieter.settings.NavigationStyle
 import com.dbpprt.dieter.update.AppUpdateManager
 import com.dbpprt.dieter.ui.theme.DieterShell
 import com.dbpprt.dieter.ui.theme.DieterEyes
@@ -101,26 +87,9 @@ import com.dbpprt.dieter.ui.theme.DieterText
 import com.dbpprt.dieter.ui.theme.DieterOutline
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.delay
-import com.dbpprt.dieter.ui.theme.DieterAbyss
-import com.dbpprt.dieter.ui.theme.DieterShellTint
 import com.dbpprt.dieter.ui.theme.DieterCoral
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.font.FontFamily
-
-internal data class NavItem(
-    val destination: Destination,
-    val label: String,
-    val icon: ImageVector,
-)
-
-internal val navigationItems = listOf(
-    NavItem(Destination.CHATS, "Chats", Icons.Outlined.ChatBubbleOutline),
-    NavItem(Destination.BOARD, "Boards", Icons.Outlined.ViewKanban),
-    NavItem(Destination.SCREENS, "Screens", Icons.Outlined.DesktopWindows),
-    NavItem(Destination.TERMINALS, "Terminal", Icons.Outlined.Terminal),
-    NavItem(Destination.FILES, "Files", Icons.Outlined.FolderOpen),
-    NavItem(Destination.SCHEDULES, "Schedules", Icons.Outlined.CalendarMonth),
-)
 
 private fun Destination.isOfflineSensitiveProjectSurface(): Boolean =
     this == Destination.FILES || this == Destination.SCHEDULES
@@ -199,6 +168,7 @@ fun DieterApp(container: DieterContainer) {
     val context = LocalContext.current
     var notificationPermissionRequested by remember { mutableStateOf(false) }
     var fileCreateVisible by remember { mutableStateOf(false) }
+    var toolsOpen by rememberSaveable { mutableStateOf(false) }
     var projectPickerTarget by remember { mutableStateOf<Destination?>(null) }
     val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
         notificationPermissionRequested = true
@@ -243,9 +213,10 @@ fun DieterApp(container: DieterContainer) {
         }
     }
 
-    // Files and Schedules are project-scoped but live in the top-level navigation.
+    // Files and Schedules are project-scoped tools.
     // Tapping either offers a project picker so the surface never falls back to a stale project.
     val handleNavigate: (Destination) -> Unit = { destination ->
+        toolsOpen = false
         if (!destination.isOfflineSensitiveProjectSurface() || projectScopedNavigationEnabled(state)) {
             if (destination.isOfflineSensitiveProjectSurface() && state.projects.size > 1) {
                 projectPickerTarget = destination
@@ -292,9 +263,8 @@ fun DieterApp(container: DieterContainer) {
                 Row(Modifier.fillMaxSize()) {
                     DieterNavigationRail(
                         selected = state.destination,
-                        projectSurfacesEnabled = projectScopedNavigationEnabled(state),
                         onSelect = handleNavigate,
-                        onSettings = { model.openSurface(AppSurface.APP_SETTINGS) },
+                        onTools = { toolsOpen = true },
                         onCreate = {
                             when (state.destination) {
                                 Destination.CHATS -> model.openSurface(AppSurface.NEW_CHAT)
@@ -329,30 +299,6 @@ fun DieterApp(container: DieterContainer) {
         } else {
             val detailVisible = state.selectedCardId != null || state.fileDocument != null
             val boardLanePagerVisible = state.destination == Destination.BOARD && !state.boardOverviewVisible
-            val destination by rememberUpdatedState(state.destination)
-            val pagerState = rememberPagerState(
-                initialPage = navigationItems.indexOfFirst { it.destination == state.destination }.coerceAtLeast(0),
-                pageCount = { navigationItems.size },
-            )
-            LaunchedEffect(state.destination) {
-                val page = navigationItems.indexOfFirst { it.destination == state.destination }.coerceAtLeast(0)
-                if (pagerState.currentPage != page) pagerState.animateScrollToPage(page)
-            }
-            LaunchedEffect(pagerState) {
-                snapshotFlow { pagerState.settledPage }
-                    .distinctUntilChanged()
-                    .collect { page ->
-                        val next = navigationItems[page].destination
-                        if (next != destination) {
-                            if (next.isOfflineSensitiveProjectSurface() && !projectScopedNavigationEnabled(state)) {
-                                val currentPage = navigationItems.indexOfFirst { it.destination == destination }.coerceAtLeast(0)
-                                pagerState.animateScrollToPage(currentPage)
-                            } else {
-                                model.navigate(next)
-                            }
-                        }
-                    }
-            }
             Scaffold(
                 containerColor = MaterialTheme.colorScheme.background,
                 topBar = {
@@ -366,41 +312,37 @@ fun DieterApp(container: DieterContainer) {
                 },
                 bottomBar = {
                     if (!detailVisible) {
-                        if (state.navigationStyle == NavigationStyle.GLASS) {
-                            GlassNavigationDock(
-                                state = state,
-                                onNavigate = handleNavigate,
-                                onSettings = { model.openSurface(AppSurface.APP_SETTINGS) },
-                            )
-                        } else {
-                            DieterBottomBar(
-                                selected = state.destination,
-                                projectSurfacesEnabled = projectScopedNavigationEnabled(state),
-                                onSelect = handleNavigate,
-                                onSettings = { model.openSurface(AppSurface.APP_SETTINGS) },
-                            )
-                        }
+                        DieterBottomBar(
+                            selected = state.destination,
+                            onSelect = handleNavigate,
+                            onTools = { toolsOpen = true },
+                        )
                     }
                 },
             ) { padding ->
-                HorizontalPager(
-                    state = pagerState,
-                    modifier = Modifier.fillMaxSize(),
-                    userScrollEnabled = !detailVisible && !boardLanePagerVisible,
-                    // Keep the two neighboring primary surfaces composed so the first tab switch
-                    // does not pay their full composition/JIT cost during the navigation gesture.
-                    beyondViewportPageCount = 1,
-                    key = { navigationItems[it].destination },
-                ) { page ->
-                    DestinationContent(
-                        destination = navigationItems[page].destination,
+                if (state.destination.isPrimaryDestination()) {
+                    PrimaryDestinationPager(
                         state = state,
                         model = model,
-                        expanded = false,
                         contentPadding = padding,
+                        userScrollEnabled = !detailVisible && !boardLanePagerVisible,
                     )
+                } else {
+                    DestinationContent(state, model, expanded = false, contentPadding = padding)
                 }
             }
+        }
+        if (toolsOpen && state.appSurface == null) {
+            DieterToolsSheet(
+                selected = state.destination,
+                projectSurfacesEnabled = projectScopedNavigationEnabled(state),
+                onSelect = handleNavigate,
+                onSettings = {
+                    toolsOpen = false
+                    model.openSurface(AppSurface.APP_SETTINGS)
+                },
+                onDismiss = { toolsOpen = false },
+            )
         }
         if (state.connectionDialogVisible) {
             DieterConnectionDialog(state, model)
@@ -428,6 +370,47 @@ fun DieterApp(container: DieterContainer) {
         }
     }
     AppUpdateDialog(container.appUpdateManager)
+}
+
+@Composable
+private fun PrimaryDestinationPager(
+    state: DieterUiState,
+    model: DieterViewModel,
+    contentPadding: PaddingValues,
+    userScrollEnabled: Boolean,
+) {
+    val destination by rememberUpdatedState(state.destination)
+    val pagerState = rememberPagerState(
+        initialPage = primaryNavigationItems.indexOfFirst { it.destination == state.destination }.coerceAtLeast(0),
+        pageCount = { primaryNavigationItems.size },
+    )
+    LaunchedEffect(state.destination) {
+        val page = primaryNavigationItems.indexOfFirst { it.destination == state.destination }.coerceAtLeast(0)
+        if (pagerState.currentPage != page) pagerState.animateScrollToPage(page)
+    }
+    LaunchedEffect(pagerState) {
+        snapshotFlow { pagerState.settledPage }
+            .distinctUntilChanged()
+            .collect { page ->
+                val next = primaryNavigationItems[page].destination
+                if (next != destination) model.navigate(next)
+            }
+    }
+    HorizontalPager(
+        state = pagerState,
+        modifier = Modifier.fillMaxSize(),
+        userScrollEnabled = userScrollEnabled,
+        beyondViewportPageCount = 1,
+        key = { primaryNavigationItems[it].destination },
+    ) { page ->
+        DestinationContent(
+            destination = primaryNavigationItems[page].destination,
+            state = state,
+            model = model,
+            expanded = false,
+            contentPadding = contentPadding,
+        )
+    }
 }
 
 @Composable
@@ -1021,76 +1004,5 @@ private fun AppSurfaceContent(
             AppSurface.APP_SETTINGS -> AppSettingsScreen(state, model, updateManager, contentPadding = contentPadding)
             null -> Unit
         }
-    }
-}
-
-@Composable
-private fun DieterBottomBar(
-    selected: Destination,
-    projectSurfacesEnabled: Boolean,
-    onSelect: (Destination) -> Unit,
-    onSettings: () -> Unit,
-) {
-    NavigationBar(
-        containerColor = DieterSurface,
-        tonalElevation = 0.dp,
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        navigationItems.forEach { item ->
-            NavigationBarItem(
-                selected = item.destination == selected,
-                enabled = projectSurfacesEnabled || !item.destination.isOfflineSensitiveProjectSurface(),
-                onClick = { onSelect(item.destination) },
-                icon = { Icon(item.icon, contentDescription = null, modifier = Modifier.size(22.dp)) },
-                label = { Text(item.label, fontSize = 11.sp) },
-                colors = NavigationBarItemDefaults.colors(
-                    selectedIconColor = DieterText,
-                    selectedTextColor = DieterText,
-                    indicatorColor = DieterShellTint,
-                    unselectedIconColor = DieterMuted,
-                    unselectedTextColor = DieterMuted,
-                ),
-                modifier = Modifier.testTag("nav-${item.destination.name.lowercase()}"),
-            )
-        }
-    }
-}
-
-@Composable
-private fun DieterNavigationRail(
-    selected: Destination,
-    projectSurfacesEnabled: Boolean,
-    onSelect: (Destination) -> Unit,
-    onSettings: () -> Unit,
-    onCreate: () -> Unit,
-) {
-    NavigationRail(containerColor = DieterSurface) {
-        Surface(
-            onClick = onCreate,
-            color = DieterShell,
-            contentColor = DieterAbyss,
-            shape = RoundedCornerShape(14.dp),
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 14.dp).size(48.dp),
-        ) {
-            Box(contentAlignment = Alignment.Center) {
-                Icon(Icons.Default.Add, contentDescription = "Create", modifier = Modifier.size(24.dp))
-            }
-        }
-        navigationItems.forEach { item ->
-            NavigationRailItem(
-                selected = item.destination == selected,
-                enabled = projectSurfacesEnabled || !item.destination.isOfflineSensitiveProjectSurface(),
-                onClick = { onSelect(item.destination) },
-                icon = { Icon(item.icon, contentDescription = null) },
-                label = { Text(item.label) },
-                modifier = Modifier.testTag("nav-${item.destination.name.lowercase()}"),
-            )
-        }
-        NavigationRailItem(
-            selected = false,
-            onClick = onSettings,
-            icon = { Icon(Icons.Outlined.Settings, contentDescription = null) },
-            label = { Text("Settings") },
-        )
     }
 }

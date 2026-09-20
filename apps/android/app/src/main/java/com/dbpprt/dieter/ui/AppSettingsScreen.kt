@@ -6,7 +6,6 @@ import android.content.Intent
 import android.provider.Settings
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -17,6 +16,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -30,14 +30,9 @@ import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.outlined.ArrowDownward
 import androidx.compose.material.icons.outlined.ArrowUpward
-import androidx.compose.material.icons.outlined.CalendarMonth
-import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.DragIndicator
-import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.material.icons.outlined.Notifications
-import androidx.compose.material.icons.outlined.Settings
-import androidx.compose.material.icons.outlined.ViewKanban
 import androidx.compose.material.icons.outlined.Wifi
 import androidx.compose.material3.Button
 import androidx.compose.material3.AlertDialog
@@ -46,7 +41,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.PrimaryTabRow
+import androidx.compose.material3.PrimaryScrollableTabRow
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
@@ -82,7 +77,6 @@ import com.dbpprt.dieter.connection.isPermittedInsecureGatewayHost
 import com.dbpprt.dieter.data.DIETER_ENDPOINTS
 import com.dbpprt.dieter.data.DieterEndpoint
 import com.dbpprt.dieter.data.dieterEndpointFromAddress
-import com.dbpprt.dieter.settings.NavigationStyle
 import com.dbpprt.dieter.settings.DieterPalette
 import com.dbpprt.dieter.settings.NotificationDisplayStyle
 import com.dbpprt.dieter.update.AppUpdateManager
@@ -95,9 +89,7 @@ import com.dbpprt.dieter.ui.theme.DieterOutline
 import com.dbpprt.dieter.ui.theme.DieterSurface
 import com.dbpprt.dieter.ui.theme.DieterSurfaceHigh
 import com.dbpprt.dieter.ui.theme.DieterText
-import com.dbpprt.dieter.ui.theme.DieterBackground
 import com.dbpprt.dieter.ui.theme.DieterEyesTint
-import com.dbpprt.dieter.ui.theme.DieterAbyss
 
 private const val CONNECTIONS_TAB = 0
 private const val NOTIFICATIONS_TAB = 1
@@ -143,10 +135,11 @@ fun AppSettingsScreen(
         Modifier.fillMaxSize().padding(contentPadding).testTag("app-settings"),
     ) {
         SettingsHeader(onBack = model::closeSurface)
-        PrimaryTabRow(
+        PrimaryScrollableTabRow(
             selectedTabIndex = selectedTab,
             containerColor = MaterialTheme.colorScheme.background,
             contentColor = DieterShell,
+            edgePadding = 8.dp,
         ) {
             SettingsTab("Connect", selectedTab == CONNECTIONS_TAB) { selectedTab = CONNECTIONS_TAB }
             SettingsTab("Alerts", selectedTab == NOTIFICATIONS_TAB) { selectedTab = NOTIFICATIONS_TAB }
@@ -250,13 +243,15 @@ private fun SettingsTab(label: String, selected: Boolean, onClick: () -> Unit) {
     Tab(
         selected = selected,
         onClick = onClick,
-        modifier = Modifier.height(52.dp).testTag("settings-${label.lowercase()}"),
+        modifier = Modifier.heightIn(min = 52.dp).testTag("settings-${label.lowercase()}"),
         text = {
             Text(
                 label,
                 color = if (selected) DieterShell else DieterMuted,
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 16.sp,
+                maxLines = 1,
+                softWrap = false,
             )
         },
     )
@@ -947,16 +942,11 @@ private fun DisplaySettings(state: DieterUiState, model: DieterViewModel) {
         item {
             SettingsSectionHeader(
                 title = "Visual settings",
-                subtitle = "Choose how the primary app destinations are presented.",
+                subtitle = "Choose the app’s color palette.",
             )
         }
         item {
             PaletteSetting(state.palette, model::setPalette)
-        }
-        item {
-            GlassNavigationSetting(state.navigationStyle == NavigationStyle.GLASS) { enabled ->
-                model.setNavigationStyle(if (enabled) NavigationStyle.GLASS else NavigationStyle.CLASSIC)
-            }
         }
         item { Spacer(Modifier.height(4.dp)) }
         item {
@@ -1122,39 +1112,6 @@ private fun UpdateSettings(manager: AppUpdateManager) {
 }
 
 @Composable
-private fun GlassNavigationSetting(enabled: Boolean, onToggle: (Boolean) -> Unit) {
-    Surface(color = DieterSurface, shape = RoundedCornerShape(20.dp), modifier = Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text("Glass lens navigation", fontWeight = FontWeight.SemiBold, fontSize = 18.sp)
-                    Text(
-                        "Floating translucent dock, raised active lens, and balanced navigation slots.",
-                        color = DieterMuted,
-                        fontSize = 14.sp,
-                        lineHeight = 20.sp,
-                    )
-                }
-                Spacer(Modifier.width(12.dp))
-                Switch(
-                    checked = enabled,
-                    onCheckedChange = onToggle,
-                    modifier = Modifier.semantics { contentDescription = "Glass lens navigation" }
-                        .testTag("glass-navigation-toggle"),
-                )
-            }
-            GlassNavigationPreview()
-            Text(
-                if (enabled) "Glass navigation is active." else "Classic navigation remains the default.",
-                color = if (enabled) DieterEyes else DieterMuted,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Medium,
-            )
-        }
-    }
-}
-
-@Composable
 private fun ReasoningTraceSetting(enabled: Boolean, onToggle: (Boolean) -> Unit) {
     Surface(color = DieterSurface, shape = RoundedCornerShape(20.dp), modifier = Modifier.fillMaxWidth()) {
         Row(
@@ -1177,49 +1134,6 @@ private fun ReasoningTraceSetting(enabled: Boolean, onToggle: (Boolean) -> Unit)
                 modifier = Modifier.semantics { contentDescription = "Show reasoning traces" }
                     .testTag("reasoning-traces-toggle"),
             )
-        }
-    }
-}
-
-@Composable
-private fun GlassNavigationPreview() {
-    Box(
-        Modifier.fillMaxWidth().height(118.dp).clip(RoundedCornerShape(18.dp))
-            .background(DieterBackground),
-        contentAlignment = Alignment.Center,
-    ) {
-        Surface(
-            color = GlassDockFill,
-            border = BorderStroke(1.dp, DieterOutline),
-            shape = RoundedCornerShape(30.dp),
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp).height(64.dp),
-        ) {
-            Row(
-                Modifier.fillMaxSize().padding(horizontal = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                listOf(
-                    Icons.Outlined.ChatBubbleOutline,
-                    Icons.Outlined.ViewKanban,
-                    Icons.Outlined.FolderOpen,
-                    Icons.Outlined.CalendarMonth,
-                    Icons.Outlined.Settings,
-                ).forEachIndexed { index, icon ->
-                    Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                        if (index == 1) {
-                            Box(
-                                Modifier.size(54.dp).clip(CircleShape).background(DieterShell)
-                                    .border(1.dp, Color.White.copy(alpha = 0.35f), CircleShape),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                Icon(icon, null, tint = DieterAbyss, modifier = Modifier.size(25.dp))
-                            }
-                        } else {
-                            Icon(icon, null, tint = DieterMuted, modifier = Modifier.size(23.dp))
-                        }
-                    }
-                }
-            }
         }
     }
 }

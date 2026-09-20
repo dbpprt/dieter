@@ -13,8 +13,6 @@ import kotlinx.coroutines.launch
 import org.json.JSONArray
 import java.util.concurrent.atomic.AtomicLong
 
-enum class NavigationStyle { CLASSIC, GLASS }
-
 const val DEFAULT_PANE_LEADING_FRACTION = 0.43f
 
 data class ConversationCreationPreferences(
@@ -35,8 +33,6 @@ class AppPreferences(
     private val preferences by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         appContext.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
     }
-    private val _navigationStyle = MutableStateFlow(if (loadAsync) NavigationStyle.CLASSIC else readNavigationStyle())
-    val navigationStyle: StateFlow<NavigationStyle> = _navigationStyle.asStateFlow()
     private val _palette = MutableStateFlow(if (loadAsync) DieterPalette.DEFAULT else readPalette())
     val palette: StateFlow<DieterPalette> = _palette.asStateFlow()
     private val _showReasoningTraces = MutableStateFlow(
@@ -78,7 +74,6 @@ class AppPreferences(
 
     private fun hydrate() {
         val expectedVersion = mutationVersion.get()
-        val navigationStyle = readNavigationStyle()
         val palette = readPalette()
         val showReasoningTraces = preferences.getBoolean(KEY_SHOW_REASONING_TRACES, false)
         val notificationBoardIds = readNotificationBoardIds()
@@ -91,7 +86,6 @@ class AppPreferences(
         val boardPaneLeadingFraction = readPaneLeadingFraction(KEY_BOARD_PANE_LEADING_FRACTION)
         val conversationCreation = readConversationCreationPreferences()
         if (mutationVersion.get() != expectedVersion) return
-        _navigationStyle.value = navigationStyle
         _palette.value = palette
         _showReasoningTraces.value = showReasoningTraces
         _notificationBoardIds.value = notificationBoardIds
@@ -112,12 +106,6 @@ class AppPreferences(
             delay(25)
             hydrate()
         }
-    }
-
-    fun setNavigationStyle(style: NavigationStyle) {
-        markMutation()
-        preferences.edit().putString(KEY_NAVIGATION_STYLE, style.name).apply()
-        _navigationStyle.value = style
     }
 
     fun setPalette(palette: DieterPalette) {
@@ -231,13 +219,6 @@ class AppPreferences(
         _conversationCreation.value = value
     }
 
-    private fun readNavigationStyle(): NavigationStyle = runCatching {
-        NavigationStyle.valueOf(
-            preferences.getString(KEY_NAVIGATION_STYLE, NavigationStyle.CLASSIC.name)
-                ?: NavigationStyle.CLASSIC.name,
-        )
-    }.getOrDefault(NavigationStyle.CLASSIC)
-
     private fun readPalette(): DieterPalette = DieterPalette.resolve(
         preferences.getString(KEY_PALETTE, DieterPalette.DEFAULT.slug),
     )
@@ -305,7 +286,6 @@ class AppPreferences(
 
     companion object {
         private const val PREFERENCES = "dieter_app_settings"
-        private const val KEY_NAVIGATION_STYLE = "navigation_style"
         private const val KEY_PALETTE = "palette"
         private const val KEY_SHOW_REASONING_TRACES = "show_reasoning_traces"
         private const val KEY_NOTIFICATION_BOARD_IDS = "notification_board_ids"

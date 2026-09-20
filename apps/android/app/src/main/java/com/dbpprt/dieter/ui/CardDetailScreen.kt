@@ -97,7 +97,6 @@ internal fun CardDetailScreen(
     var renameOpen by remember { mutableStateOf(false) }
     var labelsOpen by remember { mutableStateOf(false) }
     var actionsOpen by remember { mutableStateOf(false) }
-    var quotasOpen by remember { mutableStateOf(false) }
     var refreshClockMillis by remember(state.selectedCardId) { mutableStateOf(System.currentTimeMillis()) }
     LaunchedEffect(state.selectedCardId, state.conversationLastRefreshedAtMillis) {
         refreshClockMillis = System.currentTimeMillis()
@@ -158,6 +157,8 @@ internal fun CardDetailScreen(
                     },
                     color = DieterMuted,
                     fontSize = 11.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
                 Text(
                     conversationRefreshLabel(
@@ -167,11 +168,12 @@ internal fun CardDetailScreen(
                     ),
                     color = DieterMuted,
                     fontSize = 10.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.testTag("conversation-last-refreshed"),
                 )
             }
             StatusPill(displayRuntime)
-            ProviderQuotaCompactButton(state) { quotasOpen = true }
             if (isActiveCardRuntime(displayRuntime) && cardOperation != CardOperation.CANCELLING) {
                 IconButton(onClick = model::cancelSelected) {
                     Icon(Icons.Outlined.Cancel, "Cancel active turn")
@@ -296,9 +298,6 @@ internal fun CardDetailScreen(
             renameOpen = false
             model.renameSelected(title)
         }
-    }
-    if (quotasOpen) {
-        ProviderQuotaSheet(state, model) { quotasOpen = false }
     }
     if (labelsOpen) {
         CardLabelsDialog(state, onDismiss = { labelsOpen = false }) { labelIds ->

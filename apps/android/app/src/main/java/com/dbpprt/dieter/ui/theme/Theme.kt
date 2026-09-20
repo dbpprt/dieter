@@ -56,9 +56,6 @@ val DieterShellTint get() = DieterSurfaceHigh
 val DieterShellTintDeep get() = lerp(DieterBackground, DieterShellDeep, 0.18f)
 val DieterAmberTint get() = if (activeDarkTheme) Color(0xFF2C2410) else Color(0xFFFFF3D1)
 val DieterEyesTint get() = lerp(DieterBackground, DieterEyes, 0.16f)
-val DieterGlassFadeSoft get() = DieterBackground.copy(alpha = 0.40f)
-val DieterGlassFadeStrong get() = DieterBackground.copy(alpha = 0.82f)
-val DieterGlassDockFill get() = DieterSurface.copy(alpha = 0.92f)
 val DieterTerminalCanvas get() = DieterBackground
 val DieterTerminalBar get() = lerp(DieterBackground, DieterSurface, 0.55f)
 

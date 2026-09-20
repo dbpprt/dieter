@@ -27,7 +27,6 @@ import com.dbpprt.dieter.settings.ConversationCreationPreferences
 import com.dbpprt.dieter.settings.DEFAULT_PANE_LEADING_FRACTION
 import com.dbpprt.dieter.settings.DieterPalette
 import com.dbpprt.dieter.settings.DieterNotificationSettings
-import com.dbpprt.dieter.settings.NavigationStyle
 import com.dbpprt.dieter.v1.AddChangeCommentRequest
 import com.dbpprt.dieter.v1.Board
 import com.dbpprt.dieter.v1.Card
@@ -159,7 +158,6 @@ data class DieterUiState(
     val connectionError: String? = null,
     val desiredConnected: Boolean = true,
     val backgroundSyncMode: BackgroundSyncMode = BackgroundSyncMode.LIVE,
-    val navigationStyle: NavigationStyle = NavigationStyle.CLASSIC,
     val palette: DieterPalette = DieterPalette.DEFAULT,
     val showReasoningTraces: Boolean = false,
     val notificationBoardIds: Set<String> = emptySet(),
@@ -428,11 +426,6 @@ class DieterViewModel internal constructor(
 
     init {
         viewModelScope.launch {
-            appPreferences.navigationStyle.collectLatest { style ->
-                _state.update { it.copy(navigationStyle = style) }
-            }
-        }
-        viewModelScope.launch {
             appPreferences.palette.collectLatest { palette ->
                 _state.update { it.copy(palette = palette) }
             }
@@ -558,10 +551,6 @@ class DieterViewModel internal constructor(
 
     fun setBackgroundSyncMode(mode: BackgroundSyncMode) {
         connectionManager.setBackgroundSyncMode(mode)
-    }
-
-    fun setNavigationStyle(style: NavigationStyle) {
-        appPreferences.setNavigationStyle(style)
     }
 
     fun setPalette(palette: DieterPalette) {

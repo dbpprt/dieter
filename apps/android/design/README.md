@@ -20,11 +20,6 @@ The extractor assigns stable semantic filenames explicitly so a refreshed PDF
 replaces the expected references and fails loudly if its page structure
 changes.
 
-The optional glass navigation is sourced separately from `Copy of Native
-Android PWA redesign.pdf`. Its lens dock, expanded command center, board, and
-chat views are extracted with:
-
-```sh
-python3 apps/android/design/extract_glass_navigation.py \
-  "$HOME/Downloads/Copy of Native Android PWA redesign.pdf"
-```
+Android uses Chats and Boards as primary destinations. Tools opens a compact
+panel for Terminal, Files, Schedules, Screens, and Settings. The panel uses
+opaque surfaces from the selected app palette.

@@ -13,7 +13,6 @@ import com.dbpprt.dieter.connection.BackgroundSyncMode
 import com.dbpprt.dieter.connection.ConnectionPhase
 import com.dbpprt.dieter.connection.DieterConnectionManager
 import com.dbpprt.dieter.settings.AppPreferences
-import com.dbpprt.dieter.settings.NavigationStyle
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import kotlinx.coroutines.delay
@@ -225,7 +224,7 @@ class RealDieterIntegrationTest {
     }
 
     @Test
-    fun appSettingsPersistVisualStyleAndOrderedConnections() {
+    fun appSettingsPersistReasoningAndOrderedConnections() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val application = context.applicationContext as DieterApplication
         val manager = application.container.connectionManager
@@ -233,27 +232,23 @@ class RealDieterIntegrationTest {
             dieterEndpointFromAddress(it.id, it.label, it.address)
         }
         val preferences = AppPreferences(context)
-        val originalStyle = preferences.navigationStyle.value
         val originalShowReasoning = preferences.showReasoningTraces.value
         try {
             assertTrue(originalEndpoints.isNotEmpty())
             val saved = listOf(DieterEndpoint("saved_local", "Saved localhost", DIETER_LOCAL_HOST, DIETER_LOCAL_PORT))
             manager.updateEndpoints(saved)
-            preferences.setNavigationStyle(NavigationStyle.GLASS)
             preferences.setShowReasoningTraces(true)
 
             val restoredRepository = GrpcDieterRepository(context)
             val restoredManager = DieterConnectionManager(context, restoredRepository)
             try {
                 assertEquals(saved, restoredRepository.endpoints)
-                assertEquals(NavigationStyle.GLASS, AppPreferences(context).navigationStyle.value)
                 assertTrue(AppPreferences(context).showReasoningTraces.value)
             } finally {
                 restoredManager.close()
             }
         } finally {
             manager.updateEndpoints(originalEndpoints)
-            preferences.setNavigationStyle(originalStyle)
             preferences.setShowReasoningTraces(originalShowReasoning)
         }
     }
