@@ -60,8 +60,7 @@ struct ConversationView: View {
         let id = conversationID
         let endpointID = context.content.currentEndpointID(id)
         ConversationContentSplit(
-            presented: context.conversationWorkspacePanelEnabled
-                && context.content.isPresented(for: conversationID)
+            presented: context.content.isPresented(for: conversationID)
         ) {
             conversationBody
         } content: {
@@ -92,9 +91,11 @@ struct ConversationView: View {
     private func conversationLinkHandler(conversationID id: String, endpointID: String?)
         -> ConversationLinkHandler?
     {
-        guard context.conversationWorkspacePanelEnabled else { return nil }
         return { url in
             guard !id.isEmpty, context.content.currentEndpointID(id) == endpointID else { return false }
+            guard context.conversationWorkspacePanelEnabled || RemoteWorkspaceImage.isWorkspaceImageURL(url) else {
+                return false
+            }
             context.content.requestOpen(url, conversationID: id)
             return true
         }

@@ -37,6 +37,29 @@ class MessageMarkdownTest {
     }
 
     @Test
+    fun recognizesSafeWorkspaceImageLinks() {
+        assertEquals(
+            "docs/screenshots/Preview One.PNG",
+            conversationImagePath("./docs/screenshots/Preview%20One.PNG#view"),
+        )
+        assertEquals("images/result.webp", conversationImagePath("images/result.webp"))
+        assertEquals(
+            "docs/result.png",
+            conversationImagePath("file:///remote/worktree/docs/result.png", "/remote/worktree"),
+        )
+        assertEquals("/remote/worktree/docs/result.png", conversationImageDestination("/remote/worktree/docs/result.png"))
+        assertEquals(
+            "/remote/worktree/docs/Preview%20One.png",
+            conversationImageDestination("</remote/worktree/docs/Preview One.png>"),
+        )
+        assertEquals(null, conversationImagePath("README.md"))
+        assertEquals(null, conversationImagePath("../secret.png"))
+        assertEquals(null, conversationImagePath("https://example.com/image.png"))
+        assertEquals(null, conversationImagePath("/absolute/image.png"))
+        assertEquals(null, conversationImagePath("file:///remote/other/image.png", "/remote/worktree"))
+    }
+
+    @Test
     fun recognizesPipeTableWithoutSurroundingBlankLines() {
         val blocks = parseMessageMarkdown(
             """

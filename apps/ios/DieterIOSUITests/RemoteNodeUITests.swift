@@ -98,19 +98,22 @@ final class RemoteNodeUITests: XCTestCase {
     private func fillTask(_ app: XCUIApplication, title: String, prompt: String) {
         // Configure the isolated provider while submission is still disabled.
         // A compact iPad sheet scrolls the Agent section beneath its fixed footer.
-        let provider = element(app, "ios.create.provider")
-        XCTAssertTrue(provider.waitForExistence(timeout: 10))
+        let form = app.collectionViews.firstMatch
+        XCTAssertTrue(form.waitForExistence(timeout: 10), "The task form must appear.\n\(app.debugDescription)")
+        let footer = element(app, "ios.create.run")
+        var provider = element(app, "ios.create.provider")
         // Keep this query independent of the Picker's transient automation type.
         // Xcode 26.5 can expose it as a Button before selection and a PopUpButton
         // afterwards, which makes a containing(.button, ...) query fail when its
         // frame is read again while scrolling back to the title field.
-        let form = app.collectionViews.firstMatch
-        let footer = element(app, "ios.create.run")
-        for _ in 0..<4 {
-            if provider.frame.maxY < footer.frame.minY - 8 && provider.isHittable { break }
-            XCTAssertTrue(form.exists)
+        // SwiftUI can also keep the off-screen Agent rows out of the iPad
+        // accessibility hierarchy until the form scrolls near them.
+        for _ in 0..<6 {
+            if provider.exists, provider.frame.maxY < footer.frame.minY - 8, provider.isHittable { break }
             form.swipeUp()
+            provider = element(app, "ios.create.provider")
         }
+        XCTAssertTrue(provider.exists, "The Provider row must appear after scrolling.\n\(app.debugDescription)")
         XCTAssertLessThan(
             provider.frame.maxY, footer.frame.minY - 8, "Provider must be above the footer before tapping.")
         XCTAssertGreaterThanOrEqual(
@@ -180,9 +183,15 @@ final class RemoteNodeUITests: XCTestCase {
         } else {
             form.swipeDown()
         }
-        let keyboardGone = XCTNSPredicateExpectation(
-            predicate: NSPredicate(format: "exists == false"), object: app.keyboards.firstMatch)
-        XCTAssertEqual(XCTWaiter.wait(for: [keyboardGone], timeout: 5), .completed, app.debugDescription)
+        // On iPad, XCTest can spend its full animation-idle timeout trying to
+        // snapshot the disappearing system keyboard. Observe the app-owned
+        // footer instead; it is the user-visible state needed to submit.
+        let submissionReady = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "exists == true AND hittable == true"),
+            object: element(app, "ios.create.run"))
+        XCTAssertEqual(
+            XCTWaiter.wait(for: [submissionReady], timeout: 10), .completed,
+            "The task form must be ready after dismissing the keyboard.\n\(app.debugDescription)")
     }
 
     private func textExists(_ app: XCUIApplication, _ text: String, timeout: TimeInterval = 30) {
@@ -435,7 +444,7 @@ final class RemoteNodeUITests: XCTestCase {
             thumbnailCount, 0,
             "The imported screenshot must appear in Photos.\n\(photos.debugDescription)")
         guard thumbnailCount > 0 else { return }
-        let photo = thumbnails.element(boundBy: thumbnailCount - 1)
+        var photo = thumbnails.element(boundBy: thumbnailCount - 1)
         XCTAssertTrue(
             photo.waitForExistence(timeout: 10),
             "The imported screenshot must appear in Photos.\n\(photos.debugDescription)")
@@ -443,13 +452,24 @@ final class RemoteNodeUITests: XCTestCase {
             // A slow simulator can finish presenting onboarding while the
             // library snapshot above is being resolved.
             dismissPhotosOnboarding(photos, timeout: 5)
+            // Re-resolve after Photos replaces its library hierarchy.
+            photo = photos.images.matching(identifier: "PXGGridLayout-Info")
+                .element(boundBy: thumbnailCount - 1)
         }
         let photoReady = XCTNSPredicateExpectation(
             predicate: NSPredicate(format: "exists == true AND hittable == true"), object: photo)
-        XCTAssertEqual(
-            XCTWaiter.wait(for: [photoReady], timeout: 10), .completed,
-            "The imported screenshot must be tappable after Photos onboarding.\n\(photos.debugDescription)")
-        photo.tap()
+        if XCTWaiter.wait(for: [photoReady], timeout: 10) == .completed {
+            photo.tap()
+        } else {
+            // Photos 26 can expose a visible grid image as non-hittable after
+            // dismissing onboarding. Its resolved frame still accepts the
+            // same user tap; the share-action assertion below verifies that
+            // the screenshot actually opened.
+            XCTAssertTrue(
+                photo.exists && !photo.frame.isEmpty,
+                "The imported screenshot must remain visible after Photos onboarding.\n\(photos.debugDescription)")
+            photo.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        }
         let share = photos.buttons.matching(
             NSPredicate(format: "label CONTAINS[c] 'share' OR label CONTAINS[c] 'teilen'")
         )

@@ -174,8 +174,8 @@ extension DieterStore {
             self?.connectionStopped(error, client: rpc, source: "conversation-auth")
         }
         conversationModel.onContentPresentation = { [weak self] presentation, cardID in
-            guard let self, self.conversationWorkspacePanelEnabled,
-                let url = ConversationPresentedContent.url(for: presentation)
+            guard let self, let url = ConversationPresentedContent.url(for: presentation),
+                self.conversationWorkspacePanelEnabled || RemoteWorkspaceImage.isWorkspaceImageURL(url)
             else { return }
             self.conversationContext.content.requestOpen(
                 url, conversationID: cardID, presentationTitle: presentation.title)
