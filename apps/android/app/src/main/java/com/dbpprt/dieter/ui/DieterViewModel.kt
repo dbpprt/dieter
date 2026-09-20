@@ -22,6 +22,8 @@ import com.dbpprt.dieter.data.DieterEndpoint
 import com.dbpprt.dieter.data.DieterRepository
 import com.dbpprt.dieter.gateway.v1.ProviderQuotaGroup
 import com.dbpprt.dieter.gateway.v1.ProviderQuotaProvider
+import com.dbpprt.dieter.settings.NavigationFolderPreferences
+import com.dbpprt.dieter.settings.NavigationFolderScope
 import com.dbpprt.dieter.settings.AppPreferences
 import com.dbpprt.dieter.settings.ConversationCreationPreferences
 import com.dbpprt.dieter.settings.DEFAULT_PANE_LEADING_FRACTION
@@ -183,6 +185,8 @@ data class DieterUiState(
     val providerQuotaMutatingAccounts: Set<String> = emptySet(),
     val projects: List<Project> = emptyList(),
     val projectOrder: List<String> = emptyList(),
+    val projectFolders: NavigationFolderPreferences = NavigationFolderPreferences(),
+    val chatFolders: NavigationFolderPreferences = NavigationFolderPreferences(),
     val collapsedChatProjectIds: Set<String> = emptySet(),
     val expandedChatProjectIds: Set<String> = emptySet(),
     val pinnedChatOrder: List<String> = emptyList(),
@@ -391,6 +395,8 @@ class DieterViewModel internal constructor(
     internal val conversationCreationPreferences: ConversationCreationPreferences
         get() = appPreferences.conversationCreation.value
 
+    internal val navigationFolders get() = appPreferences.navigationFolders
+
     private val mutationMutex = Mutex()
     private var pendingProjectCreation: Pair<CreateProjectRequest, String>? = null
     private var foreground = false
@@ -431,6 +437,14 @@ class DieterViewModel internal constructor(
     private var directoryListingGeneration = 0L
 
     init {
+        viewModelScope.launch {
+            navigationFolders.layouts.collectLatest { layouts ->
+                _state.update { it.copy(
+                    projectFolders = layouts.getValue(NavigationFolderScope.PROJECTS),
+                    chatFolders = layouts.getValue(NavigationFolderScope.CHATS),
+                ) }
+            }
+        }
         viewModelScope.launch {
             appPreferences.palette.collectLatest { palette ->
                 _state.update { it.copy(palette = palette) }
@@ -1037,6 +1051,13 @@ class DieterViewModel internal constructor(
     }
 
     fun moveProject(projectId: String, targetProjectId: String) {
+        val folders = navigationFolders.layouts.value.getValue(NavigationFolderScope.PROJECTS)
+        val sourceFolder = folders.folderContaining(projectId)
+        if (sourceFolder?.id != folders.folderContaining(targetProjectId)?.id) return
+        if (sourceFolder != null) {
+            navigationFolders.update(NavigationFolderScope.PROJECTS) { it.reordering(projectId, targetProjectId) }
+            return
+        }
         var updatedOrder: List<String>? = null
         _state.update { current ->
             val currentOrder = current.projects.map(Project::getId)

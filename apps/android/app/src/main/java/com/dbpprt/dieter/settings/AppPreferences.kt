@@ -27,6 +27,9 @@ class AppPreferences(
     loadAsync: Boolean = false,
 ) {
     private val appContext = context.applicationContext
+    val navigationFolders by lazy {
+        NavigationFolderStore(appContext.getSharedPreferences("dieter_navigation_layout", Context.MODE_PRIVATE))
+    }
     private val asyncLoading = loadAsync
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val mutationVersion = AtomicLong()

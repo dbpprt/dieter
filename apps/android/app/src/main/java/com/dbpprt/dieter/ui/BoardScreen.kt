@@ -26,6 +26,8 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.lazy.LazyListScope
+import com.dbpprt.dieter.settings.NavigationFolderScope
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
@@ -212,6 +214,7 @@ fun BoardScreen(
 
 @Composable
 internal fun SpacesOverview(state: DieterUiState, model: DieterViewModel, modifier: Modifier = Modifier) {
+    var moveProjectID by rememberSaveable { mutableStateOf<String?>(null) }
     var searchOpen by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
     val projectDragState = remember { ProjectDragState() }
@@ -239,6 +242,7 @@ internal fun SpacesOverview(state: DieterUiState, model: DieterViewModel, modifi
                     fontSize = 12.sp,
                 )
             }
+            NewNavigationFolderButton(NavigationFolderScope.PROJECTS, state.projectFolders, model.navigationFolders)
             IconButton(onClick = { searchOpen = !searchOpen }) { Icon(Icons.Outlined.Search, "Search spaces") }
             IconButton(onClick = { model.openSurface(AppSurface.APP_SETTINGS) }) {
                 Icon(Icons.Outlined.Settings, "App settings", tint = DieterMuted)
@@ -248,7 +252,7 @@ internal fun SpacesOverview(state: DieterUiState, model: DieterViewModel, modifi
         val showProjectReplicas = state.presentedProjectReplicas.values.map { it.daemonId }.distinct().size > 1
         if (state.spacesLoading) LinearProgressIndicator(Modifier.fillMaxWidth().height(2.dp), color = DieterShell)
         SurfaceErrorBanner(state.error, model::clearError)
-        if (!state.connected && state.projects.isEmpty()) {
+        if (!state.connected && state.projects.isEmpty() && state.projectFolders.folders.isEmpty()) {
             ConnectionEmptyState(state, model)
         } else if (state.loading && state.projects.isEmpty()) {
             LoadingState()
@@ -258,52 +262,74 @@ internal fun SpacesOverview(state: DieterUiState, model: DieterViewModel, modifi
                 contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 24.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                items(visibleProjects, key = { it.id }) { project ->
-                    val dragged = projectDragState.projectId == project.id
-                    var originInRoot by remember(project.id) { mutableStateOf(Offset.Zero) }
-                    DisposableEffect(projectDragState, project.id) {
-                        onDispose { projectDragState.unregister(project.id) }
+                fun LazyListScope.projectItems(projects: List<Project>) {
+                    items(projects, key = { it.id }) { project ->
+                        val dragged = projectDragState.projectId == project.id
+                        var originInRoot by remember(project.id) { mutableStateOf(Offset.Zero) }
+                        DisposableEffect(projectDragState, project.id) {
+                            onDispose { projectDragState.unregister(project.id) }
+                        }
+                        ProjectSpaceCard(
+                            project = project,
+                            onMoveToFolder = { moveProjectID = project.id },
+                            host = null,
+                            boards = boardsByProject[project.id].orEmpty(),
+                            cards = cardsByProject[project.id].orEmpty(),
+                            dragged = dragged,
+                            dropTarget = projectDragState.targetProjectId == project.id,
+                            onOpenBoard = { board -> model.openBoard(project.id, board.id) },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .onGloballyPositioned {
+                                    originInRoot = it.positionInRoot()
+                                    projectDragState.register(project.id, it.boundsInRoot())
+                                }
+                                .offset { IntOffset(0, if (dragged) projectDragState.offsetY.toInt() else 0) }
+                                .zIndex(if (dragged) 1f else 0f)
+                                .testTag("space-project-${project.id}")
+                                .semantics {
+                                    contentDescription = "${project.name} project; long press and drag to reorder"
+                                }
+                                .pointerInput(project.id, projectDragState) {
+                                    detectDragGesturesAfterLongPress(
+                                        onDragStart = { offset ->
+                                            projectDragState.start(project.id, originInRoot + offset)
+                                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        },
+                                        onDrag = { change, dragAmount ->
+                                            change.consume()
+                                            projectDragState.moveBy(dragAmount)
+                                        },
+                                        onDragEnd = {
+                                            projectDragState.finish()?.let { (projectId, targetProjectId) ->
+                                                model.moveProject(projectId, targetProjectId)
+                                            }
+                                        },
+                                        onDragCancel = projectDragState::reset,
+                                    )
+                                },
+                        )
                     }
-                    ProjectSpaceCard(
-                        project = project,
-                        host = null,
-                        boards = boardsByProject[project.id].orEmpty(),
-                        cards = cardsByProject[project.id].orEmpty(),
-                        dragged = dragged,
-                        dropTarget = projectDragState.targetProjectId == project.id,
-                        onOpenBoard = { board -> model.openBoard(project.id, board.id) },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .onGloballyPositioned {
-                                originInRoot = it.positionInRoot()
-                                projectDragState.register(project.id, it.boundsInRoot())
-                            }
-                            .offset { IntOffset(0, if (dragged) projectDragState.offsetY.toInt() else 0) }
-                            .zIndex(if (dragged) 1f else 0f)
-                            .testTag("space-project-${project.id}")
-                            .semantics {
-                                contentDescription = "${project.name} project; long press and drag to reorder"
-                            }
-                            .pointerInput(project.id, projectDragState) {
-                                detectDragGesturesAfterLongPress(
-                                    onDragStart = { offset ->
-                                        projectDragState.start(project.id, originInRoot + offset)
-                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                    },
-                                    onDrag = { change, dragAmount ->
-                                        change.consume()
-                                        projectDragState.moveBy(dragAmount)
-                                    },
-                                    onDragEnd = {
-                                        projectDragState.finish()?.let { (projectId, targetProjectId) ->
-                                            model.moveProject(projectId, targetProjectId)
-                                        }
-                                    },
-                                    onDragCancel = projectDragState::reset,
-                                )
-                            },
-                    )
                 }
+                val projectsByID = visibleProjects.associateBy { it.id }
+                state.projectFolders.folders.forEach { folder ->
+                    val members = folder.itemIDs.mapNotNull(projectsByID::get)
+                    if (query.isBlank() || members.isNotEmpty()) {
+                        item(key = "project-folder-${folder.id}") {
+                            NavigationFolderHeader(folder, members.size, NavigationFolderScope.PROJECTS,
+                                state.projectFolders, model.navigationFolders, revealSearchResults = query.isNotBlank())
+                        }
+                        if (folder.isExpanded || query.isNotBlank()) {
+                            if (members.isEmpty()) item(key = "project-folder-empty-${folder.id}") {
+                                Text("No projects in this folder", color = DieterMuted, modifier = Modifier.padding(horizontal = 16.dp))
+                            }
+                            projectItems(members)
+                        }
+                    }
+                }
+                val unfiled = state.projectFolders.unfiledIDs(visibleProjects.map { it.id }).mapNotNull(projectsByID::get)
+                if (state.projectFolders.folders.isNotEmpty() && unfiled.isNotEmpty()) item { ListSectionLabel("Projects") }
+                projectItems(unfiled)
                 item {
                     Surface(
                         onClick = { model.openSurface(AppSurface.NEW_PROJECT) },
@@ -327,6 +353,10 @@ internal fun SpacesOverview(state: DieterUiState, model: DieterViewModel, modifi
             }
         }
     }
+    moveProjectID?.let { projectID ->
+        MoveToNavigationFolderDialog(projectID, NavigationFolderScope.PROJECTS, state.projectFolders,
+            model.navigationFolders, onDismiss = { moveProjectID = null })
+    }
 }
 
 @Composable
@@ -339,6 +369,7 @@ internal fun ProjectSpaceCard(
     dropTarget: Boolean,
     onOpenBoard: (Board) -> Unit,
     modifier: Modifier = Modifier,
+    onMoveToFolder: (() -> Unit)? = null,
 ) {
     val accent = stableAccent(project.id)
     val reviewCount = cards.count { it.lane.contains("review", true) }
@@ -382,6 +413,11 @@ internal fun ProjectSpaceCard(
                     Text("quiet", color = DieterMuted, fontSize = 11.sp)
                 }
                 Spacer(Modifier.width(8.dp))
+                if (onMoveToFolder != null) {
+                    IconButton(onClick = onMoveToFolder, modifier = Modifier.testTag("project-folder-${project.id}")) {
+                        Icon(Icons.Outlined.FolderOpen, "Move ${project.name} to folder", tint = DieterMuted)
+                    }
+                }
                 Icon(Icons.Outlined.DragHandle, null, tint = DieterMuted, modifier = Modifier.size(20.dp))
             }
             if (boards.isEmpty()) {
