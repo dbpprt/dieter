@@ -77,6 +77,94 @@ import DieterCore
         }
 
         var body: some View {
+            navigationView
+                .interactiveDismissDisabled(
+                    submitting || !prompt.isEmpty || !title.isEmpty || !selectedLabelIDs.isEmpty || !attachments.isEmpty
+                        || hasModifiedProviderOptions
+                )
+                .fileImporter(
+                    isPresented: $fileImporterPresented,
+                    allowedContentTypes: [.item],
+                    allowsMultipleSelection: true,
+                    onCompletion: importFiles
+                )
+                .onChange(of: photoItems) { _, items in
+                    guard !items.isEmpty else { return }
+                    photoItems = []
+                    focusedField = nil
+                    Task {
+                        do {
+                            attachments = try await IOSAttachmentLoader().parts(
+                                photoItems: items, appendingTo: attachments)
+                            attachmentError = nil
+                        } catch {
+                            showAttachmentError(error)
+                        }
+                    }
+                }
+                .task {
+                    if projectID.isEmpty { projectID = store.projects.first?.id ?? "" }
+                    if !boards.contains(where: { $0.id == boardID }) { boardID = boards.first?.id ?? "" }
+                    if checkouts.count == 1 { checkoutID = checkouts[0].id }
+                }
+                .task(id: checkoutID) { await loadCreationHarnesses() }
+                .onChange(of: projectID) { _, _ in
+                    focusedField = nil
+                    selectedLabelIDs.removeAll()
+                    boardID = boards.first?.id ?? ""
+                    checkoutID = checkouts.count == 1 ? checkouts[0].id : ""
+                }
+                .onChange(of: boardID) { _, _ in
+                    focusedField = nil
+                    selectedLabelIDs.removeAll()
+                }
+                .onChange(of: labels.map(\.id)) { _, availableIDs in
+                    selectedLabelIDs.formIntersection(availableIDs)
+                }
+                .onChange(of: provider) { _, _ in
+                    focusedField = nil; resetModel()
+                }
+                .onChange(of: model) { _, _ in
+                    focusedField = nil
+                    resetEffort()
+                    providerOptions = IOSCreateTaskProviderOptions.normalized(
+                        for: harness, model: model, saved: providerOptions)
+                }
+                .onChange(of: effort) { _, _ in focusedField = nil }
+        }
+
+        private func importFiles(_ result: Result<[URL], Error>) {
+            switch result {
+            case .success(let urls):
+                Task {
+                    do {
+                        attachments = try await IOSAttachmentLoader().parts(
+                            urls: urls, appendingTo: attachments)
+                        attachmentError = nil
+                    } catch {
+                        attachmentError = error.localizedDescription
+                    }
+                }
+            case .failure(let error):
+                if (error as NSError).code != NSUserCancelledError {
+                    attachmentError = error.localizedDescription
+                }
+            }
+        }
+
+        private func loadCreationHarnesses() async {
+            catalogCheckoutID = ""; creationHarnesses = []
+            guard !checkoutID.isEmpty else { return }
+            let requested = checkoutID
+            do {
+                let catalog = try await store.creationHarnesses(projectID: projectID, checkoutID: requested)
+                guard !Task.isCancelled, checkoutID == requested else { return }
+                creationHarnesses = catalog; catalogCheckoutID = requested
+                provider = catalog.first?.id ?? ""; resetModel()
+            } catch { if !Task.isCancelled { store.errorMessage = error.localizedDescription } }
+        }
+
+        private var navigationView: some View {
             NavigationStack {
                 Form {
                     taskSection
@@ -106,112 +194,37 @@ import DieterCore
                     }
                 }
                 .safeAreaInset(edge: .bottom) {
-                    HStack(spacing: 12) {
-                        Button {
-                            submit(run: false)
-                        } label: {
-                            HStack {
-                                if submitting && !runRequested { ProgressView() }
-                                Text("Add task").frame(maxWidth: .infinity)
-                            }
-                        }
-                        .buttonStyle(.bordered)
-                        .accessibilityIdentifier("ios.create.add")
-                        Button {
-                            submit(run: true)
-                        } label: {
-                            HStack {
-                                if submitting && runRequested { ProgressView().tint(.white) }
-                                Label("Run task", systemImage: "play.fill").frame(maxWidth: .infinity)
-                            }
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .accessibilityIdentifier("ios.create.run")
-                    }
-                    .controlSize(.large)
-                    .disabled(!canSubmit)
-                    .padding().background(.bar)
+                    submissionBar
                 }
             }
-            .interactiveDismissDisabled(
-                submitting || !prompt.isEmpty || !title.isEmpty || !selectedLabelIDs.isEmpty || !attachments.isEmpty
-                    || hasModifiedProviderOptions
-            )
-            .fileImporter(
-                isPresented: $fileImporterPresented,
-                allowedContentTypes: [.item],
-                allowsMultipleSelection: true
-            ) { result in
-                switch result {
-                case .success(let urls):
-                    Task {
-                        do {
-                            attachments = try await IOSAttachmentLoader().parts(
-                                urls: urls, appendingTo: attachments)
-                            attachmentError = nil
-                        } catch {
-                            attachmentError = error.localizedDescription
-                        }
-                    }
-                case .failure(let error):
-                    if (error as NSError).code != NSUserCancelledError {
-                        attachmentError = error.localizedDescription
+        }
+
+        private var submissionBar: some View {
+            HStack(spacing: 12) {
+                Button {
+                    submit(run: false)
+                } label: {
+                    HStack {
+                        if submitting && !runRequested { ProgressView() }
+                        Text("Add task").frame(maxWidth: .infinity)
                     }
                 }
-            }
-            .onChange(of: photoItems) { _, items in
-                guard !items.isEmpty else { return }
-                photoItems = []
-                focusedField = nil
-                Task {
-                    do {
-                        attachments = try await IOSAttachmentLoader().parts(
-                            photoItems: items, appendingTo: attachments)
-                        attachmentError = nil
-                    } catch {
-                        showAttachmentError(error)
+                .buttonStyle(.bordered)
+                .accessibilityIdentifier("ios.create.add")
+                Button {
+                    submit(run: true)
+                } label: {
+                    HStack {
+                        if submitting && runRequested { ProgressView().tint(.white) }
+                        Label("Run task", systemImage: "play.fill").frame(maxWidth: .infinity)
                     }
                 }
+                .buttonStyle(.borderedProminent)
+                .accessibilityIdentifier("ios.create.run")
             }
-            .task {
-                if projectID.isEmpty { projectID = store.projects.first?.id ?? "" }
-                if !boards.contains(where: { $0.id == boardID }) { boardID = boards.first?.id ?? "" }
-                if checkouts.count == 1 { checkoutID = checkouts[0].id }
-            }
-            .task(id: checkoutID) {
-                catalogCheckoutID = ""; creationHarnesses = []
-                guard !checkoutID.isEmpty else { return }
-                let requested = checkoutID
-                do {
-                    let catalog = try await store.creationHarnesses(projectID: projectID, checkoutID: requested)
-                    guard !Task.isCancelled, checkoutID == requested else { return }
-                    creationHarnesses = catalog; catalogCheckoutID = requested
-                    provider = catalog.first?.id ?? ""; resetModel()
-                } catch { if !Task.isCancelled { store.errorMessage = error.localizedDescription } }
-            }
-            .onChange(of: projectID) { _, _ in
-                focusedField = nil
-                selectedLabelIDs.removeAll()
-                boardID = boards.first?.id ?? ""
-                checkoutID = checkouts.count == 1 ? checkouts[0].id : ""
-            }
-            .onChange(of: boardID) { _, _ in
-                focusedField = nil
-                selectedLabelIDs.removeAll()
-            }
-            .onChange(of: labels.map(\.id)) { _, availableIDs in
-                selectedLabelIDs.formIntersection(availableIDs)
-            }
-            .onChange(of: provider) { _, _ in
-                focusedField = nil; resetModel()
-            }
-            .onChange(of: model) { _, _ in
-                focusedField = nil
-                resetEffort()
-                providerOptions = IOSCreateTaskProviderOptions.normalized(
-                    for: harness, model: model, saved: providerOptions)
-            }
-            .onChange(of: effort) { _, _ in focusedField = nil }
+            .controlSize(.large)
+            .disabled(!canSubmit)
+            .padding().background(.bar)
         }
 
         private var taskSection: some View {
