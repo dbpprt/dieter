@@ -239,21 +239,21 @@
                 return
             }
             let originalWindowFrame = window.frame
-            // AppKit may report isZoomed=false when the minimum window width
-            // exceeds the CI display. Compare against its actual standard zoom.
-            window.performZoom(nil)
-            try? await DieterTaskSleep.seconds(1)
-            let standardZoomFrame = window.frame
-            window.setFrame(originalWindowFrame, display: true)
-            try? await DieterTaskSleep.milliseconds(300)
+            // Exercise the gesture directly. Priming the expected frame with
+            // performZoom and then restoring it with setFrame leaves AppKit's
+            // internal zoom state inconsistent on narrow CI displays: the next
+            // gesture "unzooms" to the frame it already has and appears inert.
             doubleClickTitleBar(of: window)
             try? await DieterTaskSleep.seconds(1)
+            let toggledWindowFrame = window.frame
+            doubleClickTitleBar(of: window)
+            try? await DieterTaskSleep.seconds(1)
+            let restoredWindowFrame = window.frame
             results["window-titlebar-double-click"] =
-                window.frame == standardZoomFrame && window.frame != originalWindowFrame
+                toggledWindowFrame != originalWindowFrame
+                    && restoredWindowFrame == originalWindowFrame
                 ? "passed"
-                : "failed: hidden title-bar double-click did not toggle zoom (before=\(originalWindowFrame), after=\(window.frame), layout=\(window.contentLayoutRect), expected=\(standardZoomFrame))"
-            doubleClickTitleBar(of: window)
-            try? await DieterTaskSleep.seconds(1)
+                : "failed: hidden title-bar double-click did not round-trip zoom (before=\(originalWindowFrame), toggled=\(toggledWindowFrame), restored=\(restoredWindowFrame), layout=\(window.contentLayoutRect))"
             if window.frame != originalWindowFrame {
                 window.setFrame(originalWindowFrame, display: true)
             }
