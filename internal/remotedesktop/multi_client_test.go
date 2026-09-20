@@ -27,7 +27,7 @@ func TestMultipleClientsAdmissionReconnectAndControl(t *testing.T) {
 		req := proto.Clone(template).(*dieterv1.StartRemoteDesktopRequest)
 		req.ClientNonce = fmt.Sprintf("viewer-%d", i)
 		req.ClientName = fmt.Sprintf("Client %d", i)
-		req.InputProtocolVersion = 3
+		req.InputProtocolVersion = inputProtocolVersion
 		req.Control = true
 		req.Clipboard = true
 		peer := testViewer(t, req)
@@ -265,7 +265,7 @@ func (s *failingReleaseSource) ReleaseInputChecked(context.Context) error {
 	}
 	return nil
 }
-func TestControlHandoffRequiresReleaseAndRejectsLegacyOwner(t *testing.T) {
+func TestControlHandoffRequiresAcknowledgedRelease(t *testing.T) {
 	manager, template, _ := testManagerAndRequest(t, "github:7")
 	defer manager.Shutdown(context.Background())
 	source := &failingReleaseSource{inputFrameSource: inputFrameSource{blockingFrameSource: blockingFrameSource{started: make(chan struct{}), stopped: make(chan struct{})}, inputs: make(chan *dieterv1.RemoteDesktopInput, 4), released: make(chan struct{}, 4)}}
@@ -286,19 +286,8 @@ func TestControlHandoffRequiresReleaseAndRejectsLegacyOwner(t *testing.T) {
 		}
 		return manager.sessionFor(sub.SessionID)
 	}
-	first := start("legacy", 2)
-	second := start("modern", 3)
-	if _, err := manager.SetControl(context.Background(), second.id, true); !errors.Is(err, ErrControlOwner) {
-		t.Fatalf("legacy handoff: %v", err)
-	}
-	if manager.controller != first {
-		t.Fatal("legacy owner replaced")
-	}
-	manager.Close(first.id, "legacy left")
-	if _, err := manager.SetControl(context.Background(), second.id, true); err != nil {
-		t.Fatal(err)
-	}
-	third := start("modern-third", 3)
+	second := start("first", inputProtocolVersion)
+	third := start("second", inputProtocolVersion)
 	source.fail.Store(true)
 	grant := manager.controlGeneration
 	if _, err := manager.SetControl(context.Background(), third.id, true); err == nil {

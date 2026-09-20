@@ -171,12 +171,11 @@ enum ConnectionAttemptOwnership {
 enum MachineAPICompatibility: Equatable, Sendable {
     case compatible
     case incompatible
-    case unknown
 }
 
 extension DieterEndpoint {
     var apiCompatibility: MachineAPICompatibility {
-        guard !apiVersion.isEmpty else { return .unknown }
+        guard daemonID != nil else { return .compatible }
         return apiVersion == dieterExpectedAPIVersion ? .compatible : .incompatible
     }
 
@@ -406,9 +405,6 @@ enum MachineRoutingPolicy {
         }
         let eligible = online.filter { $0.apiCompatibility != .incompatible }
         let sorted = eligible.sorted {
-            let leftRank = $0.apiCompatibility == .compatible ? 0 : 1
-            let rightRank = $1.apiCompatibility == .compatible ? 0 : 1
-            if leftRank != rightRank { return leftRank < rightRank }
             let names = $0.name.localizedCaseInsensitiveCompare($1.name)
             if names != .orderedSame { return names == .orderedAscending }
             return $0.id < $1.id

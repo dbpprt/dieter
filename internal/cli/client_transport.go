@@ -150,6 +150,15 @@ func (c *CLI) dialGateway(ctx context.Context) (*gatewayTransport, error) {
 		_ = connection.Close()
 		return nil, fmt.Errorf("authenticate with Dieter gateway %s: %w", origin, err)
 	}
+	directory, err := result.client.ListDaemons(ctx, &emptypb.Empty{})
+	if err != nil {
+		_ = connection.Close()
+		return nil, err
+	}
+	if directory.GetGatewayInformation().GetApiVersion() != protocol.Version {
+		_ = connection.Close()
+		return nil, fmt.Errorf("Dieter update required: gateway contract %q, client contract %s", directory.GetGatewayInformation().GetApiVersion(), protocol.Version)
+	}
 	c.gateway = result
 	return result, nil
 }
@@ -219,6 +228,9 @@ func (c *CLI) dialDieter(ctx context.Context) (*dieterTransport, error) {
 	machine, err := resolveDaemon(directory.GetDaemons(), c.Machine)
 	if err != nil {
 		return nil, err
+	}
+	if machine.GetApiVersion() != protocol.Version {
+		return nil, fmt.Errorf("Dieter update required: daemon contract %q, client contract %s", machine.GetApiVersion(), protocol.Version)
 	}
 	if !machine.GetOnline() {
 		return nil, fmt.Errorf("Dieter machine %s (%s) is offline", machine.GetName(), machine.GetId())

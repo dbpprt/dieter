@@ -30,19 +30,15 @@ class MainActivityFramePerformanceTest {
         // Warm each route once. Macrobenchmarks and real user sessions both execute optimized
         // code after this first composition; the adjacent pages are also precomposed in-app.
         listOf("nav-chats", "nav-board", "nav-terminals", "nav-board").forEach { tag ->
-            composeRule.onNodeWithTag(tag).performClick()
-            composeRule.waitForIdle()
+            navigate(tag)
         }
         val aggregator = FrameMetricsAggregator(FrameMetricsAggregator.TOTAL_DURATION)
         aggregator.add(composeRule.activity)
 
         repeat(4) {
-            composeRule.onNodeWithTag("nav-chats").performClick()
-            composeRule.waitForIdle()
-            composeRule.onNodeWithTag("nav-board").performClick()
-            composeRule.waitForIdle()
-            composeRule.onNodeWithTag("nav-terminals").performClick()
-            composeRule.waitForIdle()
+            navigate("nav-chats")
+            navigate("nav-board")
+            navigate("nav-terminals")
         }
 
         val metrics = requireNotNull(aggregator.remove(composeRule.activity))
@@ -62,6 +58,17 @@ class MainActivityFramePerformanceTest {
         assertEquals("Detected a >=${SEVERE_FRAME_MS}ms UI-thread stall", 0, severeFrames)
         val p95 = orderedDurations.sorted()[(orderedDurations.size * 0.95).toInt().coerceAtMost(orderedDurations.lastIndex)]
         assertTrue("Navigation p95 was ${p95}ms", p95 < P95_FRAME_MS)
+    }
+
+    private fun navigate(tag: String) {
+        if (tag == "nav-terminals") {
+            composeRule.onNodeWithTag("nav-tools").performClick()
+            composeRule.waitForIdle()
+            composeRule.onNodeWithTag("tool-terminals").performClick()
+        } else {
+            composeRule.onNodeWithTag(tag).performClick()
+        }
+        composeRule.waitForIdle()
     }
 
     private companion object {

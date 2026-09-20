@@ -25,7 +25,7 @@ func TestDefaultRootUsesHome(t *testing.T) {
 	}
 }
 
-func TestOpenStoreMigratesDaemonPresenceColumns(t *testing.T) {
+func TestOpenStoreRejectsUnversionedDatabase(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, "gateway.db")
 	database, err := sql.Open("sqlite", path)
@@ -50,34 +50,11 @@ func TestOpenStoreMigratesDaemonPresenceColumns(t *testing.T) {
 		t.Fatal(err)
 	}
 	store, err := OpenStore(root)
-	if err != nil {
-		t.Fatal(err)
+	if err == nil {
+		store.Close()
+		t.Fatal("unversioned existing gateway store was accepted")
 	}
-	defer store.Close()
-	rows, err := store.DB.Query(`PRAGMA table_info(daemons)`)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer rows.Close()
-	foundRemoteDesktop := false
-	foundAPIVersion := false
-	for rows.Next() {
-		var index int
-		var name, columnType string
-		var notNull, primaryKey int
-		var defaultValue sql.NullString
-		if err := rows.Scan(&index, &name, &columnType, &notNull, &defaultValue, &primaryKey); err != nil {
-			t.Fatal(err)
-		}
-		foundRemoteDesktop = foundRemoteDesktop || name == "remote_desktop_json"
-		foundAPIVersion = foundAPIVersion || name == "api_version"
-	}
-	if !foundRemoteDesktop {
-		t.Fatal("remote_desktop_json column was not added")
-	}
-	if !foundAPIVersion {
-		t.Fatal("api_version column was not added")
-	}
+
 }
 
 func TestAuthUpdatesAcrossStoresCannotResurrectRevokedSession(t *testing.T) {

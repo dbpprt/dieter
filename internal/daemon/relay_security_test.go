@@ -272,7 +272,7 @@ func (g *stalledControlGateway) Connect(stream grpc.BidiStreamingServer[gatewayv
 	if _, err := stream.Recv(); err != nil {
 		return err
 	}
-	if err := stream.Send(&gatewayv1.DaemonLinkFrame{Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_HELLO_ACK, DaemonId: hello.GetDaemonId(), Generation: g.generation}); err != nil {
+	if err := stream.Send(&gatewayv1.DaemonLinkFrame{Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_HELLO_ACK, ApiVersion: "1", DaemonId: hello.GetDaemonId(), Generation: g.generation}); err != nil {
 		return err
 	}
 	// Stop reading after handshake. The daemon's output flow-control window

@@ -388,7 +388,8 @@
 
         private func openProjectFiles(_ project: Dieter_V1_Project, checkout: Dieter_V1_Checkout) {
             fileScope = IOSFileScope(
-                machineID: checkout.daemonID, projectID: project.id, checkoutID: checkout.id, cardID: "", title: project.name)
+                machineID: checkout.daemonID, projectID: project.id, checkoutID: checkout.id, cardID: "",
+                title: project.name)
         }
 
         private func openFiles(for card: Dieter_V1_Card?) {
@@ -506,7 +507,8 @@
             List(selection: $selectedTaskID) {
                 ForEach(tasks, id: \.id) { card in
                     NavigationLink(value: card.id) {
-                        IOSTaskRow(card: card, projectName: store.projects.first { $0.id == card.projectID }?.name,
+                        IOSTaskRow(
+                            card: card, projectName: store.projects.first { $0.id == card.projectID }?.name,
                             machineName: store.machines.first { $0.daemonID == card.ownerDaemonID }?.name,
                             machineOnline: store.machines.first { $0.daemonID == card.ownerDaemonID }?.online == true)
                     }

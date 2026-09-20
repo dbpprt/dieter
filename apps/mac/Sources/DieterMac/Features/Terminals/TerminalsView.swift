@@ -433,7 +433,9 @@ private struct NewTerminalSheet: View {
                         ForEach(destinationGroups) { group in
                             Section(group.title) {
                                 ForEach(group.destinations) { destination in
-                                    Text("\(destination.project.name) · \(destination.checkout?.name ?? destination.checkoutID)").tag(destination.checkoutID)
+                                    Text(
+                                        "\(destination.project.name) · \(destination.checkout?.name ?? destination.checkoutID)"
+                                    ).tag(destination.checkoutID)
                                 }
                             }
                         }

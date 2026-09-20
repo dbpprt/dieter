@@ -200,8 +200,8 @@ func TestManagerCarriesAuthorizedInputAndReleasesItOnChannelClose(t *testing.T) 
 		t.Fatal("reliable input channel did not open")
 	}
 	input := &dieterv1.RemoteDesktopInput{
-		ProtocolVersion: inputProtocolVersion, InputEpoch: binding.GetInputEpoch(), Sequence: 1,
-		Payload: &dieterv1.RemoteDesktopInput_Key{Key: &dieterv1.RemoteDesktopKey{KeyCode: 55, Down: true, Modifiers: 8}},
+		ProtocolVersion: inputProtocolVersion, InputEpoch: binding.GetInputEpoch(), Sequence: 1, ControlGeneration: manager.controlGeneration,
+		Payload: &dieterv1.RemoteDesktopInput_Key{Key: &dieterv1.RemoteDesktopKey{PhysicalKey: 227, Down: true, Modifiers: 8}},
 	}
 	raw, err := proto.Marshal(input)
 	if err != nil {
@@ -212,7 +212,7 @@ func TestManagerCarriesAuthorizedInputAndReleasesItOnChannelClose(t *testing.T) 
 	}
 	select {
 	case received := <-source.inputs:
-		if received.GetKey().GetKeyCode() != 55 || !received.GetKey().GetDown() {
+		if received.GetKey().GetPhysicalKey() != 227 || !received.GetKey().GetDown() {
 			t.Fatalf("received input=%#v", received)
 		}
 	case <-time.After(time.Second):
@@ -485,7 +485,7 @@ func testManagerAndRequest(t *testing.T, operator string) (*Manager, *dieterv1.S
 		t.Fatal(err)
 	}
 	configuration.SignedEnvelope = []byte(envelope)
-	request := &dieterv1.StartRemoteDesktopRequest{
+	request := &dieterv1.StartRemoteDesktopRequest{InputProtocolVersion: 1,
 		ClientNonce: "nonce_test", RtcConfiguration: configuration, DisplayId: "primary",
 		MaxFps: 10, MaxBitrateKbps: 500,
 	}

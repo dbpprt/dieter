@@ -15,15 +15,13 @@ package enum MachineDirectoryRefreshLoop {
             group.addTask {
                 while !Task.isCancelled {
                     await refreshPresence()
-                    do { try await DieterTaskSleep.seconds(presenceInterval) }
-                    catch { return }
+                    do { try await DieterTaskSleep.seconds(presenceInterval) } catch { return }
                 }
             }
             group.addTask {
                 if refreshImmediately && !Task.isCancelled { await refreshDirectory() }
                 while !Task.isCancelled {
-                    do { try await DieterTaskSleep.seconds(directoryInterval) }
-                    catch { return }
+                    do { try await DieterTaskSleep.seconds(directoryInterval) } catch { return }
                     guard !Task.isCancelled else { return }
                     await refreshDirectory()
                 }

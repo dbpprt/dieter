@@ -8,10 +8,9 @@ import org.junit.Test
 
 class BackgroundSyncModeTest {
     @Test
-    fun legacyPreferencePreservesItsExistingBehavior() {
-        assertEquals(BackgroundSyncMode.LIVE, BackgroundSyncMode.resolve(null, legacyEnabled = true))
-        assertEquals(BackgroundSyncMode.APP_ONLY, BackgroundSyncMode.resolve(null, legacyEnabled = false))
-        assertEquals(BackgroundSyncMode.LIVE, BackgroundSyncMode.resolve("live", legacyEnabled = false))
+    fun missingPreferenceDefaultsToLive() {
+        assertEquals(BackgroundSyncMode.LIVE, BackgroundSyncMode.resolve(null))
+        assertEquals(BackgroundSyncMode.LIVE, BackgroundSyncMode.resolve("live"))
     }
 
     @Test

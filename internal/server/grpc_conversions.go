@@ -148,7 +148,7 @@ func protoWorkspace(value model.Workspace) *dieterv1.Workspace {
 		CardId: value.CardID, ProjectId: value.ProjectID, Mode: value.Mode, Path: value.Path,
 		BaseRemote: value.BaseRemote, BaseBranch: value.BaseBranch, BaseSha: value.BaseSHA,
 		CurrentBaseSha: value.CurrentBaseSHA, Branch: value.Branch, HeadSha: value.HeadSHA,
-		UpstreamRef: value.UpstreamRef, ManagedBranch: value.ManagedBranch, LegacyUnmanaged: value.LegacyUnmanaged,
+		UpstreamRef: value.UpstreamRef, ManagedBranch: value.ManagedBranch,
 		State: value.State, Revision: value.Revision, CurrentOperationId: value.CurrentOperationID,
 		PreviousCardIds: append([]string(nil), value.PreviousCardIDs...), ChangedFiles: int32(value.ChangedFiles),
 		Additions: int32(value.Additions), Deletions: int32(value.Deletions), Ahead: int32(value.Ahead),

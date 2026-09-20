@@ -9,17 +9,16 @@ package actor OutboxJournal {
         package var version = 1
         package var revision: UInt64 = 0
         package var entries: [DieterOutboxEntry] = []
+        package init() {}
     }
-    private struct Legacy: Decodable { var outbox: [DieterOutboxEntry] }
     private let url: URL
-    private let legacyURL: URL
     private let writer: Writer
     private var state: Snapshot?
     package static let entryLimit = 1_000
     package static let byteLimit = 64 * 1_024 * 1_024
 
-    package init(url: URL, legacyURL: URL, writer: Writer? = nil) {
-        self.url = url; self.legacyURL = legacyURL
+    package init(url: URL, writer: Writer? = nil) {
+        self.url = url
         self.writer = writer ?? Self.write
     }
 
@@ -31,15 +30,10 @@ package actor OutboxJournal {
             state = loaded
             return loaded
         }
-        var migrated = Snapshot()
-        if FileManager.default.fileExists(atPath: legacyURL.path) {
-            // Decode only the commands: corrupt disposable protobuf projections
-            // must not make a recoverable outbox disappear.
-            migrated.entries = try JSONDecoder().decode(Legacy.self, from: Data(contentsOf: legacyURL)).outbox
-        }
-        try persist(migrated)
-        state = migrated
-        return migrated
+        let initial = Snapshot()
+        try persist(initial)
+        state = initial
+        return initial
     }
 
     package func transaction<Result: Sendable>(

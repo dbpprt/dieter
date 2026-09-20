@@ -145,7 +145,7 @@ func installSystemdUserService(root string, options linuxServiceInstallOptions, 
 	var existingUnit []byte
 	if raw, readErr := os.ReadFile(unitPath); readErr == nil {
 		existingUnit = raw
-		if !strings.HasPrefix(string(raw), managedSystemdUnitHeader) && !legacyDieterUnit(raw) && !options.force {
+		if !strings.HasPrefix(string(raw), managedSystemdUnitHeader) && !options.force {
 			return fmt.Errorf("%s is not managed by Dieter; rerun with --force to replace it", unitPath)
 		}
 	} else if !errors.Is(readErr, os.ErrNotExist) {
@@ -259,11 +259,6 @@ func validateLinuxServiceOptions(options linuxServiceInstallOptions) error {
 		}
 	}
 	return nil
-}
-
-func legacyDieterUnit(raw []byte) bool {
-	text := string(raw)
-	return strings.Contains(text, "dieter daemon start --service") || strings.Contains(text, "daemon start --service")
 }
 
 func managedExecStart(raw []byte) string {

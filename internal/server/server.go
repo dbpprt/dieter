@@ -6,12 +6,9 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
-	"os"
-	"os/signal"
 	"path/filepath"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/dbpprt/dieter/internal/app"
@@ -45,7 +42,6 @@ type Server struct {
 	log                     *slog.Logger
 	mux                     *http.ServeMux
 	filesMu                 sync.RWMutex
-	auth                    *authManager
 	terminals               *terminal.Manager
 	executions              *remoteexec.Manager
 	remoteDesktop           *remotedesktop.Manager
@@ -81,8 +77,7 @@ func NewWithRunner(data *store.Store, logger *slog.Logger, runner harness.Runner
 }
 
 func NewWithOptions(data *store.Store, logger *slog.Logger, options Options) *Server {
-	manager, _ := newAuthManager(authConfig{}, data)
-	application := newWithAuth(data, logger, options.Runner, manager)
+	application := newServer(data, logger, options.Runner)
 	application.controlRTC = options.ControlRTC
 	if options.RemoteDesktop != nil {
 		application.remoteDesktop = options.RemoteDesktop
@@ -103,15 +98,14 @@ func NewWithRemoteDesktop(data *store.Store, logger *slog.Logger, runner harness
 	return NewWithOptions(data, logger, Options{Runner: runner, RemoteDesktop: remoteDesktop})
 }
 
-func newWithAuth(data *store.Store, logger *slog.Logger, runner harness.Runner, manager *authManager) *Server {
+func newServer(data *store.Store, logger *slog.Logger, runner harness.Runner) *Server {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	manager.log = logger
 	service := app.New(data, runner)
 	s := &Server{
 		store: data, app: service, workspaces: service.Workspaces, schedules: scheduler.New(data, service), log: logger,
-		mux: http.NewServeMux(), auth: manager, terminals: terminal.NewPersistent(data.Root), executions: remoteexec.New(),
+		mux: http.NewServeMux(), terminals: terminal.NewPersistent(data.Root), executions: remoteexec.New(),
 		remoteDesktop: remotedesktop.New(remotedesktop.Options{Logger: logger, Source: remotedesktop.SourceOptions{ClipboardDirectory: filepath.Join(data.Root, "clipboard")}}),
 		machine:       machine.NewCollector(data.Root),
 		machineAction: func(ctx context.Context, operation machine.Operation) error {
@@ -191,7 +185,6 @@ func newWithAuth(data *store.Store, logger *slog.Logger, runner harness.Runner, 
 		}
 		return false
 	}
-	manager.register(s.mux)
 	path, handler := dieterv1connect.NewDieterServiceHandler(&connectAPI{core: &grpcAPI{server: s}})
 	s.mux.Handle(path, handler)
 	s.mux.HandleFunc("/", http.NotFound)
@@ -199,7 +192,7 @@ func newWithAuth(data *store.Store, logger *slog.Logger, runner harness.Runner, 
 }
 
 func (s *Server) Handler() http.Handler {
-	return h2c.NewHandler(securityHeaders(s.auth.config.Enabled, s.requestLog(s.auth.middleware(s.mux))), &http2.Server{})
+	return h2c.NewHandler(securityHeaders(s.requestLog(localDaemonOnly(s.mux))), &http2.Server{})
 }
 
 // CloseTerminalSessionsForTesting explicitly destroys every terminal owned by
@@ -252,33 +245,15 @@ func (s *Server) requestLog(next http.Handler) http.Handler {
 	})
 }
 
-func securityHeaders(public bool, next http.Handler) http.Handler {
+func securityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Referrer-Policy", "no-referrer")
 		w.Header().Set("Content-Security-Policy", "default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; font-src 'self'; connect-src 'self'")
 		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=()")
-		if public {
-			w.Header().Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
-		}
 		next.ServeHTTP(w, r)
 	})
-}
-
-func Listen(addr string, data *store.Store, runner harness.Runner, logger *slog.Logger) error {
-	config, err := authConfigFromEnv()
-	if err != nil {
-		return fmt.Errorf("configure authentication: %w", err)
-	}
-	manager, err := newAuthManager(config, data)
-	if err != nil {
-		return fmt.Errorf("configure authentication: %w", err)
-	}
-	application := newWithAuth(data, logger, runner, manager)
-	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer cancel()
-	return run(ctx, addr, data, application, logger, false, nil)
 }
 
 // ListenDaemon runs Dieter's machine-local data plane without public OAuth.
@@ -296,11 +271,7 @@ func ListenDaemon(ctx context.Context, addr string, data *store.Store, runner ha
 // successful listener binding, and recovered-worker protocol readiness, before
 // any scheduled work is dispatched.
 func ListenDaemonReady(ctx context.Context, addr string, data *store.Store, runner harness.Runner, logger *slog.Logger, remoteDesktop *remotedesktop.Manager, activating bool, ready func() error, providerAccountKey func(string) string, control *controlrtc.Manager) error {
-	manager, err := newAuthManager(authConfig{}, data)
-	if err != nil {
-		return err
-	}
-	application := newWithAuth(data, logger, runner, manager)
+	application := newServer(data, logger, runner)
 	if providerAccountKey != nil {
 		application.app.ProviderAccountKey = providerAccountKey
 	}

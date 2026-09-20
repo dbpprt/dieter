@@ -97,7 +97,7 @@ See [implementation validation](VALIDATION.md) for observed results and current 
 
 The smoke command creates its own simulator, temporary gateway, enrolled daemon, mock harness, and Git repository. It exercises real native controls and real remote RPCs without production accounts or provider credentials. It stops only those owned resources and preserves test results and screenshots. Existing simulators and operator daemons are left untouched.
 
-Fixtures include a legacy node so compatibility rejection can be verified. Certificate tests cover exact enrolled daemon URI identity and reject the wrong daemon, wrong CA, and tampered certificates. Pure model tests cover sign-in request validation, ownership across backgrounding, stale-response isolation, and bounded transcript handling. Native application-hosted tests also exercise device-only Keychain persistence and certificate trust on iOS.
+Fixtures include an incompatible node so compatibility rejection can be verified. Certificate tests cover exact enrolled daemon URI identity and reject the wrong daemon, wrong CA, and tampered certificates. Pure model tests cover sign-in request validation, ownership across backgrounding, stale-response isolation, and bounded transcript handling. Native application-hosted tests also exercise device-only Keychain persistence and certificate trust on iOS.
 
 An optional, read-only check verifies that an HTTPS gateway returns its explicit authentication error for an invalid session:
 

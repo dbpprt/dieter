@@ -14,9 +14,9 @@ enum class BackgroundSyncMode(val wireValue: String) {
         get() = this != APP_ONLY
 
     companion object {
-        fun resolve(value: String?, legacyEnabled: Boolean = true): BackgroundSyncMode =
+        fun resolve(value: String?): BackgroundSyncMode =
             entries.firstOrNull { it.wireValue == value }
-                ?: if (legacyEnabled) LIVE else APP_ONLY
+                ?: LIVE
     }
 }
 

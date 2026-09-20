@@ -11,7 +11,7 @@ struct GitOperationSheet: View {
     @State private var subject = ""
     @State private var bodyText = ""
     @State private var strategy = "squash"
-    @State private var includeUntracked = true
+    @State private var stageAll = true
     @State private var validate = true
     @State private var fetch = true
     @State private var draft = false
@@ -87,7 +87,7 @@ struct GitOperationSheet: View {
             WorkspaceSheetField(
                 label: "DESCRIPTION", placeholder: "Optional commit body", text: $bodyText, multiline: true)
             WorkspaceSheetOptions {
-                Toggle("Include untracked files", isOn: $includeUntracked)
+                Toggle("Stage all changes", isOn: $stageAll)
             }
         case .update:
             WorkspaceSheetNotice(
@@ -222,7 +222,7 @@ struct GitOperationSheet: View {
 
     private var parameters: [String: String] {
         switch kind {
-        case .commit: ["subject": subject, "body": bodyText, "include_untracked": String(includeUntracked)]
+        case .commit: ["subject": subject, "body": bodyText, "stage_all": String(stageAll)]
         case .update: ["fetch": String(fetch), "validate": String(validate)]
         case .push:
             [

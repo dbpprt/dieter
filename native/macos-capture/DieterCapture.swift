@@ -999,7 +999,7 @@ final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
                     let data = pending.prefix(upTo: end)
                     if data.count > 16384 { self.stop(); return }
                     pending.removeSubrange(...end)
-                    guard let command = try? decoder.decode(NativeCommand.self, from: data), command.version == 2 else {
+                    guard let command = try? decoder.decode(NativeCommand.self, from: data), command.version == CaptureContract.version else {
                         self.stop(); return
                     }
                     self.daemonLiveness.receive(command.kind)
@@ -1083,7 +1083,8 @@ final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
                 try await Task.sleep(nanoseconds: delay * 1_000_000)
             }
             self.stateQueue.sync {
-                if let frameID = command.frameId, self.credits.consumed(id: frameID, generation: command.generation) {
+                if let frameID = command.frameId, let generation = command.generation,
+                    self.credits.consumed(id: frameID, generation: generation) {
                     self.admitPendingFrame()
                 }
             }
@@ -1251,7 +1252,16 @@ final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
             return
         }
         let shape = SHA256.hash(data: png).map { String(format: "%02x", $0) }.joined()
-        let point = CGEvent(source: nil)?.location ?? .zero
+        let state = inputQueue.sync {
+            (
+                bounds: inputInjector?.bounds ?? .zero,
+                ordinal: inputInjector?.lastOrdinal ?? 0,
+                point: inputInjector?.dryRun == true
+                    ? inputInjector?.position ?? .zero : CGEvent(source: nil)?.location ?? .zero
+            )
+        }
+        guard state.bounds.width > 0, state.bounds.height > 0 else { return }
+        let point = state.point
         let now = DispatchTime.now().uptimeNanoseconds
         guard
             config.1 != lastCursorGeneration || shape != lastCursorShape || point != lastCursorPoint
@@ -1259,15 +1269,13 @@ final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
         else {
             return
         }
-        let state = inputQueue.sync { (inputInjector?.bounds ?? .zero, inputInjector?.lastOrdinal ?? 0) }
-        guard state.0.width > 0, state.0.height > 0 else { return }
-        let x = Int32(max(0, min(1, (point.x - state.0.minX) / state.0.width)) * 1_000_000)
-        let y = Int32(max(0, min(1, (point.y - state.0.minY) / state.0.height)) * 1_000_000)
+        let x = Int32(max(0, min(1, (point.x - state.bounds.minX) / state.bounds.width)) * 1_000_000)
+        let y = Int32(max(0, min(1, (point.y - state.bounds.minY) / state.bounds.height)) * 1_000_000)
         let value = NativeCursor(
             shapeId: shape, png: shape == lastCursorShape ? nil : png, hotspotX: cursor.hotSpot.x,
             hotspotY: cursor.hotSpot.y, width: cursor.image.size.width, height: cursor.image.size.height,
-            normalizedX: x, normalizedY: y, visible: state.0.contains(point), displayGeneration: config.1,
-            lastInputOrdinal: state.1)
+            normalizedX: x, normalizedY: y, visible: state.bounds.contains(point), displayGeneration: config.1,
+            lastInputOrdinal: state.ordinal)
         lastCursorGeneration = config.1
         lastCursorShape = shape; lastCursorPoint = point; lastCursorSentAt = now
         if !events.send(NativeEvent(cursor: value)) { stop() }
@@ -1346,7 +1354,7 @@ func hardwareEncoderAvailable(_ codec: CMVideoCodecType = kCMVideoCodecType_H264
                     let granted = synthetic || CGPreflightScreenCaptureAccess()
                     let hevc = hardwareEncoderAvailable(kCMVideoCodecType_HEVC)
                     let value: [String: Any] = [
-                        "platform": "darwin", "helper_version": "native-v2",
+                        "platform": "darwin", "helper_version": "native-v\(CaptureContract.version)",
                         "graphical_session_active": synthetic || !displays.isEmpty,
                         "capture_permission": granted ? "granted" : "denied",
                         "control_permission": (synthetic || CGPreflightPostEventAccess()) ? "granted" : "denied",
@@ -1358,8 +1366,8 @@ func hardwareEncoderAvailable(_ codec: CMVideoCodecType = kCMVideoCodecType_H264
                                     "max_fps": 60,
                                 ]
                             ] : [],
-                        "hardware_encoder_available": hardwareEncoderAvailable(), "control_supported": true,
-                        "adaptive_supported": true, "cursor_supported": true, "input_protocol_version": 2,
+                        "encoder_available": hardwareEncoderAvailable(), "control_supported": true,
+                        "adaptive_supported": true, "cursor_supported": true, "input_protocol_version": CaptureContract.version,
                         "display_mode_switching_supported": true,
                         "max_fps": 120, "encoder": "VideoToolbox H.264",
                     ]

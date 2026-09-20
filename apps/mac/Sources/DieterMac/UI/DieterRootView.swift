@@ -789,7 +789,9 @@ private struct SidebarProjectRow: View {
         store.selectedProjectID == project.id && [.board, .files, .schedules].contains(store.section)
     }
 
-    private var accessibilityLabel: String { "\(project.name), \(project.checkouts.filter { !$0.detached }.count) checkouts" }
+    private var accessibilityLabel: String {
+        "\(project.name), \(project.checkouts.filter { !$0.detached }.count) checkouts"
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {

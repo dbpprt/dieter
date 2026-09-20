@@ -87,6 +87,21 @@ import Testing
     #expect(fixture.controller.isFollowing)
 }
 
+@Test @MainActor func followingSurvivesNativeTailClampingAfterLayout() {
+    let fixture = HistoryAnchorFixture()
+    _ = fixture.row(id: "message-0", y: 0, height: 1800)
+    fixture.document.frame.size.height += 300
+    // AppKit can clamp to the document's end before applying the composer
+    // inset. That layout adjustment must not detach a reader at the live tail.
+    fixture.scrollView.contentView.scroll(to: NSPoint(x: 0, y: 2100 - 400))
+    fixture.scrollView.reflectScrolledClipView(fixture.scrollView.contentView)
+    #expect(fixture.controller.isFollowing)
+    #expect(abs(fixture.scrollView.contentView.bounds.minY - (2100 - 400 + 80)) < 1)
+    fixture.scroll(to: 900)
+    #expect(!fixture.controller.isFollowing)
+    #expect(abs(fixture.scrollView.contentView.bounds.minY - 900) < 1)
+}
+
 @MainActor private final class HistoryAnchorFixture {
     let controller = ConversationScrollController()
     let scrollView = NSScrollView(frame: NSRect(x: 0, y: 0, width: 500, height: 400))
@@ -107,6 +122,9 @@ import Testing
     }
 
     func scroll(to offset: CGFloat) {
+        // User input arrives after the preceding layout pass has committed.
+        // Flush its before-waiting observer before simulating the next gesture.
+        RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.001))
         scrollView.contentView.scroll(to: NSPoint(x: 0, y: offset))
         scrollView.reflectScrolledClipView(scrollView.contentView)
     }

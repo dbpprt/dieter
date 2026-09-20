@@ -270,11 +270,11 @@ struct IOSModelTests {
         let first = heartbeat.next(inputActive: false)
         let second = heartbeat.next(inputActive: true)
 
-        #expect(first.protocolVersion == 2)
+        #expect(first.protocolVersion == DieterContract.number)
         #expect(first.inputEpoch == epoch)
         #expect(first.sequence == 1)
         #expect(!first.inputActive)
-        #expect(second.protocolVersion == 2)
+        #expect(second.protocolVersion == DieterContract.number)
         #expect(second.inputEpoch == epoch)
         #expect(second.sequence == 2)
         #expect(second.inputActive)

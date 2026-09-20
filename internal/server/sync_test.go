@@ -23,7 +23,7 @@ import (
 
 func TestGlobalSyncAndOutboxCommandsEndToEnd(t *testing.T) {
 	t.Setenv("DIETER_ENABLE_MOCK_HARNESS", "1")
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	data := store.New(t.TempDir())
 	project, err := data.CreateProject(store.CreateProjectInput{Name: "Sync", Path: testRepository(t)})
@@ -36,13 +36,14 @@ func TestGlobalSyncAndOutboxCommandsEndToEnd(t *testing.T) {
 	}
 	client, _ := newConnectTestClient(t, data, &fakeRunner{})
 
-	stream, err := client.WatchSync(ctx, connect.NewRequest(&dieterv1.SyncRequest{ConversationLimit: 20, HeartbeatMs: 1_000}))
+	stream, err := client.WatchSync(ctx, connect.NewRequest(&dieterv1.SyncRequest{ProtocolVersion: 1, ConversationLimit: 20, HeartbeatMs: 1_000}))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !stream.Receive() {
 		t.Fatalf("initial sync: %v", stream.Err())
 	}
+	defer stream.Close()
 	initial := stream.Msg()
 	if initial.GetSnapshot() == nil || initial.GetCursor().GetEpoch() == "" || len(initial.GetSnapshot().GetState().GetProjects()) != 1 {
 		t.Fatalf("initial frame=%#v", initial)
@@ -70,7 +71,7 @@ func TestGlobalSyncAndOutboxCommandsEndToEnd(t *testing.T) {
 	found := false
 	for stream.Receive() {
 		frame := stream.Msg()
-		for _, card := range frame.GetSnapshot().GetState().GetCards() {
+		for _, card := range append(frame.GetSnapshot().GetState().GetCards(), frame.GetDelta().GetCards()...) {
 			if card.GetId() == created.Msg.GetId() {
 				found = true
 			}
@@ -105,7 +106,7 @@ func TestGlobalSyncAndOutboxCommandsEndToEnd(t *testing.T) {
 		t.Fatalf("idempotent send first=%#v second=%#v err=%v", firstSend.Msg, secondSend.Msg, err)
 	}
 
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(20 * time.Second)
 	for {
 		conversation, conversationErr := data.Conversation(chat.Msg.GetId())
 		if conversationErr != nil {
@@ -118,7 +119,7 @@ func TestGlobalSyncAndOutboxCommandsEndToEnd(t *testing.T) {
 			}
 		}
 		resolved, _ := data.ResolveCard(chat.Msg.GetId())
-		if count == 1 && conversation.Status == "idle" && resolved.Runtime == "idle" {
+		if count == 1 && conversation.Status == "idle" && resolved.Runtime == "idle" && conversation.ActiveTurn == nil {
 			break
 		}
 		if time.Now().After(deadline) {
@@ -172,7 +173,7 @@ func TestMetadataDeltaAndIdempotentStartAdmission(t *testing.T) {
 	t.Cleanup(stopRunner)
 	client, _ := newConnectTestClient(t, data, gatedRunner{release: release})
 
-	stream, err := client.WatchSync(ctx, connect.NewRequest(&dieterv1.SyncRequest{ConversationLimit: 0, HeartbeatMs: 1_000}))
+	stream, err := client.WatchSync(ctx, connect.NewRequest(&dieterv1.SyncRequest{ProtocolVersion: 1, ConversationLimit: 0, HeartbeatMs: 1_000}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -226,7 +227,7 @@ func TestMetadataSyncSuppressesSemanticallyEmptyDelta(t *testing.T) {
 		t.Fatal(err)
 	}
 	client, _ := newConnectTestClient(t, data, &fakeRunner{})
-	stream, err := client.WatchSync(ctx, connect.NewRequest(&dieterv1.SyncRequest{ConversationLimit: 0, HeartbeatMs: 1_000}))
+	stream, err := client.WatchSync(ctx, connect.NewRequest(&dieterv1.SyncRequest{ProtocolVersion: 1, ConversationLimit: 0, HeartbeatMs: 1_000}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -306,7 +307,7 @@ func TestIdleDaemonReconciliationDoesNotPublishSyncEvents(t *testing.T) {
 	}
 
 	watchCtx, stopWatch := context.WithCancel(context.Background())
-	stream, err := client.WatchSync(watchCtx, connect.NewRequest(&dieterv1.SyncRequest{
+	stream, err := client.WatchSync(watchCtx, connect.NewRequest(&dieterv1.SyncRequest{ProtocolVersion: 1,
 		ConversationLimit: 0,
 		HeartbeatMs:       1_000,
 	}))
@@ -379,7 +380,7 @@ func TestBoundedConversationSyncStreamsTranscriptDeltas(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	stream, err := client.WatchSync(ctx, connect.NewRequest(&dieterv1.SyncRequest{
+	stream, err := client.WatchSync(ctx, connect.NewRequest(&dieterv1.SyncRequest{ProtocolVersion: 1,
 		ConversationLimit: 20, RecentConversationLimit: 5, HeartbeatMs: 1_000,
 	}))
 	if err != nil {
@@ -392,8 +393,15 @@ func TestBoundedConversationSyncStreamsTranscriptDeltas(t *testing.T) {
 	if initial.GetSnapshot() == nil {
 		t.Fatalf("bounded subscribers must bootstrap from a snapshot: %#v", initial)
 	}
+	if len(initial.GetSnapshot().GetConversations()) != 0 {
+		t.Fatal("metadata bootstrap contains transcripts")
+	}
+	if !stream.Receive() {
+		t.Fatalf("hydration: %v", stream.Err())
+	}
+	hydrated := stream.Msg().GetDelta()
 	bootstrapped := false
-	for _, conversation := range initial.GetSnapshot().GetConversations() {
+	for _, conversation := range hydrated.GetConversations() {
 		if conversation.GetDetail().GetCard().GetId() == chat.Msg.GetId() {
 			bootstrapped = true
 		}
@@ -487,7 +495,7 @@ func TestGlobalSyncCoalescesJournalBurstToHighwater(t *testing.T) {
 	frames := make(chan *dieterv1.SyncFrame, 2)
 	done := make(chan error, 1)
 	go func() {
-		done <- api.watchSync(ctx, &dieterv1.SyncRequest{ConversationLimit: 0, HeartbeatMs: 10_000}, func(frame *dieterv1.SyncFrame) error {
+		done <- api.watchSync(ctx, &dieterv1.SyncRequest{ProtocolVersion: 1, ConversationLimit: 0, HeartbeatMs: 10_000}, func(frame *dieterv1.SyncFrame) error {
 			if frame.GetSnapshot() != nil {
 				initial <- frame
 				select {

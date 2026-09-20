@@ -41,9 +41,11 @@ enum ProjectDestinationCatalog {
         let fallbackMachine = fallbackEndpoint.daemonID == nil ? nil : fallbackEndpoint
         let destinations = projects.flatMap { project -> [ProjectDestination] in
             project.checkouts.filter { !$0.detached }.map { checkout in
-                let machine = endpoints.first { $0.daemonID == checkout.daemonID }
+                let machine =
+                    endpoints.first { $0.daemonID == checkout.daemonID }
                     ?? (fallbackMachine?.daemonID == checkout.daemonID ? fallbackMachine : nil)
-                return ProjectDestination(project: project, machineID: machine?.id ?? "unavailable:\(checkout.daemonID)",
+                return ProjectDestination(
+                    project: project, machineID: machine?.id ?? "unavailable:\(checkout.daemonID)",
                     machineName: machine?.name ?? checkout.daemonID, machineOnline: machine?.online ?? false,
                     machineVersion: machine?.version ?? "", checkoutID: checkout.id)
             }
@@ -71,7 +73,8 @@ enum ProjectDestinationCatalog {
     private static func destinationOrder(_ lhs: ProjectDestination, _ rhs: ProjectDestination) -> Bool {
         let nameOrder = lhs.project.name.localizedCaseInsensitiveCompare(rhs.project.name)
         if nameOrder != .orderedSame { return nameOrder == .orderedAscending }
-        let pathOrder = (lhs.checkout?.path ?? lhs.checkoutID).localizedCaseInsensitiveCompare(rhs.checkout?.path ?? rhs.checkoutID)
+        let pathOrder = (lhs.checkout?.path ?? lhs.checkoutID).localizedCaseInsensitiveCompare(
+            rhs.checkout?.path ?? rhs.checkoutID)
         if pathOrder != .orderedSame { return pathOrder == .orderedAscending }
         return lhs.project.id < rhs.project.id
     }

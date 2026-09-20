@@ -297,11 +297,15 @@ struct BoardHeader: View {
     private var machineFilterMenu: some View {
         Menu {
             Button("All machines") { store.machineFilter = "" }
-            ForEach(Array(Set(store.boardCards.map(\.ownerDaemonID))).filter { !$0.isEmpty }.sorted(), id: \.self) { id in
+            ForEach(Array(Set(store.boardCards.map(\.ownerDaemonID))).filter { !$0.isEmpty }.sorted(), id: \.self) {
+                id in
                 Button(store.endpoints.first { $0.daemonID == id }?.name ?? id) { store.machineFilter = id }
             }
         } label: {
-            Text(store.machineFilter.isEmpty ? "All machines" : (store.endpoints.first { $0.daemonID == store.machineFilter }?.name ?? store.machineFilter))
+            Text(
+                store.machineFilter.isEmpty
+                    ? "All machines"
+                    : (store.endpoints.first { $0.daemonID == store.machineFilter }?.name ?? store.machineFilter))
         }
         .menuStyle(.button)
         .accessibilityIdentifier("board.filter.machine")

@@ -182,7 +182,8 @@
             loading = true
             failed = false
             defer { loading = false }
-            let result = await store.listFiles(projectID: scope.projectID, checkoutID: scope.checkoutID, cardID: scope.cardID, path: directory)
+            let result = await store.listFiles(
+                projectID: scope.projectID, checkoutID: scope.checkoutID, cardID: scope.cardID, path: directory)
             guard isCurrentScope else { return }
             listing = result
             failed = result == nil
@@ -192,7 +193,8 @@
             guard canAccess, !loading else { return }
             loading = true
             defer { loading = false }
-            if let result = await store.readFile(projectID: scope.projectID, checkoutID: scope.checkoutID, cardID: scope.cardID, path: path),
+            if let result = await store.readFile(
+                projectID: scope.projectID, checkoutID: scope.checkoutID, cardID: scope.cardID, path: path),
                 isCurrentScope
             {
                 document = result
@@ -209,7 +211,8 @@
             let snapshot = text
             guard
                 let saved = await store.saveFile(
-                    projectID: scope.projectID, checkoutID: scope.checkoutID, cardID: scope.cardID, document: current, content: snapshot
+                    projectID: scope.projectID, checkoutID: scope.checkoutID, cardID: scope.cardID, document: current,
+                    content: snapshot
                 ), isCurrentScope, document?.path == current.path
             else { return false }
             document = saved

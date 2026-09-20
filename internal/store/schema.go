@@ -10,14 +10,11 @@ import (
 
 const storageSchema = 2
 
-var ErrLegacyStore = errors.New("legacy Dieter store: stop the daemon and run dieter daemon import-store --backup PATH; use --apply after reviewing the dry run")
+var ErrUnsupportedStore = errors.New("unsupported Dieter store; use a fresh DIETER_HOME for this pre-release baseline")
 
 func (s *Store) checkStorageSchema() error {
-	if s.importing {
-		return nil
-	}
 	if _, err := os.Stat(filepath.Join(s.Root, "import-state.json")); err == nil {
-		return errors.New("store import is incomplete; resume the offline import before starting Dieter")
+		return errors.New("unsupported incomplete store import; use a fresh DIETER_HOME")
 	}
 	raw, err := os.ReadFile(filepath.Join(s.Root, "storage-schema.json"))
 	if err == nil {
@@ -32,21 +29,18 @@ func (s *Store) checkStorageSchema() error {
 	if !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
-	paths, err := listMarkdown(s.projectDir())
+	paths, err := listMarkdown(filepath.Join(s.Root, "projects"))
 	if err != nil {
 		return err
 	}
 	if len(paths) > 0 {
-		return ErrLegacyStore
+		return ErrUnsupportedStore
 	}
 	return nil
 }
 func (s *Store) establishStorageSchema() error {
 	if err := s.checkStorageSchema(); err != nil {
 		return err
-	}
-	if s.importing {
-		return nil
 	}
 	path := filepath.Join(s.Root, "storage-schema.json")
 	if _, err := os.Stat(path); err == nil {

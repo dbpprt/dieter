@@ -549,10 +549,9 @@ type Daemon struct {
 	Generation       uint64                 `protobuf:"varint,6,opt,name=generation,proto3" json:"generation,omitempty"`
 	DirectCandidates []*DirectCandidate     `protobuf:"bytes,7,rep,name=direct_candidates,json=directCandidates,proto3" json:"direct_candidates,omitempty"`
 	RemoteDesktop    *RemoteDesktopPresence `protobuf:"bytes,8,opt,name=remote_desktop,json=remoteDesktop,proto3" json:"remote_desktop,omitempty"`
-	// api_version is the daemon data-plane compatibility version returned by
-	// DieterService.Health. It is separate from the release version above so
-	// clients can route mixed-version machine fleets without probing each one.
-	ApiVersion    string `protobuf:"bytes,9,opt,name=api_version,json=apiVersion,proto3" json:"api_version,omitempty"` // Live, authenticated enrollment capability; false on older/offline daemons.
+	// Shared application contract returned by DieterService.Health. Gateway,
+	// daemon, and clients require the exact same contract; release versions may differ.
+	ApiVersion    string `protobuf:"bytes,9,opt,name=api_version,json=apiVersion,proto3" json:"api_version,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }

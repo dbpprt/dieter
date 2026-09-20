@@ -13,7 +13,8 @@ extension DieterStore {
         filesModel.bind(
             target: WorkspaceTarget(
                 endpointID: endpoint.id,
-                projectID: selectedProjectID, conversationID: fileScopeCardID ?? "", checkoutID: fileScopeCardID == nil ? (checkout(forProjectID: selectedProjectID)?.id ?? "") : ""),
+                projectID: selectedProjectID, conversationID: fileScopeCardID ?? "",
+                checkoutID: fileScopeCardID == nil ? (checkout(forProjectID: selectedProjectID)?.id ?? "") : ""),
             client: rpc
         )
         filesModel.projectName = selectedProject?.name ?? "Project"
@@ -52,23 +53,34 @@ extension DieterStore {
         if scheduleRPCOverride != nil { schedulesModel.ownerConnection = nil; return }
         schedulesModel.ownerConnection = { [weak self] ownerID, checkoutID in
             guard let self else { throw CancellationError() }
-            let checkout = self.projectDirectory[self.selectedProjectID]?.checkouts.first { $0.id == checkoutID }
+            let checkout =
+                self.projectDirectory[self.selectedProjectID]?.checkouts.first { $0.id == checkoutID }
                 ?? self.checkout(forProjectID: self.selectedProjectID)
             let daemonID = ownerID.isEmpty ? checkout?.daemonID : ownerID
-            guard let daemonID, let machine = self.endpoints.first(where: { $0.daemonID == daemonID }), machine.online else {
-                throw NSError(domain: "Schedule", code: 1, userInfo: [NSLocalizedDescriptionKey: "Choose an online machine and checkout for this schedule."])
+            guard let daemonID, let machine = self.endpoints.first(where: { $0.daemonID == daemonID }), machine.online
+            else {
+                throw NSError(
+                    domain: "Schedule", code: 1,
+                    userInfo: [NSLocalizedDescriptionKey: "Choose an online machine and checkout for this schedule."])
             }
             if machine.id == self.endpoint.id, let rpc = self.rpc {
-                return ScheduleOwnerConnection(reader: rpc, writer: rpc, detail: { try await rpc.schedule(id: $0) }, release: {}, catalog: { try await rpc.harnesses() })
+                return ScheduleOwnerConnection(
+                    reader: rpc, writer: rpc, detail: { try await rpc.schedule(id: $0) }, release: {},
+                    catalog: { try await rpc.harnesses() })
             }
             let lease = try await self.selectDirectoryDataPlane(for: machine)
-            return ScheduleOwnerConnection(reader: lease.rpc, writer: lease.rpc, detail: { try await lease.rpc.schedule(id: $0) }, release: { lease.release() }, catalog: { try await lease.rpc.harnesses() })
+            return ScheduleOwnerConnection(
+                reader: lease.rpc, writer: lease.rpc, detail: { try await lease.rpc.schedule(id: $0) },
+                release: { lease.release() }, catalog: { try await lease.rpc.harnesses() })
         }
     }
 
     var scheduleEditorContext: ScheduleEditorContext {
         ScheduleEditorContext(
-            target: WorkspaceTarget(endpointID: schedulesModel.target.endpointID, projectID: schedulesModel.target.projectID, checkoutID: checkout(forProjectID: selectedProjectID)?.id ?? ""), projectName: selectedProject?.name ?? "Project",
+            target: WorkspaceTarget(
+                endpointID: schedulesModel.target.endpointID, projectID: schedulesModel.target.projectID,
+                checkoutID: checkout(forProjectID: selectedProjectID)?.id ?? ""),
+            projectName: selectedProject?.name ?? "Project",
             boards: state.boards.filter { $0.projectID == selectedProjectID },
             selectedBoardID: selectedBoardID, harnessCatalog: harnessCatalog)
     }

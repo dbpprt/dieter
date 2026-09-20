@@ -271,9 +271,10 @@ Dieter never accepts or stores a sudo or polkit password.
 ## Data and backup
 
 `DIETER_HOME` and metadata directories are `0700`; Dieter-owned metadata,
-credentials, logs, SQLite files, and journals are `0600`. Existing stores are
-migrated once without changing modes inside managed Git worktrees, harness
-packages, or recovery payloads.
+credentials, logs, SQLite files, and journals are created as `0600`. Permission
+checks never change modes inside managed Git worktrees, harness packages, or
+recovery payloads. Unsupported development stores require a fresh home; no
+historical permission or data migration is provided.
 
 Back up `DIETER_HOME` only while the daemon is stopped or by using a filesystem
 snapshot that preserves a consistent SQLite state. Project repositories remain

@@ -93,7 +93,7 @@ func TestAuthenticationRejectsSessionForRemovedGitHubUser(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer store.Close()
-	auth := NewAuth(Config{AllowedUserID: 42, AuthSecret: []byte("test-auth-secret"), SessionTTL: time.Hour}, store, nil)
+	auth := NewAuth(Config{AllowedUserIDs: map[int64]struct{}{42: {}}, AuthSecret: []byte("test-auth-secret"), SessionTTL: time.Hour}, store, nil)
 	token, _, err := auth.createSession(42, "former-owner")
 	if err != nil {
 		t.Fatal(err)
@@ -101,7 +101,7 @@ func TestAuthenticationRejectsSessionForRemovedGitHubUser(t *testing.T) {
 	if _, ok := auth.AuthenticateBearer("Bearer " + token); !ok {
 		t.Fatal("allowed account session was rejected")
 	}
-	auth.config.AllowedUserID = 99
+	auth.config.AllowedUserIDs = map[int64]struct{}{99: {}}
 	if _, ok := auth.AuthenticateBearer("Bearer " + token); ok {
 		t.Fatal("removed GitHub account retained gateway access")
 	}
@@ -115,7 +115,7 @@ func newSecurityTestAuth(t *testing.T) *Auth {
 	}
 	t.Cleanup(func() { _ = store.Close() })
 	public, _ := url.Parse("https://dieter.example.com")
-	return NewAuth(Config{PublicURL: public, AllowedUserID: 42, AuthSecret: []byte("test-auth-secret"), SessionTTL: time.Hour, GitHubBaseURL: "https://github.com", NativeRedirects: map[string]struct{}{"dieter://auth/callback": {}}}, store, nil)
+	return NewAuth(Config{PublicURL: public, AllowedUserIDs: map[int64]struct{}{42: {}}, AuthSecret: []byte("test-auth-secret"), SessionTTL: time.Hour, GitHubBaseURL: "https://github.com", NativeRedirects: map[string]struct{}{"dieter://auth/callback": {}}}, store, nil)
 }
 
 func TestOAuthEnrollmentRequiresBrowserBoundExplicitConfirmation(t *testing.T) {
@@ -242,7 +242,7 @@ func TestEnrollmentConfirmationExpiresRechecksAccountAndIsSingleUse(t *testing.T
 					t.Fatal(err)
 				}
 			case "removed account":
-				auth.config.AllowedUserID = 99
+				auth.config.AllowedUserIDs = map[int64]struct{}{99: {}}
 			}
 			var accepted atomic.Int32
 			var group sync.WaitGroup

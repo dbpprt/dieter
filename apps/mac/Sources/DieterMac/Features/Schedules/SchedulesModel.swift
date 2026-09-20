@@ -248,14 +248,21 @@ final class SchedulesModel {
             let owner = try await ownerConnection(schedule?.ownerDaemonID ?? "", checkoutID)
             defer { owner.release() }
             let catalog = try await owner.catalog?() ?? base.harnessCatalog
-            return ScheduleEditorContext(target: WorkspaceTarget(endpointID: base.target.endpointID, projectID: base.target.projectID, checkoutID: checkoutID), projectName: base.projectName, boards: base.boards, selectedBoardID: schedule?.boardID ?? base.selectedBoardID, harnessCatalog: catalog)
+            return ScheduleEditorContext(
+                target: WorkspaceTarget(
+                    endpointID: base.target.endpointID, projectID: base.target.projectID, checkoutID: checkoutID),
+                projectName: base.projectName, boards: base.boards,
+                selectedBoardID: schedule?.boardID ?? base.selectedBoardID, harnessCatalog: catalog)
         } catch { report(error); return nil }
     }
 
     @discardableResult
     func saveSchedule(id: String?, draft: Dieter_V1_ScheduleDraft, expectedTarget: WorkspaceTarget? = nil) async -> Bool
     {
-        guard expectedTarget == nil || (expectedTarget?.projectID == target.projectID && expectedTarget?.endpointID == target.endpointID), draft.projectID == target.projectID,
+        guard
+            expectedTarget == nil
+                || (expectedTarget?.projectID == target.projectID && expectedTarget?.endpointID == target.endpointID),
+            draft.projectID == target.projectID,
             let rpc = writer
         else { return false }
         let binding = connectionGeneration

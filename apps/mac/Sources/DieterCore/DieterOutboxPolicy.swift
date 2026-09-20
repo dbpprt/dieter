@@ -69,8 +69,6 @@ package enum DieterRPCFailure {
 
     package static func isPermanent(_ error: Error) -> Bool {
         guard let rpcError = error as? RPCError else { return false }
-        // Older daemons classified raw filesystem write failures as invalid input.
-        if rpcError.code == .invalidArgument, isInsufficientStorage(rpcError.message) { return false }
         return [.notFound, .invalidArgument, .permissionDenied, .failedPrecondition].contains(rpcError.code)
     }
 

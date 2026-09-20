@@ -55,18 +55,18 @@ func TestRelayRechecksSessionAndDaemonAfterDelayedRequestBody(t *testing.T) {
 			service, _, credential := newEnrolledSecurityService(t)
 			const token = "isolated-security-test-session"
 			if err := service.store.UpdateAuthState(func(state *AuthState) error {
-				state.Sessions = append(state.Sessions, Session{TokenHash: service.auth.digest(token), GitHubID: service.config.AllowedUserID, ExpiresAt: time.Now().Add(time.Hour)})
+				state.Sessions = append(state.Sessions, Session{TokenHash: service.auth.digest(token), GitHubID: int64(1234), ExpiresAt: time.Now().Add(time.Hour)})
 				return nil
 			}); err != nil {
 				t.Fatal(err)
 			}
-			ctx := context.WithValue(t.Context(), principalKey{}, Principal{GitHubID: service.config.AllowedUserID})
+			ctx := context.WithValue(t.Context(), principalKey{}, Principal{GitHubID: int64(1234)})
 			stream := &securityRelayStream{ctx: ctx, receive: func(message any) error {
 				message.(*rpcraw.Message).Data = nil
 				if revoke == "session" {
 					return service.store.UpdateAuthState(func(state *AuthState) error { state.Sessions = nil; return nil })
 				}
-				_, err := service.store.RevokeDaemon(credential.GetDaemonId(), service.config.AllowedUserID)
+				_, err := service.store.RevokeDaemon(credential.GetDaemonId(), int64(1234))
 				return err
 			}}
 			handler := &relayHandler{store: service.store, auth: service.auth, keys: service.keys, hub: service.hub, config: service.config}
@@ -84,7 +84,7 @@ func TestRelayRechecksSessionAndDaemonAfterDelayedRequestBody(t *testing.T) {
 
 func TestRelayRejectsOtherAccountBeforeReadingRequestBody(t *testing.T) {
 	service, _, credential := newEnrolledSecurityService(t)
-	ctx := context.WithValue(t.Context(), principalKey{}, Principal{GitHubID: service.config.AllowedUserID + 1})
+	ctx := context.WithValue(t.Context(), principalKey{}, Principal{GitHubID: int64(1234) + 1})
 	stream := &securityRelayStream{ctx: ctx, receive: func(any) error {
 		t.Fatal("cross-account request reached body admission")
 		return nil

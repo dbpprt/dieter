@@ -93,9 +93,13 @@ extension DieterStore {
         branch: String,
         validationCommands: [Dieter_V1_ValidationCommand]
     ) async -> Bool {
-        let updatesValidation = validationCommands != (checkout(forProjectID: selectedProjectID)?.validationCommands ?? [])
-        if updatesValidation { guard await ensureCheckoutConnection(selectedProjectID) else { return false } }
-        else { guard await ensureReplicaConnection(selectedProjectID) else { return false } }
+        let updatesValidation =
+            validationCommands != (checkout(forProjectID: selectedProjectID)?.validationCommands ?? [])
+        if updatesValidation {
+            guard await ensureCheckoutConnection(selectedProjectID) else { return false }
+        } else {
+            guard await ensureReplicaConnection(selectedProjectID) else { return false }
+        }
         guard let rpc, !selectedProjectID.isEmpty else { return false }
         var request = Dieter_V1_UpdateProjectWorkspaceSettingsRequest()
         request.checkoutID = updatesValidation ? (checkout(forProjectID: selectedProjectID)?.id ?? "") : ""
@@ -246,7 +250,8 @@ extension DieterStore {
         return try await lease.rpc.listDirectories(request)
     }
 
-    func createProject(_ draft: ProjectSetupDraft, machineID: String? = nil, operationID: String = UUID().uuidString) async throws
+    func createProject(_ draft: ProjectSetupDraft, machineID: String? = nil, operationID: String = UUID().uuidString)
+        async throws
         -> Dieter_V1_CreateProjectResponse
     {
         let target: DieterEndpoint

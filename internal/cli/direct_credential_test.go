@@ -4,8 +4,6 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"github.com/dbpprt/dieter/internal/server"
-	"google.golang.org/protobuf/types/known/emptypb"
 	"net"
 	"sync"
 	"sync/atomic"
@@ -16,10 +14,12 @@ import (
 	"github.com/dbpprt/dieter/internal/gateway"
 	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
+	"github.com/dbpprt/dieter/internal/server"
 	"github.com/dbpprt/dieter/internal/store"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/emptypb"
 )
 
 func TestDirectCredentialSharesRefreshAndHonorsCancellation(t *testing.T) {
@@ -160,7 +160,7 @@ func TestRemoteWaitSurvivesTwoDirectTokenExpirations(t *testing.T) {
 		t.Fatal(err)
 	}
 	client := New(store.New(t.TempDir()))
-	client.DaemonMode = true
+
 	client.transport = &dieterTransport{conn: connection, client: dieterv1.NewDieterServiceClient(readResumingConn{connection}), route: "direct", daemonID: identity.ID}
 	t.Cleanup(client.Close)
 	var stdout, stderr bytes.Buffer

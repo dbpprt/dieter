@@ -100,7 +100,9 @@ package final class WorkspaceReplica {
 
     package func accept(_ projection: MachineDirectoryProjection) {
         if projectDirectory != projection.projects { projectDirectory = projection.projects }
-        if projectReplicaEndpointIDs != projection.projectReplicaEndpointIDs { projectReplicaEndpointIDs = projection.projectReplicaEndpointIDs }
+        if projectReplicaEndpointIDs != projection.projectReplicaEndpointIDs {
+            projectReplicaEndpointIDs = projection.projectReplicaEndpointIDs
+        }
         if navigationBoards != projection.boards { navigationBoards = projection.boards }
         if navigationCards != projection.cards { navigationCards = projection.cards }
         if chats != projection.chats { chats = projection.chats }
@@ -110,8 +112,10 @@ package final class WorkspaceReplica {
     package func replaceMetadata(_ incoming: Dieter_V1_State, endpoint: DieterEndpoint, endpointID: String) {
         // Preserve the routing key passed by the caller; the synthetic snapshot
         // does not assert execution ownership.
-        let snapshot = MachineSnapshot(endpoint: endpoint, connection: .init(route: .local, latencyMilliseconds: 0),
-            projects: incoming.projects, boards: incoming.boards, cards: incoming.cards, chats: incoming.chats, replicaID: endpointID, archives: incoming.archives)
+        let snapshot = MachineSnapshot(
+            endpoint: endpoint, connection: .init(route: .local, latencyMilliseconds: 0),
+            projects: incoming.projects, boards: incoming.boards, cards: incoming.cards, chats: incoming.chats,
+            replicaID: endpointID, archives: incoming.archives)
         var next = MachineDirectoryReducer.merging(directory, snapshots: [snapshot])
         for project in incoming.projects { next.projectReplicaEndpointIDs[project.id] = endpointID }
         accept(next)

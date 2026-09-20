@@ -60,7 +60,8 @@
                 NativeUIAccessibility.find("sidebar.project.\(projectID).machine.online", in: window) == nil
                     && NativeUIAccessibility.find("sidebar.project.\(projectID).machine.offline", in: window) == nil
             }
-            results["shared-project-navigation"] = projectHasNoSingleMachine ? "passed" : "failed: project has an owner badge"
+            results["shared-project-navigation"] =
+                projectHasNoSingleMachine ? "passed" : "failed: project has an owner badge"
             switch phase {
             case "prepare":
                 await recordProjectRowLayout(store: store, window: window, results: &results)

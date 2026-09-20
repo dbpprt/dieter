@@ -853,28 +853,6 @@ func (s *Store) cardExists(id string) bool {
 	return false
 }
 
-func (s *Store) migrateArchivedCards() error {
-	paths, err := listMarkdown(s.cardDir())
-	if err != nil {
-		return err
-	}
-	for _, path := range paths {
-		var item model.Card
-		_, readErr := readMarkdown(path, &item)
-		if readErr != nil {
-			return readErr
-		}
-		if !item.Archived {
-			continue
-		}
-		target := filepath.Join(s.archivedCardDir(), filepath.Base(path))
-		if err := os.Rename(path, target); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 func (s *Store) listCards(includeArchived bool) ([]model.Card, error) {
 	return s.listCardsContext(context.Background(), includeArchived)
 }

@@ -13,19 +13,19 @@ import (
 	"unicode/utf8"
 
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
+	"github.com/dbpprt/dieter/internal/protocol"
 	"github.com/pion/webrtc/v4"
 	"google.golang.org/protobuf/proto"
 )
 
 const (
-	inputProtocolVersion    uint32 = 2
-	hostChannelLabel               = "dieter-session-v2"
-	pointerChannelLabel            = "dieter-pointer-v2"
-	stateChannelLabel              = "dieter-input-state-v2"
+	inputProtocolVersion    uint32 = protocol.Number
+	hostChannelLabel               = "dieter-session-v" + protocol.Version
+	pointerChannelLabel            = "dieter-pointer-v" + protocol.Version
+	stateChannelLabel              = "dieter-input-state-v" + protocol.Version
 	maxInputMessageBytes           = 4 << 10
 	maxNormalizedCoordinate        = 1_000_000
 	maxScrollDelta                 = 100_000
-	maxMacVirtualKeyCode           = 255
 	maxInputModifiers              = 0x3f
 )
 
@@ -99,7 +99,7 @@ func (s *Session) handleInput(label string, raw []byte) {
 		return
 	}
 	var input dieterv1.RemoteDesktopInput
-	if err := proto.Unmarshal(raw, &input); err != nil || (input.GetProtocolVersion() != s.protocol && s.protocol != 0) || validateInput(&input, s.inputEpoch) != nil {
+	if err := proto.Unmarshal(raw, &input); err != nil || validateInput(&input, s.inputEpoch) != nil {
 		return
 	}
 	var sequence *atomic.Uint64
@@ -190,7 +190,7 @@ func (s *Session) deliverInput(sink InputSink, input *dieterv1.RemoteDesktopInpu
 	if s.manager != nil {
 		s.manager.controlMu.Lock()
 		defer s.manager.controlMu.Unlock()
-		if s.manager.controller != s || (s.protocol >= 3 && input.GetControlGeneration() != s.manager.controlGeneration) {
+		if s.manager.controller != s || input.GetControlGeneration() != s.manager.controlGeneration {
 			return
 		}
 	}
@@ -236,7 +236,7 @@ func (s *Session) deliverInput(sink InputSink, input *dieterv1.RemoteDesktopInpu
 }
 
 func validateInput(input *dieterv1.RemoteDesktopInput, epoch []byte) error {
-	if input == nil || (input.GetProtocolVersion() != 2 && input.GetProtocolVersion() != 3) || !bytes.Equal(input.GetInputEpoch(), epoch) || input.GetSequence() == 0 {
+	if input == nil || input.GetProtocolVersion() != inputProtocolVersion || !bytes.Equal(input.GetInputEpoch(), epoch) || input.GetSequence() == 0 {
 		return errors.New("invalid remote desktop input envelope")
 	}
 	coordinate := func(x, y int32) error {
@@ -262,7 +262,7 @@ func validateInput(input *dieterv1.RemoteDesktopInput, epoch []byte) error {
 			return errors.New("invalid remote desktop scroll event")
 		}
 	case *dieterv1.RemoteDesktopInput_Key:
-		if value.Key.GetKeyCode() > maxMacVirtualKeyCode || value.Key.GetPhysicalKey() > 255 || value.Key.GetModifiers() > maxInputModifiers {
+		if value.Key.GetPhysicalKey() < 4 || value.Key.GetPhysicalKey() > 231 || value.Key.GetModifiers() > maxInputModifiers {
 			return errors.New("invalid remote desktop key event")
 		}
 	case *dieterv1.RemoteDesktopInput_Text:
@@ -359,7 +359,7 @@ func (s *Session) receiveFeedback(raw []byte) {
 	s.receiverStatsRejected = !validStatistics
 	if validStatistics {
 		s.receiver = &value
-		if value.MeasurementSequence == 0 || value.MeasurementSequence > s.receiverMeasurement {
+		if value.MeasurementSequence > s.receiverMeasurement {
 			s.receiverMeasurement = value.MeasurementSequence
 			s.receiverMeasuredAt = s.lastFeedback.Add(-time.Duration(value.MeasurementAgeMs) * time.Millisecond)
 		}

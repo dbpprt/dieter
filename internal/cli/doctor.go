@@ -25,8 +25,7 @@ func (c *CLI) doctor(args []string) error {
 	const usage = `Usage: dieter doctor [--format table|json]
 
 Check the local daemon's runtime, storage, service-manager, shell, and optional
-durability dependencies. Doctor is read-only apart from normal DIETER_HOME
-permission migration performed by every local CLI invocation.
+durability dependencies. Doctor is read-only and does not initialize storage.
 `
 	set := flags("doctor")
 	format := set.String("format", "table", "table or json")

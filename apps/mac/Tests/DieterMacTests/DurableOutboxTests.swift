@@ -10,7 +10,7 @@ private func outboxTestRoot() -> URL {
 }
 private func journal(at root: URL, writer: OutboxJournal.Writer? = nil) -> OutboxJournal {
     OutboxJournal(
-        url: root.appending(path: "pending.json"), legacyURL: root.appending(path: "sync.json"), writer: writer)
+        url: root.appending(path: "pending.json"), writer: writer)
 }
 private func command(_ id: String) -> DieterOutboxEntry {
     .init(
@@ -90,24 +90,6 @@ private func command(_ id: String) -> DieterOutboxEntry {
     #expect(store.pendingMessageIDs.isEmpty)
     #expect(store.outboxTask == nil)
     #expect(store.errorMessage != nil)
-}
-
-@Test func outboxMigrationIsRestartableAndIndependentOfProjectionDecoding() async throws {
-    let root = outboxTestRoot()
-    defer { try? FileManager.default.removeItem(at: root) }
-    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-    let entry = command("stable")
-    let legacy = try JSONEncoder().encode(DieterSyncDiskState(outbox: [entry]))
-    var object = try #require(JSONSerialization.jsonObject(with: legacy) as? [String: Any])
-    object["projections"] = "unreadable cache"
-    try JSONSerialization.data(withJSONObject: object).write(to: root.appending(path: "sync.json"))
-    let first = try await journal(at: root).load()
-    #expect(first.entries == [entry])
-    // A crash before the cache migration completes must not replay its commands.
-    let second = journal(at: root)
-    _ = try await second.transaction { $0.removeAll() }
-    #expect(try await journal(at: root).load().entries.isEmpty)
-    #expect(FileManager.default.fileExists(atPath: root.appending(path: "sync.json").path))
 }
 
 @Test func outboxConcurrentTransactionsDoNotLoseCommands() async throws {
@@ -291,9 +273,9 @@ private actor StorageOutboxDelivery: OutboxRPC {
     RPCError(
         code: .resourceExhausted,
         message: "insufficient free disk space to start an agent turn: 122 MiB available; 2048 MiB required"),
-    RPCError(code: .invalidArgument, message: "mkdir fixture/.write-lock: no space left on device"),
+    RPCError(code: .resourceExhausted, message: "write fixture: no space left on device"),
     RPCError(code: .resourceExhausted, message: "write fixture: disk quota exceeded"),
-    RPCError(code: .invalidArgument, message: "write fixture: disc quota exceeded"),
+    RPCError(code: .resourceExhausted, message: "write fixture: disc quota exceeded"),
 ]) @MainActor
 func storageBlockedMessageSurvivesRelaunchAndRetriesWithSameIdentity(failure: RPCError) async throws {
     let root = outboxTestRoot()
@@ -509,12 +491,14 @@ private actor UnstartedCreationDelivery: OutboxRPC {
     #expect(await rpc.requests.map(\.commandID) == ["stable-command"])
 }
 
-@Test func legacyOutboxAboveAdmissionLimitCanDrainWithoutAcceptingMoreCommands() async throws {
+@Test func existingOutboxAboveAdmissionLimitCanDrainWithoutAcceptingMoreCommands() async throws {
     let root = outboxTestRoot()
     defer { try? FileManager.default.removeItem(at: root) }
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-    let commands = (0..<(OutboxJournal.entryLimit + 2)).map { command("legacy-\($0)") }
-    try JSONEncoder().encode(DieterSyncDiskState(outbox: commands)).write(to: root.appending(path: "sync.json"))
+    let commands = (0..<(OutboxJournal.entryLimit + 2)).map { command("saved-\($0)") }
+    var snapshot = OutboxJournal.Snapshot()
+    snapshot.entries = commands
+    try JSONEncoder().encode(snapshot).write(to: root.appending(path: "pending.json"))
     let value = journal(at: root)
     #expect(try await value.load().entries.count == commands.count)
     let drained = try await value.transaction { $0.removeFirst() }

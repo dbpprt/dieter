@@ -181,7 +181,7 @@ extension DieterStore {
             gatewayRPC = nil
 
             let cachedData =
-                syncDiskState.projections[prepared.target.id]?.snapshot ?? syncDiskState.snapshot
+                syncDiskState.projections[prepared.target.id]?.snapshot
             let decodedSnapshot = await snapshotDecoder.snapshot(
                 endpointID: prepared.target.id, data: cachedData)
             guard

@@ -310,17 +310,17 @@
             postGesture(from: start, to: end, window: window)
         }
         private static func postGesture(from start: NSPoint, to end: NSPoint?, window: NSWindow) {
-            let steps = end == nil ? 1 : 12
-            for index in 0...steps {
-                let fraction = CGFloat(index) / CGFloat(steps)
+            let movementSteps = end == nil ? 0 : 12
+            for index in 0...(movementSteps + 1) {
+                let fraction = min(1, CGFloat(index) / CGFloat(max(1, movementSteps)))
                 let point = NSPoint(x: start.x + ((end?.x ?? start.x) - start.x) * fraction, y: start.y)
                 let type: NSEvent.EventType =
-                    index == 0 ? .leftMouseDown : (index == steps ? .leftMouseUp : .leftMouseDragged)
+                    index == 0 ? .leftMouseDown : (index == movementSteps + 1 ? .leftMouseUp : .leftMouseDragged)
                 if let event = NSEvent.mouseEvent(
                     with: type, location: point, modifierFlags: [],
                     timestamp: ProcessInfo.processInfo.systemUptime + Double(index) * 0.016,
                     windowNumber: window.windowNumber, context: nil, eventNumber: index,
-                    clickCount: 1, pressure: index == steps ? 0 : 1)
+                    clickCount: 1, pressure: index == movementSteps + 1 ? 0 : 1)
                 {
                     NSApp.postEvent(event, atStart: false)
                 }

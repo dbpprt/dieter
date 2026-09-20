@@ -43,6 +43,9 @@ func assertConversationSelectionCLI(t *testing.T, client *CLI, output *bytes.Buf
 				leased, leaseErr := data.CardHasRuntimeLease(card.ID)
 				conversation, conversationErr := data.Conversation(card.ID)
 				if err == nil && leaseErr == nil && conversationErr == nil && stored.Runtime == "idle" && !leased && conversation.LastSeq > afterSequence && conversation.Status == "idle" && conversation.ActiveTurn == nil && len(conversation.Queue) == 0 {
+					if err := data.WaitForWriter(t.Context()); err != nil {
+						t.Fatal(err)
+					}
 					return
 				}
 				time.Sleep(10 * time.Millisecond)

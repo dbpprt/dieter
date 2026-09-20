@@ -19,6 +19,7 @@ import (
 
 	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
 	"github.com/dbpprt/dieter/internal/linkauth"
+	"github.com/dbpprt/dieter/internal/protocol"
 	"github.com/dbpprt/dieter/internal/rpcraw"
 	"github.com/dbpprt/dieter/internal/trust"
 	"google.golang.org/grpc"
@@ -63,7 +64,6 @@ const (
 	gatewayReconnectInitialBackoff  = time.Second
 	gatewayReconnectMaximumBackoff  = 30 * time.Second
 	gatewayReconnectStableAfter     = 30 * time.Second
-	gatewayHeartbeatAckCapability   = "heartbeat_ack_v1"
 	gatewayProviderQuotaCapability  = "provider_quota_v1"
 	gatewayProviderResetCapability  = "provider_quota_reset_v1"
 	maxActiveGatewayRelays          = 16
@@ -245,18 +245,17 @@ func (c *GatewayClient) runOnce(ctx context.Context) (time.Duration, error) {
 	if err != nil {
 		return 0, handshakeFailure(err)
 	}
-	if first.GetKind() != gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_HELLO_ACK || first.GetDaemonId() != c.Identity.ID || first.GetGeneration() != c.Identity.Generation {
+	if first.GetKind() != gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_HELLO_ACK || first.GetDaemonId() != c.Identity.ID || first.GetGeneration() != c.Identity.Generation || first.GetApiVersion() != protocol.Version {
 		return 0, errors.New("gateway rejected the daemon hello")
 	}
 	handshakeTimer.Stop()
 	connectedAt := time.Now()
 	c.report(GatewayConnected, nil)
-	heartbeatAcknowledged := supportsGatewayCapability(first, gatewayHeartbeatAckCapability)
 	providerQuotaKey := append([]byte(nil), first.GetProviderAccountCorrelationKey()...)
 	providerQuotasNegotiated := c.ProviderQuotas != nil && supportsGatewayCapability(first, gatewayProviderQuotaCapability) && len(providerQuotaKey) == 32
 	resetSource, resetSourceAvailable := c.ProviderQuotas.(ProviderQuotaResetSource)
 	providerResetNegotiated := providerQuotasNegotiated && resetSourceAvailable && supportsGatewayCapability(first, gatewayProviderResetCapability)
-	if heartbeatAcknowledged && c.OnAcknowledged != nil {
+	if c.OnAcknowledged != nil {
 		c.OnAcknowledged(connectedAt)
 	}
 	finish := func(err error) (time.Duration, error) { return time.Since(connectedAt), err }
@@ -392,13 +391,8 @@ func (c *GatewayClient) runOnce(ctx context.Context) (time.Duration, error) {
 	defer heartbeat.Stop()
 	var heartbeatSequence uint64
 	var outstandingHeartbeat string
-	var heartbeatWatchdog *time.Timer
-	var heartbeatWatchdogC <-chan time.Time
-	if heartbeatAcknowledged {
-		heartbeatWatchdog = time.NewTimer(timing.HeartbeatAckTimeout)
-		heartbeatWatchdogC = heartbeatWatchdog.C
-		defer heartbeatWatchdog.Stop()
-	}
+	heartbeatWatchdog := time.NewTimer(timing.HeartbeatAckTimeout)
+	defer heartbeatWatchdog.Stop()
 	recv := make(chan *gatewayv1.DaemonLinkFrame, 8)
 	recvErr := make(chan error, 1)
 	go func() {
@@ -453,15 +447,11 @@ func (c *GatewayClient) runOnce(ctx context.Context) (time.Duration, error) {
 			return finish(err)
 		case err := <-recvErr:
 			return finish(err)
-		case <-heartbeatWatchdogC:
+		case <-heartbeatWatchdog.C:
 			return finish(fmt.Errorf("gateway heartbeat acknowledgement timed out after %s", timing.HeartbeatAckTimeout))
 		case <-heartbeat.C:
 			frame := &gatewayv1.DaemonLinkFrame{Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_HEARTBEAT, DaemonId: c.Identity.ID, Version: c.Version, ApiVersion: c.APIVersion, Capabilities: c.controlCapabilities(), DirectCandidates: c.Routes, RemoteDesktop: c.remoteDesktopPresence()}
-			if !heartbeatAcknowledged {
-				if !tryEnqueueControl(frame) {
-					return finish(errors.New("gateway heartbeat control queue is stalled"))
-				}
-			} else if outstandingHeartbeat == "" {
+			if outstandingHeartbeat == "" {
 				heartbeatSequence++
 				outstandingHeartbeat = fmt.Sprintf("hb_%d", heartbeatSequence)
 				frame.RequestId = outstandingHeartbeat
@@ -615,7 +605,7 @@ func (c *GatewayClient) runOnce(ctx context.Context) (time.Duration, error) {
 					return finish(errors.New("gateway relay control queue is stalled"))
 				}
 			case gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_PONG:
-				if heartbeatAcknowledged && matchesGatewayHeartbeatAck(frame, c.Identity.ID, outstandingHeartbeat) {
+				if matchesGatewayHeartbeatAck(frame, c.Identity.ID, outstandingHeartbeat) {
 					outstandingHeartbeat = ""
 					acknowledgedAt := time.Now()
 					if c.OnAcknowledged != nil {

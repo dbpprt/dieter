@@ -166,7 +166,7 @@ just android launch
 
 When more than one device is attached, add `-s <serial>` to each `adb` command.
 
-The application validates Dieter API version 2 before opening the workspace.
+The application validates the shared contract from `api/contract-version` (currently 1) before opening the workspace.
 The daemon's raw port 4242 remains loopback-only. Native access always uses an
 authenticated route or the gateway relay as documented in the root README.
 
@@ -195,3 +195,8 @@ just android connected-test
 
 End-to-end UI checks use semantic inspection and active interaction on the
 visible emulator. They never start a fixture or mock Dieter server.
+
+Configured-account instrumentation tests require an explicit
+`-Pandroid.testInstrumentationRunnerArguments.configuredGatewayTests=1`. They can
+mutate the signed-in account and are skipped by default. Development validation
+uses disposable credentials with `IsolatedGatewayIntegrationTest`.

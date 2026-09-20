@@ -29,7 +29,6 @@ const (
 	// sync with maxRetainedEventFrames in internal/remoteexec/manager_unix.go.
 	executionRelayFrameBuffer = 4096 + 2
 	maxRelayBufferedBytes     = 64 << 20
-	heartbeatAckCapability    = "heartbeat_ack_v1"
 )
 
 const (
@@ -264,9 +263,9 @@ func (h *Hub) connect(stream grpc.BidiStreamingServer[gatewayv1.DaemonLinkFrame,
 		}
 	}()
 	ack := &gatewayv1.DaemonLinkFrame{
-		Kind:     gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_HELLO_ACK,
-		DaemonId: identity, Generation: record.Generation, Version: "1",
-		Capabilities: []string{heartbeatAckCapability},
+		Kind:       gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_HELLO_ACK,
+		ApiVersion: GatewayAPIVersion,
+		DaemonId:   identity, Generation: record.Generation, Version: "1",
 	}
 	if h.quota != nil && link.capabilities[providerQuotaCapability] {
 		correlationKey, err := h.store.ProviderCorrelationKey(record.GitHubID)

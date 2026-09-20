@@ -14,6 +14,7 @@ import (
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
 	"github.com/dbpprt/dieter/internal/model"
 	"github.com/dbpprt/dieter/internal/store"
+	"golang.org/x/sys/unix"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -38,7 +39,7 @@ func TestSyncBurstDoesNotSkipMetadataBeyondDiagnosticBatch(t *testing.T) {
 	initial := true
 	found := false
 	stop := errors.New("done")
-	err := api.watchSync(ctx, &dieterv1.SyncRequest{ConversationLimit: 30, RecentConversationLimit: 8}, func(frame *dieterv1.SyncFrame) error {
+	err := api.watchSync(ctx, &dieterv1.SyncRequest{ProtocolVersion: 1, ConversationLimit: 30, RecentConversationLimit: 8}, func(frame *dieterv1.SyncFrame) error {
 		if initial {
 			initial = false
 			for range 256 {
@@ -101,11 +102,15 @@ func TestSyncRecoveryFrameIncludesEventsThroughPublishedCursor(t *testing.T) {
 
 func TestSyncHeartbeatsSurviveBlockedProjectionAndCancellation(t *testing.T) {
 	data, api, _ := syncRecoveryFixture(t)
-	lock := filepath.Join(data.Root, ".write-lock")
-	if err := os.Mkdir(lock, 0700); err != nil {
+	lock, err := os.OpenFile(filepath.Join(data.Root, ".writer-admission"), os.O_CREATE|os.O_RDWR, 0600)
+	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.Remove(lock)
+	defer lock.Close()
+	if err := unix.Flock(int(lock.Fd()), unix.LOCK_EX); err != nil {
+		t.Fatal(err)
+	}
+	defer unix.Flock(int(lock.Fd()), unix.LOCK_UN)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	frameReceived := make(chan *dieterv1.SyncFrame, 1)
@@ -130,7 +135,7 @@ func TestSyncHeartbeatsSurviveBlockedProjectionAndCancellation(t *testing.T) {
 		t.Fatal("cancellation did not release watch")
 	}
 	// The projection worker must release its process mutex after cancellation.
-	_ = os.Remove(lock)
+	_ = unix.Flock(int(lock.Fd()), unix.LOCK_UN)
 	ctx2, cancel2 := context.WithTimeout(context.Background(), time.Second)
 	defer cancel2()
 	if _, _, err := data.GlobalStateContext(ctx2); err != nil {
@@ -223,7 +228,7 @@ func TestSyncDirectoryPagesStayWithinWireBudget(t *testing.T) {
 	var ids []string
 	pages := 0
 	cursor := &dieterv1.SyncCursor{Epoch: "test", Sequence: 7}
-	err := sendBoundedSyncFrame(&dieterv1.SyncFrame{Snapshot: snapshot, Cursor: cursor, Reset_: true}, true, func(frame *dieterv1.SyncFrame) error {
+	err := sendBoundedSyncFrame(&dieterv1.SyncFrame{Snapshot: snapshot, Cursor: cursor, Reset_: true}, func(frame *dieterv1.SyncFrame) error {
 		pages++
 		if proto.Size(frame) > maxSyncFrameBytes {
 			t.Fatal("oversized frame")
@@ -243,14 +248,7 @@ func TestSyncDirectoryPagesStayWithinWireBudget(t *testing.T) {
 	if err != nil || pages < 3 || len(ids) != 30 {
 		t.Fatalf("paged directory: pages=%d ids=%d err=%v", pages, len(ids), err)
 	}
-	legacyFrames := 0
-	err = sendBoundedSyncFrame(&dieterv1.SyncFrame{Snapshot: snapshot, Cursor: cursor, Reset_: true}, false, func(*dieterv1.SyncFrame) error {
-		legacyFrames++
-		return nil
-	})
-	if err == nil || legacyFrames != 0 {
-		t.Fatal("legacy client received a partial projection it would incorrectly mark fresh")
-	}
+
 }
 
 func TestConversationByteBudgetPreservesPagingBoundaries(t *testing.T) {

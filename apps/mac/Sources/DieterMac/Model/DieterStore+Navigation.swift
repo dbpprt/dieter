@@ -82,8 +82,11 @@ extension DieterStore {
         // Schedules owns connection preparation and its paginated reads.
         if destination == .schedules { return }
         let ready: Bool
-        if destination == .files || destination == .changes { ready = await ensureCheckoutConnection(projectID) }
-        else { ready = await ensureReplicaConnection(projectID, reportOffline: false) }
+        if destination == .files || destination == .changes {
+            ready = await ensureCheckoutConnection(projectID)
+        } else {
+            ready = await ensureReplicaConnection(projectID, reportOffline: false)
+        }
         guard ready,
             generation == boardSelectionGeneration,
             selectedProjectID == projectID, section == destination
@@ -405,7 +408,9 @@ extension DieterStore {
                 await connect(to: machine)
                 guard phase.isConnected, endpoint.id == machine.id else { return }
             }
-        } else if let cardID = terminalScopeCardID, let card = synchronizedCardValues().first(where: { $0.id == cardID }) {
+        } else if let cardID = terminalScopeCardID,
+            let card = synchronizedCardValues().first(where: { $0.id == cardID })
+        {
             guard await ensureConversationConnection(card) else { return }
         } else {
             if !checkoutID.isEmpty { creationCheckoutIDs[projectID] = checkoutID }

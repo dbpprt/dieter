@@ -52,9 +52,8 @@ func TestGatewayAllowsMultipleAccountsAndIsolatesDaemons(t *testing.T) {
 	publicURL, _ := url.Parse("http://" + gatewayListener.Addr().String())
 	config := gateway.Config{
 		Root: t.TempDir(), Address: gatewayListener.Addr().String(), PublicURL: publicURL,
-		GitHubClientID: "test", GitHubSecret: "test", AllowedUserID: 7000188, AllowedLogin: "owner",
-		AllowedUserIDs: map[int64]struct{}{7000188: {}, 60854672: {}},
-		AuthSecret:     []byte("0123456789abcdef0123456789abcdef"), SessionTTL: time.Hour,
+		GitHubClientID: "test", GitHubSecret: "test", AllowedUserIDs: map[int64]struct{}{7000188: {}, 60854672: {}},
+		AuthSecret: []byte("0123456789abcdef0123456789abcdef"), SessionTTL: time.Hour,
 		NativeRedirects: map[string]struct{}{}, GitHubBaseURL: "https://github.invalid", GitHubAPIURL: "https://api.github.invalid", DevInsecure: true,
 	}
 	gatewayStore, err := gateway.OpenStore(config.Root)
@@ -151,8 +150,7 @@ func TestGatewayEnrollsDaemonAndRelaysDieterService(t *testing.T) {
 	publicURL, _ := url.Parse("http://" + proxyListener.Addr().String())
 	config := gateway.Config{
 		Root: t.TempDir(), Address: gatewayListener.Addr().String(), PublicURL: publicURL,
-		GitHubClientID: "test", GitHubSecret: "test", AllowedUserID: 7000188, AllowedLogin: "owner",
-		AuthSecret: []byte("0123456789abcdef0123456789abcdef"), SessionTTL: time.Hour,
+		GitHubClientID: "test", GitHubSecret: "test", AllowedUserIDs: map[int64]struct{}{7000188: {}}, AuthSecret: []byte("0123456789abcdef0123456789abcdef"), SessionTTL: time.Hour,
 		NativeRedirects: map[string]struct{}{}, GitHubBaseURL: "https://github.invalid", GitHubAPIURL: "https://api.github.invalid", DevInsecure: true,
 		RTCSTUNURLs: []string{"stun:stun.example:3478"}, RTCTTL: 5 * time.Minute,
 	}
@@ -184,7 +182,7 @@ func TestGatewayEnrollsDaemonAndRelaysDieterService(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := gatewayStore.ApproveEnrollment(enrollment.GetEnrollmentId(), enrollment.GetUserCode(), config.AllowedUserID, "owner"); err != nil {
+	if err := gatewayStore.ApproveEnrollment(enrollment.GetEnrollmentId(), enrollment.GetUserCode(), int64(7000188), "owner"); err != nil {
 		t.Fatal(err)
 	}
 	credential, err := daemon.CompleteEnrollment(ctx, identity, enrollment.GetEnrollmentId(), enrollment.GetEnrollmentSecret())
@@ -258,7 +256,7 @@ func TestGatewayEnrollsDaemonAndRelaysDieterService(t *testing.T) {
 	session := "native-test-session"
 	digest := sessionDigest(config.AuthSecret, session)
 	if err := gatewayStore.UpdateAuthState(func(state *gateway.AuthState) error {
-		state.Sessions = append(state.Sessions, gateway.Session{TokenHash: digest, GitHubID: config.AllowedUserID, Login: "owner", CreatedAt: time.Now().UTC(), ExpiresAt: time.Now().UTC().Add(time.Hour)})
+		state.Sessions = append(state.Sessions, gateway.Session{TokenHash: digest, GitHubID: int64(7000188), Login: "owner", CreatedAt: time.Now().UTC(), ExpiresAt: time.Now().UTC().Add(time.Hour)})
 		return nil
 	}); err != nil {
 		t.Fatal(err)
@@ -701,8 +699,7 @@ func TestGatewayDetectsBlackholedTunnelAndReconnects(t *testing.T) {
 	publicURL, _ := url.Parse("http://" + proxyListener.Addr().String())
 	config := gateway.Config{
 		Root: t.TempDir(), Address: gatewayListener.Addr().String(), PublicURL: publicURL,
-		GitHubClientID: "test", GitHubSecret: "test", AllowedUserID: 7000188, AllowedLogin: "owner",
-		AuthSecret: []byte("0123456789abcdef0123456789abcdef"), SessionTTL: time.Hour,
+		GitHubClientID: "test", GitHubSecret: "test", AllowedUserIDs: map[int64]struct{}{7000188: {}}, AuthSecret: []byte("0123456789abcdef0123456789abcdef"), SessionTTL: time.Hour,
 		NativeRedirects: map[string]struct{}{}, GitHubBaseURL: "https://github.invalid", GitHubAPIURL: "https://api.github.invalid", DevInsecure: true,
 	}
 	gatewayStore, err := gateway.OpenStore(config.Root)
@@ -725,7 +722,7 @@ func TestGatewayDetectsBlackholedTunnelAndReconnects(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := gatewayStore.ApproveEnrollment(enrollment.GetEnrollmentId(), enrollment.GetUserCode(), config.AllowedUserID, "owner"); err != nil {
+	if err := gatewayStore.ApproveEnrollment(enrollment.GetEnrollmentId(), enrollment.GetUserCode(), int64(7000188), "owner"); err != nil {
 		t.Fatal(err)
 	}
 	credential, err := daemon.CompleteEnrollment(ctx, identity, enrollment.GetEnrollmentId(), enrollment.GetEnrollmentSecret())
@@ -754,7 +751,7 @@ func TestGatewayDetectsBlackholedTunnelAndReconnects(t *testing.T) {
 	const session = "blackhole-test-session"
 	if err := gatewayStore.UpdateAuthState(func(state *gateway.AuthState) error {
 		state.Sessions = append(state.Sessions, gateway.Session{
-			TokenHash: sessionDigest(config.AuthSecret, session), GitHubID: config.AllowedUserID, Login: "owner",
+			TokenHash: sessionDigest(config.AuthSecret, session), GitHubID: int64(7000188), Login: "owner",
 			CreatedAt: time.Now().UTC(), ExpiresAt: time.Now().UTC().Add(time.Hour),
 		})
 		return nil
@@ -862,8 +859,7 @@ func TestGatewayRoutesMultipleDaemonsAndTracksPresenceIndependently(t *testing.T
 	publicURL, _ := url.Parse("http://" + gatewayListener.Addr().String())
 	config := gateway.Config{
 		Root: t.TempDir(), Address: gatewayListener.Addr().String(), PublicURL: publicURL,
-		GitHubClientID: "test", GitHubSecret: "test", AllowedUserID: 7000188, AllowedLogin: "owner",
-		AuthSecret: []byte("0123456789abcdef0123456789abcdef"), SessionTTL: time.Hour,
+		GitHubClientID: "test", GitHubSecret: "test", AllowedUserIDs: map[int64]struct{}{7000188: {}}, AuthSecret: []byte("0123456789abcdef0123456789abcdef"), SessionTTL: time.Hour,
 		NativeRedirects: map[string]struct{}{}, GitHubBaseURL: "https://github.invalid", GitHubAPIURL: "https://api.github.invalid", DevInsecure: true,
 	}
 	gatewayStore, err := gateway.OpenStore(config.Root)
@@ -887,7 +883,7 @@ func TestGatewayRoutesMultipleDaemonsAndTracksPresenceIndependently(t *testing.T
 	session := "multi-daemon-session"
 	if err := gatewayStore.UpdateAuthState(func(state *gateway.AuthState) error {
 		state.Sessions = append(state.Sessions, gateway.Session{
-			TokenHash: sessionDigest(config.AuthSecret, session), GitHubID: config.AllowedUserID, Login: "owner",
+			TokenHash: sessionDigest(config.AuthSecret, session), GitHubID: int64(7000188), Login: "owner",
 			CreatedAt: time.Now().UTC(), ExpiresAt: time.Now().UTC().Add(time.Hour),
 		})
 		return nil
@@ -911,7 +907,7 @@ func TestGatewayRoutesMultipleDaemonsAndTracksPresenceIndependently(t *testing.T
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := gatewayStore.ApproveEnrollment(enrollment.GetEnrollmentId(), enrollment.GetUserCode(), config.AllowedUserID, "owner"); err != nil {
+		if err := gatewayStore.ApproveEnrollment(enrollment.GetEnrollmentId(), enrollment.GetUserCode(), int64(7000188), "owner"); err != nil {
 			t.Fatal(err)
 		}
 		credential, err := daemon.CompleteEnrollment(ctx, identity, enrollment.GetEnrollmentId(), enrollment.GetEnrollmentSecret())
@@ -1170,13 +1166,13 @@ func testRemoteDesktopThroughGateway(t *testing.T, routed context.Context, clien
 		t.Fatal(err)
 	}
 	ordered := true
-	stateChannel, err := viewer.CreateDataChannel("dieter-input-state-v2", &webrtc.DataChannelInit{Ordered: &ordered})
+	stateChannel, err := viewer.CreateDataChannel("dieter-input-state-v1", &webrtc.DataChannelInit{Ordered: &ordered})
 	if err != nil {
 		t.Fatal(err)
 	}
 	unordered := false
 	zero := uint16(0)
-	if _, err := viewer.CreateDataChannel("dieter-pointer-v2", &webrtc.DataChannelInit{Ordered: &unordered, MaxRetransmits: &zero}); err != nil {
+	if _, err := viewer.CreateDataChannel("dieter-pointer-v1", &webrtc.DataChannelInit{Ordered: &unordered, MaxRetransmits: &zero}); err != nil {
 		t.Fatal(err)
 	}
 	trackReceived := make(chan struct{}, 1)
@@ -1201,7 +1197,7 @@ func testRemoteDesktopThroughGateway(t *testing.T, routed context.Context, clien
 		t.Fatal("viewer ICE gathering timed out")
 	}
 	offer = *viewer.LocalDescription()
-	request := &dieterv1.StartRemoteDesktopRequest{
+	request := &dieterv1.StartRemoteDesktopRequest{InputProtocolVersion: 1,
 		ClientNonce: "gateway-e2e-nonce", RtcConfiguration: rtc,
 		Offer:     &dieterv1.RemoteDesktopSessionDescription{Type: "offer", Sdp: offer.SDP},
 		DisplayId: "primary", Control: true, MaxFps: 10, MaxBitrateKbps: 500,

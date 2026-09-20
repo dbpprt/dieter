@@ -231,10 +231,16 @@ package final class DieterRPC: Sendable {
     }
 
     package func daemons() async throws -> Dieter_Gateway_V1_ListDaemonsResponse {
-        try await gatewayService.listDaemons(
+        let response = try await gatewayService.listDaemons(
             request: .init(message: Google_Protobuf_Empty()),
             options: Self.boundedUnaryCallOptions()
         )
+        guard response.gatewayInformation.apiVersion == DieterContract.version else {
+            throw RPCError(
+                code: .failedPrecondition,
+                message: "Update the Dieter gateway and clients together; application contract mismatch.")
+        }
+        return response
     }
 
     package func providerQuotas() async throws -> Dieter_Gateway_V1_ListProviderQuotasResponse {
@@ -728,13 +734,17 @@ package final class DieterRPC: Sendable {
 
     package func fileDiff(_ request: Dieter_V1_GetDiffRequest) async throws -> Dieter_V1_FileDiff {
         var request = request
-        if request.checkoutID.isEmpty { request.checkoutID = checkoutID(projectID: request.projectID, cardID: request.cardID) }
+        if request.checkoutID.isEmpty {
+            request.checkoutID = checkoutID(projectID: request.projectID, cardID: request.cardID)
+        }
         return try await service.getFileDiff(request: .init(message: request))
     }
 
     package func commitDiff(_ request: Dieter_V1_GetDiffRequest) async throws -> Dieter_V1_FileDiff {
         var request = request
-        if request.checkoutID.isEmpty { request.checkoutID = checkoutID(projectID: request.projectID, cardID: request.cardID) }
+        if request.checkoutID.isEmpty {
+            request.checkoutID = checkoutID(projectID: request.projectID, cardID: request.cardID)
+        }
         return try await service.getCommitDiff(request: .init(message: request))
     }
 
@@ -763,7 +773,9 @@ package final class DieterRPC: Sendable {
         -> Dieter_V1_GitOperation
     {
         var request = request
-        if request.checkoutID.isEmpty { request.checkoutID = checkoutID(projectID: request.projectID, cardID: request.cardID) }
+        if request.checkoutID.isEmpty {
+            request.checkoutID = checkoutID(projectID: request.projectID, cardID: request.cardID)
+        }
         return try await service.startGitOperation(request: .init(message: request))
     }
 
@@ -798,21 +810,27 @@ package final class DieterRPC: Sendable {
 
     package func listFiles(_ request: Dieter_V1_ListFilesRequest) async throws -> Dieter_V1_FileList {
         var request = request
-        if request.checkoutID.isEmpty { request.checkoutID = checkoutID(projectID: request.projectID, cardID: request.cardID) }
+        if request.checkoutID.isEmpty {
+            request.checkoutID = checkoutID(projectID: request.projectID, cardID: request.cardID)
+        }
         return try await service.listFiles(
             request: .init(message: request), options: Self.boundedUnaryCallOptions())
     }
 
     package func readFile(_ request: Dieter_V1_ReadFileRequest) async throws -> Dieter_V1_FileDocument {
         var request = request
-        if request.checkoutID.isEmpty { request.checkoutID = checkoutID(projectID: request.projectID, cardID: request.cardID) }
+        if request.checkoutID.isEmpty {
+            request.checkoutID = checkoutID(projectID: request.projectID, cardID: request.cardID)
+        }
         return try await service.readFile(
             request: .init(message: request), options: Self.boundedUnaryCallOptions())
     }
 
     package func saveFile(_ request: Dieter_V1_SaveFileRequest) async throws -> Dieter_V1_FileDocument {
         var request = request
-        if request.checkoutID.isEmpty { request.checkoutID = checkoutID(projectID: request.projectID, cardID: request.cardID) }
+        if request.checkoutID.isEmpty {
+            request.checkoutID = checkoutID(projectID: request.projectID, cardID: request.cardID)
+        }
         return try await service.saveFile(request: .init(message: request))
     }
 
@@ -820,7 +838,9 @@ package final class DieterRPC: Sendable {
         -> Dieter_V1_FileEntry
     {
         var request = request
-        if request.checkoutID.isEmpty { request.checkoutID = checkoutID(projectID: request.projectID, cardID: request.cardID) }
+        if request.checkoutID.isEmpty {
+            request.checkoutID = checkoutID(projectID: request.projectID, cardID: request.cardID)
+        }
         return try await service.createFile(request: .init(message: request))
     }
 
@@ -828,13 +848,17 @@ package final class DieterRPC: Sendable {
         -> Dieter_V1_MoveFileResponse
     {
         var request = request
-        if request.checkoutID.isEmpty { request.checkoutID = checkoutID(projectID: request.projectID, cardID: request.cardID) }
+        if request.checkoutID.isEmpty {
+            request.checkoutID = checkoutID(projectID: request.projectID, cardID: request.cardID)
+        }
         return try await service.moveFile(request: .init(message: request))
     }
 
     package func deleteFile(_ request: Dieter_V1_DeleteFileRequest) async throws {
         var request = request
-        if request.checkoutID.isEmpty { request.checkoutID = checkoutID(projectID: request.projectID, cardID: request.cardID) }
+        if request.checkoutID.isEmpty {
+            request.checkoutID = checkoutID(projectID: request.projectID, cardID: request.cardID)
+        }
         _ = try await service.deleteFile(request: .init(message: request)) as Google_Protobuf_Empty
     }
 
@@ -853,7 +877,9 @@ package final class DieterRPC: Sendable {
         -> Dieter_V1_Terminal
     {
         var request = request
-        if request.checkoutID.isEmpty { request.checkoutID = checkoutID(projectID: request.projectID, cardID: request.cardID) }
+        if request.checkoutID.isEmpty {
+            request.checkoutID = checkoutID(projectID: request.projectID, cardID: request.cardID)
+        }
         return try await service.createTerminal(request: .init(message: request))
     }
 

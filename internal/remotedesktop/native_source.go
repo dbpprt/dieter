@@ -19,6 +19,7 @@ import (
 	"time"
 
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
+	"github.com/dbpprt/dieter/internal/protocol"
 	"github.com/pion/webrtc/v4/pkg/media"
 )
 
@@ -85,7 +86,6 @@ type nativeInputPayload struct {
 	Precise       bool    `json:"precise"`
 	Phase         uint32  `json:"phase"`
 	MomentumPhase uint32  `json:"momentum_phase"`
-	KeyCode       uint32  `json:"key_code"`
 	PhysicalKey   uint32  `json:"physical_key"`
 	Modifiers     uint32  `json:"modifiers"`
 	Text          string  `json:"text"`
@@ -207,7 +207,7 @@ func (s *nativeHelperSource) send(ctx context.Context, command nativeCommand, ac
 	}
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	command.Version, command.ID = 2, s.sequence.Add(1)
+	command.Version, command.ID = protocol.Number, s.sequence.Add(1)
 	job := nativeWrite{command: command, done: make(chan error, 1)}
 	s.mu.Lock()
 	writes, stopped := s.writes, s.stopped
@@ -324,7 +324,7 @@ func translateNativeInput(value *dieterv1.RemoteDesktopInput) (*nativeInputPaylo
 		p.Phase, p.MomentumPhase = v.GetPhase(), v.GetMomentumPhase()
 	case *dieterv1.RemoteDesktopInput_Key:
 		v := input.Key
-		p.Kind, p.KeyCode, p.PhysicalKey, p.Down, p.Repeat, p.Modifiers = "key", v.GetKeyCode(), v.GetPhysicalKey(), v.GetDown(), v.GetRepeat(), v.GetModifiers()
+		p.Kind, p.PhysicalKey, p.Down, p.Repeat, p.Modifiers = "key", v.GetPhysicalKey(), v.GetDown(), v.GetRepeat(), v.GetModifiers()
 	case *dieterv1.RemoteDesktopInput_Text:
 		p.Kind, p.Text = "text", input.Text.GetText()
 	case *dieterv1.RemoteDesktopInput_ReleaseAll:
@@ -460,7 +460,7 @@ func (s *nativeHelperSource) Stream(ctx context.Context, emit func(media.Sample)
 		scanner.Buffer(make([]byte, 4096), 384<<10)
 		for scanner.Scan() {
 			var event nativeEvent
-			if json.Unmarshal(scanner.Bytes(), &event) != nil || event.Version != 2 {
+			if json.Unmarshal(scanner.Bytes(), &event) != nil || event.Version != protocol.Number {
 				cancelCause(errors.New("invalid native helper event"))
 				return
 			}
@@ -661,6 +661,9 @@ func ProbeCapabilities(ctx context.Context, options SourceOptions) (*dieterv1.Re
 	var value dieterv1.RemoteDesktopCapabilities
 	if err = json.Unmarshal(output.raw, &value); err != nil {
 		return nil, err
+	}
+	if value.InputProtocolVersion != inputProtocolVersion {
+		return nil, fmt.Errorf("capture helper contract %d does not match daemon contract %d", value.InputProtocolVersion, inputProtocolVersion)
 	}
 	if len(value.Displays) > 32 {
 		return nil, errors.New("too many native displays")

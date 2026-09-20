@@ -166,7 +166,7 @@ func (m *Manager) Capabilities(enabled, controlEnabled bool) *dieterv1.RemoteDes
 	value.BinaryClipboardSupported = value.ClipboardSupported
 	value.DisplayModeSwitchingSupported = value.DisplayModeSwitchingSupported || m.options.DisplayFactory != nil
 	value.MaxClients = maxClients
-	value.SupportedInputProtocolVersions = []uint32{2, 3}
+	value.InputProtocolVersion = inputProtocolVersion
 	m.mu.Lock()
 	value.ConnectedClients = uint32(len(m.sessions))
 	m.mu.Unlock()
@@ -186,7 +186,7 @@ func (m *Manager) capabilities(enabled, controlEnabled, forceProbe bool) *dieter
 		value.Enabled = enabled
 		value.ActiveSession = active
 		captureReady := value.CapturePermission == "granted" || runtime.GOOS == "linux" && value.CapturePermission == "not_requested"
-		encoderReady := value.HardwareEncoderAvailable
+		encoderReady := value.EncoderAvailable
 		value.Ready = enabled && value.GraphicalSessionActive && captureReady && encoderReady && m.options.Identity.DaemonID != "" && len(m.options.Identity.PrivateKey) == ed25519.PrivateKeySize
 		switch {
 		case !enabled:
@@ -238,7 +238,7 @@ func (m *Manager) capabilities(enabled, controlEnabled, forceProbe bool) *dieter
 		value.HelperVersion = remoteDesktopHelperVersion(m.options.Source)
 		value.Displays = []*dieterv1.RemoteDesktopDisplay{{Id: "primary", Name: "Primary display", Primary: true, Scale: 1}}
 		value.Codecs = []string{string(preferredVideoCodec(m.options.Source))}
-		value.HardwareEncoderAvailable = (runtime.GOOS == "darwin" || runtime.GOOS == "linux") && strings.TrimSpace(m.options.Source.Kind) != "synthetic"
+		value.EncoderAvailable = (runtime.GOOS == "darwin" || runtime.GOOS == "linux") && strings.TrimSpace(m.options.Source.Kind) != "synthetic"
 	}
 	return value
 }
@@ -317,14 +317,6 @@ func (m *Manager) Start(request *dieterv1.StartRemoteDesktopRequest, enabled, co
 	m.mu.Unlock()
 	if full {
 		return nil, ErrCapacity
-	}
-	if request.GetControl() && requestedInputProtocol(request) == 2 {
-		m.controlMu.Lock()
-		busy := m.controller != nil
-		m.controlMu.Unlock()
-		if busy {
-			return nil, ErrControlOwner
-		}
 	}
 	// Capabilities probes the exact production capture path once per daemon
 	// lifetime. Reusing that result here avoids opening and encoding the screen
@@ -790,9 +782,6 @@ func normalizedDisplayID(value string) string {
 }
 
 func requestedInputProtocol(request *dieterv1.StartRemoteDesktopRequest) uint32 {
-	if request.GetInputProtocolVersion() == 0 {
-		return 2
-	}
 	return request.GetInputProtocolVersion()
 }
 
@@ -800,7 +789,7 @@ func validateStartRequest(request *dieterv1.StartRemoteDesktopRequest) error {
 	if request == nil || strings.TrimSpace(request.GetClientNonce()) == "" || len(request.GetClientNonce()) > 128 {
 		return errors.New("client_nonce is required and must be at most 128 bytes")
 	}
-	if (requestedInputProtocol(request) != 2 && requestedInputProtocol(request) != 3) || len(request.GetClientName()) > 64 {
+	if requestedInputProtocol(request) != inputProtocolVersion || len(request.GetClientName()) > 64 {
 		return errors.New("unsupported input protocol or client name")
 	}
 	if request.GetOffer().GetType() != "offer" || strings.TrimSpace(request.GetOffer().GetSdp()) == "" || len(request.GetOffer().GetSdp()) > maxSDPBytes {
@@ -1136,7 +1125,7 @@ func preferredVideoCodec(options SourceOptions) VideoCodec {
 
 func remoteDesktopHelperVersion(options SourceOptions) string {
 	if preferredVideoCodec(options) == VideoCodecH264 {
-		return "native-v2"
+		return fmt.Sprintf("native-v%d", inputProtocolVersion)
 	}
 	return "pion-vp8-v1"
 }

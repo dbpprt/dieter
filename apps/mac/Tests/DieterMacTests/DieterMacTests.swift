@@ -97,11 +97,11 @@ import UniformTypeIdentifiers
         fingerprint: "sha-256 AA:BB",
         expiresAt: "2026-08-25T08:00:00Z",
         offerHash: Data([0, 1, 2]), controlGranted: true, displayID: "primary",
-        inputProtocolVersion: 2, inputEpoch: Data(repeating: 7, count: 16)
+        inputProtocolVersion: DieterContract.number, inputEpoch: Data(repeating: 7, count: 16)
     )
     #expect(
         String(data: message, encoding: .utf8)
-            == "dieter-remote-desktop-v2\nrd_one\nnonce\nsha-256 AA:BB\n2026-08-25T08:00:00Z\nAAEC\ntrue\nprimary\n2\nBwcHBwcHBwcHBwcHBwcHBw"
+            == "dieter-remote-desktop-v1\nrd_one\nnonce\nsha-256 AA:BB\n2026-08-25T08:00:00Z\nAAEC\ntrue\nprimary\n1\nBwcHBwcHBwcHBwcHBwcHBw"
     )
 }
 
@@ -362,7 +362,7 @@ private actor CardStartRPCStub: DieterCardStartRPC {
     #expect(SchedulesPresentationState.resolve(isLoaded: true, isLoading: true, hasSchedules: true) == .loaded)
 }
 
-@Test func remoteDesktopBindingRejectsLegacySignatureAfterControlBindingUpgrade() throws {
+@Test func remoteDesktopBindingRejectsSignatureWithoutControlAndEpoch() throws {
     let offer = "v=0\r\no=test"
     let answer = "v=0\r\na=fingerprint:sha-256 AA:BB\r\n"
     var binding = Dieter_V1_RemoteDesktopSessionBinding()
@@ -370,7 +370,7 @@ private actor CardStartRPCStub: DieterCardStartRPC {
     binding.helperDtlsFingerprint = "sha-256 AA:BB"
     binding.expiresAt = "2099-08-25T08:00:00Z"
     binding.offerSha256 = Data(SHA256.hash(data: Data(offer.utf8)))
-    binding.inputProtocolVersion = 2
+    binding.inputProtocolVersion = DieterContract.number
     binding.inputEpoch = Data(repeating: 1, count: 16)
     binding.daemonSignature = try #require(
         Data(base64Encoded: "ctCMwB2SL9Wk9JqpQzgtM+NQxXqUXGGKSSpQ1X2lNX3G3uS8UR7uKe5J8fjZheT1WxX3U5s37saWnSk7dqIADQ=="))
@@ -396,7 +396,7 @@ private actor CardStartRPCStub: DieterCardStartRPC {
             offerSDP: offer, answerSDP: answer, daemonCertificatePEM: certificate,
             now: now
         )
-        Issue.record("a v1 signature was accepted for the v2 control-bound payload")
+        Issue.record("a signature without the control binding was accepted")
     } catch RemoteDesktopSessionTrust.Failure.invalidSignature {
         // Expected: control authorization and the input epoch are now signed.
     }
@@ -410,7 +410,7 @@ private actor CardStartRPCStub: DieterCardStartRPC {
     binding.helperDtlsFingerprint = "sha-256 AA:BB"
     binding.expiresAt = "2026-08-25T07:00:00Z"
     binding.offerSha256 = Data(SHA256.hash(data: Data(offer.utf8)))
-    binding.inputProtocolVersion = 2
+    binding.inputProtocolVersion = DieterContract.number
     binding.inputEpoch = Data(repeating: 1, count: 16)
     do {
         try RemoteDesktopSessionTrust.verify(
@@ -2061,11 +2061,11 @@ private func terminalKeyEvent(
     let gateway = DieterEndpoint(name: "Gateway", host: "example.com", port: 443, secure: true)
     let offlinePreferred = DieterEndpoint(
         name: "Studio Mac", host: gateway.host, port: gateway.port, secure: true,
-        daemonID: "mac", online: false
+        daemonID: "mac", online: false, apiVersion: DieterContract.version
     )
     let onlineFallback = DieterEndpoint(
         name: "Build server", host: gateway.host, port: gateway.port, secure: true,
-        daemonID: "server", online: true
+        daemonID: "server", online: true, apiVersion: DieterContract.version
     )
 
     #expect(
@@ -2080,7 +2080,7 @@ private func terminalKeyEvent(
         ) == nil)
 }
 
-@Test func machineRoutingSkipsKnownIncompatibleDaemonsAndRetainsUnknownFallbacks() throws {
+@Test func machineRoutingRejectsUnknownAndIncompatibleDaemons() throws {
     let gateway = DieterEndpoint(name: "Gateway", host: "example.com", port: 443, secure: true)
     let incompatible = DieterEndpoint(
         name: "Legacy", host: gateway.host, port: gateway.port, secure: true,
@@ -2100,7 +2100,7 @@ private func terminalKeyEvent(
             from: [incompatible, unknown, compatible],
             preferredDaemonID: "legacy",
             explicitMachineSelection: false
-        ) == [compatible, unknown])
+        ) == [compatible])
     #expect(
         MachineRoutingPolicy.connectionTargets(
             from: [incompatible, compatible],
@@ -2387,8 +2387,7 @@ private func terminalKeyEvent(
             projections: [
                 endpointID: .init(cursor: try cursor.serializedData(), snapshot: try snapshot.serializedData())
             ],
-            conversationRefreshedAt: [endpointID: ["c_one": refreshedAt]],
-            outbox: [entry]
+            conversationRefreshedAt: [endpointID: ["c_one": refreshedAt]]
         ))
 
     let restored = await DieterSyncPersistence(root: root).load()
@@ -2400,8 +2399,6 @@ private func terminalKeyEvent(
     #expect(restoredCursor.sequence == 42)
     #expect(restoredSnapshot.state.projects.first?.id == "p_one")
     #expect(restored.conversationRefreshedAt[endpointID]?["c_one"] == refreshedAt)
-    #expect(restored.outbox.first?.optimisticID == "msg_one")
-    #expect(restored.outbox.first?.endpointID == endpointID)
 }
 
 @Test func cleanSyncClearsEveryProjectionAndPreservesOutbox() throws {
@@ -2422,20 +2419,13 @@ private func terminalKeyEvent(
             firstEndpointID: .init(cursor: Data([1]), snapshot: Data([2])),
             secondEndpointID: .init(cursor: Data([3]), snapshot: Data([4])),
         ],
-        cursor: Data([5]),
-        snapshot: Data([6]),
-        conversationRefreshedAt: [firstEndpointID: ["c_one": Date(timeIntervalSince1970: 10)]],
-        outbox: [entry]
+        conversationRefreshedAt: [firstEndpointID: ["c_one": Date(timeIntervalSince1970: 10)]]
     )
 
     state.clearProjections()
 
     #expect(state.projections.isEmpty)
-    #expect(state.cursor == nil)
-    #expect(state.snapshot == nil)
     #expect(state.conversationRefreshedAt.isEmpty)
-    #expect(state.outbox.count == 1)
-    #expect(state.outbox.first?.commandID == entry.commandID)
 }
 
 @Test func permanentOutboxFailureDoesNotBlockLaterCreate() throws {

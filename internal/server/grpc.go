@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"errors"
-	"github.com/dbpprt/dieter/internal/protocol"
 	"io/fs"
 	"mime"
 	"net/http"
@@ -27,6 +26,7 @@ import (
 	"github.com/dbpprt/dieter/internal/model"
 	"github.com/dbpprt/dieter/internal/peerstore"
 	dieterprompt "github.com/dbpprt/dieter/internal/prompt"
+	"github.com/dbpprt/dieter/internal/protocol"
 	"github.com/dbpprt/dieter/internal/store"
 	"github.com/dbpprt/dieter/internal/terminal"
 	"google.golang.org/grpc/codes"
@@ -1103,7 +1103,7 @@ func (api *grpcAPI) MoveCard(_ context.Context, request *dieterv1.MoveCardReques
 		}
 		go drainUpdates(updates)
 		// StartCard durably updates the runtime and initial prompt marker before
-		// returning. Resolve again so legacy MoveCard callers never receive the
+		// returning. Resolve again so MoveCard callers never receive the
 		// stale "running lane / idle runtime" projection.
 		value, _ = api.server.store.ResolveCard(value.ID)
 	}

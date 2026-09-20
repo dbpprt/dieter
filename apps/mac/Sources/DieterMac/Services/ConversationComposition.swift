@@ -5,7 +5,7 @@ import Foundation
 extension DieterStore {
     func makeConversationContext() -> ConversationContext {
         conversationModel.presentSnapshot = { [weak self] snapshot in
-            DieterOutboxPolicy.overlayOptimisticMessages(snapshot, entries: self?.syncDiskState.outbox ?? [])
+            DieterOutboxPolicy.overlayOptimisticMessages(snapshot, entries: self?.outbox.entries ?? [])
         }
         let context = ConversationContext(
             model: conversationModel, composer: composer, worktreeChanges: worktreeChanges,

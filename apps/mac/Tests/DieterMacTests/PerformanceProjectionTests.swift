@@ -154,11 +154,11 @@ import Testing
 
     for sequence in 1...99 {
         var state = DieterSyncDiskState.empty
-        state.cursor = Data(String(sequence).utf8)
+        state.projections["endpoint"] = .init(cursor: Data(String(sequence).utf8), snapshot: nil)
         await persistence.scheduleSave(state)
     }
     var final = DieterSyncDiskState.empty
-    final.cursor = Data("latest".utf8)
+    final.projections["endpoint"] = .init(cursor: Data("latest".utf8), snapshot: nil)
     let finalSave = Task { try await persistence.save(final) }
     while await persistence.metrics().acceptedSaveCount < 101 { await Task.yield() }
     writer.releaseFirstWrite()
@@ -183,7 +183,7 @@ import Testing
 
     for sequence in 1...100 {
         var state = DieterSyncDiskState.empty
-        state.cursor = Data("\(sequence)".utf8)
+        state.projections["endpoint"] = .init(cursor: Data("\(sequence)".utf8), snapshot: nil)
         await persistence.scheduleCheckpoint(.init(diskState: state))
     }
     let deadline = Date().addingTimeInterval(1)
@@ -356,9 +356,9 @@ private final class RecordingPersistenceWriter: @unchecked Sendable {
 
     func write(_ value: DieterSyncDiskState, _ fileURL: URL) throws -> Int {
         lock.lock()
-        cursor = value.cursor
+        cursor = value.projections["endpoint"]?.cursor
         lock.unlock()
-        return value.cursor?.count ?? 0
+        return value.projections["endpoint"]?.cursor?.count ?? 0
     }
 }
 

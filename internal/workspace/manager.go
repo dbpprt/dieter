@@ -157,7 +157,6 @@ func (m *Manager) provision(ctx context.Context, detail model.CardDetail, value 
 		value.Path = projectPath
 		value.Branch = currentBranch
 		value.ManagedBranch = false
-		value.LegacyUnmanaged = detail.Card.InitialPromptSentAt != ""
 		return value, nil
 	case model.WorkspaceModeWorktree:
 		if value.Branch == "" {

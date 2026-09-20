@@ -222,7 +222,9 @@ final class ConversationScrollController: NSObject {
     }
 
     private struct Layout: Equatable {
+        var documentWidth: CGFloat = 0
         var documentHeight: CGFloat = 0
+        var viewportWidth: CGFloat = 0
         var viewportHeight: CGFloat = 0
         var topInset: CGFloat = 0
         var bottomInset: CGFloat = 0
@@ -433,13 +435,14 @@ final class ConversationScrollController: NSObject {
     @objc private func clipBoundsDidChange(_ notification: Notification) {
         guard !isAdjusting, let scroll = attachedScrollView else { return }
         let layout = currentLayout(scroll)
-        guard layout == lastLayout else {
+        let offset = scroll.contentView.bounds.minY
+        guard layout == lastLayout, !(verificationScheduled && isFollowing) else {
             // Inset or size changes move the clip origin too; that is layout,
-            // not the user.
+            // not the user. AppKit may clamp the origin after the frame
+            // notification but before the pending layout verification.
             applyLayoutPolicy()
             return
         }
-        let offset = scroll.contentView.bounds.minY
         let delta = offset - lastOffset
         lastOffset = offset
         guard abs(delta) > 0.01 else { return }
@@ -462,7 +465,9 @@ final class ConversationScrollController: NSObject {
 
     private func currentLayout(_ scroll: NSScrollView) -> Layout {
         Layout(
+            documentWidth: scroll.documentView?.frame.width ?? 0,
             documentHeight: scroll.documentView?.frame.height ?? 0,
+            viewportWidth: scroll.contentView.bounds.width,
             viewportHeight: scroll.contentView.bounds.height,
             topInset: scroll.contentInsets.top,
             bottomInset: scroll.contentInsets.bottom)
@@ -510,9 +515,11 @@ final class ConversationScrollController: NSObject {
     }
 
     private func verifyLayoutPolicy() {
-        guard verificationScheduled else { return }
-        verificationScheduled = false
         guard let scroll = attachedScrollView, !isAdjusting else { return }
+        // A floating composer can change contentInsets without changing the
+        // document or clip frame. Those changes produce no layout notification.
+        guard verificationScheduled || currentLayout(scroll) != lastLayout else { return }
+        verificationScheduled = false
         if let pendingReadingPosition {
             restore(pendingReadingPosition)
             // The replacement has been laid out. Text rows may still settle

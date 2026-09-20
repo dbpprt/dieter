@@ -449,7 +449,7 @@ Each viewer adapts independently and can change displays or disconnect without
 closing another session. Only one client controls mouse and keyboard at a time.
 The first control-capable client receives control; other clients use Take Control
 (or `dieter screen control take SESSION`). Release Control leaves the video open.
-Handoff requires protocol 3; an older controlling client must disconnect first.
+Control handoff is part of the current contract; every viewer uses revocable grants.
 `dieter screen sessions` reports connected clients and allocated capture resources.
 
 For an authorized screen session, use `dieter screen status SESSION` for active
@@ -464,8 +464,8 @@ Motion policy trades resolution before cadence under sustained congestion;
 automatic/detail policies retain their cadence-first behavior. Screen media uses native macOS
 capture with hardware H.264 or opt-in HEVC, or Linux X11/portal capture with H.264.
 Linux requires the documented GStreamer and desktop-session dependencies; Wayland
-source selection remains locally portal-mediated. Signed input protocol v3 supports control handoff;
-clients retain v2 compatibility with older daemons.
+source selection remains locally portal-mediated. Screen input uses the shared
+application contract, signed session bindings, and machine-wide control grants.
 Adaptation preserves idle-screen geometry and recovery evidence across quiet
 intervals, reduces cadence before resolution, and requires fresh congestion
 evidence before shrinking pixels. Heartbeat and statistics freshness are separate.
@@ -533,7 +533,7 @@ require an OS pasteboard grant; a denied request leaves video running.
 UTF-8 plain text supports up to 1 MiB, including empty text, Unicode and newlines.
 PNG, JPEG, TIFF and WebP images and up to 64 regular files support 8 MiB combined.
 Folders, symbolic links, duplicate filenames and rich-text formatting are not
-transferred. Binary clipboard support is negotiated; older daemons require an update.
+transferred. Binary clipboard support is negotiated from the host's capture capabilities.
 A dedicated encrypted
 WebRTC channel uses 16 KiB chunks and bounded buffering. Native clipboard IPC runs
 in a separate instance of the installed helper, outside capture and heartbeat
@@ -736,7 +736,7 @@ Native Mac and Android viewers negotiate decoded-reference recovery for H.264
 and HEVC. Supporting VideoToolbox encoders recover from an acknowledged long-term
 reference after loss. Decoder completion, frame identity, display generation,
 and the authenticated input epoch scope each acknowledgement. Unsupported
-hardware, older clients, expired references, or an unacknowledged recovery use
+hardware, clients without the required codec capability, expired references, or an unacknowledged recovery use
 the existing keyframe path. Each recovery viewer gets its own bounded encoder.
 
 `dieter screen start --request offer.json --reference-recovery` opts an automation
@@ -848,7 +848,8 @@ transcripts, queues, and executable validation stay on the owner. There are no
 parallel-agent caps; one conversation still has one active turn. Transport and
 storage bounds remain. Never edit DIETER_HOME directly. See docs/peer-store.md.
 
-Contract 4 rejects mismatched fleets. Storage schema 2 rejects the old project
-store. `daemon import-store --backup PATH` is an explicit offline dry run; `--apply`
-performs resumable import only after the daemon/workers are stopped by their owner.
+Application contract 1 is the only supported contract across gateway, daemon,
+CLI, native clients, sync, and screen input. Missing or mismatched versions are
+rejected. Unsupported development stores require a fresh `DIETER_HOME`; no
+import or migration command is provided. Never delete or convert existing data.
 Never stop or replace the operator's daemon as part of testing or implementation.

@@ -31,7 +31,6 @@ struct ProjectDestinationMenuContent: View {
     }
 }
 
-
 struct ProjectCheckoutMenu: View {
     @Environment(DieterStore.self) private var store
     let projectID: String
@@ -43,11 +42,15 @@ struct ProjectCheckoutMenu: View {
                 Button {
                     Task { await store.selectCheckout(checkout) }
                 } label: {
-                    Label("\(machine?.name ?? checkout.daemonID) · \(checkout.name)",
-                          systemImage: store.checkout(forProjectID: projectID)?.id == checkout.id ? "checkmark" : "desktopcomputer")
+                    Label(
+                        "\(machine?.name ?? checkout.daemonID) · \(checkout.name)",
+                        systemImage: store.checkout(forProjectID: projectID)?.id == checkout.id
+                            ? "checkmark" : "desktopcomputer")
                 }
                 .disabled(machine?.online != true)
-                .accessibilityLabel("\(checkout.name) on \(machine?.name ?? checkout.daemonID), \(machine?.online == true ? "online" : "offline")")
+                .accessibilityLabel(
+                    "\(checkout.name) on \(machine?.name ?? checkout.daemonID), \(machine?.online == true ? "online" : "offline")"
+                )
             }
         } label: {
             Label(store.checkout(forProjectID: projectID)?.name ?? "Choose checkout", systemImage: "desktopcomputer")

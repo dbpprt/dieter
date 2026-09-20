@@ -30,9 +30,9 @@ class ConversationOutboxPolicyTest {
     fun `storage failures retain sends with a minute retry and actionable machine summary`() {
         for (error in listOf(
             Status.RESOURCE_EXHAUSTED.withDescription("insufficient free disk space to start an agent turn: 122 MiB available; 2048 MiB required"),
-            Status.INVALID_ARGUMENT.withDescription("mkdir fixture/.write-lock: no space left on device"),
+            Status.RESOURCE_EXHAUSTED.withDescription("write fixture: no space left on device"),
             Status.RESOURCE_EXHAUSTED.withDescription("write fixture: disk quota exceeded"),
-            Status.INVALID_ARGUMENT.withDescription("write fixture: disc quota exceeded"),
+            Status.RESOURCE_EXHAUSTED.withDescription("write fixture: disc quota exceeded"),
         )) {
             val failure = error.asRuntimeException()
             val detail = readableRpcError(failure)

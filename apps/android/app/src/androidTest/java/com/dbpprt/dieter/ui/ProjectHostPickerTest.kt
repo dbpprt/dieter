@@ -45,7 +45,7 @@ class ProjectReplicaPickerTest {
                 address = "https://gateway.test",
                 online = true,
                 daemonId = "daemon-old",
-                apiVersion = "1",
+                apiVersion = "unsupported",
             ),
         )
 

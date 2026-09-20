@@ -468,7 +468,13 @@ class GrpcDieterRepository(context: Context) : DieterRepository {
         return stub.withInterceptors(MetadataUtils.newAttachHeadersInterceptor(metadata(token)))
     }
 
-    override suspend fun daemons(): ListDaemonsResponse = gatewayStub().listDaemons(Empty.getDefaultInstance())
+    override suspend fun daemons(): ListDaemonsResponse {
+        val response = gatewayStub().listDaemons(Empty.getDefaultInstance())
+        require(response.gatewayInformation.apiVersion == DIETER_API_VERSION) {
+            "Update the Dieter gateway and clients together; application contract mismatch."
+        }
+        return response
+    }
 
     override suspend fun providerQuotas(): ListProviderQuotasResponse = gatewayStub().listProviderQuotas(
         ListProviderQuotasRequest.getDefaultInstance(),
@@ -543,10 +549,8 @@ class GrpcDieterRepository(context: Context) : DieterRepository {
         val endpoint = endpoints.firstOrNull { it.id == endpointId }
             ?: error("The selected Dieter machine is no longer available")
         require(endpoint.online) { "${endpoint.label} is offline. Start Dieter on that machine to continue." }
-        if (endpoint.apiVersion.isNotBlank()) {
-            require(endpoint.apiVersion == DIETER_API_VERSION) {
-                "Dieter API ${endpoint.apiVersion} is incompatible; Android requires $DIETER_API_VERSION."
-            }
+        require(endpoint.apiVersion == DIETER_API_VERSION) {
+            "Dieter API ${endpoint.apiVersion} is incompatible; Android requires $DIETER_API_VERSION."
         }
         val scoped = openScopedMachine(endpoint, deadlineSeconds)
         return try {
@@ -817,7 +821,7 @@ class GrpcDieterRepository(context: Context) : DieterRepository {
             .setConversationLimit(conversationLimit.coerceIn(0, 100))
             .setRecentConversationLimit(recentConversationLimit.coerceIn(0, 100))
             .setHeartbeatMs(5_000)
-            .setProtocolVersion(1)
+            .setProtocolVersion(DIETER_PROTOCOL_VERSION)
             .also { if (after != null) it.after = after }
             .build()
         streaming().watchSync(request).collect(::emit)

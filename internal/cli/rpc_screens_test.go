@@ -115,7 +115,7 @@ func assertScreenSessionCLI(t *testing.T, client *CLI, output *bytes.Buffer, con
 		t.Fatal("fixture ICE gathering timed out")
 	}
 	offer = *viewer.LocalDescription()
-	request := &dieterv1.StartRemoteDesktopRequest{Control: true, Clipboard: true, InputProtocolVersion: 3, ClientName: "CLI fixture", ClientNonce: "cli-screen-" + client.transport.route, RtcConfiguration: configuration, Offer: &dieterv1.RemoteDesktopSessionDescription{Type: "offer", Sdp: offer.SDP}, MaxWidth: 1920, MaxHeight: 1080, MaxFps: 60, MaxBitrateKbps: 6000}
+	request := &dieterv1.StartRemoteDesktopRequest{Control: true, Clipboard: true, InputProtocolVersion: 1, ClientName: "CLI fixture", ClientNonce: "cli-screen-" + client.transport.route, RtcConfiguration: configuration, Offer: &dieterv1.RemoteDesktopSessionDescription{Type: "offer", Sdp: offer.SDP}, MaxWidth: 1920, MaxHeight: 1080, MaxFps: 60, MaxBitrateKbps: 6000}
 	raw, _ := protojson.Marshal(request)
 	file := filepath.Join(t.TempDir(), "request.json")
 	if err = os.WriteFile(file, raw, 0600); err != nil {

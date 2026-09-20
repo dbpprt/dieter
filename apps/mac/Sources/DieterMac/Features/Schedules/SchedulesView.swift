@@ -113,11 +113,15 @@ struct SchedulesView: View {
             if let schedule = model.selectedSchedule {
                 ScheduleDetail(
                     model: model, schedule: schedule, openCard: openCard,
-                    edit: { Task {
-                        if let detail = await model.editorSchedule(schedule), let prepared = await model.editorContext(schedule: detail, base: context) {
-                            editorPresentation = ScheduleEditorPresentation(schedule: detail, context: prepared)
+                    edit: {
+                        Task {
+                            if let detail = await model.editorSchedule(schedule),
+                                let prepared = await model.editorContext(schedule: detail, base: context)
+                            {
+                                editorPresentation = ScheduleEditorPresentation(schedule: detail, context: prepared)
+                            }
                         }
-                    } })
+                    })
             } else {
                 VStack(spacing: 0) {
                     FluidPaneChrome {

@@ -55,7 +55,7 @@ func TestEnrollmentRPCBoundsAndReleasesOnlyItsRequestContext(t *testing.T) {
 }
 
 func TestEnrollmentRPCIdentifiesRoleAndOperationOnFailure(t *testing.T) {
-	for _, role := range []string{"primary", "legacy", "second"} {
+	for _, role := range []string{"primary", "incompatible", "second"} {
 		for _, operation := range []string{"begin", "complete"} {
 			t.Run(role+"/"+operation, func(t *testing.T) {
 				var output bytes.Buffer
@@ -89,7 +89,7 @@ func TestEnrollmentRPCPreservesCancellationAndEarlierDeadline(t *testing.T) {
 			}
 			var output bytes.Buffer
 			logger := slog.New(slog.NewTextHandler(&output, nil))
-			_, err := enrollmentRPC(parent, logger, "legacy", "complete", func(ctx context.Context) (int, error) {
+			_, err := enrollmentRPC(parent, logger, "incompatible", "complete", func(ctx context.Context) (int, error) {
 				parentDeadline, _ := parent.Deadline()
 				requestDeadline, _ := ctx.Deadline()
 				if !requestDeadline.Equal(parentDeadline) {

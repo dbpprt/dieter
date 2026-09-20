@@ -409,15 +409,18 @@ final class RemoteDesktopController {
         let pointerConfiguration = RTCDataChannelConfiguration()
         pointerConfiguration.isOrdered = false
         pointerConfiguration.maxRetransmits = 0
-        pointerChannel = peer.dataChannel(forLabel: "dieter-pointer-v2", configuration: pointerConfiguration)
+        pointerChannel = peer.dataChannel(
+            forLabel: "dieter-pointer-v\(DieterContract.version)", configuration: pointerConfiguration)
         let stateConfiguration = RTCDataChannelConfiguration()
         stateConfiguration.isOrdered = true
-        stateChannel = peer.dataChannel(forLabel: "dieter-input-state-v2", configuration: stateConfiguration)
+        stateChannel = peer.dataChannel(
+            forLabel: "dieter-input-state-v\(DieterContract.version)", configuration: stateConfiguration)
         let pointerDelegate = RemoteDesktopDataChannelDelegate(owner: self)
         let stateDelegate = RemoteDesktopDataChannelDelegate(owner: self)
         pointerChannelDelegate = pointerDelegate
         stateChannelDelegate = stateDelegate
-        hostChannel = peer.dataChannel(forLabel: "dieter-session-v2", configuration: stateConfiguration)
+        hostChannel = peer.dataChannel(
+            forLabel: "dieter-session-v\(DieterContract.version)", configuration: stateConfiguration)
         hostChannelDelegate = RemoteDesktopDataChannelDelegate(owner: self)
         hostChannel?.delegate = hostChannelDelegate
         clipboard.binarySupported = capabilities.binaryClipboardSupported
@@ -495,7 +498,7 @@ final class RemoteDesktopController {
         request.codecPreference = effectiveCodec
         request.referenceRecovery = referenceRecovery
         request.clipboard = clipboardEnabled && capabilities.clipboardSupported
-        request.inputProtocolVersion = capabilities.supportedInputProtocolVersions.contains(3) ? 3 : 2
+        request.inputProtocolVersion = DieterContract.number
         request.clientName = "Mac"
         request.rtcConfiguration = connection.rtcConfiguration
         request.displayID =
@@ -817,8 +820,8 @@ final class RemoteDesktopController {
     func sendKey(code: UInt16, down: Bool, repeat isRepeat: Bool, modifiers: NSEvent.ModifierFlags) {
         onUserActivity()
         var value = Dieter_V1_RemoteDesktopKey()
-        value.keyCode = UInt32(code)
-        value.physicalKey = RemoteDesktopKeyMap.macToHID[code] ?? 0
+        guard let physicalKey = RemoteDesktopKeyMap.macToHID[code] else { return }
+        value.physicalKey = physicalKey
         value.down = down
         value.repeat = isRepeat
         value.modifiers = Self.modifiers(modifiers)
@@ -979,14 +982,14 @@ final class RemoteDesktopController {
         refreshDisplayMatching()
         if phase == .streaming { recovery.streaming(now: ProcessInfo.processInfo.systemUptime) }
         controlActive =
-            binding?.controlGranted == true && (binding?.inputProtocolVersion != 3 || sessionState.controlActive)
+            binding?.controlGranted == true && sessionState.controlActive
             && pointerChannel?.readyState == .open
             && stateChannel?.readyState == .open && hostChannel?.readyState == .open
             && sessionState.displayGeneration > 0 && presentedGeneration == sessionState.displayGeneration
         feedbackPump.input(active: controlActive && inputFocused && NSApp.isActive)
     }
 
-    var canTransferControl: Bool { binding?.inputProtocolVersion == 3 && binding?.controlGranted == true }
+    var canTransferControl: Bool { binding?.controlGranted == true }
     func setDisplayMatchingTarget(_ target: RemoteDesktopDisplayTarget?) {
         displayMatchingTarget = target
         refreshDisplayMatching()
@@ -1113,7 +1116,7 @@ final class RemoteDesktopController {
         statisticsTask?.cancel()
         previousStatistics = [:]; previousStatisticsTime = Date()
         var initial = Dieter_V1_RemoteDesktopReceiverFeedback()
-        initial.protocolVersion = 2; initial.inputEpoch = binding?.inputEpoch ?? Data()
+        initial.protocolVersion = DieterContract.number; initial.inputEpoch = binding?.inputEpoch ?? Data()
         feedbackPump.start(channel: hostChannel, initial: initial)
         let token = generation
         statisticsTask = Task { [weak self] in
@@ -1150,7 +1153,8 @@ final class RemoteDesktopController {
                 func delta(_ key: String) -> Double { max(0, (current[key] ?? 0) - (previous[key] ?? 0)) }
                 let frames = delta("framesDecoded")
                 var feedback = Dieter_V1_RemoteDesktopReceiverFeedback()
-                feedback.protocolVersion = 2; feedback.inputEpoch = self.binding?.inputEpoch ?? Data()
+                feedback.protocolVersion = DieterContract.number;
+                feedback.inputEpoch = self.binding?.inputEpoch ?? Data()
                 feedback.framesPerSecond = delta("framesPresented") / elapsed
                 feedback.decodeMs = frames > 0 ? delta("totalDecodeTime") * 1000 / frames : 0
                 let emitted = delta("jitterBufferEmittedCount"), presented = delta("timedPresentations")

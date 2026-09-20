@@ -7,7 +7,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -112,15 +111,11 @@ func TestWriterLockDoesNotExpireWhileOwnerAlive(t *testing.T) {
 	if err := s.Ensure(); err != nil {
 		t.Fatal(err)
 	}
-	path := filepath.Join(s.Root, ".write-lock")
-	if err := os.Mkdir(path, 0700); err != nil {
+	release, err := s.writerAdmission(context.Background())
+	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(path, "owner"), []byte(strconv.Itoa(os.Getpid())), 0600); err != nil {
-		t.Fatal(err)
-	}
-	old := time.Now().Add(-time.Hour)
-	_ = os.Chtimes(path, old, old)
+	defer release()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
 	defer cancel()
 	if release, err := s.beginWriteLockContext(ctx); !errors.Is(err, context.DeadlineExceeded) {

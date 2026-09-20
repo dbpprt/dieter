@@ -85,7 +85,7 @@ func daemonCLIForTest(t *testing.T) (*CLI, *bytes.Buffer, *store.Store) {
 	}
 	output := &bytes.Buffer{}
 	client := New(data)
-	client.DaemonMode = true
+
 	client.Timeout = 10 * time.Second
 	client.Out, client.Err = output, output
 	t.Cleanup(client.Close)
@@ -337,7 +337,7 @@ func TestDaemonCLIControlsLocalDaemonEndToEnd(t *testing.T) {
 	}
 }
 
-func TestDaemonModeNeverFallsBackToDirectStorage(t *testing.T) {
+func TestOperationalCLINeverFallsBackToDirectStorage(t *testing.T) {
 	data := store.New(t.TempDir())
 	if err := data.Ensure(); err != nil {
 		t.Fatal(err)
@@ -348,7 +348,7 @@ func TestDaemonModeNeverFallsBackToDirectStorage(t *testing.T) {
 	}
 	var output bytes.Buffer
 	client := New(data)
-	client.DaemonMode = true
+
 	client.Out, client.Err = &output, &output
 	err := client.Run([]string{"project", "list", "--format", "json"})
 	if err == nil || !strings.Contains(err.Error(), "local Dieter daemon is not running") {
@@ -402,7 +402,7 @@ func TestDaemonCLIAuthenticatesWithLoopbackPKCEEndToEnd(t *testing.T) {
 	}
 	defer listener.Close()
 	publicURL, _ := url.Parse("http://" + listener.Addr().String())
-	configuration := gateway.Config{Root: t.TempDir(), Address: listener.Addr().String(), PublicURL: publicURL, GitHubClientID: "client", GitHubSecret: "secret", AllowedUserID: 42, AllowedLogin: "owner", AuthSecret: []byte("0123456789abcdef0123456789abcdef"), SessionTTL: time.Hour, NativeRedirects: map[string]struct{}{}, GitHubBaseURL: github.URL, GitHubAPIURL: github.URL, DevInsecure: true}
+	configuration := gateway.Config{Root: t.TempDir(), Address: listener.Addr().String(), PublicURL: publicURL, GitHubClientID: "client", GitHubSecret: "secret", AllowedUserIDs: map[int64]struct{}{42: {}}, AuthSecret: []byte("0123456789abcdef0123456789abcdef"), SessionTTL: time.Hour, NativeRedirects: map[string]struct{}{}, GitHubBaseURL: github.URL, GitHubAPIURL: github.URL, DevInsecure: true}
 	gatewayStore, err := gateway.OpenStore(configuration.Root)
 	if err != nil {
 		t.Fatal(err)
@@ -417,7 +417,7 @@ func TestDaemonCLIAuthenticatesWithLoopbackPKCEEndToEnd(t *testing.T) {
 	cliStore := store.New(t.TempDir())
 	output := &synchronizedBuffer{}
 	client := New(cliStore)
-	client.DaemonMode, client.GatewayURL, client.Timeout = true, publicURL.String(), 10*time.Second
+	client.GatewayURL, client.Timeout = publicURL.String(), 10*time.Second
 	client.Out, client.Err = output, output
 	defer client.Close()
 	result := make(chan error, 1)
@@ -503,7 +503,7 @@ func testDaemonRoutes(t *testing.T, withRTC bool) {
 	defer gatewayListener.Close()
 	publicURL, _ := url.Parse("http://" + gatewayListener.Addr().String())
 	secret := []byte("0123456789abcdef0123456789abcdef")
-	configuration := gateway.Config{Root: t.TempDir(), Address: gatewayListener.Addr().String(), PublicURL: publicURL, GitHubClientID: "test", GitHubSecret: "test", AllowedUserID: 42, AllowedLogin: "owner", AuthSecret: secret, SessionTTL: time.Hour, NativeRedirects: map[string]struct{}{}, GitHubBaseURL: "https://github.invalid", GitHubAPIURL: "https://api.github.invalid", DevInsecure: true}
+	configuration := gateway.Config{Root: t.TempDir(), Address: gatewayListener.Addr().String(), PublicURL: publicURL, GitHubClientID: "test", GitHubSecret: "test", AllowedUserIDs: map[int64]struct{}{42: {}}, AuthSecret: secret, SessionTTL: time.Hour, NativeRedirects: map[string]struct{}{}, GitHubBaseURL: "https://github.invalid", GitHubAPIURL: "https://api.github.invalid", DevInsecure: true}
 	gatewayStore, err := gateway.OpenStore(configuration.Root)
 	if err != nil {
 		t.Fatal(err)
@@ -524,7 +524,7 @@ func testDaemonRoutes(t *testing.T, withRTC bool) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := gatewayStore.ApproveEnrollment(enrollment.GetEnrollmentId(), enrollment.GetUserCode(), configuration.AllowedUserID, configuration.AllowedLogin); err != nil {
+	if err := gatewayStore.ApproveEnrollment(enrollment.GetEnrollmentId(), enrollment.GetUserCode(), int64(42), "owner"); err != nil {
 		t.Fatal(err)
 	}
 	credential, err := dieterdaemon.CompleteEnrollment(ctx, identity, enrollment.GetEnrollmentId(), enrollment.GetEnrollmentSecret())
@@ -612,7 +612,7 @@ func testDaemonRoutes(t *testing.T, withRTC bool) {
 
 	token := "cli-e2e-session"
 	if err := gatewayStore.UpdateAuthState(func(state *gateway.AuthState) error {
-		state.Sessions = append(state.Sessions, gateway.Session{TokenHash: gatewaySessionDigest(secret, token), GitHubID: configuration.AllowedUserID, Login: configuration.AllowedLogin, CreatedAt: time.Now().UTC(), ExpiresAt: time.Now().UTC().Add(time.Hour)})
+		state.Sessions = append(state.Sessions, gateway.Session{TokenHash: gatewaySessionDigest(secret, token), GitHubID: int64(42), Login: "owner", CreatedAt: time.Now().UTC(), ExpiresAt: time.Now().UTC().Add(time.Hour)})
 		return nil
 	}); err != nil {
 		t.Fatal(err)
@@ -625,7 +625,7 @@ func testDaemonRoutes(t *testing.T, withRTC bool) {
 		t.Fatal(err)
 	}
 	first := New(cliStore)
-	first.DaemonMode, first.Machine, first.GatewayURL = true, identity.ID, publicURL.String()
+	first.Machine, first.GatewayURL = identity.ID, publicURL.String()
 	first.Timeout = 10 * time.Second
 	var firstOutput bytes.Buffer
 	first.Out, first.Err = &firstOutput, &firstOutput
@@ -642,7 +642,7 @@ func testDaemonRoutes(t *testing.T, withRTC bool) {
 		directClosed = true
 		peer := New(cliStore)
 		defer peer.Close()
-		peer.DaemonMode, peer.Machine, peer.GatewayURL = true, identity.ID, publicURL.String()
+		peer.Machine, peer.GatewayURL = identity.ID, publicURL.String()
 		peer.Timeout = 20 * time.Second
 		var output bytes.Buffer
 		peer.Out, peer.Err = &output, &output
@@ -707,7 +707,7 @@ func testDaemonRoutes(t *testing.T, withRTC bool) {
 		control.Close()
 		fallback := New(cliStore)
 		defer fallback.Close()
-		fallback.DaemonMode, fallback.Machine, fallback.GatewayURL = true, identity.ID, publicURL.String()
+		fallback.Machine, fallback.GatewayURL = identity.ID, publicURL.String()
 		fallback.Out, fallback.Err = io.Discard, io.Discard
 		if err := fallback.Run([]string{"status"}); err != nil {
 			t.Fatal(err)
@@ -768,7 +768,7 @@ func testDaemonRoutes(t *testing.T, withRTC bool) {
 		t.Fatal(err)
 	}
 	localCLI := New(localCLIStore)
-	localCLI.DaemonMode = true
+
 	var localCLIOutput bytes.Buffer
 	localCLI.Out, localCLI.Err = &localCLIOutput, &localCLIOutput
 	assertScreenSessionCLI(t, localCLI, &localCLIOutput, localConfig)
@@ -787,7 +787,7 @@ func testDaemonRoutes(t *testing.T, withRTC bool) {
 	_ = directRoute.listener.Close()
 	directClosed = true
 	second := New(cliStore)
-	second.DaemonMode, second.Machine, second.GatewayURL = true, identity.ID, publicURL.String()
+	second.Machine, second.GatewayURL = identity.ID, publicURL.String()
 	second.Timeout = 10 * time.Second
 	var secondOutput bytes.Buffer
 	second.Out, second.Err = &secondOutput, &secondOutput

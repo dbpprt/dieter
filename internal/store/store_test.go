@@ -2,6 +2,7 @@ package store
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"os"
@@ -59,22 +60,6 @@ func TestCreateProjectAcceptsLinkedGitWorktree(t *testing.T) {
 	}
 	if project.Path != canonicalWorktree || project.Name != "linked-worktree" {
 		t.Fatalf("linked worktree project=%#v", project)
-	}
-}
-
-func TestLegacyWorkspaceModesCanonicalizeToProjectDirectory(t *testing.T) {
-	s, project, _ := setup(t, model.WorkflowDirect)
-	for _, legacy := range []string{"main", "branch"} {
-		chat, err := s.CreateChat(CreateCardInput{
-			Project: project.ID, Title: "Legacy " + legacy, Prompt: "work",
-			WorkspaceMode: legacy, WorkspaceBranch: "stale", WorkspaceBaseBranch: "stale-base",
-		})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if chat.WorkspaceMode != model.WorkspaceModeProject || chat.WorkspaceBranch != "" || chat.WorkspaceBaseBranch != "" {
-			t.Fatalf("legacy mode %q was not canonicalized: %#v", legacy, chat)
-		}
 	}
 }
 
@@ -283,14 +268,14 @@ func TestConversationEventDoesNotOverwriteConcurrentLaneMove(t *testing.T) {
 	// Simulate another Dieter process holding the central storage lock. The
 	// conversation writer must acquire that lock before reading the card whose
 	// activity timestamp it will update.
-	lockPath := filepath.Join(s.Root, ".write-lock")
-	if err := os.Mkdir(lockPath, 0o700); err != nil {
+	unlock, err := s.writerAdmission(context.Background())
+	if err != nil {
 		t.Fatal(err)
 	}
 	lockHeld := true
 	t.Cleanup(func() {
 		if lockHeld {
-			_ = os.Remove(lockPath)
+			unlock()
 		}
 	})
 
@@ -310,16 +295,14 @@ func TestConversationEventDoesNotOverwriteConcurrentLaneMove(t *testing.T) {
 	}
 
 	// This direct write represents the mutation completed by the process that
-	// owns lockPath. Releasing the lock lets the event writer continue.
+	// owns the writer lock. Releasing the lock lets the event writer continue.
 	card.Lane = model.LaneReview
 	card.PhaseChangedAt = "2026-08-24T07:34:45Z"
 	card.UpdatedAt = card.PhaseChangedAt
 	if err := s.writeCard(card); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Remove(lockPath); err != nil {
-		t.Fatal(err)
-	}
+	unlock()
 	lockHeld = false
 
 	select {
@@ -1151,7 +1134,7 @@ func TestArchivedCardsLeaveTheActiveScanAndRemainResolvable(t *testing.T) {
 
 func TestArchiveSurvivesStoreRestart(t *testing.T) {
 	s, project, board := setup(t, model.WorkflowReview)
-	card, err := s.CreateCard(CreateCardInput{Project: project.ID, Board: board.ID, ID: "legacy-archived", Title: "Legacy"})
+	card, err := s.CreateCard(CreateCardInput{Project: project.ID, Board: board.ID, ID: "archived", Title: "Archived"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1164,10 +1147,10 @@ func TestArchiveSurvivesStoreRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(filepath.Join(reopened.archivedCardDir(), card.ID+".md")); err != nil {
-		t.Fatalf("legacy card was not migrated: %v", err)
+		t.Fatalf("archived card was not retained: %v", err)
 	}
 	if visible, err := reopened.ListCards(CardFilter{Project: project.ID}); err != nil || len(visible) != 0 {
-		t.Fatalf("legacy archived card leaked into active scan: %#v, %v", visible, err)
+		t.Fatalf("archived card leaked into active scan: %#v, %v", visible, err)
 	}
 }
 

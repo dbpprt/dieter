@@ -223,68 +223,8 @@ CREATE INDEX IF NOT EXISTS schedule_runs_card ON schedule_runs(card_id);
 			}
 		}
 	}
-	if s.importing {
-		if err = s.migrateLegacySchedules(database); err != nil {
-			_ = database.Close()
-			return nil, err
-		}
-	}
 	s.scheduleDB = database
 	return database, nil
-}
-
-func (s *Store) migrateLegacySchedules(database *sql.DB) error {
-	var marker string
-	err := database.QueryRow(`SELECT value FROM schedule_metadata WHERE key = 'legacy_markdown_v1'`).Scan(&marker)
-	if err == nil {
-		return nil
-	}
-	if !errors.Is(err, sql.ErrNoRows) {
-		return err
-	}
-	tx, err := database.Begin()
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-	schedulePaths, err := listMarkdown(s.scheduleDir())
-	if err != nil {
-		return err
-	}
-	for _, path := range schedulePaths {
-		var item model.Schedule
-		body, readErr := readMarkdown(path, &item)
-		if readErr != nil {
-			return readErr
-		}
-		item.PromptTemplate = body
-		item.WorkspaceMode, readErr = normalizeWorkspaceMode(item.WorkspaceMode)
-		if readErr != nil {
-			return readErr
-		}
-		if err := insertScheduleDocument(tx, item); err != nil {
-			return err
-		}
-	}
-	runPaths, err := listMarkdown(s.scheduleRunDir())
-	if err != nil {
-		return err
-	}
-	for _, path := range runPaths {
-		var item model.ScheduleRun
-		body, readErr := readMarkdown(path, &item)
-		if readErr != nil {
-			return readErr
-		}
-		item.Message = body
-		if err := insertScheduleRunDocument(tx, item, ""); err != nil {
-			return err
-		}
-	}
-	if _, err := tx.Exec(`INSERT OR IGNORE INTO schedule_metadata(key, value) VALUES('legacy_markdown_v1', ?)`, timestamp()); err != nil {
-		return err
-	}
-	return tx.Commit()
 }
 
 type sqlExecutor interface {
@@ -419,7 +359,7 @@ func (s *Store) scheduleByID(id string) (model.Schedule, error) {
 		return model.Schedule{}, err
 	}
 	item, err := decodeScheduleDocument(raw)
-	if err != nil || s.importing {
+	if err != nil {
 		return item, err
 	}
 	identity, _, err := s.sharedData()
@@ -1046,7 +986,7 @@ func (s *Store) RecoverScheduleRuns() error {
 	return nil
 }
 
-// sortScheduleRuns remains available to migration and tests which build model
+// sortScheduleRuns orders model
 // values directly. Production queries are ordered by the covering SQLite
 // indexes and never sort the full occurrence history in memory.
 func sortScheduleRuns(items []model.ScheduleRun) {

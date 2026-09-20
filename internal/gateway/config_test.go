@@ -50,7 +50,7 @@ func setMinimumGatewayEnvironment(t *testing.T) {
 	t.Helper()
 	t.Setenv("DIETER_GITHUB_CLIENT_ID", "client")
 	t.Setenv("DIETER_GITHUB_CLIENT_SECRET", "secret")
-	t.Setenv("DIETER_GITHUB_ALLOWED_USER_ID", "42")
+	t.Setenv("DIETER_GITHUB_ALLOWED_USER_IDS", "42")
 	t.Setenv("DIETER_AUTH_SECRET", "3031323334353637383961626364656630313233343536373839616263646566") // gitleaks:allow -- deterministic test-only key
 	t.Setenv("DIETER_GATEWAY_TLS_CERT", "")
 	t.Setenv("DIETER_GATEWAY_TLS_KEY", "")
@@ -93,7 +93,7 @@ func TestPublicOriginRejectsEmbeddedCredentials(t *testing.T) {
 	}
 }
 
-func TestGitHubAllowlistSupportsLegacyAndMultipleUserIDs(t *testing.T) {
+func TestGitHubAllowlistSupportsMultipleUserIDs(t *testing.T) {
 	setMinimumGatewayEnvironment(t)
 	t.Setenv("DIETER_GATEWAY_DEV_INSECURE", "1")
 	t.Setenv("DIETER_PUBLIC_URL", "http://127.0.0.1:4243")
@@ -113,11 +113,10 @@ func TestGitHubAllowlistSupportsLegacyAndMultipleUserIDs(t *testing.T) {
 	}
 }
 
-func TestGitHubAllowlistAcceptsPluralConfigurationWithoutLegacyID(t *testing.T) {
+func TestGitHubAllowlistAcceptsMultipleAccounts(t *testing.T) {
 	setMinimumGatewayEnvironment(t)
 	t.Setenv("DIETER_GATEWAY_DEV_INSECURE", "1")
 	t.Setenv("DIETER_PUBLIC_URL", "http://127.0.0.1:4243")
-	t.Setenv("DIETER_GITHUB_ALLOWED_USER_ID", "")
 	t.Setenv("DIETER_GITHUB_ALLOWED_USER_IDS", "7000188,60854672")
 
 	config, err := ConfigFromEnv(t.TempDir())
@@ -135,7 +134,6 @@ func TestGitHubAllowlistRejectsMissingOrMalformedIDs(t *testing.T) {
 			setMinimumGatewayEnvironment(t)
 			t.Setenv("DIETER_GATEWAY_DEV_INSECURE", "1")
 			t.Setenv("DIETER_PUBLIC_URL", "http://127.0.0.1:4243")
-			t.Setenv("DIETER_GITHUB_ALLOWED_USER_ID", "")
 			t.Setenv("DIETER_GITHUB_ALLOWED_USER_IDS", value)
 			if _, err := ConfigFromEnv(t.TempDir()); err == nil {
 				t.Fatalf("accepted malformed allowlist %q", value)

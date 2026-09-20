@@ -46,7 +46,9 @@ import DieterCore
             _attachments = State(initialValue: initialAttachments)
         }
 
-        private var checkouts: [Dieter_V1_Checkout] { store.projects.first { $0.id == projectID }?.checkouts.filter { !$0.detached } ?? [] }
+        private var checkouts: [Dieter_V1_Checkout] {
+            store.projects.first { $0.id == projectID }?.checkouts.filter { !$0.detached } ?? []
+        }
         private var boards: [Dieter_V1_Board] { store.boards.filter { $0.projectID == projectID } }
         private var selectedBoard: Dieter_V1_Board? { boards.first { $0.id == boardID } }
         private var labels: [Dieter_V1_Label] { chat ? [] : selectedBoard?.labels ?? [] }
@@ -139,7 +141,9 @@ import DieterCore
                             Text("Choose a checkout").tag("")
                             ForEach(checkouts, id: \.id) { checkout in
                                 let machine = store.machines.first { $0.daemonID == checkout.daemonID }
-                                Text("\(machine?.name ?? checkout.daemonID) · \(checkout.name.isEmpty ? checkout.id : checkout.name)\(machine?.online == true ? "" : " · Offline")").tag(checkout.id)
+                                Text(
+                                    "\(machine?.name ?? checkout.daemonID) · \(checkout.name.isEmpty ? checkout.id : checkout.name)\(machine?.online == true ? "" : " · Offline")"
+                                ).tag(checkout.id)
                             }
                         }
                         .accessibilityIdentifier("ios.create.checkout")
@@ -401,7 +405,8 @@ import DieterCore
                 for: harness, model: model, saved: providerOptions)
             Task {
                 let id = await store.createTask(
-                    projectID: projectID, checkoutID: checkoutID, boardID: chat ? nil : boardID, title: title, prompt: prompt,
+                    projectID: projectID, checkoutID: checkoutID, boardID: chat ? nil : boardID, title: title,
+                    prompt: prompt,
                     provider: provider, model: model, effort: effort, labelIDs: labelIDs,
                     providerOptions: providerOptions, attachments: attachments, run: run)
                 submitting = false

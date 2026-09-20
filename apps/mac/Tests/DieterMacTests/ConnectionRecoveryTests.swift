@@ -94,7 +94,8 @@ private final class RecoveryProbe: Sendable {
     store.endpoints = [target]
     store.gatewayOrigins = [target.gatewayEndpoint]
     store.projectReplicaEndpointIDs = ["project": target.id]
-    var checkout = Dieter_V1_Checkout(); checkout.id = "checkout"; checkout.daemonID = "fixture"; checkout.projectID = "project"
+    var checkout = Dieter_V1_Checkout(); checkout.id = "checkout"; checkout.daemonID = "fixture";
+    checkout.projectID = "project"
     var project = Dieter_V1_Project(); project.id = "project"; project.checkouts = [checkout]
     store.projectDirectory = [project.id: project]
     return store
@@ -347,7 +348,7 @@ private final class RecoveryProbe: Sendable {
 @Test @MainActor func screenFeedbackContinuesWhileMainActorAndStatisticsAreBlocked() {
     let frames = Mutex<[Dieter_V1_RemoteDesktopReceiverFeedback]>([])
     let pump = RemoteDesktopFeedbackPump { value in frames.withLock { $0.append(value) } }
-    var initial = Dieter_V1_RemoteDesktopReceiverFeedback(); initial.protocolVersion = 2
+    var initial = Dieter_V1_RemoteDesktopReceiverFeedback(); initial.protocolVersion = DieterContract.number
     pump.start(channel: nil, initial: initial)
     pump.input(active: true)
     // No statistics callback, lease renewal or main actor execution is needed.

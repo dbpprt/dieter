@@ -324,7 +324,7 @@ final class AppSession {
         syncPersistence = persistence
         outbox =
             outboxOverride
-            ?? DurableOutbox(journal: OutboxJournal(url: persistence.outboxJournalURL, legacyURL: persistence.fileURL))
+            ?? DurableOutbox(journal: OutboxJournal(url: persistence.outboxJournalURL))
         let themeDefaults = themeDefaultsOverride ?? environment.defaults
         self.themeDefaults = themeDefaults
         let initialTheme = DieterThemeSelection.load(from: themeDefaults)

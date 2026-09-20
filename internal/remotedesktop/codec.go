@@ -84,12 +84,12 @@ func selectVideoCodec(preference dieterv1.RemoteDesktopCodecPreference, offer st
 	if preference < 0 || preference > dieterv1.RemoteDesktopCodecPreference_REMOTE_DESKTOP_CODEC_PREFERENCE_HEVC {
 		return "", errors.New("invalid codec preference")
 	}
-	legacy := preferredVideoCodec(source)
+	baseline := preferredVideoCodec(source)
 	if preference == dieterv1.RemoteDesktopCodecPreference_REMOTE_DESKTOP_CODEC_PREFERENCE_H264 {
-		if legacy != VideoCodecH264 {
+		if baseline != VideoCodecH264 {
 			return "", errors.New("H.264 is unavailable for this source")
 		}
-		return legacy, nil
+		return baseline, nil
 	}
 	available := false
 	for _, mode := range caps.GetCodecModes() {
@@ -103,7 +103,7 @@ func selectVideoCodec(preference dieterv1.RemoteDesktopCodecPreference, offer st
 	if preference == dieterv1.RemoteDesktopCodecPreference_REMOTE_DESKTOP_CODEC_PREFERENCE_HEVC {
 		return "", errors.New("HEVC requires hardware support, a compatible H265 Main offer, and at most 1920x1080/60 fps/40000 kbps")
 	}
-	return legacy, nil
+	return baseline, nil
 }
 
 // Only a native codec initialization error allows an automatic downgrade. EOF

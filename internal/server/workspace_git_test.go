@@ -243,8 +243,6 @@ func TestConversationInputRequiresPerConversationWorkspaceMode(t *testing.T) {
 	for wire, want := range map[string]string{
 		"WORKTREE": model.WorkspaceModeWorktree,
 		"PROJECT":  model.WorkspaceModeProject,
-		"main":     model.WorkspaceModeProject,
-		"branch":   model.WorkspaceModeProject,
 	} {
 		input, err := conversationInput(&dieterv1.CreateConversationRequest{Title: "Explicit workspace", WorkspaceMode: wire})
 		if err != nil || input.WorkspaceMode != want {

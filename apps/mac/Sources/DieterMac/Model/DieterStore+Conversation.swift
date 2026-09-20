@@ -576,7 +576,8 @@ extension DieterStore {
         var request = Dieter_V1_CreateConversationRequest()
         request.projectID = destinationProjectID
         let checkouts = projectDirectory[destinationProjectID]?.checkouts.filter { !$0.detached } ?? []
-        let chosen = checkouts.first { $0.id == creationCheckoutIDs[destinationProjectID] }
+        let chosen =
+            checkouts.first { $0.id == creationCheckoutIDs[destinationProjectID] }
             ?? checkouts.first { $0.daemonID == endpoint.daemonID }
             ?? checkouts.first
         request.checkoutID = chosen?.id ?? ""

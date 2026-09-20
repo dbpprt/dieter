@@ -23,12 +23,11 @@ internal fun outboxFailureIsPermanent(error: Throwable): Boolean = when (Status.
     Status.Code.PERMISSION_DENIED,
     Status.Code.FAILED_PRECONDITION,
     -> true
-    // Older daemons classified raw filesystem write failures as invalid input.
-    Status.Code.INVALID_ARGUMENT -> !outboxFailureIsInsufficientStorage(Status.fromThrowable(error).description)
+    Status.Code.INVALID_ARGUMENT -> true
     else -> false
 }
 
-/** Works with persisted errors and older daemons without confusing other resource limits with disk pressure. */
+/** Recognizes persisted storage errors without confusing other resource limits with disk pressure. */
 internal fun outboxFailureIsInsufficientStorage(message: String?): Boolean = message != null &&
     listOf("insufficient free disk space", "no space left on device", "disk quota exceeded", "disc quota exceeded")
         .any { message.contains(it, ignoreCase = true) }

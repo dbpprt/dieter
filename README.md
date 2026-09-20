@@ -250,11 +250,11 @@ terminals, or executions. Domain mutations are never replayed on route failure.
 
 
 `machine list`, `machine show`, and `machine watch` expose both the Dieter
-release version and the data-plane API version. `machine gateway` reports the
-gateway release and control-plane API versions. `machine info` returns live
+release version and the shared application contract version. `machine gateway`
+reports the gateway release and that same contract version. `machine info` returns live
 host telemetry, including optional Apple, NVIDIA, and AMD GPU data with absent
-sensors kept distinct from real zero values. Native clients use API versions
-to keep compatible machines in a mixed-version fleet available.
+sensors kept distinct from real zero values. Clients require the exact contract generated from `api/contract-version` at
+both gateway and daemon boundaries; missing or mismatched versions are rejected.
 
 `quota list` shows provider-account limits discovered by online enrolled
 machines. Each account and quota window remains separate; a provider summary
@@ -631,7 +631,7 @@ dieter daemon start \
 Create a GitHub OAuth App, copy [`.env.example`](.env.example) to
 `$DIETER_GATEWAY_HOME/.env`, and set the allowed account IDs to their immutable
 numeric GitHub IDs. Use `DIETER_GITHUB_ALLOWED_USER_IDS` with a comma-separated
-list for multiple isolated accounts; the singular variable remains supported.
+list for one or more isolated accounts.
 Then run:
 
 ```sh
@@ -1132,8 +1132,8 @@ physical glass-to-glass measurement. The native fixture reports same-host captur
 to actual Metal presentation median/p95 and idle recovery using the shared host
 clock; measuring display scanout/photons still requires an external camera. `start`
 accepts a protobuf JSON WebRTC offer; media and input use the encrypted peer
-connection. Clients negotiate signed input protocol v3 for control handoff and retain v2
-compatibility with older daemons.
+connection. Screen input uses the shared application contract, with signed session
+bindings and machine-wide control grants required for every controlling viewer.
 
 Text, image and file clipboard sharing is available on updated Mac and Android viewers. Enable
 **Share clipboard** in Screen options (Mac) or the bottom bar (Android). Mac
@@ -1148,7 +1148,7 @@ require an OS pasteboard grant; a denied request leaves video running.
 UTF-8 plain text supports up to 1 MiB, including empty text, Unicode and newlines.
 PNG, JPEG, TIFF and WebP images and up to 64 regular files support 8 MiB combined.
 Folders, symbolic links, duplicate filenames and rich-text formatting are not
-transferred. Binary clipboard support is negotiated; older daemons require an update.
+transferred. Binary clipboard support is negotiated from the host's capture capabilities.
 A dedicated encrypted
 WebRTC channel uses 16 KiB chunks and bounded buffering. Native clipboard IPC runs
 in a separate instance of the installed helper, outside capture and heartbeat
@@ -1221,7 +1221,7 @@ Each viewer adapts independently and can change displays or disconnect without
 closing another session. Only one client controls mouse and keyboard at a time.
 The first control-capable client receives control; other clients use Take Control
 (or `dieter screen control take SESSION`). Release Control leaves the video open.
-Handoff requires protocol 3; an older controlling client must disconnect first.
+Control handoff is part of the current contract; every viewer uses revocable grants.
 `dieter screen sessions` reports connected clients and allocated capture resources.
 
 ### Screen codec selection
@@ -1275,7 +1275,7 @@ Native Mac and Android viewers negotiate decoded-reference recovery for H.264
 and HEVC. Supporting VideoToolbox encoders recover from an acknowledged long-term
 reference after loss. Decoder completion, frame identity, display generation,
 and the authenticated input epoch scope each acknowledgement. Unsupported
-hardware, older clients, expired references, or an unacknowledged recovery use
+hardware, clients without the required codec capability, expired references, or an unacknowledged recovery use
 the existing keyframe path. Each recovery viewer gets its own bounded encoder.
 
 `dieter screen start --request offer.json --reference-recovery` opts an automation
@@ -1390,7 +1390,8 @@ has at most one active turn.
 Use `project attach`, `project checkouts`, `project detach`, and `project consolidate`;
 use `--checkout` with machine-local project operations. `card move --after/--before`
 uses stable neighbor IDs. `peer status` reports the last completed peer exchange.
-Contract 4 and storage schema 2 replace the previous application model. Existing
-development data uses the explicit offline `daemon import-store --backup PATH`
-workflow; do not run it against a live daemon. See [peer store](docs/peer-store.md)
-for ownership, conflict semantics, bounds, recovery, and CLI examples.
+The pre-release baseline supports only application contract 1. Unsupported
+development stores require a fresh `DIETER_HOME`; there is no import or migration
+command. Existing directories are never converted automatically. See the
+[application contract](docs/api-contract.md) and [peer store](docs/peer-store.md)
+for boundaries, ownership, conflict semantics, and CLI examples.

@@ -4,14 +4,14 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"github.com/pion/webrtc/v4"
-	"google.golang.org/protobuf/proto"
 	"os"
 	"strings"
 	"testing"
 	"time"
 
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
+	"github.com/pion/webrtc/v4"
+	"google.golang.org/protobuf/proto"
 )
 
 func clipboardFixture(t *testing.T) (*Session, *MemoryClipboard) {
@@ -19,7 +19,7 @@ func clipboardFixture(t *testing.T) (*Session, *MemoryClipboard) {
 	backend := &MemoryClipboard{}
 	m := New(Options{Source: SourceOptions{Kind: "synthetic"}, ClipboardFactory: func() ClipboardBackend { return backend }})
 	ctx, cancel := context.WithCancel(context.Background())
-	s := &Session{manager: m, id: "clipboard-test", ctx: ctx, cancel: cancel, control: true, protocol: 3, inputEpoch: []byte("1234567890123456"), status: &dieterv1.RemoteDesktopSessionState{ClipboardEnabled: true}}
+	s := &Session{manager: m, id: "clipboard-test", ctx: ctx, cancel: cancel, control: true, protocol: inputProtocolVersion, inputEpoch: []byte("1234567890123456"), status: &dieterv1.RemoteDesktopSessionState{ClipboardEnabled: true}}
 	m.sessions[s.id] = s
 	m.controller = s
 	m.controlGeneration = 1

@@ -3,10 +3,11 @@ package server
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"sync"
+
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
 	"github.com/dbpprt/dieter/internal/store"
 	"google.golang.org/protobuf/proto"
-	"sync"
 )
 
 const maxRetainedSyncBytes = 32 << 20
@@ -62,7 +63,7 @@ func (s *Server) retainSyncProjection(p *syncProjection, limit, recent int) stri
 
 func (s *Server) resumedSyncProjection(request *dieterv1.SyncRequest, current store.SyncCursor) *syncProjection {
 	after := request.GetAfter()
-	if request.GetProtocolVersion() == 0 || after.GetProjectionId() == "" || after.GetEpoch() != current.Epoch || after.GetProjectionVersion() != store.SyncProjectionVersion || after.GetSequence() > current.Sequence {
+	if after.GetProjectionId() == "" || after.GetEpoch() != current.Epoch || after.GetProjectionVersion() != store.SyncProjectionVersion || after.GetSequence() > current.Sequence {
 		return nil
 	}
 	cache := &s.syncProjections

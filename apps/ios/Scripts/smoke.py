@@ -258,7 +258,7 @@ def main():
         env = {'DIETER_IOS_TEST_GATEWAY': 'http://' + values['DIETER_ISOLATED_ADDR'],
                'DIETER_IOS_TEST_TOKEN': values['DIETER_ISOLATED_TOKEN'],
                'DIETER_IOS_TEST_DAEMON': values['DIETER_ISOLATED_DAEMON'],
-               'DIETER_IOS_TEST_LEGACY_DAEMON': values['DIETER_ISOLATED_LEGACY_DAEMON'],
+               'DIETER_IOS_TEST_INCOMPATIBLE_DAEMON': values['DIETER_ISOLATED_INCOMPATIBLE_DAEMON'],
                'DIETER_IOS_TEST_PROJECT': values['DIETER_ISOLATED_PROJECT'],
                'DIETER_IOS_TEST_BOARD': values['DIETER_ISOLATED_BOARD'],
                'DIETER_IOS_TEST_OFFLINE_TRIGGER': str(evidence / 'offline'),

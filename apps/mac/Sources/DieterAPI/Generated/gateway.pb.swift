@@ -449,9 +449,8 @@ public nonisolated struct Dieter_Gateway_V1_Daemon: Sendable {
   /// Clears the value of `remoteDesktop`. Subsequent reads from it will return its default value.
   public mutating func clearRemoteDesktop() {self._remoteDesktop = nil}
 
-  /// api_version is the daemon data-plane compatibility version returned by
-  /// DieterService.Health. It is separate from the release version above so
-  /// clients can route mixed-version machine fleets without probing each one.
+  /// Shared application contract returned by DieterService.Health. Gateway,
+  /// daemon, and clients require the exact same contract; release versions may differ.
   public var apiVersion: String = String()
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()

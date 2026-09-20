@@ -55,7 +55,7 @@ func TestPointerQueueKeepsOnlyTheNewestUnreliableMove(t *testing.T) {
 }
 
 func TestNativeInputTranslationPreservesZeroAndFalse(t *testing.T) {
-	input := &dieterv1.RemoteDesktopInput{Payload: &dieterv1.RemoteDesktopInput_Key{Key: &dieterv1.RemoteDesktopKey{KeyCode: 0, Down: false}}}
+	input := &dieterv1.RemoteDesktopInput{Payload: &dieterv1.RemoteDesktopInput_Key{Key: &dieterv1.RemoteDesktopKey{PhysicalKey: 4, Down: false}}}
 	value, err := translateNativeInput(input)
 	if err != nil {
 		t.Fatal(err)
@@ -68,7 +68,7 @@ func TestNativeInputTranslationPreservesZeroAndFalse(t *testing.T) {
 	if err := json.Unmarshal(raw, &fields); err != nil {
 		t.Fatal(err)
 	}
-	for key, want := range map[string]string{"down": "false", "key_code": "0", "x": "0", "y": "0", "modifiers": "0"} {
+	for key, want := range map[string]string{"down": "false", "physical_key": "4", "x": "0", "y": "0", "modifiers": "0"} {
 		if string(fields[key]) != want {
 			t.Errorf("%s=%s, want %s", key, fields[key], want)
 		}

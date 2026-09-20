@@ -130,7 +130,7 @@ func OpenStore(root string) (*Store, error) {
 	}
 	db.SetMaxOpenConns(1)
 	store := &Store{Root: absolute, DB: db}
-	if err := store.migrate(); err != nil {
+	if err := store.initializeSchema(); err != nil {
 		db.Close()
 		return nil, err
 	}
@@ -139,10 +139,21 @@ func OpenStore(root string) (*Store, error) {
 
 func (s *Store) Close() error { return s.DB.Close() }
 
-func (s *Store) migrate() error {
+func (s *Store) initializeSchema() error {
+	var version, tables int
+	if err := s.DB.QueryRow("PRAGMA user_version").Scan(&version); err != nil {
+		return err
+	}
+	if err := s.DB.QueryRow("SELECT count(*) FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").Scan(&tables); err != nil {
+		return err
+	}
+	if version != 1 && (version != 0 || tables != 0) {
+		return errors.New("unsupported Dieter gateway storage schema; use a fresh DIETER_GATEWAY_HOME for this pre-release baseline")
+	}
 	_, err := s.DB.Exec(`
 PRAGMA journal_mode=WAL;
 PRAGMA foreign_keys=ON;
+BEGIN IMMEDIATE;
 CREATE TABLE IF NOT EXISTS gateway_state (
   key TEXT PRIMARY KEY,
   value BLOB NOT NULL
@@ -237,61 +248,16 @@ CREATE TABLE IF NOT EXISTS provider_quota_snapshots (
     REFERENCES provider_accounts(github_id, provider, account_key)
     ON DELETE CASCADE
 );
+PRAGMA user_version=1;
+COMMIT;
 `)
 	if err != nil {
 		return fmt.Errorf("initialize gateway database: %w", err)
-	}
-	if err := s.ensureDaemonColumn("remote_desktop_json", `BLOB NOT NULL DEFAULT '{}'`); err != nil {
-		return fmt.Errorf("migrate gateway database: %w", err)
-	}
-	if err := s.ensureDaemonColumn("api_version", `TEXT NOT NULL DEFAULT ''`); err != nil {
-		return fmt.Errorf("migrate gateway database: %w", err)
-	}
-	if err := s.ensureProviderAccountColumn("summary_included", `INTEGER NOT NULL DEFAULT 1`); err != nil {
-		return fmt.Errorf("migrate gateway database: %w", err)
 	}
 	if info, statErr := os.Stat(filepath.Join(s.Root, "gateway.db")); statErr == nil && info.Mode().Perm() != 0o600 {
 		_ = os.Chmod(filepath.Join(s.Root, "gateway.db"), 0o600)
 	}
 	return nil
-}
-
-func (s *Store) ensureDaemonColumn(name, declaration string) error {
-	return s.ensureTableColumn("daemons", name, declaration)
-}
-
-func (s *Store) ensureProviderAccountColumn(name, declaration string) error {
-	return s.ensureTableColumn("provider_accounts", name, declaration)
-}
-
-func (s *Store) ensureTableColumn(table, name, declaration string) error {
-	rows, err := s.DB.Query(`PRAGMA table_info(` + table + `)`)
-	if err != nil {
-		return err
-	}
-	found := false
-	for rows.Next() {
-		var index int
-		var column, columnType string
-		var notNull, primaryKey int
-		var defaultValue sql.NullString
-		if err := rows.Scan(&index, &column, &columnType, &notNull, &defaultValue, &primaryKey); err != nil {
-			rows.Close()
-			return err
-		}
-		if column == name {
-			found = true
-		}
-	}
-	if err := rows.Close(); err != nil {
-		return err
-	}
-	if found {
-		return nil
-	}
-	// name and declaration are internal constants, never request data.
-	_, err = s.DB.Exec(`ALTER TABLE ` + table + ` ADD COLUMN ` + name + ` ` + declaration)
-	return err
 }
 
 func (s *Store) AuthState() (AuthState, error) {

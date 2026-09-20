@@ -335,7 +335,7 @@ final class WorktreeChangesModel {
                 await startGitOperation(
                     .commit,
                     parameters: [
-                        "subject": subject, "body": body, "include_untracked": "true",
+                        "subject": subject, "body": body, "stage_all": "true",
                     ]), await awaitCurrentGitOperationSuccess()
             else { return false }
             await loadWorkspaceSurface()

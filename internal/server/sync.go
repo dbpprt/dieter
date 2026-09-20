@@ -7,7 +7,10 @@ import (
 
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
 	"github.com/dbpprt/dieter/internal/model"
+	"github.com/dbpprt/dieter/internal/protocol"
 	"github.com/dbpprt/dieter/internal/store"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -258,40 +261,6 @@ func globalDelta(previous, current *dieterv1.GlobalSnapshot) *dieterv1.GlobalDel
 			delta.RemovedChatIds = append(delta.RemovedChatIds, id)
 		}
 	}
-
-	previousSchedules := make(map[string]*dieterv1.Schedule, len(previous.GetSchedules()))
-	for _, value := range previous.GetSchedules() {
-		previousSchedules[value.GetId()] = value
-	}
-	currentSchedules := make(map[string]struct{}, len(current.GetSchedules()))
-	for _, value := range current.GetSchedules() {
-		currentSchedules[value.GetId()] = struct{}{}
-		if before := previousSchedules[value.GetId()]; before == nil || !proto.Equal(before, value) {
-			delta.Schedules = append(delta.Schedules, value)
-		}
-	}
-	for id := range previousSchedules {
-		if _, ok := currentSchedules[id]; !ok {
-			delta.RemovedScheduleIds = append(delta.RemovedScheduleIds, id)
-		}
-	}
-
-	previousRuns := make(map[string]*dieterv1.ScheduleRun, len(previous.GetScheduleRuns()))
-	for _, value := range previous.GetScheduleRuns() {
-		previousRuns[value.GetId()] = value
-	}
-	currentRuns := make(map[string]struct{}, len(current.GetScheduleRuns()))
-	for _, value := range current.GetScheduleRuns() {
-		currentRuns[value.GetId()] = struct{}{}
-		if before := previousRuns[value.GetId()]; before == nil || !proto.Equal(before, value) {
-			delta.ScheduleRuns = append(delta.ScheduleRuns, value)
-		}
-	}
-	for id := range previousRuns {
-		if _, ok := currentRuns[id]; !ok {
-			delta.RemovedScheduleRunIds = append(delta.RemovedScheduleRunIds, id)
-		}
-	}
 	if !proto.Equal(previous.GetSettings(), current.GetSettings()) {
 		delta.Settings = current.GetSettings()
 	}
@@ -323,6 +292,9 @@ func globalDeltaEmpty(delta *dieterv1.GlobalDelta) bool {
 // watchSync has one sender and one bounded projection worker. Slow projection
 // work cannot suppress liveness, and canceled senders cancel their worker.
 func (api *grpcAPI) watchSync(parent context.Context, request *dieterv1.SyncRequest, send func(*dieterv1.SyncFrame) error) error {
+	if request.GetProtocolVersion() != protocol.Number {
+		return status.Error(codes.FailedPrecondition, "unsupported Dieter sync contract")
+	}
 	ctx, cancel := context.WithCancel(parent)
 	defer cancel()
 	heartbeat := time.Duration(request.GetHeartbeatMs()) * time.Millisecond
@@ -363,20 +335,17 @@ func (api *grpcAPI) watchSync(parent context.Context, request *dieterv1.SyncRequ
 			return err
 		case delivery := <-frames:
 			frame := delivery.frame
-			if err := sendBoundedSyncFrame(frame, request.GetProtocolVersion() > 0, send); err != nil {
+			if err := sendBoundedSyncFrame(frame, send); err != nil {
 				return err
 			}
 			applied = frame.Cursor
 			close(delivery.sent)
 		case <-ticks.C:
-			if request.GetProtocolVersion() == 0 && applied == nil {
-				continue
-			}
 			observed, _, err := api.server.store.SyncEvents(^uint64(0), 1)
 			if err != nil {
 				return err
 			}
-			frame := &dieterv1.SyncFrame{Cursor: applied, ObservedCursor: protoSyncCursor(observed), Heartbeat: true, TransportOnly: request.GetProtocolVersion() > 0}
+			frame := &dieterv1.SyncFrame{Cursor: applied, ObservedCursor: protoSyncCursor(observed), Heartbeat: true, TransportOnly: true}
 			frame.ProjectionPending = applied == nil || applied.GetEpoch() != observed.Epoch || applied.GetSequence() < observed.Sequence
 			if err := send(frame); err != nil {
 				return err
@@ -387,7 +356,6 @@ func (api *grpcAPI) watchSync(parent context.Context, request *dieterv1.SyncRequ
 
 func (api *grpcAPI) buildSyncFrames(ctx context.Context, request *dieterv1.SyncRequest, send func(*dieterv1.SyncFrame) error) error {
 	limit, recent := int(request.GetConversationLimit()), int(request.GetRecentConversationLimit())
-	modern := request.GetProtocolVersion() > 0
 	cursor, _, err := api.server.store.SyncEvents(^uint64(0), 1)
 	if err != nil {
 		return err
@@ -396,10 +364,8 @@ func (api *grpcAPI) buildSyncFrames(ctx context.Context, request *dieterv1.SyncR
 	reset := projection == nil
 	publish := func(next *syncProjection, events []store.SyncEvent, full bool) error {
 		frame := &dieterv1.SyncFrame{Cursor: protoSyncCursor(next.cursor)}
-		if modern {
-			frame.Cursor.ProjectionId = api.server.retainSyncProjection(next, limit, recent)
-		}
-		if full || (!modern && limit > 0 && recent == 0) {
+		frame.Cursor.ProjectionId = api.server.retainSyncProjection(next, limit, recent)
+		if full {
 			frame.Snapshot = next.snapshot
 			frame.Reset_ = reset
 		} else if delta := globalDelta(projection.snapshot, next.snapshot); !globalDeltaEmpty(delta) {
@@ -419,11 +385,7 @@ func (api *grpcAPI) buildSyncFrames(ctx context.Context, request *dieterv1.SyncR
 		return nil
 	}
 	if projection == nil {
-		initialLimit := limit
-		if modern {
-			initialLimit = 0
-		}
-		initial, err := api.globalSnapshotContext(ctx, initialLimit, recent, nil, false)
+		initial, err := api.globalSnapshotContext(ctx, 0, recent, nil, false)
 		if err != nil {
 			return err
 		}
@@ -442,7 +404,7 @@ func (api *grpcAPI) buildSyncFrames(ctx context.Context, request *dieterv1.SyncR
 			return err
 		}
 	}
-	if modern && limit > 0 && !projection.hydrated {
+	if limit > 0 && !projection.hydrated {
 		hydrated, err := api.globalSnapshotContext(ctx, limit, recent, projection, false)
 		if err != nil {
 			return err

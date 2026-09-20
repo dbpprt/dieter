@@ -194,7 +194,7 @@
                     ? "passed"
                     : "failed: incompatible switch displaced the healthy route or presented a global error"
             } else {
-                results["mixed-version-switch-isolation"] = "failed: legacy fixture machine was absent"
+                results["mixed-version-switch-isolation"] = "failed: incompatible fixture machine was absent"
             }
             if let fixtureNote { results["fixture"] = fixtureNote }
             if let scheduleFixtureError {
@@ -1252,7 +1252,9 @@
             store.beginStandaloneChat(projectID: project.id)
             try? await DieterTaskSleep.milliseconds(700)
             let destinationGroups = store.projectDestinationGroups()
-            let duplicateDestination = destinationGroups.flatMap(\.destinations).first { $0.checkoutID == remoteCheckout.id }
+            let duplicateDestination = destinationGroups.flatMap(\.destinations).first {
+                $0.checkoutID == remoteCheckout.id
+            }
             let duplicateNamesAreGrouped =
                 destinationGroups.filter {
                     $0.destinations.contains { $0.project.name == project.name }

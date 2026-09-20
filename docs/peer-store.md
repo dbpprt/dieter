@@ -1,6 +1,6 @@
 # Shared projects and the account peer store
 
-Dieter uses one application contract, generated from `api/contract-version` (4),
+Dieter uses one application contract, generated from `api/contract-version` (1),
 and storage schema 2. A logical project can contain checkouts on several machines,
 including multiple working trees on one machine. Project IDs establish identity;
 names, paths, and Git remotes never silently join projects.
@@ -118,10 +118,9 @@ from domain projection and cannot override the canonical granular project record
 
 ## Development-store cutover
 
-The daemon rejects legacy project storage. `dieter daemon import-store --backup PATH`
-performs an offline dry run; `--apply` creates a resumable immutable backup and
-imports project/checkouts, boards, conversations, schedules, and occurrence IDs.
-Old parallel-session settings are discarded. Capacity-waiting occurrences become
-interrupted and are never replayed automatically. Rollback discards new-schema edits.
-The importer refuses a live daemon or active workers. Implementation/tests must use
-disposable stores and never stop or replace the operator's daemon.
+The daemon rejects unsupported project storage without converting it. Use a fresh
+`DIETER_HOME` for this pre-release baseline and preserve existing data separately.
+No offline import or migration command is provided. Storage schema 2 identifies
+the current disk format independently of application contract 1. Tests use
+disposable stores and never stop or replace the operator's daemon. See
+[application contract](api-contract.md).

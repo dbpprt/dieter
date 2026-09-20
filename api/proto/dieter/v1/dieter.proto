@@ -403,11 +403,6 @@ message SyncEvent {
 message GlobalSnapshot {
   State state = 1;
   repeated ConversationSnapshot conversations = 2;
-  // Deprecated: schedule definitions are queried in bounded project pages.
-  repeated Schedule schedules = 3 [deprecated = true];
-  // Deprecated: occurrence history is queried in bounded pages and is never
-  // part of the daemon-wide native projection.
-  repeated ScheduleRun schedule_runs = 4 [deprecated = true];
   Settings settings = 5;
 }
 
@@ -424,11 +419,6 @@ message GlobalDelta {
   repeated string removed_card_ids = 6;
   repeated Card chats = 7;
   repeated string removed_chat_ids = 8;
-  repeated Schedule schedules = 9 [deprecated = true];
-  repeated string removed_schedule_ids = 10 [deprecated = true];
-  // Deprecated: native clients refresh only the visible schedule history.
-  repeated ScheduleRun schedule_runs = 11 [deprecated = true];
-  repeated string removed_schedule_run_ids = 12 [deprecated = true];
   Settings settings = 13;
   repeated ConversationSnapshot conversations = 14;
   repeated string removed_conversation_ids = 15;
@@ -1258,7 +1248,6 @@ message Workspace {
   string head_sha = 10;
   string upstream_ref = 11;
   bool managed_branch = 12;
-  bool legacy_unmanaged = 13;
   string state = 14;
   string revision = 15;
   string current_operation_id = 16;
@@ -1737,7 +1726,7 @@ message RemoteDesktopCapabilities {
   string control_permission = 8;
   repeated RemoteDesktopDisplay displays = 9;
   repeated string codecs = 10;
-  bool hardware_encoder_available = 11;
+  bool encoder_available = 11;
   bool control_supported = 12;
   bool clipboard_supported = 13;
   bool audio_supported = 14;
@@ -1752,9 +1741,8 @@ message RemoteDesktopCapabilities {
   string capture_executable = 23;
   uint32 max_clients = 24;
   uint32 connected_clients = 25;
-  repeated uint32 supported_input_protocol_versions = 26;
   bool binary_clipboard_supported = 27;
-  // Hardware-verified operating envelopes; missing entries retain legacy H.264.
+  // Hardware-verified operating envelopes; missing entries use the baseline H.264 profile.
   repeated RemoteDesktopCodecMode codec_modes = 28;
   bool display_mode_switching_supported = 29;
 }
@@ -1868,7 +1856,7 @@ message StartRemoteDesktopRequest {
   int32 max_bitrate_kbps = 10;
   RemoteDesktopQuality quality = 11;
   bool embedded_cursor = 12;
-  // Zero selects legacy v2. V3 adds revocable, machine-wide input ownership.
+  // Must match the current Dieter application contract; ownership is revocable.
   uint32 input_protocol_version = 13;
   string client_name = 14;
   bool clipboard = 15;
@@ -1969,11 +1957,10 @@ message RemoteDesktopScroll {
 }
 
 message RemoteDesktopKey {
-  uint32 key_code = 1;
   bool down = 2;
   bool repeat = 3;
   uint32 modifiers = 4;
-  // USB HID keyboard/keypad usage (page 0x07); zero uses legacy macOS key_code.
+  // Required USB HID keyboard/keypad usage (page 0x07).
   uint32 physical_key = 5;
 }
 
@@ -1996,12 +1983,12 @@ message RemoteDesktopInput {
   uint64 display_generation = 9;
   uint64 event_ordinal = 10;
   uint64 state_barrier = 11;
-  // V3 input is accepted only for the current machine-wide control grant.
+  // Input is accepted only for the current machine-wide control grant.
   uint64 control_generation = 13;
 }
 
 // Render timings end at different platform events. Neither endpoint measures
-// physical scanout. Zero means an older receiver did not identify its endpoint.
+// physical scanout. Zero means no render endpoint was measured.
 enum RemoteDesktopRenderMeasurement {
   REMOTE_DESKTOP_RENDER_MEASUREMENT_UNSPECIFIED = 0;
   REMOTE_DESKTOP_RENDER_MEASUREMENT_METAL_PRESENTED = 1;
@@ -2099,9 +2086,8 @@ message RemoteDesktopReceiverFeedback {
   // Mean residence in WebRTC's jitter buffer, distinct from RTP jitter.
   double jitter_buffer_ms = 11;
   // Mean decoded-frame arrival to the identified render_measurement endpoint.
-  // Legacy Mac reports presentation; legacy Android reports EGL submission.
   double render_ms = 12;
-  // Independent of the heartbeat sequence. Zero is a legacy sender; new senders
+  // Independent of the heartbeat sequence. Zero carries no measurement. Senders
   // start at one (an empty sample) and advance only when statistics are collected.
   uint64 measurement_sequence = 13;
   // Monotonic age of that sample at send time; repeated heartbeats do not refresh it.

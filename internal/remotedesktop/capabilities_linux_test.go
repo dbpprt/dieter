@@ -32,14 +32,14 @@ func TestLinuxPortalPermissionIsPromptable(t *testing.T) {
 	manager.options.Source = SourceOptions{Kind: "screen", HelperPath: "/bin/true"}
 	manager.options.CapabilityProbe = func(context.Context, SourceOptions) (*dieterv1.RemoteDesktopCapabilities, error) {
 		return &dieterv1.RemoteDesktopCapabilities{
-			Platform:                 "linux",
-			GraphicalSessionActive:   true,
-			CapturePermission:        "not_requested",
-			ControlPermission:        "not_requested",
-			ControlSupported:         true,
-			HardwareEncoderAvailable: true,
-			Displays:                 []*dieterv1.RemoteDesktopDisplay{{Id: "portal", Primary: true}},
-			Codecs:                   []string{"H264"},
+			Platform:               "linux",
+			GraphicalSessionActive: true,
+			CapturePermission:      "not_requested",
+			ControlPermission:      "not_requested",
+			ControlSupported:       true,
+			EncoderAvailable:       true,
+			Displays:               []*dieterv1.RemoteDesktopDisplay{{Id: "portal", Primary: true}},
+			Codecs:                 []string{"H264"},
 		}, nil
 	}
 	capabilities := manager.Capabilities(true, true)
@@ -275,7 +275,7 @@ func TestLinuxNativeHelperCapabilities(t *testing.T) {
 	if len(capabilities.GetCodecs()) != 1 || capabilities.GetCodecs()[0] != "H264" || capabilities.GetHelperVersion() != "linux-native-v1" {
 		t.Fatalf("native codec capabilities = %#v", capabilities)
 	}
-	if !capabilities.GetControlSupported() || !capabilities.GetHardwareEncoderAvailable() {
+	if !capabilities.GetControlSupported() || !capabilities.GetEncoderAvailable() {
 		t.Fatalf("native input/encoder capabilities = %#v", capabilities)
 	}
 }

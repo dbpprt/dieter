@@ -119,15 +119,15 @@ class IsolatedGatewayIntegrationTest {
             val endpoint = connect(repository, origin, token)
             repository.prepareDaemon()
             val activeBefore = repository.activeEndpoint
-            val legacyDaemon = repository.daemons().daemonsList.first { it.apiVersion != DIETER_API_VERSION }
-            val legacyEndpoint = origin.copy(
-                id = "${origin.credentialId}#${legacyDaemon.id}",
-                label = legacyDaemon.name,
-                daemonId = legacyDaemon.id,
-                apiVersion = legacyDaemon.apiVersion,
+            val incompatibleDaemon = repository.daemons().daemonsList.first { it.apiVersion != DIETER_API_VERSION }
+            val incompatibleEndpoint = origin.copy(
+                id = "${origin.credentialId}#${incompatibleDaemon.id}",
+                label = incompatibleDaemon.name,
+                daemonId = incompatibleDaemon.id,
+                apiVersion = incompatibleDaemon.apiVersion,
             )
-            repository.replaceEndpoints(listOf(endpoint, legacyEndpoint))
-            val incompatible = runCatching { repository.listDirectoriesOn(legacyEndpoint.id) }.exceptionOrNull()
+            repository.replaceEndpoints(listOf(endpoint, incompatibleEndpoint))
+            val incompatible = runCatching { repository.listDirectoriesOn(incompatibleEndpoint.id) }.exceptionOrNull()
             assertTrue(incompatible?.message.orEmpty().contains("incompatible", ignoreCase = true))
             val root = repository.listDirectoriesOn(endpoint.id)
             assertEquals(activeBefore, repository.activeEndpoint)
@@ -168,6 +168,7 @@ class IsolatedGatewayIntegrationTest {
             val updated = repository.updateProjectWorkspaceSettings(
                 UpdateProjectWorkspaceSettingsRequest.newBuilder()
                     .setProjectId(created.project.id)
+                    .setCheckoutId(created.project.checkoutsList.single().id)
                     .setBaseRemote("upstream")
                     .setBaseBranch("main")
                     .addValidationCommands(validation.toBuilder().setTimeoutSeconds(45))
@@ -517,6 +518,7 @@ class IsolatedGatewayIntegrationTest {
     fun archiveVisibleFixtureAndRestoreProductionGateway() = runBlocking {
         val fixtureCardId = argument("fixtureCardId")
         val token = argument("isolatedGatewayToken")
+        assumeTrue("Pass an explicit isolated fixture to clean up", fixtureCardId.isNotBlank() && token.isNotBlank())
         if (fixtureCardId.isNotBlank() && token.isNotBlank()) {
             val context = InstrumentationRegistry.getInstrumentation().targetContext
             val repository = GrpcDieterRepository(context)

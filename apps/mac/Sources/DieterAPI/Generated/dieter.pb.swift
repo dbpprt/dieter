@@ -365,7 +365,7 @@ public nonisolated enum Dieter_V1_RemoteDesktopQuality: SwiftProtobuf.Enum, Swif
 }
 
 /// Render timings end at different platform events. Neither endpoint measures
-/// physical scanout. Zero means an older receiver did not identify its endpoint.
+/// physical scanout. Zero means no render endpoint was measured.
 public nonisolated enum Dieter_V1_RemoteDesktopRenderMeasurement: SwiftProtobuf.Enum, Swift.CaseIterable {
   public typealias RawValue = Int
   case unspecified // = 0
@@ -1062,23 +1062,6 @@ public nonisolated struct Dieter_V1_GlobalSnapshot: @unchecked Sendable {
     set {_uniqueStorage()._conversations = newValue}
   }
 
-  /// Deprecated: schedule definitions are queried in bounded project pages.
-  ///
-  /// NOTE: This field was marked as deprecated in the .proto file.
-  public var schedules: [Dieter_V1_Schedule] {
-    get {_storage._schedules}
-    set {_uniqueStorage()._schedules = newValue}
-  }
-
-  /// Deprecated: occurrence history is queried in bounded pages and is never
-  /// part of the daemon-wide native projection.
-  ///
-  /// NOTE: This field was marked as deprecated in the .proto file.
-  public var scheduleRuns: [Dieter_V1_ScheduleRun] {
-    get {_storage._scheduleRuns}
-    set {_uniqueStorage()._scheduleRuns = newValue}
-  }
-
   public var settings: Dieter_V1_Settings {
     get {_storage._settings ?? Dieter_V1_Settings()}
     set {_uniqueStorage()._settings = newValue}
@@ -1099,110 +1082,55 @@ public nonisolated struct Dieter_V1_GlobalSnapshot: @unchecked Sendable {
 /// Removed IDs make the delta independently applicable to a persisted client
 /// projection. Conversation content appears here only for clients that opt in
 /// via recent_conversation_limit; everyone else uses WatchConversation.
-public nonisolated struct Dieter_V1_GlobalDelta: @unchecked Sendable {
+public nonisolated struct Dieter_V1_GlobalDelta: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
 
-  public var projects: [Dieter_V1_Project] {
-    get {_storage._projects}
-    set {_uniqueStorage()._projects = newValue}
-  }
+  public var projects: [Dieter_V1_Project] = []
 
-  public var removedProjectIds: [String] {
-    get {_storage._removedProjectIds}
-    set {_uniqueStorage()._removedProjectIds = newValue}
-  }
+  public var removedProjectIds: [String] = []
 
-  public var boards: [Dieter_V1_Board] {
-    get {_storage._boards}
-    set {_uniqueStorage()._boards = newValue}
-  }
+  public var boards: [Dieter_V1_Board] = []
 
-  public var removedBoardIds: [String] {
-    get {_storage._removedBoardIds}
-    set {_uniqueStorage()._removedBoardIds = newValue}
-  }
+  public var removedBoardIds: [String] = []
 
-  public var cards: [Dieter_V1_Card] {
-    get {_storage._cards}
-    set {_uniqueStorage()._cards = newValue}
-  }
+  public var cards: [Dieter_V1_Card] = []
 
-  public var removedCardIds: [String] {
-    get {_storage._removedCardIds}
-    set {_uniqueStorage()._removedCardIds = newValue}
-  }
+  public var removedCardIds: [String] = []
 
-  public var chats: [Dieter_V1_Card] {
-    get {_storage._chats}
-    set {_uniqueStorage()._chats = newValue}
-  }
+  public var chats: [Dieter_V1_Card] = []
 
-  public var removedChatIds: [String] {
-    get {_storage._removedChatIds}
-    set {_uniqueStorage()._removedChatIds = newValue}
-  }
-
-  /// NOTE: This field was marked as deprecated in the .proto file.
-  public var schedules: [Dieter_V1_Schedule] {
-    get {_storage._schedules}
-    set {_uniqueStorage()._schedules = newValue}
-  }
-
-  /// NOTE: This field was marked as deprecated in the .proto file.
-  public var removedScheduleIds: [String] {
-    get {_storage._removedScheduleIds}
-    set {_uniqueStorage()._removedScheduleIds = newValue}
-  }
-
-  /// Deprecated: native clients refresh only the visible schedule history.
-  ///
-  /// NOTE: This field was marked as deprecated in the .proto file.
-  public var scheduleRuns: [Dieter_V1_ScheduleRun] {
-    get {_storage._scheduleRuns}
-    set {_uniqueStorage()._scheduleRuns = newValue}
-  }
-
-  /// NOTE: This field was marked as deprecated in the .proto file.
-  public var removedScheduleRunIds: [String] {
-    get {_storage._removedScheduleRunIds}
-    set {_uniqueStorage()._removedScheduleRunIds = newValue}
-  }
+  public var removedChatIds: [String] = []
 
   public var settings: Dieter_V1_Settings {
-    get {_storage._settings ?? Dieter_V1_Settings()}
-    set {_uniqueStorage()._settings = newValue}
+    get {_settings ?? Dieter_V1_Settings()}
+    set {_settings = newValue}
   }
   /// Returns true if `settings` has been explicitly set.
-  public var hasSettings: Bool {_storage._settings != nil}
+  public var hasSettings: Bool {self._settings != nil}
   /// Clears the value of `settings`. Subsequent reads from it will return its default value.
-  public mutating func clearSettings() {_uniqueStorage()._settings = nil}
+  public mutating func clearSettings() {self._settings = nil}
 
-  public var conversations: [Dieter_V1_ConversationSnapshot] {
-    get {_storage._conversations}
-    set {_uniqueStorage()._conversations = newValue}
-  }
+  public var conversations: [Dieter_V1_ConversationSnapshot] = []
 
-  public var removedConversationIds: [String] {
-    get {_storage._removedConversationIds}
-    set {_uniqueStorage()._removedConversationIds = newValue}
-  }
+  public var removedConversationIds: [String] = []
 
   public var archives: Dieter_V1_SharedArchives {
-    get {_storage._archives ?? Dieter_V1_SharedArchives()}
-    set {_uniqueStorage()._archives = newValue}
+    get {_archives ?? Dieter_V1_SharedArchives()}
+    set {_archives = newValue}
   }
   /// Returns true if `archives` has been explicitly set.
-  public var hasArchives: Bool {_storage._archives != nil}
+  public var hasArchives: Bool {self._archives != nil}
   /// Clears the value of `archives`. Subsequent reads from it will return its default value.
-  public mutating func clearArchives() {_uniqueStorage()._archives = nil}
+  public mutating func clearArchives() {self._archives = nil}
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
 
-  fileprivate var _storage = _StorageClass.defaultInstance
+  fileprivate var _settings: Dieter_V1_Settings? = nil
+  fileprivate var _archives: Dieter_V1_SharedArchives? = nil
 }
 
 public nonisolated struct Dieter_V1_SyncFrame: @unchecked Sendable {
@@ -3983,11 +3911,6 @@ public nonisolated struct Dieter_V1_Workspace: @unchecked Sendable {
     set {_uniqueStorage()._managedBranch = newValue}
   }
 
-  public var legacyUnmanaged: Bool {
-    get {_storage._legacyUnmanaged}
-    set {_uniqueStorage()._legacyUnmanaged = newValue}
-  }
-
   public var state: String {
     get {_storage._state}
     set {_uniqueStorage()._state = newValue}
@@ -5427,9 +5350,9 @@ public nonisolated struct Dieter_V1_RemoteDesktopCapabilities: @unchecked Sendab
     set {_uniqueStorage()._codecs = newValue}
   }
 
-  public var hardwareEncoderAvailable: Bool {
-    get {_storage._hardwareEncoderAvailable}
-    set {_uniqueStorage()._hardwareEncoderAvailable = newValue}
+  public var encoderAvailable: Bool {
+    get {_storage._encoderAvailable}
+    set {_uniqueStorage()._encoderAvailable = newValue}
   }
 
   public var controlSupported: Bool {
@@ -5502,17 +5425,12 @@ public nonisolated struct Dieter_V1_RemoteDesktopCapabilities: @unchecked Sendab
     set {_uniqueStorage()._connectedClients = newValue}
   }
 
-  public var supportedInputProtocolVersions: [UInt32] {
-    get {_storage._supportedInputProtocolVersions}
-    set {_uniqueStorage()._supportedInputProtocolVersions = newValue}
-  }
-
   public var binaryClipboardSupported: Bool {
     get {_storage._binaryClipboardSupported}
     set {_uniqueStorage()._binaryClipboardSupported = newValue}
   }
 
-  /// Hardware-verified operating envelopes; missing entries retain legacy H.264.
+  /// Hardware-verified operating envelopes; missing entries use the baseline H.264 profile.
   public var codecModes: [Dieter_V1_RemoteDesktopCodecMode] {
     get {_storage._codecModes}
     set {_uniqueStorage()._codecModes = newValue}
@@ -5821,7 +5739,7 @@ public nonisolated struct Dieter_V1_StartRemoteDesktopRequest: @unchecked Sendab
     set {_uniqueStorage()._embeddedCursor = newValue}
   }
 
-  /// Zero selects legacy v2. V3 adds revocable, machine-wide input ownership.
+  /// Must match the current Dieter application contract; ownership is revocable.
   public var inputProtocolVersion: UInt32 {
     get {_storage._inputProtocolVersion}
     set {_uniqueStorage()._inputProtocolVersion = newValue}
@@ -6115,15 +6033,13 @@ public nonisolated struct Dieter_V1_RemoteDesktopKey: Sendable {
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
 
-  public var keyCode: UInt32 = 0
-
   public var down: Bool = false
 
   public var `repeat`: Bool = false
 
   public var modifiers: UInt32 = 0
 
-  /// USB HID keyboard/keypad usage (page 0x07); zero uses legacy macOS key_code.
+  /// Required USB HID keyboard/keypad usage (page 0x07).
   public var physicalKey: UInt32 = 0
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
@@ -6220,7 +6136,7 @@ public nonisolated struct Dieter_V1_RemoteDesktopInput: Sendable {
 
   public var stateBarrier: UInt64 = 0
 
-  /// V3 input is accepted only for the current machine-wide control grant.
+  /// Input is accepted only for the current machine-wide control grant.
   public var controlGeneration: UInt64 = 0
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
@@ -6652,13 +6568,12 @@ public nonisolated struct Dieter_V1_RemoteDesktopReceiverFeedback: @unchecked Se
   }
 
   /// Mean decoded-frame arrival to the identified render_measurement endpoint.
-  /// Legacy Mac reports presentation; legacy Android reports EGL submission.
   public var renderMs: Double {
     get {_storage._renderMs}
     set {_uniqueStorage()._renderMs = newValue}
   }
 
-  /// Independent of the heartbeat sequence. Zero is a legacy sender; new senders
+  /// Independent of the heartbeat sequence. Zero carries no measurement. Senders
   /// start at one (an empty sample) and advance only when statistics are collected.
   public var measurementSequence: UInt64 {
     get {_storage._measurementSequence}
@@ -9074,13 +8989,11 @@ nonisolated extension Dieter_V1_SyncEvent: SwiftProtobuf.Message, SwiftProtobuf.
 
 nonisolated extension Dieter_V1_GlobalSnapshot: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".GlobalSnapshot"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}state\0\u{1}conversations\0\u{1}schedules\0\u{3}schedule_runs\0\u{1}settings\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}state\0\u{1}conversations\0\u{2}\u{3}settings\0")
 
   fileprivate class _StorageClass {
     var _state: Dieter_V1_State? = nil
     var _conversations: [Dieter_V1_ConversationSnapshot] = []
-    var _schedules: [Dieter_V1_Schedule] = []
-    var _scheduleRuns: [Dieter_V1_ScheduleRun] = []
     var _settings: Dieter_V1_Settings? = nil
 
       // This property is used as the initial default value for new instances of the type.
@@ -9094,8 +9007,6 @@ nonisolated extension Dieter_V1_GlobalSnapshot: SwiftProtobuf.Message, SwiftProt
     init(copying source: _StorageClass) {
       _state = source._state
       _conversations = source._conversations
-      _schedules = source._schedules
-      _scheduleRuns = source._scheduleRuns
       _settings = source._settings
     }
   }
@@ -9117,8 +9028,6 @@ nonisolated extension Dieter_V1_GlobalSnapshot: SwiftProtobuf.Message, SwiftProt
         switch fieldNumber {
         case 1: try { try decoder.decodeSingularMessageField(value: &_storage._state) }()
         case 2: try { try decoder.decodeRepeatedMessageField(value: &_storage._conversations) }()
-        case 3: try { try decoder.decodeRepeatedMessageField(value: &_storage._schedules) }()
-        case 4: try { try decoder.decodeRepeatedMessageField(value: &_storage._scheduleRuns) }()
         case 5: try { try decoder.decodeSingularMessageField(value: &_storage._settings) }()
         default: break
         }
@@ -9138,12 +9047,6 @@ nonisolated extension Dieter_V1_GlobalSnapshot: SwiftProtobuf.Message, SwiftProt
       if !_storage._conversations.isEmpty {
         try visitor.visitRepeatedMessageField(value: _storage._conversations, fieldNumber: 2)
       }
-      if !_storage._schedules.isEmpty {
-        try visitor.visitRepeatedMessageField(value: _storage._schedules, fieldNumber: 3)
-      }
-      if !_storage._scheduleRuns.isEmpty {
-        try visitor.visitRepeatedMessageField(value: _storage._scheduleRuns, fieldNumber: 4)
-      }
       try { if let v = _storage._settings {
         try visitor.visitSingularMessageField(value: v, fieldNumber: 5)
       } }()
@@ -9158,8 +9061,6 @@ nonisolated extension Dieter_V1_GlobalSnapshot: SwiftProtobuf.Message, SwiftProt
         let rhs_storage = _args.1
         if _storage._state != rhs_storage._state {return false}
         if _storage._conversations != rhs_storage._conversations {return false}
-        if _storage._schedules != rhs_storage._schedules {return false}
-        if _storage._scheduleRuns != rhs_storage._scheduleRuns {return false}
         if _storage._settings != rhs_storage._settings {return false}
         return true
       }
@@ -9172,174 +9073,88 @@ nonisolated extension Dieter_V1_GlobalSnapshot: SwiftProtobuf.Message, SwiftProt
 
 nonisolated extension Dieter_V1_GlobalDelta: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".GlobalDelta"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}projects\0\u{3}removed_project_ids\0\u{1}boards\0\u{3}removed_board_ids\0\u{1}cards\0\u{3}removed_card_ids\0\u{1}chats\0\u{3}removed_chat_ids\0\u{1}schedules\0\u{3}removed_schedule_ids\0\u{3}schedule_runs\0\u{3}removed_schedule_run_ids\0\u{1}settings\0\u{1}conversations\0\u{3}removed_conversation_ids\0\u{1}archives\0")
-
-  fileprivate class _StorageClass {
-    var _projects: [Dieter_V1_Project] = []
-    var _removedProjectIds: [String] = []
-    var _boards: [Dieter_V1_Board] = []
-    var _removedBoardIds: [String] = []
-    var _cards: [Dieter_V1_Card] = []
-    var _removedCardIds: [String] = []
-    var _chats: [Dieter_V1_Card] = []
-    var _removedChatIds: [String] = []
-    var _schedules: [Dieter_V1_Schedule] = []
-    var _removedScheduleIds: [String] = []
-    var _scheduleRuns: [Dieter_V1_ScheduleRun] = []
-    var _removedScheduleRunIds: [String] = []
-    var _settings: Dieter_V1_Settings? = nil
-    var _conversations: [Dieter_V1_ConversationSnapshot] = []
-    var _removedConversationIds: [String] = []
-    var _archives: Dieter_V1_SharedArchives? = nil
-
-      // This property is used as the initial default value for new instances of the type.
-      // The type itself is protecting the reference to its storage via CoW semantics.
-      // This will force a copy to be made of this reference when the first mutation occurs;
-      // hence, it is safe to mark this as `nonisolated(unsafe)`.
-      static nonisolated(unsafe) let defaultInstance = _StorageClass()
-
-    private init() {}
-
-    init(copying source: _StorageClass) {
-      _projects = source._projects
-      _removedProjectIds = source._removedProjectIds
-      _boards = source._boards
-      _removedBoardIds = source._removedBoardIds
-      _cards = source._cards
-      _removedCardIds = source._removedCardIds
-      _chats = source._chats
-      _removedChatIds = source._removedChatIds
-      _schedules = source._schedules
-      _removedScheduleIds = source._removedScheduleIds
-      _scheduleRuns = source._scheduleRuns
-      _removedScheduleRunIds = source._removedScheduleRunIds
-      _settings = source._settings
-      _conversations = source._conversations
-      _removedConversationIds = source._removedConversationIds
-      _archives = source._archives
-    }
-  }
-
-  fileprivate mutating func _uniqueStorage() -> _StorageClass {
-    if !isKnownUniquelyReferenced(&_storage) {
-      _storage = _StorageClass(copying: _storage)
-    }
-    return _storage
-  }
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}projects\0\u{3}removed_project_ids\0\u{1}boards\0\u{3}removed_board_ids\0\u{1}cards\0\u{3}removed_card_ids\0\u{1}chats\0\u{3}removed_chat_ids\0\u{2}\u{5}settings\0\u{1}conversations\0\u{3}removed_conversation_ids\0\u{1}archives\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
-    _ = _uniqueStorage()
-    try withExtendedLifetime(_storage) { (_storage: _StorageClass) in
-      while let fieldNumber = try decoder.nextFieldNumber() {
-        // The use of inline closures is to circumvent an issue where the compiler
-        // allocates stack space for every case branch when no optimizations are
-        // enabled. https://github.com/apple/swift-protobuf/issues/1034
-        switch fieldNumber {
-        case 1: try { try decoder.decodeRepeatedMessageField(value: &_storage._projects) }()
-        case 2: try { try decoder.decodeRepeatedStringField(value: &_storage._removedProjectIds) }()
-        case 3: try { try decoder.decodeRepeatedMessageField(value: &_storage._boards) }()
-        case 4: try { try decoder.decodeRepeatedStringField(value: &_storage._removedBoardIds) }()
-        case 5: try { try decoder.decodeRepeatedMessageField(value: &_storage._cards) }()
-        case 6: try { try decoder.decodeRepeatedStringField(value: &_storage._removedCardIds) }()
-        case 7: try { try decoder.decodeRepeatedMessageField(value: &_storage._chats) }()
-        case 8: try { try decoder.decodeRepeatedStringField(value: &_storage._removedChatIds) }()
-        case 9: try { try decoder.decodeRepeatedMessageField(value: &_storage._schedules) }()
-        case 10: try { try decoder.decodeRepeatedStringField(value: &_storage._removedScheduleIds) }()
-        case 11: try { try decoder.decodeRepeatedMessageField(value: &_storage._scheduleRuns) }()
-        case 12: try { try decoder.decodeRepeatedStringField(value: &_storage._removedScheduleRunIds) }()
-        case 13: try { try decoder.decodeSingularMessageField(value: &_storage._settings) }()
-        case 14: try { try decoder.decodeRepeatedMessageField(value: &_storage._conversations) }()
-        case 15: try { try decoder.decodeRepeatedStringField(value: &_storage._removedConversationIds) }()
-        case 16: try { try decoder.decodeSingularMessageField(value: &_storage._archives) }()
-        default: break
-        }
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeRepeatedMessageField(value: &self.projects) }()
+      case 2: try { try decoder.decodeRepeatedStringField(value: &self.removedProjectIds) }()
+      case 3: try { try decoder.decodeRepeatedMessageField(value: &self.boards) }()
+      case 4: try { try decoder.decodeRepeatedStringField(value: &self.removedBoardIds) }()
+      case 5: try { try decoder.decodeRepeatedMessageField(value: &self.cards) }()
+      case 6: try { try decoder.decodeRepeatedStringField(value: &self.removedCardIds) }()
+      case 7: try { try decoder.decodeRepeatedMessageField(value: &self.chats) }()
+      case 8: try { try decoder.decodeRepeatedStringField(value: &self.removedChatIds) }()
+      case 13: try { try decoder.decodeSingularMessageField(value: &self._settings) }()
+      case 14: try { try decoder.decodeRepeatedMessageField(value: &self.conversations) }()
+      case 15: try { try decoder.decodeRepeatedStringField(value: &self.removedConversationIds) }()
+      case 16: try { try decoder.decodeSingularMessageField(value: &self._archives) }()
+      default: break
       }
     }
   }
 
   public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
-    try withExtendedLifetime(_storage) { (_storage: _StorageClass) in
-      // The use of inline closures is to circumvent an issue where the compiler
-      // allocates stack space for every if/case branch local when no optimizations
-      // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
-      // https://github.com/apple/swift-protobuf/issues/1182
-      if !_storage._projects.isEmpty {
-        try visitor.visitRepeatedMessageField(value: _storage._projects, fieldNumber: 1)
-      }
-      if !_storage._removedProjectIds.isEmpty {
-        try visitor.visitRepeatedStringField(value: _storage._removedProjectIds, fieldNumber: 2)
-      }
-      if !_storage._boards.isEmpty {
-        try visitor.visitRepeatedMessageField(value: _storage._boards, fieldNumber: 3)
-      }
-      if !_storage._removedBoardIds.isEmpty {
-        try visitor.visitRepeatedStringField(value: _storage._removedBoardIds, fieldNumber: 4)
-      }
-      if !_storage._cards.isEmpty {
-        try visitor.visitRepeatedMessageField(value: _storage._cards, fieldNumber: 5)
-      }
-      if !_storage._removedCardIds.isEmpty {
-        try visitor.visitRepeatedStringField(value: _storage._removedCardIds, fieldNumber: 6)
-      }
-      if !_storage._chats.isEmpty {
-        try visitor.visitRepeatedMessageField(value: _storage._chats, fieldNumber: 7)
-      }
-      if !_storage._removedChatIds.isEmpty {
-        try visitor.visitRepeatedStringField(value: _storage._removedChatIds, fieldNumber: 8)
-      }
-      if !_storage._schedules.isEmpty {
-        try visitor.visitRepeatedMessageField(value: _storage._schedules, fieldNumber: 9)
-      }
-      if !_storage._removedScheduleIds.isEmpty {
-        try visitor.visitRepeatedStringField(value: _storage._removedScheduleIds, fieldNumber: 10)
-      }
-      if !_storage._scheduleRuns.isEmpty {
-        try visitor.visitRepeatedMessageField(value: _storage._scheduleRuns, fieldNumber: 11)
-      }
-      if !_storage._removedScheduleRunIds.isEmpty {
-        try visitor.visitRepeatedStringField(value: _storage._removedScheduleRunIds, fieldNumber: 12)
-      }
-      try { if let v = _storage._settings {
-        try visitor.visitSingularMessageField(value: v, fieldNumber: 13)
-      } }()
-      if !_storage._conversations.isEmpty {
-        try visitor.visitRepeatedMessageField(value: _storage._conversations, fieldNumber: 14)
-      }
-      if !_storage._removedConversationIds.isEmpty {
-        try visitor.visitRepeatedStringField(value: _storage._removedConversationIds, fieldNumber: 15)
-      }
-      try { if let v = _storage._archives {
-        try visitor.visitSingularMessageField(value: v, fieldNumber: 16)
-      } }()
+    // The use of inline closures is to circumvent an issue where the compiler
+    // allocates stack space for every if/case branch local when no optimizations
+    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+    // https://github.com/apple/swift-protobuf/issues/1182
+    if !self.projects.isEmpty {
+      try visitor.visitRepeatedMessageField(value: self.projects, fieldNumber: 1)
     }
+    if !self.removedProjectIds.isEmpty {
+      try visitor.visitRepeatedStringField(value: self.removedProjectIds, fieldNumber: 2)
+    }
+    if !self.boards.isEmpty {
+      try visitor.visitRepeatedMessageField(value: self.boards, fieldNumber: 3)
+    }
+    if !self.removedBoardIds.isEmpty {
+      try visitor.visitRepeatedStringField(value: self.removedBoardIds, fieldNumber: 4)
+    }
+    if !self.cards.isEmpty {
+      try visitor.visitRepeatedMessageField(value: self.cards, fieldNumber: 5)
+    }
+    if !self.removedCardIds.isEmpty {
+      try visitor.visitRepeatedStringField(value: self.removedCardIds, fieldNumber: 6)
+    }
+    if !self.chats.isEmpty {
+      try visitor.visitRepeatedMessageField(value: self.chats, fieldNumber: 7)
+    }
+    if !self.removedChatIds.isEmpty {
+      try visitor.visitRepeatedStringField(value: self.removedChatIds, fieldNumber: 8)
+    }
+    try { if let v = self._settings {
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 13)
+    } }()
+    if !self.conversations.isEmpty {
+      try visitor.visitRepeatedMessageField(value: self.conversations, fieldNumber: 14)
+    }
+    if !self.removedConversationIds.isEmpty {
+      try visitor.visitRepeatedStringField(value: self.removedConversationIds, fieldNumber: 15)
+    }
+    try { if let v = self._archives {
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 16)
+    } }()
     try unknownFields.traverse(visitor: &visitor)
   }
 
   public static func ==(lhs: Dieter_V1_GlobalDelta, rhs: Dieter_V1_GlobalDelta) -> Bool {
-    if lhs._storage !== rhs._storage {
-      let storagesAreEqual: Bool = withExtendedLifetime((lhs._storage, rhs._storage)) { (_args: (_StorageClass, _StorageClass)) in
-        let _storage = _args.0
-        let rhs_storage = _args.1
-        if _storage._projects != rhs_storage._projects {return false}
-        if _storage._removedProjectIds != rhs_storage._removedProjectIds {return false}
-        if _storage._boards != rhs_storage._boards {return false}
-        if _storage._removedBoardIds != rhs_storage._removedBoardIds {return false}
-        if _storage._cards != rhs_storage._cards {return false}
-        if _storage._removedCardIds != rhs_storage._removedCardIds {return false}
-        if _storage._chats != rhs_storage._chats {return false}
-        if _storage._removedChatIds != rhs_storage._removedChatIds {return false}
-        if _storage._schedules != rhs_storage._schedules {return false}
-        if _storage._removedScheduleIds != rhs_storage._removedScheduleIds {return false}
-        if _storage._scheduleRuns != rhs_storage._scheduleRuns {return false}
-        if _storage._removedScheduleRunIds != rhs_storage._removedScheduleRunIds {return false}
-        if _storage._settings != rhs_storage._settings {return false}
-        if _storage._conversations != rhs_storage._conversations {return false}
-        if _storage._removedConversationIds != rhs_storage._removedConversationIds {return false}
-        if _storage._archives != rhs_storage._archives {return false}
-        return true
-      }
-      if !storagesAreEqual {return false}
-    }
+    if lhs.projects != rhs.projects {return false}
+    if lhs.removedProjectIds != rhs.removedProjectIds {return false}
+    if lhs.boards != rhs.boards {return false}
+    if lhs.removedBoardIds != rhs.removedBoardIds {return false}
+    if lhs.cards != rhs.cards {return false}
+    if lhs.removedCardIds != rhs.removedCardIds {return false}
+    if lhs.chats != rhs.chats {return false}
+    if lhs.removedChatIds != rhs.removedChatIds {return false}
+    if lhs._settings != rhs._settings {return false}
+    if lhs.conversations != rhs.conversations {return false}
+    if lhs.removedConversationIds != rhs.removedConversationIds {return false}
+    if lhs._archives != rhs._archives {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -14963,7 +14778,7 @@ nonisolated extension Dieter_V1_WorkspaceSummary: SwiftProtobuf.Message, SwiftPr
 
 nonisolated extension Dieter_V1_Workspace: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".Workspace"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}card_id\0\u{3}project_id\0\u{1}mode\0\u{1}path\0\u{3}base_remote\0\u{3}base_branch\0\u{3}base_sha\0\u{3}current_base_sha\0\u{1}branch\0\u{3}head_sha\0\u{3}upstream_ref\0\u{3}managed_branch\0\u{3}legacy_unmanaged\0\u{1}state\0\u{1}revision\0\u{3}current_operation_id\0\u{3}previous_card_ids\0\u{3}changed_files\0\u{1}additions\0\u{1}deletions\0\u{1}ahead\0\u{1}behind\0\u{3}size_bytes\0\u{3}created_at\0\u{3}updated_at\0\u{3}integrated_head_sha\0\u{3}integrated_result_sha\0\u{3}integration_strategy\0\u{3}integrated_at\0\u{1}dirty\0\u{3}remote_publish_mode\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}card_id\0\u{3}project_id\0\u{1}mode\0\u{1}path\0\u{3}base_remote\0\u{3}base_branch\0\u{3}base_sha\0\u{3}current_base_sha\0\u{1}branch\0\u{3}head_sha\0\u{3}upstream_ref\0\u{3}managed_branch\0\u{2}\u{2}state\0\u{1}revision\0\u{3}current_operation_id\0\u{3}previous_card_ids\0\u{3}changed_files\0\u{1}additions\0\u{1}deletions\0\u{1}ahead\0\u{1}behind\0\u{3}size_bytes\0\u{3}created_at\0\u{3}updated_at\0\u{3}integrated_head_sha\0\u{3}integrated_result_sha\0\u{3}integration_strategy\0\u{3}integrated_at\0\u{1}dirty\0\u{3}remote_publish_mode\0")
 
   fileprivate class _StorageClass {
     var _cardID: String = String()
@@ -14978,7 +14793,6 @@ nonisolated extension Dieter_V1_Workspace: SwiftProtobuf.Message, SwiftProtobuf.
     var _headSha: String = String()
     var _upstreamRef: String = String()
     var _managedBranch: Bool = false
-    var _legacyUnmanaged: Bool = false
     var _state: String = String()
     var _revision: String = String()
     var _currentOperationID: String = String()
@@ -15019,7 +14833,6 @@ nonisolated extension Dieter_V1_Workspace: SwiftProtobuf.Message, SwiftProtobuf.
       _headSha = source._headSha
       _upstreamRef = source._upstreamRef
       _managedBranch = source._managedBranch
-      _legacyUnmanaged = source._legacyUnmanaged
       _state = source._state
       _revision = source._revision
       _currentOperationID = source._currentOperationID
@@ -15068,7 +14881,6 @@ nonisolated extension Dieter_V1_Workspace: SwiftProtobuf.Message, SwiftProtobuf.
         case 10: try { try decoder.decodeSingularStringField(value: &_storage._headSha) }()
         case 11: try { try decoder.decodeSingularStringField(value: &_storage._upstreamRef) }()
         case 12: try { try decoder.decodeSingularBoolField(value: &_storage._managedBranch) }()
-        case 13: try { try decoder.decodeSingularBoolField(value: &_storage._legacyUnmanaged) }()
         case 14: try { try decoder.decodeSingularStringField(value: &_storage._state) }()
         case 15: try { try decoder.decodeSingularStringField(value: &_storage._revision) }()
         case 16: try { try decoder.decodeSingularStringField(value: &_storage._currentOperationID) }()
@@ -15130,9 +14942,6 @@ nonisolated extension Dieter_V1_Workspace: SwiftProtobuf.Message, SwiftProtobuf.
       }
       if _storage._managedBranch != false {
         try visitor.visitSingularBoolField(value: _storage._managedBranch, fieldNumber: 12)
-      }
-      if _storage._legacyUnmanaged != false {
-        try visitor.visitSingularBoolField(value: _storage._legacyUnmanaged, fieldNumber: 13)
       }
       if !_storage._state.isEmpty {
         try visitor.visitSingularStringField(value: _storage._state, fieldNumber: 14)
@@ -15209,7 +15018,6 @@ nonisolated extension Dieter_V1_Workspace: SwiftProtobuf.Message, SwiftProtobuf.
         if _storage._headSha != rhs_storage._headSha {return false}
         if _storage._upstreamRef != rhs_storage._upstreamRef {return false}
         if _storage._managedBranch != rhs_storage._managedBranch {return false}
-        if _storage._legacyUnmanaged != rhs_storage._legacyUnmanaged {return false}
         if _storage._state != rhs_storage._state {return false}
         if _storage._revision != rhs_storage._revision {return false}
         if _storage._currentOperationID != rhs_storage._currentOperationID {return false}
@@ -18116,7 +17924,7 @@ nonisolated extension Dieter_V1_ResizeExecutionRequest: SwiftProtobuf.Message, S
 
 nonisolated extension Dieter_V1_RemoteDesktopCapabilities: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".RemoteDesktopCapabilities"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}platform\0\u{3}graphical_session_active\0\u{1}enabled\0\u{1}ready\0\u{3}unavailable_reason\0\u{3}helper_version\0\u{3}capture_permission\0\u{3}control_permission\0\u{1}displays\0\u{1}codecs\0\u{3}hardware_encoder_available\0\u{3}control_supported\0\u{3}clipboard_supported\0\u{3}audio_supported\0\u{3}file_transfer_supported\0\u{3}active_session\0\u{3}adaptive_supported\0\u{3}cursor_supported\0\u{3}input_protocol_version\0\u{3}max_fps\0\u{1}encoder\0\u{3}daemon_executable\0\u{3}capture_executable\0\u{3}max_clients\0\u{3}connected_clients\0\u{3}supported_input_protocol_versions\0\u{3}binary_clipboard_supported\0\u{3}codec_modes\0\u{3}display_mode_switching_supported\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}platform\0\u{3}graphical_session_active\0\u{1}enabled\0\u{1}ready\0\u{3}unavailable_reason\0\u{3}helper_version\0\u{3}capture_permission\0\u{3}control_permission\0\u{1}displays\0\u{1}codecs\0\u{3}encoder_available\0\u{3}control_supported\0\u{3}clipboard_supported\0\u{3}audio_supported\0\u{3}file_transfer_supported\0\u{3}active_session\0\u{3}adaptive_supported\0\u{3}cursor_supported\0\u{3}input_protocol_version\0\u{3}max_fps\0\u{1}encoder\0\u{3}daemon_executable\0\u{3}capture_executable\0\u{3}max_clients\0\u{3}connected_clients\0\u{4}\u{2}binary_clipboard_supported\0\u{3}codec_modes\0\u{3}display_mode_switching_supported\0")
 
   fileprivate class _StorageClass {
     var _platform: String = String()
@@ -18129,7 +17937,7 @@ nonisolated extension Dieter_V1_RemoteDesktopCapabilities: SwiftProtobuf.Message
     var _controlPermission: String = String()
     var _displays: [Dieter_V1_RemoteDesktopDisplay] = []
     var _codecs: [String] = []
-    var _hardwareEncoderAvailable: Bool = false
+    var _encoderAvailable: Bool = false
     var _controlSupported: Bool = false
     var _clipboardSupported: Bool = false
     var _audioSupported: Bool = false
@@ -18144,7 +17952,6 @@ nonisolated extension Dieter_V1_RemoteDesktopCapabilities: SwiftProtobuf.Message
     var _captureExecutable: String = String()
     var _maxClients: UInt32 = 0
     var _connectedClients: UInt32 = 0
-    var _supportedInputProtocolVersions: [UInt32] = []
     var _binaryClipboardSupported: Bool = false
     var _codecModes: [Dieter_V1_RemoteDesktopCodecMode] = []
     var _displayModeSwitchingSupported: Bool = false
@@ -18168,7 +17975,7 @@ nonisolated extension Dieter_V1_RemoteDesktopCapabilities: SwiftProtobuf.Message
       _controlPermission = source._controlPermission
       _displays = source._displays
       _codecs = source._codecs
-      _hardwareEncoderAvailable = source._hardwareEncoderAvailable
+      _encoderAvailable = source._encoderAvailable
       _controlSupported = source._controlSupported
       _clipboardSupported = source._clipboardSupported
       _audioSupported = source._audioSupported
@@ -18183,7 +17990,6 @@ nonisolated extension Dieter_V1_RemoteDesktopCapabilities: SwiftProtobuf.Message
       _captureExecutable = source._captureExecutable
       _maxClients = source._maxClients
       _connectedClients = source._connectedClients
-      _supportedInputProtocolVersions = source._supportedInputProtocolVersions
       _binaryClipboardSupported = source._binaryClipboardSupported
       _codecModes = source._codecModes
       _displayModeSwitchingSupported = source._displayModeSwitchingSupported
@@ -18215,7 +18021,7 @@ nonisolated extension Dieter_V1_RemoteDesktopCapabilities: SwiftProtobuf.Message
         case 8: try { try decoder.decodeSingularStringField(value: &_storage._controlPermission) }()
         case 9: try { try decoder.decodeRepeatedMessageField(value: &_storage._displays) }()
         case 10: try { try decoder.decodeRepeatedStringField(value: &_storage._codecs) }()
-        case 11: try { try decoder.decodeSingularBoolField(value: &_storage._hardwareEncoderAvailable) }()
+        case 11: try { try decoder.decodeSingularBoolField(value: &_storage._encoderAvailable) }()
         case 12: try { try decoder.decodeSingularBoolField(value: &_storage._controlSupported) }()
         case 13: try { try decoder.decodeSingularBoolField(value: &_storage._clipboardSupported) }()
         case 14: try { try decoder.decodeSingularBoolField(value: &_storage._audioSupported) }()
@@ -18230,7 +18036,6 @@ nonisolated extension Dieter_V1_RemoteDesktopCapabilities: SwiftProtobuf.Message
         case 23: try { try decoder.decodeSingularStringField(value: &_storage._captureExecutable) }()
         case 24: try { try decoder.decodeSingularUInt32Field(value: &_storage._maxClients) }()
         case 25: try { try decoder.decodeSingularUInt32Field(value: &_storage._connectedClients) }()
-        case 26: try { try decoder.decodeRepeatedUInt32Field(value: &_storage._supportedInputProtocolVersions) }()
         case 27: try { try decoder.decodeSingularBoolField(value: &_storage._binaryClipboardSupported) }()
         case 28: try { try decoder.decodeRepeatedMessageField(value: &_storage._codecModes) }()
         case 29: try { try decoder.decodeSingularBoolField(value: &_storage._displayModeSwitchingSupported) }()
@@ -18272,8 +18077,8 @@ nonisolated extension Dieter_V1_RemoteDesktopCapabilities: SwiftProtobuf.Message
       if !_storage._codecs.isEmpty {
         try visitor.visitRepeatedStringField(value: _storage._codecs, fieldNumber: 10)
       }
-      if _storage._hardwareEncoderAvailable != false {
-        try visitor.visitSingularBoolField(value: _storage._hardwareEncoderAvailable, fieldNumber: 11)
+      if _storage._encoderAvailable != false {
+        try visitor.visitSingularBoolField(value: _storage._encoderAvailable, fieldNumber: 11)
       }
       if _storage._controlSupported != false {
         try visitor.visitSingularBoolField(value: _storage._controlSupported, fieldNumber: 12)
@@ -18317,9 +18122,6 @@ nonisolated extension Dieter_V1_RemoteDesktopCapabilities: SwiftProtobuf.Message
       if _storage._connectedClients != 0 {
         try visitor.visitSingularUInt32Field(value: _storage._connectedClients, fieldNumber: 25)
       }
-      if !_storage._supportedInputProtocolVersions.isEmpty {
-        try visitor.visitPackedUInt32Field(value: _storage._supportedInputProtocolVersions, fieldNumber: 26)
-      }
       if _storage._binaryClipboardSupported != false {
         try visitor.visitSingularBoolField(value: _storage._binaryClipboardSupported, fieldNumber: 27)
       }
@@ -18348,7 +18150,7 @@ nonisolated extension Dieter_V1_RemoteDesktopCapabilities: SwiftProtobuf.Message
         if _storage._controlPermission != rhs_storage._controlPermission {return false}
         if _storage._displays != rhs_storage._displays {return false}
         if _storage._codecs != rhs_storage._codecs {return false}
-        if _storage._hardwareEncoderAvailable != rhs_storage._hardwareEncoderAvailable {return false}
+        if _storage._encoderAvailable != rhs_storage._encoderAvailable {return false}
         if _storage._controlSupported != rhs_storage._controlSupported {return false}
         if _storage._clipboardSupported != rhs_storage._clipboardSupported {return false}
         if _storage._audioSupported != rhs_storage._audioSupported {return false}
@@ -18363,7 +18165,6 @@ nonisolated extension Dieter_V1_RemoteDesktopCapabilities: SwiftProtobuf.Message
         if _storage._captureExecutable != rhs_storage._captureExecutable {return false}
         if _storage._maxClients != rhs_storage._maxClients {return false}
         if _storage._connectedClients != rhs_storage._connectedClients {return false}
-        if _storage._supportedInputProtocolVersions != rhs_storage._supportedInputProtocolVersions {return false}
         if _storage._binaryClipboardSupported != rhs_storage._binaryClipboardSupported {return false}
         if _storage._codecModes != rhs_storage._codecModes {return false}
         if _storage._displayModeSwitchingSupported != rhs_storage._displayModeSwitchingSupported {return false}
@@ -19593,7 +19394,7 @@ nonisolated extension Dieter_V1_RemoteDesktopScroll: SwiftProtobuf.Message, Swif
 
 nonisolated extension Dieter_V1_RemoteDesktopKey: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".RemoteDesktopKey"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}key_code\0\u{1}down\0\u{1}repeat\0\u{1}modifiers\0\u{3}physical_key\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\u{2}down\0\u{1}repeat\0\u{1}modifiers\0\u{3}physical_key\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -19601,7 +19402,6 @@ nonisolated extension Dieter_V1_RemoteDesktopKey: SwiftProtobuf.Message, SwiftPr
       // allocates stack space for every case branch when no optimizations are
       // enabled. https://github.com/apple/swift-protobuf/issues/1034
       switch fieldNumber {
-      case 1: try { try decoder.decodeSingularUInt32Field(value: &self.keyCode) }()
       case 2: try { try decoder.decodeSingularBoolField(value: &self.down) }()
       case 3: try { try decoder.decodeSingularBoolField(value: &self.`repeat`) }()
       case 4: try { try decoder.decodeSingularUInt32Field(value: &self.modifiers) }()
@@ -19612,9 +19412,6 @@ nonisolated extension Dieter_V1_RemoteDesktopKey: SwiftProtobuf.Message, SwiftPr
   }
 
   public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
-    if self.keyCode != 0 {
-      try visitor.visitSingularUInt32Field(value: self.keyCode, fieldNumber: 1)
-    }
     if self.down != false {
       try visitor.visitSingularBoolField(value: self.down, fieldNumber: 2)
     }
@@ -19631,7 +19428,6 @@ nonisolated extension Dieter_V1_RemoteDesktopKey: SwiftProtobuf.Message, SwiftPr
   }
 
   public static func ==(lhs: Dieter_V1_RemoteDesktopKey, rhs: Dieter_V1_RemoteDesktopKey) -> Bool {
-    if lhs.keyCode != rhs.keyCode {return false}
     if lhs.down != rhs.down {return false}
     if lhs.`repeat` != rhs.`repeat` {return false}
     if lhs.modifiers != rhs.modifiers {return false}

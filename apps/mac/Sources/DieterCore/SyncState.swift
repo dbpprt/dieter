@@ -19,11 +19,6 @@ package struct DieterOutboxEntry: Codable, Equatable, Identifiable, Sendable {
     package var nextAttemptAt: Date? = nil
     package let createdAt: Date
 
-    private enum CodingKeys: String, CodingKey {
-        case commandID, clientID, endpointID, daemonID, kind, request, optimisticID, serverID, attempts, lastError,
-            state, nextAttemptAt, createdAt
-    }
-
     package init(
         commandID: String,
         clientID: String,
@@ -52,39 +47,6 @@ package struct DieterOutboxEntry: Codable, Equatable, Identifiable, Sendable {
         self.createdAt = createdAt
     }
 
-    package init(from decoder: Decoder) throws {
-        let values = try decoder.container(keyedBy: CodingKeys.self)
-        commandID = try values.decode(String.self, forKey: .commandID)
-        clientID = try values.decode(String.self, forKey: .clientID)
-        endpointID =
-            try values.decodeIfPresent(String.self, forKey: .endpointID)
-            ?? values.decode(String.self, forKey: .daemonID)
-        kind = try values.decode(Kind.self, forKey: .kind)
-        request = try values.decode(Data.self, forKey: .request)
-        optimisticID = try values.decode(String.self, forKey: .optimisticID)
-        serverID = try values.decodeIfPresent(String.self, forKey: .serverID)
-        attempts = try values.decode(Int.self, forKey: .attempts)
-        lastError = try values.decodeIfPresent(String.self, forKey: .lastError)
-        state = try values.decodeIfPresent(State.self, forKey: .state) ?? .queued
-        nextAttemptAt = try values.decodeIfPresent(Date.self, forKey: .nextAttemptAt)
-        createdAt = try values.decode(Date.self, forKey: .createdAt)
-    }
-
-    package func encode(to encoder: Encoder) throws {
-        var values = encoder.container(keyedBy: CodingKeys.self)
-        try values.encode(commandID, forKey: .commandID)
-        try values.encode(clientID, forKey: .clientID)
-        try values.encode(endpointID, forKey: .endpointID)
-        try values.encode(kind, forKey: .kind)
-        try values.encode(request, forKey: .request)
-        try values.encode(optimisticID, forKey: .optimisticID)
-        try values.encodeIfPresent(serverID, forKey: .serverID)
-        try values.encode(attempts, forKey: .attempts)
-        try values.encodeIfPresent(lastError, forKey: .lastError)
-        try values.encode(state, forKey: .state)
-        try values.encodeIfPresent(nextAttemptAt, forKey: .nextAttemptAt)
-        try values.encode(createdAt, forKey: .createdAt)
-    }
 }
 
 package struct DieterSyncProjection: Codable, Sendable {
@@ -105,49 +67,34 @@ package struct DieterSyncDiskState: Codable, Sendable {
     /// The endpoint ID includes the gateway credential origin, so two gateways
     /// may safely expose daemons with the same daemon ID.
     package var projections: [String: DieterSyncProjection]
-    /// Legacy single-daemon fields retained only for an in-place migration.
-    package var cursor: Data?
-    package var snapshot: Data?
     /// Endpoint ID -> card ID -> the wall-clock time at which the native
     /// client last received authoritative conversation data.
     package var conversationRefreshedAt: [String: [String: Date]]
-    package var outbox: [DieterOutboxEntry]
 
     package init(
         projections: [String: DieterSyncProjection] = [:],
-        cursor: Data? = nil,
-        snapshot: Data? = nil,
-        conversationRefreshedAt: [String: [String: Date]] = [:],
-        outbox: [DieterOutboxEntry] = []
+        conversationRefreshedAt: [String: [String: Date]] = [:]
     ) {
         self.projections = projections
-        self.cursor = cursor
-        self.snapshot = snapshot
         self.conversationRefreshedAt = conversationRefreshedAt
-        self.outbox = outbox
     }
 
     private enum CodingKeys: String, CodingKey {
-        case projections, cursor, snapshot, conversationRefreshedAt, outbox
+        case projections, conversationRefreshedAt
     }
 
     package init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         projections = try values.decodeIfPresent([String: DieterSyncProjection].self, forKey: .projections) ?? [:]
-        cursor = try values.decodeIfPresent(Data.self, forKey: .cursor)
-        snapshot = try values.decodeIfPresent(Data.self, forKey: .snapshot)
         conversationRefreshedAt =
             try values.decodeIfPresent(
                 [String: [String: Date]].self,
                 forKey: .conversationRefreshedAt
             ) ?? [:]
-        outbox = try values.decodeIfPresent([DieterOutboxEntry].self, forKey: .outbox) ?? []
     }
 
     package mutating func clearProjections() {
         projections.removeAll()
-        cursor = nil
-        snapshot = nil
         conversationRefreshedAt.removeAll()
     }
 
@@ -204,8 +151,6 @@ package enum DieterSyncProjectionCache {
         snapshot.state.cards = cards
         snapshot.state.chats = chats
         snapshot.state.archives = archives
-        snapshot.schedules = []
-        snapshot.scheduleRuns = []
         return DieterSyncProjection(
             cursor: cursor,
             snapshot: try? snapshot.serializedData(),
@@ -223,8 +168,6 @@ package enum DieterSyncProjectionCache {
             projection.snapshot
             .flatMap { try? Dieter_V1_GlobalSnapshot(serializedBytes: $0) }
             ?? Dieter_V1_GlobalSnapshot()
-        snapshot.schedules = []
-        snapshot.scheduleRuns = []
         let retained = TranscriptFreshness.merging(
             conversation, with: snapshot.conversations.first { $0.detail.card.id == cardID })
         snapshot.conversations.removeAll { $0.detail.card.id == cardID }
@@ -251,8 +194,6 @@ package enum GlobalProjectionReducer {
         to snapshot: Dieter_V1_GlobalSnapshot
     ) -> Dieter_V1_GlobalSnapshot {
         var next = snapshot
-        next.schedules = []
-        next.scheduleRuns = []
         if !delta.projects.isEmpty || !delta.removedProjectIds.isEmpty {
             next.state.projects = merge(
                 next.state.projects,

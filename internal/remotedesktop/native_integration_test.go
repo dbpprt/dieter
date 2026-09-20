@@ -45,7 +45,7 @@ func TestNativeHelperBaselineUsesLowLatencyHardware(t *testing.T) {
 	}
 }
 
-func TestNativeNegotiatedOverlapAndLegacySingleCredit(t *testing.T) {
+func TestNativeNegotiatedOverlapAndSingleCredit(t *testing.T) {
 	path := os.Getenv("DIETER_TEST_CAPTURE_HELPER")
 	if path == "" {
 		t.Skip("native helper not configured")
@@ -145,7 +145,7 @@ func TestNativeHelperHardwareLifecycle(t *testing.T) {
 	t.Logf("1080p hardware throughput %.1f fps, mean encode %s (synthetic changing NV12)", 60/(measured.PTS-measurement.PTS).Seconds(), totalEncode/60)
 	sink := source.(InputSink)
 	for _, down := range []bool{true, false} {
-		input := &dieterv1.RemoteDesktopInput{DisplayGeneration: first.Generation, Payload: &dieterv1.RemoteDesktopInput_Key{Key: &dieterv1.RemoteDesktopKey{KeyCode: 0, PhysicalKey: 4, Down: down}}}
+		input := &dieterv1.RemoteDesktopInput{DisplayGeneration: first.Generation, Payload: &dieterv1.RemoteDesktopInput_Key{Key: &dieterv1.RemoteDesktopKey{PhysicalKey: 4, Down: down}}}
 		if err := sink.SendInput(ctx, input); err != nil {
 			t.Fatalf("key down=%t not acknowledged: %v", down, err)
 		}
@@ -234,7 +234,7 @@ func TestNativeHelperKeepsInputResponsiveUnderMediaBackpressure(t *testing.T) {
 	}
 	time.Sleep(200 * time.Millisecond)
 	started := time.Now()
-	if err := source.(InputSink).SendInput(ctx, &dieterv1.RemoteDesktopInput{DisplayGeneration: 1, Payload: &dieterv1.RemoteDesktopInput_Key{Key: &dieterv1.RemoteDesktopKey{KeyCode: 0, Down: false}}}); err != nil {
+	if err := source.(InputSink).SendInput(ctx, &dieterv1.RemoteDesktopInput{DisplayGeneration: 1, Payload: &dieterv1.RemoteDesktopInput_Key{Key: &dieterv1.RemoteDesktopKey{PhysicalKey: 4, Down: false}}}); err != nil {
 		t.Fatal(err)
 	}
 	if time.Since(started) > 500*time.Millisecond {

@@ -356,7 +356,7 @@ func TestEnrollmentThroughTLSProxyRequiresExplicitBrowserApproval(t *testing.T) 
 		}
 	}))
 	defer github.Close()
-	_, frontend := securityTLSProxy(t, Config{AllowedUserID: 42, AuthSecret: []byte("fixture-secret"), GitHubBaseURL: github.URL, GitHubAPIURL: github.URL})
+	_, frontend := securityTLSProxy(t, Config{AllowedUserIDs: map[int64]struct{}{42: {}}, AuthSecret: []byte("fixture-secret"), GitHubBaseURL: github.URL, GitHubAPIURL: github.URL})
 	client := frontend.Client()
 	client.Timeout = 5 * time.Second
 	client.Jar, _ = cookiejar.New(nil)

@@ -71,11 +71,9 @@ class DieterSyncStore(
             }
     }
 
-    // Snapshot and cursor are one AtomicFile transaction. Legacy split files
-    // are only used as an unverified snapshot: force a reset before resuming.
+    // Snapshot and cursor are one AtomicFile transaction.
     @Synchronized
     fun loadSnapshot(scope: String): GlobalSnapshot? = loadProjection(scope)?.takeIf { it.hasSnapshot() }?.snapshot
-        ?: read(projectionFile(scope, "snapshot.pb"))?.let { runCatching { GlobalSnapshot.parseFrom(it) }.getOrNull() }
 
     @Synchronized
     fun loadCursor(scope: String): SyncCursor? = loadProjection(scope)?.takeIf { it.hasSnapshot() && it.hasCursor() }?.cursor
@@ -83,14 +81,10 @@ class DieterSyncStore(
     @Synchronized
     fun loadProjection(scope: String): SyncFrame? = read(projectionFile(scope, "projection.pb"))
         ?.let { runCatching { SyncFrame.parseFrom(it) }.getOrNull() }
-        ?: read(projectionFile(scope, "snapshot.pb"))?.let { bytes ->
-            runCatching { SyncFrame.newBuilder().setSnapshot(GlobalSnapshot.parseFrom(bytes)).build() }.getOrNull()
-        }
 
     @Synchronized
     fun projectionRefreshedAtMillis(scope: String): Long? =
-        maxOf(projectionFile(scope, "projection.pb").baseFile.lastModified(),
-            projectionFile(scope, "snapshot.pb").baseFile.lastModified()).takeIf { it > 0L }
+        projectionFile(scope, "projection.pb").baseFile.lastModified().takeIf { it > 0L }
 
     @Synchronized
     fun projectionPersistedAtMillis(scope: String): Long? = projectionRefreshedAtMillis(scope)
@@ -166,15 +160,14 @@ class DieterSyncStore(
                 AndroidOutboxEntry(
                     commandId = item.getString("commandId"),
                     clientId = item.getString("clientId"),
-                    endpointId = item.optString("endpointId").ifBlank { item.getString("daemonId") },
+                    endpointId = item.getString("endpointId"),
                     kind = OutboxKind.valueOf(item.getString("kind")),
                     request = Base64.decode(item.getString("request"), Base64.NO_WRAP),
                     optimisticId = item.getString("optimisticId"),
                     serverId = item.optString("serverId").takeIf(String::isNotBlank),
                     attempts = item.optInt("attempts"),
                     lastError = item.optString("lastError").takeIf(String::isNotBlank),
-                    state = item.optString("state").takeIf(String::isNotBlank)
-                        ?.let(OutboxState::valueOf) ?: OutboxState.QUEUED,
+                    state = OutboxState.valueOf(item.getString("state")),
                     nextAttemptAtMillis = item.optLong("nextAttemptAtMillis").takeIf { it > 0 },
                     createdAtMillis = item.optLong("createdAtMillis"),
                 )

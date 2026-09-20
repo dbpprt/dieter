@@ -1,5 +1,7 @@
 package com.dbpprt.dieter.screens
 
+import com.dbpprt.dieter.data.DIETER_PROTOCOL_VERSION
+
 import com.dbpprt.dieter.gateway.v1.RTCConfiguration
 import com.dbpprt.dieter.v1.DieterServiceGrpcKt
 import com.dbpprt.dieter.v1.RemoteDesktopSessionBinding
@@ -24,13 +26,13 @@ class ScreenConnection(
 
 internal object ScreenTrust {
     fun verify(binding: RemoteDesktopSessionBinding, session: String, nonce: String, offer: String,
-               answer: String, certificate: ByteArray, control: Boolean, display: String, protocol: Int = 2) {
+               answer: String, certificate: ByteArray, control: Boolean, display: String, protocol: Int = DIETER_PROTOCOL_VERSION) {
         val hash = MessageDigest.getInstance("SHA-256").digest(offer.toByteArray())
         val fingerprints = answer.lineSequence().map(String::trim)
             .filter { it.startsWith("a=fingerprint:") }.map { it.substringAfter("a=fingerprint:").trim() }.toSet()
         require(session.isNotEmpty() && binding.clientNonce == nonce && binding.offerSha256.toByteArray().contentEquals(hash) &&
             fingerprints == setOf(binding.helperDtlsFingerprint) && binding.helperDtlsFingerprint.startsWith("sha-256 ") &&
-            protocol in 2..3 && binding.inputProtocolVersion == protocol && binding.inputEpoch.size() == 16 &&
+            protocol == DIETER_PROTOCOL_VERSION && binding.inputProtocolVersion == protocol && binding.inputEpoch.size() == 16 &&
             binding.controlGranted == control && binding.displayId == display) { "Untrusted screen-sharing session" }
         require(Instant.parse(binding.expiresAt).isAfter(Instant.now())) { "Screen-sharing session expired" }
         val body = certificate.decodeToString().replace("-----BEGIN CERTIFICATE-----", "")

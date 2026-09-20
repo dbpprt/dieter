@@ -18,7 +18,6 @@ class DieterBootReceiver : BroadcastReceiver() {
                 val preferences = appContext.getSharedPreferences("dieter_connection", Context.MODE_PRIVATE)
                 val mode = BackgroundSyncMode.resolve(
                     preferences.getString("background_sync_mode", null),
-                    preferences.getBoolean("background_sync", true),
                 )
                 if (preferences.getBoolean("desired_connected", true) &&
                     mode.usesBackgroundService

@@ -202,7 +202,7 @@ func testPeerMachines(t *testing.T, wantRoute string) {
 		t.Fatal(err)
 	}
 	client := New(cliRoot)
-	client.DaemonMode = true
+
 	client.Machine = b.ID
 	client.GatewayURL = origin.String()
 	client.Timeout = 15 * time.Second

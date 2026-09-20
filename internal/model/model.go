@@ -49,13 +49,10 @@ const (
 	RemotePublishPushBase    = "push_base"
 )
 
-// CanonicalWorkspaceMode keeps old durable data and older clients readable
-// while exposing only the two workspace modes Dieter supports. Both legacy
-// shared-checkout values mean "use the registered project directory as-is";
-// Dieter never switches that directory's branch.
+// CanonicalWorkspaceMode accepts the two supported workspace modes.
 func CanonicalWorkspaceMode(value string) (string, bool) {
 	switch strings.ToLower(strings.TrimSpace(value)) {
-	case WorkspaceModeProject, "main", "branch":
+	case WorkspaceModeProject:
 		return WorkspaceModeProject, true
 	case WorkspaceModeWorktree:
 		return WorkspaceModeWorktree, true
@@ -221,7 +218,6 @@ type Workspace struct {
 	HeadSHA             string   `json:"headSha,omitempty"`
 	UpstreamRef         string   `json:"upstreamRef,omitempty"`
 	ManagedBranch       bool     `json:"managedBranch,omitempty"`
-	LegacyUnmanaged     bool     `json:"legacyUnmanaged,omitempty"`
 	State               string   `json:"state"`
 	Revision            string   `json:"revision,omitempty"`
 	CurrentOperationID  string   `json:"currentOperationId,omitempty"`
@@ -655,28 +651,6 @@ type UIMessage struct {
 	Role     string          `json:"role"`
 	Metadata json.RawMessage `json:"metadata,omitempty"`
 	Parts    []UIMessagePart `json:"parts"`
-}
-
-// UnmarshalJSON migrates the pre-0.3 message timestamp into AI SDK message
-// metadata. UIMessage is a wire protocol type, so application fields must not
-// be added at its top level.
-func (message *UIMessage) UnmarshalJSON(data []byte) error {
-	var wire struct {
-		ID              string          `json:"id"`
-		Role            string          `json:"role"`
-		Metadata        json.RawMessage `json:"metadata"`
-		Parts           []UIMessagePart `json:"parts"`
-		LegacyCreatedAt string          `json:"createdAt"`
-	}
-	if err := json.Unmarshal(data, &wire); err != nil {
-		return err
-	}
-	metadata := append(json.RawMessage(nil), wire.Metadata...)
-	if (len(metadata) == 0 || string(metadata) == "null") && wire.LegacyCreatedAt != "" {
-		metadata, _ = json.Marshal(map[string]string{"createdAt": wire.LegacyCreatedAt})
-	}
-	*message = UIMessage{ID: wire.ID, Role: wire.Role, Metadata: metadata, Parts: wire.Parts}
-	return nil
 }
 
 type UIMessagePart struct {

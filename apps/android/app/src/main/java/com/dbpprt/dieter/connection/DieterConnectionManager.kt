@@ -104,11 +104,6 @@ internal fun liveSyncCoversConversation(
     !syncStreamIsStale(lastFrameAtMs, nowMs) &&
     includedInProjection
 
-@Suppress("DEPRECATION")
-private fun GlobalSnapshot.withoutScheduleProjection(): GlobalSnapshot =
-    if (schedulesCount == 0 && scheduleRunsCount == 0) this
-    else toBuilder().clearSchedules().clearScheduleRuns().build()
-
 data class EndpointConnection(
     val id: String,
     val label: String,
@@ -239,13 +234,10 @@ class DieterConnectionManager(
             ?.takeIf { saved -> endpoints.any { it.id == saved } }
             ?: endpoints.first().id
         val projectionKey = preferences.getString(KEY_PREFERRED_ENDPOINT, null)
-            ?: preferences.getString(KEY_PREFERRED_DAEMON, null)
             ?: ""
         val desiredConnected = preferences.getBoolean(KEY_DESIRED_CONNECTED, true)
-        val legacyBackgroundSyncEnabled = preferences.getBoolean(KEY_BACKGROUND_SYNC, true)
         val backgroundSyncMode = BackgroundSyncMode.resolve(
             preferences.getString(KEY_BACKGROUND_SYNC_MODE, null),
-            legacyBackgroundSyncEnabled,
         )
         val lastConnectedAtMs = DieterWidgetPrefs.lastSyncAtMs(appContext).takeIf { it > 0L }
         val configurationApplied = synchronized(lock) {
@@ -552,7 +544,7 @@ class DieterConnectionManager(
                 selectedProjectId = ""
                 discoveredEndpoints = emptyList()
             }
-            preferences.edit().remove(KEY_PREFERRED_ENDPOINT).remove(KEY_PREFERRED_DAEMON).apply()
+            preferences.edit().remove(KEY_PREFERRED_ENDPOINT).apply()
             globalSnapshot = null
             syncCursor = null
             activeProjectionRefreshedAtMillis = null
@@ -793,9 +785,6 @@ class DieterConnectionManager(
     fun setBackgroundSyncMode(mode: BackgroundSyncMode) {
         preferences.edit()
             .putString(KEY_BACKGROUND_SYNC_MODE, mode.wireValue)
-            // Keep the legacy value during the migration window so an older
-            // installed build still interprets APP_ONLY safely.
-            .putBoolean(KEY_BACKGROUND_SYNC, mode.usesBackgroundService)
             .apply()
         synchronized(lock) {
             if (mode != BackgroundSyncMode.PERIODIC) periodicSyncWindowActive = false
@@ -1108,7 +1097,7 @@ class DieterConnectionManager(
             }
             var projectionChanged = false
             if (frame.hasSnapshot()) {
-                val snapshot = frame.snapshot.withoutScheduleProjection()
+                val snapshot = frame.snapshot
                 if (globalSnapshot != snapshot) {
                     globalSnapshot = snapshot
                     projectionChanged = true
@@ -1206,21 +1195,10 @@ class DieterConnectionManager(
             preferredEndpointId = endpoint.id
             preferences.edit().putString(KEY_PREFERRED_ENDPOINT, endpoint.id).apply()
             val persisted = syncStore.loadProjection(endpoint.id)
-            val currentSnapshot = persisted?.takeIf { it.hasSnapshot() }?.snapshot?.withoutScheduleProjection()
-            val legacyScope = endpoint.daemonId.takeIf { currentSnapshot == null }
-            val chosen = persisted ?: legacyScope?.let(syncStore::loadProjection)
-            globalSnapshot = chosen?.takeIf { it.hasSnapshot() }?.snapshot?.withoutScheduleProjection()
-            syncCursor = chosen?.takeIf { it.hasSnapshot() && it.hasCursor() }?.cursor
-            activeProjectionRefreshedAtMillis = if (currentSnapshot != null) {
-                syncStore.projectionRefreshedAtMillis(endpoint.id)
-            } else {
-                legacyScope?.let(syncStore::projectionRefreshedAtMillis)
-            }
-            lastProjectionPersistedAtMillis = if (currentSnapshot != null) {
-                syncStore.projectionPersistedAtMillis(endpoint.id)
-            } else {
-                legacyScope?.let(syncStore::projectionPersistedAtMillis)
-            }
+            globalSnapshot = persisted?.takeIf { it.hasSnapshot() }?.snapshot
+            syncCursor = persisted?.takeIf { it.hasSnapshot() && it.hasCursor() }?.cursor
+            activeProjectionRefreshedAtMillis = syncStore.projectionRefreshedAtMillis(endpoint.id)
+            lastProjectionPersistedAtMillis = syncStore.projectionPersistedAtMillis(endpoint.id)
             projectionSnapshotDirty = false
             projectionCursorDirty = false
             _state.update { current ->
@@ -1388,7 +1366,7 @@ class DieterConnectionManager(
             )
             .also { if (delta.hasSettings()) it.settings = delta.settings }
             .build()
-            .withoutScheduleProjection()
+
     }
 
     private fun applyGlobalSnapshot(
@@ -2204,15 +2182,12 @@ class DieterConnectionManager(
     companion object {
         private const val PREFERENCES = "dieter_connection"
         private const val KEY_DESIRED_CONNECTED = "desired_connected"
-        private const val KEY_BACKGROUND_SYNC = "background_sync"
         private const val KEY_BACKGROUND_SYNC_MODE = "background_sync_mode"
         private const val KEY_ENDPOINTS = "endpoints"
         private const val KEY_AUTH_VERIFIER = "auth_verifier"
         private const val KEY_AUTH_ENDPOINT = "auth_endpoint"
         private const val KEY_ACTIVE_GATEWAY = "active_gateway"
         private const val KEY_PREFERRED_ENDPOINT = "preferred_endpoint"
-        // Read-only migration key from pre gateway-scoped builds.
-        private const val KEY_PREFERRED_DAEMON = "preferred_daemon"
         private const val MACHINE_DIRECTORY_REFRESH_MS = 15_000L
         private const val MAX_MACHINE_DIRECTORY_RPCS = 4
         private const val MAX_RESOLVED_CONVERSATIONS = 256

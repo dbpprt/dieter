@@ -72,7 +72,7 @@ private func settingsCard() -> Dieter_V1_Card {
         defer { try? FileManager.default.removeItem(at: root) }
         let outbox = DurableOutbox(
             journal: OutboxJournal(
-                url: root.appending(path: "pending.json"), legacyURL: root.appending(path: "legacy.json")))
+                url: root.appending(path: "pending.json")))
         let store = DieterStore(outboxOverride: outbox, restoreSync: false)
         let card = settingsCard()
         if chat { store.selectedChatID = card.id } else { store.selectedCardID = card.id }

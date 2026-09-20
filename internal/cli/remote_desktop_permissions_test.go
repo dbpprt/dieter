@@ -37,7 +37,7 @@ func permissionCLI(t *testing.T, options remotedesktop.Options) (*CLI, *bytes.Bu
 		t.Fatal(err)
 	}
 	client := New(local)
-	client.DaemonMode = true
+
 	output := &bytes.Buffer{}
 	client.Out, client.Err = output, output
 	t.Cleanup(client.Close)
@@ -102,7 +102,7 @@ func TestRemoteDesktopPermissionCheckUsesDeniedDaemonContext(t *testing.T) {
 func TestRemoteDesktopPermissionCheckRequiresRunningDaemon(t *testing.T) {
 	t.Setenv("DIETER_REMOTE_DESKTOP_SOURCE", "synthetic")
 	client := New(store.New(t.TempDir()))
-	client.DaemonMode = true
+
 	client.Out = io.Discard
 	defer client.Close()
 	if err := client.Run([]string{"daemon", "permissions", "--check"}); err == nil {

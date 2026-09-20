@@ -7,6 +7,9 @@ Android clients. Every card is one durable local AI SDK Harness conversation.
 
 ## Invariants
 
+- Support one application contract from `api/contract-version` across gateway,
+  daemon, CLI, native clients, sync, and screen input. Reject mismatches; do not
+  add historical API branches or development-store migration paths.
 - Store all Dieter data centrally under `DIETER_HOME` (default `~/.dieter`). Never
   write Dieter metadata into project repositories.
 - Every logical project has a Dieter-generated shared identity and may have

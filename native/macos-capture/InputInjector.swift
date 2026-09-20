@@ -73,7 +73,7 @@ final class InputInjector: @unchecked Sendable {
                 post(event)
             }
         case "key":
-            let code = v.physicalKey == 0 ? UInt16(exactly: v.keyCode) : RemoteDesktopKeyMap.hidToMac[v.physicalKey]
+            let code = RemoteDesktopKeyMap.hidToMac[v.physicalKey]
             guard let code, code <= 255 else { throw CaptureError.invalidArgument("physical key") }
             modifiers = v.modifiers
             if v.down { heldKeys.insert(code) } else { heldKeys.remove(code) }

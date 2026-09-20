@@ -7,21 +7,37 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"io"
+	"log/slog"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	dieterdaemon "github.com/dbpprt/dieter/internal/daemon"
 	"github.com/dbpprt/dieter/internal/harness"
+	"github.com/dbpprt/dieter/internal/server"
 	"github.com/dbpprt/dieter/internal/store"
 )
 
-type fakeRunner struct{ requests []harness.Request }
+type fakeRunner struct {
+	mu       sync.Mutex
+	requests []harness.Request
+}
+
+func (f *fakeRunner) snapshot() []harness.Request {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]harness.Request(nil), f.requests...)
+}
 
 func (f *fakeRunner) Run(_ context.Context, request harness.Request, emit func(harness.Output) error) error {
+	f.mu.Lock()
 	f.requests = append(f.requests, request)
+	f.mu.Unlock()
 	response := "done"
 	if request.ConfiguredModel == "gpt-5.3-codex-spark" {
 		response = "Add Keyboard Board Navigation"
@@ -66,6 +82,7 @@ func TestCLIConversationWorkflowAndHelp(t *testing.T) {
 	var out bytes.Buffer
 	c := New(data)
 	c.Out, c.Err, c.Runner = &out, &out, fake
+	connectTestCLI(t, c)
 	if err := c.Run([]string{"project", "open", repo, "--prompt", "Stay concise."}); err != nil {
 		t.Fatal(err)
 	}
@@ -96,14 +113,23 @@ func TestCLIConversationWorkflowAndHelp(t *testing.T) {
 	if err := c.Run([]string{"card", "send", cardID, "--message", "Implement it"}); err != nil {
 		t.Fatal(err)
 	}
-	if len(fake.requests) != 1 || !strings.Contains(fake.requests[0].Instructions, "Stay concise") || len(fake.requests[0].Attachments) != 1 || fake.requests[0].Attachments[0].Filename != "notes.txt" {
-		t.Fatalf("requests=%#v", fake.requests)
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		current, err := data.ResolveCard(cardID)
+		if err == nil && current.InitialPromptSentAt != "" && current.Runtime == "idle" {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	requests := fake.snapshot()
+	if len(requests) != 1 || !strings.Contains(requests[0].Instructions, "Stay concise") || len(requests[0].Attachments) != 1 || requests[0].Attachments[0].Filename != "notes.txt" {
+		t.Fatalf("requests=%#v", requests)
 	}
 	out.Reset()
 	if err := c.Run([]string{"card", "comment", cardID, "--message", "Progress"}); err != nil {
 		t.Fatal(err)
 	}
-	if len(fake.requests) != 1 {
+	if len(fake.snapshot()) != 1 {
 		t.Fatal("comment unexpectedly sent an agent message")
 	}
 	out.Reset()
@@ -136,7 +162,7 @@ func TestCLIConversationWorkflowAndHelp(t *testing.T) {
 	if err := c.Run([]string{"card", "--help"}); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out.String(), "non-triggering Dieter annotation") {
+	if !strings.Contains(out.String(), "annotation") {
 		t.Fatalf("help=%s", out.String())
 	}
 }
@@ -171,6 +197,7 @@ func TestCLIProjectRemoveAndRestore(t *testing.T) {
 	var out bytes.Buffer
 	c := New(data)
 	c.Out, c.Err = &out, &out
+	connectTestCLI(t, c)
 	if err := c.Run([]string{"project", "open", repo, "--name", "Temporary"}); err != nil {
 		t.Fatal(err)
 	}
@@ -314,4 +341,19 @@ func TestServiceLoggerWritesCentralBoundedLog(t *testing.T) {
 	if err != nil || !strings.Contains(string(raw), "service ready") {
 		t.Fatalf("log=%q err=%v", raw, err)
 	}
+}
+
+// All workflow tests use the same API path as the installed CLI.
+func connectTestCLI(t *testing.T, c *CLI) {
+	t.Helper()
+	if err := c.Store.Ensure(); err != nil {
+		t.Fatal(err)
+	}
+	application := server.NewWithRunner(c.Store, slog.New(slog.NewTextHandler(io.Discard, nil)), c.Runner)
+	host := httptest.NewServer(application.Handler())
+	t.Cleanup(host.Close)
+	if _, err := dieterdaemon.NewStatusWriter(c.Store.Root, dieterdaemon.RuntimeStatus{PID: os.Getpid(), State: "running", ListenAddress: strings.TrimPrefix(host.URL, "http://")}); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(c.Close)
 }

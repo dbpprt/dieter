@@ -14,8 +14,7 @@ extension DieterStore {
             errorMessage = "Could not recover pending messages: \(error.localizedDescription)"
             return
         }
-        var restored = await syncPersistence.load()
-        restored.outbox = []
+        let restored = await syncPersistence.load()
         syncDiskState = restored
         let activePrefix = activeGateway.credentialID + "#"
         let deploymentProjections = restored.projections
@@ -33,12 +32,6 @@ extension DieterStore {
             {
                 decodedProjections.append((endpointID, snapshot))
             }
-        }
-        if deploymentProjections.isEmpty,
-            let snapshot = await snapshotDecoder.snapshot(
-                endpointID: endpoint.id, data: restored.snapshot)
-        {
-            decodedProjections.append((endpoint.id, snapshot))
         }
         let shouldChooseInitialSelection =
             restoreSelection && selectedProjectID.isEmpty && boardSelectionGeneration == selectionGeneration
@@ -59,24 +52,11 @@ extension DieterStore {
     func activateSyncProjection(
         for endpoint: DieterEndpoint, decodedSnapshot: Dieter_V1_GlobalSnapshot?, decodedData: Data?
     ) {
-        if let persisted = syncDiskState.projections[endpoint.id] {
-            syncProjection = persisted
-        } else {
-            syncProjection = DieterSyncProjection(
-                cursor: syncDiskState.cursor, snapshot: syncDiskState.snapshot)
-            syncDiskState.projections[endpoint.id] = syncProjection
-            syncDiskState.cursor = nil
-            syncDiskState.snapshot = nil
-        }
+        syncProjection = syncDiskState.projections[endpoint.id] ?? .empty
         // Metadata refresh may replace this endpoint while decoding is suspended.
         // Never pair that newer cursor with a snapshot decoded from older bytes.
         let matchingSnapshot = syncProjection.snapshot == decodedData ? decodedSnapshot : nil
-        syncSnapshot = matchingSnapshot.map { snapshot in
-            var next = snapshot
-            next.schedules = []
-            next.scheduleRuns = []
-            return next
-        }
+        syncSnapshot = matchingSnapshot
         lastSyncedAt = syncProjection.refreshedAt
         if lastSyncPersistenceAt[endpoint.id] == nil {
             lastSyncPersistenceAt[endpoint.id] = syncProjection.refreshedAt
@@ -189,7 +169,7 @@ extension DieterStore {
         globalSyncing = true
         syncAttemptStartedAt = Date()
         syncLastActivity = ContinuousClock.now
-        syncTransportTimeout = .seconds(45)  // Allow legacy daemons to finish their coupled bootstrap.
+        syncTransportTimeout = .seconds(45)
         let endpointID = endpoint.id
         syncTask = Task { [weak self] in
             defer {
@@ -265,7 +245,7 @@ extension DieterStore {
         request.conversationLimit = syncConversationMessageLimit
         request.recentConversationLimit = syncRecentConversationLimit
         request.heartbeatMs = 5_000
-        request.protocolVersion = 1
+        request.protocolVersion = Int32(DieterContract.number)
         if syncSnapshot != nil,
             let raw = syncProjection.cursor, let cursor = try? Dieter_V1_SyncCursor(serializedBytes: raw)
         {
@@ -338,8 +318,6 @@ extension DieterStore {
         var conversationDirectoryChanged = false
         if frame.hasSnapshot {
             var snapshot = frame.snapshot
-            snapshot.schedules = []
-            snapshot.scheduleRuns = []
             snapshot.conversations = snapshot.conversations.map { incoming in
                 TranscriptFreshness.merging(
                     incoming,
@@ -643,7 +621,7 @@ extension DieterStore {
         if let snapshot = conversation {
             conversation = DieterOutboxPolicy.overlayOptimisticMessages(
                 snapshot,
-                entries: syncDiskState.outbox
+                entries: outbox.entries
             )
         }
         if chats != projectedChats { chats = projectedChats }

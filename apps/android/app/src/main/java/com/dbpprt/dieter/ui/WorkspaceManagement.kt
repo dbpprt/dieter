@@ -685,7 +685,7 @@ private fun ArchivesManagement(state: DieterUiState, model: DieterViewModel) {
 }
 
 internal fun EndpointConnection.usableForProjectCreation(): Boolean = online &&
-    daemonId != null && (apiVersion.isBlank() || apiVersion == DIETER_API_VERSION)
+    daemonId != null && apiVersion == DIETER_API_VERSION
 
 @Composable
 internal fun ProjectReplicaPicker(
@@ -706,7 +706,7 @@ internal fun ProjectReplicaPicker(
                     when {
                         selected == null -> "No machine selected"
                         !selected.online -> "Offline"
-                        selected.apiVersion.isNotBlank() && selected.apiVersion != DIETER_API_VERSION ->
+                        selected.apiVersion != DIETER_API_VERSION ->
                             "Requires API $DIETER_API_VERSION"
                         else -> "Online · repository and agents run here"
                     },
@@ -725,7 +725,7 @@ internal fun ProjectReplicaPicker(
                             Text(
                                 when {
                                     !machine.online -> "Offline"
-                                    machine.apiVersion.isNotBlank() && machine.apiVersion != DIETER_API_VERSION ->
+                                    machine.apiVersion != DIETER_API_VERSION ->
                                         "Incompatible API ${machine.apiVersion}"
                                     else -> machine.detail
                                 },

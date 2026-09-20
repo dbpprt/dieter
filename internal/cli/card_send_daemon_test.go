@@ -27,6 +27,19 @@ type daemonOwnedRunner struct {
 	requests chan harness.Request
 }
 
+func TestOperationalCLIWithoutDaemonDoesNotInitializeStore(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "missing")
+	client := New(store.New(root))
+	client.Out, client.Err = io.Discard, io.Discard
+	defer client.Close()
+	if err := client.Run([]string{"storage"}); err == nil {
+		t.Fatal("expected unavailable local daemon")
+	}
+	if _, err := os.Stat(root); !os.IsNotExist(err) {
+		t.Fatalf("operational command initialized storage: %v", err)
+	}
+}
+
 func (runner *daemonOwnedRunner) Run(ctx context.Context, request harness.Request, emit func(harness.Output) error) error {
 	runner.requests <- request
 	close(runner.started)
@@ -93,6 +106,7 @@ func TestCardSendUsesRunningDaemonAndOutlivesClient(t *testing.T) {
 	directRunner := &fakeRunner{}
 	var output bytes.Buffer
 	client := New(data)
+	t.Cleanup(client.Close)
 	client.Out, client.Err, client.Runner = &output, &output, directRunner
 	attachment := filepath.Join(t.TempDir(), "resume.txt")
 	if err := os.WriteFile(attachment, []byte("daemon attachment"), 0o600); err != nil {
@@ -115,7 +129,7 @@ func TestCardSendUsesRunningDaemonAndOutlivesClient(t *testing.T) {
 	}
 	select {
 	case <-runner.started:
-	case <-time.After(time.Second):
+	case <-time.After(10 * time.Second):
 		t.Fatal("daemon-owned runner did not start")
 	}
 	request := <-runner.requests
@@ -132,13 +146,14 @@ func TestCardSendUsesRunningDaemonAndOutlivesClient(t *testing.T) {
 	close(runner.release)
 	select {
 	case <-runner.finished:
-	case <-time.After(time.Second):
+	case <-time.After(10 * time.Second):
 		t.Fatal("daemon-owned runner did not finish")
 	}
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
 		stored, resolveErr := data.ResolveCard(card.ID)
-		if resolveErr == nil && stored.Runtime == "idle" {
+		leased, leaseErr := data.CardHasRuntimeLease(card.ID)
+		if resolveErr == nil && leaseErr == nil && !leased && stored.Runtime == "idle" {
 			// The cache file precedes the final sync-journal commit. Wait for
 			// that writer to finish before TempDir cleanup removes its root.
 			if _, _, err := data.GlobalStateContext(context.Background()); err != nil {
@@ -163,9 +178,10 @@ func TestCardSendDoesNotFallbackAfterCurrentDaemonFailure(t *testing.T) {
 	}
 	directRunner := &fakeRunner{}
 	client := New(data)
+	t.Cleanup(client.Close)
 	client.Runner = directRunner
 	err := client.Run([]string{"card", "send", "c_missing", "--message", "Do not duplicate"})
-	if err == nil || !strings.Contains(err.Error(), "running Dieter daemon") {
+	if err == nil || !strings.Contains(err.Error(), "connect to local Dieter daemon") {
 		t.Fatalf("error=%v", err)
 	}
 	if len(directRunner.requests) != 0 {

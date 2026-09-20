@@ -190,7 +190,7 @@ func (s *Session) exchangeClipboard(ctx context.Context, r *dieterv1.RemoteDeskt
 
 func (s *Session) installClipboardChannel(channel *webrtc.DataChannel) {
 	s.mu.Lock()
-	if s.clipboard.channel != nil || !s.control || s.protocol < 3 {
+	if s.clipboard.channel != nil || !s.control {
 		s.mu.Unlock()
 		_ = channel.Close()
 		return

@@ -121,7 +121,7 @@ func TestDaemonHandshakeRejectsWrongKeyAndReplayedProof(t *testing.T) {
 
 func TestDaemonHandshakeRejectsRemovedAccount(t *testing.T) {
 	service, _, credential := newEnrolledSecurityService(t)
-	service.hub.config.AllowedUserID++
+	service.hub.config.AllowedUserIDs = map[int64]struct{}{1235: {}}
 	stream := newSecurityLinkStream(t)
 	stream.recv <- &gatewayv1.DaemonLinkFrame{Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_HELLO, ApiVersion: GatewayAPIVersion, DaemonId: credential.GetDaemonId()}
 	if err := service.hub.Connect(stream); status.Code(err) != codes.Unauthenticated {
@@ -199,7 +199,7 @@ func newEnrolledSecurityService(t *testing.T) (*Service, ed25519.PrivateKey, *ga
 		t.Fatal(err)
 	}
 	publicURL, _ := url.Parse("https://gateway.example")
-	config := Config{PublicURL: publicURL, AllowedUserID: 1234, AuthSecret: []byte("security-test-secret-not-a-real-secret")}
+	config := Config{PublicURL: publicURL, AllowedUserIDs: map[int64]struct{}{1234: {}}, AuthSecret: []byte("security-test-secret-not-a-real-secret")}
 	auth := NewAuth(config, store, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	service := NewService(store, auth, keys, NewHub(store, config), config)
 	public, private, err := ed25519.GenerateKey(rand.Reader)
@@ -214,7 +214,7 @@ func newEnrolledSecurityService(t *testing.T) (*Service, ed25519.PrivateKey, *ga
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.ApproveEnrollment(enrollment.GetEnrollmentId(), enrollment.GetUserCode(), config.AllowedUserID, "security-test"); err != nil {
+	if err := store.ApproveEnrollment(enrollment.GetEnrollmentId(), enrollment.GetUserCode(), int64(1234), "security-test"); err != nil {
 		t.Fatal(err)
 	}
 	credential, err := service.CompleteDaemonEnrollment(t.Context(), &gatewayv1.CompleteDaemonEnrollmentRequest{EnrollmentId: enrollment.GetEnrollmentId(), EnrollmentSecret: enrollment.GetEnrollmentSecret()})

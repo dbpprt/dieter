@@ -14,7 +14,7 @@ the machine that owns them, and give the gateway nothing worth stealing.**
 
 Client sessions have binary full access or no access. The configured GitHub
 identity is allowed or it is not, matched on immutable numeric IDs from
-`DIETER_GITHUB_ALLOWED_USER_ID` and `DIETER_GITHUB_ALLOWED_USER_IDS` rather than
+`DIETER_GITHUB_ALLOWED_USER_IDS` rather than
 mutable logins. Each account can access only its own enrolled daemons. There are
 no scopes to over-grant and no tokens to scope down.
 

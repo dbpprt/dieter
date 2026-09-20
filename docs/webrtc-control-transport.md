@@ -7,8 +7,8 @@ is no change to domain RPCs or mutation replay semantics.
 
 Gateway `ResolveDaemonRoute.control_webrtc` is true only when the authenticated,
 currently connected daemon advertises `control_webrtc_v1`. Gateway identity,
-presence, enrollment, credential issuance, and signaling remain in place. An
-older daemon has no capability and is not probed for this transport.
+presence, enrollment, credential issuance, and signaling remain in place. A
+daemon without the capability is not probed for this transport.
 
 Bootstrap calls `StartControlConnection` on an existing direct/relay route with
 signed gateway RTC configuration and a gathered SDP offer, capped at 64 KiB.

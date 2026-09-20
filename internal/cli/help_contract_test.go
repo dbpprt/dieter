@@ -83,13 +83,13 @@ func TestEveryDaemonCLICommandHasOfflineHelp(t *testing.T) {
 		"schedule", "schedule create", "schedule list", "schedule show", "schedule preview", "schedule update", "schedule run", "schedule pause", "schedule resume", "schedule runs", "schedule delete",
 		"project consolidate", "project attach", "project detach", "project checkouts", "settings", "settings show", "settings options", "settings update",
 		"prompt", "prompt show", "prompt update", "prompt project", "prompt board", "prompt preview",
-		"daemon", "daemon import-store", "daemon start", "daemon service", "daemon service install", "daemon service start", "daemon service restart", "daemon service stop", "daemon service status", "daemon service uninstall", "daemon enroll", "daemon unenroll", "daemon status", "daemon logs", "daemon permissions", "doctor", "setup", "serve",
+		"daemon", "daemon start", "daemon service", "daemon service install", "daemon service start", "daemon service restart", "daemon service stop", "daemon service status", "daemon service uninstall", "daemon enroll", "daemon unenroll", "daemon status", "daemon logs", "daemon permissions", "doctor", "setup", "serve",
 	}
 	for _, path := range paths {
 		t.Run(strings.ReplaceAll(path, " ", "/"), func(t *testing.T) {
 			var output bytes.Buffer
 			client := New(store.New(t.TempDir()))
-			client.DaemonMode = true
+
 			client.Out, client.Err = &output, &output
 			args := append(strings.Fields(path), "--help")
 			if err := client.Run(args); err != nil {
@@ -112,7 +112,7 @@ func TestHostnameHelpExplainsPortsAndRouting(t *testing.T) {
 	} {
 		t.Run(strings.Join(command.args, " "), func(t *testing.T) {
 			c := New(store.New(t.TempDir()))
-			c.DaemonMode = true
+
 			var output bytes.Buffer
 			c.Out = &output
 			if err := c.Run(append(command.args, "--help")); err != nil {

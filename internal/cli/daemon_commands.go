@@ -13,6 +13,7 @@ import (
 
 	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
+	"github.com/dbpprt/dieter/internal/protocol"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -507,7 +508,7 @@ projection (projectionPending=false), never from a heartbeat.
 			}
 		}
 	case "sync":
-		stream, err := client.WatchSync(rpcCtx, &dieterv1.SyncRequest{HeartbeatMs: 5_000, ProtocolVersion: 1})
+		stream, err := client.WatchSync(rpcCtx, &dieterv1.SyncRequest{HeartbeatMs: 5_000, ProtocolVersion: protocol.Number})
 		if err != nil {
 			return err
 		}

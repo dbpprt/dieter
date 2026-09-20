@@ -3,6 +3,7 @@
 #pragma GCC diagnostic ignored "-Wconversion"
 #endif
 
+#include "dieter-contract.h"
 #include <errno.h>
 #include <fcntl.h>
 #include <gio/gio.h>
@@ -30,7 +31,7 @@
 #pragma GCC diagnostic pop
 #endif
 
-#define HELPER_VERSION "linux-native-v1"
+#define HELPER_VERSION "linux-native-v" G_STRINGIFY(DIETER_CONTRACT_VERSION)
 #define MAX_STREAMS 4
 #define MAX_COMMAND_BYTES (16 * 1024)
 #define MAX_FRAME_BYTES (16 * 1024 * 1024)
@@ -416,10 +417,8 @@ static int print_capabilities(const Options *options) {
     json_builder_set_member_name(builder, "codecs"); json_builder_begin_array(builder);
     if (pipeline) json_builder_add_string_value(builder, "H264");
     json_builder_end_array(builder);
-    /* This legacy field means a production encoder is usable to old clients.
-     * The exact hardware/software identity remains in encoder and the additive
-     * software_encoder_available diagnostic until the public schema grows. */
-    BOOL_MEMBER("hardware_encoder_available", pipeline);
+    /* Readiness includes the host's supported hardware or software encoder. */
+    BOOL_MEMBER("encoder_available", pipeline);
     BOOL_MEMBER("software_encoder_available", encoder != NULL && !hardware);
     BOOL_MEMBER("control_supported", control);
     BOOL_MEMBER("clipboard_supported", FALSE);
@@ -430,7 +429,7 @@ static int print_capabilities(const Options *options) {
     /* Linux does not yet emit separate cursor metadata. Streams may still hide
      * the host cursor when a controlling viewer renders its own pointer. */
     BOOL_MEMBER("cursor_supported", FALSE);
-    INT_MEMBER("input_protocol_version", 3);
+    INT_MEMBER("input_protocol_version", DIETER_CONTRACT_VERSION);
     INT_MEMBER("max_fps", hardware ? 120 : 30);
     STR_MEMBER("encoder", encoder != NULL ? encoder : "");
     BOOL_MEMBER("display_mode_switching_supported", FALSE);
@@ -760,7 +759,7 @@ static void emit_event(CaptureApp *app, guint64 stream_id, guint64 ack, const gc
                        CaptureStream *stream) {
     JsonBuilder *builder = json_builder_new();
     json_builder_begin_object(builder);
-    json_builder_set_member_name(builder, "version"); json_builder_add_int_value(builder, 2);
+    json_builder_set_member_name(builder, "version"); json_builder_add_int_value(builder, DIETER_CONTRACT_VERSION);
     json_builder_set_member_name(builder, "stream_id"); json_builder_add_int_value(builder, (gint64)stream_id);
     json_builder_set_member_name(builder, "ack"); json_builder_add_int_value(builder, (gint64)ack);
     if (error != NULL) {
@@ -1252,7 +1251,7 @@ static gboolean handle_command(CaptureApp *app, JsonObject *command) {
     guint64 id = id_value > 0 ? (guint64)id_value : 0;
     guint64 stream_id = stream_value > 0 ? (guint64)stream_value : (app->multiplex ? 0 : 1);
     GError *error = NULL;
-    if (version != 2 || id == 0 || strlen(kind) > 32) {
+    if (version != DIETER_CONTRACT_VERSION || id == 0 || strlen(kind) > 32) {
         emit_event(app, stream_id, id, "invalid native command", NULL);
         return TRUE;
     }

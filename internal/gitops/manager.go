@@ -486,13 +486,8 @@ func (m *Manager) commit(ctx context.Context, operation *model.GitOperation, val
 	if subject == "" {
 		return errors.New("commit subject is required")
 	}
-	_, legacyAutoStage := operation.Parameters["include_untracked"]
-	if operation.Parameters["stage_all"] == "true" || legacyAutoStage {
-		addMode := "-A"
-		if legacyAutoStage && operation.Parameters["include_untracked"] == "false" {
-			addMode = "-u"
-		}
-		if _, err := m.Git.Run(ctx, value.Path, "add", addMode); err != nil {
+	if operation.Parameters["stage_all"] == "true" {
+		if _, err := m.Git.Run(ctx, value.Path, "add", "-A"); err != nil {
 			return err
 		}
 		m.step(operation, "staged checkout changes for commit")

@@ -60,19 +60,7 @@ func TestRelayMethodPriorityKeepsCommandsAheadOfStreams(t *testing.T) {
 	}
 }
 
-func TestGatewayHeartbeatAcknowledgementNegotiationAndCorrelation(t *testing.T) {
-	legacy := &gatewayv1.DaemonLinkFrame{Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_HELLO_ACK}
-	if supportsGatewayCapability(legacy, gatewayHeartbeatAckCapability) {
-		t.Fatal("legacy gateway unexpectedly enabled acknowledged heartbeats")
-	}
-	negotiated := &gatewayv1.DaemonLinkFrame{
-		Kind:         gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_HELLO_ACK,
-		Capabilities: []string{"another_capability", gatewayHeartbeatAckCapability},
-	}
-	if !supportsGatewayCapability(negotiated, gatewayHeartbeatAckCapability) {
-		t.Fatal("gateway heartbeat acknowledgement capability was not detected")
-	}
-
+func TestGatewayHeartbeatAcknowledgementCorrelation(t *testing.T) {
 	valid := &gatewayv1.DaemonLinkFrame{
 		Kind:     gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_PONG,
 		DaemonId: "daemon", RequestId: "hb_4",

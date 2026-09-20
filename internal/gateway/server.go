@@ -6,7 +6,6 @@ import (
 	"crypto/x509"
 	"errors"
 	"fmt"
-	"github.com/dbpprt/dieter/internal/protocol"
 	"log/slog"
 	"net"
 	"net/http"
@@ -17,6 +16,7 @@ import (
 	"time"
 
 	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
+	"github.com/dbpprt/dieter/internal/protocol"
 	"golang.org/x/net/http2"
 	"google.golang.org/grpc"
 )
@@ -34,9 +34,8 @@ type Server struct {
 	HTTPHandler http.Handler
 }
 
-// GatewayAPIVersion identifies the authenticated gateway control-plane
-// contract. It is intentionally distinct from daemon API compatibility and
-// the daemon-link framing version.
+// GatewayAPIVersion is the shared Dieter application contract, also used by
+// the daemon, CLI, native clients, and authenticated daemon link.
 const GatewayAPIVersion = protocol.Version
 
 func NewServer(config Config, store *Store, logger *slog.Logger) (*Server, error) {

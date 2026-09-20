@@ -1284,7 +1284,7 @@ private fun GitOperationParameterSheet(
     val card = state.conversation?.detail?.card ?: state.selectedCard
     var subject by remember(kind) { mutableStateOf(if (kind == GitOperationKinds.COMMIT) card?.title.orEmpty() else "") }
     var body by remember(kind) { mutableStateOf("") }
-    var includeUntracked by remember(kind) { mutableStateOf(true) }
+    var stageAll by remember(kind) { mutableStateOf(true) }
     var validate by remember(kind) { mutableStateOf(true) }
     var draft by remember(kind) { mutableStateOf(false) }
     var strategy by remember(kind) { mutableStateOf("squash") }
@@ -1314,7 +1314,7 @@ private fun GitOperationParameterSheet(
                         minLines = 2,
                         modifier = Modifier.fillMaxWidth(),
                     )
-                    WorkspaceSheetToggle("Include untracked files", includeUntracked) { includeUntracked = it }
+                    WorkspaceSheetToggle("Stage all changes", stageAll) { stageAll = it }
                 }
                 GitOperationKinds.UPDATE -> {
                     Text(
@@ -1390,7 +1390,7 @@ private fun GitOperationParameterSheet(
                         GitOperationKinds.COMMIT -> mapOf(
                             "subject" to subject.trim(),
                             "body" to body.trim(),
-                            "include_untracked" to if (includeUntracked) "true" else "false",
+                            "stage_all" to if (stageAll) "true" else "false",
                         )
                         GitOperationKinds.UPDATE -> mapOf("validate" to if (validate) "true" else "false")
                         GitOperationKinds.CREATE_PR -> buildMap {

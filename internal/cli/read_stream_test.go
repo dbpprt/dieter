@@ -156,7 +156,7 @@ func TestRecoveryNeverReplaysMutationsOrScreenAdmission(t *testing.T) {
 	if calls.Load() != 1 {
 		t.Fatalf("mutation dispatched %d times", calls.Load())
 	}
-	stream, err := client.StartRemoteDesktop(ctx, &dieterv1.StartRemoteDesktopRequest{})
+	stream, err := client.StartRemoteDesktop(ctx, &dieterv1.StartRemoteDesktopRequest{InputProtocolVersion: 1})
 	if err == nil {
 		_, _ = stream.Recv()
 	}

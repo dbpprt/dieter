@@ -41,8 +41,11 @@
                     Text(projectName).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                 }
                 if !card.ownerDaemonID.isEmpty {
-                    Label("\(machineName ?? card.ownerDaemonID)\(machineOnline ? "" : " · Offline")", systemImage: "desktopcomputer")
-                        .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    Label(
+                        "\(machineName ?? card.ownerDaemonID)\(machineOnline ? "" : " · Offline")",
+                        systemImage: "desktopcomputer"
+                    )
+                    .font(.caption).foregroundStyle(.secondary).lineLimit(1)
                 }
                 HStack(spacing: 10) {
                     IOSStatusBadge(state: card.runtime)

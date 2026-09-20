@@ -371,8 +371,11 @@
                 currentOrigin: connectedOrigin, currentDaemonID: selectedMachineID,
                 requestedOrigin: machine.gatewayEndpoint, requestedDaemonID: machine.daemonID)
             {
-                if connectedOrigin?.credentialID != machine.gatewayEndpoint.credentialID { clearNodeContent() }
-                else { harnesses = []; closeConversation() }
+                if connectedOrigin?.credentialID != machine.gatewayEndpoint.credentialID {
+                    clearNodeContent()
+                } else {
+                    harnesses = []; closeConversation()
+                }
             }
             selectedMachineID = machine.daemonID
             guard IOSMachinePolicy.isCompatible(machine) else { throw IOSStoreError.incompatible(machine.apiVersion) }
@@ -435,9 +438,14 @@
                 projectReplicaEndpointIDs: [:], boards: Dictionary(grouping: boards, by: \.projectID),
                 cards: Dictionary(grouping: cards, by: \.projectID), chats: chats)
             if let machine = selectedMachine {
-                let next = MachineDirectoryReducer.merging(current, snapshots: [MachineSnapshot(
-                    endpoint: machine, connection: .init(route: .gateway, latencyMilliseconds: 0),
-                    projects: value.projects, boards: value.boards, cards: value.cards, chats: value.chats, archives: value.archives)])
+                let next = MachineDirectoryReducer.merging(
+                    current,
+                    snapshots: [
+                        MachineSnapshot(
+                            endpoint: machine, connection: .init(route: .gateway, latencyMilliseconds: 0),
+                            projects: value.projects, boards: value.boards, cards: value.cards, chats: value.chats,
+                            archives: value.archives)
+                    ])
                 projects = next.sortedProjects.filter { !$0.archived }
                 boards = next.boards.values.flatMap { $0 }
                 cards = next.cards.values.flatMap { $0 }.filter { !$0.archived }
@@ -553,7 +561,8 @@
 
         func selectCard(id: String) async {
             if let owner = (cards + chats).first(where: { $0.id == id })?.ownerDaemonID,
-                !owner.isEmpty, owner != selectedMachineID {
+                !owner.isEmpty, owner != selectedMachineID
+            {
                 guard machines.contains(where: { $0.daemonID == owner && $0.online }) else {
                     errorMessage = "This conversation’s machine is offline."; return
                 }
@@ -676,17 +685,25 @@
         }
 
         private func checkoutConnection(projectID: String, checkoutID: String) async throws -> DataPlaneConnection {
-            guard let checkout = projects.first(where: { $0.id == projectID })?.checkouts.first(where: { $0.id == checkoutID && !$0.detached }),
+            guard
+                let checkout = projects.first(where: { $0.id == projectID })?.checkouts.first(where: {
+                    $0.id == checkoutID && !$0.detached
+                }),
                 let machine = machines.first(where: { $0.daemonID == checkout.daemonID }), machine.online,
-                let gateway, let accessToken else {
-                throw NSError(domain: "Checkout", code: 1, userInfo: [NSLocalizedDescriptionKey: "Choose an available checkout and machine."])
+                let gateway, let accessToken
+            else {
+                throw NSError(
+                    domain: "Checkout", code: 1,
+                    userInfo: [NSLocalizedDescriptionKey: "Choose an available checkout and machine."])
             }
             guard IOSMachinePolicy.isCompatible(machine) else { throw IOSStoreError.incompatible(machine.apiVersion) }
             var candidateScope = DirectCandidateScope.nonLoopback
             #if DEBUG
                 if ProcessInfo.processInfo.environment["DIETER_IOS_TEST_GATEWAY"] != nil { candidateScope = .all }
             #endif
-            return try await connections.selectDataPlane(gateway: gateway, target: machine, gatewayAccessToken: accessToken, directCandidateScope: candidateScope)
+            return try await connections.selectDataPlane(
+                gateway: gateway, target: machine, gatewayAccessToken: accessToken, directCandidateScope: candidateScope
+            )
         }
 
         func creationHarnesses(projectID: String, checkoutID: String) async throws -> [Dieter_V1_Harness] {
@@ -870,7 +887,9 @@
             }
         }
 
-        func listFiles(projectID: String, checkoutID: String, cardID: String = "", path: String = "") async -> Dieter_V1_FileList? {
+        func listFiles(projectID: String, checkoutID: String, cardID: String = "", path: String = "") async
+            -> Dieter_V1_FileList?
+        {
             let attempt = connectionID
             var request = Dieter_V1_ListFilesRequest()
             request.projectID = projectID; request.checkoutID = checkoutID; request.cardID = cardID; request.path = path
@@ -885,7 +904,9 @@
             }
         }
 
-        func readFile(projectID: String, checkoutID: String, cardID: String = "", path: String) async -> Dieter_V1_FileDocument? {
+        func readFile(projectID: String, checkoutID: String, cardID: String = "", path: String) async
+            -> Dieter_V1_FileDocument?
+        {
             let attempt = connectionID
             var request = Dieter_V1_ReadFileRequest()
             request.projectID = projectID; request.checkoutID = checkoutID; request.cardID = cardID; request.path = path
@@ -924,13 +945,17 @@
             }
         }
 
-        func saveFile(projectID: String, checkoutID: String, cardID: String = "", document: Dieter_V1_FileDocument, content: String) async
+        func saveFile(
+            projectID: String, checkoutID: String, cardID: String = "", document: Dieter_V1_FileDocument,
+            content: String
+        ) async
             -> Dieter_V1_FileDocument?
         {
             guard !document.binary else { return nil }
             let attempt = connectionID
             var request = Dieter_V1_SaveFileRequest()
-            request.projectID = projectID; request.checkoutID = checkoutID; request.cardID = cardID; request.path = document.path
+            request.projectID = projectID; request.checkoutID = checkoutID; request.cardID = cardID;
+            request.path = document.path
             request.content = content; request.revision = document.revision
             do {
                 let plane = try await checkoutConnection(projectID: projectID, checkoutID: checkoutID)

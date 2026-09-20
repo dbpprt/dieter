@@ -10,9 +10,8 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// The kernel releases this admission lock on process death. Keep the directory
-// lock as well for compatibility with older daemons. Admission serializes stale
-// owner reclamation, so a competing reader cannot remove a replacement lock.
+// The kernel releases this cross-process writer lock on process death. The
+// lock file stays at a stable path and is never removed while contenders wait.
 func (s *Store) writerAdmission(ctx context.Context) (func(), error) {
 	file, err := os.OpenFile(filepath.Join(s.Root, ".writer-admission"), os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {

@@ -25,9 +25,8 @@ Copy `.env.example` to `$DIETER_GATEWAY_HOME/.env` (default
 `~/.dieter-gateway/.env`), fill its values, and set mode `0600`.
 
 {{< callout type="warn" title="Match on the numeric GitHub ID" >}}
-`DIETER_GITHUB_ALLOWED_USER_ID` accepts one immutable numeric GitHub ID.
-`DIETER_GITHUB_ALLOWED_USER_IDS` accepts a comma-separated list and is combined
-with the singular value when both are set. Logins are display-only and must
+`DIETER_GITHUB_ALLOWED_USER_IDS` accepts one or more immutable numeric GitHub
+IDs as a comma-separated list. Logins are display-only and must
 never be used for authorization. Accounts cannot see or control one another's
 daemons.
 {{< /callout >}}

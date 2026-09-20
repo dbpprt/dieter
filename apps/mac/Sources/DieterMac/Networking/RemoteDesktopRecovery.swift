@@ -40,7 +40,7 @@ struct RemoteDesktopRecovery {
 }
 
 enum RemoteDesktopLeaseRenewal {
-    // UI stalls must not delay the legacy/authenticated RPC heartbeat. The
+    // UI stalls must not delay the authenticated RPC heartbeat. The
     // failure callback dispatches UI work without blocking this sender.
     static func start(
         rpc: any ScreenSignalingRPC, sessionID: String, clock: ClientClock = .live,

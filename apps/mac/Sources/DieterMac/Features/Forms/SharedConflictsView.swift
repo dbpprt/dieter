@@ -27,8 +27,10 @@ private struct SharedConflictsView: View {
                 if !error.isEmpty { Text(error).foregroundStyle(.red) }
                 ForEach(records, id: \.id) { record in
                     Section(record.id.split(separator: ".").last.map(String.init) ?? record.id) {
-                        Text("These edits were made independently. Choose the value to keep, then edit it normally if needed.")
-                            .foregroundStyle(.secondary)
+                        Text(
+                            "These edits were made independently. Choose the value to keep, then edit it normally if needed."
+                        )
+                        .foregroundStyle(.secondary)
                         ForEach(Array(record.versions.enumerated()), id: \.offset) { _, version in
                             VStack(alignment: .leading, spacing: 8) {
                                 Text(display(version)).textSelection(.enabled)
@@ -43,7 +45,7 @@ private struct SharedConflictsView: View {
             .navigationTitle("Resolve shared edits")
             .toolbar { Button("Done") { dismiss() } }
         }.frame(width: 600, height: 500)
-        .task { await load() }
+            .task { await load() }
     }
 
     private func display(_ value: Dieter_V1_PeerVersion) -> String {

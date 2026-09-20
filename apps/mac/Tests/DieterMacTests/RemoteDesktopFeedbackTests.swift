@@ -14,7 +14,7 @@ private final class ScreenFeedbackSamples: @unchecked Sendable {
     let samples = ScreenFeedbackSamples()
     let pump = RemoteDesktopFeedbackPump { samples.append($0) }
     var feedback = Dieter_V1_RemoteDesktopReceiverFeedback()
-    feedback.protocolVersion = 2
+    feedback.protocolVersion = DieterContract.number
     pump.start(channel: nil, initial: feedback)
     defer { pump.stop() }
     feedback.decodeMs = 100; feedback.framesPerSecond = 30

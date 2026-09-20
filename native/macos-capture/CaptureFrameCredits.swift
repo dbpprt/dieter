@@ -1,8 +1,8 @@
 import Foundation
 
 // Never replace encoded reference frames. One explicit send-start token may
-// admit one encode behind it; consumption retires only the exact frame. Legacy
-// owners never send that token and retain the original one-credit behavior.
+// admit one encode behind it; consumption retires only the exact frame. Without
+// a send-start token, at most one encoded frame remains outstanding.
 struct CaptureFrameCredits {
     struct Frame {
         let generation: UInt64
@@ -25,8 +25,8 @@ struct CaptureFrameCredits {
         frame.overlapUntil = now + UInt64(budgetMS) * 1_000_000
         frames[id] = frame
     }
-    @discardableResult mutating func consumed(id: UInt64, generation: UInt64?) -> Bool {
-        guard let frame = frames[id], generation == nil || generation == frame.generation else { return false }
+    @discardableResult mutating func consumed(id: UInt64, generation: UInt64) -> Bool {
+        guard let frame = frames[id], generation == frame.generation else { return false }
         frames.removeValue(forKey: id)
         return true
     }

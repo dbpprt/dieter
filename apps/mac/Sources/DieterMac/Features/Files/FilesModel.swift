@@ -71,7 +71,8 @@ final class FilesModel {
     func loadFiles(path: String? = nil) async -> Bool {
         guard let rpc = client, !target.projectID.isEmpty else { return false }
         let destination = path ?? filePath
-        var request = Dieter_V1_ListFilesRequest(); request.projectID = target.projectID; request.checkoutID = target.checkoutID; request.path = destination;
+        var request = Dieter_V1_ListFilesRequest(); request.projectID = target.projectID;
+        request.checkoutID = target.checkoutID; request.path = destination;
         request.showHidden = showHiddenFiles
         request.cardID = target.conversationID
         fileListingGeneration &+= 1
@@ -134,7 +135,8 @@ final class FilesModel {
 
     func openFile(path: String) async {
         guard let rpc = client else { return }
-        var request = Dieter_V1_ReadFileRequest(); request.projectID = target.projectID; request.checkoutID = target.checkoutID; request.path = path;
+        var request = Dieter_V1_ReadFileRequest(); request.projectID = target.projectID;
+        request.checkoutID = target.checkoutID; request.path = path;
         request.cardID = target.conversationID
         fileReadGeneration &+= 1
         let generation = fileReadGeneration
@@ -172,7 +174,8 @@ final class FilesModel {
     func saveFile(content: String) async -> Dieter_V1_FileDocument? {
         guard let client, let document = fileDocument, !saving else { return nil }
         var request = Dieter_V1_SaveFileRequest()
-        request.projectID = target.projectID; request.checkoutID = target.checkoutID; request.cardID = target.conversationID
+        request.projectID = target.projectID; request.checkoutID = target.checkoutID;
+        request.cardID = target.conversationID
         request.path = document.path; request.revision = document.revision; request.content = content
         let scope = fileScopeGeneration
         let generation = fileReadGeneration
@@ -203,7 +206,8 @@ final class FilesModel {
         guard let client else { return }
         let scope = fileScopeGeneration
         var request = Dieter_V1_CreateFileRequest()
-        request.projectID = target.projectID; request.checkoutID = target.checkoutID; request.cardID = target.conversationID
+        request.projectID = target.projectID; request.checkoutID = target.checkoutID;
+        request.cardID = target.conversationID
         request.path = path; request.kind = directory ? "directory" : "file"
         do {
             _ = try await client.createFile(request)
@@ -216,7 +220,8 @@ final class FilesModel {
         guard let client else { return }
         let scope = fileScopeGeneration
         var request = Dieter_V1_DeleteFileRequest()
-        request.projectID = target.projectID; request.checkoutID = target.checkoutID; request.cardID = target.conversationID
+        request.projectID = target.projectID; request.checkoutID = target.checkoutID;
+        request.cardID = target.conversationID
         request.path = path; request.recursive = recursive
         do {
             try await client.deleteFile(request)
@@ -230,7 +235,8 @@ final class FilesModel {
         guard let client else { return }
         let scope = fileScopeGeneration
         var request = Dieter_V1_MoveFileRequest()
-        request.projectID = target.projectID; request.checkoutID = target.checkoutID; request.cardID = target.conversationID
+        request.projectID = target.projectID; request.checkoutID = target.checkoutID;
+        request.cardID = target.conversationID
         request.source = source; request.destination = destination
         do {
             _ = try await client.moveFile(request)

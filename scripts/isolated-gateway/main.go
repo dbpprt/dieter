@@ -111,8 +111,7 @@ func run(address, home, offlineTrigger, daemonRestartTrigger string, boardStress
 	}
 	config := gateway.Config{
 		Root: filepath.Join(home, "gateway"), Address: gatewayListener.Addr().String(), PublicURL: publicURL,
-		GitHubClientID: "isolated", GitHubSecret: "isolated", AllowedUserID: 1, AllowedLogin: "isolated",
-		AuthSecret: authSecret, SessionTTL: 12 * time.Hour, RTCTTL: 5 * time.Minute,
+		GitHubClientID: "isolated", GitHubSecret: "isolated", AllowedUserIDs: map[int64]struct{}{1: {}}, AuthSecret: authSecret, SessionTTL: 12 * time.Hour, RTCTTL: 5 * time.Minute,
 		NativeRedirects: map[string]struct{}{}, GitHubBaseURL: "https://github.invalid", GitHubAPIURL: "https://api.github.invalid",
 		DevInsecure: true,
 	}
@@ -138,7 +137,7 @@ func run(address, home, offlineTrigger, daemonRestartTrigger string, boardStress
 	if err != nil {
 		return err
 	}
-	if err = gatewayStore.ApproveEnrollment(enrollment.GetEnrollmentId(), enrollment.GetUserCode(), config.AllowedUserID, config.AllowedLogin); err != nil {
+	if err = gatewayStore.ApproveEnrollment(enrollment.GetEnrollmentId(), enrollment.GetUserCode(), int64(1), "isolated"); err != nil {
 		return err
 	}
 	credential, err := enrollmentRPC(ctx, logger, "primary", "complete", func(requestContext context.Context) (*gatewayv1.DaemonCredential, error) {
@@ -155,7 +154,7 @@ func run(address, home, offlineTrigger, daemonRestartTrigger string, boardStress
 	if err = data.Ensure(); err != nil {
 		return err
 	}
-	subject := fmt.Sprintf("github:%d", config.AllowedUserID)
+	subject := fmt.Sprintf("github:%d", int64(1))
 	account := peerstore.Revision([]string{identity.GatewayURL, subject})
 	if _, err = data.BindPeerAccount(account, subject, identity.ID, identity.GatewayURL); err != nil {
 		return err
@@ -341,30 +340,30 @@ func run(address, home, offlineTrigger, daemonRestartTrigger string, boardStress
 
 	// Keep an enrolled incompatible machine in discovery. The gateway rejects
 	// its obsolete contract, so it must remain offline rather than opening a
-	// fake legacy tunnel against the current data plane.
-	legacyIdentity, err := daemon.LoadOrCreateEnrollmentIdentity(filepath.Join(home, "legacy-daemon"), "Legacy API 2 machine", publicURL.String())
+	// fake incompatible tunnel against the current data plane.
+	incompatibleIdentity, err := daemon.LoadOrCreateEnrollmentIdentity(filepath.Join(home, "incompatible-daemon"), "Incompatible API machine", publicURL.String())
 	if err != nil {
 		return err
 	}
-	legacyEnrollment, err := enrollmentRPC(ctx, logger, "legacy", "begin", func(requestContext context.Context) (*gatewayv1.DaemonEnrollment, error) {
-		return daemon.BeginEnrollment(requestContext, legacyIdentity)
+	incompatibleEnrollment, err := enrollmentRPC(ctx, logger, "incompatible", "begin", func(requestContext context.Context) (*gatewayv1.DaemonEnrollment, error) {
+		return daemon.BeginEnrollment(requestContext, incompatibleIdentity)
 	})
 	if err != nil {
 		return err
 	}
-	if err = gatewayStore.ApproveEnrollment(legacyEnrollment.GetEnrollmentId(), legacyEnrollment.GetUserCode(), config.AllowedUserID, config.AllowedLogin); err != nil {
+	if err = gatewayStore.ApproveEnrollment(incompatibleEnrollment.GetEnrollmentId(), incompatibleEnrollment.GetUserCode(), int64(1), "isolated"); err != nil {
 		return err
 	}
-	legacyCredential, err := enrollmentRPC(ctx, logger, "legacy", "complete", func(requestContext context.Context) (*gatewayv1.DaemonCredential, error) {
-		return daemon.CompleteEnrollment(requestContext, legacyIdentity, legacyEnrollment.GetEnrollmentId(), legacyEnrollment.GetEnrollmentSecret())
+	incompatibleCredential, err := enrollmentRPC(ctx, logger, "incompatible", "complete", func(requestContext context.Context) (*gatewayv1.DaemonCredential, error) {
+		return daemon.CompleteEnrollment(requestContext, incompatibleIdentity, incompatibleEnrollment.GetEnrollmentId(), incompatibleEnrollment.GetEnrollmentSecret())
 	})
 	if err != nil {
 		return err
 	}
-	if err = legacyIdentity.SaveCredential(legacyCredential.GetDaemonId(), legacyCredential.GetDaemonName(), legacyCredential.GetCertificatePem(), legacyCredential.GetDaemonCaPem(), legacyCredential.GetGatewaySigningPublicKey(), legacyCredential.GetExpiresAt(), legacyCredential.GetGeneration()); err != nil {
+	if err = incompatibleIdentity.SaveCredential(incompatibleCredential.GetDaemonId(), incompatibleCredential.GetDaemonName(), incompatibleCredential.GetCertificatePem(), incompatibleCredential.GetDaemonCaPem(), incompatibleCredential.GetGatewaySigningPublicKey(), incompatibleCredential.GetExpiresAt(), incompatibleCredential.GetGeneration()); err != nil {
 		return err
 	}
-	if err = gatewayStore.MarkDaemonSeen(legacyIdentity.ID, "legacy-e2e", "2", []byte("[]"), []byte("{}")); err != nil {
+	if err = gatewayStore.MarkDaemonSeen(incompatibleIdentity.ID, "incompatible-e2e", "2", []byte("[]"), []byte("{}")); err != nil {
 		return err
 	}
 
@@ -382,7 +381,7 @@ func run(address, home, offlineTrigger, daemonRestartTrigger string, boardStress
 			return enrollmentErr
 		}
 		if err = gatewayStore.ApproveEnrollment(
-			secondEnrollment.GetEnrollmentId(), secondEnrollment.GetUserCode(), config.AllowedUserID, config.AllowedLogin,
+			secondEnrollment.GetEnrollmentId(), secondEnrollment.GetUserCode(), int64(1), "isolated",
 		); err != nil {
 			return err
 		}
@@ -489,7 +488,7 @@ func run(address, home, offlineTrigger, daemonRestartTrigger string, boardStress
 	now := time.Now().UTC()
 	if err = gatewayStore.UpdateAuthState(func(state *gateway.AuthState) error {
 		state.Sessions = append(state.Sessions, gateway.Session{
-			TokenHash: digest, GitHubID: config.AllowedUserID, Login: config.AllowedLogin,
+			TokenHash: digest, GitHubID: int64(1), Login: "isolated",
 			CreatedAt: now, ExpiresAt: now.Add(config.SessionTTL),
 		})
 		return nil
@@ -510,7 +509,7 @@ func run(address, home, offlineTrigger, daemonRestartTrigger string, boardStress
 	fmt.Printf("DIETER_ISOLATED_ADDR=%s\n", gatewayListener.Addr().String())
 	fmt.Printf("DIETER_ISOLATED_TOKEN=%s\n", token)
 	fmt.Printf("DIETER_ISOLATED_DAEMON=%s\n", identity.ID)
-	fmt.Printf("DIETER_ISOLATED_LEGACY_DAEMON=%s\n", legacyIdentity.ID)
+	fmt.Printf("DIETER_ISOLATED_INCOMPATIBLE_DAEMON=%s\n", incompatibleIdentity.ID)
 	if secondDaemonID != "" {
 		fmt.Printf("DIETER_ISOLATED_SECOND_DAEMON=%s\n", secondDaemonID)
 	}

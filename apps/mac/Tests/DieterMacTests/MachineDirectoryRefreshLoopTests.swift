@@ -12,8 +12,7 @@ import Testing
             refreshPresence: { state.withLock { $0.presence += 1 } },
             refreshDirectory: {
                 state.withLock { $0.directoryStarted = true }
-                do { try await DieterTaskSleep.seconds(60) }
-                catch { state.withLock { $0.directoryCancelled = true } }
+                do { try await DieterTaskSleep.seconds(60) } catch { state.withLock { $0.directoryCancelled = true } }
             }
         )
     }

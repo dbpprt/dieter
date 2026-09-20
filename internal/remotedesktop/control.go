@@ -2,7 +2,6 @@ package remotedesktop
 
 import (
 	"context"
-	"errors"
 	"sort"
 
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
@@ -24,14 +23,8 @@ func (m *Manager) SetControl(ctx context.Context, id string, take bool) (*dieter
 	if !s.control {
 		return nil, ErrControlDisabled
 	}
-	if s.protocol < 3 {
-		return nil, errors.New("update this client to use control handoff")
-	}
 	if take && m.controller != s {
 		if m.controller != nil {
-			if m.controller.protocol < 3 {
-				return nil, ErrControlOwner
-			}
 			if err := m.controller.releaseNativeInput(ctx); err != nil {
 				return nil, err
 			}

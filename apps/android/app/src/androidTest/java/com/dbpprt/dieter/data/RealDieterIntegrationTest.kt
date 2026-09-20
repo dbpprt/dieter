@@ -24,6 +24,8 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.Before
+import org.junit.Assume.assumeTrue
 import org.junit.runner.RunWith
 import java.io.ByteArrayOutputStream
 import java.util.UUID
@@ -31,6 +33,14 @@ import java.util.UUID
 /** Real transport verification through the configured gateway and an enrolled daemon. */
 @RunWith(AndroidJUnit4::class)
 class RealDieterIntegrationTest {
+    @Before
+    fun requireExplicitConfiguredGatewayRun() {
+        assumeTrue(
+            "Configured-account tests require explicit configuredGatewayTests=1; use the isolated gateway suite for development",
+            InstrumentationRegistry.getArguments().getString("configuredGatewayTests") == "1",
+        )
+    }
+
     @Test
     fun terminalSurvivesAndroidTransportLossThroughTheRealGateway() = runBlocking {
         val context = InstrumentationRegistry.getInstrumentation().targetContext

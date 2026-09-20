@@ -72,12 +72,14 @@ package enum MachineDirectoryReducer {
         var next = current
         // An absent project can leave this replica's catalog. A shared project
         // present in another snapshot keeps the union of its owned items.
-        for id in current.projects.keys where !incomingIDs.contains(id) && refreshed.contains(current.projectReplicaEndpointIDs[id] ?? "") {
+        for id in current.projects.keys
+        where !incomingIDs.contains(id) && refreshed.contains(current.projectReplicaEndpointIDs[id] ?? "") {
             next.projects.removeValue(forKey: id); next.projectReplicaEndpointIDs.removeValue(forKey: id)
             next.boards.removeValue(forKey: id); next.cards.removeValue(forKey: id)
             next.chats.removeAll { $0.projectID == id }
         }
-        let allKnownItems = current.cards.values.flatMap { $0 } + current.chats + changedSnapshots.flatMap { $0.cards + $0.chats }
+        let allKnownItems =
+            current.cards.values.flatMap { $0 } + current.chats + changedSnapshots.flatMap { $0.cards + $0.chats }
         var removed = Set(changedSnapshots.flatMap { $0.archives.itemIds })
         let archivedProjects = Set(changedSnapshots.flatMap { $0.archives.projectIds })
         for snapshot in changedSnapshots {
@@ -86,7 +88,8 @@ package enum MachineDirectoryReducer {
             // Only an owner's complete snapshot can retire a missing item.
             removed.formUnion(allKnownItems.filter { $0.ownerDaemonID == owner && !present.contains($0.id) }.map(\.id))
         }
-        var items = Dictionary((current.cards.values.flatMap { $0 } + current.chats).map { ($0.id, $0) }, uniquingKeysWith: { _, b in b })
+        var items = Dictionary(
+            (current.cards.values.flatMap { $0 } + current.chats).map { ($0.id, $0) }, uniquingKeysWith: { _, b in b })
         for snapshot in changedSnapshots {
             for project in snapshot.projects {
                 next.projects[project.id] = mergeProject(next.projects[project.id], project)
@@ -96,7 +99,9 @@ package enum MachineDirectoryReducer {
                 var values = next.boards[board.projectID] ?? []
                 if let index = values.firstIndex(where: { $0.id == board.id }) {
                     values[index] = board
-                } else { values.append(board) }
+                } else {
+                    values.append(board)
+                }
                 next.boards[board.projectID] = values.sorted { $0.id < $1.id }
             }
             for item in snapshot.cards + snapshot.chats {
@@ -107,8 +112,13 @@ package enum MachineDirectoryReducer {
             next.projects.removeValue(forKey: id); next.projectReplicaEndpointIDs.removeValue(forKey: id)
             next.boards.removeValue(forKey: id)
         }
-        let visible = items.values.filter { (!removed.contains($0.id) || $0.archived && $0.scope == "chat" && $0.boardID.isEmpty) && next.projects[$0.projectID] != nil }
-        next.cards = Dictionary(grouping: visible.filter { $0.scope != "chat" || !$0.boardID.isEmpty }.sorted { $0.id < $1.id }, by: \.projectID)
+        let visible = items.values.filter {
+            (!removed.contains($0.id) || $0.archived && $0.scope == "chat" && $0.boardID.isEmpty)
+                && next.projects[$0.projectID] != nil
+        }
+        next.cards = Dictionary(
+            grouping: visible.filter { $0.scope != "chat" || !$0.boardID.isEmpty }.sorted { $0.id < $1.id },
+            by: \.projectID)
         next.chats = visible.filter { $0.scope == "chat" && $0.boardID.isEmpty }.sorted {
             let left = $0.lastActivityAt.isEmpty ? $0.updatedAt : $0.lastActivityAt
             let right = $1.lastActivityAt.isEmpty ? $1.updatedAt : $1.lastActivityAt
@@ -117,7 +127,8 @@ package enum MachineDirectoryReducer {
         return next
     }
 
-    package static func mergeProject(_ previous: Dieter_V1_Project?, _ incoming: Dieter_V1_Project) -> Dieter_V1_Project {
+    package static func mergeProject(_ previous: Dieter_V1_Project?, _ incoming: Dieter_V1_Project) -> Dieter_V1_Project
+    {
         guard let previous else { return incoming }
         var result = incoming
         var checkouts = Dictionary(previous.checkouts.map { ($0.id, $0) }, uniquingKeysWith: { _, b in b })

@@ -5,6 +5,20 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createLocalSandboxProvider } from './local-sandbox.mjs';
 
+async function assertProcessExited(pid) {
+  // An orphan can briefly remain as a zombie after its process group has
+  // disappeared. Wait for OS reaping as well as termination.
+  const deadline = Date.now() + 2000;
+  while (true) {
+    try { process.kill(pid, 0); } catch (error) {
+      if (error?.code === 'ESRCH') return;
+      throw error;
+    }
+    assert.ok(Date.now() < deadline, `process ${pid} remained after session stop`);
+    await new Promise(resolve => setTimeout(resolve, 20));
+  }
+}
+
 test('observes a process that exits before wait is called', async () => {
   const base = await mkdtemp(join(tmpdir(), 'board-local-sandbox-'));
   try {
@@ -68,8 +82,8 @@ test('stopping a local session terminates the entire spawned process group', { s
     await session.stop();
     await processHandle.wait();
 
-    assert.throws(() => process.kill(processHandle.pid, 0), error => error?.code === 'ESRCH');
-    assert.throws(() => process.kill(descendantPID, 0), error => error?.code === 'ESRCH');
+    await assertProcessExited(processHandle.pid);
+    await assertProcessExited(descendantPID);
   } finally {
     await rm(base, { recursive: true, force: true });
   }
@@ -92,7 +106,7 @@ test('stopping a local session terminates descendants after the group leader exi
 
     await session.stop();
 
-    assert.throws(() => process.kill(descendantPID, 0), error => error?.code === 'ESRCH');
+    await assertProcessExited(descendantPID);
   } finally {
     await rm(base, { recursive: true, force: true });
   }

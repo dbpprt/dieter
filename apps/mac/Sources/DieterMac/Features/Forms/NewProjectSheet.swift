@@ -25,7 +25,8 @@ struct NewProjectSheet: View {
     }
 
     private var canSubmit: Bool {
-        existingProjectID.isEmpty ? draft.canSubmit : !draft.path.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        existingProjectID.isEmpty
+            ? draft.canSubmit : !draft.path.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     var body: some View {
@@ -62,13 +63,16 @@ struct NewProjectSheet: View {
 
                     Picker("Project", selection: $existingProjectID) {
                         Text("Create a new project").tag("")
-                        ForEach(store.projects, id: \.id) { project in Text("Attach to \(project.name)").tag(project.id) }
+                        ForEach(store.projects, id: \.id) { project in Text("Attach to \(project.name)").tag(project.id)
+                        }
                     }
                     projectLabel("Checkout machine")
                     Menu {
                         ForEach(availableMachines) { machine in
                             Button {
-                                if machine.online && machine.apiCompatibility != .incompatible { machineID = machine.id }
+                                if machine.online && machine.apiCompatibility != .incompatible {
+                                    machineID = machine.id
+                                }
                             } label: {
                                 if machine.id == machineID {
                                     Label(machine.name, systemImage: "checkmark")
@@ -117,7 +121,9 @@ struct NewProjectSheet: View {
                         .buttonStyle(DieterSecondaryButtonStyle())
                         .accessibilityIdentifier("new-project.browse")
                         .smokeTarget("new-project.browse")
-                        .disabled(submitting || machineID.isEmpty || selectedMachine?.online != true || selectedMachine?.apiCompatibility == .incompatible)
+                        .disabled(
+                            submitting || machineID.isEmpty || selectedMachine?.online != true
+                                || selectedMachine?.apiCompatibility == .incompatible)
                     }
                     Text(pathHelp)
                         .font(.caption2).foregroundStyle(DieterTheme.tertiary)
@@ -243,14 +249,20 @@ struct NewProjectSheet: View {
                     if submitting {
                         HStack(spacing: 7) {
                             ProgressView().controlSize(.small)
-                            Text(!existingProjectID.isEmpty ? "Attaching…" : draft.mode == .existing ? "Adding…" : "Creating…")
+                            Text(
+                                !existingProjectID.isEmpty
+                                    ? "Attaching…" : draft.mode == .existing ? "Adding…" : "Creating…")
                         }
                     } else {
-                        Label(existingProjectID.isEmpty ? draft.mode.submitTitle : "Attach checkout", systemImage: "plus")
+                        Label(
+                            existingProjectID.isEmpty ? draft.mode.submitTitle : "Attach checkout", systemImage: "plus")
                     }
                 }
                 .buttonStyle(DieterPrimaryButtonStyle())
-                .disabled(submitting || !canSubmit || selectedMachine?.online != true || selectedMachine?.apiCompatibility == .incompatible)
+                .disabled(
+                    submitting || !canSubmit || selectedMachine?.online != true
+                        || selectedMachine?.apiCompatibility == .incompatible
+                )
                 .accessibilityIdentifier("new-project.submit")
             }
             .padding(.horizontal, 24).padding(.vertical, 14)
@@ -312,7 +324,10 @@ struct NewProjectSheet: View {
                 if existingProjectID.isEmpty {
                     _ = try await store.createProject(draft, machineID: machineID, operationID: operationID)
                 } else {
-                    guard await store.attachCheckout(projectID: existingProjectID, path: draft.path, name: draft.name, machineID: machineID) else {
+                    guard
+                        await store.attachCheckout(
+                            projectID: existingProjectID, path: draft.path, name: draft.name, machineID: machineID)
+                    else {
                         submitting = false; errorMessage = store.errorMessage ?? "Could not attach checkout"; return
                     }
                 }

@@ -30,7 +30,6 @@ struct NativeInput: Codable {
     var precise: Bool = false
     var phase: UInt32 = 0
     var momentumPhase: UInt32 = 0
-    var keyCode: UInt32 = 0
     var physicalKey: UInt32 = 0
     var modifiers: UInt32 = 0
     var text: String = ""
@@ -89,7 +88,7 @@ struct NativeContent: Encodable {
 }
 
 struct NativeEvent: Encodable {
-    var version = 2
+    var version = CaptureContract.version
     var streamId: UInt64 = 0
     var ack: UInt64 = 0
     var error: String?

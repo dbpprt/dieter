@@ -11,15 +11,11 @@ import (
 // Large directories are transferred as a reset followed by bounded delta
 // pages. Only the last page carries the applied cursor. Interrupted batches
 // therefore cannot be persisted or resumed as complete projections.
-func sendBoundedSyncFrame(frame *dieterv1.SyncFrame, allowPages bool, send func(*dieterv1.SyncFrame) error) error {
+func sendBoundedSyncFrame(frame *dieterv1.SyncFrame, send func(*dieterv1.SyncFrame) error) error {
 	if proto.Size(frame) <= maxSyncFrameBytes {
 		return send(frame)
 	}
-	if !allowPages {
-		// Old clients treat each frame as a complete projection. Never let them
-		// publish or persist a partial directory as current data.
-		return status.Error(codes.ResourceExhausted, "large workspace requires a client supporting sync protocol version 1")
-	}
+
 	delta := frame.GetDelta()
 	if snapshot := frame.GetSnapshot(); snapshot != nil {
 		state := snapshot.GetState()

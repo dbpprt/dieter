@@ -70,7 +70,9 @@ struct ProjectChangesView: View {
         .task(id: targetKey) {
             guard active, scenePhase == .active else { model.suspend(); return }
             if injectedModel == nil {
-                guard await store.ensureCheckoutConnection(store.selectedProjectID), let rpc = store.rpc else { model.suspend(); return }
+                guard await store.ensureCheckoutConnection(store.selectedProjectID), let rpc = store.rpc else {
+                    model.suspend(); return
+                }
                 model.bind(projectID: store.selectedProjectID, client: rpc)
             } else if !isLive {
                 model.suspend(); return

@@ -18,9 +18,7 @@ type Config struct {
 	PublicURL       *url.URL
 	GitHubClientID  string
 	GitHubSecret    string
-	AllowedUserID   int64
 	AllowedUserIDs  map[int64]struct{}
-	AllowedLogin    string
 	AuthSecret      []byte
 	SessionTTL      time.Duration
 	NativeRedirects map[string]struct{}
@@ -60,13 +58,6 @@ func ConfigFromEnv(root string) (Config, error) {
 		return config, errors.New("DIETER_GITHUB_CLIENT_ID and DIETER_GITHUB_CLIENT_SECRET are required")
 	}
 	config.AllowedUserIDs = map[int64]struct{}{}
-	legacyAllowedUserID := strings.TrimSpace(os.Getenv("DIETER_GITHUB_ALLOWED_USER_ID"))
-	if legacyAllowedUserID != "" {
-		config.AllowedUserID, err = addAllowedUserID(config.AllowedUserIDs, legacyAllowedUserID)
-		if err != nil {
-			return config, errors.New("DIETER_GITHUB_ALLOWED_USER_ID must be a positive numeric GitHub ID")
-		}
-	}
 	if allowedUserIDs := strings.TrimSpace(os.Getenv("DIETER_GITHUB_ALLOWED_USER_IDS")); allowedUserIDs != "" {
 		for _, value := range strings.Split(allowedUserIDs, ",") {
 			if _, err := addAllowedUserID(config.AllowedUserIDs, strings.TrimSpace(value)); err != nil {
@@ -75,9 +66,8 @@ func ConfigFromEnv(root string) (Config, error) {
 		}
 	}
 	if len(config.AllowedUserIDs) == 0 {
-		return config, errors.New("DIETER_GITHUB_ALLOWED_USER_ID or DIETER_GITHUB_ALLOWED_USER_IDS must contain at least one positive numeric GitHub ID")
+		return config, errors.New("DIETER_GITHUB_ALLOWED_USER_IDS must contain at least one positive numeric GitHub ID")
 	}
-	config.AllowedLogin = strings.TrimSpace(os.Getenv("DIETER_GITHUB_ALLOWED_LOGIN"))
 	config.AuthSecret, err = hex.DecodeString(strings.TrimSpace(os.Getenv("DIETER_AUTH_SECRET")))
 	if err != nil || len(config.AuthSecret) < 32 {
 		return config, errors.New("DIETER_AUTH_SECRET must contain at least 32 random bytes encoded as hexadecimal")
@@ -154,11 +144,8 @@ func addAllowedUserID(allowed map[int64]struct{}, value string) (int64, error) {
 }
 
 func (c Config) AllowsGitHubUser(id int64) bool {
-	if len(c.AllowedUserIDs) > 0 {
-		_, ok := c.AllowedUserIDs[id]
-		return ok
-	}
-	return id > 0 && id == c.AllowedUserID
+	_, ok := c.AllowedUserIDs[id]
+	return id > 0 && ok
 }
 
 func rtcURLs(raw string, prefixes ...string) ([]string, error) {

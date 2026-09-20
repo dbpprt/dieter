@@ -3147,7 +3147,7 @@ class DieterViewModel internal constructor(
                     val committed = startGitOperationInternal(
                         cardId,
                         GitOperationKinds.COMMIT,
-                        mapOf("subject" to subject, "body" to body, "include_untracked" to "true"),
+                        mapOf("subject" to subject, "body" to body, "stage_all" to "true"),
                     ) && awaitGitOperationSuccess()
                     if (!committed) return@launch
                     refreshWorkspaceSurface(cardId)

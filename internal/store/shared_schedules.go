@@ -207,9 +207,6 @@ func (s *Store) localScheduleIDs() ([]string, error) {
 	return ids, nil
 }
 func (s *Store) requireLocalScheduleHistory(id string) error {
-	if s.importing {
-		return nil
-	}
 	ids, err := s.localScheduleIDs()
 	if err != nil {
 		return err

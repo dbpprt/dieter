@@ -3,7 +3,6 @@ package store
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -185,55 +184,6 @@ func TestRunnableBatchIsBoundedAndDoesNotReplayInterruptedRuns(t *testing.T) {
 	}
 	if len(runs) != 60 || counts[model.ScheduleRunPending] != 60 || counts[model.ScheduleRunInterrupted] != 0 {
 		t.Fatalf("runnable batch=%d statuses=%v", len(runs), counts)
-	}
-}
-
-func TestOfflineLegacyScheduleMarkdownImportRunsOnce(t *testing.T) {
-	root := t.TempDir()
-	data := New(root)
-	data.importing = true
-	if err := osMkdirAll(data.scheduleDir()); err != nil {
-		t.Fatal(err)
-	}
-	if err := osMkdirAll(data.scheduleRunDir()); err != nil {
-		t.Fatal(err)
-	}
-	schedule := model.Schedule{ID: "sch_legacy", ProjectID: "p_legacy", BoardID: "b_legacy", Name: "Legacy",
-		Cron: "0 9 * * *", Timezone: "UTC", Action: model.ScheduleActionDraft, WorkspaceMode: model.WorkspaceModeProject,
-		CreatedAt: "2026-08-31T10:00:00Z", UpdatedAt: "2026-08-31T10:00:00Z"}
-	if err := writeMarkdown(filepath.Join(data.scheduleDir(), schedule.ID+".md"), schedule, "legacy prompt"); err != nil {
-		t.Fatal(err)
-	}
-	run := model.ScheduleRun{ID: "sr_legacy", ScheduleID: schedule.ID, ProjectID: schedule.ProjectID, BoardID: schedule.BoardID,
-		ScheduledFor: "2026-08-31T11:00:00Z", Status: model.ScheduleRunCompleted,
-		CreatedAt: "2026-08-31T11:00:00Z", UpdatedAt: "2026-08-31T11:00:00Z"}
-	if err := writeMarkdown(filepath.Join(data.scheduleRunDir(), run.ID+".md"), run, "legacy result"); err != nil {
-		t.Fatal(err)
-	}
-	if err := data.Ensure(); err != nil {
-		t.Fatal(err)
-	}
-	loaded, err := data.scheduleByID(schedule.ID)
-	if err != nil || loaded.PromptTemplate != "legacy prompt" {
-		t.Fatalf("migrated schedule=%#v err=%v", loaded, err)
-	}
-	loadedRun, err := data.ResolveScheduleRun(run.ID)
-	if err != nil || loadedRun.Message != "legacy result" {
-		t.Fatalf("migrated run=%#v err=%v", loadedRun, err)
-	}
-	// Leaving the legacy files in place is safe: the durable marker prevents
-	// later starts from overwriting the indexed canonical rows.
-	loaded.Name = "Indexed"
-	database, err := data.scheduleDatabase()
-	if err != nil || upsertScheduleDocument(database, loaded) != nil {
-		t.Fatal(err)
-	}
-	if _, err := data.scheduleDatabase(); err != nil {
-		t.Fatal(err)
-	}
-	again, err := data.scheduleByID(schedule.ID)
-	if err != nil || again.Name != "Indexed" {
-		t.Fatalf("migration replayed legacy data: %#v err=%v", again, err)
 	}
 }
 

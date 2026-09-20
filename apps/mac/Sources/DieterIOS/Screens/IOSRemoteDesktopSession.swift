@@ -57,7 +57,7 @@
             IOSRemoteDesktopFrameRate.available(hostMaximum: capabilities.maxFps)
         }
         var canTransferControl: Bool {
-            binding?.inputProtocolVersion == 3 && binding?.controlGranted == true
+            binding?.controlGranted == true
         }
         @ObservationIgnored private var openConnection:
             (@MainActor () async throws -> RemoteDesktopSignalingConnection)?
@@ -225,9 +225,12 @@
             pointerConfiguration.maxRetransmits = 0
             let stateConfiguration = RTCDataChannelConfiguration()
             stateConfiguration.isOrdered = true
-            pointerChannel = peer.dataChannel(forLabel: "dieter-pointer-v2", configuration: pointerConfiguration)
-            stateChannel = peer.dataChannel(forLabel: "dieter-input-state-v2", configuration: stateConfiguration)
-            hostChannel = peer.dataChannel(forLabel: "dieter-session-v2", configuration: stateConfiguration)
+            pointerChannel = peer.dataChannel(
+                forLabel: "dieter-pointer-v\(DieterContract.version)", configuration: pointerConfiguration)
+            stateChannel = peer.dataChannel(
+                forLabel: "dieter-input-state-v\(DieterContract.version)", configuration: stateConfiguration)
+            hostChannel = peer.dataChannel(
+                forLabel: "dieter-session-v\(DieterContract.version)", configuration: stateConfiguration)
             pointerDelegate = IOSRemoteDesktopDataChannelDelegate(owner: self, role: .pointer)
             stateDelegate = IOSRemoteDesktopDataChannelDelegate(owner: self, role: .state)
             hostDelegate = IOSRemoteDesktopDataChannelDelegate(owner: self, role: .host)
@@ -236,7 +239,7 @@
             hostChannel?.delegate = hostDelegate
 
             let inputProtocolVersion: UInt32 =
-                capabilities.supportedInputProtocolVersions.contains(3) ? 3 : 2
+                DieterContract.number
             let transceiver = RTCRtpTransceiverInit()
             transceiver.direction = .recvOnly
             guard let video = peer.addTransceiver(of: .video, init: transceiver) else {
@@ -561,7 +564,7 @@
         private func updateControlReadiness() {
             controlActive =
                 authorized && binding?.controlGranted == true
-                && (binding?.inputProtocolVersion != 3 || sessionState.controlActive)
+                && sessionState.controlActive
                 && pointerChannel?.readyState == .open
                 && stateChannel?.readyState == .open && hostChannel?.readyState == .open
                 && sessionState.displayGeneration > 0

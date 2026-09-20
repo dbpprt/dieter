@@ -5,7 +5,11 @@ extension DieterStore {
     func machine(for card: Dieter_V1_Card) -> DieterEndpoint? {
         if card.ownerDaemonID.isEmpty { return endpoint }
         return endpoints.first { $0.daemonID == card.ownerDaemonID }
-            ?? (endpoint.daemonID == card.ownerDaemonID ? endpoint : DieterEndpoint(name: card.ownerDaemonID, host: endpoint.host, port: endpoint.port, secure: endpoint.secure, daemonID: card.ownerDaemonID, online: false))
+            ?? (endpoint.daemonID == card.ownerDaemonID
+                ? endpoint
+                : DieterEndpoint(
+                    name: card.ownerDaemonID, host: endpoint.host, port: endpoint.port, secure: endpoint.secure,
+                    daemonID: card.ownerDaemonID, online: false))
     }
 
     func endpointID(for card: Dieter_V1_Card?) -> String {
@@ -15,7 +19,9 @@ extension DieterStore {
 
     func ensureConversationConnection(_ card: Dieter_V1_Card, reportOffline: Bool = true) async -> Bool {
         guard let target = machine(for: card), target.online else {
-            if reportOffline { errorMessage = "This conversation’s machine is offline. Shared board edits remain available." }
+            if reportOffline {
+                errorMessage = "This conversation’s machine is offline. Shared board edits remain available."
+            }
             return false
         }
         if target.id == endpoint.id, phase.isConnected, rpc != nil { return true }
@@ -42,8 +48,9 @@ extension DieterStore {
         }
         do {
             var request = Dieter_V1_CheckoutRef(); request.checkoutID = checkout.id
-            if machine.id == endpoint.id, let rpc { _ = try await rpc.detachCheckout(request) }
-            else {
+            if machine.id == endpoint.id, let rpc {
+                _ = try await rpc.detachCheckout(request)
+            } else {
                 let lease = try await selectDirectoryDataPlane(for: machine)
                 defer { lease.release() }
                 _ = try await lease.rpc.detachCheckout(request)

@@ -152,9 +152,9 @@ beside an existing Dieter app. Multi-phase sidebar and terminal checks wait for
 the first app process to quit before launching the second. Reports, logs, and
 screenshots are retained under `apps/mac/.build/smoke/<run-id>`.
 
-The isolated gateway includes compatible and legacy API machines. The core
+The isolated gateway includes compatible and incompatible API machines. The core
 suite verifies that startup chooses a compatible daemon and that explicitly
-probing the legacy daemon neither replaces the healthy route nor turns cached
+probing the incompatible daemon neither replaces the healthy route nor turns cached
 projects from other machines offline.
 
 The app-side smoke hooks compile only in debug builds. A release build has no

@@ -8,7 +8,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"github.com/dbpprt/dieter/internal/remotedesktop"
 	"io"
 	"net/http"
 	"os"
@@ -19,6 +18,7 @@ import (
 	"unicode/utf8"
 
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
+	"github.com/dbpprt/dieter/internal/remotedesktop"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/emptypb"
@@ -484,9 +484,8 @@ func (c *CLI) rpcScreenControl(args []string) error {
 
 Give a connected control-capable client exclusive keyboard/mouse control, or
 release its current grant. Taking control first releases the previous client's
-held input. Viewers keep streaming. Both clients must support protocol 3 for
-handoff; older controlling clients must disconnect first. Prints session state
-as JSON. Supports --machine ID|NAME.
+held input. Viewers keep streaming. Control handoff uses revocable grants.
+Prints session state as JSON. Supports --machine ID|NAME.
 `
 	if groupHelp(args) || wantsHelp(args) {
 		fmt.Fprint(c.Out, usage)

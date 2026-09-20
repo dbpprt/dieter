@@ -11,10 +11,8 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	md "github.com/dbpprt/dieter/internal/markdown"
@@ -29,7 +27,6 @@ var (
 type Store struct {
 	peerWakeOnce     sync.Once
 	peerWake         chan struct{}
-	importing        bool
 	peerCacheMu      sync.Mutex
 	peerCacheAccount string
 	peerDBMu         sync.Mutex
@@ -114,7 +111,7 @@ func (s *Store) Ensure() error {
 		return err
 	}
 	for _, dir := range []string{
-		s.projectDir(), s.boardDir(), s.cardDir(), s.archivedCardDir(), s.commentDir(), s.conversationDir(), s.runtimeDir(), s.scheduleDir(), s.scheduleRunDir(), s.authDir(), s.syncDir(),
+		s.cardDir(), s.archivedCardDir(), s.commentDir(), s.conversationDir(), s.runtimeDir(), s.syncDir(),
 		s.workspaceDir(), s.gitOperationDir(), s.pullRequestDir(), s.changeCommentDir(), s.recoveryDir(), filepath.Join(s.Root, "logs"), filepath.Join(s.runtimeDir(), "leases"),
 	} {
 		if err := os.MkdirAll(dir, 0o700); err != nil {
@@ -124,7 +121,7 @@ func (s *Store) Ensure() error {
 			return err
 		}
 	}
-	if err := s.migratePrivateMetadataPermissions(); err != nil {
+	if err := s.ensurePrivateMetadataPermissions(); err != nil {
 		return err
 	}
 	if _, err := s.ensureSyncEpoch(); err != nil {
@@ -141,8 +138,7 @@ func (s *Store) Ensure() error {
 // beginWriteLock serializes access both within the process and across CLI/server
 // processes without publishing a sync mutation. Conditional writers use it to
 // revalidate that a domain change is still necessary before advancing the sync
-// journal. Directory creation also coordinates older daemons; a stale lock is
-// reclaimed only after its recorded process has died.
+// journal. Kernel file locking releases the cross-process lock on process exit.
 func (s *Store) beginWriteLock() (func(), error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -172,45 +168,19 @@ func (s *Store) beginWriteLockContext(ctx context.Context) (func(), error) {
 			unlockAdmission()
 		}
 	}()
-	lockPath := filepath.Join(s.Root, ".write-lock")
-	for {
-		err := os.Mkdir(lockPath, 0o700)
-		if err == nil {
-			if err := os.WriteFile(filepath.Join(lockPath, "owner"), []byte(strconv.Itoa(os.Getpid())), 0o600); err != nil {
-				_ = os.Remove(lockPath)
-				return nil, err
-			}
-			if err := s.establishStorageSchema(); err != nil {
-				_ = os.Remove(filepath.Join(lockPath, "owner"))
-				_ = os.Remove(lockPath)
-				return nil, err
-			}
-			acquiredAt := time.Now()
-			releaseProcess = false
-			return func() {
-				held := time.Since(acquiredAt)
-				if held > 100*time.Millisecond || acquiredAt.Sub(requestedAt) > 100*time.Millisecond {
-					slog.Debug("store writer lock", "waitMs", acquiredAt.Sub(requestedAt).Milliseconds(), "heldMs", held.Milliseconds())
-				}
-				_ = os.Remove(filepath.Join(lockPath, "owner"))
-				_ = os.Remove(lockPath)
-				unlockAdmission()
-				writeMu.Unlock()
-			}, nil
-		}
-		if !errors.Is(err, os.ErrExist) {
-			return nil, err
-		}
-		if reclaimDeadWriter(lockPath) {
-			continue
-		}
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		case <-time.After(5 * time.Millisecond):
-		}
-
+	if err := s.establishStorageSchema(); err != nil {
+		return nil, err
 	}
+	acquiredAt := time.Now()
+	releaseProcess = false
+	return func() {
+		held := time.Since(acquiredAt)
+		if held > 100*time.Millisecond || acquiredAt.Sub(requestedAt) > 100*time.Millisecond {
+			slog.Debug("store writer lock", "waitMs", acquiredAt.Sub(requestedAt).Milliseconds(), "heldMs", held.Milliseconds())
+		}
+		unlockAdmission()
+		writeMu.Unlock()
+	}, nil
 }
 
 // beginWrite acquires the central writer lock and publishes a durable sync
@@ -251,17 +221,12 @@ func (s *Store) beginWriteKind(kind string) (func(), error) {
 	}, nil
 }
 
-func (s *Store) projectDir() string           { return filepath.Join(s.Root, "projects") }
-func (s *Store) boardDir() string             { return filepath.Join(s.Root, "boards") }
 func (s *Store) cardDir() string              { return filepath.Join(s.Root, "cards") }
 func (s *Store) archivedCardDir() string      { return filepath.Join(s.Root, "archived-cards") }
 func (s *Store) commentDir() string           { return filepath.Join(s.Root, "comments") }
 func (s *Store) conversationDir() string      { return filepath.Join(s.Root, "conversations") }
 func (s *Store) runtimeDir() string           { return filepath.Join(s.Root, "runtime") }
-func (s *Store) scheduleDir() string          { return filepath.Join(s.Root, "schedules") }
-func (s *Store) scheduleRunDir() string       { return filepath.Join(s.Root, "schedule-runs") }
 func (s *Store) scheduleDatabasePath() string { return filepath.Join(s.Root, "schedules.db") }
-func (s *Store) authDir() string              { return filepath.Join(s.Root, "auth") }
 func (s *Store) workspaceDir() string         { return filepath.Join(s.Root, "workspaces") }
 func (s *Store) gitOperationDir() string      { return filepath.Join(s.Root, "git-operations") }
 func (s *Store) pullRequestDir() string       { return filepath.Join(s.Root, "pull-requests") }
@@ -399,33 +364,4 @@ func matchRef(ref, id, name string) bool {
 
 func containsFold(value, query string) bool {
 	return strings.Contains(strings.ToLower(value), strings.ToLower(query))
-}
-
-// Age is not proof that a writer died: large writes or a suspended daemon may
-// hold the lock for longer than thirty seconds. Only reclaim a known dead PID.
-func reclaimDeadWriter(path string) bool {
-	raw, err := os.ReadFile(filepath.Join(path, "owner"))
-	if err != nil {
-		return false
-	}
-	pid, err := strconv.Atoi(strings.TrimSpace(string(raw)))
-	if err != nil || pid <= 0 {
-		return false
-	}
-	process, err := os.FindProcess(pid)
-	if err != nil {
-		return false
-	}
-	signalErr := process.Signal(syscall.Signal(0))
-	if !errors.Is(signalErr, os.ErrProcessDone) && !errors.Is(signalErr, syscall.ESRCH) {
-		return false
-	}
-	// Rename claims this exact abandoned directory; competing reclaimers cannot
-	// delete a new owner's lock.
-	abandoned := path + ".abandoned-" + newID("")
-	if err := os.Rename(path, abandoned); err != nil {
-		return false
-	}
-	_ = os.RemoveAll(abandoned)
-	return true
 }
