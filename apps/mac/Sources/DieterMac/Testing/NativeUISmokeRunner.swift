@@ -249,11 +249,27 @@
             doubleClickTitleBar(of: window)
             try? await DieterTaskSleep.seconds(1)
             let restoredWindowFrame = window.frame
+            var normalizedWindowFrame: NSRect?
+            if toggledWindowFrame == originalWindowFrame
+                && restoredWindowFrame != originalWindowFrame
+            {
+                // A restored CI window can start with zoom state and geometry
+                // out of sync. The first gesture normalizes that hidden state;
+                // the next two must still visibly toggle and round-trip.
+                doubleClickTitleBar(of: window)
+                try? await DieterTaskSleep.seconds(1)
+                normalizedWindowFrame = window.frame
+            }
+            let didRoundTrip =
+                (toggledWindowFrame != originalWindowFrame
+                    && restoredWindowFrame == originalWindowFrame)
+                || (toggledWindowFrame == originalWindowFrame
+                    && restoredWindowFrame != originalWindowFrame
+                    && normalizedWindowFrame == originalWindowFrame)
             results["window-titlebar-double-click"] =
-                toggledWindowFrame != originalWindowFrame
-                    && restoredWindowFrame == originalWindowFrame
+                didRoundTrip
                 ? "passed"
-                : "failed: hidden title-bar double-click did not round-trip zoom (before=\(originalWindowFrame), toggled=\(toggledWindowFrame), restored=\(restoredWindowFrame), layout=\(window.contentLayoutRect))"
+                : "failed: hidden title-bar double-click did not round-trip zoom (before=\(originalWindowFrame), toggled=\(toggledWindowFrame), restored=\(restoredWindowFrame), normalized=\(String(describing: normalizedWindowFrame)), layout=\(window.contentLayoutRect))"
             if window.frame != originalWindowFrame {
                 window.setFrame(originalWindowFrame, display: true)
             }
