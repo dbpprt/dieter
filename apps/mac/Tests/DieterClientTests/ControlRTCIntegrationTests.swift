@@ -40,6 +40,47 @@ func controlWebRTCRoutesNativeRPCAndReportsSelectedMode() async throws {
         return false
     }
     #expect(observed)
+    var kvList = Dieter_V1_KVListRequest(); kvList.namespace = "navigation"
+    let kvInfo = try await plane.rpc.listKV(kvList)
+    var kvRef = Dieter_V1_KVRef(); kvRef.namespace = "navigation"; kvRef.key = "projects-folder.native-swift.name";
+    kvRef.account = kvInfo.account
+    var kvPut = Dieter_V1_KVPutRequest(); kvPut.ref = kvRef; kvPut.valueJson = Data("\"Swift RTC folder\"".utf8)
+    kvPut.operationID = UUID().uuidString; kvPut.daemonID = kvInfo.daemonID
+    let kvWritten = try await plane.rpc.putKV(kvPut)
+    #expect(try await plane.rpc.putKV(kvPut).revision == kvWritten.revision)
+    var kvWatch = Dieter_V1_KVWatchRequest(); kvWatch.namespace = "navigation"; kvWatch.account = kvInfo.account
+    let kvObserved = try await plane.rpc.service.watchKV(request: .init(message: kvWatch)) { response in
+        for try await frame in response.messages {
+            if frame.entries.contains(where: { $0.key == "projects-folder.native-swift.name" }) { return true }
+        }
+        return false
+    }
+    #expect(kvObserved)
+    let suiteA = "native-kv-a-" + UUID().uuidString, suiteB = "native-kv-b-" + UUID().uuidString
+    let defaultsA = try #require(UserDefaults(suiteName: suiteA)),
+        defaultsB = try #require(UserDefaults(suiteName: suiteB))
+    let sharedA = SharedKV(defaults: defaultsA), sharedB = SharedKV(defaults: defaultsB)
+    defer {
+        sharedA.bind(nil); sharedB.bind(nil); defaultsA.removePersistentDomain(forName: suiteA);
+        defaultsB.removePersistentDomain(forName: suiteB)
+    }
+    sharedA.bind(plane.rpc); sharedB.bind(plane.rpc)
+    for _ in 0..<250 {
+        if sharedA.account == kvInfo.account && sharedB.account == kvInfo.account { break };
+        try await Task.sleep(for: .milliseconds(20))
+    }
+    #expect(sharedA.account == kvInfo.account)
+    sharedA.put("projects-folder.native-shared.name", "Native shared navigation")
+    sharedA.put("projects-folder.native-shared.expanded", false)
+    for _ in 0..<250 {
+        if sharedA.pendingCount == 0 && sharedB.values["projects-folder.native-shared.expanded"] == Data("false".utf8) {
+            break
+        }
+        try await Task.sleep(for: .milliseconds(20))
+    }
+    #expect(sharedA.pendingCount == 0)
+    #expect(sharedB.values["projects-folder.native-shared.name"] == Data("\"Native shared navigation\"".utf8))
+    #expect(sharedB.values["projects-folder.native-shared.expanded"] == Data("false".utf8))
     #expect(try await plane.rpc.health(timeout: .seconds(5)).status == "ok")
     plane.shutdown()
     // Directory reads restrict advertised direct candidates to loopback, but

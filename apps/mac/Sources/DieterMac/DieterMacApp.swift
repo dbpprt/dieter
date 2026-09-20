@@ -4,6 +4,7 @@ import SwiftUI
 @main
 struct DieterMacApp: App {
     @State private var store: DieterStore
+    @State private var permissions = RequiredPermissions.live()
     private let islandController: DieterIslandController
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.openWindow) private var openWindow
@@ -28,7 +29,8 @@ struct DieterMacApp: App {
 
     var body: some Scene {
         Window("Dieter", id: "workspace") {
-            DieterRootView()
+            RequiredPermissionsGate { DieterRootView() }
+                .environment(permissions)
                 .environment(store)
                 .dieterThemeRoot(
                     palette: store.themeSelection.palette,
@@ -44,7 +46,7 @@ struct DieterMacApp: App {
                     let selected = DieterPalette.resolve(paletteValue)
                     if paletteValue != selected.rawValue { paletteValue = selected.rawValue }
                     DieterAppIcon.apply(selected)
-                    islandController.start(enabled: islandEnabled)
+                    islandController.start(enabled: islandEnabled && permissions.isReady)
                 }
                 .onChange(of: appearanceValue) { _, value in
                     store.themeSelection.appearance = DieterAppearance.resolve(value)
@@ -59,7 +61,7 @@ struct DieterMacApp: App {
                     DieterAppIcon.apply(palette)
                 }
                 .onChange(of: islandEnabled) { _, enabled in
-                    islandController.setEnabled(enabled)
+                    islandController.setEnabled(enabled && permissions.isReady)
                 }
                 .onOpenURL { store.completeAuthentication(url: $0) }
                 .task {
@@ -127,14 +129,17 @@ struct DieterMacApp: App {
                     openWindow(id: "workspace"); store.commandPalettePresented = true
                 }
                 .keyboardShortcut("k", modifiers: .command)
+                .disabled(!permissions.isReady)
                 Button("New Card…") {
                     openWindow(id: "workspace"); store.createConversationPresented = true
                 }
                 .keyboardShortcut("n", modifiers: .command)
+                .disabled(!permissions.isReady)
                 Button("New Standalone Chat") {
                     openWindow(id: "workspace"); store.beginStandaloneChat()
                 }
                 .keyboardShortcut("n", modifiers: [.command, .shift])
+                .disabled(!permissions.isReady)
                 Button("New Terminal…") {
                     openWindow(id: "workspace")
                     Task {
@@ -143,15 +148,30 @@ struct DieterMacApp: App {
                     }
                 }
                 .keyboardShortcut("t", modifiers: [.command, .shift])
+                .disabled(!permissions.isReady)
                 Divider()
                 Button("Refresh") { Task { await store.refreshState() } }
                     .keyboardShortcut("r", modifiers: .command)
+                    .disabled(!permissions.isReady)
             }
         }
 
         MenuBarExtra {
-            MenuBarContent()
-                .environment(store)
+            Group {
+                if permissions.isReady {
+                    MenuBarContent()
+                } else {
+                    VStack(spacing: 12) {
+                        Text("Finish required permissions to use Dieter.")
+                        Button("Finish Setup…") {
+                            openWindow(id: "workspace")
+                            NSApp.activate(ignoringOtherApps: true)
+                        }
+                        Button("Quit Dieter") { NSApp.terminate(nil) }
+                    }.padding()
+                }
+            }
+            .environment(store)
         } label: {
             Image(nsImage: MenuBarIcon.template)
                 .opacity(store.phase.isConnected ? 1 : 0.55)
@@ -161,16 +181,28 @@ struct DieterMacApp: App {
                     // a workspace window, so it owns the island and sync
                     // lifetime rather than waiting for DieterRootView to open.
                     store.reopenWorkspaceWindow = { openWindow(id: "workspace") }
-                    islandController.start(enabled: islandEnabled)
+                    islandController.start(enabled: islandEnabled && permissions.isReady)
                 }
                 .onChange(of: islandEnabled) { _, enabled in
-                    islandController.setEnabled(enabled)
+                    islandController.setEnabled(enabled && permissions.isReady)
                 }
                 .onChange(of: scenePhase) { _, phase in
                     if phase == .active {
+                        permissions.refresh()
                         store.applicationDidBecomeActive()
                     } else {
                         store.applicationDidResignActive()
+                    }
+                }
+                .onChange(of: permissions.isReady) { _, ready in
+                    islandController.setEnabled(islandEnabled && ready)
+                    if !ready { openWindow(id: "workspace") }
+                }
+                .task {
+                    if !permissions.isReady { openWindow(id: "workspace") }
+                    while !Task.isCancelled {
+                        permissions.refresh()
+                        do { try await DieterTaskSleep.seconds(2) } catch { return }
                     }
                 }
                 .task {

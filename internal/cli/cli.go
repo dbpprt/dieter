@@ -195,6 +195,7 @@ Commands:
   remote       Run resumable commands and native shells on a daemon host
   screen       Share screens/clipboard, tune quality, inspect latency and recovery
   schedule     Create, preview, dispatch, pause, and inspect schedules
+  kv           Shared portable JSON, ordering, and live account subscriptions
   peer         Inspect and edit account peer settings (leaderless sync)
   settings     Inspect and update prompt and daemon settings
   prompt       Inspect, update, scope, and preview prompt templates
@@ -465,14 +466,7 @@ Service startup activates a staged verified release there before workers begin.
 		}
 	}
 	remoteDesktop := remotedesktop.New(remoteDesktopOptions)
-	remoteDesktopPresence := func() *gatewayv1.RemoteDesktopPresence {
-		settings, settingsErr := c.Store.Settings()
-		if settingsErr != nil {
-			logger.Warn("read remote desktop settings for gateway presence", "error", settingsErr)
-			return remoteDesktop.Presence(false, false)
-		}
-		return remoteDesktop.Presence(settings.RemoteDesktopEnabled, settings.RemoteDesktopControlEnabled)
-	}
+	remoteDesktopPresence := remoteDesktop.Presence
 	startedAt := time.Now().UTC().Format(time.RFC3339Nano)
 	gatewayState := dieterdaemon.GatewayNotEnrolled
 	if enrolled {

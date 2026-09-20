@@ -17,8 +17,11 @@ On macOS, Screens uses the packaged `dieter-capture` helper with
 ScreenCaptureKit and VideoToolbox hardware H.264 or opt-in HEVC. The helper keeps at most one
 pending frame, scales the stream to the viewer's requested bounds, and accepts
 live keyframe and bitrate feedback from WebRTC. It captures the primary display
-by default after guided `dieter setup` verifies Screen Recording access for the
-exact signed helper installed beside the daemon.
+when an authenticated session starts, after guided `dieter setup` verifies Screen
+Recording and Accessibility access in the running daemon’s context. Grant the
+daemon executable path shown by the guide. Screen sharing has no enable switch: it
+is ready, needs OS permission, or is unsupported. The Mac app separately guides
+required Accessibility and Screen Recording grants for Dieter.app.
 
 ```sh
 dieter daemon permissions        # reopen the permission guide

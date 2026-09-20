@@ -10,7 +10,8 @@ import SwiftProtobuf
 enum RemoteDesktopPhase: Equatable, Sendable {
     case idle
     case loading
-    case disabled(String)
+    case permissionRequired(String)
+    case unsupported(String)
     case connecting
     case waitingForHostApproval
     case streaming
@@ -21,7 +22,8 @@ enum RemoteDesktopPhase: Equatable, Sendable {
         switch self {
         case .idle: "Not connected"
         case .loading: "Checking machine…"
-        case .disabled: "Screen sharing is off"
+        case .permissionRequired: "Permission required"
+        case .unsupported: "Screen sharing unavailable"
         case .connecting: "Connecting…"
         case .waitingForHostApproval: "Waiting for approval on Linux host…"
         case .streaming: "Live"
@@ -32,11 +34,11 @@ enum RemoteDesktopPhase: Equatable, Sendable {
 }
 
 func remoteDesktopShouldRequestControl(
-    enabled: Bool, capabilities: Dieter_V1_RemoteDesktopCapabilities
+    capabilities: Dieter_V1_RemoteDesktopCapabilities
 ) -> Bool {
     let portalCanRequestControl =
         capabilities.platform == "linux" && capabilities.controlPermission == "not_requested"
-    return enabled && capabilities.controlSupported
+    return capabilities.controlSupported
         && (capabilities.controlPermission == "granted" || portalCanRequestControl)
 }
 
@@ -64,7 +66,7 @@ final class RemoteDesktopController {
         subsystem: "com.dbpprt.dieter.mac", category: "remote-desktop-media")
     var phase: RemoteDesktopPhase = .idle
     var capabilities = Dieter_V1_RemoteDesktopCapabilities()
-    var settings = Dieter_V1_RemoteDesktopSettings()
+
     var routeLabel = ""
     var machineName = ""
     var errorMessage: String?
@@ -209,13 +211,16 @@ final class RemoteDesktopController {
                 guard self.owns(token) else { connection.shutdown(); return }
                 self.connection = connection
                 self.routeLabel = connection.routeLabel
-                let settings = try await connection.rpc.remoteDesktopSettings()
-                guard self.owns(token) else { return }
-                self.settings = settings
                 let capabilities = try await connection.rpc.remoteDesktopCapabilities()
                 guard self.owns(token) else { return }
                 self.capabilities = capabilities
-                guard settings.enabled else { self.phase = .disabled(capabilities.unavailableReason); return }
+                guard capabilities.ready else {
+                    self.phase =
+                        capabilities.availability == .permissionRequired
+                        ? .permissionRequired(capabilities.unavailableReason)
+                        : .unsupported(capabilities.unavailableReason)
+                    return
+                }
                 try await self.startPeerSession(generation: token)
             } catch {
                 guard self.owns(token) else { return }
@@ -248,29 +253,6 @@ final class RemoteDesktopController {
             self.recover(message: "Screen connection attempt timed out")
         }
         return task
-    }
-
-    func enableAndConnect() {
-        guard let connection, connectTask == nil else { return }
-        onUserActivity()
-        phase = .loading
-        let token = generation
-        connectTask = Task { [weak self] in
-            guard let self else { return }
-            defer { if self.owns(token) { self.connectTask = nil } }
-            do {
-                let settings = try await connection.rpc.updateRemoteDesktopSettings(enabled: true, controlEnabled: true)
-                guard self.owns(token) else { return }
-                self.settings = settings
-                let capabilities = try await connection.rpc.remoteDesktopCapabilities()
-                guard self.owns(token) else { return }
-                self.capabilities = capabilities
-                try await self.startPeerSession(generation: token)
-            } catch {
-                guard self.owns(token) else { return }
-                self.fail(error)
-            }
-        }
     }
 
     private func owns(_ token: UInt64) -> Bool { generation == token && !Task.isCancelled }
@@ -513,11 +495,11 @@ final class RemoteDesktopController {
         // Linux portals grant capture/control while the session is starting,
         // so "not_requested" is actionable there rather than a denial.
         request.control = remoteDesktopShouldRequestControl(
-            enabled: settings.controlEnabled, capabilities: capabilities)
+            capabilities: capabilities)
         request.embeddedCursor = remoteDesktopShouldEmbedCursor(
             capabilities, requestingControl: request.control)
         controlUnavailableReason =
-            settings.controlEnabled && !request.control
+            !request.control
             ? (capabilities.platform == "linux"
                 ? "Remote-control permission is required from the Linux desktop portal"
                 : "Accessibility permission is required on the host") : ""

@@ -12,10 +12,7 @@ data class NavigationFolder(
     val isExpanded: Boolean = true,
 )
 
-enum class NavigationFolderScope(val storageKey: String) {
-    PROJECTS("DieterSidebarProjectFolders"),
-    CHATS("DieterAllChatsFolders"),
-}
+enum class NavigationFolderScope { PROJECTS, CHATS }
 
 /** Matches the Mac folder model, including ordered membership and independent scopes. */
 @ConsistentCopyVisibility
@@ -30,7 +27,8 @@ data class NavigationFolderPreferences private constructor(val folders: List<Nav
     }
 
     fun nameIsAvailable(name: String, excludingID: String? = null): Boolean =
-        name.isNotBlank() && folders.none { it.id != excludingID && foldedName(it.name) == foldedName(name) }
+        name.isNotBlank() && name.trim().toByteArray(Charsets.UTF_8).size <= 256 &&
+            folders.none { it.id != excludingID && foldedName(it.name) == foldedName(name) }
 
     fun adding(name: String, id: String = UUID.randomUUID().toString()): NavigationFolderPreferences =
         if (!nameIsAvailable(name) || id.isBlank() || folders.any { it.id == id }) this

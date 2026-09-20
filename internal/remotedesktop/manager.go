@@ -40,13 +40,13 @@ const (
 )
 
 var (
-	ErrDisabled        = errors.New("remote desktop is disabled")
-	ErrControlDisabled = errors.New("remote desktop control is disabled")
-	ErrBusy            = errors.New("another remote desktop session is active")
-	ErrCapacity        = errors.New("screen sharing client limit reached (4)")
-	ErrControlOwner    = errors.New("another client controls the desktop; update both clients to use control handoff")
-	ErrNotFound        = errors.New("remote desktop session not found")
-	ErrInvalidSignal   = errors.New("invalid remote desktop signal")
+	ErrSessionClosed      = errors.New("remote desktop session admission was canceled")
+	ErrControlUnavailable = errors.New("this session did not request remote control")
+	ErrBusy               = errors.New("another remote desktop session is active")
+	ErrCapacity           = errors.New("screen sharing client limit reached (4)")
+	ErrControlOwner       = errors.New("another client controls the desktop; update both clients to use control handoff")
+	ErrNotFound           = errors.New("remote desktop session not found")
+	ErrInvalidSignal      = errors.New("invalid remote desktop signal")
 )
 
 type Identity struct {
@@ -92,7 +92,7 @@ type Manager struct {
 	displayOwner        *Session
 	displayLeaseDisplay string
 	controlGeneration   uint64 // protected by controlMu
-	policyGeneration    uint64 // protected by mu
+	sessionGeneration   uint64 // protected by mu
 	media               *capturePool
 	probeMu             sync.Mutex
 	probe               captureProbeResult
@@ -159,8 +159,8 @@ func New(options Options) *Manager {
 	return m
 }
 
-func (m *Manager) Capabilities(enabled, controlEnabled bool) *dieterv1.RemoteDesktopCapabilities {
-	value := m.capabilities(enabled, controlEnabled, false)
+func (m *Manager) Capabilities() *dieterv1.RemoteDesktopCapabilities {
+	value := m.capabilities(false)
 	value.DaemonExecutable, value.CaptureExecutable = executableIdentity(m.options.Source)
 	value.ClipboardSupported = value.ClipboardSupported || runtime.GOOS == "darwin" || m.options.ClipboardFactory != nil
 	value.BinaryClipboardSupported = value.ClipboardSupported
@@ -173,72 +173,57 @@ func (m *Manager) Capabilities(enabled, controlEnabled bool) *dieterv1.RemoteDes
 	return value
 }
 
-func (m *Manager) capabilities(enabled, controlEnabled, forceProbe bool) *dieterv1.RemoteDesktopCapabilities {
+func (m *Manager) capabilities(forceProbe bool) *dieterv1.RemoteDesktopCapabilities {
 	available, reason := SourceAvailable(m.options.Source)
 	m.mu.Lock()
 	active := len(m.sessions) > 0
 	m.mu.Unlock()
+	value := &dieterv1.RemoteDesktopCapabilities{Platform: runtime.GOOS, GraphicalSessionActive: available, UnavailableReason: reason, CapturePermission: "unknown", ControlPermission: "unsupported"}
 	if m.options.CapabilityProbe != nil && m.options.Source.Kind != "synthetic" && available {
-		value, err := m.nativeCapabilities(forceProbe)
+		native, err := m.nativeCapabilities(forceProbe)
 		if err != nil {
-			return &dieterv1.RemoteDesktopCapabilities{Platform: runtime.GOOS, Enabled: enabled, UnavailableReason: err.Error()}
+			value.GraphicalSessionActive = false
+			value.UnavailableReason = err.Error()
+		} else {
+			value = native
 		}
-		value.Enabled = enabled
-		value.ActiveSession = active
-		captureReady := value.CapturePermission == "granted" || runtime.GOOS == "linux" && value.CapturePermission == "not_requested"
-		encoderReady := value.EncoderAvailable
-		value.Ready = enabled && value.GraphicalSessionActive && captureReady && encoderReady && m.options.Identity.DaemonID != "" && len(m.options.Identity.PrivateKey) == ed25519.PrivateKeySize
-		switch {
-		case !enabled:
-			value.UnavailableReason = "Remote desktop is disabled on this machine"
-		case !captureReady:
-			value.UnavailableReason = "Screen capture permission is required for the running Dieter daemon; run `dieter daemon permissions` on that machine"
-		case !value.GraphicalSessionActive:
-			value.UnavailableReason = "No graphical session is active"
-		case !encoderReady:
-			value.UnavailableReason = "A compatible native H.264 encoder is unavailable"
-		case m.options.Identity.DaemonID == "":
-			value.UnavailableReason = "The daemon is not enrolled"
+	} else if available {
+		value.CapturePermission, value.UnavailableReason = m.captureReadiness(forceProbe)
+		value.ControlSupported = runtime.GOOS == "darwin" || runtime.GOOS == "linux" || m.options.Source.Kind == "synthetic"
+		if value.ControlSupported {
+			value.ControlPermission, _ = m.controlReadiness(forceProbe)
+		} else {
+			value.ControlPermission = "unsupported"
 		}
-		return value
-	}
-	permission := "unknown"
-	if strings.TrimSpace(m.options.Source.Kind) == "synthetic" {
-		permission = "granted"
-	} else if enabled && available {
-		permission, reason = m.captureReadiness(forceProbe)
-	}
-	controlSupported := runtime.GOOS == "darwin" || runtime.GOOS == "linux" || strings.TrimSpace(m.options.Source.Kind) == "synthetic"
-	controlPermission := "not_requested"
-	if controlEnabled && controlSupported {
-		controlPermission, _ = m.controlReadiness(false)
-	} else if !controlSupported {
-		controlPermission = "unsupported"
-	}
-	ready := enabled && available && permission == "granted" && m.options.Identity.DaemonID != "" && len(m.options.Identity.PrivateKey) == ed25519.PrivateKeySize
-	if !available {
-		// SourceAvailable already supplied the actionable dependency/session reason.
-	} else if !enabled {
-		reason = "Remote desktop is disabled on this machine"
-	} else if permission != "granted" {
-		if reason == "" {
-			reason = "Screen capture permission has not been verified"
-		}
-	} else if m.options.Identity.DaemonID == "" {
-		reason = "The daemon is not enrolled"
-	}
-	value := &dieterv1.RemoteDesktopCapabilities{
-		Platform: runtime.GOOS, GraphicalSessionActive: available, Enabled: enabled,
-		Ready: ready, UnavailableReason: reason,
-		CapturePermission: permission, ControlPermission: controlPermission,
-		ControlSupported: controlSupported, ClipboardSupported: false,
-		AudioSupported: false, FileTransferSupported: false, ActiveSession: active,
-	}
-	if available {
 		value.HelperVersion = remoteDesktopHelperVersion(m.options.Source)
 		value.Displays = []*dieterv1.RemoteDesktopDisplay{{Id: "primary", Name: "Primary display", Primary: true, Scale: 1}}
 		value.Codecs = []string{string(preferredVideoCodec(m.options.Source))}
-		value.EncoderAvailable = (runtime.GOOS == "darwin" || runtime.GOOS == "linux") && strings.TrimSpace(m.options.Source.Kind) != "synthetic"
+		value.EncoderAvailable = true
+	}
+	value.ActiveSession = active
+	value.Ready = false
+	value.Availability = dieterv1.RemoteDesktopAvailability_REMOTE_DESKTOP_AVAILABILITY_UNSUPPORTED
+	permissionReady := func(permission string) bool {
+		return permission == "granted" || value.Platform == "linux" && permission == "not_requested"
+	}
+	switch {
+	case !value.GraphicalSessionActive:
+		if value.UnavailableReason == "" {
+			value.UnavailableReason = "No graphical session is active on this machine"
+		}
+	case !value.EncoderAvailable:
+		value.UnavailableReason = "A compatible native screen encoder is unavailable"
+	case !value.ControlSupported:
+		value.UnavailableReason = "Remote input is not supported on this machine"
+	case m.options.Identity.DaemonID == "" || len(m.options.Identity.PrivateKey) != ed25519.PrivateKeySize:
+		value.UnavailableReason = "Enroll this daemon with `dieter setup` before connecting"
+	case !permissionReady(value.CapturePermission) || !permissionReady(value.ControlPermission):
+		value.Availability = dieterv1.RemoteDesktopAvailability_REMOTE_DESKTOP_AVAILABILITY_PERMISSION_REQUIRED
+		value.UnavailableReason = "Screen recording and input permissions are required. Run `dieter daemon permissions` on this machine to finish setup."
+	default:
+		value.Ready = true
+		value.Availability = dieterv1.RemoteDesktopAvailability_REMOTE_DESKTOP_AVAILABILITY_READY
+		value.UnavailableReason = ""
 	}
 	return value
 }
@@ -279,13 +264,7 @@ func (m *Manager) controlReadiness(force bool) (string, string) {
 	return result.permission, result.reason
 }
 
-func (m *Manager) Start(request *dieterv1.StartRemoteDesktopRequest, enabled, controlEnabled bool, operatorSubject string) (*Subscription, error) {
-	if !enabled {
-		return nil, ErrDisabled
-	}
-	if request.GetControl() && !controlEnabled {
-		return nil, ErrControlDisabled
-	}
+func (m *Manager) Start(request *dieterv1.StartRemoteDesktopRequest, operatorSubject string) (*Subscription, error) {
 	if err := validateStartRequest(request); err != nil {
 		return nil, err
 	}
@@ -299,7 +278,7 @@ func (m *Manager) Start(request *dieterv1.StartRemoteDesktopRequest, enabled, co
 	m.admissionMu.Lock()
 	defer m.admissionMu.Unlock()
 	m.mu.Lock()
-	policyGeneration := m.policyGeneration
+	sessionGeneration := m.sessionGeneration
 	for _, current := range m.sessions {
 		if current.clientNonce != request.GetClientNonce() {
 			continue
@@ -318,11 +297,10 @@ func (m *Manager) Start(request *dieterv1.StartRemoteDesktopRequest, enabled, co
 	if full {
 		return nil, ErrCapacity
 	}
-	// Capabilities probes the exact production capture path once per daemon
-	// lifetime. Reusing that result here avoids opening and encoding the screen
-	// twice immediately before every session; the real stream still reports any
-	// permission or device change when it starts.
-	capabilities := m.capabilities(enabled, controlEnabled, false)
+	// Reuse the short-lived capability cache before opening media. Explicit
+	// permission checks invalidate it, and the production capture/input paths
+	// still enforce OS grants when the session starts.
+	capabilities := m.capabilities(false)
 	if !capabilities.GetReady() {
 		return nil, errors.New(capabilities.GetUnavailableReason())
 	}
@@ -337,15 +315,15 @@ func (m *Manager) Start(request *dieterv1.StartRemoteDesktopRequest, enabled, co
 		return nil, err
 	}
 
-	session, err := newSession(m, request, operatorSubject, capabilities, controlEnabled)
+	session, err := newSession(m, request, operatorSubject, capabilities)
 	if err != nil {
 		return nil, err
 	}
 	m.mu.Lock()
-	if m.policyGeneration != policyGeneration {
+	if m.sessionGeneration != sessionGeneration {
 		m.mu.Unlock()
-		session.close("screen sharing policy changed")
-		return nil, ErrDisabled
+		session.close("screen sessions closed")
+		return nil, ErrSessionClosed
 	}
 	m.sessions[session.id] = session
 	subscription, err := session.subscribe(m.options.Now())
@@ -398,34 +376,17 @@ func (m *Manager) allSessions() []*Session {
 
 func (m *Manager) CloseActive(reason string) {
 	m.mu.Lock()
-	m.policyGeneration++
+	m.sessionGeneration++
 	m.mu.Unlock()
 	for _, session := range m.allSessions() {
 		session.close(reason)
 	}
 }
 
-func (m *Manager) CloseControlActive(reason string) {
-	if runtime.GOOS == "linux" {
-		// Linux portal device grants belong to the shared helper process, so a
-		// host policy change must retire even view-only sessions that share it.
-		m.CloseActive(reason)
-		return
-	}
-	m.mu.Lock()
-	m.policyGeneration++
-	m.mu.Unlock()
-	for _, session := range m.allSessions() {
-		if session.control {
-			session.close(reason)
-		}
-	}
-}
-
 func (m *Manager) Shutdown(context.Context) { m.CloseActive("daemon shutdown"); m.media.Close() }
 
-func (m *Manager) Presence(enabled, controlEnabled bool) *gatewayv1.RemoteDesktopPresence {
-	capabilities := m.Capabilities(enabled, controlEnabled)
+func (m *Manager) Presence() *gatewayv1.RemoteDesktopPresence {
+	capabilities := m.Capabilities()
 	return &gatewayv1.RemoteDesktopPresence{
 		Platform: capabilities.GetPlatform(), HelperVersion: capabilities.GetHelperVersion(),
 		Ready: capabilities.GetReady(), Reason: capabilities.GetUnavailableReason(),
@@ -564,7 +525,7 @@ func (s *Session) active() bool {
 	return !s.closed
 }
 
-func newSession(manager *Manager, request *dieterv1.StartRemoteDesktopRequest, operatorSubject string, capabilities *dieterv1.RemoteDesktopCapabilities, controlEnabled bool) (*Session, error) {
+func newSession(manager *Manager, request *dieterv1.StartRemoteDesktopRequest, operatorSubject string, capabilities *dieterv1.RemoteDesktopCapabilities) (*Session, error) {
 	config, configErr := normalizeConfiguration(requestConfiguration(request))
 	if configErr != nil {
 		return nil, configErr
@@ -582,9 +543,9 @@ func newSession(manager *Manager, request *dieterv1.StartRemoteDesktopRequest, o
 	sourceOptions.Control = request.GetControl()
 	if runtime.GOOS == "linux" {
 		// A shared portal session cannot add input devices after Start. Bind the
-		// helper's portal privilege to the host control setting; the manager still
+		// helper to the supported input devices; the manager still
 		// admits input only from the signed current controller.
-		sourceOptions.Control = controlEnabled && capabilities.GetControlSupported()
+		sourceOptions.Control = capabilities.GetControlSupported()
 	}
 	sourceOptions.EmbeddedCursor = request.GetEmbeddedCursor()
 	if request.GetDisplayId() != "" {

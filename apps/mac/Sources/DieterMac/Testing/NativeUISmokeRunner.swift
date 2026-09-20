@@ -176,6 +176,9 @@
                 "connection": "passed",
                 "fixture-project": project.name,
             ]
+            results["required-permissions-onboarding"] = await RequiredPermissionsUISmoke.run(output: output)
+            if results["required-permissions-onboarding"] != "passed" { writeReport(results, to: output); return }
+            window.makeKeyAndOrderFront(nil)
             let compatibleEndpointID = store.endpoint.id
             results["mixed-version-compatible-startup"] =
                 store.endpoint.apiCompatibility == .compatible

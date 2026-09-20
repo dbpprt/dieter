@@ -32,7 +32,7 @@ func TestMultipleClientsAdmissionReconnectAndControl(t *testing.T) {
 		req.Clipboard = true
 		peer := testViewer(t, req)
 		defer peer.Close()
-		sub, err := manager.Start(req, true, true, "github:7")
+		sub, err := manager.Start(req, "github:7")
 		if i == 4 {
 			if !errors.Is(err, ErrCapacity) {
 				t.Fatalf("fifth admission = %v", err)
@@ -46,7 +46,7 @@ func TestMultipleClientsAdmissionReconnectAndControl(t *testing.T) {
 		session := manager.sessionFor(sub.SessionID)
 		sessions = append(sessions, session)
 		if i == 0 {
-			replacement, err := manager.Start(req, true, true, "github:7")
+			replacement, err := manager.Start(req, "github:7")
 			if err != nil || replacement.SessionID != sub.SessionID {
 				t.Fatalf("reattach = %v", err)
 			}
@@ -280,7 +280,7 @@ func TestControlHandoffRequiresAcknowledgedRelease(t *testing.T) {
 		r.InputProtocolVersion = version
 		peer := testViewer(t, r)
 		t.Cleanup(func() { peer.Close() })
-		sub, err := manager.Start(r, true, true, "github:7")
+		sub, err := manager.Start(r, "github:7")
 		if err != nil {
 			t.Fatal(err)
 		}

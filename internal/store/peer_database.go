@@ -39,6 +39,7 @@ func (s *Store) peerDatabase(account string) (*sql.DB, error) {
 	db.SetMaxIdleConns(1)
 	_, err = db.Exec(`PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA busy_timeout=10000;
  CREATE TABLE IF NOT EXISTS peer_metadata (id INTEGER PRIMARY KEY CHECK(id=1), epoch TEXT NOT NULL, sequence INTEGER NOT NULL, record_count INTEGER NOT NULL DEFAULT 0, record_bytes INTEGER NOT NULL DEFAULT 0);
+ CREATE TABLE IF NOT EXISTS kv_receipts (id TEXT PRIMARY KEY, fingerprint TEXT NOT NULL, value BLOB NOT NULL);
  CREATE TABLE IF NOT EXISTS peer_effects (path TEXT PRIMARY KEY, value BLOB, remove_file INTEGER NOT NULL);
  CREATE TABLE IF NOT EXISTS peer_records (key TEXT PRIMARY KEY, revision TEXT NOT NULL, sequence INTEGER NOT NULL, value BLOB NOT NULL);
  CREATE INDEX IF NOT EXISTS peer_records_sequence ON peer_records(sequence);`)
@@ -116,6 +117,9 @@ func (s *Store) readPeerState(account string) (PeerData, error) {
 	return data, nil
 }
 func (s *Store) writePeerState(account string, data PeerData, effects ...localEffect) error {
+	return s.writePeerStateReceipt(account, data, nil, effects...)
+}
+func (s *Store) writePeerStateReceipt(account string, data PeerData, receipt *kvReceipt, effects ...localEffect) error {
 	db, err := s.peerDatabase(account)
 	if err != nil {
 		return err
@@ -215,6 +219,18 @@ func (s *Store) writePeerState(account string, data PeerData, effects ...localEf
 	}
 	for _, effect := range effects {
 		if _, err = tx.Exec("INSERT INTO peer_effects(path,value,remove_file) VALUES(?,?,?) ON CONFLICT(path) DO UPDATE SET value=excluded.value,remove_file=excluded.remove_file", effect.Path, effect.Value, effect.Remove); err != nil {
+			return err
+		}
+	}
+	if receipt != nil {
+		var count, size int
+		if err = tx.QueryRow("SELECT count(*),coalesce(sum(length(value)),0) FROM kv_receipts").Scan(&count, &size); err != nil {
+			return err
+		}
+		if count >= 65536 || size+len(receipt.Value) > 64<<20 {
+			return peerstore.ErrCapacity
+		}
+		if _, err = tx.Exec("INSERT INTO kv_receipts(id,fingerprint,value) VALUES(?,?,?)", receipt.ID, receipt.Fingerprint, receipt.Value); err != nil {
 			return err
 		}
 	}

@@ -453,12 +453,10 @@ const (
 
 // Settings contain machine-local templates and remote desktop policy.
 type Settings struct {
-	PromptTemplate              string `json:"promptTemplate,omitempty" yaml:"prompt_template,omitempty"`
-	BoardSkillTemplate          string `json:"boardSkillTemplate,omitempty" yaml:"board_skill_template,omitempty"`
-	ChatSkillTemplate           string `json:"chatSkillTemplate,omitempty" yaml:"chat_skill_template,omitempty"`
-	RemoteDesktopEnabled        bool   `json:"remoteDesktopEnabled,omitempty" yaml:"remote_desktop_enabled,omitempty"`
-	RemoteDesktopControlEnabled bool   `json:"remoteDesktopControlEnabled,omitempty" yaml:"remote_desktop_control_enabled,omitempty"`
-	UpdatedAt                   string `json:"updatedAt,omitempty" yaml:"updated_at,omitempty"`
+	PromptTemplate     string `json:"promptTemplate,omitempty" yaml:"prompt_template,omitempty"`
+	BoardSkillTemplate string `json:"boardSkillTemplate,omitempty" yaml:"board_skill_template,omitempty"`
+	ChatSkillTemplate  string `json:"chatSkillTemplate,omitempty" yaml:"chat_skill_template,omitempty"`
+	UpdatedAt          string `json:"updatedAt,omitempty" yaml:"updated_at,omitempty"`
 }
 
 type Schedule struct {

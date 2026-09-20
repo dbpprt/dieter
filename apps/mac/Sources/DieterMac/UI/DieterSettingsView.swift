@@ -554,7 +554,10 @@ struct GeneralSettings: View {
                     .smokeTarget("settings.screenShare.captureKeyboard")
                     Text("Forward system shortcuts such as ⌘Tab to the remote Mac. Press ⌘⇧Esc to release input.")
                         .font(.caption).foregroundStyle(DieterTheme.tertiary)
-                    Button("Allow keyboard capture in macOS…") { RemoteDesktopKeyboardCapture.requestPermission() }
+                    Text(
+                        "Accessibility access is required and checked automatically. Manage it in System Settings → Privacy & Security → Accessibility."
+                    )
+                    .font(.caption).foregroundStyle(DieterTheme.tertiary)
                     Divider().overlay(DieterTheme.border)
                     Toggle(
                         "Disconnect inactive screen shares",

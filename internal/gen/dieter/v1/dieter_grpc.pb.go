@@ -20,6 +20,12 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
+	DieterService_GetKV_FullMethodName                           = "/dieter.v1.DieterService/GetKV"
+	DieterService_ListKV_FullMethodName                          = "/dieter.v1.DieterService/ListKV"
+	DieterService_PutKV_FullMethodName                           = "/dieter.v1.DieterService/PutKV"
+	DieterService_DeleteKV_FullMethodName                        = "/dieter.v1.DieterService/DeleteKV"
+	DieterService_MoveKV_FullMethodName                          = "/dieter.v1.DieterService/MoveKV"
+	DieterService_WatchKV_FullMethodName                         = "/dieter.v1.DieterService/WatchKV"
 	DieterService_GetPeerChanges_FullMethodName                  = "/dieter.v1.DieterService/GetPeerChanges"
 	DieterService_GetPeerRecord_FullMethodName                   = "/dieter.v1.DieterService/GetPeerRecord"
 	DieterService_GetPeerStoreStatus_FullMethodName              = "/dieter.v1.DieterService/GetPeerStoreStatus"
@@ -126,8 +132,6 @@ const (
 	DieterService_SetRemoteDesktopDisplayMode_FullMethodName     = "/dieter.v1.DieterService/SetRemoteDesktopDisplayMode"
 	DieterService_RestoreRemoteDesktopDisplayMode_FullMethodName = "/dieter.v1.DieterService/RestoreRemoteDesktopDisplayMode"
 	DieterService_ProbeRemoteDesktopPermissions_FullMethodName   = "/dieter.v1.DieterService/ProbeRemoteDesktopPermissions"
-	DieterService_GetRemoteDesktopSettings_FullMethodName        = "/dieter.v1.DieterService/GetRemoteDesktopSettings"
-	DieterService_UpdateRemoteDesktopSettings_FullMethodName     = "/dieter.v1.DieterService/UpdateRemoteDesktopSettings"
 	DieterService_StartRemoteDesktop_FullMethodName              = "/dieter.v1.DieterService/StartRemoteDesktop"
 	DieterService_SendRemoteDesktopSignal_FullMethodName         = "/dieter.v1.DieterService/SendRemoteDesktopSignal"
 	DieterService_GetRemoteDesktopSession_FullMethodName         = "/dieter.v1.DieterService/GetRemoteDesktopSession"
@@ -151,6 +155,14 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type DieterServiceClient interface {
+	// Account-scoped portable JSON state. Revisions and cursors belong to a replica;
+	// replication is causal/eventual, not a distributed transaction or lock.
+	GetKV(ctx context.Context, in *KVRef, opts ...grpc.CallOption) (*KVEntry, error)
+	ListKV(ctx context.Context, in *KVListRequest, opts ...grpc.CallOption) (*KVPage, error)
+	PutKV(ctx context.Context, in *KVPutRequest, opts ...grpc.CallOption) (*KVEntry, error)
+	DeleteKV(ctx context.Context, in *KVDeleteRequest, opts ...grpc.CallOption) (*KVEntry, error)
+	MoveKV(ctx context.Context, in *KVMoveRequest, opts ...grpc.CallOption) (*KVEntry, error)
+	WatchKV(ctx context.Context, in *KVWatchRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[KVFrame], error)
 	GetPeerChanges(ctx context.Context, in *PeerChangesRequest, opts ...grpc.CallOption) (*PeerChangesResponse, error)
 	GetPeerRecord(ctx context.Context, in *PeerRecordRef, opts ...grpc.CallOption) (*PeerRecord, error)
 	GetPeerStoreStatus(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*PeerStoreStatus, error)
@@ -284,8 +296,6 @@ type DieterServiceClient interface {
 	// Explicit, bounded permission test performed by the running daemon.
 	// Discards one encoded frame and never injects input or changes settings.
 	ProbeRemoteDesktopPermissions(ctx context.Context, in *ProbeRemoteDesktopPermissionsRequest, opts ...grpc.CallOption) (*RemoteDesktopPermissionProbe, error)
-	GetRemoteDesktopSettings(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*RemoteDesktopSettings, error)
-	UpdateRemoteDesktopSettings(ctx context.Context, in *UpdateRemoteDesktopSettingsRequest, opts ...grpc.CallOption) (*RemoteDesktopSettings, error)
 	StartRemoteDesktop(ctx context.Context, in *StartRemoteDesktopRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[RemoteDesktopSignal], error)
 	SendRemoteDesktopSignal(ctx context.Context, in *RemoteDesktopSignal, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	GetRemoteDesktopSession(ctx context.Context, in *RemoteDesktopRef, opts ...grpc.CallOption) (*RemoteDesktopSessionState, error)
@@ -312,6 +322,75 @@ type dieterServiceClient struct {
 func NewDieterServiceClient(cc grpc.ClientConnInterface) DieterServiceClient {
 	return &dieterServiceClient{cc}
 }
+
+func (c *dieterServiceClient) GetKV(ctx context.Context, in *KVRef, opts ...grpc.CallOption) (*KVEntry, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(KVEntry)
+	err := c.cc.Invoke(ctx, DieterService_GetKV_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dieterServiceClient) ListKV(ctx context.Context, in *KVListRequest, opts ...grpc.CallOption) (*KVPage, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(KVPage)
+	err := c.cc.Invoke(ctx, DieterService_ListKV_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dieterServiceClient) PutKV(ctx context.Context, in *KVPutRequest, opts ...grpc.CallOption) (*KVEntry, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(KVEntry)
+	err := c.cc.Invoke(ctx, DieterService_PutKV_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dieterServiceClient) DeleteKV(ctx context.Context, in *KVDeleteRequest, opts ...grpc.CallOption) (*KVEntry, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(KVEntry)
+	err := c.cc.Invoke(ctx, DieterService_DeleteKV_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dieterServiceClient) MoveKV(ctx context.Context, in *KVMoveRequest, opts ...grpc.CallOption) (*KVEntry, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(KVEntry)
+	err := c.cc.Invoke(ctx, DieterService_MoveKV_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dieterServiceClient) WatchKV(ctx context.Context, in *KVWatchRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[KVFrame], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &DieterService_ServiceDesc.Streams[0], DieterService_WatchKV_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[KVWatchRequest, KVFrame]{ClientStream: stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type DieterService_WatchKVClient = grpc.ServerStreamingClient[KVFrame]
 
 func (c *dieterServiceClient) GetPeerChanges(ctx context.Context, in *PeerChangesRequest, opts ...grpc.CallOption) (*PeerChangesResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
@@ -455,7 +534,7 @@ func (c *dieterServiceClient) GetState(ctx context.Context, in *GetStateRequest,
 
 func (c *dieterServiceClient) WatchState(ctx context.Context, in *WatchStateRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[State], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	stream, err := c.cc.NewStream(ctx, &DieterService_ServiceDesc.Streams[0], DieterService_WatchState_FullMethodName, cOpts...)
+	stream, err := c.cc.NewStream(ctx, &DieterService_ServiceDesc.Streams[1], DieterService_WatchState_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -474,7 +553,7 @@ type DieterService_WatchStateClient = grpc.ServerStreamingClient[State]
 
 func (c *dieterServiceClient) WatchSync(ctx context.Context, in *SyncRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[SyncFrame], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	stream, err := c.cc.NewStream(ctx, &DieterService_ServiceDesc.Streams[1], DieterService_WatchSync_FullMethodName, cOpts...)
+	stream, err := c.cc.NewStream(ctx, &DieterService_ServiceDesc.Streams[2], DieterService_WatchSync_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -843,7 +922,7 @@ func (c *dieterServiceClient) PollConversation(ctx context.Context, in *PollConv
 
 func (c *dieterServiceClient) WatchConversation(ctx context.Context, in *WatchConversationRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ConversationUpdate], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	stream, err := c.cc.NewStream(ctx, &DieterService_ServiceDesc.Streams[2], DieterService_WatchConversation_FullMethodName, cOpts...)
+	stream, err := c.cc.NewStream(ctx, &DieterService_ServiceDesc.Streams[3], DieterService_WatchConversation_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -1112,7 +1191,7 @@ func (c *dieterServiceClient) GetGitOperation(ctx context.Context, in *GitOperat
 
 func (c *dieterServiceClient) WatchGitOperation(ctx context.Context, in *WatchGitOperationRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[GitOperationFrame], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	stream, err := c.cc.NewStream(ctx, &DieterService_ServiceDesc.Streams[3], DieterService_WatchGitOperation_FullMethodName, cOpts...)
+	stream, err := c.cc.NewStream(ctx, &DieterService_ServiceDesc.Streams[4], DieterService_WatchGitOperation_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -1221,7 +1300,7 @@ func (c *dieterServiceClient) CreateTerminal(ctx context.Context, in *CreateTerm
 
 func (c *dieterServiceClient) WatchTerminal(ctx context.Context, in *WatchTerminalRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[TerminalFrame], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	stream, err := c.cc.NewStream(ctx, &DieterService_ServiceDesc.Streams[4], DieterService_WatchTerminal_FullMethodName, cOpts...)
+	stream, err := c.cc.NewStream(ctx, &DieterService_ServiceDesc.Streams[5], DieterService_WatchTerminal_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -1310,7 +1389,7 @@ func (c *dieterServiceClient) GetExecution(ctx context.Context, in *ExecutionRef
 
 func (c *dieterServiceClient) WatchExecution(ctx context.Context, in *WatchExecutionRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ExecutionEvent], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	stream, err := c.cc.NewStream(ctx, &DieterService_ServiceDesc.Streams[5], DieterService_WatchExecution_FullMethodName, cOpts...)
+	stream, err := c.cc.NewStream(ctx, &DieterService_ServiceDesc.Streams[6], DieterService_WatchExecution_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -1427,29 +1506,9 @@ func (c *dieterServiceClient) ProbeRemoteDesktopPermissions(ctx context.Context,
 	return out, nil
 }
 
-func (c *dieterServiceClient) GetRemoteDesktopSettings(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*RemoteDesktopSettings, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(RemoteDesktopSettings)
-	err := c.cc.Invoke(ctx, DieterService_GetRemoteDesktopSettings_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *dieterServiceClient) UpdateRemoteDesktopSettings(ctx context.Context, in *UpdateRemoteDesktopSettingsRequest, opts ...grpc.CallOption) (*RemoteDesktopSettings, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(RemoteDesktopSettings)
-	err := c.cc.Invoke(ctx, DieterService_UpdateRemoteDesktopSettings_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
 func (c *dieterServiceClient) StartRemoteDesktop(ctx context.Context, in *StartRemoteDesktopRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[RemoteDesktopSignal], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	stream, err := c.cc.NewStream(ctx, &DieterService_ServiceDesc.Streams[6], DieterService_StartRemoteDesktop_FullMethodName, cOpts...)
+	stream, err := c.cc.NewStream(ctx, &DieterService_ServiceDesc.Streams[7], DieterService_StartRemoteDesktop_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -1630,6 +1689,14 @@ func (c *dieterServiceClient) ListScheduleRuns(ctx context.Context, in *ListSche
 // All implementations must embed UnimplementedDieterServiceServer
 // for forward compatibility.
 type DieterServiceServer interface {
+	// Account-scoped portable JSON state. Revisions and cursors belong to a replica;
+	// replication is causal/eventual, not a distributed transaction or lock.
+	GetKV(context.Context, *KVRef) (*KVEntry, error)
+	ListKV(context.Context, *KVListRequest) (*KVPage, error)
+	PutKV(context.Context, *KVPutRequest) (*KVEntry, error)
+	DeleteKV(context.Context, *KVDeleteRequest) (*KVEntry, error)
+	MoveKV(context.Context, *KVMoveRequest) (*KVEntry, error)
+	WatchKV(*KVWatchRequest, grpc.ServerStreamingServer[KVFrame]) error
 	GetPeerChanges(context.Context, *PeerChangesRequest) (*PeerChangesResponse, error)
 	GetPeerRecord(context.Context, *PeerRecordRef) (*PeerRecord, error)
 	GetPeerStoreStatus(context.Context, *emptypb.Empty) (*PeerStoreStatus, error)
@@ -1763,8 +1830,6 @@ type DieterServiceServer interface {
 	// Explicit, bounded permission test performed by the running daemon.
 	// Discards one encoded frame and never injects input or changes settings.
 	ProbeRemoteDesktopPermissions(context.Context, *ProbeRemoteDesktopPermissionsRequest) (*RemoteDesktopPermissionProbe, error)
-	GetRemoteDesktopSettings(context.Context, *emptypb.Empty) (*RemoteDesktopSettings, error)
-	UpdateRemoteDesktopSettings(context.Context, *UpdateRemoteDesktopSettingsRequest) (*RemoteDesktopSettings, error)
 	StartRemoteDesktop(*StartRemoteDesktopRequest, grpc.ServerStreamingServer[RemoteDesktopSignal]) error
 	SendRemoteDesktopSignal(context.Context, *RemoteDesktopSignal) (*emptypb.Empty, error)
 	GetRemoteDesktopSession(context.Context, *RemoteDesktopRef) (*RemoteDesktopSessionState, error)
@@ -1792,6 +1857,24 @@ type DieterServiceServer interface {
 // pointer dereference when methods are called.
 type UnimplementedDieterServiceServer struct{}
 
+func (UnimplementedDieterServiceServer) GetKV(context.Context, *KVRef) (*KVEntry, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetKV not implemented")
+}
+func (UnimplementedDieterServiceServer) ListKV(context.Context, *KVListRequest) (*KVPage, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListKV not implemented")
+}
+func (UnimplementedDieterServiceServer) PutKV(context.Context, *KVPutRequest) (*KVEntry, error) {
+	return nil, status.Error(codes.Unimplemented, "method PutKV not implemented")
+}
+func (UnimplementedDieterServiceServer) DeleteKV(context.Context, *KVDeleteRequest) (*KVEntry, error) {
+	return nil, status.Error(codes.Unimplemented, "method DeleteKV not implemented")
+}
+func (UnimplementedDieterServiceServer) MoveKV(context.Context, *KVMoveRequest) (*KVEntry, error) {
+	return nil, status.Error(codes.Unimplemented, "method MoveKV not implemented")
+}
+func (UnimplementedDieterServiceServer) WatchKV(*KVWatchRequest, grpc.ServerStreamingServer[KVFrame]) error {
+	return status.Error(codes.Unimplemented, "method WatchKV not implemented")
+}
 func (UnimplementedDieterServiceServer) GetPeerChanges(context.Context, *PeerChangesRequest) (*PeerChangesResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetPeerChanges not implemented")
 }
@@ -2110,12 +2193,6 @@ func (UnimplementedDieterServiceServer) RestoreRemoteDesktopDisplayMode(context.
 func (UnimplementedDieterServiceServer) ProbeRemoteDesktopPermissions(context.Context, *ProbeRemoteDesktopPermissionsRequest) (*RemoteDesktopPermissionProbe, error) {
 	return nil, status.Error(codes.Unimplemented, "method ProbeRemoteDesktopPermissions not implemented")
 }
-func (UnimplementedDieterServiceServer) GetRemoteDesktopSettings(context.Context, *emptypb.Empty) (*RemoteDesktopSettings, error) {
-	return nil, status.Error(codes.Unimplemented, "method GetRemoteDesktopSettings not implemented")
-}
-func (UnimplementedDieterServiceServer) UpdateRemoteDesktopSettings(context.Context, *UpdateRemoteDesktopSettingsRequest) (*RemoteDesktopSettings, error) {
-	return nil, status.Error(codes.Unimplemented, "method UpdateRemoteDesktopSettings not implemented")
-}
 func (UnimplementedDieterServiceServer) StartRemoteDesktop(*StartRemoteDesktopRequest, grpc.ServerStreamingServer[RemoteDesktopSignal]) error {
 	return status.Error(codes.Unimplemented, "method StartRemoteDesktop not implemented")
 }
@@ -2187,6 +2264,107 @@ func RegisterDieterServiceServer(s grpc.ServiceRegistrar, srv DieterServiceServe
 	}
 	s.RegisterService(&DieterService_ServiceDesc, srv)
 }
+
+func _DieterService_GetKV_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(KVRef)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DieterServiceServer).GetKV(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DieterService_GetKV_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DieterServiceServer).GetKV(ctx, req.(*KVRef))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DieterService_ListKV_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(KVListRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DieterServiceServer).ListKV(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DieterService_ListKV_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DieterServiceServer).ListKV(ctx, req.(*KVListRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DieterService_PutKV_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(KVPutRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DieterServiceServer).PutKV(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DieterService_PutKV_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DieterServiceServer).PutKV(ctx, req.(*KVPutRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DieterService_DeleteKV_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(KVDeleteRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DieterServiceServer).DeleteKV(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DieterService_DeleteKV_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DieterServiceServer).DeleteKV(ctx, req.(*KVDeleteRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DieterService_MoveKV_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(KVMoveRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DieterServiceServer).MoveKV(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DieterService_MoveKV_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DieterServiceServer).MoveKV(ctx, req.(*KVMoveRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DieterService_WatchKV_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(KVWatchRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(DieterServiceServer).WatchKV(m, &grpc.GenericServerStream[KVWatchRequest, KVFrame]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type DieterService_WatchKVServer = grpc.ServerStreamingServer[KVFrame]
 
 func _DieterService_GetPeerChanges_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(PeerChangesRequest)
@@ -4054,42 +4232,6 @@ func _DieterService_ProbeRemoteDesktopPermissions_Handler(srv interface{}, ctx c
 	return interceptor(ctx, in, info, handler)
 }
 
-func _DieterService_GetRemoteDesktopSettings_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(emptypb.Empty)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(DieterServiceServer).GetRemoteDesktopSettings(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: DieterService_GetRemoteDesktopSettings_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(DieterServiceServer).GetRemoteDesktopSettings(ctx, req.(*emptypb.Empty))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _DieterService_UpdateRemoteDesktopSettings_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(UpdateRemoteDesktopSettingsRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(DieterServiceServer).UpdateRemoteDesktopSettings(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: DieterService_UpdateRemoteDesktopSettings_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(DieterServiceServer).UpdateRemoteDesktopSettings(ctx, req.(*UpdateRemoteDesktopSettingsRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
 func _DieterService_StartRemoteDesktop_Handler(srv interface{}, stream grpc.ServerStream) error {
 	m := new(StartRemoteDesktopRequest)
 	if err := stream.RecvMsg(m); err != nil {
@@ -4396,6 +4538,26 @@ var DieterService_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "dieter.v1.DieterService",
 	HandlerType: (*DieterServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "GetKV",
+			Handler:    _DieterService_GetKV_Handler,
+		},
+		{
+			MethodName: "ListKV",
+			Handler:    _DieterService_ListKV_Handler,
+		},
+		{
+			MethodName: "PutKV",
+			Handler:    _DieterService_PutKV_Handler,
+		},
+		{
+			MethodName: "DeleteKV",
+			Handler:    _DieterService_DeleteKV_Handler,
+		},
+		{
+			MethodName: "MoveKV",
+			Handler:    _DieterService_MoveKV_Handler,
+		},
 		{
 			MethodName: "GetPeerChanges",
 			Handler:    _DieterService_GetPeerChanges_Handler,
@@ -4797,14 +4959,6 @@ var DieterService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _DieterService_ProbeRemoteDesktopPermissions_Handler,
 		},
 		{
-			MethodName: "GetRemoteDesktopSettings",
-			Handler:    _DieterService_GetRemoteDesktopSettings_Handler,
-		},
-		{
-			MethodName: "UpdateRemoteDesktopSettings",
-			Handler:    _DieterService_UpdateRemoteDesktopSettings_Handler,
-		},
-		{
 			MethodName: "SendRemoteDesktopSignal",
 			Handler:    _DieterService_SendRemoteDesktopSignal_Handler,
 		},
@@ -4870,6 +5024,11 @@ var DieterService_ServiceDesc = grpc.ServiceDesc{
 		},
 	},
 	Streams: []grpc.StreamDesc{
+		{
+			StreamName:    "WatchKV",
+			Handler:       _DieterService_WatchKV_Handler,
+			ServerStreams: true,
+		},
 		{
 			StreamName:    "WatchState",
 			Handler:       _DieterService_WatchState_Handler,

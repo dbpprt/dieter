@@ -1,6 +1,7 @@
 import AppKit
 import DieterAPI
 import DieterCore
+import DieterClient
 import Foundation
 import GRPCCore
 import Observation
@@ -50,6 +51,7 @@ final class AppSession {
     var endpoint: DieterEndpoint {
         didSet {
             if endpoint.id != oldValue.id {
+                if endpoint.credentialID != oldValue.credentialID { sharedNavigation.clearAccount() }
                 bindComposer(); resetFileSurface(); bindSchedules(); bindConversation(); bindWorktree(); bindTerminals()
             }
         }
@@ -82,22 +84,43 @@ final class AppSession {
     var sidebarProjectNavigation: SidebarProjectNavigationPreferences {
         didSet {
             guard sidebarProjectNavigation != oldValue else { return }
-            sidebarProjectNavigation.save(to: environment.defaults)
+            syncNavigationOrder(oldValue.projectOrder, sidebarProjectNavigation.projectOrder, prefix: "projects-order")
+            syncNavigationFlags(
+                oldValue.expandedProjectIDs, sidebarProjectNavigation.expandedProjectIDs, prefix: "projects-disclosure")
         }
     }
     var sidebarProjectFolders: NavigationFolderPreferences {
         didSet {
             guard sidebarProjectFolders != oldValue else { return }
-            sidebarProjectFolders.save(scope: .projects, to: environment.defaults)
+            syncNavigationFolders(oldValue, sidebarProjectFolders, scope: "projects")
         }
     }
     var allChatsFolders: NavigationFolderPreferences {
         didSet {
             guard allChatsFolders != oldValue else { return }
-            allChatsFolders.save(scope: .chats, to: environment.defaults)
+            syncNavigationFolders(oldValue, allChatsFolders, scope: "chats")
         }
     }
 
+    @ObservationIgnored lazy var sharedNavigation = SharedKV(
+        defaults: environment.defaults,
+        root: syncPersistence.fileURL.deletingLastPathComponent().appending(path: "shared-kv"))
+    @ObservationIgnored var applyingSharedNavigation = false
+    var navigationPendingCount = 0
+    var navigationSyncError: String?
+    var sharedLaneSortDirections: [String: String] = [:]
+    var pinnedChatNavigation = PinnedChatNavigationPreferences() {
+        didSet { syncNavigationOrder(oldValue.chatOrder, pinnedChatNavigation.chatOrder, prefix: "pinned-order") }
+    }
+    var chatProjectDisclosure = ChatProjectDisclosurePreferences() {
+        didSet {
+            syncNavigationFlags(
+                oldValue.collapsedProjectIDs, chatProjectDisclosure.collapsedProjectIDs, prefix: "chats-section",
+                inverted: true)
+            syncNavigationFlags(
+                oldValue.expandedProjectIDs, chatProjectDisclosure.expandedProjectIDs, prefix: "chats-disclosure")
+        }
+    }
     let conversationModel = ConversationModel()
     @ObservationIgnored var onConversationContentConnectionChanged: @MainActor () -> Void = {}
     @ObservationIgnored lazy var conversationContext = makeConversationContext()
@@ -216,6 +239,7 @@ final class AppSession {
                 terminalInputForwarder.suspend(); resetFileSurface(); bindSchedules(); bindConversation();
                 bindWorktree(); bindTerminals()
                 onConversationContentConnectionChanged()
+                bindSharedNavigation()
             }
         }
     }
@@ -310,9 +334,9 @@ final class AppSession {
         composer = ComposerModel(defaults: environment.defaults)
         terminalsModel = TerminalsModel(selectionDefaults: environment.defaults)
         screensModel = ScreensModel(defaults: environment.defaults)
-        sidebarProjectNavigation = SidebarProjectNavigationPreferences.load(from: environment.defaults)
-        sidebarProjectFolders = NavigationFolderPreferences.load(scope: .projects, from: environment.defaults)
-        allChatsFolders = NavigationFolderPreferences.load(scope: .chats, from: environment.defaults)
+        sidebarProjectNavigation = SidebarProjectNavigationPreferences()
+        sidebarProjectFolders = NavigationFolderPreferences()
+        allChatsFolders = NavigationFolderPreferences()
         connections = ConnectionManager(factory: environment.clients, clock: environment.clock)
         authentication = DieterAuthentication(
             defaults: environment.defaults, credentials: environment.credentials, clock: environment.clock)
@@ -350,6 +374,7 @@ final class AppSession {
             if restoreSync {
                 syncRestoreTask = Task { [weak self] in await self?.restorePersistentSync() }
             }
+            bindSharedNavigation(); applySharedNavigation()
             return
         }
 
@@ -367,6 +392,7 @@ final class AppSession {
         } else {
             endpoint = loadedEndpoints[0]
         }
+        bindSharedNavigation(); applySharedNavigation()
         if loadedEndpoints != storedEndpoints { persistEndpoints() }
         if restoreSync {
             syncRestoreTask = Task { [weak self] in await self?.restorePersistentSync() }

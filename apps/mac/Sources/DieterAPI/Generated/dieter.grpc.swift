@@ -21,6 +21,84 @@ public enum Dieter_V1_DieterService: Sendable {
     public static let descriptor = GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.DieterService")
     /// Namespace for method metadata.
     public enum Method: Sendable {
+        /// Namespace for "GetKV" metadata.
+        public enum GetKV: Sendable {
+            /// Request type for "GetKV".
+            public typealias Input = Dieter_V1_KVRef
+            /// Response type for "GetKV".
+            public typealias Output = Dieter_V1_KVEntry
+            /// Descriptor for "GetKV".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.DieterService"),
+                method: "GetKV",
+                type: .unary
+            )
+        }
+        /// Namespace for "ListKV" metadata.
+        public enum ListKV: Sendable {
+            /// Request type for "ListKV".
+            public typealias Input = Dieter_V1_KVListRequest
+            /// Response type for "ListKV".
+            public typealias Output = Dieter_V1_KVPage
+            /// Descriptor for "ListKV".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.DieterService"),
+                method: "ListKV",
+                type: .unary
+            )
+        }
+        /// Namespace for "PutKV" metadata.
+        public enum PutKV: Sendable {
+            /// Request type for "PutKV".
+            public typealias Input = Dieter_V1_KVPutRequest
+            /// Response type for "PutKV".
+            public typealias Output = Dieter_V1_KVEntry
+            /// Descriptor for "PutKV".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.DieterService"),
+                method: "PutKV",
+                type: .unary
+            )
+        }
+        /// Namespace for "DeleteKV" metadata.
+        public enum DeleteKV: Sendable {
+            /// Request type for "DeleteKV".
+            public typealias Input = Dieter_V1_KVDeleteRequest
+            /// Response type for "DeleteKV".
+            public typealias Output = Dieter_V1_KVEntry
+            /// Descriptor for "DeleteKV".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.DieterService"),
+                method: "DeleteKV",
+                type: .unary
+            )
+        }
+        /// Namespace for "MoveKV" metadata.
+        public enum MoveKV: Sendable {
+            /// Request type for "MoveKV".
+            public typealias Input = Dieter_V1_KVMoveRequest
+            /// Response type for "MoveKV".
+            public typealias Output = Dieter_V1_KVEntry
+            /// Descriptor for "MoveKV".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.DieterService"),
+                method: "MoveKV",
+                type: .unary
+            )
+        }
+        /// Namespace for "WatchKV" metadata.
+        public enum WatchKV: Sendable {
+            /// Request type for "WatchKV".
+            public typealias Input = Dieter_V1_KVWatchRequest
+            /// Response type for "WatchKV".
+            public typealias Output = Dieter_V1_KVFrame
+            /// Descriptor for "WatchKV".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.DieterService"),
+                method: "WatchKV",
+                type: .serverStreaming
+            )
+        }
         /// Namespace for "GetPeerChanges" metadata.
         public enum GetPeerChanges: Sendable {
             /// Request type for "GetPeerChanges".
@@ -1399,32 +1477,6 @@ public enum Dieter_V1_DieterService: Sendable {
                 type: .unary
             )
         }
-        /// Namespace for "GetRemoteDesktopSettings" metadata.
-        public enum GetRemoteDesktopSettings: Sendable {
-            /// Request type for "GetRemoteDesktopSettings".
-            public typealias Input = SwiftProtobuf.Google_Protobuf_Empty
-            /// Response type for "GetRemoteDesktopSettings".
-            public typealias Output = Dieter_V1_RemoteDesktopSettings
-            /// Descriptor for "GetRemoteDesktopSettings".
-            public static let descriptor = GRPCCore.MethodDescriptor(
-                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.DieterService"),
-                method: "GetRemoteDesktopSettings",
-                type: .unary
-            )
-        }
-        /// Namespace for "UpdateRemoteDesktopSettings" metadata.
-        public enum UpdateRemoteDesktopSettings: Sendable {
-            /// Request type for "UpdateRemoteDesktopSettings".
-            public typealias Input = Dieter_V1_UpdateRemoteDesktopSettingsRequest
-            /// Response type for "UpdateRemoteDesktopSettings".
-            public typealias Output = Dieter_V1_RemoteDesktopSettings
-            /// Descriptor for "UpdateRemoteDesktopSettings".
-            public static let descriptor = GRPCCore.MethodDescriptor(
-                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.DieterService"),
-                method: "UpdateRemoteDesktopSettings",
-                type: .unary
-            )
-        }
         /// Namespace for "StartRemoteDesktop" metadata.
         public enum StartRemoteDesktop: Sendable {
             /// Request type for "StartRemoteDesktop".
@@ -1648,6 +1700,12 @@ public enum Dieter_V1_DieterService: Sendable {
         }
         /// Descriptors for all methods in the "dieter.v1.DieterService" service.
         public static let descriptors: [GRPCCore.MethodDescriptor] = [
+            GetKV.descriptor,
+            ListKV.descriptor,
+            PutKV.descriptor,
+            DeleteKV.descriptor,
+            MoveKV.descriptor,
+            WatchKV.descriptor,
             GetPeerChanges.descriptor,
             GetPeerRecord.descriptor,
             GetPeerStoreStatus.descriptor,
@@ -1754,8 +1812,6 @@ public enum Dieter_V1_DieterService: Sendable {
             SetRemoteDesktopDisplayMode.descriptor,
             RestoreRemoteDesktopDisplayMode.descriptor,
             ProbeRemoteDesktopPermissions.descriptor,
-            GetRemoteDesktopSettings.descriptor,
-            UpdateRemoteDesktopSettings.descriptor,
             StartRemoteDesktop.descriptor,
             SendRemoteDesktopSignal.descriptor,
             GetRemoteDesktopSession.descriptor,
@@ -1792,6 +1848,125 @@ extension Dieter_V1_DieterService {
     /// You don't need to implement this protocol directly, use the generated
     /// implementation, ``Client``.
     public protocol ClientProtocol: Sendable {
+        /// Call the "GetKV" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Account-scoped portable JSON state. Revisions and cursors belong to a replica;
+        /// > replication is causal/eventual, not a distributed transaction or lock.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_KVRef` message.
+        ///   - serializer: A serializer for `Dieter_V1_KVRef` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_KVEntry` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func getKV<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_KVRef>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_KVRef>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_KVEntry>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_KVEntry>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "ListKV" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_KVListRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_KVListRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_KVPage` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func listKV<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_KVListRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_KVListRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_KVPage>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_KVPage>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "PutKV" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_KVPutRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_KVPutRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_KVEntry` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func putKV<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_KVPutRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_KVPutRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_KVEntry>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_KVEntry>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "DeleteKV" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_KVDeleteRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_KVDeleteRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_KVEntry` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func deleteKV<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_KVDeleteRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_KVDeleteRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_KVEntry>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_KVEntry>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "MoveKV" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_KVMoveRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_KVMoveRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_KVEntry` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func moveKV<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_KVMoveRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_KVMoveRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_KVEntry>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_KVEntry>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "WatchKV" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_KVWatchRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_KVWatchRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_KVFrame` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func watchKV<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_KVWatchRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_KVWatchRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_KVFrame>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.StreamingClientResponse<Dieter_V1_KVFrame>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
         /// Call the "GetPeerChanges" method.
         ///
         /// - Parameters:
@@ -3866,44 +4041,6 @@ extension Dieter_V1_DieterService {
             onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_RemoteDesktopPermissionProbe>) async throws -> Result
         ) async throws -> Result where Result: Sendable
 
-        /// Call the "GetRemoteDesktopSettings" method.
-        ///
-        /// - Parameters:
-        ///   - request: A request containing a single `SwiftProtobuf.Google_Protobuf_Empty` message.
-        ///   - serializer: A serializer for `SwiftProtobuf.Google_Protobuf_Empty` messages.
-        ///   - deserializer: A deserializer for `Dieter_V1_RemoteDesktopSettings` messages.
-        ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
-        /// - Returns: The result of `handleResponse`.
-        func getRemoteDesktopSettings<Result>(
-            request: GRPCCore.ClientRequest<SwiftProtobuf.Google_Protobuf_Empty>,
-            serializer: some GRPCCore.MessageSerializer<SwiftProtobuf.Google_Protobuf_Empty>,
-            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_RemoteDesktopSettings>,
-            options: GRPCCore.CallOptions,
-            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_RemoteDesktopSettings>) async throws -> Result
-        ) async throws -> Result where Result: Sendable
-
-        /// Call the "UpdateRemoteDesktopSettings" method.
-        ///
-        /// - Parameters:
-        ///   - request: A request containing a single `Dieter_V1_UpdateRemoteDesktopSettingsRequest` message.
-        ///   - serializer: A serializer for `Dieter_V1_UpdateRemoteDesktopSettingsRequest` messages.
-        ///   - deserializer: A deserializer for `Dieter_V1_RemoteDesktopSettings` messages.
-        ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
-        /// - Returns: The result of `handleResponse`.
-        func updateRemoteDesktopSettings<Result>(
-            request: GRPCCore.ClientRequest<Dieter_V1_UpdateRemoteDesktopSettingsRequest>,
-            serializer: some GRPCCore.MessageSerializer<Dieter_V1_UpdateRemoteDesktopSettingsRequest>,
-            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_RemoteDesktopSettings>,
-            options: GRPCCore.CallOptions,
-            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_RemoteDesktopSettings>) async throws -> Result
-        ) async throws -> Result where Result: Sendable
-
         /// Call the "StartRemoteDesktop" method.
         ///
         /// - Parameters:
@@ -4242,6 +4379,189 @@ extension Dieter_V1_DieterService {
         ///   - client: A `GRPCCore.GRPCClient` providing a communication channel to the service.
         public init(wrapping client: GRPCCore.GRPCClient<Transport>) {
             self.client = client
+        }
+
+        /// Call the "GetKV" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Account-scoped portable JSON state. Revisions and cursors belong to a replica;
+        /// > replication is causal/eventual, not a distributed transaction or lock.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_KVRef` message.
+        ///   - serializer: A serializer for `Dieter_V1_KVRef` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_KVEntry` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func getKV<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_KVRef>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_KVRef>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_KVEntry>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_KVEntry>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Dieter_V1_DieterService.Method.GetKV.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "ListKV" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_KVListRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_KVListRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_KVPage` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func listKV<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_KVListRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_KVListRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_KVPage>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_KVPage>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Dieter_V1_DieterService.Method.ListKV.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "PutKV" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_KVPutRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_KVPutRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_KVEntry` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func putKV<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_KVPutRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_KVPutRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_KVEntry>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_KVEntry>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Dieter_V1_DieterService.Method.PutKV.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "DeleteKV" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_KVDeleteRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_KVDeleteRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_KVEntry` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func deleteKV<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_KVDeleteRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_KVDeleteRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_KVEntry>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_KVEntry>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Dieter_V1_DieterService.Method.DeleteKV.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "MoveKV" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_KVMoveRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_KVMoveRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_KVEntry` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func moveKV<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_KVMoveRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_KVMoveRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_KVEntry>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_KVEntry>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Dieter_V1_DieterService.Method.MoveKV.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "WatchKV" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_KVWatchRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_KVWatchRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_KVFrame` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func watchKV<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_KVWatchRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_KVWatchRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_KVFrame>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.StreamingClientResponse<Dieter_V1_KVFrame>) async throws -> Result
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.serverStreaming(
+                request: request,
+                descriptor: Dieter_V1_DieterService.Method.WatchKV.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
         }
 
         /// Call the "GetPeerChanges" method.
@@ -7472,66 +7792,6 @@ extension Dieter_V1_DieterService {
             )
         }
 
-        /// Call the "GetRemoteDesktopSettings" method.
-        ///
-        /// - Parameters:
-        ///   - request: A request containing a single `SwiftProtobuf.Google_Protobuf_Empty` message.
-        ///   - serializer: A serializer for `SwiftProtobuf.Google_Protobuf_Empty` messages.
-        ///   - deserializer: A deserializer for `Dieter_V1_RemoteDesktopSettings` messages.
-        ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
-        /// - Returns: The result of `handleResponse`.
-        public func getRemoteDesktopSettings<Result>(
-            request: GRPCCore.ClientRequest<SwiftProtobuf.Google_Protobuf_Empty>,
-            serializer: some GRPCCore.MessageSerializer<SwiftProtobuf.Google_Protobuf_Empty>,
-            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_RemoteDesktopSettings>,
-            options: GRPCCore.CallOptions = .defaults,
-            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_RemoteDesktopSettings>) async throws -> Result = { response in
-                try response.message
-            }
-        ) async throws -> Result where Result: Sendable {
-            try await self.client.unary(
-                request: request,
-                descriptor: Dieter_V1_DieterService.Method.GetRemoteDesktopSettings.descriptor,
-                serializer: serializer,
-                deserializer: deserializer,
-                options: options,
-                onResponse: handleResponse
-            )
-        }
-
-        /// Call the "UpdateRemoteDesktopSettings" method.
-        ///
-        /// - Parameters:
-        ///   - request: A request containing a single `Dieter_V1_UpdateRemoteDesktopSettingsRequest` message.
-        ///   - serializer: A serializer for `Dieter_V1_UpdateRemoteDesktopSettingsRequest` messages.
-        ///   - deserializer: A deserializer for `Dieter_V1_RemoteDesktopSettings` messages.
-        ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
-        /// - Returns: The result of `handleResponse`.
-        public func updateRemoteDesktopSettings<Result>(
-            request: GRPCCore.ClientRequest<Dieter_V1_UpdateRemoteDesktopSettingsRequest>,
-            serializer: some GRPCCore.MessageSerializer<Dieter_V1_UpdateRemoteDesktopSettingsRequest>,
-            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_RemoteDesktopSettings>,
-            options: GRPCCore.CallOptions = .defaults,
-            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_RemoteDesktopSettings>) async throws -> Result = { response in
-                try response.message
-            }
-        ) async throws -> Result where Result: Sendable {
-            try await self.client.unary(
-                request: request,
-                descriptor: Dieter_V1_DieterService.Method.UpdateRemoteDesktopSettings.descriptor,
-                serializer: serializer,
-                deserializer: deserializer,
-                options: options,
-                onResponse: handleResponse
-            )
-        }
-
         /// Call the "StartRemoteDesktop" method.
         ///
         /// - Parameters:
@@ -8045,6 +8305,159 @@ extension Dieter_V1_DieterService {
 // Helpers providing default arguments to 'ClientProtocol' methods.
 @available(macOS 15.0, iOS 18.0, watchOS 11.0, tvOS 18.0, visionOS 2.0, *)
 extension Dieter_V1_DieterService.ClientProtocol {
+    /// Call the "GetKV" method.
+    ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > Account-scoped portable JSON state. Revisions and cursors belong to a replica;
+    /// > replication is causal/eventual, not a distributed transaction or lock.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Dieter_V1_KVRef` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func getKV<Result>(
+        request: GRPCCore.ClientRequest<Dieter_V1_KVRef>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_KVEntry>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.getKV(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_V1_KVRef>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_V1_KVEntry>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "ListKV" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Dieter_V1_KVListRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func listKV<Result>(
+        request: GRPCCore.ClientRequest<Dieter_V1_KVListRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_KVPage>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.listKV(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_V1_KVListRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_V1_KVPage>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "PutKV" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Dieter_V1_KVPutRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func putKV<Result>(
+        request: GRPCCore.ClientRequest<Dieter_V1_KVPutRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_KVEntry>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.putKV(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_V1_KVPutRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_V1_KVEntry>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "DeleteKV" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Dieter_V1_KVDeleteRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func deleteKV<Result>(
+        request: GRPCCore.ClientRequest<Dieter_V1_KVDeleteRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_KVEntry>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.deleteKV(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_V1_KVDeleteRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_V1_KVEntry>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "MoveKV" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Dieter_V1_KVMoveRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func moveKV<Result>(
+        request: GRPCCore.ClientRequest<Dieter_V1_KVMoveRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_KVEntry>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.moveKV(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_V1_KVMoveRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_V1_KVEntry>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "WatchKV" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Dieter_V1_KVWatchRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func watchKV<Result>(
+        request: GRPCCore.ClientRequest<Dieter_V1_KVWatchRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.StreamingClientResponse<Dieter_V1_KVFrame>) async throws -> Result
+    ) async throws -> Result where Result: Sendable {
+        try await self.watchKV(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_V1_KVWatchRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_V1_KVFrame>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
     /// Call the "GetPeerChanges" method.
     ///
     /// - Parameters:
@@ -10743,56 +11156,6 @@ extension Dieter_V1_DieterService.ClientProtocol {
         )
     }
 
-    /// Call the "GetRemoteDesktopSettings" method.
-    ///
-    /// - Parameters:
-    ///   - request: A request containing a single `SwiftProtobuf.Google_Protobuf_Empty` message.
-    ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
-    /// - Returns: The result of `handleResponse`.
-    public func getRemoteDesktopSettings<Result>(
-        request: GRPCCore.ClientRequest<SwiftProtobuf.Google_Protobuf_Empty>,
-        options: GRPCCore.CallOptions = .defaults,
-        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_RemoteDesktopSettings>) async throws -> Result = { response in
-            try response.message
-        }
-    ) async throws -> Result where Result: Sendable {
-        try await self.getRemoteDesktopSettings(
-            request: request,
-            serializer: GRPCProtobuf.ProtobufSerializer<SwiftProtobuf.Google_Protobuf_Empty>(),
-            deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_V1_RemoteDesktopSettings>(),
-            options: options,
-            onResponse: handleResponse
-        )
-    }
-
-    /// Call the "UpdateRemoteDesktopSettings" method.
-    ///
-    /// - Parameters:
-    ///   - request: A request containing a single `Dieter_V1_UpdateRemoteDesktopSettingsRequest` message.
-    ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
-    /// - Returns: The result of `handleResponse`.
-    public func updateRemoteDesktopSettings<Result>(
-        request: GRPCCore.ClientRequest<Dieter_V1_UpdateRemoteDesktopSettingsRequest>,
-        options: GRPCCore.CallOptions = .defaults,
-        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_RemoteDesktopSettings>) async throws -> Result = { response in
-            try response.message
-        }
-    ) async throws -> Result where Result: Sendable {
-        try await self.updateRemoteDesktopSettings(
-            request: request,
-            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_V1_UpdateRemoteDesktopSettingsRequest>(),
-            deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_V1_RemoteDesktopSettings>(),
-            options: options,
-            onResponse: handleResponse
-        )
-    }
-
     /// Call the "StartRemoteDesktop" method.
     ///
     /// - Parameters:
@@ -11220,6 +11583,183 @@ extension Dieter_V1_DieterService.ClientProtocol {
 // Helpers providing sugared APIs for 'ClientProtocol' methods.
 @available(macOS 15.0, iOS 18.0, watchOS 11.0, tvOS 18.0, visionOS 2.0, *)
 extension Dieter_V1_DieterService.ClientProtocol {
+    /// Call the "GetKV" method.
+    ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > Account-scoped portable JSON state. Revisions and cursors belong to a replica;
+    /// > replication is causal/eventual, not a distributed transaction or lock.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func getKV<Result>(
+        _ message: Dieter_V1_KVRef,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_KVEntry>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Dieter_V1_KVRef>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.getKV(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "ListKV" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func listKV<Result>(
+        _ message: Dieter_V1_KVListRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_KVPage>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Dieter_V1_KVListRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.listKV(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "PutKV" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func putKV<Result>(
+        _ message: Dieter_V1_KVPutRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_KVEntry>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Dieter_V1_KVPutRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.putKV(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "DeleteKV" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func deleteKV<Result>(
+        _ message: Dieter_V1_KVDeleteRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_KVEntry>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Dieter_V1_KVDeleteRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.deleteKV(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "MoveKV" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func moveKV<Result>(
+        _ message: Dieter_V1_KVMoveRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_KVEntry>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Dieter_V1_KVMoveRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.moveKV(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "WatchKV" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func watchKV<Result>(
+        _ message: Dieter_V1_KVWatchRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.StreamingClientResponse<Dieter_V1_KVFrame>) async throws -> Result
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Dieter_V1_KVWatchRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.watchKV(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
     /// Call the "GetPeerChanges" method.
     ///
     /// - Parameters:
@@ -14336,64 +14876,6 @@ extension Dieter_V1_DieterService.ClientProtocol {
             metadata: metadata
         )
         return try await self.probeRemoteDesktopPermissions(
-            request: request,
-            options: options,
-            onResponse: handleResponse
-        )
-    }
-
-    /// Call the "GetRemoteDesktopSettings" method.
-    ///
-    /// - Parameters:
-    ///   - message: request message to send.
-    ///   - metadata: Additional metadata to send, defaults to empty.
-    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
-    /// - Returns: The result of `handleResponse`.
-    public func getRemoteDesktopSettings<Result>(
-        _ message: SwiftProtobuf.Google_Protobuf_Empty,
-        metadata: GRPCCore.Metadata = [:],
-        options: GRPCCore.CallOptions = .defaults,
-        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_RemoteDesktopSettings>) async throws -> Result = { response in
-            try response.message
-        }
-    ) async throws -> Result where Result: Sendable {
-        let request = GRPCCore.ClientRequest<SwiftProtobuf.Google_Protobuf_Empty>(
-            message: message,
-            metadata: metadata
-        )
-        return try await self.getRemoteDesktopSettings(
-            request: request,
-            options: options,
-            onResponse: handleResponse
-        )
-    }
-
-    /// Call the "UpdateRemoteDesktopSettings" method.
-    ///
-    /// - Parameters:
-    ///   - message: request message to send.
-    ///   - metadata: Additional metadata to send, defaults to empty.
-    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
-    /// - Returns: The result of `handleResponse`.
-    public func updateRemoteDesktopSettings<Result>(
-        _ message: Dieter_V1_UpdateRemoteDesktopSettingsRequest,
-        metadata: GRPCCore.Metadata = [:],
-        options: GRPCCore.CallOptions = .defaults,
-        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_RemoteDesktopSettings>) async throws -> Result = { response in
-            try response.message
-        }
-    ) async throws -> Result where Result: Sendable {
-        let request = GRPCCore.ClientRequest<Dieter_V1_UpdateRemoteDesktopSettingsRequest>(
-            message: message,
-            metadata: metadata
-        )
-        return try await self.updateRemoteDesktopSettings(
             request: request,
             options: options,
             onResponse: handleResponse

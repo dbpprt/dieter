@@ -12,6 +12,9 @@ import (
 // itself is schema-independent. Paths, credentials, executable environments and
 // machine admission policy intentionally have no field here.
 func ValidateSettings(r Record) error {
+	if strings.HasPrefix(r.Kind, KVKindPrefix) {
+		return ValidateKV(r)
+	}
 	if DomainKind(r.Kind) {
 		return ValidateDomain(r)
 	}

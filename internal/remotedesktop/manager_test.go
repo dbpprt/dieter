@@ -67,7 +67,7 @@ func TestManagerStreamsSyntheticVP8AndSignsBinding(t *testing.T) {
 	client := testViewer(t, request)
 	defer client.Close()
 
-	subscription, err := manager.Start(request, true, false, "github:7")
+	subscription, err := manager.Start(request, "github:7")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -154,7 +154,7 @@ func TestManagerCarriesAuthorizedInputAndReleasesItOnChannelClose(t *testing.T) 
 
 	viewer, stateChannel := testControlViewer(t, request)
 	defer viewer.Close()
-	subscription, err := manager.Start(request, true, true, "github:7")
+	subscription, err := manager.Start(request, "github:7")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -199,8 +199,11 @@ func TestManagerCarriesAuthorizedInputAndReleasesItOnChannelClose(t *testing.T) 
 	if stateChannel.ReadyState() != webrtc.DataChannelStateOpen {
 		t.Fatal("reliable input channel did not open")
 	}
+	manager.mu.Lock()
+	controlGeneration := manager.controlGeneration
+	manager.mu.Unlock()
 	input := &dieterv1.RemoteDesktopInput{
-		ProtocolVersion: inputProtocolVersion, InputEpoch: binding.GetInputEpoch(), Sequence: 1, ControlGeneration: manager.controlGeneration,
+		ProtocolVersion: inputProtocolVersion, InputEpoch: binding.GetInputEpoch(), Sequence: 1, ControlGeneration: controlGeneration,
 		Payload: &dieterv1.RemoteDesktopInput_Key{Key: &dieterv1.RemoteDesktopKey{PhysicalKey: 227, Down: true, Modifiers: 8}},
 	}
 	raw, err := proto.Marshal(input)
@@ -233,34 +236,31 @@ func TestManagerRejectsRTCConfigurationFromAnotherOperator(t *testing.T) {
 	manager, request, _ := testManagerAndRequest(t, "github:7")
 	viewer := testViewer(t, request)
 	defer viewer.Close()
-	if _, err := manager.Start(request, true, false, "github:8"); err == nil {
+	if _, err := manager.Start(request, "github:8"); err == nil {
 		t.Fatal("expected operator-bound RTC configuration to be rejected")
 	}
-	if _, err := manager.Start(request, true, true, "github:7"); err != nil {
-		// A viewing-only request remains valid when host control is also enabled.
+	if _, err := manager.Start(request, "github:7"); err != nil {
+		// A viewing-only request remains valid without taking control.
 		t.Fatal(err)
 	}
 	manager.CloseActive("test complete")
 	request.Control = true
-	controlled, err := manager.Start(request, true, true, "github:7")
+	controlled, err := manager.Start(request, "github:7")
 	if err != nil {
 		t.Fatalf("control request failed: %v", err)
 	}
-	manager.CloseControlActive("control disabled")
-	if manager.Capabilities(true, true).GetActiveSession() {
-		t.Fatal("controlled session survived host control disable")
+	manager.CloseActive("sessions closed")
+	if manager.Capabilities().GetActiveSession() {
+		t.Fatal("controlled session survived CloseActive")
 	}
 	controlled.Close()
-	if _, err := manager.Start(request, true, false, "github:7"); err != ErrControlDisabled {
-		t.Fatalf("disabled control request error=%v, want %v", err, ErrControlDisabled)
-	}
 }
 
 func TestManagerReattachesSameOperatorWithoutReusingGatewayAdmission(t *testing.T) {
 	manager, request, _ := testManagerAndRequest(t, "github:7")
 	viewer := testViewer(t, request)
 	defer viewer.Close()
-	first, err := manager.Start(request, true, false, "github:7")
+	first, err := manager.Start(request, "github:7")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -270,7 +270,7 @@ func TestManagerReattachesSameOperatorWithoutReusingGatewayAdmission(t *testing.
 	// short-lived gateway configuration still being valid after a signaling
 	// transport interruption.
 	request.RtcConfiguration.SignedEnvelope = []byte("expired-or-already-consumed")
-	second, err := manager.Start(request, true, false, "github:7")
+	second, err := manager.Start(request, "github:7")
 	if err != nil {
 		t.Fatalf("reattach failed: %v", err)
 	}
@@ -280,15 +280,15 @@ func TestManagerReattachesSameOperatorWithoutReusingGatewayAdmission(t *testing.
 	}
 	differentOffer := proto.Clone(request).(*dieterv1.StartRemoteDesktopRequest)
 	differentOffer.Offer.Sdp += "\r\n"
-	if _, err := manager.Start(differentOffer, true, false, "github:7"); !errors.Is(err, ErrBusy) {
+	if _, err := manager.Start(differentOffer, "github:7"); !errors.Is(err, ErrBusy) {
 		t.Fatalf("different offer reattach error=%v, want %v", err, ErrBusy)
 	}
 	differentControl := proto.Clone(request).(*dieterv1.StartRemoteDesktopRequest)
 	differentControl.Control = true
-	if _, err := manager.Start(differentControl, true, true, "github:7"); !errors.Is(err, ErrBusy) {
+	if _, err := manager.Start(differentControl, "github:7"); !errors.Is(err, ErrBusy) {
 		t.Fatalf("different control grant reattach error=%v, want %v", err, ErrBusy)
 	}
-	if _, err := manager.Start(request, true, false, "github:8"); !errors.Is(err, ErrBusy) {
+	if _, err := manager.Start(request, "github:8"); !errors.Is(err, ErrBusy) {
 		t.Fatalf("other operator reattach error=%v, want %v", err, ErrBusy)
 	}
 	manager.CloseActive("test complete")
@@ -302,7 +302,7 @@ func TestManagerCapabilityRequiresRealCaptureProbe(t *testing.T) {
 	manager.options.CaptureProbe = func(context.Context, SourceOptions) error {
 		return errors.New("macOS Screen Recording permission is not granted to Dieter's capture helper")
 	}
-	capabilities := manager.Capabilities(true, false)
+	capabilities := manager.Capabilities()
 	if runtime.GOOS != "darwin" && runtime.GOOS != "linux" {
 		if capabilities.GetReady() || capabilities.GetCapturePermission() != "unknown" || !strings.Contains(capabilities.GetUnavailableReason(), "macOS only") {
 			t.Fatalf("unsupported native backend: %#v", capabilities)
@@ -312,25 +312,25 @@ func TestManagerCapabilityRequiresRealCaptureProbe(t *testing.T) {
 	if capabilities.GetReady() || capabilities.GetCapturePermission() != "denied" {
 		t.Fatalf("capabilities=%#v", capabilities)
 	}
-	if capabilities.GetUnavailableReason() != "macOS Screen Recording permission is not granted to Dieter's capture helper" {
+	if capabilities.GetAvailability() != dieterv1.RemoteDesktopAvailability_REMOTE_DESKTOP_AVAILABILITY_PERMISSION_REQUIRED {
 		t.Fatalf("unavailable reason=%q", capabilities.GetUnavailableReason())
 	}
 
 	manager.probe = captureProbeResult{}
 	manager.options.CaptureProbe = func(context.Context, SourceOptions) error { return nil }
-	capabilities = manager.Capabilities(true, false)
+	capabilities = manager.Capabilities()
 	if !capabilities.GetReady() || capabilities.GetCapturePermission() != "granted" {
 		t.Fatalf("capabilities after permission=%#v", capabilities)
 	}
 }
 
-func TestManagerReportsControlPermissionWithoutDisablingViewing(t *testing.T) {
+func TestManagerRequiresControlPermissionForReadiness(t *testing.T) {
 	manager, _, _ := testManagerAndRequest(t, "github:7")
 	manager.options.ControlProbe = func(context.Context, SourceOptions, bool) error {
 		return errors.New("Accessibility permission denied")
 	}
-	capabilities := manager.Capabilities(true, true)
-	if !capabilities.GetReady() || !capabilities.GetControlSupported() || capabilities.GetControlPermission() != "denied" {
+	capabilities := manager.Capabilities()
+	if capabilities.GetReady() || capabilities.GetAvailability() != dieterv1.RemoteDesktopAvailability_REMOTE_DESKTOP_AVAILABILITY_PERMISSION_REQUIRED || !capabilities.GetControlSupported() || capabilities.GetControlPermission() != "denied" {
 		t.Fatalf("control permission capabilities=%#v", capabilities)
 	}
 }
@@ -355,7 +355,7 @@ func TestManagerNegotiatesNativeH264Source(t *testing.T) {
 	manager.options.CaptureProbe = func(context.Context, SourceOptions) error { return nil }
 	manager.options.SourceFactory = func(SourceOptions) (FrameSource, error) { return source, nil }
 
-	subscription, err := manager.Start(request, true, false, "github:7")
+	subscription, err := manager.Start(request, "github:7")
 	if err != nil {
 		t.Fatalf("negotiate H264 source: %v", err)
 	}
@@ -387,7 +387,7 @@ func TestManagerStopsCaptureWhenSignalingObserverDisconnects(t *testing.T) {
 	manager.options.SourceFactory = func(SourceOptions) (FrameSource, error) { return source, nil }
 	manager.options.DetachGrace = 25 * time.Millisecond
 	manager.options.MonitorInterval = 5 * time.Millisecond
-	subscription, err := manager.Start(request, true, false, "github:7")
+	subscription, err := manager.Start(request, "github:7")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -411,7 +411,7 @@ func TestManagerStopsCaptureWhenSignalingObserverDisconnects(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("capture source was not canceled after the signaling observer disconnected")
 	}
-	if capabilities := manager.Capabilities(true, false); capabilities.GetActiveSession() {
+	if capabilities := manager.Capabilities(); capabilities.GetActiveSession() {
 		t.Fatalf("session remained active after disconnect: %#v", capabilities)
 	}
 }
@@ -425,7 +425,7 @@ func TestManagerStopsCaptureWhenWebRTCPeerDoesNotReconnect(t *testing.T) {
 	manager.options.SourceFactory = func(SourceOptions) (FrameSource, error) { return source, nil }
 	manager.options.DetachGrace = 25 * time.Millisecond
 	manager.options.MonitorInterval = 5 * time.Millisecond
-	subscription, err := manager.Start(request, true, false, "github:7")
+	subscription, err := manager.Start(request, "github:7")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -591,7 +591,7 @@ func TestInputHeartbeatDoesNotExpireWhilePeerIsNegotiating(t *testing.T) {
 	request.Control = true
 	viewer, _ := testControlViewer(t, request)
 	defer viewer.Close()
-	subscription, err := manager.Start(request, true, true, "github:7")
+	subscription, err := manager.Start(request, "github:7")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -602,5 +602,33 @@ func TestInputHeartbeatDoesNotExpireWhilePeerIsNegotiating(t *testing.T) {
 	time.Sleep(3500 * time.Millisecond)
 	if _, err := manager.SessionState(subscription.SessionID); err != nil {
 		t.Fatalf("input watchdog expired before negotiation completed: %v", err)
+	}
+}
+
+func TestScreenReadinessRecoversAfterPermissionProbeWithoutSettings(t *testing.T) {
+	manager, request, _ := testManagerAndRequest(t, "github:7")
+	allowed := false
+	manager.options.ControlProbe = func(context.Context, SourceOptions, bool) error {
+		if !allowed {
+			return errors.New("Accessibility denied")
+		}
+		return nil
+	}
+	if got := manager.Capabilities(); got.Ready || got.Availability != dieterv1.RemoteDesktopAvailability_REMOTE_DESKTOP_AVAILABILITY_PERMISSION_REQUIRED {
+		t.Fatalf("denied = %v", got)
+	}
+	if _, err := manager.Start(request, "github:7"); err == nil {
+		t.Fatal("session admitted without required permission")
+	}
+	allowed = true
+	if _, err := manager.ProbePermissions(context.Background(), false); err != nil {
+		t.Fatal(err)
+	}
+	if got := manager.Capabilities(); !got.Ready || got.Availability != dieterv1.RemoteDesktopAvailability_REMOTE_DESKTOP_AVAILABILITY_READY {
+		t.Fatalf("granted = %v", got)
+	}
+	manager.options.Source = SourceOptions{Kind: "screen", HelperPath: t.TempDir() + "/missing"}
+	if got := manager.Capabilities(); got.Ready || got.Availability != dieterv1.RemoteDesktopAvailability_REMOTE_DESKTOP_AVAILABILITY_UNSUPPORTED {
+		t.Fatalf("unsupported = %v", got)
 	}
 }

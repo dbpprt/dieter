@@ -212,8 +212,9 @@ private struct DetachedScreenShareView: View {
                     Text(session.machineName).font(.headline)
                     Text(session.controller.errorMessage ?? session.inactivityMessage ?? session.controller.phase.label)
                         .multilineTextAlignment(.center)
-                    if case .disabled = session.controller.phase {
-                        Button("Enable & connect") { session.controller.enableAndConnect() }
+                    if case .permissionRequired(let reason) = session.controller.phase {
+                        Text(reason).multilineTextAlignment(.center)
+                        Button("Check Again") { session.reconnect() }
                     } else if session.keepsConnectionOpen {
                         ProgressView().controlSize(.small)
                     } else {

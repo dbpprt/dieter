@@ -22,7 +22,7 @@ type readResumingConn struct{ grpc.ClientConnInterface }
 
 func (c readResumingConn) NewStream(ctx context.Context, desc *grpc.StreamDesc, method string, opts ...grpc.CallOption) (grpc.ClientStream, error) {
 	switch method {
-	case dieterv1.DieterService_WatchState_FullMethodName,
+	case dieterv1.DieterService_WatchKV_FullMethodName, dieterv1.DieterService_WatchState_FullMethodName,
 		dieterv1.DieterService_WatchSync_FullMethodName,
 		dieterv1.DieterService_WatchConversation_FullMethodName,
 		dieterv1.DieterService_WatchTerminal_FullMethodName,
@@ -132,6 +132,12 @@ func retryReadStream(err error) bool {
 
 func (s *resumingReadStream) checkpoint(value any) {
 	switch request := s.request.(type) {
+	case *dieterv1.KVWatchRequest:
+		frame := value.(*dieterv1.KVFrame)
+		if frame.GetCursor() != nil {
+			request.After = proto.Clone(frame.GetCursor()).(*dieterv1.KVCursor)
+			request.Account = frame.GetAccount()
+		}
 	case *dieterv1.WatchConversationRequest:
 		update := value.(*dieterv1.ConversationUpdate)
 		request.AfterSeq = update.GetLastSeq()

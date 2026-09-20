@@ -84,7 +84,6 @@ func assertScreenSessionCLI(t *testing.T, client *CLI, output *bytes.Buffer, con
 		t.Fatalf("route permission probe: %v", &permissions)
 	}
 	runDaemonCLI(t, client, output, "daemon", "permissions", "--check")
-	runDaemonCLI(t, client, output, "screen", "update", "--enabled=true", "--control=true")
 	if configuration == nil {
 		configuration = &gatewayv1.RTCConfiguration{}
 		if err := protojson.Unmarshal([]byte(runDaemonCLI(t, client, output, "machine", "rtc")), configuration); err != nil {

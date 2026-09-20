@@ -27,9 +27,8 @@ class AppPreferences(
     loadAsync: Boolean = false,
 ) {
     private val appContext = context.applicationContext
-    val navigationFolders by lazy {
-        NavigationFolderStore(appContext.getSharedPreferences("dieter_navigation_layout", Context.MODE_PRIVATE))
-    }
+    val sharedNavigation by lazy { SharedKV(appContext.getSharedPreferences("dieter_shared_kv", Context.MODE_PRIVATE)) }
+    val navigationFolders by lazy { NavigationFolderStore(sharedNavigation) }
     private val asyncLoading = loadAsync
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val mutationVersion = AtomicLong()
@@ -46,13 +45,13 @@ class AppPreferences(
     val notificationBoardIds: StateFlow<Set<String>> = _notificationBoardIds.asStateFlow()
     private val _notificationSettings = MutableStateFlow(if (loadAsync) DieterNotificationSettings() else readNotificationSettings())
     val notificationSettings: StateFlow<DieterNotificationSettings> = _notificationSettings.asStateFlow()
-    private val _projectOrder = MutableStateFlow(if (loadAsync) emptyList() else readProjectOrder())
+    private val _projectOrder = MutableStateFlow<List<String>>(emptyList())
     val projectOrder: StateFlow<List<String>> = _projectOrder.asStateFlow()
-    private val _collapsedChatProjectIds = MutableStateFlow(if (loadAsync) emptySet() else readCollapsedChatProjectIds())
+    private val _collapsedChatProjectIds = MutableStateFlow<Set<String>>(emptySet())
     val collapsedChatProjectIds: StateFlow<Set<String>> = _collapsedChatProjectIds.asStateFlow()
-    private val _expandedChatProjectIds = MutableStateFlow(if (loadAsync) emptySet() else readExpandedChatProjectIds())
+    private val _expandedChatProjectIds = MutableStateFlow<Set<String>>(emptySet())
     val expandedChatProjectIds: StateFlow<Set<String>> = _expandedChatProjectIds.asStateFlow()
-    private val _pinnedChatOrder = MutableStateFlow(if (loadAsync) emptyList() else readPinnedChatOrder())
+    private val _pinnedChatOrder = MutableStateFlow<List<String>>(emptyList())
     val pinnedChatOrder: StateFlow<List<String>> = _pinnedChatOrder.asStateFlow()
     private val _chatsPaneLeadingFraction = MutableStateFlow(
         if (loadAsync) DEFAULT_PANE_LEADING_FRACTION else readPaneLeadingFraction(KEY_CHATS_PANE_LEADING_FRACTION),
@@ -68,6 +67,10 @@ class AppPreferences(
     val conversationCreation: StateFlow<ConversationCreationPreferences> = _conversationCreation.asStateFlow()
 
     init {
+        projectSharedNavigation(sharedNavigation.values.value)
+        scope.launch(Dispatchers.Main.immediate) {
+            sharedNavigation.values.collect { values -> projectSharedNavigation(values) }
+        }
         if (loadAsync) {
             scope.launch { hydrate() }
         } else {
@@ -81,10 +84,6 @@ class AppPreferences(
         val showReasoningTraces = preferences.getBoolean(KEY_SHOW_REASONING_TRACES, false)
         val notificationBoardIds = readNotificationBoardIds()
         val notificationSettings = readNotificationSettings()
-        val projectOrder = readProjectOrder()
-        val collapsedChatProjectIds = readCollapsedChatProjectIds()
-        val expandedChatProjectIds = readExpandedChatProjectIds()
-        val pinnedChatOrder = readPinnedChatOrder()
         val chatsPaneLeadingFraction = readPaneLeadingFraction(KEY_CHATS_PANE_LEADING_FRACTION)
         val boardPaneLeadingFraction = readPaneLeadingFraction(KEY_BOARD_PANE_LEADING_FRACTION)
         val conversationCreation = readConversationCreationPreferences()
@@ -93,10 +92,6 @@ class AppPreferences(
         _showReasoningTraces.value = showReasoningTraces
         _notificationBoardIds.value = notificationBoardIds
         _notificationSettings.value = notificationSettings
-        _projectOrder.value = projectOrder
-        _collapsedChatProjectIds.value = collapsedChatProjectIds
-        _expandedChatProjectIds.value = expandedChatProjectIds
-        _pinnedChatOrder.value = pinnedChatOrder
         _chatsPaneLeadingFraction.value = chatsPaneLeadingFraction
         _boardPaneLeadingFraction.value = boardPaneLeadingFraction
         _conversationCreation.value = conversationCreation
@@ -159,40 +154,29 @@ class AppPreferences(
         _notificationSettings.value = settings
     }
 
+    private fun projectSharedNavigation(values: Map<String,String>) {
+        navigationFolders.project(values)
+        _projectOrder.value = SharedNavigation.ordered(values, "projects-order")
+        _pinnedChatOrder.value = SharedNavigation.ordered(values, "pinned-order")
+        _collapsedChatProjectIds.value = SharedNavigation.flags(values, "chats-section", inverted = true)
+        _expandedChatProjectIds.value = SharedNavigation.flags(values, "chats-disclosure")
+    }
+
     fun setProjectOrder(projectIds: List<String>) {
-        markMutation()
-        val updated = projectIds.filter(String::isNotBlank).distinct()
-        val encoded = JSONArray().apply { updated.forEach { put(it) } }.toString()
-        preferences.edit().putString(KEY_PROJECT_ORDER, encoded).apply()
-        _projectOrder.value = updated
+        SharedNavigation.order(sharedNavigation, _projectOrder.value, projectIds.distinct(), "projects-order")
+        projectSharedNavigation(sharedNavigation.values.value)
     }
-
     fun setChatProjectCollapsed(projectId: String, collapsed: Boolean) {
-        if (projectId.isBlank()) return
-        markMutation()
-        val updated = _collapsedChatProjectIds.value.toMutableSet().apply {
-            if (collapsed) add(projectId) else remove(projectId)
-        }.toSet()
-        preferences.edit().putStringSet(KEY_COLLAPSED_CHAT_PROJECT_IDS, updated).apply()
-        _collapsedChatProjectIds.value = updated
+        sharedNavigation.put("chats-section.$projectId.expanded", !collapsed)
+        projectSharedNavigation(sharedNavigation.values.value)
     }
-
     fun setChatProjectExpanded(projectId: String, expanded: Boolean) {
-        if (projectId.isBlank()) return
-        markMutation()
-        val updated = _expandedChatProjectIds.value.toMutableSet().apply {
-            if (expanded) add(projectId) else remove(projectId)
-        }.toSet()
-        preferences.edit().putStringSet(KEY_EXPANDED_CHAT_PROJECT_IDS, updated).apply()
-        _expandedChatProjectIds.value = updated
+        sharedNavigation.put("chats-disclosure.$projectId.expanded", expanded)
+        projectSharedNavigation(sharedNavigation.values.value)
     }
-
     fun setPinnedChatOrder(chatIds: List<String>) {
-        markMutation()
-        val updated = chatIds.filter(String::isNotBlank).distinct()
-        val encoded = JSONArray().apply { updated.forEach { put(it) } }.toString()
-        preferences.edit().putString(KEY_PINNED_CHAT_ORDER, encoded).apply()
-        _pinnedChatOrder.value = updated
+        SharedNavigation.order(sharedNavigation, _pinnedChatOrder.value, chatIds.distinct(), "pinned-order")
+        projectSharedNavigation(sharedNavigation.values.value)
     }
 
     fun setChatsPaneLeadingFraction(fraction: Float) {
@@ -245,34 +229,6 @@ class AppPreferences(
         liveStatusActivityEnabled = preferences.getBoolean(KEY_LIVE_STATUS_ACTIVITY_ENABLED, true),
     )
 
-    private fun readProjectOrder(): List<String> = runCatching {
-        val encoded = preferences.getString(KEY_PROJECT_ORDER, null) ?: return@runCatching emptyList()
-        val array = JSONArray(encoded)
-        buildList {
-            for (index in 0 until array.length()) {
-                array.optString(index).takeIf(String::isNotBlank)?.let(::add)
-            }
-        }.distinct()
-    }.getOrDefault(emptyList())
-
-    private fun readCollapsedChatProjectIds(): Set<String> =
-        preferences.getStringSet(KEY_COLLAPSED_CHAT_PROJECT_IDS, emptySet()).orEmpty()
-            .filterTo(mutableSetOf(), String::isNotBlank)
-
-    private fun readExpandedChatProjectIds(): Set<String> =
-        preferences.getStringSet(KEY_EXPANDED_CHAT_PROJECT_IDS, emptySet()).orEmpty()
-            .filterTo(mutableSetOf(), String::isNotBlank)
-
-    private fun readPinnedChatOrder(): List<String> = runCatching {
-        val encoded = preferences.getString(KEY_PINNED_CHAT_ORDER, null) ?: return@runCatching emptyList()
-        val array = JSONArray(encoded)
-        buildList {
-            for (index in 0 until array.length()) {
-                array.optString(index).takeIf(String::isNotBlank)?.let(::add)
-            }
-        }.distinct()
-    }.getOrDefault(emptyList())
-
     private fun readPaneLeadingFraction(key: String): Float =
         preferences.getFloat(key, DEFAULT_PANE_LEADING_FRACTION)
             .takeIf(Float::isFinite)
@@ -300,10 +256,6 @@ class AppPreferences(
         private const val KEY_NOTIFICATION_DISPLAY_STYLE = "notification_display_style"
         private const val KEY_RESULT_PREVIEWS_ENABLED = "result_previews_enabled"
         private const val KEY_LIVE_STATUS_ACTIVITY_ENABLED = "live_status_activity_enabled"
-        private const val KEY_PROJECT_ORDER = "project_order"
-        private const val KEY_COLLAPSED_CHAT_PROJECT_IDS = "collapsed_chat_project_ids"
-        private const val KEY_EXPANDED_CHAT_PROJECT_IDS = "expanded_chat_project_ids"
-        private const val KEY_PINNED_CHAT_ORDER = "pinned_chat_order"
         private const val KEY_CHATS_PANE_LEADING_FRACTION = "chats_pane_leading_fraction"
         private const val KEY_BOARD_PANE_LEADING_FRACTION = "board_pane_leading_fraction"
         private const val KEY_CONVERSATION_CREATION_PROVIDER = "conversation_creation_provider"

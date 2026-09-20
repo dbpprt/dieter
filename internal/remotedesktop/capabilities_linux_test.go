@@ -18,7 +18,7 @@ import (
 )
 
 func TestLinuxNativeScreenCapabilitiesRequireInstalledHelper(t *testing.T) {
-	capabilities := New(Options{Source: SourceOptions{Kind: "screen", HelperPath: t.TempDir() + "/missing"}}).Capabilities(false, false)
+	capabilities := New(Options{Source: SourceOptions{Kind: "screen", HelperPath: t.TempDir() + "/missing"}}).Capabilities()
 	if capabilities.GetReady() || len(capabilities.GetDisplays()) != 0 || len(capabilities.GetCodecs()) != 0 || capabilities.GetHelperVersion() != "" {
 		t.Fatalf("missing Linux helper advertised resources: %#v", capabilities)
 	}
@@ -42,7 +42,7 @@ func TestLinuxPortalPermissionIsPromptable(t *testing.T) {
 			Codecs:                 []string{"H264"},
 		}, nil
 	}
-	capabilities := manager.Capabilities(true, true)
+	capabilities := manager.Capabilities()
 	if !capabilities.GetReady() || capabilities.GetCapturePermission() != "not_requested" || capabilities.GetControlPermission() != "not_requested" {
 		t.Fatalf("portal capabilities = %#v", capabilities)
 	}
@@ -70,7 +70,7 @@ func TestLinuxPermissionRequestUsesOneCombinedPortalProbe(t *testing.T) {
 	}
 }
 
-func TestLinuxCapturePoolHonorsHostControlPolicy(t *testing.T) {
+func TestLinuxCapturePoolHonorsRequestedInputAccess(t *testing.T) {
 	for _, expected := range []bool{false, true} {
 		t.Run(map[bool]string{false: "view-only", true: "control"}[expected], func(t *testing.T) {
 			observed := !expected
@@ -112,7 +112,7 @@ func TestLinuxCapturePoolDoesNotReuseViewOnlyHelperForControl(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(observed) != 2 || observed[0] || !observed[1] {
-		t.Fatalf("helper control policies = %v, want [false true]", observed)
+		t.Fatalf("helper input grants = %v, want [false true]", observed)
 	}
 	viewMux := view.(*sharedSource).variant.source.(*nativeRendition).mux
 	controlMux := control.(*sharedSource).variant.source.(*nativeRendition).mux
@@ -268,7 +268,7 @@ func TestLinuxNativeHelperCapabilities(t *testing.T) {
 	if helper == "" {
 		t.Skip("Linux capture helper not configured")
 	}
-	capabilities := New(Options{Source: SourceOptions{Kind: "native-synthetic", HelperPath: helper}}).Capabilities(false, false)
+	capabilities := New(Options{Source: SourceOptions{Kind: "native-synthetic", HelperPath: helper}}).Capabilities()
 	if capabilities.GetPlatform() != "linux" || len(capabilities.GetDisplays()) != 1 || capabilities.GetDisplays()[0].GetId() != "synthetic" {
 		t.Fatalf("capabilities = %#v", capabilities)
 	}

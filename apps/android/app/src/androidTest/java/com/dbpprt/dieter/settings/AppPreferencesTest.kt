@@ -30,64 +30,33 @@ class AppPreferencesTest {
     }
 
     @Test
-    fun projectOrderPersistsInSequence() {
-        val preferences = AppPreferences(InstrumentationRegistry.getInstrumentation().targetContext)
-        val originalOrder = preferences.projectOrder.value
-        val prefix = "project-order-test-${System.nanoTime()}"
-        val expected = listOf("$prefix-c", "$prefix-a", "$prefix-b")
-
-        try {
-            preferences.setProjectOrder(expected + expected.first())
-
-            assertEquals(expected, preferences.projectOrder.value)
-            assertEquals(expected, AppPreferences(InstrumentationRegistry.getInstrumentation().targetContext).projectOrder.value)
-        } finally {
-            preferences.setProjectOrder(originalOrder)
+    fun navigationUsesIsolatedAccountCacheAndDurableOfflineQueue() {
+        val base = InstrumentationRegistry.getInstrumentation().targetContext
+        val prefix = "kv-test-${java.util.UUID.randomUUID()}-"
+        val context = object : android.content.ContextWrapper(base) {
+            override fun getApplicationContext(): android.content.Context = this
+            override fun getSharedPreferences(name: String, mode: Int): android.content.SharedPreferences =
+                base.getSharedPreferences(prefix + name, mode)
         }
-    }
-
-    @Test
-    fun chatProjectDisclosurePersistsAcrossInstances() {
-        val context = InstrumentationRegistry.getInstrumentation().targetContext
-        val preferences = AppPreferences(context)
-        val projectId = "chat-project-disclosure-test-${System.nanoTime()}"
-
-        try {
-            preferences.setChatProjectCollapsed(projectId, true)
-            preferences.setChatProjectExpanded(projectId, true)
-
+        context.getSharedPreferences("dieter_shared_kv", 0).edit().putString("activeAccount", "fixture-account").commit()
+        InstrumentationRegistry.getInstrumentation().runOnMainSync {
+            val preferences = AppPreferences(context)
+            preferences.setProjectOrder(listOf("c", "a", "b"))
+            preferences.setPinnedChatOrder(listOf("two", "one"))
+            preferences.setChatProjectCollapsed("p", true)
+            preferences.setChatProjectExpanded("p", true)
             val restored = AppPreferences(context)
-            assertTrue(projectId in restored.collapsedChatProjectIds.value)
-            assertTrue(projectId in restored.expandedChatProjectIds.value)
-
-            preferences.setChatProjectCollapsed(projectId, false)
-            preferences.setChatProjectExpanded(projectId, false)
-
-            val cleared = AppPreferences(context)
-            assertFalse(projectId in cleared.collapsedChatProjectIds.value)
-            assertFalse(projectId in cleared.expandedChatProjectIds.value)
-        } finally {
-            preferences.setChatProjectCollapsed(projectId, false)
-            preferences.setChatProjectExpanded(projectId, false)
+            assertEquals(listOf("c", "a", "b"), restored.projectOrder.value)
+            assertEquals(listOf("two", "one"), restored.pinnedChatOrder.value)
+            assertTrue("p" in restored.collapsedChatProjectIds.value)
+            assertTrue("p" in restored.expandedChatProjectIds.value)
+            assertEquals(7, restored.sharedNavigation.status.value.pending)
+            restored.sharedNavigation.clearAccount()
+            val signedOut = AppPreferences(context)
+            assertTrue(signedOut.projectOrder.value.isEmpty())
+            assertEquals(0, signedOut.sharedNavigation.status.value.pending)
         }
-    }
-
-    @Test
-    fun pinnedChatOrderPersistsInSequence() {
-        val context = InstrumentationRegistry.getInstrumentation().targetContext
-        val preferences = AppPreferences(context)
-        val originalOrder = preferences.pinnedChatOrder.value
-        val prefix = "pinned-chat-order-test-${System.nanoTime()}"
-        val expected = listOf("$prefix-c", "$prefix-a", "$prefix-b")
-
-        try {
-            preferences.setPinnedChatOrder(expected + expected.first())
-
-            assertEquals(expected, preferences.pinnedChatOrder.value)
-            assertEquals(expected, AppPreferences(context).pinnedChatOrder.value)
-        } finally {
-            preferences.setPinnedChatOrder(originalOrder)
-        }
+        base.deleteSharedPreferences(prefix + "dieter_shared_kv")
     }
 
     @Test

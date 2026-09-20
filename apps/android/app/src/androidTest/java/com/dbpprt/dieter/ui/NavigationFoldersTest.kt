@@ -23,7 +23,6 @@ import com.dbpprt.dieter.data.DieterEndpoint
 import com.dbpprt.dieter.data.DieterRepository
 import com.dbpprt.dieter.settings.AppPreferences
 import com.dbpprt.dieter.settings.NavigationFolderScope
-import com.dbpprt.dieter.settings.NavigationFolderStore
 import com.dbpprt.dieter.ui.theme.DieterTheme
 import com.dbpprt.dieter.v1.Card
 import com.dbpprt.dieter.v1.Project
@@ -55,7 +54,7 @@ class NavigationFoldersTest {
 
     @Before fun setup() {
         assumeTrue("Use -Pdieter.screenTestBuildType=screenFixture to preserve the signed-in app", context.packageName.endsWith(".screenfixture"))
-        context.getSharedPreferences("dieter_navigation_layout", Context.MODE_PRIVATE).edit().clear().commit()
+        context.getSharedPreferences("dieter_shared_kv", Context.MODE_PRIVATE).edit().clear().putString("activeAccount", "navigation-fixture").commit()
         var endpoints = DIETER_ENDPOINTS
         val repository = Proxy.newProxyInstance(DieterRepository::class.java.classLoader, arrayOf(DieterRepository::class.java)) { _, method, args ->
             when (method.name) {
@@ -109,7 +108,7 @@ class NavigationFoldersTest {
         compose.onNodeWithTag("save-folder").performClick()
         compose.onNodeWithText("Reviews").assertIsDisplayed()
         compose.runOnIdle {
-            val restored = NavigationFolderStore(context.getSharedPreferences("dieter_navigation_layout", Context.MODE_PRIVATE))
+            val restored = AppPreferences(context).navigationFolders
                 .layouts.value.getValue(NavigationFolderScope.CHATS).folders.single()
             assertEquals(id, restored.id)
             assertEquals("Reviews", restored.name)
@@ -155,17 +154,22 @@ class NavigationFoldersTest {
         compose.runOnIdle { assertTrue(model.state.value.chatFolders.folders.isEmpty()) }
     }
 
-    @Test fun macJSONRoundTripsBothScopesAndCollapsedMembership() {
-        val mac = """[{"id":"mac-id","name":"Research","itemIDs":["offline-project","p1"],"isExpanded":false}]"""
-        val decoded = NavigationFolderStore.decode(mac)
-        assertEquals(decoded, NavigationFolderStore.decode(NavigationFolderStore.encode(decoded)))
+    @Test fun sharedRecordsPreserveBothScopesAndCollapsedMembership() {
+        val records = mapOf(
+            "projects-folder.mac-id.name" to "\"Research\"",
+            "projects-folder.mac-id.expanded" to "false",
+            "projects-item.offline-project.position" to """{"parent":"mac-id","rank":"a"}""",
+            "projects-item.p1.position" to """{"parent":"mac-id","rank":"b"}""",
+        )
+        val decoded = com.dbpprt.dieter.settings.SharedNavigation.folders(records, "projects")
+        assertEquals(listOf("offline-project", "p1"), decoded.folders.single().itemIDs)
+        assertFalse(decoded.folders.single().isExpanded)
         val store = model.navigationFolders
         store.update(NavigationFolderScope.PROJECTS) { decoded }
         store.create(NavigationFolderScope.CHATS, "Research", "c1")
-        val restored = NavigationFolderStore(context.getSharedPreferences("dieter_navigation_layout", Context.MODE_PRIVATE))
+        val restored = AppPreferences(context).navigationFolders
         assertEquals(decoded, restored.layouts.value.getValue(NavigationFolderScope.PROJECTS))
         assertEquals(listOf("c1"), restored.layouts.value.getValue(NavigationFolderScope.CHATS).folders.single().itemIDs)
-        assertTrue(NavigationFolderStore.decode("bad json").folders.isEmpty())
     }
 
     @Test fun folderPickerScrollsWithLargeTextAndManyFolders() {

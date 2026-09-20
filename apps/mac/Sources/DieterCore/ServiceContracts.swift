@@ -80,10 +80,7 @@ package protocol ProjectChangesRPC: AnyObject, Sendable {
 }
 
 package protocol ScreenSignalingRPC: AnyObject, Sendable {
-    func remoteDesktopSettings() async throws -> Dieter_V1_RemoteDesktopSettings
     func remoteDesktopCapabilities() async throws -> Dieter_V1_RemoteDesktopCapabilities
-    func updateRemoteDesktopSettings(enabled: Bool, controlEnabled: Bool) async throws
-        -> Dieter_V1_RemoteDesktopSettings
     func startRemoteDesktop(
         _ request: Dieter_V1_StartRemoteDesktopRequest,
         receive: @escaping @Sendable (Dieter_V1_RemoteDesktopSignal) async throws -> Void) async throws

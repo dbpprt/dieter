@@ -10,17 +10,16 @@ import Testing
     capabilities.controlPermission = "not_requested"
     capabilities.cursorSupported = false
 
-    #expect(remoteDesktopShouldRequestControl(enabled: true, capabilities: capabilities))
-    #expect(!remoteDesktopShouldRequestControl(enabled: false, capabilities: capabilities))
+    #expect(remoteDesktopShouldRequestControl(capabilities: capabilities))
     #expect(remoteDesktopShouldEmbedCursor(capabilities, requestingControl: false))
     #expect(!remoteDesktopShouldEmbedCursor(capabilities, requestingControl: true))
     #expect(remoteDesktopNeedsHostApproval(capabilities))
 
     capabilities.platform = "darwin"
-    #expect(!remoteDesktopShouldRequestControl(enabled: true, capabilities: capabilities))
+    #expect(!remoteDesktopShouldRequestControl(capabilities: capabilities))
     capabilities.controlPermission = "granted"
     capabilities.cursorSupported = true
-    #expect(remoteDesktopShouldRequestControl(enabled: true, capabilities: capabilities))
+    #expect(remoteDesktopShouldRequestControl(capabilities: capabilities))
     #expect(!remoteDesktopShouldEmbedCursor(capabilities, requestingControl: false))
     #expect(!remoteDesktopShouldEmbedCursor(capabilities, requestingControl: true))
     #expect(!remoteDesktopNeedsHostApproval(capabilities))

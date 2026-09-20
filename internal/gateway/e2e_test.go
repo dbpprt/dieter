@@ -196,9 +196,6 @@ func TestGatewayEnrollsDaemonAndRelaysDieterService(t *testing.T) {
 	if err := boardStore.Ensure(); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := boardStore.UpdateRemoteDesktopSettings(true, true); err != nil {
-		t.Fatal(err)
-	}
 	remoteDesktop := remotedesktop.New(remotedesktop.Options{
 		Identity: remotedesktop.Identity{
 			DaemonID: identity.ID, GatewayURL: identity.GatewayURL, Generation: identity.Generation,
@@ -247,7 +244,7 @@ func TestGatewayEnrollsDaemonAndRelaysDieterService(t *testing.T) {
 			ReconnectStableAfter: 200 * time.Millisecond,
 		},
 		RemoteDesktopPresence: func() *gatewayv1.RemoteDesktopPresence {
-			return remoteDesktop.Presence(true, false)
+			return remoteDesktop.Presence()
 		},
 	}
 	gatewayEvents, stopTunnel := runTestGatewayTunnel(t, ctx, tunnel)
@@ -1244,10 +1241,10 @@ func testRemoteDesktopThroughGateway(t *testing.T, routed context.Context, clien
 			// and stop the host capture without relying on CloseRemoteDesktop.
 			cancelStream()
 			deadline := time.Now().Add(2 * time.Second)
-			for manager.Capabilities(true, false).GetActiveSession() && time.Now().Before(deadline) {
+			for manager.Capabilities().GetActiveSession() && time.Now().Before(deadline) {
 				time.Sleep(10 * time.Millisecond)
 			}
-			if manager.Capabilities(true, false).GetActiveSession() {
+			if manager.Capabilities().GetActiveSession() {
 				t.Fatal("remote desktop session survived viewer relay cancellation")
 			}
 			return

@@ -137,7 +137,10 @@ internal fun NavigationFolderNameDialog(
                 value = name, onValueChange = { name = it }, singleLine = true,
                 label = { Text("Folder name") },
                 isError = name.isNotBlank() && !available,
-                supportingText = { if (name.isNotBlank() && !available) Text("A folder with this name already exists.") },
+                supportingText = {
+                    if (name.trim().toByteArray(Charsets.UTF_8).size > 256) Text("Choose a shorter folder name.")
+                    else if (name.isNotBlank() && !available) Text("A folder with this name already exists.")
+                },
                 modifier = Modifier.fillMaxWidth().testTag("folder-name"),
             )
         },
@@ -193,5 +196,17 @@ private fun FolderDestination(name: String, selected: Boolean, tag: String, onCl
     TextButton(onClick = onClick, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag(tag)) {
         Text(name, modifier = Modifier.weight(1f), maxLines = 2, overflow = TextOverflow.Ellipsis)
         if (selected) Icon(Icons.Outlined.Check, "Current folder")
+    }
+}
+
+@androidx.compose.runtime.Composable
+internal fun NavigationSyncStatus(state: DieterUiState) {
+    if (state.navigationPendingCount > 0 || state.navigationSyncError != null) {
+        androidx.compose.material3.Text(
+            text = if (state.navigationPendingCount > 0) "${state.navigationPendingCount} navigation edits pending sync" else "Navigation sync unavailable",
+            modifier = androidx.compose.ui.Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
+            style = androidx.compose.material3.MaterialTheme.typography.labelSmall,
+            color = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }

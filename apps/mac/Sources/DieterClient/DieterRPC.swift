@@ -938,19 +938,6 @@ package final class DieterRPC: Sendable {
         try await service.getRemoteDesktopCapabilities(request: .init(message: Google_Protobuf_Empty()))
     }
 
-    package func remoteDesktopSettings() async throws -> Dieter_V1_RemoteDesktopSettings {
-        try await service.getRemoteDesktopSettings(request: .init(message: Google_Protobuf_Empty()))
-    }
-
-    package func updateRemoteDesktopSettings(enabled: Bool, controlEnabled: Bool = true) async throws
-        -> Dieter_V1_RemoteDesktopSettings
-    {
-        var request = Dieter_V1_UpdateRemoteDesktopSettingsRequest()
-        request.enabled = enabled
-        request.controlEnabled = enabled && controlEnabled
-        return try await service.updateRemoteDesktopSettings(request: .init(message: request))
-    }
-
     package func startRemoteDesktop(
         _ request: Dieter_V1_StartRemoteDesktopRequest,
         receive: @Sendable @escaping (Dieter_V1_RemoteDesktopSignal) async throws -> Void

@@ -106,11 +106,7 @@ private final class DisplayMatchingRPC: ScreenSignalingRPC, @unchecked Sendable 
         }
         return .init()
     }
-    func remoteDesktopSettings() async throws -> Dieter_V1_RemoteDesktopSettings { .init() }
     func remoteDesktopCapabilities() async throws -> Dieter_V1_RemoteDesktopCapabilities { .init() }
-    func updateRemoteDesktopSettings(enabled: Bool, controlEnabled: Bool) async throws
-        -> Dieter_V1_RemoteDesktopSettings
-    { .init() }
     func startRemoteDesktop(
         _ request: Dieter_V1_StartRemoteDesktopRequest,
         receive: @escaping @Sendable (Dieter_V1_RemoteDesktopSignal) async throws -> Void

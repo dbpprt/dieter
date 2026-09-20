@@ -217,6 +217,13 @@ private object DaemonTLSProviders {
 }
 
 interface DieterRepository {
+    suspend fun getKV(request: com.dbpprt.dieter.v1.KVRef): com.dbpprt.dieter.v1.KVEntry = error("Shared KV unavailable")
+    suspend fun listKV(request: com.dbpprt.dieter.v1.KVListRequest): com.dbpprt.dieter.v1.KVPage = error("Shared KV unavailable")
+    suspend fun putKV(request: com.dbpprt.dieter.v1.KVPutRequest): com.dbpprt.dieter.v1.KVEntry = error("Shared KV unavailable")
+    suspend fun deleteKV(request: com.dbpprt.dieter.v1.KVDeleteRequest): com.dbpprt.dieter.v1.KVEntry = error("Shared KV unavailable")
+    suspend fun moveKV(request: com.dbpprt.dieter.v1.KVMoveRequest): com.dbpprt.dieter.v1.KVEntry = error("Shared KV unavailable")
+    fun watchKV(request: com.dbpprt.dieter.v1.KVWatchRequest): Flow<com.dbpprt.dieter.v1.KVFrame> = kotlinx.coroutines.flow.emptyFlow()
+
     fun selectCheckout(projectId: String, checkoutId: String) {}
     val endpoints: List<DieterEndpoint>
     val activeEndpoint: DieterEndpoint
@@ -805,6 +812,13 @@ class GrpcDieterRepository(context: Context) : DieterRepository {
         authenticated(DieterServiceGrpcKt.DieterServiceCoroutineStub(channel()))
 
     override suspend fun health(timeoutSeconds: Long): HealthResponse = unary(timeoutSeconds).health(Empty.getDefaultInstance())
+
+    override suspend fun getKV(request: com.dbpprt.dieter.v1.KVRef) = unary().getKV(request)
+    override suspend fun listKV(request: com.dbpprt.dieter.v1.KVListRequest) = unary().listKV(request)
+    override suspend fun putKV(request: com.dbpprt.dieter.v1.KVPutRequest) = unary().putKV(request)
+    override suspend fun deleteKV(request: com.dbpprt.dieter.v1.KVDeleteRequest) = unary().deleteKV(request)
+    override suspend fun moveKV(request: com.dbpprt.dieter.v1.KVMoveRequest) = unary().moveKV(request)
+    override fun watchKV(request: com.dbpprt.dieter.v1.KVWatchRequest) = streaming().watchKV(request)
 
     override suspend fun runtimeStatus(): RuntimeStatus = unary().getRuntimeStatus(Empty.getDefaultInstance())
 

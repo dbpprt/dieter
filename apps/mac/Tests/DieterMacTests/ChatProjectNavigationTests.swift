@@ -8,7 +8,9 @@ import Testing
     let suite = "dieter-chat-project-navigation-\(UUID().uuidString)"
     let defaults = try #require(UserDefaults(suiteName: suite))
     defer { defaults.removePersistentDomain(forName: suite) }
-    let store = DieterStore(environment: .testing(defaults: defaults), restoreSync: false)
+    defaults.set("test-account", forKey: "DieterSharedKV.activeAccount")
+    let environment = DieterAppEnvironment.testing(defaults: defaults)
+    let store = DieterStore(environment: environment, restoreSync: false)
 
     var navigation = store.sidebarProjectNavigation
     let moved = navigation.move("p_three", before: "p_one", availableIDs: ["p_one", "p_two", "p_three"])
@@ -19,14 +21,18 @@ import Testing
         store.sidebarProjectNavigation.orderedIDs(from: ["p_one", "p_two", "p_three"]) == [
             "p_three", "p_one", "p_two",
         ])
-    #expect(SidebarProjectNavigationPreferences.load(from: defaults) == store.sidebarProjectNavigation)
+    #expect(
+        DieterStore(environment: environment, restoreSync: false).sidebarProjectNavigation
+            == store.sidebarProjectNavigation)
 }
 
 @Test @MainActor func projectFoldersAreSharedThroughTheAppSessionAndPersisted() throws {
     let suite = "dieter-project-folder-navigation-\(UUID().uuidString)"
     let defaults = try #require(UserDefaults(suiteName: suite))
     defer { defaults.removePersistentDomain(forName: suite) }
-    let store = DieterStore(environment: .testing(defaults: defaults), restoreSync: false)
+    defaults.set("test-account", forKey: "DieterSharedKV.activeAccount")
+    let environment = DieterAppEnvironment.testing(defaults: defaults)
+    let store = DieterStore(environment: environment, restoreSync: false)
 
     var folders = store.sidebarProjectFolders
     let createdFolderID = folders.createFolder(named: "Active work")
@@ -36,7 +42,7 @@ import Testing
     store.sidebarProjectFolders = folders
 
     #expect(
-        NavigationFolderPreferences.load(scope: .projects, from: defaults)
+        DieterStore(environment: environment, restoreSync: false).sidebarProjectFolders
             == store.sidebarProjectFolders
     )
 }
@@ -45,7 +51,9 @@ import Testing
     let suite = "dieter-chat-folder-navigation-\(UUID().uuidString)"
     let defaults = try #require(UserDefaults(suiteName: suite))
     defer { defaults.removePersistentDomain(forName: suite) }
-    let store = DieterStore(environment: .testing(defaults: defaults), restoreSync: false)
+    defaults.set("test-account", forKey: "DieterSharedKV.activeAccount")
+    let environment = DieterAppEnvironment.testing(defaults: defaults)
+    let store = DieterStore(environment: environment, restoreSync: false)
 
     var folders = store.allChatsFolders
     let createdFolderID = folders.createFolder(named: "Research")
@@ -55,7 +63,7 @@ import Testing
     store.allChatsFolders = folders
 
     #expect(
-        NavigationFolderPreferences.load(scope: .chats, from: defaults)
+        DieterStore(environment: environment, restoreSync: false).allChatsFolders
             == store.allChatsFolders
     )
 }

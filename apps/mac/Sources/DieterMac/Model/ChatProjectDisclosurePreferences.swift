@@ -1,8 +1,6 @@
 import Foundation
 
 struct ChatProjectDisclosurePreferences: Equatable {
-    static let collapsedKey = "DieterChatsCollapsedProjects"
-    static let expandedKey = "DieterChatsExpandedProjects"
 
     private(set) var collapsedProjectIDs: Set<String>
     private(set) var expandedProjectIDs: Set<String>
@@ -13,18 +11,6 @@ struct ChatProjectDisclosurePreferences: Equatable {
     ) {
         self.collapsedProjectIDs = collapsedProjectIDs
         self.expandedProjectIDs = expandedProjectIDs
-    }
-
-    static func load(from defaults: UserDefaults = .standard) -> Self {
-        Self(
-            collapsedProjectIDs: Set(defaults.stringArray(forKey: collapsedKey) ?? []),
-            expandedProjectIDs: Set(defaults.stringArray(forKey: expandedKey) ?? [])
-        )
-    }
-
-    func save(to defaults: UserDefaults = .standard) {
-        defaults.set(collapsedProjectIDs.sorted(), forKey: Self.collapsedKey)
-        defaults.set(expandedProjectIDs.sorted(), forKey: Self.expandedKey)
     }
 
     func isCollapsed(_ projectID: String) -> Bool {

@@ -61,6 +61,10 @@ import DieterCore
             guard let selectedModel else { return [] }
             return selectedModel.efforts.isEmpty ? (harness?.effort.options.map(\.id) ?? []) : selectedModel.efforts
         }
+        private func effortName(_ value: String) -> String {
+            let options: [Dieter_V1_EffortOption] = harness?.effort.options ?? []
+            return options.first(where: { $0.id == value })?.name ?? value.capitalized
+        }
         private var canSubmit: Bool {
             !submitting && store.phase.isConnected && !projectID.isEmpty && (chat || !boardID.isEmpty)
                 && !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -172,7 +176,7 @@ import DieterCore
                         if !efforts.isEmpty {
                             Picker("Reasoning", selection: $effort) {
                                 ForEach(efforts, id: \.self) { value in
-                                    Text(harness?.effort.options.first { $0.id == value }?.name ?? value.capitalized)
+                                    Text(effortName(value))
                                         .tag(value)
                                 }
                             }

@@ -8,17 +8,17 @@ import Testing
 
 private final class ScreenFixture: ScreenSignalingRPC {
     let closed = Mutex(false)
+    let capabilities = Mutex<Dieter_V1_RemoteDesktopCapabilities>(.init())
+    let starts = Mutex(0)
     let leaseSignals = Mutex<[Dieter_V1_RemoteDesktopSignal]>([])
     func shutdown() { closed.withLock { $0 = true } }
-    func remoteDesktopSettings() async throws -> Dieter_V1_RemoteDesktopSettings { .init() }
-    func remoteDesktopCapabilities() async throws -> Dieter_V1_RemoteDesktopCapabilities { .init() }
-    func updateRemoteDesktopSettings(enabled: Bool, controlEnabled: Bool) async throws
-        -> Dieter_V1_RemoteDesktopSettings
-    { .init() }
+    func remoteDesktopCapabilities() async throws -> Dieter_V1_RemoteDesktopCapabilities {
+        capabilities.withLock { $0 }
+    }
     func startRemoteDesktop(
         _ request: Dieter_V1_StartRemoteDesktopRequest,
         receive: @escaping @Sendable (Dieter_V1_RemoteDesktopSignal) async throws -> Void
-    ) async throws {}
+    ) async throws { starts.withLock { $0 += 1 } }
     func sendRemoteDesktopSignal(_ signal: Dieter_V1_RemoteDesktopSignal) async throws {
         leaseSignals.withLock { $0.append(signal) }
     }
@@ -42,6 +42,26 @@ private final class ScreenFixture: ScreenSignalingRPC {
             rpc: self, connectionTask: Task {}, rtcConfiguration: .init(), daemonCertificatePEM: Data(),
             routeLabel: label)
     }
+}
+
+@Test @MainActor func screenUnavailableHostOffersPermissionGuidanceWithoutStartingMedia() async {
+    let rpc = ScreenFixture(), controller = RemoteDesktopController()
+    rpc.capabilities.withLock {
+        $0.availability = .permissionRequired
+        $0.unavailableReason = "Run dieter daemon permissions on the host"
+    }
+    await controller.connect(machineName: "Host") { rpc.connection("fixture") }.value
+    #expect(controller.phase == .permissionRequired("Run dieter daemon permissions on the host"))
+    #expect(rpc.starts.withLock { $0 } == 0)
+    controller.disconnect()
+    rpc.capabilities.withLock {
+        $0.availability = .unsupported
+        $0.unavailableReason = "No graphical session"
+    }
+    await controller.connect(machineName: "Host") { rpc.connection("fixture") }.value
+    #expect(controller.phase == .unsupported("No graphical session"))
+    #expect(rpc.starts.withLock { $0 } == 0)
+    controller.disconnect()
 }
 
 @Test @MainActor func screenLeaseRenewalDoesNotWaitForTheMainActor() async throws {
@@ -95,7 +115,6 @@ private final class ScreenFixture: ScreenSignalingRPC {
     ] {
         #expect(RemoteDesktopRecovery.retryableClosure(reason))
     }
-    #expect(!RemoteDesktopRecovery.retryableClosure("remote desktop disabled"))
     #expect(!RemoteDesktopRecovery.retryableClosure("closed by client"))
     #expect(!RemoteDesktopRecovery.retryableClosure("capture permission denied"))
 }

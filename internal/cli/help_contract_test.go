@@ -13,6 +13,7 @@ import (
 // RPC must have an equivalent, documented CLI entry point. Adding an RPC makes
 // this test fail until the feature team wires and documents its CLI operation.
 var rpcCommand = map[string]string{
+	"GetKV": "kv get", "ListKV": "kv list", "PutKV": "kv put", "DeleteKV": "kv delete", "MoveKV": "kv move", "WatchKV": "kv watch",
 	"GetPeerRecord": "peer show", "GetPeerChanges": "peer changes", "GetPeerStoreStatus": "peer status", "ListPeerRecords": "peer list", "PutPeerRecord": "peer put", "MergePeerRecords": "peer merge",
 	"StartControlConnection": "machine connection start", "GetControlConnection": "machine connection show", "CloseControlConnection": "machine connection close",
 	"ListRemoteDesktopDisplayModes":   "screen resolution modes",
@@ -34,7 +35,7 @@ var rpcCommand = map[string]string{
 	"ListFiles": "file list", "ReadFile": "file read", "SaveFile": "file save", "CreateFile": "file create", "MoveFile": "file move", "DeleteFile": "file delete",
 	"ListTerminals": "terminal list", "CreateTerminal": "terminal create", "WatchTerminal": "terminal watch", "WriteTerminal": "terminal write", "ResizeTerminal": "terminal resize", "RenameTerminal": "terminal rename", "CloseTerminal": "terminal close",
 	"ListExecutions": "remote list", "StartExecution": "remote exec", "GetExecution": "remote show", "WatchExecution": "remote watch", "WriteExecutionInput": "remote input", "SignalExecution": "remote signal", "ResizeExecution": "remote resize", "CancelExecution": "remote cancel", "CloseExecution": "remote close",
-	"GetRemoteDesktopCapabilities": "screen capabilities", "GetRemoteDesktopSettings": "screen settings", "UpdateRemoteDesktopSettings": "screen update", "StartRemoteDesktop": "screen start", "SendRemoteDesktopSignal": "screen signal", "CloseRemoteDesktop": "screen close", "ListRemoteDesktopSessions": "screen sessions",
+	"GetRemoteDesktopCapabilities": "screen capabilities", "StartRemoteDesktop": "screen start", "SendRemoteDesktopSignal": "screen signal", "CloseRemoteDesktop": "screen close", "ListRemoteDesktopSessions": "screen sessions",
 	"SetRemoteDesktopControl":        "screen control",
 	"ExchangeRemoteDesktopClipboard": "screen clipboard",
 	"GetRemoteDesktopSession":        "screen status", "UpdateRemoteDesktopSession": "screen configure",
@@ -63,6 +64,7 @@ func TestEveryDaemonRPCMapsToCLICommand(t *testing.T) {
 
 func TestEveryDaemonCLICommandHasOfflineHelp(t *testing.T) {
 	paths := []string{
+		"kv", "kv get", "kv list", "kv put", "kv delete", "kv move", "kv watch",
 		"peer", "peer show", "peer changes", "peer status", "peer list", "peer put", "peer delete", "peer merge",
 		"machine connection", "machine connection start", "machine connection show", "machine connection close",
 		"screen resolution", "screen resolution modes", "screen resolution set", "screen resolution restore",
@@ -79,7 +81,7 @@ func TestEveryDaemonCLICommandHasOfflineHelp(t *testing.T) {
 		"file", "file list", "file read", "file save", "file create", "file move", "file delete",
 		"terminal", "terminal list", "terminal create", "terminal attach", "terminal watch", "terminal write", "terminal resize", "terminal rename", "terminal close",
 		"remote", "remote exec", "remote shell", "remote list", "remote show", "remote watch", "remote wait", "remote attach", "remote input", "remote signal", "remote resize", "remote cancel", "remote close",
-		"screen", "screen clipboard", "screen clipboard read", "screen clipboard write", "screen clipboard paste", "screen clipboard copy", "screen clipboard cut", "screen clipboard enable", "screen clipboard disable", "screen sessions", "screen control", "screen control take", "screen control release", "screen capabilities", "screen permissions", "screen settings", "screen update", "screen start", "screen signal", "screen close", "screen status", "screen configure", "screen refresh",
+		"screen", "screen clipboard", "screen clipboard read", "screen clipboard write", "screen clipboard paste", "screen clipboard copy", "screen clipboard cut", "screen clipboard enable", "screen clipboard disable", "screen sessions", "screen control", "screen control take", "screen control release", "screen capabilities", "screen permissions", "screen start", "screen signal", "screen close", "screen status", "screen configure", "screen refresh",
 		"schedule", "schedule create", "schedule list", "schedule show", "schedule preview", "schedule update", "schedule run", "schedule pause", "schedule resume", "schedule runs", "schedule delete",
 		"project consolidate", "project attach", "project detach", "project checkouts", "settings", "settings show", "settings options", "settings update",
 		"prompt", "prompt show", "prompt update", "prompt project", "prompt board", "prompt preview",

@@ -3199,7 +3199,7 @@ private func dragCard(_ id: String, position: Int64) -> Dieter_V1_Card {
     #expect(!ignoredSelfMove)
 }
 
-@Test func sidebarProjectPreferencesPersistOrderAndExpandedStateAcrossReload() throws {
+@Test func sidebarProjectPreferencesRetainOrderAndExpandedState() throws {
     let suite = "dieter-sidebar-tests-\(UUID().uuidString)"
     let defaults = try #require(UserDefaults(suiteName: suite))
     defer { defaults.removePersistentDomain(forName: suite) }
@@ -3209,15 +3209,15 @@ private func dragCard(_ id: String, position: Int64) -> Dieter_V1_Card {
     #expect(!preferences.isExpanded("p_two"))
     _ = preferences.move("p_three", before: "p_one", availableIDs: ["p_one", "p_two", "p_three"])
     preferences.toggleExpanded("p_two")
-    preferences.save(to: defaults)
 
-    let restored = SidebarProjectNavigationPreferences.load(from: defaults)
+    let restored = SidebarProjectNavigationPreferences(
+        projectOrder: preferences.projectOrder, expandedProjectIDs: preferences.expandedProjectIDs)
     #expect(restored.orderedIDs(from: ["p_one", "p_two", "p_three"]) == ["p_three", "p_one", "p_two"])
     #expect(restored.isExpanded("p_two"))
     #expect(!restored.isExpanded("p_one"))
 }
 
-@Test func chatProjectDisclosurePersistsCollapseAndExpansion() throws {
+@Test func chatProjectDisclosureRetainsIndependentCollapseAndExpansion() throws {
     let suite = "dieter-chat-project-tests-\(UUID().uuidString)"
     let defaults = try #require(UserDefaults(suiteName: suite))
     defer { defaults.removePersistentDomain(forName: suite) }
@@ -3225,9 +3225,9 @@ private func dragCard(_ id: String, position: Int64) -> Dieter_V1_Card {
     var preferences = ChatProjectDisclosurePreferences()
     preferences.toggleCollapsed("p_collapsed")
     preferences.toggleExpanded("p_expanded")
-    preferences.save(to: defaults)
 
-    let restored = ChatProjectDisclosurePreferences.load(from: defaults)
+    let restored = ChatProjectDisclosurePreferences(
+        collapsedProjectIDs: preferences.collapsedProjectIDs, expandedProjectIDs: preferences.expandedProjectIDs)
     #expect(restored.isCollapsed("p_collapsed"))
     #expect(!restored.isCollapsed("p_expanded"))
     #expect(restored.isExpanded("p_expanded"))
@@ -3241,11 +3241,7 @@ private func dragCard(_ id: String, position: Int64) -> Dieter_V1_Card {
     #expect(SidebarProjectDragPayload("dieter:sidebar-project:") == nil)
 }
 
-@Test func navigationFoldersCreateMoveRenameCollapseDeleteAndPersist() throws {
-    let suite = "dieter-navigation-folders-\(UUID().uuidString)"
-    let defaults = try #require(UserDefaults(suiteName: suite))
-    defer { defaults.removePersistentDomain(forName: suite) }
-
+@Test func navigationFoldersCreateMoveRenameCollapseDeleteAndEncode() throws {
     var preferences = NavigationFolderPreferences()
     let createdWorkID = preferences.createFolder(named: "Work")
     let workID = try #require(createdWorkID)
@@ -3253,6 +3249,11 @@ private func dragCard(_ id: String, position: Int64) -> Dieter_V1_Card {
     let personalID = try #require(createdPersonalID)
     let duplicateID = preferences.createFolder(named: " work ")
     #expect(duplicateID == nil)
+    let oversizedCreate = preferences.createFolder(named: String(repeating: "界", count: 86))
+    let oversizedRename = preferences.renameFolder(workID, to: String(repeating: "界", count: 86))
+    #expect(oversizedCreate == nil)
+    #expect(!oversizedRename)
+    #expect(NavigationFolderPreferences.validName(String(repeating: "界", count: 85)))
 
     let movedFirstToWork = preferences.moveItem("item_one", to: workID)
     let movedSecondToWork = preferences.moveItem("item_two", to: workID)
@@ -3268,9 +3269,9 @@ private func dragCard(_ id: String, position: Int64) -> Dieter_V1_Card {
     let collapsed = preferences.toggleExpanded(personalID)
     #expect(renamed)
     #expect(collapsed)
-    preferences.save(scope: .projects, to: defaults)
 
-    var restored = NavigationFolderPreferences.load(scope: .projects, from: defaults)
+    var restored = NavigationFolderPreferences(
+        folders: try JSONDecoder().decode([NavigationFolder].self, from: JSONEncoder().encode(preferences.folders)))
     #expect(restored == preferences)
     #expect(restored.folders.first(where: { $0.id == personalID })?.isExpanded == false)
     let removedFromFolder = restored.moveItem("item_one", to: nil)
@@ -3315,7 +3316,7 @@ private func dragCard(_ id: String, position: Int64) -> Dieter_V1_Card {
     #expect(activityChanged.map(\.id) == [first.id, second.id, newPin.id])
 }
 
-@Test func pinnedChatPreferencesMatchAndroidDropTargetMovementAndPersist() throws {
+@Test func pinnedChatPreferencesMatchAndroidDropTargetMovement() throws {
     let suite = "dieter-pinned-chat-tests-\(UUID().uuidString)"
     let defaults = try #require(UserDefaults(suiteName: suite))
     defer { defaults.removePersistentDomain(forName: suite) }
@@ -3336,9 +3337,8 @@ private func dragCard(_ id: String, position: Int64) -> Dieter_V1_Card {
     let movedThird = preferences.move(third.id, to: second.id, among: [first, second, third])
     #expect(movedThird)
     #expect(preferences.chatOrder == [third.id, second.id, first.id])
-    preferences.save(to: defaults)
 
-    var restored = PinnedChatNavigationPreferences.load(from: defaults)
+    var restored = PinnedChatNavigationPreferences(chatOrder: preferences.chatOrder)
     #expect(restored.chatOrder == [third.id, second.id, first.id])
     let reinitialized = restored.initializeIfNeeded(with: [first.id])
     #expect(!reinitialized)

@@ -1,25 +1,34 @@
 package com.dbpprt.dieter.settings
 
-import android.content.SharedPreferences
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import org.json.JSONArray
-import org.json.JSONObject
 
-/** Local persistence boundary for future client-layout sync. Uses Mac's JSON field names. */
-class NavigationFolderStore(private val preferences: SharedPreferences) {
-    private val _layouts = MutableStateFlow(NavigationFolderScope.entries.associateWith { scope ->
-        decode(preferences.getString(scope.storageKey, null))
-    })
+/** Projection and semantic edits over the account KV store. */
+class NavigationFolderStore(private val shared: SharedKV) {
+    private val _layouts = MutableStateFlow(NavigationFolderScope.entries.associateWith { NavigationFolderPreferences() })
     val layouts = _layouts.asStateFlow()
-
-    @Synchronized
+    fun project(values: Map<String,String>) {
+        _layouts.value = NavigationFolderScope.entries.associateWith { SharedNavigation.folders(values, it.name.lowercase()) }
+    }
     fun update(scope: NavigationFolderScope, transform: (NavigationFolderPreferences) -> NavigationFolderPreferences) {
         val current = _layouts.value.getValue(scope)
         val updated = NavigationFolderPreferences.from(transform(current).folders)
         if (current == updated) return
-        preferences.edit().putString(scope.storageKey, encode(updated)).apply()
-        _layouts.value = _layouts.value + (scope to updated)
+        val name = scope.name.lowercase(); val prefix = "$name-folder"
+        current.folders.filterNot { old -> updated.folders.any { it.id == old.id } }.forEach {
+            shared.delete("$prefix.${it.id}.name")
+        }
+        updated.folders.forEach { folder ->
+            val previous = current.folders.firstOrNull { it.id == folder.id }
+            if (previous?.name != folder.name) shared.put("$prefix.${folder.id}.name", folder.name, previous != null)
+            if (previous?.isExpanded != folder.isExpanded) shared.put("$prefix.${folder.id}.expanded", folder.isExpanded)
+            SharedNavigation.order(shared, previous?.itemIDs.orEmpty(), folder.itemIDs, "$name-item", folder.id)
+        }
+        val members = updated.folders.flatMap { it.itemIDs }.toSet()
+        current.folders.filter { old -> updated.folders.any { it.id == old.id } }.flatMap { it.itemIDs }
+            .filterNot { it in members }.forEach { shared.move("$name-item.$it.position") }
+        SharedNavigation.order(shared, current.folders.map { it.id }, updated.folders.map { it.id }, prefix)
+        project(shared.values.value)
     }
 
     fun create(scope: NavigationFolderScope, name: String, itemID: String? = null) {
@@ -29,26 +38,4 @@ class NavigationFolderStore(private val preferences: SharedPreferences) {
         }
     }
 
-    companion object {
-        fun encode(value: NavigationFolderPreferences): String = JSONArray().apply {
-            value.folders.forEach { folder ->
-                put(JSONObject().put("id", folder.id).put("name", folder.name)
-                    .put("itemIDs", JSONArray(folder.itemIDs)).put("isExpanded", folder.isExpanded))
-            }
-        }.toString()
-
-        fun decode(encoded: String?): NavigationFolderPreferences = runCatching {
-            val array = JSONArray(encoded ?: "[]")
-            NavigationFolderPreferences.from((0 until array.length()).mapNotNull { index ->
-                val folder = array.optJSONObject(index) ?: return@mapNotNull null
-                val members = folder.optJSONArray("itemIDs") ?: JSONArray()
-                NavigationFolder(
-                    id = folder.optString("id"),
-                    name = folder.optString("name"),
-                    itemIDs = (0 until members.length()).mapNotNull { members.opt(it) as? String },
-                    isExpanded = folder.optBoolean("isExpanded", true),
-                )
-            })
-        }.getOrDefault(NavigationFolderPreferences())
-    }
 }

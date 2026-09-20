@@ -543,6 +543,17 @@ struct AppSidebar: View {
     }
 
     @ViewBuilder private var sidebarFooter: some View {
+        if store.navigationPendingCount > 0 || store.navigationSyncError != nil {
+            Text(
+                store.navigationPendingCount > 0
+                    ? "\(store.navigationPendingCount) navigation edits pending sync" : "Navigation sync unavailable"
+            )
+            .font(.caption2).foregroundStyle(.secondary).padding(.horizontal, 12)
+            .help(
+                store.navigationSyncError ?? "Edits are saved on this device and will sync when a machine is reachable."
+            )
+            .accessibilityIdentifier("navigation.sync-status")
+        }
 
         VStack(spacing: 5) {
             VStack(alignment: .leading, spacing: 4) {

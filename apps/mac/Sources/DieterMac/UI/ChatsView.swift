@@ -7,13 +7,7 @@ struct ChatsView: View {
     @Environment(DieterStore.self) private var store
     @State private var search = ""
     @State private var showArchived = false
-    @State private var projectDisclosure = ChatProjectDisclosurePreferences.load(
-        from: DieterAppearance.applicationDefaults()
-    )
     @State private var pinnedPageIndex = 0
-    @State private var pinnedChatNavigation = PinnedChatNavigationPreferences.load(
-        from: DieterAppearance.applicationDefaults()
-    )
     @State private var folderEditor: NavigationFolderEditor?
     @State private var unfiledDropTargeted = false
 
@@ -41,7 +35,7 @@ struct ChatsView: View {
         let projection = store.replica.chatProjection(
             showArchived: showArchived,
             search: search,
-            pinnedOrder: pinnedChatNavigation.chatOrder
+            pinnedOrder: store.pinnedChatNavigation.chatOrder
         )
         let pinnedPage = LaneCardPage.resolve(
             total: projection.pinned.count, requestedPage: pinnedPageIndex)
@@ -185,8 +179,8 @@ struct ChatsView: View {
                                 projectIDs: displayedProjectIDs,
                                 chats: projectChats,
                                 showArchived: showArchived,
-                                expanded: projectDisclosure.isExpanded(project.id),
-                                collapsed: projectDisclosure.isCollapsed(project.id),
+                                expanded: store.chatProjectDisclosure.isExpanded(project.id),
+                                collapsed: store.chatProjectDisclosure.isCollapsed(project.id),
                                 toggleExpanded: { toggleExpanded(project.id) },
                                 toggleCollapsed: { toggleCollapsed(project.id) },
                                 moveProject: moveProject
@@ -250,25 +244,21 @@ struct ChatsView: View {
     }
 
     private func toggleExpanded(_ projectID: String) {
-        projectDisclosure.toggleExpanded(projectID)
-        projectDisclosure.save(to: DieterAppearance.applicationDefaults())
+        store.chatProjectDisclosure.toggleExpanded(projectID)
     }
 
     private func toggleCollapsed(_ projectID: String) {
-        projectDisclosure.toggleCollapsed(projectID)
-        projectDisclosure.save(to: DieterAppearance.applicationDefaults())
+        store.chatProjectDisclosure.toggleCollapsed(projectID)
     }
 
     private func initializePinnedChatOrderIfNeeded() {
-        guard pinnedChatNavigation.initializeIfNeeded(with: activePinnedChats.map(\.id)) else { return }
-        pinnedChatNavigation.save(to: DieterAppearance.applicationDefaults())
+        guard store.pinnedChatNavigation.initializeIfNeeded(with: activePinnedChats.map(\.id)) else { return }
     }
 
     private func movePinnedChat(_ chatID: String, to targetChatID: String) {
-        guard pinnedChatNavigation.move(chatID, to: targetChatID, among: activePinnedChats) else {
+        guard store.pinnedChatNavigation.move(chatID, to: targetChatID, among: activePinnedChats) else {
             return
         }
-        pinnedChatNavigation.save(to: DieterAppearance.applicationDefaults())
     }
 
     private func moveProject(_ projectID: String, before targetProjectID: String?) {

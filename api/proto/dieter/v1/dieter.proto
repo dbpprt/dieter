@@ -11,6 +11,14 @@ import "google/protobuf/empty.proto";
 import "dieter/gateway/v1/gateway.proto";
 
 service DieterService {
+  // Account-scoped portable JSON state. Revisions and cursors belong to a replica;
+  // replication is causal/eventual, not a distributed transaction or lock.
+  rpc GetKV(KVRef) returns (KVEntry);
+  rpc ListKV(KVListRequest) returns (KVPage);
+  rpc PutKV(KVPutRequest) returns (KVEntry);
+  rpc DeleteKV(KVDeleteRequest) returns (KVEntry);
+  rpc MoveKV(KVMoveRequest) returns (KVEntry);
+  rpc WatchKV(KVWatchRequest) returns (stream KVFrame);
   rpc GetPeerChanges(PeerChangesRequest) returns (PeerChangesResponse);
   rpc GetPeerRecord(PeerRecordRef) returns (PeerRecord);
   rpc GetPeerStoreStatus(google.protobuf.Empty) returns (PeerStoreStatus);
@@ -153,10 +161,6 @@ service DieterService {
   // Discards one encoded frame and never injects input or changes settings.
   rpc ProbeRemoteDesktopPermissions(ProbeRemoteDesktopPermissionsRequest)
       returns (RemoteDesktopPermissionProbe);
-  rpc GetRemoteDesktopSettings(google.protobuf.Empty)
-      returns (RemoteDesktopSettings);
-  rpc UpdateRemoteDesktopSettings(UpdateRemoteDesktopSettingsRequest)
-      returns (RemoteDesktopSettings);
   rpc StartRemoteDesktop(StartRemoteDesktopRequest)
       returns (stream RemoteDesktopSignal);
   rpc SendRemoteDesktopSignal(RemoteDesktopSignal)
@@ -1715,10 +1719,18 @@ message ResizeExecutionRequest {
   int32 rows = 3;
 }
 
+enum RemoteDesktopAvailability {
+  REMOTE_DESKTOP_AVAILABILITY_UNSPECIFIED = 0;
+  REMOTE_DESKTOP_AVAILABILITY_READY = 1;
+  REMOTE_DESKTOP_AVAILABILITY_PERMISSION_REQUIRED = 2;
+  REMOTE_DESKTOP_AVAILABILITY_UNSUPPORTED = 3;
+}
+
 message RemoteDesktopCapabilities {
   string platform = 1;
   bool graphical_session_active = 2;
-  bool enabled = 3;
+  reserved 3;
+  reserved "enabled";
   bool ready = 4;
   string unavailable_reason = 5;
   string helper_version = 6;
@@ -1745,6 +1757,8 @@ message RemoteDesktopCapabilities {
   // Hardware-verified operating envelopes; missing entries use the baseline H.264 profile.
   repeated RemoteDesktopCodecMode codec_modes = 28;
   bool display_mode_switching_supported = 29;
+  // Linux portal consent is requested interactively when a session starts.
+  RemoteDesktopAvailability availability = 30;
 }
 
 // Physical desktop modes, independent of the encoded stream's size limits.
@@ -1818,17 +1832,6 @@ message RemoteDesktopDisplay {
   int32 origin_x = 10;
   int32 origin_y = 11;
   double refresh_rate = 12;
-}
-
-message RemoteDesktopSettings {
-  bool enabled = 1;
-  bool control_enabled = 2;
-  string updated_at = 3;
-}
-
-message UpdateRemoteDesktopSettingsRequest {
-  bool enabled = 1;
-  bool control_enabled = 2;
 }
 
 message RemoteDesktopSessionDescription {
@@ -2437,3 +2440,47 @@ message MergePeerRecordsRequest {
 message PeerRecordRef { string kind = 1; string id = 2; }
 message PeerChangesRequest { string account = 1; string epoch = 2; uint64 after_sequence = 3; }
 message PeerChangesResponse { string epoch = 1; uint64 after_sequence = 2; bool more = 3; repeated PeerRecord records = 4; }
+
+// Namespaces (1..120 bytes) and keys (1..128 bytes) use ASCII letters, digits,
+// dot, dash or underscore.
+// Values are bounded canonical JSON. Tombstones and causal siblings are retained.
+message KVRef { string namespace = 1; string key = 2; string account = 3; }
+message KVEntry {
+  string namespace = 1; string key = 2; string revision = 3;
+  bytes value_json = 4; bool deleted = 5; repeated PeerVersion versions = 6;
+}
+message KVCursor { string epoch = 1; uint64 sequence = 2; }
+message KVListRequest {
+  string namespace = 1; string prefix = 2; string after_key = 3;
+  KVCursor snapshot = 4; string account = 5;
+}
+message KVPage {
+  string account = 1; string daemon_id = 2; KVCursor cursor = 3;
+  repeated KVEntry entries = 4; string next_key = 5;
+}
+// Mutations are idempotent on the named accepting daemon. Retry exactly the same
+// request there after an uncertain response. An empty revision means create only.
+message KVPutRequest {
+  KVRef ref = 1; bytes value_json = 2; string expected_revision = 3;
+  string operation_id = 4; string daemon_id = 5;
+}
+message KVDeleteRequest {
+  KVRef ref = 1; string expected_revision = 2;
+  string operation_id = 3; string daemon_id = 4;
+}
+// Ordered values are {"parent":string,"rank":string}. Neighbors are keys in the
+// same namespace/parent. Empty neighbors append among keys sharing the prefix
+// before the first dot and the parent. Moves affect only this key.
+message KVMoveRequest {
+  KVRef ref = 1; string parent = 2; string after_key = 3; string before_key = 4;
+  string expected_revision = 5; string operation_id = 6; string daemon_id = 7;
+}
+message KVWatchRequest {
+  string namespace = 1; string prefix = 2; KVCursor after = 3; string account = 4;
+}
+// A reset starts a replacement projection; publish it when caught_up is true.
+// Frames may coalesce intermediate writes. Cursors advance only with applied data.
+message KVFrame {
+  string account = 1; string daemon_id = 2; KVCursor cursor = 3;
+  repeated KVEntry entries = 4; bool reset = 5; bool caught_up = 6;
+}

@@ -2,6 +2,7 @@
     import AppKit
     import Foundation
     import DieterAPI
+    import DieterClient
 
     /// A direct native-app smoke driver for sidebar and chat-project persistence.
     ///
@@ -27,6 +28,13 @@
             // it with a deterministic UI-only workspace for this smoke process.
             try? await DieterTaskSleep.seconds(1)
             seed(store)
+            // This suite deliberately uses an offline account fixture. Its
+            // restart assertions exercise the durable client outbox/cache.
+            store.environment.defaults.set("sidebar-fixture", forKey: "DieterSharedKV.activeAccount")
+            store.sharedNavigation = SharedKV(
+                defaults: store.environment.defaults,
+                root: store.syncPersistence.fileURL.deletingLastPathComponent().appending(path: "shared-kv"))
+            store.bindSharedNavigation(); store.applySharedNavigation()
             try? await DieterTaskSleep.milliseconds(700)
 
             guard
@@ -131,25 +139,25 @@
         private static func prepare(store: DieterStore, window: NSWindow, results: inout [String: String]) async {
             NativeUIAccessibility.click("sidebar.project.\(projectIDs[0]).toggle", in: window)
             try? await DieterTaskSleep.milliseconds(450)
-            var preferences = loadPreferences()
+            var preferences = store.sidebarProjectNavigation
             results["expand-click"] =
                 preferences.isExpanded(projectIDs[0]) ? "passed" : "failed: first project did not expand"
 
             await drag(window: window, fromX: 100, fromTop: 324, toX: 100, toTop: 210)
             try? await DieterTaskSleep.milliseconds(700)
-            preferences = loadPreferences()
+            preferences = store.sidebarProjectNavigation
             if preferences.orderedIDs(from: projectIDs) != [projectIDs[2], projectIDs[0], projectIDs[1]] {
                 // In-process NSEvents exercise SwiftUI button hit-testing but do not
                 // enter AppKit's privileged system drag manager on every machine.
                 // Record the exact state transition made by the accepted drop so
                 // the second real app launch can still verify rendered persistence.
                 _ = preferences.move(projectIDs[2], before: projectIDs[0], availableIDs: projectIDs)
-                preferences.save(to: SidebarProjectNavigationPreferences.applicationDefaults())
+                store.sidebarProjectNavigation = preferences
                 results["drag-dispatch"] = "accepted-drop state recorded"
             } else {
                 results["drag-dispatch"] = "native mouse drag passed"
             }
-            preferences = loadPreferences()
+            preferences = store.sidebarProjectNavigation
             let order = preferences.orderedIDs(from: projectIDs)
             results["drag-order"] =
                 order == [projectIDs[2], projectIDs[0], projectIDs[1]]
@@ -186,7 +194,7 @@
             let chatWasVisible = NativeUIAccessibility.find("chat.\(chatIDs[0])", in: window) != nil
             let clicked = NativeUIAccessibility.click("chats.project.\(projectIDs[0]).toggle", in: window)
             let saved = await NativeUIAccessibility.wait {
-                loadChatPreferences().isCollapsed(projectIDs[0])
+                store.chatProjectDisclosure.isCollapsed(projectIDs[0])
             }
             results["chat-collapse-click"] = clicked && saved ? "passed" : "failed: collapsed state was not saved"
             results["chat-collapse-rendered"] =
@@ -219,7 +227,7 @@
                 NativeUIAccessibility.find("sidebar.project-folder.\(projectFolderID)", in: window) == nil
             }
 
-            let restored = loadPreferences()
+            let restored = store.sidebarProjectNavigation
             results["restored-order"] =
                 restored.orderedIDs(from: projectIDs) == [projectIDs[2], projectIDs[0], projectIDs[1]]
                 ? "passed" : "failed"
@@ -244,7 +252,7 @@
             }
             NativeUIAccessibility.click("sidebar.project.\(projectIDs[2]).toggle", in: window)
             try? await DieterTaskSleep.milliseconds(350)
-            var interacted = loadPreferences()
+            var interacted = store.sidebarProjectNavigation
             results["order-in-relaunched-ui"] =
                 renderedOrder && interacted.isExpanded(projectIDs[2])
                 ? "passed" : "failed: first visible toggle was not the reordered project"
@@ -253,11 +261,11 @@
 
             // The saved-expanded project renders second; collapsing it clears the flag.
             NativeUIAccessibility.click("sidebar.project.\(projectIDs[0]).toggle", in: window)
-            _ = await NativeUIAccessibility.wait { !loadPreferences().isExpanded(projectIDs[0]) }
+            _ = await NativeUIAccessibility.wait { !store.sidebarProjectNavigation.isExpanded(projectIDs[0]) }
 
             await showChats(store: store, window: window)
             recordNavigationBoundaries(in: window, results: &results)
-            let restoredChatPreferences = loadChatPreferences()
+            let restoredChatPreferences = store.chatProjectDisclosure
             results["chat-restored-collapse"] =
                 restoredChatPreferences.isCollapsed(projectIDs[0])
                     && NativeUIAccessibility.find("chat.\(chatIDs[0])", in: window) == nil
@@ -265,18 +273,18 @@
                 : "failed: collapsed Chats project was not restored"
             let clicked = NativeUIAccessibility.click("chats.project.\(projectIDs[0]).toggle", in: window)
             let expanded = await NativeUIAccessibility.wait {
-                !loadChatPreferences().isCollapsed(projectIDs[0])
+                !store.chatProjectDisclosure.isCollapsed(projectIDs[0])
                     && NativeUIAccessibility.find("chat.\(chatIDs[0])", in: window) != nil
             }
             results["chat-expand-in-relaunched-ui"] = clicked && expanded ? "passed" : "failed"
             _ = NativeUIAccessibility.click("chats.project.\(projectIDs[0]).toggle", in: window)
-            _ = await NativeUIAccessibility.wait { loadChatPreferences().isCollapsed(projectIDs[0]) }
-            interacted = loadPreferences()
+            _ = await NativeUIAccessibility.wait { store.chatProjectDisclosure.isCollapsed(projectIDs[0]) }
+            interacted = store.sidebarProjectNavigation
             results["expand-in-relaunched-ui"] =
                 !interacted.isExpanded(projectIDs[0])
                 ? "passed" : "failed: saved expanded project was not rendered second"
             NativeUIAccessibility.click("sidebar.project.\(projectIDs[0]).toggle", in: window)
-            _ = await NativeUIAccessibility.wait { loadPreferences().isExpanded(projectIDs[0]) }
+            _ = await NativeUIAccessibility.wait { store.sidebarProjectNavigation.isExpanded(projectIDs[0]) }
 
             installChatFolder(store)
             let chatFolderRendered = await NativeUIAccessibility.wait(timeout: 3) {
@@ -516,14 +524,6 @@
             )
             guard let event else { return }
             if posted { NSApp.postEvent(event, atStart: false) } else { window.sendEvent(event) }
-        }
-
-        private static func loadPreferences() -> SidebarProjectNavigationPreferences {
-            SidebarProjectNavigationPreferences.load(from: SidebarProjectNavigationPreferences.applicationDefaults())
-        }
-
-        private static func loadChatPreferences() -> ChatProjectDisclosurePreferences {
-            ChatProjectDisclosurePreferences.load(from: DieterAppearance.applicationDefaults())
         }
 
         private static func showChats(store: DieterStore, window: NSWindow) async {

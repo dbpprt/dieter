@@ -21,7 +21,7 @@ func (m *Manager) SetControl(ctx context.Context, id string, take bool) (*dieter
 		return nil, ErrNotFound
 	}
 	if !s.control {
-		return nil, ErrControlDisabled
+		return nil, ErrControlUnavailable
 	}
 	if take && m.controller != s {
 		if m.controller != nil {

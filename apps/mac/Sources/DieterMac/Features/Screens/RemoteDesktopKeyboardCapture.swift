@@ -24,11 +24,6 @@ import Carbon
     var interrupted: (() -> Void)?
     var active: Bool { tap != nil }
 
-    static func requestPermission() {
-        AXIsProcessTrustedWithOptions(
-            [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary)
-    }
-
     func start() -> Bool {
         if active { return true }
         let now = ProcessInfo.processInfo.systemUptime

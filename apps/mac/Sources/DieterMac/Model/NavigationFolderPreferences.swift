@@ -24,22 +24,12 @@ struct NavigationFolder: Codable, Equatable, Identifiable {
     }
 }
 
-/// Mac-only navigation organization. Folders intentionally live in local
-/// preferences: they arrange daemon-owned projects and chats without changing
-/// the underlying resources or their behavior on other clients.
+/// Portable projection of account navigation records; membership never changes execution ownership.
 struct NavigationFolderPreferences: Equatable {
-    enum Scope {
-        case projects
-        case chats
-
-        var storageKey: String {
-            switch self {
-            case .projects: "DieterSidebarProjectFolders"
-            case .chats: "DieterAllChatsFolders"
-            }
-        }
+    static func validName(_ name: String) -> Bool {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        return !trimmed.isEmpty && trimmed.utf8.count <= 256
     }
-
     private(set) var folders: [NavigationFolder]
 
     init(folders: [NavigationFolder] = []) {
@@ -58,18 +48,6 @@ struct NavigationFolderPreferences: Equatable {
         }
     }
 
-    static func load(scope: Scope, from defaults: UserDefaults = .standard) -> Self {
-        guard let data = defaults.data(forKey: scope.storageKey),
-            let folders = try? JSONDecoder().decode([NavigationFolder].self, from: data)
-        else { return Self() }
-        return Self(folders: folders)
-    }
-
-    func save(scope: Scope, to defaults: UserDefaults = .standard) {
-        guard let data = try? JSONEncoder().encode(folders) else { return }
-        defaults.set(data, forKey: scope.storageKey)
-    }
-
     func folder(containing itemID: String) -> NavigationFolder? {
         folders.first { $0.itemIDs.contains(itemID) }
     }
@@ -82,7 +60,7 @@ struct NavigationFolderPreferences: Equatable {
     @discardableResult
     mutating func createFolder(named proposedName: String) -> String? {
         let name = proposedName.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !name.isEmpty, !containsFolder(named: name) else { return nil }
+        guard Self.validName(name), !containsFolder(named: name) else { return nil }
         let folder = NavigationFolder(name: name)
         folders.append(folder)
         return folder.id
@@ -91,7 +69,7 @@ struct NavigationFolderPreferences: Equatable {
     @discardableResult
     mutating func renameFolder(_ folderID: String, to proposedName: String) -> Bool {
         let name = proposedName.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !name.isEmpty,
+        guard Self.validName(name),
             !containsFolder(named: name, excluding: folderID),
             let index = folders.firstIndex(where: { $0.id == folderID }),
             folders[index].name != name

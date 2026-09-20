@@ -149,8 +149,8 @@ func (p *capturePool) variantLocked(options SourceOptions, config StreamConfigur
 	options.Display, options.MaxWidth, options.MaxHeight = config.DisplayID, config.MaxWidth, config.MaxHeight
 	options.FPS, options.Bitrate, options.EmbeddedCursor = config.FPS, config.BitrateKbps, config.EmbeddedCursor
 	// The manager is the sole input authority. Sharing with a viewer never grants
-	// it input. A production Linux portal must also honor the host's explicit
-	// control setting because its device grant is fixed when capture starts.
+	// it input. A production Linux portal must honor the requested devices
+	// because its input grant is fixed when capture starts.
 	if !linuxProductionCapture(options) {
 		options.Control = true
 	}

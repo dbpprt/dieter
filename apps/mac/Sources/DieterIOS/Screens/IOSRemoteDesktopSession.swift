@@ -11,7 +11,8 @@
     enum IOSRemoteDesktopPhase: Equatable, Sendable {
         case idle
         case loading
-        case disabled(String)
+        case permissionRequired(String)
+        case unsupported(String)
         case connecting
         case waitingForHostApproval
         case streaming
@@ -22,7 +23,8 @@
             switch self {
             case .idle: "Not connected"
             case .loading: "Checking machine…"
-            case .disabled: "Screen sharing is off"
+            case .permissionRequired: "Permission required"
+            case .unsupported: "Screen sharing unavailable"
             case .connecting: "Connecting…"
             case .waitingForHostApproval: "Waiting for approval on Linux host…"
             case .streaming: "Live"
@@ -37,7 +39,7 @@
     final class IOSRemoteDesktopSession {
         var phase: IOSRemoteDesktopPhase = .idle
         var capabilities = Dieter_V1_RemoteDesktopCapabilities()
-        var settings = Dieter_V1_RemoteDesktopSettings()
+
         var sessionState = Dieter_V1_RemoteDesktopSessionState()
         var cursor = Dieter_V1_RemoteDesktopCursor()
         var routeLabel = ""
@@ -132,24 +134,6 @@
             recover(immediate: true)
         }
 
-        func enableAndConnect() {
-            guard let connection else { return }
-            let token = generation
-            connectTask?.cancel()
-            connectTask = Task { [weak self] in
-                guard let self else { return }
-                do {
-                    self.settings = try await connection.rpc.updateRemoteDesktopSettings(
-                        enabled: true, controlEnabled: true)
-                    guard self.owns(token) else { return }
-                    self.recover(immediate: true)
-                } catch {
-                    guard self.owns(token) else { return }
-                    self.fail(error)
-                }
-            }
-        }
-
         private func beginConnection() {
             guard connectTask == nil, let openConnection else { return }
             phase = recoveryAttempts == 0 ? .loading : .reconnecting
@@ -163,22 +147,14 @@
                     guard self.owns(token) else { connection.shutdown(); return }
                     self.connection = connection
                     self.routeLabel = connection.routeLabel
-                    self.settings = try await connection.rpc.remoteDesktopSettings()
-                    guard self.owns(token) else { return }
                     self.capabilities = try await connection.rpc.remoteDesktopCapabilities()
                     guard self.owns(token) else { return }
-                    guard self.settings.enabled else {
-                        self.phase = .disabled(self.capabilities.unavailableReason)
-                        return
-                    }
                     guard self.capabilities.ready else {
-                        throw NSError(
-                            domain: "DieterScreens", code: 5,
-                            userInfo: [
-                                NSLocalizedDescriptionKey: self.capabilities.unavailableReason.isEmpty
-                                    ? "Screen sharing is not ready on this machine."
-                                    : self.capabilities.unavailableReason
-                            ])
+                        self.phase =
+                            self.capabilities.availability == .permissionRequired
+                            ? .permissionRequired(self.capabilities.unavailableReason)
+                            : .unsupported(self.capabilities.unavailableReason)
+                        return
                     }
                     try await self.startPeer(generation: token)
                 } catch {
@@ -282,12 +258,12 @@
             let portalCanRequestControl =
                 capabilities.platform == "linux" && capabilities.controlPermission == "not_requested"
             request.control =
-                settings.controlEnabled && capabilities.controlSupported
+                capabilities.controlSupported
                 && (capabilities.controlPermission == "granted" || portalCanRequestControl)
             request.embeddedCursor = !capabilities.cursorSupported
             request.clipboard = false
             controlUnavailableReason =
-                settings.controlEnabled && !request.control
+                !request.control
                 ? (capabilities.platform == "linux"
                     ? "Remote-control permission is required from the Linux desktop portal"
                     : "Accessibility permission is required on the host") : ""

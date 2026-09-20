@@ -33,6 +33,9 @@ them together in one native workspace.
 
 - **Work across machines.** Enroll a laptop, workstation, or home server and
   see their projects in one place.
+- **Keep your workspace organized everywhere.** Mac and Android share project
+  and chat folders, ordering, sort choices, and expanded/collapsed state, with
+  offline changes queued until a daemon reconnects.
 - **Keep execution local.** Agents run beside the code without sending project
   data or harness credentials through the gateway.
 - **Resume real work.** Chats, boards, queues, terminals, files, schedules, and
@@ -41,7 +44,8 @@ them together in one native workspace.
   active turn and can be steered next, removed, or returned to the composer for
   editing before they run.
 - **Use native clients.** The macOS, iOS, and Android apps automatically route
-  each project to the machine that owns it. The iPhone and iPad app is
+  each conversation to its execution machine and checkout. Shared projects can
+  span several machines. The iPhone and iPad app is
   currently in beta.
 - **Bring your existing agent setup.** Dieter uses each harness's normal local
   configuration and supports per-card model and effort settings.
@@ -83,24 +87,22 @@ dieter setup ~/Development/my-project
 dieter doctor
 ```
 
-Remote desktop is deliberately opt-in. Installing the helper and detecting a
-display do not enable screen access. Run the interactive service-side check to
-verify capture and input, then enable viewing and control:
+Screen sharing is available automatically on supported enrolled hosts once the
+required OS permissions are granted. There is no viewing/control enable switch.
+Run the guided service-side permission check:
 
 ```sh
 dieter daemon permissions
-dieter screen settings
 dieter screen capabilities
 ```
 
-The final capability response should contain `"enabled": true` and
-`"ready": true`. For view-only hosting, run `dieter screen permissions` and
-then `dieter screen update --enabled=true --control=false`. An authorized
-non-interactive control setup can use `dieter screen permissions
---request-control` followed by `dieter screen update --enabled=true
---control=true`. Disable all screen access with `dieter screen update
---enabled=false --control=false`. These commands also accept the global
-`--machine ID|NAME` selector.
+Capabilities report `availability` as `READY`, `PERMISSION_REQUIRED`, or
+`UNSUPPORTED` (with the protobuf enum prefix), plus `ready` and an actionable
+reason. Screen recording and input access must both be granted. Linux portals
+may request source/device consent when a session starts. These commands also
+accept global `--machine ID|NAME`; grant permissions on the target machine.
+Capture starts for an authenticated screen session or an explicit permission
+probe. To prevent access, revoke the host's OS permissions or enrollment.
 
 The installer verifies the Sigstore-signed release manifest and archive
 checksum, replaces each executable by atomic rename, and creates a private
@@ -125,9 +127,16 @@ dieter setup ~/Development/my-project
 ```
 
 `dieter setup` enrolls the machine, registers the project, starts the daemon as
-a Homebrew service, and verifies optional screen-sharing permissions through
-that running service. Add
-`--skip-screen-sharing` on hosts that should never capture their display.
+a Homebrew service, and guides the required screen-recording and input grants
+through that running service. Unsupported or headless hosts report why screen
+sharing is unavailable while their other daemon features remain usable.
+
+The Mac app also requires Screen Recording and Accessibility access for capture,
+browser context, and keyboard control. Its setup screen explains each permission,
+opens the matching System Settings pane, and verifies access automatically.
+Grant access to **Dieter.app** for the app and to the **daemon executable** for
+hosting; these are separate OS grants. If macOS requests a restart, quit and reopen
+the relevant application or service, then check again.
 
 The Homebrew service runs signed, regular executable files at
 `$(brew --prefix)/var/dieter/service/bin/{dieter,dieter-capture}`. The CLI remains
@@ -397,14 +406,16 @@ flowchart LR
 
 The system has three components:
 
-1. **Daemon and CLI** — own projects, conversations, terminals, schedules,
-   files, and local harness workers on each machine.
+1. **Daemon and CLI** — replicate shared projects and portable settings across
+   the account, and own each machine's checkouts, conversations, terminals,
+   schedules, files, and local harness workers.
 2. **Gateway** — authenticates one allowed GitHub identity and connects enrolled
    daemons through a bounded relay.
-3. **Native clients** — combine projects from all online daemons and prefer a
-   verified direct TLS route when one is reachable.
+3. **Native clients** — show shared projects, route work to its execution
+   machine, and cache and queue portable navigation preferences offline.
 
-Both network paths expose the same `dieter.v1.DieterService` API. The gateway
+Verified direct TLS, WebRTC, and gateway relay expose the same
+`dieter.v1.DieterService` API. The gateway
 stores account sessions, daemon identities, presence, route metadata, and
 normalized provider-account quota snapshots. It never stores provider
 credentials or raw provider responses, project code, transcripts, schedules,
@@ -1395,3 +1406,16 @@ development stores require a fresh `DIETER_HOME`; there is no import or migratio
 command. Existing directories are never converted automatically. See the
 [application contract](docs/api-contract.md) and [peer store](docs/peer-store.md)
 for boundaries, ownership, conflict semantics, and CLI examples.
+
+### Shared navigation
+
+Mac and Android synchronize project/chat folders, membership, ordering, sort
+choices, and expansion state through the account's daemon KV replicas. The
+leaderless store holds portable JSON settings under account-scoped keys; no
+central machine or gateway database owns this data. Clients
+keep a durable offline queue and account cache; daemons synchronize over verified
+TLS, WebRTC, or relay. `dieter kv --help` exposes get/list/put/delete/move/watch
+through the same API, including global `--machine`. Writes acknowledge local
+durability and converge causally; revision checks are not global locks. See
+[shared navigation and KV](docs/client-navigation-folders.md) for record keys,
+conflicts, retry receipts, bounds, and the clean pre-release preference cutover.

@@ -12,6 +12,7 @@ import Testing
         .appending(path: "dieter-initial-selection-\(UUID().uuidString)", directoryHint: .isDirectory)
     defer { try? FileManager.default.removeItem(at: root) }
     let persistence = DieterSyncPersistence(root: root)
+    defaults.set("fixture-account", forKey: "DieterSharedKV.activeAccount")
     let environment = DieterAppEnvironment.testing(defaults: defaults)
     let store = DieterStore(
         environment: environment,
@@ -30,10 +31,9 @@ import Testing
     preferredBoard.projectID = preferredProject.id
     preferredBoard.name = "Main"
 
-    SidebarProjectNavigationPreferences(
+    store.sidebarProjectNavigation = SidebarProjectNavigationPreferences(
         projectOrder: [preferredProject.id, firstProject.id]
-    ).save(to: defaults)
-    store.sidebarProjectNavigation = .load(from: defaults)
+    )
 
     var firstSnapshot = Dieter_V1_GlobalSnapshot()
     firstSnapshot.state.projects = [firstProject]

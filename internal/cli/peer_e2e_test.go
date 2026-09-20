@@ -232,6 +232,42 @@ func testPeerMachines(t *testing.T, wantRoute string) {
 	if err = client.Run([]string{"peer", "delete", "--kind", "board-settings", "--id", "board", "--revision", card.GetRevision()}); err != nil {
 		t.Fatal(err)
 	}
+
+	// Exercise the public KV consumer and watch over each authenticated route.
+	if err = os.WriteFile(file, []byte(`"Research"`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	output.Reset()
+	if err = client.Run([]string{"kv", "put", "--namespace", "navigation", "--key", "projects-folder.fixture.name", "--file", file, "--operation", "kv-create"}); err != nil {
+		t.Fatal(err)
+	}
+	var entry dieterv1.KVEntry
+	if err = protojson.Unmarshal(output.Bytes(), &entry); err != nil {
+		t.Fatal(err)
+	}
+	output.Reset()
+	if err = client.Run([]string{"kv", "watch", "--namespace", "navigation", "--count", "1"}); err != nil {
+		t.Fatal(err)
+	}
+	var frame dieterv1.KVFrame
+	if err = protojson.Unmarshal(output.Bytes(), &frame); err != nil || !frame.GetReset_() || len(frame.GetEntries()) != 1 {
+		t.Fatal(output.String(), err)
+	}
+	output.Reset()
+	if err = client.Run([]string{"kv", "move", "--namespace", "navigation", "--key", "projects-folder.fixture.position", "--operation", "kv-move"}); err != nil {
+		t.Fatal(err)
+	}
+	output.Reset()
+	if err = client.Run([]string{"kv", "delete", "--namespace", "navigation", "--key", entry.Key, "--revision", entry.Revision, "--operation", "kv-delete"}); err != nil {
+		t.Fatal(err)
+	}
+	if err = runner.Round(ctx); err != nil {
+		t.Fatal(err)
+	}
+	shared, e := sa.PeerData(scope)
+	if e != nil || !peerstore.SelectedKV(shared.Records["kv.navigation/projects-folder.fixture.name"]).Deleted {
+		t.Fatal(shared, e)
+	}
 	// Real raw local API, with no remote credentials, has the same record view.
 	local, err := grpc.NewClient(localListener.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {

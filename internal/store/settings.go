@@ -63,40 +63,6 @@ func (s *Store) UpdateSettings(value model.Settings) (model.Settings, error) {
 	if strings.TrimSpace(value.ChatSkillTemplate) == "" {
 		value.ChatSkillTemplate = current.ChatSkillTemplate
 	}
-	// Remote desktop policy is only changed by its dedicated RPC.
-	value.RemoteDesktopEnabled = current.RemoteDesktopEnabled
-	value.RemoteDesktopControlEnabled = current.RemoteDesktopControlEnabled
-	normalized, err := normalizeSettings(value)
-	if err != nil {
-		return model.Settings{}, err
-	}
-	release, err := s.beginWrite()
-	if err != nil {
-		return model.Settings{}, err
-	}
-	defer release()
-	normalized.UpdatedAt = timestamp()
-	data, err := yaml.Marshal(normalized)
-	if err != nil {
-		return model.Settings{}, err
-	}
-	if err := atomicWrite(s.settingsPath(), data); err != nil {
-		return model.Settings{}, err
-	}
-	return normalized, nil
-}
-
-func (s *Store) UpdateRemoteDesktopSettings(enabled, controlEnabled bool) (model.Settings, error) {
-	current, err := s.readSettings()
-	if err != nil {
-		return model.Settings{}, err
-	}
-	current.RemoteDesktopEnabled = enabled
-	current.RemoteDesktopControlEnabled = enabled && controlEnabled
-	return s.updateSettings(current)
-}
-
-func (s *Store) updateSettings(value model.Settings) (model.Settings, error) {
 	normalized, err := normalizeSettings(value)
 	if err != nil {
 		return model.Settings{}, err

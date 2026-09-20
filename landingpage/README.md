@@ -4,8 +4,9 @@ The marketing site and documentation for **Dieter** — coding agents across all
 your machines, behind one interface. Built with [Hugo](https://gohugo.io)
 (extended) and a fully custom, light theme.
 
-> This lives in the repo for now. It will move to a GitHub Pages deployment at
-> `getdieter.com` later (domain not yet purchased).
+The GitHub Pages workflow is named **Deploy getdieter.com**. The configured
+public URL is currently `https://dbpprt.github.io/dieter/`; `getdieter.com` is
+not yet configured as its custom domain.
 
 ## Develop
 
@@ -66,13 +67,14 @@ unchanged at a subpath or a domain root.
 
 Deployment is automatic. [`.github/workflows/pages.yml`](../.github/workflows/pages.yml)
 builds this directory and publishes it on every push to `main` that touches
-`landingpage/**`. The base URL comes from the Pages configuration, so nothing
-here is hard-coded to a host.
+`landingpage/**`, the site recipes, or the deployment workflow. It can also be
+started manually. The base URL comes from the Pages configuration. Deployment
+uses the Node 24 Pages action with OIDC permissions on the deploy job and one
+bounded retry for transient GitHub failures; a second failure fails the run.
 
 - **Now:** served at the project-pages URL, `https://dbpprt.github.io/dieter/`.
-- **Later (getdieter.com):** buy the domain, add a `getdieter.com` file to
-  `static/`, set it as the custom domain under **Settings → Pages**, and point
-  DNS at GitHub Pages. The workflow picks up the new base URL automatically — no
-  code change.
+- **Custom domain:** configure `getdieter.com` under **Settings → Pages** and
+  point the domain's DNS at GitHub Pages. The workflow picks up the configured
+  base URL automatically.
 
 One-time setup: **Settings → Pages → Build and deployment → Source: GitHub Actions.**

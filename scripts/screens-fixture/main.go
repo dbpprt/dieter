@@ -85,9 +85,6 @@ func run(helper, kind, ready string, authenticate bool) error {
 	if err = data.Ensure(); err != nil {
 		return err
 	}
-	if _, err = data.UpdateRemoteDesktopSettings(true, true); err != nil {
-		return err
-	}
 	gp, gk, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		return err

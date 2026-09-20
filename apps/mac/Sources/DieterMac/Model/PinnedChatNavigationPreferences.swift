@@ -4,20 +4,11 @@ import Foundation
 /// Keeps pinned chats in a user-controlled location instead of allowing new
 /// activity timestamps to reshuffle the pinned section.
 struct PinnedChatNavigationPreferences: Equatable {
-    static let orderKey = "DieterPinnedChatOrder"
 
     private(set) var chatOrder: [String]
 
     init(chatOrder: [String] = []) {
         self.chatOrder = Self.unique(chatOrder)
-    }
-
-    static func load(from defaults: UserDefaults = .standard) -> Self {
-        Self(chatOrder: defaults.stringArray(forKey: orderKey) ?? [])
-    }
-
-    func save(to defaults: UserDefaults = .standard) {
-        defaults.set(chatOrder, forKey: Self.orderKey)
     }
 
     @discardableResult

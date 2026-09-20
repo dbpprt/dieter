@@ -81,6 +81,14 @@ cloning a live enrollment across machines is unsupported. Replication is eventua
 not a transcript backup or a promise that every other machine has acknowledged an
 edit. `peer status` reports the last completed exchange, not a quorum.
 
+## Portable KV consumers
+
+The `kv.*` record kinds expose bounded JSON namespaces over this same replica.
+The `navigation` consumer synchronizes native folder, ordering, sort and expansion
+state. It has live subscriptions and durable daemon-bound mutation receipts;
+see [shared navigation and KV](client-navigation-folders.md). No second database
+or gateway data authority is introduced.
+
 ## Operations
 
 Create a project once, then attach other checkouts explicitly. Creation and initial

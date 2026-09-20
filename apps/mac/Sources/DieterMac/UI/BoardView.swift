@@ -1092,7 +1092,6 @@ private struct BoardLabelDragPreview: View {
 struct KanbanView: View {
     @Environment(DieterStore.self) private var store
     let board: Dieter_V1_Board
-    @State private var laneSortDirections: [String: BoardCardSortDirection] = [:]
 
     private var lanes: [Dieter_V1_Lane] {
         if !board.lanes.isEmpty { return board.lanes }
@@ -1111,7 +1110,7 @@ struct KanbanView: View {
             ScrollView(.horizontal) {
                 HStack(alignment: .top, spacing: KanbanLaneSizing.spacing) {
                     ForEach(lanes, id: \.id) { lane in
-                        let direction = laneSortDirections[lane.id] ?? .descending
+                        let direction = store.laneSortDirection(board: board.id, lane: lane.id)
                         LaneColumn(
                             lane: lane,
                             cards: BoardCardOrdering.sorted(
@@ -1119,7 +1118,7 @@ struct KanbanView: View {
                                 direction: direction
                             ),
                             sortDirection: direction,
-                            onToggleSort: { laneSortDirections[lane.id] = direction.toggled }
+                            onToggleSort: { store.toggleLaneSort(board: board.id, lane: lane.id) }
                         )
                         .frame(width: laneWidth, height: max(0, geometry.size.height - 24))
                     }

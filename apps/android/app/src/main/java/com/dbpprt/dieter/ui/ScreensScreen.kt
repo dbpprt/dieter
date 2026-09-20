@@ -60,7 +60,7 @@ internal fun ScreenWorkspace(
     var specialKeys by rememberSaveable { mutableStateOf(false) }
     var modifiers by remember { mutableIntStateOf(0) }
     val machine = machines.firstOrNull { it.id == selected }
-    val active = screen.phase != "idle" && screen.phase != "failed"
+    val active = screen.phase !in setOf("idle", "failed", "permission required", "unsupported")
     fun disconnect() { canvas?.showKeyboard(false); keyboard = false; modifiers = 0; controller.disconnect() }
     DisposableEffect(controller, lifecycle) {
         val observer = LifecycleEventObserver { _, event ->
@@ -78,7 +78,7 @@ internal fun ScreenWorkspace(
     }
     BackHandler(active || keyboard) { if (keyboard) { canvas?.showKeyboard(false); keyboard = false } else disconnect() }
     LaunchedEffect(screen.phase) {
-        if (screen.phase == "idle" || screen.phase == "failed" || screen.phase == "reconnecting") canvas?.clearFrame()
+        if (screen.phase in setOf("idle", "failed", "reconnecting", "permission required", "unsupported")) canvas?.clearFrame()
     }
     LaunchedEffect(screen.control) { if (!screen.control) { modifiers = 0; canvas?.modifiers = 0 } }
     Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background,
@@ -96,15 +96,15 @@ internal fun ScreenWorkspace(
                             !endpoint.online -> " · Offline"
                             !endpoint.remoteDesktopReady -> " · Unavailable"
                             else -> ""
-                        }) }, enabled = endpoint.online && endpoint.remoteDesktopReady,
+                        }) }, enabled = endpoint.online,
                         onClick = { disconnect(); selected = endpoint.id; machineMenu = false },
                     ) }
                 }
             }
             if (active) TextButton(onClick = ::disconnect, modifier = Modifier.testTag("screen-disconnect")) { Text("Disconnect") }
-            else TextButton(enabled = machine?.online == true && machine.remoteDesktopReady, onClick = {
+            else TextButton(enabled = machine?.online == true, onClick = {
                 controller.connect { openConnection(requireNotNull(selected)) }
-            }, modifier = Modifier.testTag("screen-connect")) { Text(if (screen.phase == "failed") "Retry" else "Connect") }
+            }, modifier = Modifier.testTag("screen-connect")) { Text(if (screen.phase in setOf("failed", "permission required", "unsupported")) "Check Again" else "Connect") }
             if (active) {
                 Box {
                     IconButton(onClick = { displayMenu = true }) { Icon(Icons.Outlined.DesktopWindows, "Choose display") }

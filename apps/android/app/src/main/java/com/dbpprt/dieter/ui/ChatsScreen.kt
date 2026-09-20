@@ -179,6 +179,7 @@ internal fun ChatsList(state: DieterUiState, model: DieterViewModel, modifier: M
                     Icon(Icons.Outlined.Settings, "App settings", tint = DieterMuted)
                 }
             }
+            NavigationSyncStatus(state)
             SurfaceErrorBanner(state.error, model::clearError)
             CompactSearchField(query, { query = it }, "Search chats")
             if (!state.connected && state.projects.isEmpty() && state.chatFolders.folders.isEmpty()) {

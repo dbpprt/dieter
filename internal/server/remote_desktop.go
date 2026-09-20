@@ -30,39 +30,10 @@ func (api *connectAPI) ProbeRemoteDesktopPermissions(ctx context.Context, reques
 type remoteDesktopOperatorKey struct{}
 
 func (api *grpcAPI) GetRemoteDesktopCapabilities(context.Context, *emptypb.Empty) (*dieterv1.RemoteDesktopCapabilities, error) {
-	settings, err := api.server.store.Settings()
-	if err != nil {
-		return nil, grpcFailure(err)
-	}
-	return api.server.remoteDesktop.Capabilities(settings.RemoteDesktopEnabled, settings.RemoteDesktopControlEnabled), nil
-}
-
-func (api *grpcAPI) GetRemoteDesktopSettings(context.Context, *emptypb.Empty) (*dieterv1.RemoteDesktopSettings, error) {
-	settings, err := api.server.store.Settings()
-	if err != nil {
-		return nil, grpcFailure(err)
-	}
-	return protoRemoteDesktopSettings(settings.RemoteDesktopEnabled, settings.RemoteDesktopControlEnabled, settings.UpdatedAt), nil
-}
-
-func (api *grpcAPI) UpdateRemoteDesktopSettings(_ context.Context, request *dieterv1.UpdateRemoteDesktopSettingsRequest) (*dieterv1.RemoteDesktopSettings, error) {
-	settings, err := api.server.store.UpdateRemoteDesktopSettings(request.GetEnabled(), request.GetControlEnabled())
-	if err != nil {
-		return nil, grpcFailure(err)
-	}
-	if !settings.RemoteDesktopEnabled {
-		api.server.remoteDesktop.CloseActive("remote desktop disabled")
-	} else if !settings.RemoteDesktopControlEnabled {
-		api.server.remoteDesktop.CloseControlActive("remote desktop control disabled")
-	}
-	return protoRemoteDesktopSettings(settings.RemoteDesktopEnabled, settings.RemoteDesktopControlEnabled, settings.UpdatedAt), nil
+	return api.server.remoteDesktop.Capabilities(), nil
 }
 
 func (api *grpcAPI) StartRemoteDesktop(ctx context.Context, request *dieterv1.StartRemoteDesktopRequest) (*remotedesktop.Subscription, error) {
-	settings, err := api.server.store.Settings()
-	if err != nil {
-		return nil, grpcFailure(err)
-	}
 	subject := remoteDesktopOperator(ctx)
 	// The raw loopback API has full local access and no gateway transport
 	// subject. The manager still verifies the gateway signature, daemon,
@@ -70,7 +41,7 @@ func (api *grpcAPI) StartRemoteDesktop(ctx context.Context, request *dieterv1.St
 	if subject == "" {
 		subject = request.GetRtcConfiguration().GetOperatorSubject()
 	}
-	subscription, err := api.server.remoteDesktop.Start(request, settings.RemoteDesktopEnabled, settings.RemoteDesktopControlEnabled, subject)
+	subscription, err := api.server.remoteDesktop.Start(request, subject)
 	if err != nil {
 		return nil, remoteDesktopFailure(err)
 	}
@@ -97,13 +68,6 @@ func (api *grpcAPI) ListRemoteDesktopSessions(context.Context, *emptypb.Empty) (
 }
 
 func (api *grpcAPI) SetRemoteDesktopControl(ctx context.Context, request *dieterv1.RemoteDesktopControlRequest) (*dieterv1.RemoteDesktopSessionState, error) {
-	settings, err := api.server.store.Settings()
-	if err != nil {
-		return nil, grpcFailure(err)
-	}
-	if request.GetTakeControl() && (!settings.RemoteDesktopEnabled || !settings.RemoteDesktopControlEnabled) {
-		return nil, remoteDesktopFailure(remotedesktop.ErrControlDisabled)
-	}
 	state, err := api.server.remoteDesktop.SetControl(ctx, request.GetSessionId(), request.GetTakeControl())
 	if err != nil {
 		return nil, remoteDesktopFailure(err)
@@ -143,14 +107,6 @@ func (api *connectAPI) GetRemoteDesktopCapabilities(ctx context.Context, request
 	return connectUnary(ctx, request, api.core.GetRemoteDesktopCapabilities)
 }
 
-func (api *connectAPI) GetRemoteDesktopSettings(ctx context.Context, request *connect.Request[emptypb.Empty]) (*connect.Response[dieterv1.RemoteDesktopSettings], error) {
-	return connectUnary(ctx, request, api.core.GetRemoteDesktopSettings)
-}
-
-func (api *connectAPI) UpdateRemoteDesktopSettings(ctx context.Context, request *connect.Request[dieterv1.UpdateRemoteDesktopSettingsRequest]) (*connect.Response[dieterv1.RemoteDesktopSettings], error) {
-	return connectUnary(ctx, request, api.core.UpdateRemoteDesktopSettings)
-}
-
 func (api *connectAPI) StartRemoteDesktop(ctx context.Context, request *connect.Request[dieterv1.StartRemoteDesktopRequest], stream *connect.ServerStream[dieterv1.RemoteDesktopSignal]) error {
 	// connect-go terminates the gRPC HTTP/2 request, so transport metadata is
 	// available as headers rather than grpc/metadata on this adapter boundary.
@@ -183,10 +139,6 @@ func (api *connectAPI) CloseRemoteDesktop(ctx context.Context, request *connect.
 	return connectUnary(ctx, request, api.core.CloseRemoteDesktop)
 }
 
-func protoRemoteDesktopSettings(enabled, controlEnabled bool, updatedAt string) *dieterv1.RemoteDesktopSettings {
-	return &dieterv1.RemoteDesktopSettings{Enabled: enabled, ControlEnabled: enabled && controlEnabled, UpdatedAt: updatedAt}
-}
-
 func remoteDesktopOperator(ctx context.Context) string {
 	if value, ok := ctx.Value(remoteDesktopOperatorKey{}).(string); ok && value != "" {
 		return value
@@ -201,7 +153,7 @@ func remoteDesktopOperator(ctx context.Context) string {
 
 func remoteDesktopFailure(err error) error {
 	switch {
-	case errors.Is(err, remotedesktop.ErrDisabled), errors.Is(err, remotedesktop.ErrControlDisabled):
+	case errors.Is(err, remotedesktop.ErrSessionClosed), errors.Is(err, remotedesktop.ErrControlUnavailable):
 		return status.Error(codes.FailedPrecondition, err.Error())
 	case errors.Is(err, remotedesktop.ErrBusy):
 		return status.Error(codes.ResourceExhausted, err.Error())

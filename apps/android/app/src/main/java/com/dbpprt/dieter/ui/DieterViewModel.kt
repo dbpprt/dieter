@@ -185,6 +185,9 @@ data class DieterUiState(
     val providerQuotaMutatingAccounts: Set<String> = emptySet(),
     val projects: List<Project> = emptyList(),
     val projectOrder: List<String> = emptyList(),
+    val sharedLaneSortDirections: Map<String, String> = emptyMap(),
+    val navigationPendingCount: Int = 0,
+    val navigationSyncError: String? = null,
     val projectFolders: NavigationFolderPreferences = NavigationFolderPreferences(),
     val chatFolders: NavigationFolderPreferences = NavigationFolderPreferences(),
     val collapsedChatProjectIds: Set<String> = emptySet(),
@@ -437,6 +440,12 @@ class DieterViewModel internal constructor(
     private var directoryListingGeneration = 0L
 
     init {
+        viewModelScope.launch { appPreferences.sharedNavigation.values.collectLatest { values ->
+            _state.update { it.copy(sharedLaneSortDirections = values.filterKeys { key -> key.startsWith("lane.") }.mapValues { entry -> entry.value.trim('"') }) }
+        } }
+        viewModelScope.launch { appPreferences.sharedNavigation.status.collectLatest { status ->
+            _state.update { it.copy(navigationPendingCount = status.pending, navigationSyncError = status.error) }
+        } }
         viewModelScope.launch {
             navigationFolders.layouts.collectLatest { layouts ->
                 _state.update { it.copy(
@@ -553,6 +562,7 @@ class DieterViewModel internal constructor(
     fun signIn() = connectionManager.signIn()
 
     fun disconnect() {
+        appPreferences.sharedNavigation.bind(null)
         cancelConversationStream()
         connectionDialogGraceJob?.cancel()
         connectionDialogGraceJob = null
@@ -784,6 +794,11 @@ class DieterViewModel internal constructor(
         }
         resolvedSelectedCardId?.let(::ensureConversationRecovery)
         if (gatewayChanged && foreground) startProviderQuotaWatch()
+        if (gatewayChanged) appPreferences.sharedNavigation.clearAccount()
+        if ((gatewayChanged || endpointChanged || !wasConnected) && connection.phase == ConnectionPhase.CONNECTED) {
+            appPreferences.sharedNavigation.bind(repository)
+        }
+        if (connection.phase == ConnectionPhase.AUTH_REQUIRED) appPreferences.sharedNavigation.clearAccount()
         if ((gatewayChanged || !wasConnected) && connection.phase == ConnectionPhase.CONNECTED) {
             refreshProviderQuotas(requestRefresh = false)
         }
@@ -797,6 +812,11 @@ class DieterViewModel internal constructor(
         ) {
             loadTerminals()
         }
+    }
+
+    fun toggleLaneSort(boardId: String, laneId: String) {
+        val key = "lane.$boardId.$laneId.sort"
+        appPreferences.sharedNavigation.put(key, if (_state.value.sharedLaneSortDirections[key] == "ascending") "descending" else "ascending")
     }
 
     fun refreshProviderQuotas(requestRefresh: Boolean = true) {

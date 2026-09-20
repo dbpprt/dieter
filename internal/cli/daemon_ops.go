@@ -396,7 +396,7 @@ func streamLog(out io.Writer, path string, lines int, follow bool) error {
 }
 
 func (c *CLI) setup(args []string) error {
-	const usage = `Usage: dieter setup [--gateway URL] [--name NAME] [--no-open] [--no-start] [--skip-screen-sharing] [PROJECT_PATH...]
+	const usage = `Usage: dieter setup [--gateway URL] [--name NAME] [--no-open] [--no-start] [PROJECT_PATH...]
 
 Authorize this machine with GitHub, register Git projects, and start the
 platform-managed daemon service. On macOS, setup also guides and verifies Screen
@@ -409,7 +409,6 @@ current Git working tree is used.
 	name := set.String("name", hostname, "machine display name")
 	noOpen := set.Bool("no-open", false, "do not open the verification URL or System Settings")
 	noStart := set.Bool("no-start", false, "do not install, start, or restart the daemon service")
-	skipScreenSharing := set.Bool("skip-screen-sharing", false, "skip capture permission onboarding and leave the existing setting unchanged")
 	help, err := parse(set, args, usage, c.Out)
 	if help || err != nil {
 		return err
@@ -479,25 +478,13 @@ current Git working tree is used.
 			return err
 		}
 	}
-	fmt.Fprintln(c.Out, "\n4. Screen sharing permission")
-	if runtime.GOOS != "darwin" && runtime.GOOS != "linux" {
-		fmt.Fprintln(c.Out, "Native screen hosting is unavailable on this platform; this daemon runs as a headless agent host.")
-	} else if *skipScreenSharing {
-		fmt.Fprintln(c.Out, "Skipped without changing the existing setting; run `dieter daemon permissions` when this machine should share its screen.")
-	} else if runtime.GOOS == "linux" {
-		capabilities, capabilityErr := c.remoteDesktopCapabilities()
-		if capabilityErr != nil {
-			return capabilityErr
-		}
-		if !capabilities.GetGraphicalSessionActive() || len(capabilities.GetDisplays()) == 0 || len(capabilities.GetCodecs()) == 0 {
-			reason := capabilities.GetUnavailableReason()
-			if reason == "" {
-				reason = "no active graphical session or compatible encoder"
-			}
-			fmt.Fprintf(c.Out, "Skipped screen onboarding: %s. The headless daemon remains available; run `dieter daemon permissions` after installing desktop dependencies.\n", reason)
-		} else if err := c.ensureRemoteDesktopPermissions(false, *noOpen); err != nil {
-			return err
-		}
+	fmt.Fprintln(c.Out, "\n4. Required screen sharing permissions")
+	capabilities, capabilityErr := c.remoteDesktopCapabilities()
+	if capabilityErr != nil {
+		return capabilityErr
+	}
+	if capabilities.GetAvailability() == dieterv1.RemoteDesktopAvailability_REMOTE_DESKTOP_AVAILABILITY_UNSUPPORTED {
+		fmt.Fprintf(c.Out, "Screen sharing is unsupported: %s. Other daemon features remain available.\n", capabilities.GetUnavailableReason())
 	} else if err := c.ensureRemoteDesktopPermissions(false, *noOpen); err != nil {
 		return err
 	}
@@ -522,8 +509,8 @@ func (c *CLI) daemonPermissions(args []string) error {
 Verify capture and input permission through the running daemon, including with
 --machine ID|NAME. --check discards one encoded frame and checks event-posting
 permission without injecting input or changing settings. No local fallback is
-used when the daemon is unavailable. Interactive onboarding enables viewing and
-control only after both checks succeed; it never restarts the daemon.
+used when the daemon is unavailable. Screen sharing is always available when
+the required permissions are granted. Onboarding never restarts the daemon.
 `
 	set := flags("daemon permissions")
 	check := set.Bool("check", false, "check the running daemon without changing settings")
@@ -543,9 +530,17 @@ func (c *CLI) ensureRemoteDesktopPermissions(checkOnly, noOpen bool) error {
 }
 
 func (c *CLI) runRemoteDesktopPermissionGuide(checkOnly, noOpen bool) error {
+	capabilities, err := c.remoteDesktopCapabilities()
+	if err != nil {
+		return fmt.Errorf("running daemon capability check failed: %w", err)
+	}
+	if !capabilities.GetGraphicalSessionActive() || !capabilities.GetEncoderAvailable() || !capabilities.GetControlSupported() {
+		return fmt.Errorf("screen sharing is unsupported: %s", capabilities.GetUnavailableReason())
+	}
 	reader := bufio.NewReader(c.In)
-	for attempt := 0; attempt < 3; attempt++ {
-		value, err := c.probeRemoteDesktopPermissions(!checkOnly && !noOpen)
+	requestControl := !checkOnly && !noOpen && (capabilities.GetPlatform() == "linux" || capabilities.GetCapturePermission() == "granted")
+	for attempt := 0; attempt < 5; attempt++ {
+		value, err := c.probeRemoteDesktopPermissions(requestControl)
 		if err != nil {
 			return fmt.Errorf("running daemon permission check failed: %w", err)
 		}
@@ -557,23 +552,12 @@ func (c *CLI) runRemoteDesktopPermissionGuide(checkOnly, noOpen bool) error {
 			} else {
 				fmt.Fprintln(c.Out, "Input permission verified; no click, keystroke, or cursor movement was injected.")
 			}
-			if checkOnly {
-				return nil
-			}
-			ctx, cancel := c.commandContext()
-			defer cancel()
-			client, rpcCtx, err := c.rpc(ctx)
-			if err != nil {
-				return err
-			}
-			if _, err := client.UpdateRemoteDesktopSettings(rpcCtx, &dieterv1.UpdateRemoteDesktopSettingsRequest{Enabled: true, ControlEnabled: true}); err != nil {
-				return err
-			}
-			fmt.Fprintln(c.Out, "Screen viewing and remote control enabled.")
+			fmt.Fprintln(c.Out, "Required screen-sharing permissions are verified. No enable switch is required.")
 			return nil
 		}
+		requestControl = !checkOnly && !noOpen && (value.GetPlatform() == "linux" || value.GetCaptureVerified())
 		reason := fmt.Sprintf("capture: %s; control: %s", value.GetCaptureError(), value.GetControlError())
-		if checkOnly || attempt == 2 {
+		if checkOnly || attempt == 4 {
 			return fmt.Errorf("daemon screen sharing is not ready: %s", reason)
 		}
 		if value.GetPlatform() == "linux" {
@@ -591,12 +575,16 @@ func (c *CLI) runRemoteDesktopPermissionGuide(checkOnly, noOpen bool) error {
 			if permission.verified || value.GetPlatform() != "darwin" {
 				continue
 			}
-			fmt.Fprintf(c.Out, "Privacy & Security → %s\n", permission.title)
+			fmt.Fprintf(c.Out, "Required: Privacy & Security → %s\nEnable the running daemon listed above. If it is missing, click +, press Command-Shift-G, and paste its full path.\n", permission.title)
 			if !noOpen && c.Machine == "" && runtime.GOOS == "darwin" {
 				if err := exec.Command("open", "x-apple.systempreferences:com.apple.preference.security?"+permission.pane).Run(); err != nil {
 					fmt.Fprintf(c.Out, "Could not open System Settings: %v\n", err)
 				}
 			}
+			break // Guide one permission at a time, then verify through the service.
+		}
+		if value.GetPlatform() == "darwin" {
+			fmt.Fprintln(c.Out, "If macOS requires a restart, restart the daemon service when your active work has finished, then run this check again.")
 		}
 		fmt.Fprint(c.Out, "After granting access, press Return to check the service again: ")
 		if c.In == nil {

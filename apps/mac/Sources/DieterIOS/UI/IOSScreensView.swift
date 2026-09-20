@@ -96,15 +96,15 @@ import CoreGraphics
                     detail: "Dieter is checking capture permission and negotiating an authenticated route.",
                     symbol: "ellipsis"
                 ) { ProgressView().tint(.white) }
-            case .disabled(let reason):
+            case .permissionRequired(let reason), .unsupported(let reason):
                 emptyState(
-                    title: "Screen sharing is off",
-                    detail: reason.isEmpty ? "Enable screen sharing on this machine to continue." : reason,
+                    title: session.phase.label,
+                    detail: reason.isEmpty ? "Screen sharing is unavailable on this machine." : reason,
                     symbol: "rectangle.slash"
                 ) {
-                    Button("Enable & Connect") { session.enableAndConnect() }
+                    Button("Check Again") { connectIfPossible(force: true) }
                         .buttonStyle(.borderedProminent)
-                        .accessibilityIdentifier("ios.screens.enable")
+                        .accessibilityIdentifier("ios.screens.permissions.retry")
                 }
             case .failed(let message):
                 emptyState(title: "Couldn’t connect", detail: message, symbol: "exclamationmark.triangle") {

@@ -56,6 +56,10 @@ func (m *Manager) ProbePermissions(ctx context.Context, requestControl bool) (*d
 	}
 	// A fresh explicit probe invalidates the passive capability cache, including
 	// previous denied results after the user changes System Settings.
+	m.probeMu.Lock()
+	m.probe = captureProbeResult{}
+	m.controlProbe = captureProbeResult{}
+	m.probeMu.Unlock()
 	m.capabilityMu.Lock()
 	m.cachedCapabilities = nil
 	m.capabilityMu.Unlock()

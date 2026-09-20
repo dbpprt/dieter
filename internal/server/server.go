@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/dbpprt/dieter/internal/app"
@@ -31,6 +32,7 @@ import (
 )
 
 type Server struct {
+	kvWatches               atomic.Int32
 	controlRTC              *controlrtc.Manager
 	syncProjections         syncProjectionCache
 	store                   *store.Store

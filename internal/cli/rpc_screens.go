@@ -29,8 +29,6 @@ const screenHelp = `Usage: dieter screen <action>
 Actions:
   capabilities                 Inspect displays, codecs, permissions, and readiness
   permissions [--request-control] Probe capture and input permission through the daemon
-  settings                     Show screen-viewing and control policy
-  update [options]             Enable/disable viewing and remote control
   start --request FILE         Start WebRTC signaling; stream daemon signals as JSON Lines
   signal --file FILE           Send one trickle ICE/heartbeat signal to a session
   sessions                     List viewers, controller, and capture resources
@@ -41,6 +39,10 @@ Actions:
   refresh SESSION              Request a fresh keyframe, including an idle screen
   clipboard ACTION SESSION     Read, write, copy, paste, or toggle clipboard sharing
   close SESSION                Close a remote-desktop session
+
+Hosting is automatically available when the required OS permissions are granted.
+Use "dieter daemon permissions" on the host for guided setup; capabilities reports
+ready, permission required, or unsupported. There is no enable/disable setting.
 
 "start" accepts protobuf JSON from FILE or stdin (-). It can also consume
 additional RemoteDesktopSignal JSON Lines from --signal-input FILE while the
@@ -62,10 +64,6 @@ func (c *CLI) rpcScreen(args []string) error {
 		return c.rpcScreenCapabilities(args[1:])
 	case "permissions":
 		return c.rpcScreenPermissions(args[1:])
-	case "settings":
-		return c.rpcScreenSettings(args[1:])
-	case "update", "set":
-		return c.rpcScreenUpdate(args[1:])
 	case "start", "connect":
 		return c.rpcScreenStart(args[1:])
 	case "signal", "send":
@@ -135,65 +133,6 @@ func (c *CLI) rpcScreenCapabilities(args []string) error {
 		return err
 	}
 	value, err := client.GetRemoteDesktopCapabilities(rpcCtx, &emptypb.Empty{})
-	if err != nil {
-		return err
-	}
-	return protoJSONOut(c.Out, value)
-}
-
-func (c *CLI) rpcScreenSettings(args []string) error {
-	const usage = "Usage: dieter screen settings\n"
-	if wantsHelp(args) {
-		fmt.Fprint(c.Out, usage)
-		return nil
-	}
-	if len(args) != 0 {
-		return errors.New("screen settings does not accept arguments")
-	}
-	ctx, cancel := c.commandContext()
-	defer cancel()
-	client, rpcCtx, err := c.rpc(ctx)
-	if err != nil {
-		return err
-	}
-	value, err := client.GetRemoteDesktopSettings(rpcCtx, &emptypb.Empty{})
-	if err != nil {
-		return err
-	}
-	return protoJSONOut(c.Out, value)
-}
-
-func (c *CLI) rpcScreenUpdate(args []string) error {
-	const usage = "Usage: dieter screen update [--enabled=true|false] [--control=true|false]\n"
-	set := flags("screen update")
-	enabled := set.Bool("enabled", false, "allow screen viewing")
-	control := set.Bool("control", false, "allow authenticated remote input")
-	help, err := parse(set, args, usage, c.Out)
-	if help || err != nil {
-		return err
-	}
-	if set.NArg() != 0 {
-		return errors.New("screen update does not accept positional arguments")
-	}
-	ctx, cancel := c.commandContext()
-	defer cancel()
-	client, rpcCtx, err := c.rpc(ctx)
-	if err != nil {
-		return err
-	}
-	current, err := client.GetRemoteDesktopSettings(rpcCtx, &emptypb.Empty{})
-	if err != nil {
-		return err
-	}
-	set.Visit(func(item *flag.Flag) {
-		switch item.Name {
-		case "enabled":
-			current.Enabled = *enabled
-		case "control":
-			current.ControlEnabled = *control
-		}
-	})
-	value, err := client.UpdateRemoteDesktopSettings(rpcCtx, &dieterv1.UpdateRemoteDesktopSettingsRequest{Enabled: current.GetEnabled(), ControlEnabled: current.GetControlEnabled()})
 	if err != nil {
 		return err
 	}

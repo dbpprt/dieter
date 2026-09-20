@@ -24,7 +24,7 @@ func TestDisplayModeOwnershipRestorationAndStaleSelection(t *testing.T) {
 		request.InputProtocolVersion = inputProtocolVersion
 		peer := testViewer(t, request)
 		defer peer.Close()
-		sub, err := m.Start(request, true, true, "github:7")
+		sub, err := m.Start(request, "github:7")
 		if err != nil {
 			t.Fatal(err)
 		}

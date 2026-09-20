@@ -34,6 +34,18 @@ const (
 // reflection-formatted method names, remove the leading slash and convert the remaining slash to a
 // period.
 const (
+	// DieterServiceGetKVProcedure is the fully-qualified name of the DieterService's GetKV RPC.
+	DieterServiceGetKVProcedure = "/dieter.v1.DieterService/GetKV"
+	// DieterServiceListKVProcedure is the fully-qualified name of the DieterService's ListKV RPC.
+	DieterServiceListKVProcedure = "/dieter.v1.DieterService/ListKV"
+	// DieterServicePutKVProcedure is the fully-qualified name of the DieterService's PutKV RPC.
+	DieterServicePutKVProcedure = "/dieter.v1.DieterService/PutKV"
+	// DieterServiceDeleteKVProcedure is the fully-qualified name of the DieterService's DeleteKV RPC.
+	DieterServiceDeleteKVProcedure = "/dieter.v1.DieterService/DeleteKV"
+	// DieterServiceMoveKVProcedure is the fully-qualified name of the DieterService's MoveKV RPC.
+	DieterServiceMoveKVProcedure = "/dieter.v1.DieterService/MoveKV"
+	// DieterServiceWatchKVProcedure is the fully-qualified name of the DieterService's WatchKV RPC.
+	DieterServiceWatchKVProcedure = "/dieter.v1.DieterService/WatchKV"
 	// DieterServiceGetPeerChangesProcedure is the fully-qualified name of the DieterService's
 	// GetPeerChanges RPC.
 	DieterServiceGetPeerChangesProcedure = "/dieter.v1.DieterService/GetPeerChanges"
@@ -338,12 +350,6 @@ const (
 	// DieterServiceProbeRemoteDesktopPermissionsProcedure is the fully-qualified name of the
 	// DieterService's ProbeRemoteDesktopPermissions RPC.
 	DieterServiceProbeRemoteDesktopPermissionsProcedure = "/dieter.v1.DieterService/ProbeRemoteDesktopPermissions"
-	// DieterServiceGetRemoteDesktopSettingsProcedure is the fully-qualified name of the DieterService's
-	// GetRemoteDesktopSettings RPC.
-	DieterServiceGetRemoteDesktopSettingsProcedure = "/dieter.v1.DieterService/GetRemoteDesktopSettings"
-	// DieterServiceUpdateRemoteDesktopSettingsProcedure is the fully-qualified name of the
-	// DieterService's UpdateRemoteDesktopSettings RPC.
-	DieterServiceUpdateRemoteDesktopSettingsProcedure = "/dieter.v1.DieterService/UpdateRemoteDesktopSettings"
 	// DieterServiceStartRemoteDesktopProcedure is the fully-qualified name of the DieterService's
 	// StartRemoteDesktop RPC.
 	DieterServiceStartRemoteDesktopProcedure = "/dieter.v1.DieterService/StartRemoteDesktop"
@@ -399,6 +405,14 @@ const (
 
 // DieterServiceClient is a client for the dieter.v1.DieterService service.
 type DieterServiceClient interface {
+	// Account-scoped portable JSON state. Revisions and cursors belong to a replica;
+	// replication is causal/eventual, not a distributed transaction or lock.
+	GetKV(context.Context, *connect.Request[v1.KVRef]) (*connect.Response[v1.KVEntry], error)
+	ListKV(context.Context, *connect.Request[v1.KVListRequest]) (*connect.Response[v1.KVPage], error)
+	PutKV(context.Context, *connect.Request[v1.KVPutRequest]) (*connect.Response[v1.KVEntry], error)
+	DeleteKV(context.Context, *connect.Request[v1.KVDeleteRequest]) (*connect.Response[v1.KVEntry], error)
+	MoveKV(context.Context, *connect.Request[v1.KVMoveRequest]) (*connect.Response[v1.KVEntry], error)
+	WatchKV(context.Context, *connect.Request[v1.KVWatchRequest]) (*connect.ServerStreamForClient[v1.KVFrame], error)
 	GetPeerChanges(context.Context, *connect.Request[v1.PeerChangesRequest]) (*connect.Response[v1.PeerChangesResponse], error)
 	GetPeerRecord(context.Context, *connect.Request[v1.PeerRecordRef]) (*connect.Response[v1.PeerRecord], error)
 	GetPeerStoreStatus(context.Context, *connect.Request[emptypb.Empty]) (*connect.Response[v1.PeerStoreStatus], error)
@@ -532,8 +546,6 @@ type DieterServiceClient interface {
 	// Explicit, bounded permission test performed by the running daemon.
 	// Discards one encoded frame and never injects input or changes settings.
 	ProbeRemoteDesktopPermissions(context.Context, *connect.Request[v1.ProbeRemoteDesktopPermissionsRequest]) (*connect.Response[v1.RemoteDesktopPermissionProbe], error)
-	GetRemoteDesktopSettings(context.Context, *connect.Request[emptypb.Empty]) (*connect.Response[v1.RemoteDesktopSettings], error)
-	UpdateRemoteDesktopSettings(context.Context, *connect.Request[v1.UpdateRemoteDesktopSettingsRequest]) (*connect.Response[v1.RemoteDesktopSettings], error)
 	StartRemoteDesktop(context.Context, *connect.Request[v1.StartRemoteDesktopRequest]) (*connect.ServerStreamForClient[v1.RemoteDesktopSignal], error)
 	SendRemoteDesktopSignal(context.Context, *connect.Request[v1.RemoteDesktopSignal]) (*connect.Response[emptypb.Empty], error)
 	GetRemoteDesktopSession(context.Context, *connect.Request[v1.RemoteDesktopRef]) (*connect.Response[v1.RemoteDesktopSessionState], error)
@@ -564,6 +576,42 @@ func NewDieterServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 	baseURL = strings.TrimRight(baseURL, "/")
 	dieterServiceMethods := v1.File_dieter_v1_dieter_proto.Services().ByName("DieterService").Methods()
 	return &dieterServiceClient{
+		getKV: connect.NewClient[v1.KVRef, v1.KVEntry](
+			httpClient,
+			baseURL+DieterServiceGetKVProcedure,
+			connect.WithSchema(dieterServiceMethods.ByName("GetKV")),
+			connect.WithClientOptions(opts...),
+		),
+		listKV: connect.NewClient[v1.KVListRequest, v1.KVPage](
+			httpClient,
+			baseURL+DieterServiceListKVProcedure,
+			connect.WithSchema(dieterServiceMethods.ByName("ListKV")),
+			connect.WithClientOptions(opts...),
+		),
+		putKV: connect.NewClient[v1.KVPutRequest, v1.KVEntry](
+			httpClient,
+			baseURL+DieterServicePutKVProcedure,
+			connect.WithSchema(dieterServiceMethods.ByName("PutKV")),
+			connect.WithClientOptions(opts...),
+		),
+		deleteKV: connect.NewClient[v1.KVDeleteRequest, v1.KVEntry](
+			httpClient,
+			baseURL+DieterServiceDeleteKVProcedure,
+			connect.WithSchema(dieterServiceMethods.ByName("DeleteKV")),
+			connect.WithClientOptions(opts...),
+		),
+		moveKV: connect.NewClient[v1.KVMoveRequest, v1.KVEntry](
+			httpClient,
+			baseURL+DieterServiceMoveKVProcedure,
+			connect.WithSchema(dieterServiceMethods.ByName("MoveKV")),
+			connect.WithClientOptions(opts...),
+		),
+		watchKV: connect.NewClient[v1.KVWatchRequest, v1.KVFrame](
+			httpClient,
+			baseURL+DieterServiceWatchKVProcedure,
+			connect.WithSchema(dieterServiceMethods.ByName("WatchKV")),
+			connect.WithClientOptions(opts...),
+		),
 		getPeerChanges: connect.NewClient[v1.PeerChangesRequest, v1.PeerChangesResponse](
 			httpClient,
 			baseURL+DieterServiceGetPeerChangesProcedure,
@@ -1200,18 +1248,6 @@ func NewDieterServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 			connect.WithSchema(dieterServiceMethods.ByName("ProbeRemoteDesktopPermissions")),
 			connect.WithClientOptions(opts...),
 		),
-		getRemoteDesktopSettings: connect.NewClient[emptypb.Empty, v1.RemoteDesktopSettings](
-			httpClient,
-			baseURL+DieterServiceGetRemoteDesktopSettingsProcedure,
-			connect.WithSchema(dieterServiceMethods.ByName("GetRemoteDesktopSettings")),
-			connect.WithClientOptions(opts...),
-		),
-		updateRemoteDesktopSettings: connect.NewClient[v1.UpdateRemoteDesktopSettingsRequest, v1.RemoteDesktopSettings](
-			httpClient,
-			baseURL+DieterServiceUpdateRemoteDesktopSettingsProcedure,
-			connect.WithSchema(dieterServiceMethods.ByName("UpdateRemoteDesktopSettings")),
-			connect.WithClientOptions(opts...),
-		),
 		startRemoteDesktop: connect.NewClient[v1.StartRemoteDesktopRequest, v1.RemoteDesktopSignal](
 			httpClient,
 			baseURL+DieterServiceStartRemoteDesktopProcedure,
@@ -1319,6 +1355,12 @@ func NewDieterServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 
 // dieterServiceClient implements DieterServiceClient.
 type dieterServiceClient struct {
+	getKV                           *connect.Client[v1.KVRef, v1.KVEntry]
+	listKV                          *connect.Client[v1.KVListRequest, v1.KVPage]
+	putKV                           *connect.Client[v1.KVPutRequest, v1.KVEntry]
+	deleteKV                        *connect.Client[v1.KVDeleteRequest, v1.KVEntry]
+	moveKV                          *connect.Client[v1.KVMoveRequest, v1.KVEntry]
+	watchKV                         *connect.Client[v1.KVWatchRequest, v1.KVFrame]
 	getPeerChanges                  *connect.Client[v1.PeerChangesRequest, v1.PeerChangesResponse]
 	getPeerRecord                   *connect.Client[v1.PeerRecordRef, v1.PeerRecord]
 	getPeerStoreStatus              *connect.Client[emptypb.Empty, v1.PeerStoreStatus]
@@ -1425,8 +1467,6 @@ type dieterServiceClient struct {
 	setRemoteDesktopDisplayMode     *connect.Client[v1.SetRemoteDesktopDisplayModeRequest, v1.RemoteDesktopDisplayModes]
 	restoreRemoteDesktopDisplayMode *connect.Client[v1.RemoteDesktopRef, v1.RemoteDesktopDisplayModes]
 	probeRemoteDesktopPermissions   *connect.Client[v1.ProbeRemoteDesktopPermissionsRequest, v1.RemoteDesktopPermissionProbe]
-	getRemoteDesktopSettings        *connect.Client[emptypb.Empty, v1.RemoteDesktopSettings]
-	updateRemoteDesktopSettings     *connect.Client[v1.UpdateRemoteDesktopSettingsRequest, v1.RemoteDesktopSettings]
 	startRemoteDesktop              *connect.Client[v1.StartRemoteDesktopRequest, v1.RemoteDesktopSignal]
 	sendRemoteDesktopSignal         *connect.Client[v1.RemoteDesktopSignal, emptypb.Empty]
 	getRemoteDesktopSession         *connect.Client[v1.RemoteDesktopRef, v1.RemoteDesktopSessionState]
@@ -1444,6 +1484,36 @@ type dieterServiceClient struct {
 	runSchedule                     *connect.Client[v1.ScheduleRef, v1.ScheduleRun]
 	setScheduleEnabled              *connect.Client[v1.SetScheduleEnabledRequest, v1.Schedule]
 	listScheduleRuns                *connect.Client[v1.ListScheduleRunsRequest, v1.ScheduleRunsResponse]
+}
+
+// GetKV calls dieter.v1.DieterService.GetKV.
+func (c *dieterServiceClient) GetKV(ctx context.Context, req *connect.Request[v1.KVRef]) (*connect.Response[v1.KVEntry], error) {
+	return c.getKV.CallUnary(ctx, req)
+}
+
+// ListKV calls dieter.v1.DieterService.ListKV.
+func (c *dieterServiceClient) ListKV(ctx context.Context, req *connect.Request[v1.KVListRequest]) (*connect.Response[v1.KVPage], error) {
+	return c.listKV.CallUnary(ctx, req)
+}
+
+// PutKV calls dieter.v1.DieterService.PutKV.
+func (c *dieterServiceClient) PutKV(ctx context.Context, req *connect.Request[v1.KVPutRequest]) (*connect.Response[v1.KVEntry], error) {
+	return c.putKV.CallUnary(ctx, req)
+}
+
+// DeleteKV calls dieter.v1.DieterService.DeleteKV.
+func (c *dieterServiceClient) DeleteKV(ctx context.Context, req *connect.Request[v1.KVDeleteRequest]) (*connect.Response[v1.KVEntry], error) {
+	return c.deleteKV.CallUnary(ctx, req)
+}
+
+// MoveKV calls dieter.v1.DieterService.MoveKV.
+func (c *dieterServiceClient) MoveKV(ctx context.Context, req *connect.Request[v1.KVMoveRequest]) (*connect.Response[v1.KVEntry], error) {
+	return c.moveKV.CallUnary(ctx, req)
+}
+
+// WatchKV calls dieter.v1.DieterService.WatchKV.
+func (c *dieterServiceClient) WatchKV(ctx context.Context, req *connect.Request[v1.KVWatchRequest]) (*connect.ServerStreamForClient[v1.KVFrame], error) {
+	return c.watchKV.CallServerStream(ctx, req)
 }
 
 // GetPeerChanges calls dieter.v1.DieterService.GetPeerChanges.
@@ -1976,16 +2046,6 @@ func (c *dieterServiceClient) ProbeRemoteDesktopPermissions(ctx context.Context,
 	return c.probeRemoteDesktopPermissions.CallUnary(ctx, req)
 }
 
-// GetRemoteDesktopSettings calls dieter.v1.DieterService.GetRemoteDesktopSettings.
-func (c *dieterServiceClient) GetRemoteDesktopSettings(ctx context.Context, req *connect.Request[emptypb.Empty]) (*connect.Response[v1.RemoteDesktopSettings], error) {
-	return c.getRemoteDesktopSettings.CallUnary(ctx, req)
-}
-
-// UpdateRemoteDesktopSettings calls dieter.v1.DieterService.UpdateRemoteDesktopSettings.
-func (c *dieterServiceClient) UpdateRemoteDesktopSettings(ctx context.Context, req *connect.Request[v1.UpdateRemoteDesktopSettingsRequest]) (*connect.Response[v1.RemoteDesktopSettings], error) {
-	return c.updateRemoteDesktopSettings.CallUnary(ctx, req)
-}
-
 // StartRemoteDesktop calls dieter.v1.DieterService.StartRemoteDesktop.
 func (c *dieterServiceClient) StartRemoteDesktop(ctx context.Context, req *connect.Request[v1.StartRemoteDesktopRequest]) (*connect.ServerStreamForClient[v1.RemoteDesktopSignal], error) {
 	return c.startRemoteDesktop.CallServerStream(ctx, req)
@@ -2073,6 +2133,14 @@ func (c *dieterServiceClient) ListScheduleRuns(ctx context.Context, req *connect
 
 // DieterServiceHandler is an implementation of the dieter.v1.DieterService service.
 type DieterServiceHandler interface {
+	// Account-scoped portable JSON state. Revisions and cursors belong to a replica;
+	// replication is causal/eventual, not a distributed transaction or lock.
+	GetKV(context.Context, *connect.Request[v1.KVRef]) (*connect.Response[v1.KVEntry], error)
+	ListKV(context.Context, *connect.Request[v1.KVListRequest]) (*connect.Response[v1.KVPage], error)
+	PutKV(context.Context, *connect.Request[v1.KVPutRequest]) (*connect.Response[v1.KVEntry], error)
+	DeleteKV(context.Context, *connect.Request[v1.KVDeleteRequest]) (*connect.Response[v1.KVEntry], error)
+	MoveKV(context.Context, *connect.Request[v1.KVMoveRequest]) (*connect.Response[v1.KVEntry], error)
+	WatchKV(context.Context, *connect.Request[v1.KVWatchRequest], *connect.ServerStream[v1.KVFrame]) error
 	GetPeerChanges(context.Context, *connect.Request[v1.PeerChangesRequest]) (*connect.Response[v1.PeerChangesResponse], error)
 	GetPeerRecord(context.Context, *connect.Request[v1.PeerRecordRef]) (*connect.Response[v1.PeerRecord], error)
 	GetPeerStoreStatus(context.Context, *connect.Request[emptypb.Empty]) (*connect.Response[v1.PeerStoreStatus], error)
@@ -2206,8 +2274,6 @@ type DieterServiceHandler interface {
 	// Explicit, bounded permission test performed by the running daemon.
 	// Discards one encoded frame and never injects input or changes settings.
 	ProbeRemoteDesktopPermissions(context.Context, *connect.Request[v1.ProbeRemoteDesktopPermissionsRequest]) (*connect.Response[v1.RemoteDesktopPermissionProbe], error)
-	GetRemoteDesktopSettings(context.Context, *connect.Request[emptypb.Empty]) (*connect.Response[v1.RemoteDesktopSettings], error)
-	UpdateRemoteDesktopSettings(context.Context, *connect.Request[v1.UpdateRemoteDesktopSettingsRequest]) (*connect.Response[v1.RemoteDesktopSettings], error)
 	StartRemoteDesktop(context.Context, *connect.Request[v1.StartRemoteDesktopRequest], *connect.ServerStream[v1.RemoteDesktopSignal]) error
 	SendRemoteDesktopSignal(context.Context, *connect.Request[v1.RemoteDesktopSignal]) (*connect.Response[emptypb.Empty], error)
 	GetRemoteDesktopSession(context.Context, *connect.Request[v1.RemoteDesktopRef]) (*connect.Response[v1.RemoteDesktopSessionState], error)
@@ -2234,6 +2300,42 @@ type DieterServiceHandler interface {
 // and JSON codecs. They also support gzip compression.
 func NewDieterServiceHandler(svc DieterServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
 	dieterServiceMethods := v1.File_dieter_v1_dieter_proto.Services().ByName("DieterService").Methods()
+	dieterServiceGetKVHandler := connect.NewUnaryHandler(
+		DieterServiceGetKVProcedure,
+		svc.GetKV,
+		connect.WithSchema(dieterServiceMethods.ByName("GetKV")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dieterServiceListKVHandler := connect.NewUnaryHandler(
+		DieterServiceListKVProcedure,
+		svc.ListKV,
+		connect.WithSchema(dieterServiceMethods.ByName("ListKV")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dieterServicePutKVHandler := connect.NewUnaryHandler(
+		DieterServicePutKVProcedure,
+		svc.PutKV,
+		connect.WithSchema(dieterServiceMethods.ByName("PutKV")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dieterServiceDeleteKVHandler := connect.NewUnaryHandler(
+		DieterServiceDeleteKVProcedure,
+		svc.DeleteKV,
+		connect.WithSchema(dieterServiceMethods.ByName("DeleteKV")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dieterServiceMoveKVHandler := connect.NewUnaryHandler(
+		DieterServiceMoveKVProcedure,
+		svc.MoveKV,
+		connect.WithSchema(dieterServiceMethods.ByName("MoveKV")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dieterServiceWatchKVHandler := connect.NewServerStreamHandler(
+		DieterServiceWatchKVProcedure,
+		svc.WatchKV,
+		connect.WithSchema(dieterServiceMethods.ByName("WatchKV")),
+		connect.WithHandlerOptions(opts...),
+	)
 	dieterServiceGetPeerChangesHandler := connect.NewUnaryHandler(
 		DieterServiceGetPeerChangesProcedure,
 		svc.GetPeerChanges,
@@ -2870,18 +2972,6 @@ func NewDieterServiceHandler(svc DieterServiceHandler, opts ...connect.HandlerOp
 		connect.WithSchema(dieterServiceMethods.ByName("ProbeRemoteDesktopPermissions")),
 		connect.WithHandlerOptions(opts...),
 	)
-	dieterServiceGetRemoteDesktopSettingsHandler := connect.NewUnaryHandler(
-		DieterServiceGetRemoteDesktopSettingsProcedure,
-		svc.GetRemoteDesktopSettings,
-		connect.WithSchema(dieterServiceMethods.ByName("GetRemoteDesktopSettings")),
-		connect.WithHandlerOptions(opts...),
-	)
-	dieterServiceUpdateRemoteDesktopSettingsHandler := connect.NewUnaryHandler(
-		DieterServiceUpdateRemoteDesktopSettingsProcedure,
-		svc.UpdateRemoteDesktopSettings,
-		connect.WithSchema(dieterServiceMethods.ByName("UpdateRemoteDesktopSettings")),
-		connect.WithHandlerOptions(opts...),
-	)
 	dieterServiceStartRemoteDesktopHandler := connect.NewServerStreamHandler(
 		DieterServiceStartRemoteDesktopProcedure,
 		svc.StartRemoteDesktop,
@@ -2986,6 +3076,18 @@ func NewDieterServiceHandler(svc DieterServiceHandler, opts ...connect.HandlerOp
 	)
 	return "/dieter.v1.DieterService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case DieterServiceGetKVProcedure:
+			dieterServiceGetKVHandler.ServeHTTP(w, r)
+		case DieterServiceListKVProcedure:
+			dieterServiceListKVHandler.ServeHTTP(w, r)
+		case DieterServicePutKVProcedure:
+			dieterServicePutKVHandler.ServeHTTP(w, r)
+		case DieterServiceDeleteKVProcedure:
+			dieterServiceDeleteKVHandler.ServeHTTP(w, r)
+		case DieterServiceMoveKVProcedure:
+			dieterServiceMoveKVHandler.ServeHTTP(w, r)
+		case DieterServiceWatchKVProcedure:
+			dieterServiceWatchKVHandler.ServeHTTP(w, r)
 		case DieterServiceGetPeerChangesProcedure:
 			dieterServiceGetPeerChangesHandler.ServeHTTP(w, r)
 		case DieterServiceGetPeerRecordProcedure:
@@ -3198,10 +3300,6 @@ func NewDieterServiceHandler(svc DieterServiceHandler, opts ...connect.HandlerOp
 			dieterServiceRestoreRemoteDesktopDisplayModeHandler.ServeHTTP(w, r)
 		case DieterServiceProbeRemoteDesktopPermissionsProcedure:
 			dieterServiceProbeRemoteDesktopPermissionsHandler.ServeHTTP(w, r)
-		case DieterServiceGetRemoteDesktopSettingsProcedure:
-			dieterServiceGetRemoteDesktopSettingsHandler.ServeHTTP(w, r)
-		case DieterServiceUpdateRemoteDesktopSettingsProcedure:
-			dieterServiceUpdateRemoteDesktopSettingsHandler.ServeHTTP(w, r)
 		case DieterServiceStartRemoteDesktopProcedure:
 			dieterServiceStartRemoteDesktopHandler.ServeHTTP(w, r)
 		case DieterServiceSendRemoteDesktopSignalProcedure:
@@ -3244,6 +3342,30 @@ func NewDieterServiceHandler(svc DieterServiceHandler, opts ...connect.HandlerOp
 
 // UnimplementedDieterServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedDieterServiceHandler struct{}
+
+func (UnimplementedDieterServiceHandler) GetKV(context.Context, *connect.Request[v1.KVRef]) (*connect.Response[v1.KVEntry], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.GetKV is not implemented"))
+}
+
+func (UnimplementedDieterServiceHandler) ListKV(context.Context, *connect.Request[v1.KVListRequest]) (*connect.Response[v1.KVPage], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.ListKV is not implemented"))
+}
+
+func (UnimplementedDieterServiceHandler) PutKV(context.Context, *connect.Request[v1.KVPutRequest]) (*connect.Response[v1.KVEntry], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.PutKV is not implemented"))
+}
+
+func (UnimplementedDieterServiceHandler) DeleteKV(context.Context, *connect.Request[v1.KVDeleteRequest]) (*connect.Response[v1.KVEntry], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.DeleteKV is not implemented"))
+}
+
+func (UnimplementedDieterServiceHandler) MoveKV(context.Context, *connect.Request[v1.KVMoveRequest]) (*connect.Response[v1.KVEntry], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.MoveKV is not implemented"))
+}
+
+func (UnimplementedDieterServiceHandler) WatchKV(context.Context, *connect.Request[v1.KVWatchRequest], *connect.ServerStream[v1.KVFrame]) error {
+	return connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.WatchKV is not implemented"))
+}
 
 func (UnimplementedDieterServiceHandler) GetPeerChanges(context.Context, *connect.Request[v1.PeerChangesRequest]) (*connect.Response[v1.PeerChangesResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.GetPeerChanges is not implemented"))
@@ -3667,14 +3789,6 @@ func (UnimplementedDieterServiceHandler) RestoreRemoteDesktopDisplayMode(context
 
 func (UnimplementedDieterServiceHandler) ProbeRemoteDesktopPermissions(context.Context, *connect.Request[v1.ProbeRemoteDesktopPermissionsRequest]) (*connect.Response[v1.RemoteDesktopPermissionProbe], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.ProbeRemoteDesktopPermissions is not implemented"))
-}
-
-func (UnimplementedDieterServiceHandler) GetRemoteDesktopSettings(context.Context, *connect.Request[emptypb.Empty]) (*connect.Response[v1.RemoteDesktopSettings], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.GetRemoteDesktopSettings is not implemented"))
-}
-
-func (UnimplementedDieterServiceHandler) UpdateRemoteDesktopSettings(context.Context, *connect.Request[v1.UpdateRemoteDesktopSettingsRequest]) (*connect.Response[v1.RemoteDesktopSettings], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.UpdateRemoteDesktopSettings is not implemented"))
 }
 
 func (UnimplementedDieterServiceHandler) StartRemoteDesktop(context.Context, *connect.Request[v1.StartRemoteDesktopRequest], *connect.ServerStream[v1.RemoteDesktopSignal]) error {

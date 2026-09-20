@@ -634,6 +634,7 @@ extension DieterStore {
     }
 
     func signOut() async {
+        sharedNavigation.clearAccount()
         let target = endpoint
         authentication.cancel()
         do { try await environment.credentials.remove(for: target.credentialID) } catch {

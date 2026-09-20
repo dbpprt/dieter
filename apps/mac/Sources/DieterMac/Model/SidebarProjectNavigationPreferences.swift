@@ -1,10 +1,8 @@
 import Foundation
 
 struct SidebarProjectNavigationPreferences: Equatable {
-    static let orderKey = "DieterSidebarProjectOrder"
     // Projects are compressed (title + initials only) by default. This set records
     // the projects the person has explicitly expanded to reveal boards inline.
-    static let expandedKey = "DieterSidebarExpandedProjects"
 
     static func applicationDefaults(arguments: [String] = ProcessInfo.processInfo.arguments) -> UserDefaults {
         guard let flag = arguments.firstIndex(of: "--sidebar-preferences-suite"),
@@ -20,18 +18,6 @@ struct SidebarProjectNavigationPreferences: Equatable {
     init(projectOrder: [String] = [], expandedProjectIDs: Set<String> = []) {
         self.projectOrder = Self.unique(projectOrder)
         self.expandedProjectIDs = expandedProjectIDs
-    }
-
-    static func load(from defaults: UserDefaults = .standard) -> Self {
-        Self(
-            projectOrder: defaults.stringArray(forKey: orderKey) ?? [],
-            expandedProjectIDs: Set(defaults.stringArray(forKey: expandedKey) ?? [])
-        )
-    }
-
-    func save(to defaults: UserDefaults = .standard) {
-        defaults.set(projectOrder, forKey: Self.orderKey)
-        defaults.set(expandedProjectIDs.sorted(), forKey: Self.expandedKey)
     }
 
     func orderedIDs(from availableIDs: [String]) -> [String] {

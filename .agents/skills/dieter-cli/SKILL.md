@@ -578,24 +578,25 @@ Explicit Disconnect, closing the tab, and permanent permission/identity/policy
 errors stop recovery. Mac inactivity disconnect is optional and disabled by
 default; explicitly configured inactivity limits remain honored.
 
-Screen sharing uses explicit daemon policy plus WebRTC signaling. Check
-`dieter screen capabilities` and `dieter screen settings`; do not enable capture
-or control, start a session, restart/shut down a machine, revoke enrollment, or
-delete data without explicit authorization.
+Screen sharing is automatically available on supported enrolled hosts once OS
+capture and input grants are present. There are no screen settings/update commands
+or saved enable switches. `dieter screen capabilities` reports `availability`
+(ready, permission required, or unsupported), `ready`, and an actionable reason.
+Linux portal consent may be requested when a session starts. A client can still
+choose a session without control. Do not start a session, request OS prompts,
+restart/shut down a machine, revoke enrollment, or delete data without authorization.
 
-With explicit authorization, enable both viewing and control only after the
-service-side permission flow succeeds:
+For authorized onboarding:
 
 ```sh
 dieter daemon permissions
-dieter screen update --enabled=true --control=true
+dieter screen capabilities
 ```
 
-Use `dieter screen permissions` followed by `dieter screen update
---enabled=true --control=false` for view-only hosting. Disable both with `dieter
-screen update --enabled=false --control=false`. Installation, capability
-detection, and `permissions --check` never enable policy implicitly. An enabled,
-ready host reports `enabled: true` and `ready: true` from `screen capabilities`.
+Grant permissions on the target host; global `--machine ID|NAME` selects it.
+Revoking OS grants or daemon enrollment prevents access. The Mac app separately
+requires Screen Recording and Accessibility for Dieter.app and guides these in
+its required setup screen. App permission does not grant daemon permission.
 
 For authorized permission diagnostics, `dieter screen permissions` returns JSON
 with the actual daemon/helper paths, capture verification, and input permission.
@@ -604,7 +605,7 @@ check fails. `--request-control` explicitly allows an Accessibility prompt on ma
 or verifies the active Linux XTest/RemoteDesktop portal path. `dieter daemon permissions --check` provides the same service-side
 check as text. Both support global `--machine ID|NAME` and never fall back to a
 helper launched by the CLI. Interactive `dieter daemon permissions` guides the
-user and enables viewing/control via RPC only after verification. It does not
+user through one required OS grant at a time and verifies readiness. It does not
 restart the service. Old Cellar grants require a one-time grant to the new fixed
 daemon path; follow an OS-requested restart with another service-side check.
 
@@ -853,3 +854,27 @@ CLI, native clients, sync, and screen input. Missing or mismatched versions are
 rejected. Unsupported development stores require a fresh `DIETER_HOME`; no
 import or migration command is provided. Never delete or convert existing data.
 Never stop or replace the operator's daemon as part of testing or implementation.
+
+### Shared navigation and portable KV
+
+Use `kv get`, `kv list`, `kv put`, `kv delete`, `kv move`, and `kv watch` for
+account-scoped portable JSON. All use the daemon API and global `--machine`.
+Folders, membership, project/pinned ordering, disclosure, and lane sort direction
+share the `navigation` namespace across native clients. See
+`docs/client-navigation-folders.md` for keys and projection rules.
+
+`kv put --namespace NS --key KEY --file value.json --revision REV` replaces the
+observed local revision (omit revision only for creation). `kv move` accepts
+`--parent`, `--after`, and `--before` for atomic fractional positions. `kv delete`
+requires `--revision` and retains a tombstone. Values are at most 32 KiB.
+`kv list` pages with `--after`, `--epoch`, and `--sequence`; a changed snapshot
+requires restarting the list. Watch frames may coalesce updates: apply reset,
+then publish the replacement at caughtUp. Cursors belong to a replica.
+
+Mutations accept `--operation ID --account ID --daemon ID`. Preserve exact input
+and retry only on that admitting daemon after an uncertain response; errors
+include its identity and operation ID. Receipts are durable and bounded.
+Acknowledgement means local durability, not a quorum or globally linearizable
+CAS. Read every causal sibling before resolving meaningful conflicts. Gateway
+storage and execution ownership are unaffected. Never write central storage
+files directly or restart the operator daemon to test synchronization.

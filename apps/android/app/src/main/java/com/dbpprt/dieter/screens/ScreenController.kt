@@ -30,9 +30,9 @@ data class ScreenState(
     val decodedFrames: Long = 0,
 )
 
-internal fun shouldRequestScreenControl(enabled: Boolean, capabilities: RemoteDesktopCapabilities): Boolean {
+internal fun shouldRequestScreenControl(capabilities: RemoteDesktopCapabilities): Boolean {
     val portalCanRequestControl = capabilities.platform == "linux" && capabilities.controlPermission == "not_requested"
-    return enabled && capabilities.controlSupported && (capabilities.controlPermission == "granted" || portalCanRequestControl)
+    return capabilities.controlSupported && (capabilities.controlPermission == "granted" || portalCanRequestControl)
 }
 
 internal fun shouldEmbedScreenCursor(capabilities: RemoteDesktopCapabilities) = !capabilities.cursorSupported
@@ -167,10 +167,15 @@ class ScreenController(context: Context) : AutoCloseable {
                 certificate = route.certificate.copyOf()
                 val caps = rpc().getRemoteDesktopCapabilities(Empty.getDefaultInstance())
                 mutable.value = mutable.value.copy(capabilities = caps, signalingRoute = route.route)
-                require(caps.enabled && caps.ready) { caps.unavailableReason.ifBlank { "Enable screen sharing on this machine first" } }
+                if (!caps.ready) {
+                    mutable.value = mutable.value.copy(
+                        phase = if (caps.availability == RemoteDesktopAvailability.REMOTE_DESKTOP_AVAILABILITY_PERMISSION_REQUIRED) "permission required" else "unsupported",
+                        error = caps.unavailableReason.ifBlank { "Screen sharing is unavailable on this machine" },
+                    )
+                    return@launch
+                }
                 require(caps.inputProtocolVersion == DIETER_PROTOCOL_VERSION) { "Update the Dieter daemon and client together" }
                 clipboard.binarySupported = caps.binaryClipboardSupported
-                val settings = rpc().getRemoteDesktopSettings(Empty.getDefaultInstance())
                 val references = ScreenReferenceReceiver { feedbackPump.acknowledge(it) }
                 referenceReceiver?.stop(); referenceReceiver = references
                 val decoders = ScreenDecoderFactory(egl.eglBaseContext,
@@ -218,7 +223,7 @@ class ScreenController(context: Context) : AutoCloseable {
                 val start = StartRemoteDesktopRequest.newBuilder().setReferenceRecovery(offer.description.contains(SCREEN_GENERIC_DESCRIPTOR_URI)).setCodecPreference(effectiveCodec).setClipboard(caps.clipboardSupported && clipboard.enabled).setClientNonce(UUID.randomUUID().toString())
                     .setRtcConfiguration(route.rtc).setDisplayId(display.id)
                     .setInputProtocolVersion(DIETER_PROTOCOL_VERSION).setClientName("Android")
-                    .setControl(shouldRequestScreenControl(settings.controlEnabled, caps))
+                    .setControl(shouldRequestScreenControl(caps))
                     .setEmbeddedCursor(shouldEmbedScreenCursor(caps))
                     .setMaxWidth(1920).setMaxHeight(1080).setMaxFps(minOf(preferredMaxFPS, caps.maxFps.takeIf { it > 0 } ?: 60)).setMaxBitrateKbps(12000).setQuality(configuration.quality)
                     .setOffer(RemoteDesktopSessionDescription.newBuilder().setType("offer").setSdp(offer.description)).build()

@@ -52,15 +52,19 @@ dieter setup ~/Development/my-project
 Screen &amp; System Audio Recording permission, proves the exact signed
 ScreenCaptureKit/VideoToolbox helper with one discarded frame, guides and
 verifies Accessibility event-posting permission without moving or clicking the
-pointer, enables viewing and control only after both probes succeed, and starts
-the daemon as a Homebrew service.
+pointer, and starts the daemon as a Homebrew service. Screen sharing is
+automatically available after the required OS permissions are granted.
 
-Use `--skip-screen-sharing` during fresh setup on hosts that must not capture
-their display. Re-run the standalone check at any time with:
+There is no screen-sharing enable switch. Unsupported/headless hosts report why
+screen sharing is unavailable. Re-run the standalone check at any time with:
 
 ```sh
 dieter daemon permissions --check
 ```
+
+The Mac app separately requires Accessibility and Screen Recording for Dieter.app.
+Its setup screen guides each grant and checks automatically when you return from
+System Settings. App grants and daemon grants are separate.
 
 ## Install the Mac app
 

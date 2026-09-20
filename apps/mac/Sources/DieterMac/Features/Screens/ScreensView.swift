@@ -135,10 +135,6 @@ struct ScreensView: View {
             Button("Disconnect") { session.disconnect() }
                 .buttonStyle(DieterSecondaryButtonStyle())
                 .accessibilityIdentifier("screens.disconnect")
-        case .disabled:
-            Button("Enable & connect") { controller.enableAndConnect() }
-                .buttonStyle(DieterPrimaryButtonStyle())
-                .accessibilityIdentifier("screens.enable")
         default:
             Button("Connect") {
                 session.connect { [makeConnection, machineID = session.machineID] in
@@ -246,12 +242,21 @@ struct ScreensView: View {
                 detail: "Dieter is checking capture permission and negotiating an authenticated route.",
                 symbol: "ellipsis"
             ) { ProgressView().controlSize(.small) }
-        case .disabled(let reason):
+        case .permissionRequired(let reason), .unsupported(let reason):
             emptyState(
-                title: "Screen sharing is off",
-                detail: reason.isEmpty ? "Enable remote desktop on this machine to continue." : reason,
-                symbol: "rectangle.slash"
-            ) { EmptyView() }
+                title: session.controller.phase.label,
+                detail: reason.isEmpty ? "Screen sharing is unavailable on this machine." : reason,
+                symbol: "lock.shield"
+            ) {
+                if case .permissionRequired = session.controller.phase {
+                    VStack(spacing: 8) {
+                        Text("On \(session.machineName), run:")
+                        Text("dieter daemon permissions").font(.system(.body, design: .monospaced)).textSelection(
+                            .enabled)
+                        Text("Follow the permission guide on that machine, then connect again.")
+                    }
+                }
+            }
         case .failed(let message):
             emptyState(
                 title: "Couldn’t connect", detail: message,
@@ -411,7 +416,7 @@ private struct NewScreenShareSheet: View {
                 ForEach(machines) { machine in
                     Text(machineLabel(machine))
                         .tag(machine.id)
-                        .disabled(!machine.online || !machine.remoteDesktopReady)
+                        .disabled(!machine.online)
                 }
             }
             .accessibilityIdentifier("screens.new.machine")
@@ -436,7 +441,7 @@ private struct NewScreenShareSheet: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .keyboardShortcut(.defaultAction)
-                .disabled(selectedMachine?.online != true || selectedMachine?.remoteDesktopReady != true)
+                .disabled(selectedMachine?.online != true)
                 .accessibilityIdentifier("screens.new.connect")
             }
         }
@@ -445,8 +450,9 @@ private struct NewScreenShareSheet: View {
         .onAppear {
             machineID =
                 machines.first(where: {
-                    $0.id == initialMachineID && $0.online && $0.remoteDesktopReady
-                })?.id ?? machines.first(where: { $0.online && $0.remoteDesktopReady })?.id ?? ""
+                    $0.id == initialMachineID && $0.online
+                })?.id ?? machines.first(where: { $0.online && $0.remoteDesktopReady })?.id
+                ?? machines.first(where: { $0.online })?.id ?? ""
         }
     }
 
@@ -476,7 +482,6 @@ struct ScreenShareOptions: View {
                 Button(display.name) { controller.configure(displayID: display.id) }
             }
             Divider()
-            Button("Enable fullscreen keyboard capture…") { RemoteDesktopKeyboardCapture.requestPermission() }
             if !controller.keyboardCaptureStatus.isEmpty { Text(controller.keyboardCaptureStatus) }
             if !controller.displayMatching.status.isEmpty { Text(controller.displayMatching.status) }
             Button("Automatic quality") { controller.configure(quality: .auto) }

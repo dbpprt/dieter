@@ -40,6 +40,7 @@ func TestReadStreamsResumeOnlyDeliveredCheckpoints(t *testing.T) {
 		request, resumed proto.Message
 		responses        []proto.Message
 	}{
+		{"WatchKV", &dieterv1.KVWatchRequest{Namespace: "navigation"}, &dieterv1.KVWatchRequest{Namespace: "navigation", Account: "account", After: &dieterv1.KVCursor{Epoch: "replica", Sequence: 7}}, []proto.Message{&dieterv1.KVFrame{Account: "account", Cursor: &dieterv1.KVCursor{Epoch: "replica", Sequence: 7}, Reset_: true}}},
 		{"WatchConversation", &dieterv1.WatchConversationRequest{CardId: "card"}, &dieterv1.WatchConversationRequest{CardId: "card", AfterSeq: 7}, []proto.Message{&dieterv1.ConversationUpdate{LastSeq: 7}}},
 		{"WatchConversation", &dieterv1.WatchConversationRequest{CardId: "card"}, &dieterv1.WatchConversationRequest{CardId: "card", AfterSeq: 7}, []proto.Message{&dieterv1.ConversationUpdate{Snapshot: &dieterv1.ConversationSnapshot{Conversation: &dieterv1.Conversation{LastSeq: 7}}}}},
 		{"WatchTerminal", &dieterv1.WatchTerminalRequest{TerminalId: "terminal"}, &dieterv1.WatchTerminalRequest{TerminalId: "terminal", AfterSequence: 7}, []proto.Message{&dieterv1.TerminalFrame{Sequence: 7, Data: []byte("data")}, &dieterv1.TerminalFrame{Sequence: 99, Heartbeat: true}}},

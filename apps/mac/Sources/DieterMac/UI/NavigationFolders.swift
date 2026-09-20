@@ -54,7 +54,7 @@ struct NavigationFolderNameSheet: View {
                     .background(DieterTheme.shell.opacity(0.12), in: RoundedRectangle(cornerRadius: 9))
                 VStack(alignment: .leading, spacing: 2) {
                     Text(editor.title).font(.title2.weight(.bold))
-                    Text("Folders only change how items are arranged on this Mac.")
+                    Text("Folders and their layout sync across your devices.")
                         .font(.callout).foregroundStyle(DieterTheme.tertiary)
                 }
             }
@@ -65,7 +65,10 @@ struct NavigationFolderNameSheet: View {
                 .accessibilityIdentifier("navigation-folder.name")
                 .onSubmit { submit() }
 
-            if duplicatesExistingName {
+            if trimmedName.utf8.count > 256 {
+                Label("Choose a shorter folder name.", systemImage: "exclamationmark.circle")
+                    .font(.caption).foregroundStyle(DieterTheme.coral)
+            } else if duplicatesExistingName {
                 Label("A folder with this name already exists.", systemImage: "exclamationmark.circle")
                     .font(.caption).foregroundStyle(DieterTheme.coral)
             }
@@ -75,7 +78,7 @@ struct NavigationFolderNameSheet: View {
                 Button("Cancel") { dismiss() }
                 Button(editor.folderID == nil ? "Create folder" : "Rename") { submit() }
                     .buttonStyle(.borderedProminent)
-                    .disabled(trimmedName.isEmpty || duplicatesExistingName)
+                    .disabled(!NavigationFolderPreferences.validName(trimmedName) || duplicatesExistingName)
                     .accessibilityIdentifier("navigation-folder.confirm")
             }
         }
@@ -85,7 +88,7 @@ struct NavigationFolderNameSheet: View {
     }
 
     private func submit() {
-        guard !trimmedName.isEmpty, !duplicatesExistingName else { return }
+        guard NavigationFolderPreferences.validName(trimmedName), !duplicatesExistingName else { return }
         save(trimmedName)
         dismiss()
     }

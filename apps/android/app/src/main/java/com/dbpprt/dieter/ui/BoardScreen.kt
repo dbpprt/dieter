@@ -248,6 +248,7 @@ internal fun SpacesOverview(state: DieterUiState, model: DieterViewModel, modifi
                 Icon(Icons.Outlined.Settings, "App settings", tint = DieterMuted)
             }
         }
+        NavigationSyncStatus(state)
         if (searchOpen) CompactSearchField(query, { query = it }, "Search projects and boards")
         val showProjectReplicas = state.presentedProjectReplicas.values.map { it.daemonId }.distinct().size > 1
         if (state.spacesLoading) LinearProgressIndicator(Modifier.fillMaxWidth().height(2.dp), color = DieterShell)
@@ -1099,7 +1100,6 @@ internal fun BoardLanePager(
     var revealedCardId by remember(state.selectedBoardId, state.selectedLane) { mutableStateOf<String?>(null) }
     var movingCard by remember(state.selectedBoardId) { mutableStateOf<BoardCard?>(null) }
     var editingCard by remember(state.selectedBoardId) { mutableStateOf<BoardCard?>(null) }
-    val laneSortDirections = remember(state.selectedBoardId) { mutableStateMapOf<String, CardCreationSortDirection>() }
     var activityNow by remember { mutableStateOf(Instant.now()) }
     val laneIds = lanes.map { it.id }
     val selectedLane by rememberUpdatedState(state.selectedLane)
@@ -1131,7 +1131,7 @@ internal fun BoardLanePager(
         key = { lanes[it].id },
     ) { page ->
         val lane = lanes[page]
-        val sortDirection = laneSortDirections[lane.id] ?: CardCreationSortDirection.DESCENDING
+        val sortDirection = if (state.sharedLaneSortDirections["lane.${state.selectedBoardId}.${lane.id}.sort"] == "ascending") CardCreationSortDirection.ASCENDING else CardCreationSortDirection.DESCENDING
         val visible = remember(boardCards, lane.id, sortDirection) {
             cardsByCreationTime(
                 boardCards.filter { card -> card.lane == lane.id },
@@ -1142,7 +1142,7 @@ internal fun BoardLanePager(
             LaneSortButton(
                 laneName = lane.name,
                 direction = sortDirection,
-                onToggle = { laneSortDirections[lane.id] = sortDirection.toggled() },
+                onToggle = { model.toggleLaneSort(state.selectedBoardId, lane.id) },
                 modifier = Modifier.align(Alignment.End),
             )
             if (state.loading && visible.isEmpty()) {

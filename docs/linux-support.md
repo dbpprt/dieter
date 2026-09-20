@@ -172,56 +172,34 @@ service after active work finishes.
 
 ## Screen permissions and limits
 
-Screen hosting is disabled by default even when `dieter doctor` finds the helper,
-display, portal, and encoder. Installation and updates preserve this explicit
-host policy; capability detection alone never grants screen access.
+Screen hosting is available automatically when this enrolled daemon has a
+supported graphical session, encoder, capture permission, and input permission.
+There is no saved enable/disable policy. Headless hosts keep the other daemon
+features and report screen hosting as unsupported with a dependency/session reason.
 
-The recommended first-time setup verifies one frame and input permission through
-the running service, then enables both viewing and control only after those checks
-succeed:
+Complete the required desktop grants through the running daemon:
 
 ```sh
 dieter daemon permissions
-dieter screen settings
 dieter screen capabilities
 ```
 
-After setup, `screen settings` reports `"enabled": true` and
-`"controlEnabled": true`, while `screen capabilities` reports `"ready": true`.
-If capabilities list a display and encoder but say `Remote desktop is disabled on
-this machine`, the helper is working and only the host policy remains disabled.
+Capabilities report ready, permission required, or unsupported. On Wayland,
+`not_requested` means the portal can request source/device consent when a session
+starts; it does not bypass the compositor's consent dialog. No frame is streamed
+until the desktop permits it. Sessions may choose not to take control.
 
-For an explicit view-only configuration:
-
-```sh
-dieter screen permissions
-dieter screen update --enabled=true --control=false
-```
-
-For authorized non-interactive viewing and control, verify the control path
-before enabling it:
-
-```sh
-dieter screen permissions --request-control
-dieter screen update --enabled=true --control=true
-```
-
-Disable all screen access with:
-
-```sh
-dieter screen update --enabled=false --control=false
-```
-
-All of these operations support the global `--machine ID|NAME` selector. Policy
-changes use the running daemon API and do not require a service restart.
-`dieter daemon permissions --check` and `dieter screen permissions` are
-diagnostic-only: they never enable screen access. On Wayland, a permission check
-may still open the compositor-owned source/control prompt.
+All operations support global `--machine ID|NAME`. Grant permissions on the
+host, then retry the connection. To prevent screen access, revoke the OS grant
+or the daemon's enrollment. For diagnostics:
 
 ```sh
 dieter daemon permissions --check
+dieter screen permissions --request-control
 dieter screen capabilities
 ```
+
+Checks do not write settings; a Wayland check may open the compositor's prompt.
 
 On X11, the check captures and discards one encoded frame and verifies XTest
 without injecting input. On Wayland, the desktop portal owns source selection and
