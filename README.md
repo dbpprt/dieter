@@ -228,7 +228,7 @@ dieter --machine <machine-id> terminal create --home --name shell --format id
 
 Remote API connections prefer verified direct TLS, then a data-only WebRTC
 connection when the daemon advertises support, with gateway relay fallback.
-macOS Machines, iOS connection status, and Android machine connection details
+macOS Machines, iOS machine state, and Android machine connection details
 show **WebRTC · Direct** or **WebRTC · TURN** from the selected ICE pair. CLI
 `status` reports `webrtc-direct` or `webrtc-turn`. TURN is still a relay; the
 client-to-daemon TLS connection remains authenticated and encrypted through it.
