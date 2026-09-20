@@ -60,7 +60,8 @@ just --yes ios testflight 0.1.0 1.1 --upload
 1. Enter your HTTPS Dieter gateway in the sign-in screen.
 2. Sign in with GitHub using the native authentication session, or supply an existing gateway session token in the advanced section.
 3. Select an enrolled, compatible node. The app prefers authenticated non-loopback direct routes and falls back to the gateway relay.
-4. Open a project and board, create a task, or continue a conversation.
+4. Open **Machine state** to inspect live CPU, memory, storage, network, GPU, daemon build, and Dieter process telemetry.
+5. Open a project and board, create a task, or continue a conversation.
 
 Select **Screens** in the sidebar to open the selected machine's remote desktop.
 The app negotiates an independently authenticated H.264 WebRTC session over the
@@ -84,6 +85,7 @@ The existing `dieter-mac://oauth/callback` redirect is deliberately reused insid
 - Attach photos, pasted screenshots, and files from New Task or any conversation. The iOS share extension can route a shared screenshot or file into a new task, an existing task, or an existing chat. After choosing the destination, tap **Done** and open Dieter to continue; iOS does not allow a Share extension to launch its containing app directly.
 - Start a draft, send follow-up messages, stop an active turn, and read live transcript updates and older messages.
 - Read and edit remote text files with revision-checked saves.
+- Inspect the selected machine's live resource, software, and Dieter process state.
 - View and control the selected machine through authenticated remote screen sharing.
 - Suspend observation while the app is in the background and reconnect on return. Transport disconnects do not cancel agent work.
 

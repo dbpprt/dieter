@@ -379,6 +379,15 @@ final class RemoteNodeUITests: XCTestCase {
         waitForBoard(app, project: project, board: board)
         screenshot(app, "10-compatible-node-restored")
 
+        tap(app, "ios.machine-state.open")
+        XCTAssertTrue(element(app, "ios.machine-state").waitForExistence(timeout: 20))
+        XCTAssertTrue(element(app, "ios.machine-state.cpu").waitForExistence(timeout: 20))
+        XCTAssertTrue(element(app, "ios.machine-state.memory").exists)
+        XCTAssertTrue(element(app, "ios.machine-state.system").exists)
+        screenshot(app, "11-machine-state")
+        tap(app, "ios.machine-state.back")
+        waitForBoard(app, project: project, board: board)
+
         if environment["DIETER_IOS_TEST_LANDSCAPE"] != "1" {
             tap(app, "ios.screens.open")
             XCTAssertTrue(element(app, "ios.screens.back").waitForExistence(timeout: 10))
@@ -399,7 +408,7 @@ final class RemoteNodeUITests: XCTestCase {
             XCTAssertEqual(
                 XCTWaiter.wait(for: [settingsReady], timeout: 10), .completed,
                 "Screen settings should be usable after the landscape transition.\n\(app.debugDescription)")
-            screenshot(app, "11-remote-screen-phone-chrome")
+            screenshot(app, "12-remote-screen-phone-chrome")
             XCUIDevice.shared.orientation = .portrait
             let portrait = XCTNSPredicateExpectation(
                 predicate: NSPredicate { _, _ in window.frame.height > window.frame.width }, object: window)

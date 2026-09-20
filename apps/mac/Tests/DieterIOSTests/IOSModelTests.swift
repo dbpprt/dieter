@@ -7,6 +7,18 @@ import Testing
 
 @Suite("iOS remote session policies")
 struct IOSModelTests {
+    @Test func machineInformationPresentationFormatsAndBoundsTelemetry() {
+        #expect(IOSMachineInformationPresentation.bytes(11_200_000_000).contains("GB"))
+        #expect(IOSMachineInformationPresentation.rate(1_250_000).hasSuffix("/s"))
+        #expect(IOSMachineInformationPresentation.uptime(14 * 86_400 + 6 * 3_600) == "14d 6h")
+        #expect(IOSMachineInformationPresentation.uptime(2 * 3_600 + 41 * 60) == "2h 41m")
+        #expect(IOSMachineInformationPresentation.percentage(37.6) == "38%")
+        #expect(IOSMachineInformationPresentation.fraction(3, of: 2) == 1)
+        #expect(IOSMachineInformationPresentation.fraction(1, of: 0) == 0)
+        #expect(IOSMachineInformationPresentation.shortRevision("0123456789abcdef") == "0123456789")
+        #expect(IOSMachineInformationPresentation.shortRevision("unknown") == nil)
+    }
+
     @Test func taskLabelSelectionKeepsOnlyCurrentBoardLabelsInStableOrder() {
         var first = Dieter_V1_Label()
         first.id = "label-a"

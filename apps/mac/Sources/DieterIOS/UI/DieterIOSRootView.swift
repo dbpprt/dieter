@@ -85,6 +85,9 @@
                 if destination == .screens {
                     IOSScreensPlaceholderView { preferredColumn = .detail }
                         .navigationSplitViewColumnWidth(min: 280, ideal: 350, max: 480)
+                } else if destination == .machine {
+                    IOSMachineStatePlaceholderView { preferredColumn = .detail }
+                        .navigationSplitViewColumnWidth(min: 280, ideal: 350, max: 480)
                 } else {
                     IOSTaskListView(
                         store: store, destination: destination ?? .allTasks, selectedTaskID: $selectedTaskID,
@@ -95,6 +98,12 @@
             } detail: {
                 if destination == .screens {
                     IOSScreensView(store: store) {
+                        destination = nil
+                        preferredColumn = .sidebar
+                    }
+                    .id(store.selectedMachine?.daemonID ?? "")
+                } else if destination == .machine {
+                    IOSMachineStateView(store: store) {
                         destination = nil
                         preferredColumn = .sidebar
                     }
@@ -142,7 +151,7 @@
                     selectedTaskID = nil
                     store.closeConversation()
                 }
-                if destination == .screens { preferredColumn = .detail }
+                if destination == .screens || destination == .machine { preferredColumn = .detail }
             }
             .onChange(of: selectedTaskID) { _, id in
                 if id != nil { preferredColumn = .detail } else { store.closeConversation() }
@@ -166,6 +175,11 @@
                     }
                 }
                 Section {
+                    NavigationLink(value: IOSWorkspaceDestination.machine) {
+                        Label("Machine state", systemImage: "gauge.with.dots.needle.67percent")
+                    }
+                    .disabled(store.selectedMachine == nil)
+                    .accessibilityIdentifier("ios.machine-state.open")
                     NavigationLink(value: IOSWorkspaceDestination.allTasks) {
                         Label("All tasks", systemImage: "square.grid.2x2")
                     }
@@ -356,6 +370,8 @@
         private var selectedTaskBelongsToDestination: Bool {
             guard let selectedTaskID, let destination else { return false }
             switch destination {
+            case .machine:
+                return false
             case .allTasks:
                 return store.cards.contains { $0.id == selectedTaskID }
             case .chats:
@@ -460,6 +476,7 @@
 
         private var title: String {
             switch destination {
+            case .machine: "Machine state"
             case .allTasks: "All tasks"
             case .chats: "Chats"
             case .screens: "Screens"
@@ -475,7 +492,7 @@
                 switch destination {
                 case let .project(id): if card.projectID != id { return false }
                 case let .board(id): if card.boardID != id { return false }
-                case .screens: return false
+                case .machine, .screens: return false
                 default: break
                 }
                 return (lane.isEmpty || destination == .chats || card.lane == lane)

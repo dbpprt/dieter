@@ -36,6 +36,9 @@
         private(set) var providerQuotasLoading = false
         private(set) var providerQuotaError: String?
         private(set) var providerQuotaMutatingAccounts: Set<String> = []
+        private(set) var machineInformation: Dieter_V1_MachineInformation?
+        private(set) var machineInformationLoading = false
+        private(set) var machineInformationError: String?
         private var pendingOperations = 0
         var busy: Bool { pendingOperations > 0 || phase == .connecting }
         var selectedMachine: DieterEndpoint? { machines.first { $0.daemonID == selectedMachineID } }
@@ -317,6 +320,48 @@
             } catch {
                 guard owns(attempt) else { return }
                 connectionFailed(error, attempt: attempt)
+            }
+        }
+
+        func refreshMachineInformation() async {
+            guard !machineInformationLoading else { return }
+            guard let machine = selectedMachine else {
+                machineInformation = nil
+                machineInformationError = "Choose a machine to inspect its state."
+                return
+            }
+            guard machine.online else {
+                machineInformation = nil
+                machineInformationError = "\(machine.name) is offline."
+                return
+            }
+            guard IOSMachinePolicy.isCompatible(machine) else {
+                machineInformation = nil
+                machineInformationError = IOSUserError.message(IOSStoreError.incompatible(machine.apiVersion))
+                return
+            }
+            guard foreground, phase.isConnected, let rpc = dataPlane?.rpc else {
+                machineInformationError = "Reconnect to read live machine state."
+                return
+            }
+
+            let attempt = connectionID
+            let daemonID = machine.daemonID
+            machineInformationLoading = true
+            machineInformationError = nil
+            defer {
+                if connectionID == attempt, selectedMachineID == daemonID {
+                    machineInformationLoading = false
+                }
+            }
+            do {
+                let information = try await rpc.machineInformation()
+                guard owns(attempt), selectedMachineID == daemonID else { return }
+                machineInformation = information
+            } catch is CancellationError {
+            } catch {
+                guard owns(attempt), selectedMachineID == daemonID else { return }
+                machineInformationError = IOSUserError.message(error)
             }
         }
 
@@ -922,6 +967,7 @@
             gatewayTask?.cancel(); gatewayTask = nil
             gateway?.shutdown(); gateway = nil
             connections.invalidateTemporaryLeases()
+            machineInformationLoading = false
             if clearContent {
                 providerQuotaGroups = []
                 providerQuotasLoading = false
@@ -934,6 +980,9 @@
         private func clearNodeContent() {
             projects = []; boards = []; cards = []; chats = []; harnesses = []
             routeDescription = ""
+            machineInformation = nil
+            machineInformationLoading = false
+            machineInformationError = nil
             closeConversation()
         }
 
