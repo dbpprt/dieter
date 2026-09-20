@@ -35,7 +35,9 @@ dieter doctor
 The installer verifies the GitHub OIDC Sigstore signature and archive checksum,
 then installs a private systemd user service when available. Linux hosts support
 agents, projects, schedules, terminals, remote execution, telemetry, power
-operations, and rollback-capable updates. Screen hosting remains macOS-only.
+operations, and rollback-capable updates. Screen hosting requires an active
+X11 or Wayland desktop and the dependencies in the
+[Linux host guide](https://github.com/dbpprt/dieter/blob/main/docs/linux-support.md).
 Use `--version`, `--install-dir`, or `--no-service` when the defaults do not fit
 the host; `install.sh --help` documents their environment-variable equivalents.
 
@@ -48,11 +50,12 @@ brew install dbpprt/tap/dieter
 dieter setup ~/Development/my-project
 ```
 
-`dieter setup` registers the Git working tree, enrolls the Mac, guides the macOS
+`dieter setup` enrolls the Mac, registers the Git working tree, and starts the
+daemon as a Homebrew service. Through that running service, it guides the macOS
 Screen &amp; System Audio Recording permission, proves the exact signed
-ScreenCaptureKit/VideoToolbox helper with one discarded frame, guides and
+ScreenCaptureKit/VideoToolbox helper with one discarded frame, and guides and
 verifies Accessibility event-posting permission without moving or clicking the
-pointer, and starts the daemon as a Homebrew service. Screen sharing is
+pointer. Screen sharing is
 automatically available after the required OS permissions are granted.
 
 There is no screen-sharing enable switch. Unsupported/headless hosts report why
