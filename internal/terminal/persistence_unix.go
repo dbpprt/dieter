@@ -341,29 +341,30 @@ func (p *tmuxPersistence) resize(name string, columns, rows int) error {
 }
 
 func (p *tmuxPersistence) pipe(name, id string) error {
-	logPath, chunkPath, nextPath := p.logPath(id), p.logPath(id)+".chunk", p.logPath(id)+".next"
+	logPath := p.logPath(id)
 	if _, err := os.Stat(logPath); errors.Is(err, os.ErrNotExist) {
 		if err := os.WriteFile(logPath, nil, 0o600); err != nil {
 			return err
 		}
 	}
-	quotedLog, quotedChunk, quotedNext := shellQuote(logPath), shellQuote(chunkPath), shellQuote(nextPath)
+	quotedLog := shellQuote(logPath)
 	script := fmt.Sprintf(`
 	umask 077
+	log=%s
+	chunk="${log}.chunk.$$"
+	next="${log}.next.$$"
 while :; do
-  : > %s
-  dd bs=%d count=1 of=%s 2>/dev/null
-  test -s %s || break
-  cat %s >> %s
-  size=$(wc -c < %s)
-  if test "$size" -gt %d; then
-    tail -c %d %s > %s && mv -f %s %s
-  fi
+	  : > "$chunk"
+	  dd bs=%d count=1 of="$chunk" 2>/dev/null
+	  test -s "$chunk" || break
+	  cat "$chunk" >> "$log"
+	  size=$(wc -c < "$log")
+	  if test "$size" -gt %d; then
+	    tail -c %d "$log" > "$next" && mv -f "$next" "$log"
+	  fi
 done
-rm -f %s %s
-`, quotedChunk, maxFrameBytes, quotedChunk, quotedChunk, quotedChunk, quotedLog, quotedLog,
-		maxScrollbackBytes, maxScrollbackBytes, quotedLog, quotedNext, quotedNext, quotedLog,
-		quotedChunk, quotedNext)
+rm -f "$chunk" "$next"
+`, quotedLog, maxFrameBytes, maxScrollbackBytes, maxScrollbackBytes)
 	output, err := p.run("pipe-pane", "-O", "-t", name, script)
 	if err != nil {
 		return fmt.Errorf("capture persistent terminal output: %s: %w", strings.TrimSpace(string(output)), err)

@@ -1173,15 +1173,26 @@ func TestEmptyClaudeCompletionPreservesSessionInFailureMessage(t *testing.T) {
 
 func TestRunnerFailureIsPersisted(t *testing.T) {
 	service, fake, project, board := appSetup(t)
+	t.Cleanup(func() {
+		if err := service.Store.Close(); err != nil {
+			t.Errorf("close isolated store: %v", err)
+		}
+	})
 	fake.err = errors.New("offline")
-	card, err := service.CreateCard(context.Background(), CardInput{Project: project.ID, Board: board.ID, Lane: model.LaneRunning, Title: "Implement", Prompt: "Ship it", Provider: "codex"})
+	card, err := service.CreateCard(context.Background(), CardInput{Project: project.ID, Board: board.ID, Lane: model.LaneRunning, Title: "Implement", Prompt: "Ship it", Provider: "codex", DeferStart: true})
 	if err != nil {
 		t.Fatal(err)
 	}
-	waitFor(t, func() bool {
-		stored, _ := service.Store.ResolveCard(card.ID)
-		return stored.Runtime == "failed"
-	})
+	updates, err := service.StartCard(card.ID, "", card.Provider, card.Model, card.Effort)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range updates {
+	}
+	stored, err := service.Store.ResolveCard(card.ID)
+	if err != nil || stored.Runtime != "failed" {
+		t.Fatalf("card=%#v err=%v", stored, err)
+	}
 	conversation, _ := service.Store.Conversation(card.ID)
 	if conversation.Status != "failed" {
 		t.Fatalf("conversation=%#v", conversation)

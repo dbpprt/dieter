@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"net"
+	"strings"
 	"sync"
 	"time"
 
@@ -37,15 +38,16 @@ type Manager struct {
 	closed   bool
 }
 type session struct {
-	pc       *webrtc.PeerConnection
-	owner    string
-	expires  time.Time
-	answer   string
-	once     sync.Once
-	close    func()
-	setup    *time.Timer
-	lifetime *time.Timer
-	stream   net.Conn
+	pc        *webrtc.PeerConnection
+	owner     string
+	relayOnly bool
+	expires   time.Time
+	answer    string
+	once      sync.Once
+	close     func()
+	setup     *time.Timer
+	lifetime  *time.Timer
+	stream    net.Conn
 }
 
 // target is the daemon-owned authenticated loopback TLS listener, never a
@@ -107,7 +109,7 @@ func (m *Manager) Start(ctx context.Context, r *dieterv1.StartControlConnectionR
 	nonce := make([]byte, 24)
 	_, _ = rand.Read(nonce)
 	id := hex.EncodeToString(nonce)
-	s := &session{pc: pc, owner: owner, expires: time.Now().Add(SessionLifetime)}
+	s := &session{pc: pc, owner: owner, relayOnly: offerUsesOnlyRelayCandidates(r.GetOfferSdp()), expires: time.Now().Add(SessionLifetime)}
 	s.close = func() {
 		s.once.Do(func() {
 			m.mu.Lock()
@@ -236,12 +238,27 @@ func (m *Manager) Get(id, owner string) (*dieterv1.ControlConnection, error) {
 			result.LocalCandidateType = pair.Local.Typ.String()
 			result.RemoteCandidateType = pair.Remote.Typ.String()
 			result.Mode = "direct"
-			if pair.Local.Typ == webrtc.ICECandidateTypeRelay || pair.Remote.Typ == webrtc.ICECandidateTypeRelay {
+			if s.relayOnly || pair.Local.Typ == webrtc.ICECandidateTypeRelay || pair.Remote.Typ == webrtc.ICECandidateTypeRelay {
 				result.Mode = "turn"
 			}
 		}
 	}
 	return result, nil
+}
+
+func offerUsesOnlyRelayCandidates(value string) bool {
+	found := false
+	for _, line := range strings.Split(value, "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "a=candidate:") {
+			continue
+		}
+		found = true
+		if !strings.Contains(" "+line+" ", " typ relay ") {
+			return false
+		}
+	}
+	return found
 }
 func (m *Manager) CloseSession(id, owner string) error {
 	if m == nil {
