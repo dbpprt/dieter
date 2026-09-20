@@ -111,6 +111,12 @@ func waitForCanceledCard(t *testing.T, data *store.Store, cardID string) {
 		leased, leaseErr = data.CardHasRuntimeLease(cardID)
 		if cardErr == nil && conversationErr == nil && leaseErr == nil &&
 			card.Runtime != "running" && conversation.Status != "running" && conversation.ActiveTurn == nil && !leased {
+			// The in-memory conversation state becomes visible before the owning
+			// write releases the store lock and commits its sync journal. Cross that
+			// writer boundary before TempDir cleanup can remove the store root.
+			if err := data.WaitForWriter(t.Context()); err != nil {
+				t.Fatalf("wait for canceled turn writer: %v", err)
+			}
 			return
 		}
 		time.Sleep(5 * time.Millisecond)

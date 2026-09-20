@@ -193,8 +193,23 @@ distro-smoke:
     smoke_dir="$(mktemp -d "${RUNNER_TEMP:-/tmp}/dieter-distro-smoke.XXXXXX")"
     trap 'rm -rf "$smoke_dir"' EXIT
     tar -xzf "$archive" -C "$smoke_dir"
+    pull_image() {
+        local image="$1"
+        local attempt
+        for attempt in 1 2 3 4; do
+            if docker pull "$image"; then
+                return 0
+            fi
+            if (( attempt == 4 )); then
+                echo "Could not pull $image after $attempt attempts." >&2
+                return 1
+            fi
+            sleep "$((attempt * 2))"
+        done
+    }
     for image in ubuntu:24.04 debian:12 fedora:42 archlinux:base alpine:3.22; do
-        actual="$(docker run --rm -v "$smoke_dir/dieter-linux-amd64:/artifact:ro" "$image" /artifact/dieter --version)"
+        pull_image "$image"
+        actual="$(docker run --rm --pull never -v "$smoke_dir/dieter-linux-amd64:/artifact:ro" "$image" /artifact/dieter --version)"
         [[ "$actual" == "$RELEASE_VERSION" ]] || { echo "$image returned $actual" >&2; exit 1; }
     done
 
