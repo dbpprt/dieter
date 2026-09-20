@@ -266,14 +266,21 @@ struct BoardView: View {
                     }
                 }
             case .empty:
-                VStack(spacing: 0) {
-                    BoardHeader()
-                    ContentUnavailableView(
-                        "No board selected",
-                        systemImage: "rectangle.split.3x1",
-                        description: Text("Create or select a board for this project.")
+                ContentUnavailableView {
+                    Label("No boards yet", systemImage: "rectangle.split.3x1")
+                } description: {
+                    Text(
+                        "Create a board for \(store.selectedProject?.name ?? "this project") to organize conversations."
                     )
+                } actions: {
+                    if let projectID = store.selectedProject?.id {
+                        Button("Create board") { store.presentNewBoard(projectID: projectID) }
+                            .buttonStyle(DieterPrimaryButtonStyle())
+                            .accessibilityIdentifier("board.empty-create")
+                    }
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .accessibilityIdentifier("board.empty")
             }
         }
     }

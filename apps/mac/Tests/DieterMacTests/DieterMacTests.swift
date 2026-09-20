@@ -1820,7 +1820,7 @@ private func terminalKeyEvent(
     #expect(AppSection.allCases.contains(.settings))
     #expect(
         DieterSettingsSection.allCases.map(\.rawValue) == [
-            "General", "Connection", "Prompts", "Notifications", "Island", "Agents", "Experimental",
+            "General", "Connection", "Usage", "Prompts", "Notifications", "Island", "Agents", "Experimental",
         ])
 }
 

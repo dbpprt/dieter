@@ -194,6 +194,7 @@ struct ProviderQuotaDetailsView: View {
                 }
                 .disabled(store.providerQuotasLoading)
                 .accessibilityIdentifier("provider-quotas.refresh")
+                .smokeTarget("provider-quotas.refresh")
             }
 
             if let error = store.providerQuotaError, !error.isEmpty {

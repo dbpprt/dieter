@@ -134,6 +134,16 @@ func TestGRPCMachineListener(t *testing.T) {
 	if err != nil || canonicalErr != nil || createdWorkspace.GetProject().GetPath() != canonicalSecondRepo || createdWorkspace.GetBoard().GetProjectId() != createdWorkspace.GetProject().GetId() {
 		t.Fatalf("native project creation = %#v, %v", createdWorkspace, err)
 	}
+	if _, err = data.ArchiveProject(createdWorkspace.GetProject().GetId(), true); err != nil {
+		t.Fatal(err)
+	}
+	restoredWorkspace, err := client.CreateProject(ctx, &dieterv1.CreateProjectRequest{
+		Mode: "open", Path: secondRepo, Name: "Remote fixture", BoardName: "Main", Workflow: model.WorkflowReview,
+	})
+	if err != nil || restoredWorkspace.GetProject().GetId() != createdWorkspace.GetProject().GetId() ||
+		restoredWorkspace.GetBoard().GetId() != createdWorkspace.GetBoard().GetId() {
+		t.Fatalf("native archived project restore = %#v, %v", restoredWorkspace, err)
+	}
 	card, err := client.CreateCard(ctx, &dieterv1.CreateConversationRequest{
 		ProjectId: project.ID, BoardId: board.ID, Lane: model.LaneTodo,
 		Title: "Native work", Prompt: "Build the app", Provider: "codex",

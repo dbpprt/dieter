@@ -118,45 +118,70 @@ struct RemoteDirectoryBrowserSheet: View {
                         .font(.caption).foregroundStyle(DieterTheme.coral)
                     }
 
-                    ScrollView {
-                        LazyVStack(spacing: 3) {
-                            if entries.isEmpty, !loading {
-                                ContentUnavailableView(
-                                    "No folders", systemImage: "folder",
-                                    description: Text("This directory has no visible subfolders.")
-                                )
-                                .padding(.top, 45)
-                            }
-                            ForEach(entries, id: \.path) { entry in
-                                Button {
-                                    Task { await load(entry.path) }
-                                } label: {
-                                    HStack(spacing: 10) {
-                                        Image(
-                                            systemName: entry.gitRepository ? "folder.badge.gearshape" : "folder.fill"
-                                        )
-                                        .foregroundStyle(entry.gitRepository ? DieterTheme.eyes : DieterTheme.shell)
-                                        .frame(width: 19)
-                                        Text(entry.name).font(.system(size: 12, weight: .medium)).lineLimit(1)
-                                        Spacer()
-                                        if entry.gitRepository {
-                                            Text("Git repository").font(.caption2.weight(.semibold)).foregroundStyle(
-                                                DieterTheme.eyes
-                                            )
-                                            .padding(.horizontal, 7).padding(.vertical, 3).background(
-                                                DieterTheme.eyes.opacity(0.1), in: Capsule())
-                                        }
-                                        Image(systemName: "chevron.right").font(.system(size: 8, weight: .bold))
-                                            .foregroundStyle(DieterTheme.tertiary)
-                                    }
-                                    .foregroundStyle(DieterTheme.subtle).padding(.horizontal, 11).frame(height: 36)
-                                    .background(
-                                        DieterTheme.surface.opacity(0.72), in: RoundedRectangle(cornerRadius: 8))
+                    ZStack {
+                        ScrollView {
+                            LazyVStack(spacing: 3) {
+                                if entries.isEmpty, !loading {
+                                    ContentUnavailableView(
+                                        "No folders", systemImage: "folder",
+                                        description: Text("This directory has no visible subfolders.")
+                                    )
+                                    .padding(.top, 45)
                                 }
-                                .buttonStyle(.plain)
+                                ForEach(entries, id: \.path) { entry in
+                                    Button {
+                                        Task { await load(entry.path) }
+                                    } label: {
+                                        HStack(spacing: 10) {
+                                            Image(
+                                                systemName: entry.gitRepository
+                                                    ? "folder.badge.gearshape" : "folder.fill"
+                                            )
+                                            .foregroundStyle(entry.gitRepository ? DieterTheme.eyes : DieterTheme.shell)
+                                            .frame(width: 19)
+                                            Text(entry.name).font(.system(size: 12, weight: .medium)).lineLimit(1)
+                                            Spacer()
+                                            if entry.gitRepository {
+                                                Text("Git repository").font(.caption2.weight(.semibold))
+                                                    .foregroundStyle(
+                                                        DieterTheme.eyes
+                                                    )
+                                                    .padding(.horizontal, 7).padding(.vertical, 3).background(
+                                                        DieterTheme.eyes.opacity(0.1), in: Capsule())
+                                            }
+                                            Image(systemName: "chevron.right").font(.system(size: 8, weight: .bold))
+                                                .foregroundStyle(DieterTheme.tertiary)
+                                        }
+                                        .foregroundStyle(DieterTheme.subtle).padding(.horizontal, 11).frame(height: 36)
+                                        .background(
+                                            DieterTheme.surface.opacity(0.72), in: RoundedRectangle(cornerRadius: 8))
+                                    }
+                                    .buttonStyle(.plain)
+                                    .disabled(loading)
+                                }
                             }
                         }
+                        .opacity(loading && listing == nil ? 0 : 1)
+
+                        if loading {
+                            VStack(spacing: 10) {
+                                ProgressView().controlSize(.regular)
+                                Text("Loading folders…")
+                                    .font(.system(size: 12, weight: .semibold))
+                                Text(machine?.name ?? "Remote machine")
+                                    .font(.caption)
+                                    .foregroundStyle(DieterTheme.tertiary)
+                            }
+                            .padding(.horizontal, 22)
+                            .padding(.vertical, 16)
+                            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+                            .overlay(RoundedRectangle(cornerRadius: 12).stroke(DieterTheme.border))
+                            .accessibilityElement(children: .combine)
+                            .accessibilityLabel("Loading folders from \(machine?.name ?? "remote machine")")
+                            .accessibilityIdentifier("new-project.browser-loading")
+                        }
                     }
+                    .animation(.easeOut(duration: 0.15), value: loading)
                 }
                 .padding(14)
             }

@@ -1240,6 +1240,11 @@ class DieterViewModel internal constructor(
         if (changingProject) startStateStream()
     }
 
+    fun openNewBoard(projectId: String) {
+        if (projectId != _state.value.selectedProjectId) selectProject(projectId)
+        openSurface(AppSurface.NEW_BOARD)
+    }
+
     fun showBoardOverview() {
         rememberConversation()
         cancelConversationStream()

@@ -105,6 +105,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.unit.dp
@@ -279,6 +280,7 @@ internal fun SpacesOverview(state: DieterUiState, model: DieterViewModel, modifi
                             dragged = dragged,
                             dropTarget = projectDragState.targetProjectId == project.id,
                             onOpenBoard = { board -> model.openBoard(project.id, board.id) },
+                            onCreateBoard = { model.openNewBoard(project.id) },
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .onGloballyPositioned {
@@ -369,6 +371,7 @@ internal fun ProjectSpaceCard(
     dragged: Boolean,
     dropTarget: Boolean,
     onOpenBoard: (Board) -> Unit,
+    onCreateBoard: () -> Unit,
     modifier: Modifier = Modifier,
     onMoveToFolder: (() -> Unit)? = null,
 ) {
@@ -422,7 +425,17 @@ internal fun ProjectSpaceCard(
                 Icon(Icons.Outlined.DragHandle, null, tint = DieterMuted, modifier = Modifier.size(20.dp))
             }
             if (boards.isEmpty()) {
-                Text("No boards yet", color = DieterMuted, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp))
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text("No boards yet", color = DieterMuted, fontSize = 12.sp, modifier = Modifier.weight(1f))
+                    TextButton(onClick = onCreateBoard, modifier = Modifier.testTag("space-create-board-${project.id}")) {
+                        Icon(Icons.Default.Add, null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(5.dp))
+                        Text("Create board")
+                    }
+                }
             }
             boards.forEach { board ->
                 val boardCards = cards.filter { it.boardId == board.id }
@@ -879,6 +892,10 @@ internal fun BoardList(state: DieterUiState, model: DieterViewModel, modifier: M
                 (query.isBlank() || card.title.contains(query, ignoreCase = true) || card.summary.contains(query, ignoreCase = true))
         }
     }
+    if (!state.loading && state.project != null && state.board == null) {
+        BoardlessProjectState(state, model, modifier)
+        return
+    }
     Box(modifier.onGloballyPositioned { boardListOrigin = it.positionInRoot() }) {
         Column(Modifier.fillMaxSize()) {
             BoardDetailHeader(
@@ -982,6 +999,37 @@ internal fun BoardList(state: DieterUiState, model: DieterViewModel, modifier: M
                 model.createQuickTask(story)
             },
         )
+    }
+}
+
+@Composable
+private fun BoardlessProjectState(state: DieterUiState, model: DieterViewModel, modifier: Modifier = Modifier) {
+    Column(
+        modifier.fillMaxSize().padding(28.dp).testTag("board-empty"),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Surface(shape = RoundedCornerShape(18.dp), color = DieterShellTint, modifier = Modifier.size(64.dp)) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(Icons.Outlined.ViewKanban, null, Modifier.size(28.dp), tint = DieterShell)
+            }
+        }
+        Spacer(Modifier.height(16.dp))
+        Text("No boards yet", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+        Spacer(Modifier.height(6.dp))
+        Text(
+            "Create a board for ${state.project?.name ?: "this project"} to organize conversations.",
+            color = DieterMuted,
+            fontSize = 13.sp,
+            lineHeight = 19.sp,
+            textAlign = TextAlign.Center,
+        )
+        Spacer(Modifier.height(16.dp))
+        Button(onClick = { model.openNewBoard(state.selectedProjectId) }, modifier = Modifier.testTag("board-empty-create")) {
+            Icon(Icons.Default.Add, null, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(7.dp))
+            Text("Create board")
+        }
     }
 }
 

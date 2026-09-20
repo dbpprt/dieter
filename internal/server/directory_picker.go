@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 )
 
 type projectDirectoryEntry struct {
@@ -71,15 +72,15 @@ func listProjectDirectories(requested string) (projectDirectoryListing, error) {
 			continue
 		}
 		entries = append(entries, projectDirectoryEntry{
-			Name:          item.Name(),
-			Path:          child,
-			GitRepository: isGitWorkingTree(child),
-			Hidden:        strings.HasPrefix(item.Name(), "."),
+			Name:   item.Name(),
+			Path:   child,
+			Hidden: strings.HasPrefix(item.Name(), "."),
 		})
 	}
 	sort.Slice(entries, func(i, j int) bool {
 		return strings.ToLower(entries[i].Name) < strings.ToLower(entries[j].Name)
 	})
+	markGitRepositories(entries)
 
 	parent := filepath.Dir(path)
 	if parent == path {
@@ -98,6 +99,32 @@ func listProjectDirectories(requested string) (projectDirectoryListing, error) {
 		Entries:       entries,
 		Locations:     projectDirectoryLocations(home),
 	}, nil
+}
+
+// Directory browsing can cross network-backed volumes where each metadata
+// lookup has noticeable latency. Bound the work, but do not serialize one
+// .git lookup per visible child.
+func markGitRepositories(entries []projectDirectoryEntry) {
+	if len(entries) == 0 {
+		return
+	}
+	workers := min(len(entries), 12)
+	jobs := make(chan int)
+	var group sync.WaitGroup
+	group.Add(workers)
+	for range workers {
+		go func() {
+			defer group.Done()
+			for index := range jobs {
+				entries[index].GitRepository = isGitWorkingTree(entries[index].Path)
+			}
+		}()
+	}
+	for index := range entries {
+		jobs <- index
+	}
+	close(jobs)
+	group.Wait()
 }
 
 func fmtDirectoryError(path string, err error) error {

@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -79,6 +80,9 @@ func (s *Store) CreateProject(input CreateProjectInput) (model.Project, error) {
 	for _, candidate := range projects {
 		for _, checkout := range candidate.Checkouts {
 			if checkout.Path == path && !checkout.Detached {
+				if candidate.Archived {
+					return s.restoreProjectForCreation(candidate, input, receiptPath, fingerprint)
+				}
 				return model.Project{}, fmt.Errorf("path is already attached to project %s", candidate.ID)
 			}
 		}
@@ -129,6 +133,87 @@ func (s *Store) CreateProject(input CreateProjectInput) (model.Project, error) {
 	effects := []localEffect{{Path: "checkouts/" + checkout.ID + ".json", Value: rawValue(checkout)}}
 	if receiptPath != "" {
 		effects = append(effects, localEffect{Path: receiptPath, Value: rawValue(projectReceipt{project.ID, fingerprint})})
+	}
+	if err = s.writePeerState(identity.Account, data, effects...); err != nil {
+		return model.Project{}, err
+	}
+	return s.ResolveProject(project.ID)
+}
+
+// restoreProjectForCreation makes reopening a previously removed path behave
+// like project creation from the clients' point of view. Archived projects are
+// intentionally absent from the normal project directory, so returning an
+// opaque duplicate-path error would otherwise leave users with no visible
+// project to recover. Preserve the durable project identity and history, and
+// only synthesize the requested initial board when the project is boardless.
+// The caller holds the central write lock.
+func (s *Store) restoreProjectForCreation(
+	project model.Project,
+	input CreateProjectInput,
+	receiptPath, fingerprint string,
+) (model.Project, error) {
+	boards, err := s.listBoards()
+	if err != nil {
+		return model.Project{}, err
+	}
+	hasBoard := false
+	for _, board := range boards {
+		if board.ProjectID == project.ID {
+			hasBoard = true
+			break
+		}
+	}
+
+	var initialBoard *model.Board
+	if !hasBoard && strings.TrimSpace(input.InitialBoardName) != "" {
+		workflow, normalizeErr := normalizeWorkflow(input.InitialWorkflow)
+		if normalizeErr != nil {
+			return model.Project{}, normalizeErr
+		}
+		mode, normalizeErr := normalizeRemotePublishMode(input.InitialRemotePublishMode)
+		if normalizeErr != nil {
+			return model.Project{}, normalizeErr
+		}
+		now := timestamp()
+		initialBoard = &model.Board{
+			ID: initialBoardID(project.ID), ProjectID: project.ID,
+			Name: strings.TrimSpace(input.InitialBoardName), Workflow: workflow,
+			DoneArchivePolicy: model.DoneArchiveNever, BaseRemote: project.BaseRemote,
+			RemotePublishMode: mode, CreatedAt: now, UpdatedAt: now,
+		}
+	}
+
+	identity, err := s.sharedIdentity()
+	if err != nil {
+		return model.Project{}, err
+	}
+	data, err := s.PeerData(identity.Account)
+	if err != nil {
+		return model.Project{}, err
+	}
+	data.State = clonePeerState(data.State)
+	project.Archived = false
+	project.UpdatedAt = timestamp()
+	if err = applyFields(&data, identity, "project", project.ID, project.SharedBase, map[string]json.RawMessage{
+		"archived":  rawValue(false),
+		"updatedAt": rawValue(project.UpdatedAt),
+	}); err != nil {
+		return model.Project{}, err
+	}
+	if initialBoard != nil {
+		fields := pickFields(*initialBoard, "board")
+		fields["identity"] = rawValue(map[string]string{
+			"id": initialBoard.ID, "projectId": project.ID, "createdAt": initialBoard.CreatedAt,
+		})
+		if err = applyFields(&data, identity, "board", initialBoard.ID, nil, fields); err != nil {
+			return model.Project{}, err
+		}
+	}
+	effects := []localEffect{}
+	if receiptPath != "" {
+		effects = append(effects, localEffect{
+			Path: receiptPath, Value: rawValue(projectReceipt{project.ID, fingerprint}),
+		})
 	}
 	if err = s.writePeerState(identity.Account, data, effects...); err != nil {
 		return model.Project{}, err

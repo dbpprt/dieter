@@ -154,7 +154,6 @@ struct DieterRootView: View {
             .allowsHitTesting(false)
         }
         .toolbar {
-            ToolbarSpacer(.flexible)
             ToolbarItemGroup(placement: .primaryAction) {
                 ProviderQuotaCompactView()
                 if store.section != .board || store.selectedCardID == nil {
@@ -1061,7 +1060,8 @@ private struct SidebarProjectDestinations: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            ForEach(store.boards(for: project.id), id: \.id) { board in
+            let boards = store.boards(for: project.id)
+            ForEach(boards, id: \.id) { board in
                 SidebarDestination(
                     title: board.name,
                     symbol: "rectangle.split.3x1",
@@ -1076,6 +1076,18 @@ private struct SidebarProjectDestinations: View {
                     Button("Rename board…", systemImage: "pencil") { store.presentRenameBoard(boardID: board.id) }
                     Button("New board…", systemImage: "plus") { store.presentNewBoard(projectID: project.id) }
                 }
+            }
+            if boards.isEmpty {
+                SidebarDestination(
+                    title: "Create board", symbol: "rectangle.split.3x1.fill.badge.plus", selected: false
+                ) {
+                    onNavigate?()
+                    store.presentNewBoard(projectID: project.id)
+                }
+                .disabled(projectIsUnavailable)
+                .opacity(projectIsUnavailable ? 0.42 : 1)
+                .accessibilityIdentifier("sidebar.boardless-create.\(project.id)")
+                .smokeTarget("sidebar.boardless-create.\(project.id)")
             }
             SidebarDestination(
                 title: "Files", symbol: "folder",

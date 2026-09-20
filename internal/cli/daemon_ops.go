@@ -624,17 +624,26 @@ func (c *CLI) setupProject(path string) (model.Project, bool, error) {
 	if err != nil {
 		return model.Project{}, false, err
 	}
-	archived, err := c.Store.ListArchivedProjects()
-	if err != nil {
-		return model.Project{}, false, err
-	}
-	for _, project := range append(active, archived...) {
+	for _, project := range active {
 		if project.Path == absolute {
 			return project, true, nil
 		}
 	}
-	project, err := c.service().RegisterProject(context.Background(), app.ProjectInput{Path: absolute})
-	return project, false, err
+	archived, err := c.Store.ListArchivedProjects()
+	if err != nil {
+		return model.Project{}, false, err
+	}
+	restored := false
+	for _, project := range archived {
+		if project.Path == absolute {
+			restored = true
+			break
+		}
+	}
+	project, err := c.service().RegisterProject(context.Background(), app.ProjectInput{
+		Path: absolute, InitialBoardName: "Main", InitialWorkflow: model.WorkflowReview,
+	})
+	return project, restored, err
 }
 
 func gitWorkingTreeRoot(path string) (string, error) {

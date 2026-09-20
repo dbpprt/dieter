@@ -4,6 +4,7 @@ import SwiftUI
 enum DieterSettingsSection: String, CaseIterable, Identifiable, Hashable {
     case general = "General"
     case connection = "Connection"
+    case usage = "Usage"
     case prompts = "Prompts"
     case notifications = "Notifications"
     case island = "Island"
@@ -16,6 +17,7 @@ enum DieterSettingsSection: String, CaseIterable, Identifiable, Hashable {
         switch self {
         case .general: "gearshape"
         case .connection: "network"
+        case .usage: "chart.bar.xaxis"
         case .prompts: "text.quote"
         case .notifications: "bell"
         case .island: "capsule.tophalf.filled"
@@ -28,6 +30,7 @@ enum DieterSettingsSection: String, CaseIterable, Identifiable, Hashable {
         switch self {
         case .general: "Server, client, and project preferences"
         case .connection: "Machines, gateways, and authentication"
+        case .usage: "Provider accounts, limits, and reset windows"
         case .prompts: "Global and scoped agent instructions"
         case .notifications: "macOS alerts for agent activity"
         case .island: "Live activity around the notch"
@@ -39,7 +42,6 @@ enum DieterSettingsSection: String, CaseIterable, Identifiable, Hashable {
 
 struct DieterSettingsView: View {
     @Environment(DieterStore.self) private var store
-    @State private var selection = DieterSettingsSection.general
 
     var body: some View {
         HStack(spacing: 0) {
@@ -55,9 +57,8 @@ struct DieterSettingsView: View {
                     ForEach(DieterSettingsSection.allCases) { section in
                         Button {
                             store.settingsSection = section
-                            selection = section
                         } label: {
-                            SettingsNavigationRow(section: section, selected: section == selection)
+                            SettingsNavigationRow(section: section, selected: section == store.settingsSection)
                         }
                         .buttonStyle(.plain)
                         .accessibilityIdentifier("settings.\(section.rawValue.lowercased())")
@@ -85,17 +86,19 @@ struct DieterSettingsView: View {
 
             VStack(spacing: 0) {
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(selection.rawValue).font(.system(size: 18, weight: .semibold))
-                    Text(selection.subtitle).font(DieterFont.subtitle).foregroundStyle(DieterTheme.tertiary)
+                    Text(store.settingsSection.rawValue).font(.system(size: 18, weight: .semibold))
+                    Text(store.settingsSection.subtitle).font(DieterFont.subtitle).foregroundStyle(
+                        DieterTheme.tertiary)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 22).padding(.top, 18).padding(.bottom, 12)
                 .background(DieterTheme.background)
 
                 Group {
-                    switch selection {
+                    switch store.settingsSection {
                     case .general: GeneralSettings()
                     case .connection: ConnectionSettings()
+                    case .usage: UsageSettings()
                     case .prompts: PromptSettingsEditor()
                     case .notifications: NotificationSettings()
                     case .island: IslandSettings()
@@ -109,8 +112,19 @@ struct DieterSettingsView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .background(DieterTheme.background)
-        .onAppear { selection = store.settingsSection }
-        .onChange(of: store.settingsSection) { _, section in selection = section }
+    }
+}
+
+private struct UsageSettings: View {
+    var body: some View {
+        SettingsPage {
+            SettingsPanel(
+                title: "Provider quotas",
+                subtitle: "Usage limits discovered across all online enrolled machines."
+            ) {
+                ProviderQuotaDetailsView()
+            }
+        }
     }
 }
 
@@ -722,7 +736,6 @@ struct ConnectionSettings: View {
             VStack(spacing: 14) {
                 connectionExplanation
                 activeConnection
-                providerQuotas
                 gatewayList
                 machineList
                 addGateway
@@ -749,15 +762,6 @@ struct ConnectionSettings: View {
             Text(
                 "Dieter will remove all cached workspace data on this Mac, keep your sign-in and pending changes, then download fresh snapshots. Content may briefly disappear."
             )
-        }
-    }
-
-    private var providerQuotas: some View {
-        SettingsPanel(
-            title: "Provider quotas",
-            subtitle: "Usage limits discovered across all online enrolled machines."
-        ) {
-            ProviderQuotaDetailsView()
         }
     }
 

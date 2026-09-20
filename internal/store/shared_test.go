@@ -245,6 +245,68 @@ func TestSharedProjectCreationReceiptAndAtomicBoard(t *testing.T) {
 	}
 }
 
+func TestCreateProjectRestoresArchivedPathAndAddsMissingInitialBoard(t *testing.T) {
+	s := peerFixture(t, "machine_a")
+	path := sharedRepo(t)
+	original, err := s.CreateProject(CreateProjectInput{Name: "Repo", Path: path})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.ArchiveProject(original.ID, true); err != nil {
+		t.Fatal(err)
+	}
+
+	restored, err := s.CreateProject(CreateProjectInput{
+		OperationID: "restore-archived-project", Name: "Ignored replacement", Path: path,
+		InitialBoardName: "Main", InitialWorkflow: model.WorkflowReview,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if restored.ID != original.ID || restored.Archived || restored.Name != original.Name {
+		t.Fatalf("restored=%#v original=%#v", restored, original)
+	}
+	boards, err := s.ListBoards(original.ID)
+	if err != nil || len(boards) != 1 || boards[0].Name != "Main" {
+		t.Fatalf("boards=%#v err=%v", boards, err)
+	}
+
+	again, err := s.CreateProject(CreateProjectInput{
+		OperationID: "restore-archived-project", Name: "Ignored replacement", Path: path,
+		InitialBoardName: "Main", InitialWorkflow: model.WorkflowReview,
+	})
+	if err != nil || again.ID != original.ID {
+		t.Fatalf("receipt retry=%#v err=%v", again, err)
+	}
+	boards, err = s.ListBoards(original.ID)
+	if err != nil || len(boards) != 1 {
+		t.Fatalf("retry boards=%#v err=%v", boards, err)
+	}
+}
+
+func TestCreateProjectRestoresArchivedPathWithoutDuplicatingExistingBoard(t *testing.T) {
+	s := peerFixture(t, "machine_a")
+	path := sharedRepo(t)
+	original, err := s.CreateProject(CreateProjectInput{Name: "Repo", Path: path})
+	if err != nil {
+		t.Fatal(err)
+	}
+	existing, err := s.CreateBoard(CreateBoardInput{Project: original.ID, Name: "Existing", Workflow: model.WorkflowDirect})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.ArchiveProject(original.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.CreateProject(CreateProjectInput{Path: path, InitialBoardName: "Main"}); err != nil {
+		t.Fatal(err)
+	}
+	boards, err := s.ListBoards(original.ID)
+	if err != nil || len(boards) != 1 || boards[0].ID != existing.ID {
+		t.Fatalf("boards=%#v err=%v", boards, err)
+	}
+}
+
 func TestSharedEffectsRecoveryDoesNotReplayOldMetadata(t *testing.T) {
 	s := peerFixture(t, "machine_a")
 	p, err := s.CreateProject(CreateProjectInput{Name: "Repo", Path: sharedRepo(t)})

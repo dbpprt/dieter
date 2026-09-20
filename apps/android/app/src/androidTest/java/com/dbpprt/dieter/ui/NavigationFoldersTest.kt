@@ -154,6 +154,30 @@ class NavigationFoldersTest {
         compose.runOnIdle { assertTrue(model.state.value.chatFolders.folders.isEmpty()) }
     }
 
+    @Test fun boardlessProjectsExposeBoardCreationInsteadOfAnEmptyBoard() {
+        compose.setContent {
+            DieterTheme {
+                Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                    BoardList(
+                        DieterUiState(
+                            loading = false,
+                            projects = projects,
+                            selectedProjectId = projects.single().id,
+                            boards = emptyList(),
+                        ),
+                        model,
+                        Modifier.fillMaxSize(),
+                    )
+                }
+            }
+        }
+
+        compose.onNodeWithTag("board-empty").assertIsDisplayed()
+        compose.onNodeWithText("No boards yet").assertIsDisplayed()
+        compose.onNodeWithTag("board-empty-create").assertIsDisplayed()
+        compose.onNodeWithTag("new-card").assertDoesNotExist()
+    }
+
     @Test fun sharedRecordsPreserveBothScopesAndCollapsedMembership() {
         val records = mapOf(
             "projects-folder.mac-id.name" to "\"Research\"",

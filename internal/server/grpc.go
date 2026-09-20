@@ -342,6 +342,16 @@ func (api *grpcAPI) CreateProject(ctx context.Context, request *dieterv1.CreateP
 		return nil, grpcFailure(err)
 	}
 	board, err := api.server.store.InitialBoard(project.ID)
+	if errors.Is(err, store.ErrNotFound) {
+		boards, listErr := api.server.store.ListBoards(project.ID)
+		if listErr != nil {
+			return nil, grpcFailure(listErr)
+		}
+		if len(boards) == 0 {
+			return nil, grpcFailure(err)
+		}
+		board, err = boards[0], nil
+	}
 	if err != nil {
 		return nil, grpcFailure(err)
 	}

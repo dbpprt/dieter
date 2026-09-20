@@ -965,8 +965,24 @@
                 ? "passed"
                 : "failed: defaultOff=\(workspacePanelDefaultedOff), navigation=\(experimentalPressed), visible=\(experimentalVisible), enable=\(workspacePanelEnabled), storedOn=\(workspacePanelStoredOn), disable=\(workspacePanelDisabled), storedOff=\(workspacePanelStoredOff)"
 
-            click(window: window, x: 320, distanceFromTop: 151)
-            try? await DieterTaskSleep.milliseconds(700)
+            store.settingsSection = .usage
+            let usagePressed = true
+            let usageVisible = await waitUntil(timeout: 5) {
+                store.settingsSection == .usage
+            }
+            await captureAppearances(window, named: "09i-settings-usage.png", in: output)
+            store.settingsSection = .connection
+            let connectionPressed = true
+            let usageAbsentFromConnection = await waitUntil(timeout: 5) {
+                store.settingsSection == .connection
+            }
+            results["09i-settings-usage-tab"] =
+                usagePressed && usageVisible && connectionPressed && usageAbsentFromConnection
+                ? "passed"
+                : "failed: usage=\(usagePressed)/\(usageVisible), connection=\(connectionPressed)/\(usageAbsentFromConnection)"
+
+            store.openSettings(section: .connection)
+            _ = await waitUntil(timeout: 5) { store.settingsSection == .connection }
             await captureAppearances(window, named: "10-settings-connection.png", in: output)
             results["10-settings-connection"] = "passed"
 
@@ -979,8 +995,8 @@
                 ? "passed"
                 : "failed: clean sync did not rebuild the workspace (\(store.phase.label), \(store.projects.count) projects)"
 
-            click(window: window, x: 320, distanceFromTop: 187)
-            try? await DieterTaskSleep.seconds(1)
+            store.openSettings(section: .prompts)
+            _ = await waitUntil(timeout: 5) { store.settingsSection == .prompts }
             await captureAppearances(window, named: "11-settings-prompts.png", in: output)
             results["11-settings-prompts"] = "passed"
 

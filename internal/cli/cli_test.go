@@ -334,9 +334,41 @@ func TestSetupProjectIsIdempotent(t *testing.T) {
 	if first.Path != canonicalRepo {
 		t.Fatalf("registered path=%q want=%q", first.Path, canonicalRepo)
 	}
+	boards, err := c.Store.ListBoards(first.ID)
+	if err != nil || len(boards) != 1 || boards[0].Name != "Main" {
+		t.Fatalf("setup boards=%#v err=%v", boards, err)
+	}
 	second, existing, err := c.setupProject(repo)
 	if err != nil || !existing || second.ID != first.ID {
 		t.Fatalf("second=%#v existing=%v err=%v", second, existing, err)
+	}
+	boards, err = c.Store.ListBoards(first.ID)
+	if err != nil || len(boards) != 1 {
+		t.Fatalf("idempotent setup boards=%#v err=%v", boards, err)
+	}
+}
+
+func TestSetupProjectRestoresArchivedBoardlessProject(t *testing.T) {
+	repo := filepath.Join(t.TempDir(), "repo")
+	if output, err := exec.Command("git", "init", repo).CombinedOutput(); err != nil {
+		t.Fatalf("git init: %s: %v", output, err)
+	}
+	data := store.New(t.TempDir())
+	original, err := data.CreateProject(store.CreateProjectInput{Name: "Existing", Path: repo})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = data.ArchiveProject(original.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	c := New(data)
+	restored, existing, err := c.setupProject(repo)
+	if err != nil || !existing || restored.ID != original.ID || restored.Archived {
+		t.Fatalf("restored=%#v existing=%v err=%v", restored, existing, err)
+	}
+	boards, err := data.ListBoards(original.ID)
+	if err != nil || len(boards) != 1 || boards[0].Name != "Main" {
+		t.Fatalf("boards=%#v err=%v", boards, err)
 	}
 }
 
