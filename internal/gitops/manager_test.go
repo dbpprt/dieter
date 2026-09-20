@@ -552,6 +552,15 @@ func waitOperation(t *testing.T, manager *gitops.Manager, id string) model.GitOp
 		case model.GitOperationQueued, model.GitOperationRunning:
 			time.Sleep(10 * time.Millisecond)
 		default:
+			// The terminal record is visible before SaveGitOperation finishes
+			// its sync journal commit. Drain that writer before using the result
+			// or letting TempDir cleanup remove the store underneath it.
+			ctx, cancel := context.WithDeadline(context.Background(), deadline)
+			err := manager.Store.WaitForWriter(ctx)
+			cancel()
+			if err != nil {
+				t.Fatal(err)
+			}
 			return value
 		}
 	}

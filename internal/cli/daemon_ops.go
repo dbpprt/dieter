@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"net/http"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -24,6 +23,9 @@ import (
 	dieterdaemon "github.com/dbpprt/dieter/internal/daemon"
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
 	"github.com/dbpprt/dieter/internal/model"
+	"github.com/dbpprt/dieter/internal/protocol"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
 
@@ -281,13 +283,15 @@ func daemonHealth(address string) bool {
 	if strings.TrimSpace(address) == "" {
 		return false
 	}
-	client := &http.Client{Timeout: 1200 * time.Millisecond}
-	response, err := client.Get("http://" + address + "/healthz")
+	ctx, cancel := context.WithTimeout(context.Background(), 1200*time.Millisecond)
+	defer cancel()
+	connection, err := grpc.NewClient(address, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		return false
 	}
-	defer response.Body.Close()
-	return response.StatusCode == http.StatusOK
+	defer connection.Close()
+	health, err := dieterv1.NewDieterServiceClient(connection).Health(ctx, &emptypb.Empty{})
+	return err == nil && health.GetStatus() == "ok" && health.GetVersion() == protocol.Version
 }
 
 func homebrewServiceStatus() string {

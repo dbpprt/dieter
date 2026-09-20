@@ -299,6 +299,20 @@ func TestDaemonStatusAndLogs(t *testing.T) {
 	}
 }
 
+func TestDaemonStatusRecognizesHealthyCurrentAPI(t *testing.T) {
+	client, output, _ := daemonCLIForTest(t)
+	if err := client.Run([]string{"daemon", "status", "--format", "json"}); err != nil {
+		t.Fatal(err)
+	}
+	var status daemonStatusView
+	if err := json.Unmarshal(output.Bytes(), &status); err != nil {
+		t.Fatal(err)
+	}
+	if !status.APIHealthy || !status.Running || status.Status != "local-only" {
+		t.Fatalf("status=%#v", status)
+	}
+}
+
 func TestSetupProjectIsIdempotent(t *testing.T) {
 	repo := filepath.Join(t.TempDir(), "repo")
 	if output, err := exec.Command("git", "init", repo).CombinedOutput(); err != nil {

@@ -8,7 +8,6 @@ import subprocess
 import tempfile
 import time
 import unittest
-import urllib.request
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -112,12 +111,20 @@ class LinuxServiceEndToEndTest(unittest.TestCase):
             if daemon.poll() is not None:
                 self.fail(f"daemon exited early: {daemon.stdout.read()}")
             try:
-                with urllib.request.urlopen(f"http://127.0.0.1:{port}/healthz", timeout=0.5) as response:
-                    if response.status == 200:
-                        break
+                readiness = subprocess.run(
+                    [str(self.executable), "--store", str(self.root), "daemon", "status", "--format", "json"],
+                    env=self.environment,
+                    capture_output=True,
+                    text=True,
+                    timeout=3,
+                    check=True,
+                )
+                if json.loads(readiness.stdout)["running"]:
+                    break
+                last_error = readiness.stdout
             except Exception as error:  # bounded readiness probe
                 last_error = error
-                time.sleep(0.1)
+            time.sleep(0.1)
         else:
             self.fail(f"daemon did not become healthy: {last_error}")
 

@@ -53,7 +53,8 @@ import DieterCore
         private var selectedBoard: Dieter_V1_Board? { boards.first { $0.id == boardID } }
         private var labels: [Dieter_V1_Label] { chat ? [] : selectedBoard?.labels ?? [] }
         private var harness: Dieter_V1_Harness? { creationHarnesses.first { $0.id == provider } }
-        private var selectedModel: Dieter_V1_HarnessModel? { harness?.models.first { $0.id == model } }
+        private var models: [Dieter_V1_HarnessModel] { harness?.models ?? [] }
+        private var selectedModel: Dieter_V1_HarnessModel? { models.first { $0.id == model } }
         private var fastModeOption: Dieter_V1_ProviderOption? {
             IOSCreateTaskProviderOptions.fastModeOption(for: harness, model: model)
         }
@@ -78,118 +79,11 @@ import DieterCore
         var body: some View {
             NavigationStack {
                 Form {
-                    Section("Task") {
-                        TextField("Title (optional)", text: $title)
-                            .focused($focusedField, equals: .title)
-                            .submitLabel(.next)
-                            .onSubmit { focusedField = .prompt }
-                            .accessibilityIdentifier("ios.create.title")
-                        IOSAttachmentTextEditor(
-                            text: $prompt,
-                            isFocused: Binding(
-                                get: { focusedField == .prompt },
-                                set: { focusedField = $0 ? .prompt : nil }
-                            ),
-                            placeholder: "What should the agent do?",
-                            minimumLines: 6,
-                            maximumLines: 12,
-                            accessibilityIdentifier: "ios.create.prompt",
-                            keyboardDoneAccessibilityIdentifier: "ios.create.keyboard-done",
-                            pastedImages: appendPastedImages,
-                            pasteFailed: showAttachmentError
-                        )
-                    }
-                    Section("Attachments") {
-                        ForEach(Array(attachments.enumerated()), id: \.offset) { index, part in
-                            attachmentRow(part, index: index)
-                        }
-                        HStack(spacing: 20) {
-                            PhotosPicker(
-                                selection: $photoItems,
-                                maxSelectionCount: max(
-                                    1, IOSAttachmentLoader.maximumCount - attachments.count),
-                                matching: .images
-                            ) {
-                                Label("Photos", systemImage: "photo.on.rectangle")
-                            }
-                            .disabled(attachments.count >= IOSAttachmentLoader.maximumCount)
-                            .accessibilityIdentifier("ios.create.attach-photos")
-                            Button {
-                                focusedField = nil
-                                fileImporterPresented = true
-                            } label: {
-                                Label("Files", systemImage: "folder")
-                            }
-                            .disabled(attachments.count >= IOSAttachmentLoader.maximumCount)
-                            .accessibilityIdentifier("ios.create.attach-files")
-                        }
-                        Text("Up to 4 files, 5 MB each and 6 MB total.")
-                            .font(.caption).foregroundStyle(.secondary)
-                        if let attachmentError {
-                            Text(attachmentError).font(.caption).foregroundStyle(.red)
-                                .accessibilityIdentifier("ios.create.attachment-error")
-                        }
-                    }
-                    Section("Destination") {
-                        Picker("Project", selection: $projectID) {
-                            ForEach(store.projects, id: \.id) { Text($0.name).tag($0.id) }
-                        }
-                        .accessibilityIdentifier("ios.create.project")
-                        if !chat {
-                            Picker("Board", selection: $boardID) {
-                                ForEach(boards, id: \.id) { Text($0.name).tag($0.id) }
-                            }
-                            .accessibilityIdentifier("ios.create.board")
-                        }
-                        Picker("Machine & checkout", selection: $checkoutID) {
-                            Text("Choose a checkout").tag("")
-                            ForEach(checkouts, id: \.id) { checkout in
-                                let machine = store.machines.first { $0.daemonID == checkout.daemonID }
-                                Text(
-                                    "\(machine?.name ?? checkout.daemonID) · \(checkout.name.isEmpty ? checkout.id : checkout.name)\(machine?.online == true ? "" : " · Offline")"
-                                ).tag(checkout.id)
-                            }
-                        }
-                        .accessibilityIdentifier("ios.create.checkout")
-                    }
-                    if !labels.isEmpty {
-                        Section("Labels") {
-                            ForEach(labels, id: \.id) { label in
-                                Toggle(isOn: labelSelection(label.id)) {
-                                    Label(label.name, systemImage: "tag.fill")
-                                }
-                                .accessibilityIdentifier("ios.create.label.\(label.id)")
-                            }
-                        }
-                    }
-                    Section("Agent") {
-                        Picker("Provider", selection: $provider) {
-                            ForEach(creationHarnesses, id: \.id) { Text($0.name).tag($0.id) }
-                        }
-                        .accessibilityIdentifier("ios.create.provider")
-                        .accessibilityValue(harness?.name ?? provider)
-                        Picker("Model", selection: $model) {
-                            ForEach(harness?.models ?? [], id: \.id) { Text($0.name).tag($0.id) }
-                        }
-                        .accessibilityIdentifier("ios.create.model")
-                        .accessibilityValue(selectedModel?.name ?? model)
-                        if !efforts.isEmpty {
-                            Picker("Reasoning", selection: $effort) {
-                                ForEach(efforts, id: \.self) { value in
-                                    Text(effortName(value))
-                                        .tag(value)
-                                }
-                            }
-                            .accessibilityIdentifier("ios.create.effort")
-                        }
-                        if let fastModeOption {
-                            Toggle(
-                                fastModeOption.name.isEmpty ? "Fast mode" : fastModeOption.name,
-                                isOn: fastModeSelection
-                            )
-                            .accessibilityIdentifier("ios.create.fast-mode")
-                        }
-                    }
+                    taskSection
+                    attachmentsSection
+                    destinationSection
+                    labelsSection
+                    agentSection
                     if !store.phase.isConnected {
                         Section { Text("Reconnect to create this task.").foregroundStyle(.secondary) }
                     }
@@ -318,6 +212,136 @@ import DieterCore
                     for: harness, model: model, saved: providerOptions)
             }
             .onChange(of: effort) { _, _ in focusedField = nil }
+        }
+
+        private var taskSection: some View {
+            Section("Task") {
+                TextField("Title (optional)", text: $title)
+                    .focused($focusedField, equals: .title)
+                    .submitLabel(.next)
+                    .onSubmit { focusedField = .prompt }
+                    .accessibilityIdentifier("ios.create.title")
+                IOSAttachmentTextEditor(
+                    text: $prompt,
+                    isFocused: Binding(
+                        get: { focusedField == .prompt },
+                        set: { focusedField = $0 ? .prompt : nil }
+                    ),
+                    placeholder: "What should the agent do?",
+                    minimumLines: 6,
+                    maximumLines: 12,
+                    accessibilityIdentifier: "ios.create.prompt",
+                    keyboardDoneAccessibilityIdentifier: "ios.create.keyboard-done",
+                    pastedImages: appendPastedImages,
+                    pasteFailed: showAttachmentError
+                )
+            }
+        }
+
+        private var attachmentsSection: some View {
+            Section("Attachments") {
+                ForEach(Array(attachments.enumerated()), id: \.offset) { index, part in
+                    attachmentRow(part, index: index)
+                }
+                HStack(spacing: 20) {
+                    PhotosPicker(
+                        selection: $photoItems,
+                        maxSelectionCount: max(
+                            1, IOSAttachmentLoader.maximumCount - attachments.count),
+                        matching: .images
+                    ) {
+                        Label("Photos", systemImage: "photo.on.rectangle")
+                    }
+                    .disabled(attachments.count >= IOSAttachmentLoader.maximumCount)
+                    .accessibilityIdentifier("ios.create.attach-photos")
+                    Button {
+                        focusedField = nil
+                        fileImporterPresented = true
+                    } label: {
+                        Label("Files", systemImage: "folder")
+                    }
+                    .disabled(attachments.count >= IOSAttachmentLoader.maximumCount)
+                    .accessibilityIdentifier("ios.create.attach-files")
+                }
+                Text("Up to 4 files, 5 MB each and 6 MB total.")
+                    .font(.caption).foregroundStyle(.secondary)
+                if let attachmentError {
+                    Text(attachmentError).font(.caption).foregroundStyle(.red)
+                        .accessibilityIdentifier("ios.create.attachment-error")
+                }
+            }
+        }
+
+        private var destinationSection: some View {
+            Section("Destination") {
+                Picker("Project", selection: $projectID) {
+                    ForEach(store.projects, id: \.id) { Text($0.name).tag($0.id) }
+                }
+                .accessibilityIdentifier("ios.create.project")
+                if !chat {
+                    Picker("Board", selection: $boardID) {
+                        ForEach(boards, id: \.id) { Text($0.name).tag($0.id) }
+                    }
+                    .accessibilityIdentifier("ios.create.board")
+                }
+                Picker("Machine & checkout", selection: $checkoutID) {
+                    Text("Choose a checkout").tag("")
+                    ForEach(checkouts, id: \.id) { checkout in
+                        let machine = store.machines.first { $0.daemonID == checkout.daemonID }
+                        Text(
+                            "\(machine?.name ?? checkout.daemonID) · \(checkout.name.isEmpty ? checkout.id : checkout.name)\(machine?.online == true ? "" : " · Offline")"
+                        ).tag(checkout.id)
+                    }
+                }
+                .accessibilityIdentifier("ios.create.checkout")
+            }
+        }
+
+        @ViewBuilder
+        private var labelsSection: some View {
+            if !labels.isEmpty {
+                Section("Labels") {
+                    ForEach(labels, id: \.id) { label in
+                        Toggle(isOn: labelSelection(label.id)) {
+                            Label(label.name, systemImage: "tag.fill")
+                        }
+                        .accessibilityIdentifier("ios.create.label.\(label.id)")
+                    }
+                }
+            }
+        }
+
+        private var agentSection: some View {
+            Section("Agent") {
+                Picker("Provider", selection: $provider) {
+                    ForEach(creationHarnesses, id: \.id) { Text($0.name).tag($0.id) }
+                }
+                .accessibilityIdentifier("ios.create.provider")
+                .accessibilityValue(harness?.name ?? provider)
+                Picker("Model", selection: $model) {
+                    ForEach(models, id: \.id) { (option: Dieter_V1_HarnessModel) in
+                        Text(option.name).tag(option.id)
+                    }
+                }
+                .accessibilityIdentifier("ios.create.model")
+                .accessibilityValue(selectedModel?.name ?? model)
+                if !efforts.isEmpty {
+                    Picker("Reasoning", selection: $effort) {
+                        ForEach(efforts, id: \.self) { value in
+                            Text(effortName(value))
+                                .tag(value)
+                        }
+                    }
+                    .accessibilityIdentifier("ios.create.effort")
+                }
+                if let fastModeOption {
+                    Toggle(
+                        fastModeOption.name.isEmpty ? "Fast mode" : fastModeOption.name,
+                        isOn: fastModeSelection
+                    )
+                    .accessibilityIdentifier("ios.create.fast-mode")
+                }
+            }
         }
 
         private func resetModel() {
