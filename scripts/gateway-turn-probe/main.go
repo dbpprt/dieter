@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/pion/logging"
+	"github.com/pion/stun/v3"
 	"github.com/pion/turn/v5"
 )
 
@@ -275,7 +276,12 @@ func main() {
 	timer := time.AfterFunc(time.Duration(r.HoldSeconds+45)*time.Second, func() { fmt.Fprintln(os.Stderr, "probe deadline exceeded"); os.Exit(1) })
 	defer timer.Stop()
 	if err := probe(r); err != nil {
-		fmt.Fprintf(os.Stderr, "TURN %s payload probe failed: %T\n", r.Transport, err)
+		var turnError *stun.TurnError
+		if errors.As(err, &turnError) {
+			fmt.Fprintf(os.Stderr, "TURN %s payload probe failed: %s code %d\n", r.Transport, turnError.StunMessageType.Method, turnError.ErrorCodeAttr.Code)
+		} else {
+			fmt.Fprintf(os.Stderr, "TURN %s payload probe failed: %T\n", r.Transport, err)
+		}
 		os.Exit(1)
 	}
 	result := map[string]any{"transport": r.Transport, "checksPassed": true}
