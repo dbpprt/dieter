@@ -278,7 +278,7 @@ private let connectionLogger = Logger(subsystem: "com.dbpprt.dieter.mac", catego
             }
         } else if let retryAt = webRTCRetries[daemonID]?.retryAt {
             connectionLogger.debug(
-                "Using stable gateway relay for \(daemonID, privacy: .public); WebRTC retry in \(max(0, Int(retryAt.timeIntervalSince(clock.now()))))s")
+                "Using stable gateway relay for \(daemonID, privacy: .public); WebRTC retry in \(max(0, Int(retryAt.timeIntervalSince(self.clock.now()))))s")
         }
         guard route.relayAvailable else {
             throw NSError(
