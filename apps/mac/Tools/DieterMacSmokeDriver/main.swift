@@ -26,7 +26,11 @@ private enum SmokeSuite: String, CaseIterable {
         switch self {
         // Settings now exercises solid, glass, and experimental-panel appearance captures.
         case .core: 300
-        case .board: 150
+        // The board journey reaches its Quick Task run near the 100-second mark,
+        // then deliberately allows up to 55 seconds for create, start, and
+        // generated-title convergence. Leave enough outer budget for those
+        // bounded assertions and slower hosted runners to finish their report.
+        case .board: 240
         case .workspace: 180
         case .conversation: ProcessInfo.processInfo.environment["DIETER_CONTENT_CAPTURE"] == "1" ? 400 : 300
         // This suite performs two app phases around a daemon reconstruction;
