@@ -260,6 +260,10 @@
             if window.frame != originalWindowFrame {
                 window.setFrame(originalWindowFrame, display: true)
             }
+            if ProcessInfo.processInfo.arguments.contains("--board-stress-ui-smoke") {
+                store.providerQuotaGroups = smokeProviderQuotaGroups()
+                try? await DieterTaskSleep.milliseconds(300)
+            }
             let appearanceDefaults = DieterAppearance.applicationDefaults()
             appearanceDefaults.set(DieterAppearance.dark.rawValue, forKey: DieterAppearance.storageKey)
             try? await DieterTaskSleep.milliseconds(300)
@@ -394,11 +398,18 @@
                 recordNavigationTargetFailure(
                     "sidebar.quick-task", section: store.section, window: window,
                     to: output.appending(path: "global-quick-task-initial-target.txt"))
+                let globalTargetFrame = NativeUIAccessibility.find("sidebar.quick-task", in: window)?.recordedFrame
+                results["global-titlebar-actions-trailing"] =
+                    globalTargetFrame?.midX ?? 0 > window.frame.midX
+                    ? "passed" : "failed: Quick Task was not in the trailing half of the titlebar"
+                results["global-titlebar-actions-top"] =
+                    window.frame.maxY - (globalTargetFrame?.maxY ?? 0) < 32
+                    ? "passed" : "failed: Quick Task was below the titlebar"
                 let globalOpened = globalReady && NativeUIAccessibility.click("sidebar.quick-task", in: window)
                 let globalVisible = await waitUntil(timeout: 8, intervalMilliseconds: 50) {
                     [
                         "quick-task.content", "quick-task.title", "quick-task.story", "quick-task.create",
-                        "quick-task.run",
+                        "quick-task.run", "quick-task.machine",
                     ].allSatisfy {
                         NativeUIAccessibility.find($0, in: window)?.recordedFrame?.height ?? 0 > 0
                     }
@@ -1032,6 +1043,53 @@
             store.createConversationPresented = true
             try? await DieterTaskSleep.milliseconds(700)
             if let sheet = NSApp.windows.first(where: { $0.isSheet && $0.isVisible }) {
+                let machineVisible = NativeUIAccessibility.find("new-card.machine", in: sheet) != nil
+                results["13-new-card-machine"] =
+                    machineVisible ? "passed" : "failed: execution machine selector not visible"
+                let titleField: NSTextField? = {
+                    guard let content = sheet.contentView else { return nil }
+                    var pending = [content]
+                    while let view = pending.popLast() {
+                        if let field = view as? NSTextField,
+                            field.isEditable,
+                            field.placeholderString == "A short name for this task"
+                        {
+                            return field
+                        }
+                        pending.append(contentsOf: view.subviews)
+                    }
+                    return nil
+                }()
+                var titleSpaceVisible = false
+                if let titleField, sheet.makeFirstResponder(titleField),
+                    let editor = titleField.currentEditor() as? NSTextView
+                {
+                    editor.setSelectedRange(NSRange(location: 0, length: (editor.string as NSString).length))
+                    editor.insertText("Spacebar check", replacementRange: editor.selectedRange())
+                    for type in [NSEvent.EventType.keyDown, .keyUp] {
+                        if let event = NSEvent.keyEvent(
+                            with: type,
+                            location: .zero,
+                            modifierFlags: [],
+                            timestamp: ProcessInfo.processInfo.systemUptime,
+                            windowNumber: sheet.windowNumber,
+                            context: nil,
+                            characters: " ",
+                            charactersIgnoringModifiers: " ",
+                            isARepeat: false,
+                            keyCode: 49
+                        ) {
+                            NSApp.postEvent(event, atStart: false)
+                        }
+                    }
+                    titleSpaceVisible = await waitUntil(timeout: 3) {
+                        titleField.stringValue == "Spacebar check "
+                            && editor.selectedRange().location == (titleField.stringValue as NSString).length
+                            && (editor.alignment == .left || editor.alignment == .natural)
+                    }
+                }
+                results["13-new-card-title-space"] =
+                    titleSpaceVisible ? "passed" : "failed: trailing space or caret was not visible immediately"
                 await captureAppearances(sheet, named: "13-new-card.png", in: output)
                 results["13-new-card"] = "passed"
                 let workspaceOpened = await NativeUIAccessibility.pressWhenSettled("new-card.workspace", in: sheet)
@@ -2440,6 +2498,52 @@
             }
             return URL(filePath: NSTemporaryDirectory()).appending(
                 path: "dieter-mac-ui-smoke", directoryHint: .isDirectory)
+        }
+
+        private static func smokeProviderQuotaGroups() -> [Dieter_Gateway_V1_ProviderQuotaGroup] {
+            func group(
+                provider: Dieter_Gateway_V1_ProviderQuotaProvider,
+                accountKey: String,
+                email: String,
+                remaining: UInt32
+            ) -> Dieter_Gateway_V1_ProviderQuotaGroup {
+                var window = Dieter_Gateway_V1_ProviderQuotaWindow()
+                window.id = "weekly"
+                window.label = "Weekly"
+                window.kind = .weekly
+                window.usedPercent = 100 - remaining
+                window.remainingPercent = remaining
+
+                var account = Dieter_Gateway_V1_ProviderQuotaSnapshot()
+                account.provider = provider
+                account.accountKey = accountKey
+                account.displayEmail = email
+                account.includedInSummary = true
+                account.accountKind = .subscription
+                account.plan = "plus"
+                account.availability = .available
+                account.windows = [window]
+
+                var group = Dieter_Gateway_V1_ProviderQuotaGroup()
+                group.provider = provider
+                group.accounts = [account]
+                return group
+            }
+
+            return [
+                group(
+                    provider: .openaiCodex,
+                    accountKey: "smoke-openai-account",
+                    email: "dieter@example.com",
+                    remaining: 62
+                ),
+                group(
+                    provider: .anthropicClaude,
+                    accountKey: "smoke-claude-account",
+                    email: "claude@example.com",
+                    remaining: 81
+                ),
+            ]
         }
 
         private static func offlineTrigger() -> URL? {

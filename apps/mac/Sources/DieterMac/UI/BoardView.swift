@@ -778,6 +778,19 @@ struct QuickTaskPopover: View {
                         Text("Choose board").tag("")
                         ForEach(store.boards(for: draftProjectID), id: \.id) { Text($0.name).tag($0.id) }
                     }.accessibilityIdentifier("quick-task.board")
+                    LabeledContent("Run on") {
+                        if draftProjectID.isEmpty {
+                            Text("Choose a project")
+                                .foregroundStyle(.tertiary)
+                                .accessibilityIdentifier("quick-task.machine")
+                                .smokeTarget("quick-task.machine")
+                        } else {
+                            ProjectCheckoutMenu(
+                                projectID: draftProjectID,
+                                accessibilityIdentifier: "quick-task.machine"
+                            )
+                        }
+                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(4)
@@ -1479,9 +1492,6 @@ struct BoardCardView: View {
                         )
                         .accessibilityLabel(BoardAgentStatus.resolve(card).label)
                     }
-                    if let machine = store.machine(for: card) {
-                        ProjectMachineBadge(machine: machine, online: store.machineIsAvailable(machine), compact: true)
-                    }
                     if !card.summary.isEmpty {
                         Text(card.summary).font(.system(size: 11)).foregroundStyle(DieterTheme.subtle)
                             .lineLimit(3).multilineTextAlignment(.leading)
@@ -1491,6 +1501,14 @@ struct BoardCardView: View {
                     }
                     HStack(spacing: 7) {
                         StatusPill(text: card.runtime, color: runtimeColor(card.runtime))
+                        if let machine = store.machine(for: card) {
+                            ProjectMachineBadge(
+                                machine: machine,
+                                online: store.machineIsAvailable(machine),
+                                compact: true,
+                                alignsWithStatus: true
+                            )
+                        }
                         Spacer()
                         let age = BoardCardActivityText.compact(
                             updatedAt: card.updatedAt,

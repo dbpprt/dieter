@@ -153,14 +153,16 @@ struct DieterRootView: View {
             .ignoresSafeArea()
             .allowsHitTesting(false)
         }
-        .toolbar {
-            ToolbarSpacer(.flexible, placement: .primaryAction)
-            ToolbarItemGroup(placement: .primaryAction) {
+        .overlay(alignment: .topTrailing) {
+            HStack(spacing: 8) {
                 ProviderQuotaCompactView()
                 if store.section != .board || store.selectedCardID == nil {
                     GlobalQuickTaskButton()
                 }
             }
+            .padding(.top, 8)
+            .padding(.trailing, 12)
+            .offset(y: -48)
         }
         .animation(.easeOut(duration: 0.18), value: workspaceSurfaceTreatment)
         .background(WindowTitleBarDoubleClickHandler())
@@ -935,6 +937,7 @@ struct ProjectMachineBadge: View {
     let machine: DieterEndpoint
     let online: Bool
     var compact = false
+    var alignsWithStatus = false
 
     var body: some View {
         Group {
@@ -953,23 +956,40 @@ struct ProjectMachineBadge: View {
         .accessibilityLabel("Hosted on \(machine.name), \(online ? "online" : "offline")")
     }
 
-    private func badge(showName: Bool) -> some View {
-        HStack(spacing: 4) {
-            Circle()
-                .fill(online ? DieterTheme.machineOnline : DieterTheme.machineOffline)
-                .frame(width: 5, height: 5)
-            if showName {
-                Text(machine.name)
-                    .font(.system(size: 8.5, weight: .semibold))
-                    .lineLimit(1)
-                    .truncationMode(.middle)
+    @ViewBuilder private func badge(showName: Bool) -> some View {
+        if alignsWithStatus {
+            HStack(spacing: 5) {
+                Circle().fill(badgeColor).frame(width: 5, height: 5)
+                if showName {
+                    Text(machine.name)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
             }
+            .font(.system(size: 10, weight: .semibold))
+            .foregroundStyle(badgeColor)
+            .padding(.horizontal, 8).padding(.vertical, 4)
+            .background(badgeColor.opacity(0.12), in: Capsule())
+        } else {
+            HStack(spacing: 4) {
+                Circle().fill(badgeColor).frame(width: 5, height: 5)
+                if showName {
+                    Text(machine.name)
+                        .font(.system(size: 8.5, weight: .semibold))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+            }
+            .foregroundStyle(online ? DieterTheme.subtle : DieterTheme.tertiary)
+            .padding(.horizontal, 6)
+            .frame(height: 16)
+            .background(DieterTheme.surface.opacity(0.9), in: Capsule())
+            .overlay(Capsule().stroke(DieterTheme.border))
         }
-        .foregroundStyle(online ? DieterTheme.subtle : DieterTheme.tertiary)
-        .padding(.horizontal, 6)
-        .frame(height: 16)
-        .background(DieterTheme.surface.opacity(0.9), in: Capsule())
-        .overlay(Capsule().stroke(DieterTheme.border))
+    }
+
+    private var badgeColor: Color {
+        online ? DieterTheme.machineOnline : DieterTheme.machineOffline
     }
 }
 
@@ -1558,7 +1578,12 @@ struct GlobalQuickTaskButton: View {
             presented = true
         } label: {
             Label("Quick task", systemImage: "square.and.pencil")
+                .labelStyle(.iconOnly)
+                .frame(width: 24, height: 24)
+                .background(DieterTheme.raised, in: Circle())
+                .overlay(Circle().stroke(DieterTheme.border))
         }
+        .buttonStyle(.plain)
         .help("Quick task")
         .accessibilityIdentifier("sidebar.quick-task")
         .smokeTarget("sidebar.quick-task")

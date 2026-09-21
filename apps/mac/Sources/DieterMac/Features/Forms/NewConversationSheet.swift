@@ -52,12 +52,16 @@ struct NewConversationSheet: View {
 
             Form {
                 Section {
-                    TextField("Title", text: $title, prompt: Text("A short name for this task"))
-                        .textFieldStyle(.roundedBorder)
-                        .focused($focusedField, equals: .title)
-                        .onSubmit { focusedField = .prompt }
-                        .accessibilityIdentifier("new-card.title")
-                        .smokeTarget("new-card.title")
+                    LabeledContent("Title") {
+                        TextField("Title", text: $title, prompt: Text("A short name for this task"))
+                            .labelsHidden()
+                            .textFieldStyle(.roundedBorder)
+                            .multilineTextAlignment(.leading)
+                            .focused($focusedField, equals: .title)
+                            .onSubmit { focusedField = .prompt }
+                            .accessibilityIdentifier("new-card.title")
+                            .smokeTarget("new-card.title")
+                    }
 
                     VStack(alignment: .leading, spacing: 8) {
                         HStack {
@@ -85,9 +89,12 @@ struct NewConversationSheet: View {
                 }
 
                 Section {
-                    if let project, project.checkouts.filter({ !$0.detached }).count > 1 {
+                    if let project {
                         LabeledContent("Run on") {
-                            ProjectCheckoutMenu(projectID: project.id)
+                            ProjectCheckoutMenu(
+                                projectID: project.id,
+                                accessibilityIdentifier: "new-card.machine"
+                            )
                         }
                     }
                     Picker("Start in", selection: $lane) {

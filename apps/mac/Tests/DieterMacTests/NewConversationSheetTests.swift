@@ -69,6 +69,23 @@ struct NewConversationSheetTests {
         #expect(formFrame.maxY <= fixture.root.bounds.maxY - 48)
     }
 
+    @Test func titleFieldShowsTrailingSpacesWhileTyping() async throws {
+        let fixture = NewConversationSheetFixture()
+        defer { fixture.window.close() }
+        fixture.window.makeKeyAndOrderFront(nil)
+        await fixture.settle()
+
+        let field = try #require(fixture.titleField)
+        #expect(fixture.window.makeFirstResponder(field))
+        let editor = try #require(field.currentEditor() as? NSTextView)
+        #expect(editor.alignment == .left || editor.alignment == .natural)
+        editor.insertText("Visible space ", replacementRange: editor.selectedRange())
+        await fixture.settle()
+
+        #expect(field.stringValue == "Visible space ")
+        #expect(editor.selectedRange().location == (field.stringValue as NSString).length)
+    }
+
 }
 
 @MainActor
@@ -115,6 +132,12 @@ private final class NewConversationSheetFixture {
 
     var taskEditor: NSTextView? {
         views.compactMap { $0 as? NSTextView }.first { $0.isEditable && !$0.isFieldEditor }
+    }
+
+    var titleField: NSTextField? {
+        views.compactMap { $0 as? NSTextField }.first {
+            $0.isEditable && $0.placeholderString == "A short name for this task"
+        }
     }
 
     func settle() async {

@@ -76,5 +76,11 @@ import Testing
         let renderer = ImageRenderer(content: ProjectMachineBadge(machine: machine, online: online))
         renderer.proposedSize = .init(width: 100, height: 20)
         #expect(renderer.nsImage != nil)
+
+        let machineBadge = NSHostingView(
+            rootView: ProjectMachineBadge(
+                machine: machine, online: online, compact: true, alignsWithStatus: true))
+        let runtimeBadge = NSHostingView(rootView: StatusPill(text: "idle", color: DieterTheme.subtle))
+        #expect(abs(machineBadge.fittingSize.height - runtimeBadge.fittingSize.height) < 1)
     }
 }
