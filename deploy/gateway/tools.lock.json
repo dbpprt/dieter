@@ -50,6 +50,11 @@
       "url": "https://github.com/restic/restic/releases/download/v0.18.0/restic_0.18.0_darwin_arm64.bz2",
       "sha256": "dd7d64a9bc0c1f8342e8f9693d5b198e9f04022f78b07f15d17ef9b801d4489d",
       "archiveMember": null
+    },
+    "linux/amd64": {
+      "url": "https://github.com/restic/restic/releases/download/v0.18.0/restic_0.18.0_linux_amd64.bz2",
+      "sha256": "98f6dd8bf5b59058d04bfd8dab58e196cc2a680666ccee90275a3b722374438e",
+      "archiveMember": null
     }
   },
   "rest-server": {
@@ -57,6 +62,11 @@
       "url": "https://github.com/restic/rest-server/releases/download/v0.14.0/rest-server_0.14.0_darwin_arm64.tar.gz",
       "sha256": "057004ce24ca9edfbe0e391eae87981ab03f2abb6b65cf8fdfcddf847ded8656",
       "archiveMember": "rest-server_0.14.0_darwin_arm64/rest-server"
+    },
+    "linux/amd64": {
+      "url": "https://github.com/restic/rest-server/releases/download/v0.14.0/rest-server_0.14.0_linux_amd64.tar.gz",
+      "sha256": "4c9c95bc079a0334e81fad379b19dc5c3353c71c2c88d652cafce2081c2b1c66",
+      "archiveMember": "rest-server_0.14.0_linux_amd64/rest-server"
     }
   }
 }
