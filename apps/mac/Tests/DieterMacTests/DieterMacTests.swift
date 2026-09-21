@@ -2177,6 +2177,61 @@ private func terminalKeyEvent(
     #expect(groups.isEmpty)
 }
 
+@Test func projectDestinationDefaultsToTheCurrentMachineAndAllowsAnExplicitCheckoutOverride() throws {
+    let current = DieterEndpoint(
+        name: "Zulu current Mac", host: "example.com", port: 443, secure: true,
+        daemonID: "current", online: true
+    )
+    let remote = DieterEndpoint(
+        name: "Alpha remote Mac", host: "example.com", port: 443, secure: true,
+        daemonID: "remote", online: true
+    )
+    var project = Dieter_V1_Project()
+    project.id = "p_shared"
+    project.name = "Shared"
+    var currentCheckout = Dieter_V1_Checkout()
+    currentCheckout.id = "co_current"; currentCheckout.projectID = project.id
+    currentCheckout.daemonID = "current"; currentCheckout.path = "/current/shared"
+    var remoteCheckout = Dieter_V1_Checkout()
+    remoteCheckout.id = "co_remote"; remoteCheckout.projectID = project.id
+    remoteCheckout.daemonID = "remote"; remoteCheckout.path = "/remote/shared"
+    project.checkouts = [remoteCheckout, currentCheckout]
+
+    let groups = ProjectDestinationCatalog.groups(
+        projects: [project],
+        projectReplicaEndpointIDs: [:],
+        endpoints: [remote, current],
+        fallbackEndpoint: current
+    )
+
+    let defaultDestination = try #require(
+        ProjectDestinationCatalog.preferredDestination(
+            preferredMachineID: current.id,
+            preferredProjectID: project.id,
+            in: groups
+        ))
+    #expect(defaultDestination.checkoutID == currentCheckout.id)
+    #expect(defaultDestination.machineID == current.id)
+
+    let explicitDestination = try #require(
+        ProjectDestinationCatalog.preferredDestination(
+            preferredMachineID: current.id,
+            preferredProjectID: project.id,
+            preferredCheckoutID: remoteCheckout.id,
+            in: groups
+        ))
+    #expect(explicitDestination.checkoutID == remoteCheckout.id)
+    #expect(explicitDestination.machineID == remote.id)
+
+    let selectedRemoteProject = try #require(
+        ProjectDestinationCatalog.preferredDestination(
+            preferredMachineID: remote.id,
+            preferredProjectID: project.id,
+            in: groups
+        ))
+    #expect(selectedRemoteProject.checkoutID == remoteCheckout.id)
+}
+
 @Test func boardPresentationUsesLoadingStateUntilASelectionCanBeResolved() {
     #expect(
         BoardPresentationState.resolve(

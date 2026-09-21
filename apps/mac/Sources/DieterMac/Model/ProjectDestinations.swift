@@ -70,6 +70,56 @@ enum ProjectDestinationCatalog {
         groups.lazy.flatMap(\.destinations).first { $0.project.id == projectID }
     }
 
+    static func destination(
+        machineID: String,
+        projectID: String,
+        checkoutID: String,
+        in groups: [ProjectDestinationGroup]
+    ) -> ProjectDestination? {
+        guard let group = groups.first(where: { $0.machineID == machineID }) else { return nil }
+        if !checkoutID.isEmpty,
+            let exact = group.destinations.first(where: {
+                $0.project.id == projectID && $0.checkoutID == checkoutID
+            })
+        {
+            return exact
+        }
+        return group.destinations.first { $0.project.id == projectID }
+    }
+
+    static func preferredDestination(
+        preferredMachineID: String,
+        preferredProjectID: String,
+        preferredCheckoutID: String = "",
+        in groups: [ProjectDestinationGroup]
+    ) -> ProjectDestination? {
+        let destinations = groups.flatMap(\.destinations)
+        if !preferredCheckoutID.isEmpty,
+            let exact = destinations.first(where: {
+                $0.checkoutID == preferredCheckoutID
+                    && (preferredProjectID.isEmpty || $0.project.id == preferredProjectID)
+            })
+        {
+            return exact
+        }
+        if let preferredMachine = groups.first(where: { $0.machineID == preferredMachineID }) {
+            if !preferredProjectID.isEmpty,
+                let project = preferredMachine.destinations.first(where: {
+                    $0.project.id == preferredProjectID
+                })
+            {
+                return project
+            }
+            if let first = preferredMachine.destinations.first { return first }
+        }
+        if !preferredProjectID.isEmpty,
+            let project = destinations.first(where: { $0.project.id == preferredProjectID })
+        {
+            return project
+        }
+        return destinations.first
+    }
+
     private static func destinationOrder(_ lhs: ProjectDestination, _ rhs: ProjectDestination) -> Bool {
         let nameOrder = lhs.project.name.localizedCaseInsensitiveCompare(rhs.project.name)
         if nameOrder != .orderedSame { return nameOrder == .orderedAscending }

@@ -1204,7 +1204,9 @@ enum ChatActivityText {
 private struct StandaloneChatStartView: View {
     @Environment(DieterStore.self) private var store
     @State private var prompt = ""
+    @State private var machineID = ""
     @State private var projectID = ""
+    @State private var checkoutID = ""
     @State private var provider = ""
     @State private var model = ""
     @State private var effort = ""
@@ -1223,6 +1225,7 @@ private struct StandaloneChatStartView: View {
 
     private struct HarnessLoadID: Hashable {
         let projectID: String
+        let checkoutID: String
         let endpointID: String
         let connected: Bool
         let retry: Int
@@ -1248,8 +1251,19 @@ private struct StandaloneChatStartView: View {
     private var destinationGroups: [ProjectDestinationGroup] {
         store.projectDestinationGroups(projects: availableProjects)
     }
+    private var destinationGroup: ProjectDestinationGroup? {
+        destinationGroups.first { $0.machineID == machineID }
+    }
+    private var machineDestinations: [ProjectDestination] {
+        destinationGroup?.destinations ?? []
+    }
     private var destination: ProjectDestination? {
-        ProjectDestinationCatalog.destination(projectID: projectID, in: destinationGroups)
+        ProjectDestinationCatalog.destination(
+            machineID: machineID,
+            projectID: projectID,
+            checkoutID: checkoutID,
+            in: destinationGroups
+        )
     }
     private var project: Dieter_V1_Project? { destination?.project }
     private var harness: Dieter_V1_Harness? { destinationHarnesses.first { $0.id == provider } }
@@ -1263,7 +1277,7 @@ private struct StandaloneChatStartView: View {
                         subtitle: destination.map {
                             "\($0.project.name) on \($0.machineName) · Standalone chat"
                         }
-                            ?? "Choose a project and machine · Standalone chat",
+                            ?? "Choose a machine and project · Standalone chat",
                         symbol: "bubble.left"
                     )
                     StatusPill(text: "New")
@@ -1325,18 +1339,21 @@ private struct StandaloneChatStartView: View {
             importerPresented: $fileImporterPresented,
             attachments: $attachments
         )
-        .onAppear { chooseProject() }
-        .onChange(of: store.newChatProjectID) { _, value in if !value.isEmpty { projectID = value } }
+        .onAppear { chooseDestination() }
+        .onChange(of: store.newChatProjectID) { _, value in
+            if !value.isEmpty { chooseDestination(preferredProjectID: value) }
+        }
+        .onChange(of: destinationGroups) { _, _ in reconcileDestination() }
         .task(
             id: HarnessLoadID(
-                projectID: projectID, endpointID: store.endpoint.id,
+                projectID: projectID, checkoutID: checkoutID, endpointID: store.endpoint.id,
                 connected: store.phase.isConnected, retry: harnessCatalogRetry)
-        ) { await loadDestinationHarnesses(for: projectID) }
+        ) { await loadDestinationHarnesses(for: projectID, checkoutID: checkoutID) }
     }
 
     private var canSubmit: Bool {
         !submitting && !harnessCatalogLoading && harnessCatalogError == nil && harness != nil
-            && !projectID.isEmpty
+            && destination != nil
             && (!prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachments.isEmpty)
     }
 
@@ -1421,15 +1438,47 @@ private struct StandaloneChatStartView: View {
         VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 12) {
                 ComposerSelectionMenu(
-                    title: destination?.title ?? "Project and machine", symbol: "folder", help: "Project",
-                    maximumWidth: 240
+                    title: destinationGroup?.machineName ?? "Machine", symbol: "desktopcomputer", help: "Machine",
+                    maximumWidth: 136
                 ) {
-                    ProjectDestinationMenuContent(
-                        groups: destinationGroups, selectedProjectID: projectID, allowsOffline: true
-                    ) { projectID = $0.project.id }
+                    ForEach(destinationGroups) { group in
+                        Button {
+                            selectMachine(group)
+                        } label: {
+                            Label(
+                                group.machineName,
+                                systemImage: group.machineID == machineID ? "checkmark" : "desktopcomputer"
+                            )
+                        }
+                        .help(group.title)
+                        .accessibilityLabel("\(group.machineName), \(group.machineOnline ? "online" : "offline")")
+                    }
                 }
+                .disabled(destinationGroups.isEmpty)
+                .accessibilityIdentifier("chats.new.machine")
+                .accessibilityValue(destinationGroup?.title ?? "No machine selected")
+                .smokeTarget("chats.new.machine")
+
+                ComposerSelectionMenu(
+                    title: destination?.project.name ?? "Project", symbol: "folder", help: "Project",
+                    maximumWidth: 180
+                ) {
+                    ForEach(machineDestinations) { item in
+                        Button {
+                            selectDestination(item)
+                        } label: {
+                            Label(
+                                projectOptionTitle(item),
+                                systemImage: item.checkoutID == checkoutID ? "checkmark" : "folder"
+                            )
+                        }
+                        .help(item.detail)
+                        .accessibilityLabel("\(item.project.name), \(item.detail)")
+                    }
+                }
+                .disabled(machineDestinations.isEmpty)
                 .accessibilityIdentifier("chats.new.project")
-                .accessibilityValue(destination?.title ?? "No project selected")
+                .accessibilityValue(destination?.project.name ?? "No project selected")
                 .smokeTarget("chats.new.project")
 
                 ComposerSelectionMenu(
@@ -1523,17 +1572,69 @@ private struct StandaloneChatStartView: View {
         .smokeTarget("chats.new.reasoning")
     }
 
-    private func chooseProject() {
-        if projectID.isEmpty {
-            projectID =
-                store.newChatProjectID.isEmpty
-                ? (store.selectedProjectID.isEmpty
-                    ? (availableProjects.first?.id ?? "") : store.selectedProjectID)
-                : store.newChatProjectID
+    private func projectOptionTitle(_ item: ProjectDestination) -> String {
+        let duplicates = machineDestinations.filter { $0.project.id == item.project.id }
+        guard duplicates.count > 1 else { return item.project.name }
+        let checkoutName = item.checkout?.name.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !checkoutName.isEmpty { return "\(item.project.name) · \(checkoutName)" }
+        let path = item.checkout?.path ?? ""
+        return path.isEmpty ? item.project.name : "\(item.project.name) · \((path as NSString).lastPathComponent)"
+    }
+
+    private func chooseDestination(preferredProjectID: String? = nil) {
+        let requestedProjectID =
+            preferredProjectID
+            ?? (!store.newChatProjectID.isEmpty
+                ? store.newChatProjectID
+                : (!store.selectedProjectID.isEmpty ? store.selectedProjectID : projectID))
+        let selected = ProjectDestinationCatalog.preferredDestination(
+            preferredMachineID: store.endpoint.id,
+            preferredProjectID: requestedProjectID,
+            preferredCheckoutID: store.creationCheckoutIDs[requestedProjectID] ?? "",
+            in: destinationGroups
+        )
+        if let selected {
+            selectDestination(selected)
+        } else {
+            machineID = ""
+            projectID = ""
+            checkoutID = ""
         }
     }
 
-    private func loadDestinationHarnesses(for requestedProjectID: String) async {
+    private func reconcileDestination() {
+        guard
+            ProjectDestinationCatalog.destination(
+                machineID: machineID,
+                projectID: projectID,
+                checkoutID: checkoutID,
+                in: destinationGroups
+            ) == nil
+        else { return }
+        chooseDestination(preferredProjectID: projectID)
+    }
+
+    private func selectMachine(_ group: ProjectDestinationGroup) {
+        guard
+            let selected = ProjectDestinationCatalog.preferredDestination(
+                preferredMachineID: group.machineID,
+                preferredProjectID: projectID,
+                in: destinationGroups
+            )
+        else { return }
+        selectDestination(selected)
+    }
+
+    private func selectDestination(_ selected: ProjectDestination) {
+        machineID = selected.machineID
+        projectID = selected.project.id
+        checkoutID = selected.checkoutID
+        store.creationCheckoutIDs[selected.project.id] = selected.checkoutID
+    }
+
+    private func loadDestinationHarnesses(
+        for requestedProjectID: String, checkoutID requestedCheckoutID: String
+    ) async {
         guard !Task.isCancelled else { return }
         let requestID = UUID()
         harnessCatalogRequestID = requestID
@@ -1549,7 +1650,7 @@ private struct StandaloneChatStartView: View {
             catalog = try await store.loadHarnessCatalog(forProjectID: requestedProjectID)
         } catch {
             guard !Task.isCancelled, harnessCatalogRequestID == requestID,
-                projectID == requestedProjectID
+                projectID == requestedProjectID, checkoutID == requestedCheckoutID
             else { return }
             destinationHarnesses = []
             harnessCatalogError =
@@ -1559,7 +1660,7 @@ private struct StandaloneChatStartView: View {
             return
         }
         guard !Task.isCancelled, harnessCatalogRequestID == requestID,
-            projectID == requestedProjectID
+            projectID == requestedProjectID, checkoutID == requestedCheckoutID
         else { return }
         destinationHarnesses = catalog.harnesses
         let initializing = provider.isEmpty
