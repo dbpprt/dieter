@@ -30,23 +30,27 @@ private struct RecoveryFixtureError: Error {}
     var retry = WebRTCRouteRetryState()
     _ = retry.recordFailure(at: now)
 
-    #expect(!TemporaryRouteCachePolicy.shouldProbeWebRTC(
-        cachedRoute: .gateway, retry: retry, now: now.addingTimeInterval(119)))
-    #expect(TemporaryRouteCachePolicy.shouldProbeWebRTC(
-        cachedRoute: .gateway, retry: retry, now: now.addingTimeInterval(120)))
-    #expect(!TemporaryRouteCachePolicy.shouldProbeWebRTC(
-        cachedRoute: .webrtcTURN, retry: retry, now: now.addingTimeInterval(120)))
+    #expect(
+        !TemporaryRouteCachePolicy.shouldProbeWebRTC(
+            cachedRoute: .gateway, retry: retry, now: now.addingTimeInterval(119)))
+    #expect(
+        TemporaryRouteCachePolicy.shouldProbeWebRTC(
+            cachedRoute: .gateway, retry: retry, now: now.addingTimeInterval(120)))
+    #expect(
+        !TemporaryRouteCachePolicy.shouldProbeWebRTC(
+            cachedRoute: .webrtcTURN, retry: retry, now: now.addingTimeInterval(120)))
     #expect(TemporaryRouteCachePolicy.prefers(.webrtcTURN, over: .gateway))
     #expect(!TemporaryRouteCachePolicy.prefers(.gateway, over: .webrtcTURN))
     #expect(TemporaryRouteCachePolicy.healthyIdleLifetime == 300)
 }
 
 @Test func webRTCCandidateDiagnosticsExposeOnlyKindsAndCounts() {
-    let summary = ControlRTCBridge.candidateSummary(in: """
-        a=candidate:1 1 udp 1 10.0.0.1 100 typ host generation 0
-        a=candidate:2 1 udp 1 203.0.113.1 200 typ srflx generation 0
-        a=candidate:3 1 tcp 1 192.0.2.1 300 typ relay generation 0
-        """)
+    let summary = ControlRTCBridge.candidateSummary(
+        in: """
+            a=candidate:1 1 udp 1 10.0.0.1 100 typ host generation 0
+            a=candidate:2 1 udp 1 203.0.113.1 200 typ srflx generation 0
+            a=candidate:3 1 tcp 1 192.0.2.1 300 typ relay generation 0
+            """)
     #expect(summary == .init(host: 1, srflx: 1, relay: 1))
 }
 
