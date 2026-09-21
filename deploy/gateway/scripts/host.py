@@ -141,6 +141,8 @@ class Host:
                 compose = read_json(current / "public/compose.json")
                 images = sorted({service["image"] for service in compose["services"].values()})
                 sizes = json.loads(run(["docker", "image", "inspect", *images]))
+                atomic(stage / "images.json", canonical([{ "reference": reference, "imageID": image["Id"]}
+                                                         for reference, image in zip(images, sizes)]))
                 required = sum(image["Size"] for image in sizes)
                 require(required <= 2*1024*1024*1024 and shutil.disk_usage(root).free > required + 1024*1024*1024,
                         "insufficient bounded backup staging capacity")

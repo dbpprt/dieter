@@ -128,3 +128,13 @@ turn-test:
 # Publish the signed image and durable OCI deployment bundle from the same commit.
 publish-bundle:
     python3 deploy/gateway/scripts/bundle.py publish
+
+# Install the same checksum-pinned signing and OCI tools used on deployment hosts.
+publisher-tools:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    python3 deploy/gateway/scripts/install_tools.py cosign bin/cosign
+    python3 deploy/gateway/scripts/install_tools.py oras bin/oras
+    if [[ -n "${GITHUB_PATH:-}" ]]; then
+        python3 -c 'from pathlib import Path; import os; Path(os.environ["GITHUB_PATH"]).open("a").write(str(Path("bin").resolve()) + "\n")'
+    fi
