@@ -49,6 +49,9 @@ def handle(host, request):
     if command == "status":
         keys(request, ("command", "operation"), "status")
         return host.status(request["operation"])
+    if command == "rollback":
+        keys(request, ("command", "operation", "release"), "rollback")
+        return host.rollback(request["operation"], request["release"])
     if command == "accept":
         keys(request, ("command", "operation", "report"), "readiness")
         # Root-owned scratch is distinct from the accepted report consumed by the

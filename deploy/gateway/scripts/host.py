@@ -114,6 +114,15 @@ class Host:
             require((path / "signing" / name).is_file(), "gateway identity material is incomplete")
         return path
 
+    def rollback(self, operation, release):
+        """Readmit an accepted signed release while retaining current live data."""
+        target = self.operation(release)
+        require(self.status(release)["state"] == "committed", "rollback target must be an accepted signed release")
+        require((target / "input" / MANIFEST).is_file(), "rollback target distribution is missing")
+        # Reuse the same verification, backup, activation and external readiness
+        # path. A rollback is itself a new durable deployment, never a DB restore.
+        return self.admit(operation, target / "input")
+
     def backup(self, s, operation):
         """Online SQLite backup plus the corresponding stable identity/config."""
         source = self.volume(s)
@@ -131,6 +140,10 @@ class Host:
             os.chmod(gateway / "gateway.db", 0o600)
             shutil.copytree(source / "signing", gateway / "signing")
             shutil.copytree(self.etc, stage / "configuration", symlinks=True)
+            for key in ("caddyData", "caddyConfig"):
+                path = Path(s[key])
+                require(path.is_dir(), "existing Caddy recovery storage is missing")
+                shutil.copytree(path, stage / key, symlinks=True)
             shutil.copyfile(self.policy, stage / "host-policy.json")
             current = self.install / "current"
             if current.is_symlink():
@@ -153,8 +166,12 @@ class Host:
             # local-only backup can satisfy pre-activation safety.
             backup_command = self.config["backupCommand"]
             require(isinstance(backup_command, list) and backup_command and Path(backup_command[0]).is_absolute(), "encrypted off-host backup is not configured")
-            run([*backup_command, str(stage)], timeout=900)
-        return {"completedAt": now(), "gatewayCAFingerprint": digest(source / "signing" / "daemon-ca.pem")}
+            receipt = json.loads(run([*backup_command, str(stage)], timeout=900))
+        result = {"completedAt": now(), "gatewayCAFingerprint": digest(source / "signing" / "daemon-ca.pem")}
+        for key in ("snapshotID", "offHost"):
+            if key in receipt:
+                result[key] = receipt[key]
+        return result
 
     def compose(self, release, *args):
         return run(["docker", "compose", "--project-name", self.config["project"],
@@ -330,6 +347,9 @@ def main():
         command.add_argument("path")
     for cmd in ("status", "execute"):
         sub.add_parser(cmd).add_argument("operation")
+    rollback = sub.add_parser("rollback")
+    rollback.add_argument("operation")
+    rollback.add_argument("release")
     sub.add_parser("resume")
     sub.add_parser("backup")
     a = p.parse_args()
@@ -337,6 +357,8 @@ def main():
     host = Host(a.policy)
     if a.command in ("admit", "accept"):
         result = getattr(host, a.command)(a.operation, a.path)
+    elif a.command == "rollback":
+        result = host.rollback(a.operation, a.release)
     elif a.command in ("status", "execute"):
         result = getattr(host, a.command)(a.operation)
     elif a.command == "backup":

@@ -188,8 +188,10 @@ backend turn
     coturn = service(deps["coturn"], limits["turnMemoryMiB"], "65534:65533")
     coturn.update({"entrypoint": ["turnserver"], "command": ["-c", "/etc/coturn/turnserver.conf"],
                    "volumes": [protected + "/turnserver.conf:/etc/coturn/turnserver.conf:ro", certs + ":/certificates:ro"]})
-    if managed and not multiplex:
-        coturn["cap_add"] = ["NET_BIND_SERVICE"]
+    # The pinned coturn executable carries cap_net_bind_service in its file
+    # capabilities. Linux rejects exec when that capability is absent from the
+    # bounding set, even when all selected listener ports are above 1024.
+    coturn["cap_add"] = ["NET_BIND_SERVICE"]
     services = {"dieter-gateway": gateway, "caddy": caddy_service, "coturn": coturn}
     if multiplex:
         proxy = service(deps["haproxy"], limits["haproxyMemoryMiB"], "99:99")

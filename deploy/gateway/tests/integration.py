@@ -44,7 +44,14 @@ def main():
             cname = prefix + "-" + name
             command = ["docker", "run", "-d", "--name", cname, "--network", "container:" + prefix + "-anchor",
                        "--memory", "256m", "--pids-limit", "128", "--log-opt", "max-size=1m", "--log-opt", "max-file=1",
+                       "--read-only", "--cap-drop", "ALL", "--security-opt", "no-new-privileges:true",
+                       "--tmpfs", "/tmp:rw,noexec,nosuid,size=16m,mode=1777",
                        "-v", fixture_volume + ":/fixture:ro"]
+            if name in ("turn", "caddy", "haproxy"):
+                command += ["--cap-add", "NET_BIND_SERVICE"]
+            if name == "turn":
+                command += ["--entrypoint", "turnserver"]
+            user = user or {"turn": "65534:65533", "caddy": "0:0", "haproxy": "99:99"}.get(name)
             if user:
                 command += ["--user", user]
             command += [img, *arguments]
@@ -97,8 +104,6 @@ def main():
                 "--env-file", output / "private/gateway.env", "-v", volume + ":/var/lib/dieter-gateway", image)
             containers.append(gateway)
             turn_name = start("turn", deps["coturn"], "-c", "/fixture/turnserver.conf")
-            # coturn's entrypoint normally expands external-ip; the explicit config
-            # still owns relay-ip and both listeners in this fixture.
             caddy_name = start("caddy", deps["caddy"], "caddy", "run", "--config", "/fixture/Caddyfile")
             start("haproxy", deps["haproxy"], "haproxy", "-W", "-db", "-f", "/fixture/rendered/public/haproxy.cfg")
             username = f"{int(time.time())+600}:dieter:7000188:fixture"
@@ -160,7 +165,7 @@ def main():
             raise
         finally:
             for name in reversed(containers):
-                subprocess.run(["docker", "rm", "-f", name], capture_output=True)
+                subprocess.run(["docker", "rm", "-fv", name], capture_output=True)
             subprocess.run(["docker", "volume", "rm", volume, fixture_volume], capture_output=True)
             subprocess.run(["docker", "network", "rm", network], capture_output=True)
             subprocess.run(["docker", "image", "rm", image], capture_output=True)

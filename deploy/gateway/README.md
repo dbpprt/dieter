@@ -136,3 +136,20 @@ filesystem sharing.
 `just gateway turn-test` takes a bounded JSON request on stdin and prints only
 probe results. It verifies the allocated public relay IP and bidirectional random
 payloads between two allocations; credentials never appear in arguments or logs.
+# Disposable Debian lifecycle qualification
+
+`tests/debian-vm.yaml` creates a separate Lima VM with one CPU, 1 GiB memory,
+no operator mounts and no automatic port forwarding. Transfer a verified signed
+distribution into `/opt/dieter-distribution` and the reviewed
+`tests/lifecycle_vm.py` into `/opt/lifecycle_vm.py`. The fixture refuses every
+hostname except `lima-dieter-gateway-test`; run it as root inside that VM.
+
+Its `setup`, `admit`, `inspect`, `accept` and `restore` commands exercise the real
+images, systemd workers, encrypted fixture snapshots and isolated cold restore.
+Use a distinct `--operation` for each admission. After a candidate reaches
+`checking`, stop and restart only this disposable VM to verify automatic recovery
+to the previous release. Repeat admission with the same ID to check idempotence.
+`accept` uses real HTTPS and TURN payload probes and a trusted fixture controller
+report; production client authentication is verified separately by the enrolled
+operator readiness driver. The fixture repository is local to the VM and does
+not establish that production off-host backup storage is available.

@@ -52,6 +52,17 @@ class HostTests(unittest.TestCase):
             self.assertEqual(start.call_count, 1)
             self.assertIn("dieter-deploy@one.service", start.call_args.args[0])
 
+    def test_rollback_readmits_only_a_previously_accepted_signed_release(self):
+        self.admit("old")
+        with self.assertRaisesRegex(ValueError, "accepted"):
+            self.host.rollback("rollback", "old")
+        self.host.transition("old", "committed")
+        with patch("host.run"):
+            result = self.host.rollback("rollback", "old")
+        self.assertEqual(result["state"], "admitted")
+        self.assertEqual(result["requestSHA256"], self.host.status("old")["requestSHA256"])
+        self.assertEqual(self.host.status("old")["state"], "committed")
+
     def test_interrupted_activation_rolls_back_instead_of_replaying(self):
         self.admit()
         previous = self.host.install / "releases/baseline"
