@@ -251,26 +251,17 @@ final class RemoteNodeUITests: XCTestCase {
         try Data().write(to: trigger, options: .atomic)
         defer { try? FileManager.default.removeItem(at: trigger) }
 
-        let banner = element(app, "ios.connection.banner")
-        XCTAssertTrue(
-            banner.waitForExistence(timeout: 45),
-            "Taking the isolated daemon offline must present the connection state.\n\(app.debugDescription)")
-
         let connecting = app.staticTexts["Connecting…"]
-        if !connecting.waitForExistence(timeout: 2) {
-            let retry = app.buttons["Retry"]
-            XCTAssertTrue(retry.waitForExistence(timeout: 10))
-            retry.tap()
-        }
         XCTAssertTrue(
-            connecting.waitForExistence(timeout: 10),
-            "Retrying an unavailable isolated daemon must show the animated connecting state.\n\(app.debugDescription)")
+            connecting.waitForExistence(timeout: 20),
+            "Losing the isolated daemon must show the automatic connecting state.\n\(app.debugDescription)")
         screenshot(app, "05-connecting-activity")
 
         try FileManager.default.removeItem(at: trigger)
         Thread.sleep(forTimeInterval: 1)
-        let retry = app.buttons["Retry"]
-        if banner.exists, retry.isHittable { retry.tap() }
+        let requestAlert = app.alerts["Couldn’t complete the request"]
+        if requestAlert.exists { requestAlert.buttons["OK"].tap() }
+        let banner = element(app, "ios.connection.banner")
         let recovered = XCTNSPredicateExpectation(
             predicate: NSPredicate(format: "exists == false"), object: banner)
         XCTAssertEqual(
