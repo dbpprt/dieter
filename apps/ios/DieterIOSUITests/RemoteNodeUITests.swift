@@ -234,11 +234,14 @@ final class RemoteNodeUITests: XCTestCase {
             "The submitted message must leave the composer and enter the transcript.\n\(app.debugDescription)")
     }
 
-    private func waitForBoard(_ app: XCUIApplication, project: String, board: String) {
+    private func waitForBoard(
+        _ app: XCUIApplication, project: String, board: String, requireHittable: Bool = true
+    ) {
         // The machine name appears before its workspace loads. Project links
         // navigate away from the sidebar; board links are their siblings.
+        let predicate = requireHittable ? "exists == true AND hittable == true" : "exists == true"
         let ready = XCTNSPredicateExpectation(
-            predicate: NSPredicate(format: "exists == true AND hittable == true"),
+            predicate: NSPredicate(format: predicate),
             object: element(app, "ios.board.\(board)"))
         XCTAssertEqual(
             XCTWaiter.wait(for: [ready], timeout: 40), .completed,
@@ -463,7 +466,11 @@ final class RemoteNodeUITests: XCTestCase {
         app.launchEnvironment["DIETER_IOS_TEST_GATEWAY"] = gateway
         app.launchEnvironment["DIETER_IOS_TEST_TOKEN"] = token
         app.launch()
-        waitForBoard(app, project: project, board: board)
+        // This launch only primes the authenticated app before Photos takes
+        // the foreground. Xcode 26 can briefly report the visible sidebar at
+        // device-scale coordinates and mark its controls non-hittable; the
+        // directory's existence is the readiness signal needed here.
+        waitForBoard(app, project: project, board: board, requireHittable: false)
         XCUIDevice.shared.press(.home)
 
         let photos = XCUIApplication(bundleIdentifier: "com.apple.mobileslideshow")
