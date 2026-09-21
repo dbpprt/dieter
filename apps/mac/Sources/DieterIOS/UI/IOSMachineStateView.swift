@@ -46,7 +46,7 @@
                         .frame(maxWidth: 760)
                         .frame(maxWidth: .infinity)
                     }
-                    .background(Color(uiColor: .systemGroupedBackground))
+                    .background { IOSWorkspaceBackdrop() }
                 } else {
                     ContentUnavailableView(
                         "Choose a machine",
@@ -123,6 +123,11 @@
                 }
                 Spacer(minLength: 0)
             }
+            .padding()
+            .modifier(
+                IOSGlassCardModifier(
+                    shape: RoundedRectangle(cornerRadius: 22, style: .continuous))
+            )
             .accessibilityElement(children: .combine)
             .accessibilityIdentifier("ios.machine-state.identity")
         }
@@ -327,7 +332,9 @@
             }
             .padding()
             .frame(maxWidth: .infinity, minHeight: 132, alignment: .topLeading)
-            .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16))
+            .modifier(
+                IOSGlassCardModifier(
+                    shape: RoundedRectangle(cornerRadius: 20, style: .continuous)))
         }
 
         private func stateCard<Content: View>(
@@ -349,7 +356,9 @@
             }
             .padding()
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16))
+            .modifier(
+                IOSGlassCardModifier(
+                    shape: RoundedRectangle(cornerRadius: 20, style: .continuous)))
         }
 
         private func detailRow(_ title: String, value: String) -> some View {

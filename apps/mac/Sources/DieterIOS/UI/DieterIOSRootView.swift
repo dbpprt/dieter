@@ -6,9 +6,11 @@
     @MainActor
     public struct DieterIOSRootView: View {
         @Environment(\.scenePhase) private var scenePhase
+        @Environment(\.horizontalSizeClass) private var horizontalSizeClass
         @State private var store = IOSStore()
         @State private var destination: IOSWorkspaceDestination?
         @State private var selectedTaskID: String?
+        @State private var selectedScreenMachineID: String?
         @State private var preferredColumn: NavigationSplitViewColumn = .sidebar
         @State private var settingsPresented = false
         @State private var machineStatePresented = false
@@ -84,8 +86,12 @@
                     .navigationSplitViewColumnWidth(min: 230, ideal: 270, max: 340)
             } content: {
                 if destination == .screens {
-                    IOSScreensPlaceholderView { preferredColumn = .detail }
-                        .navigationSplitViewColumnWidth(min: 280, ideal: 350, max: 480)
+                    IOSScreensMachinePickerView(store: store) { machineID in
+                        store.selectUtilityMachine(id: machineID)
+                        selectedScreenMachineID = machineID
+                        preferredColumn = .detail
+                    }
+                    .navigationSplitViewColumnWidth(min: 280, ideal: 350, max: 480)
                 } else {
                     IOSTaskListView(
                         store: store, destination: destination ?? .allTasks, selectedTaskID: $selectedTaskID,
@@ -95,11 +101,15 @@
                 }
             } detail: {
                 if destination == .screens {
-                    IOSScreensView(store: store) {
-                        destination = nil
-                        preferredColumn = .sidebar
+                    if selectedScreenMachineID != nil {
+                        IOSScreensView(store: store) {
+                            selectedScreenMachineID = nil
+                            preferredColumn = .content
+                        }
+                        .id(selectedScreenMachineID ?? "")
+                    } else {
+                        IOSScreensPlaceholderView { preferredColumn = .content }
                     }
-                    .id(store.utilityMachine?.daemonID ?? "")
                 } else if let id = selectedTaskID {
                     IOSConversationView(
                         store: store, cardID: id, draft: draftBinding(for: id),
@@ -151,12 +161,17 @@
             .sheet(item: $fileScope) { scope in
                 IOSFilesView(store: store, scope: scope)
             }
-            .onChange(of: destination) { _, _ in
+            .onChange(of: destination) { oldValue, newValue in
                 if !selectedTaskBelongsToDestination {
                     selectedTaskID = nil
                     store.closeConversation()
                 }
-                if destination == .screens { preferredColumn = .detail }
+                if newValue == .screens, oldValue != .screens {
+                    selectedScreenMachineID = nil
+                    preferredColumn = .content
+                } else if newValue != nil {
+                    preferredColumn = .content
+                }
             }
             .onChange(of: selectedTaskID) { _, id in
                 if id != nil { preferredColumn = .detail } else { store.closeConversation() }
@@ -164,60 +179,79 @@
         }
 
         private var sidebar: some View {
-            List(selection: $destination) {
-                if !store.phase.isConnected {
-                    Section {
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 22) {
+                    if !store.phase.isConnected {
                         IOSConnectionBanner(title: store.phase.label, detail: "Reconnect to continue working.") {
                             Task { await store.reconnect() }
-                        }.listRowInsets(EdgeInsets())
+                        }
                     }
-                }
-                Section {
-                    NavigationLink(value: IOSWorkspaceDestination.allTasks) {
-                        Label("All tasks", systemImage: "square.grid.2x2")
+
+                    VStack(spacing: 0) {
+                        sidebarDestinationRow(
+                            .allTasks, title: "All tasks", systemImage: "square.grid.2x2",
+                            identifier: "ios.all-tasks")
+                        sidebarDivider()
+                        sidebarDestinationRow(
+                            .chats, title: "Chats", systemImage: "bubble.left.and.bubble.right",
+                            identifier: "ios.chats")
+                        sidebarDivider()
+                        sidebarDestinationRow(
+                            .screens, title: "Screens", systemImage: "display",
+                            identifier: "ios.screens.open")
                     }
-                    .accessibilityIdentifier("ios.all-tasks")
-                    NavigationLink(value: IOSWorkspaceDestination.chats) {
-                        Label("Chats", systemImage: "bubble.left.and.bubble.right")
-                    }
-                    .accessibilityIdentifier("ios.chats")
-                    NavigationLink(value: IOSWorkspaceDestination.screens) {
-                        Label("Screens", systemImage: "display")
-                    }
-                    .accessibilityIdentifier("ios.screens.open")
-                }
-                Section("Projects") {
+                    .modifier(
+                        IOSGlassCardModifier(
+                            shape: RoundedRectangle(cornerRadius: 24, style: .continuous)))
+
+                    Text("Projects")
+                        .font(.title3.bold())
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 8)
+
                     if store.projects.isEmpty {
                         Text(store.busy ? "Loading projects…" : "No projects")
-                            .font(.subheadline).foregroundStyle(.secondary)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, minHeight: 92)
+                            .modifier(
+                                IOSGlassCardModifier(
+                                    shape: RoundedRectangle(cornerRadius: 24, style: .continuous)))
                     }
                     ForEach(store.projects, id: \.id) { project in
-                        NavigationLink(value: IOSWorkspaceDestination.project(project.id)) {
-                            Label(project.name, systemImage: "folder")
-                                .fontWeight(.medium)
-                        }
-                        .accessibilityIdentifier("ios.project.\(project.id)")
-                        .contextMenu {
-                            Menu("Browse files", systemImage: "folder") {
-                                ForEach(project.checkouts.filter { !$0.detached }, id: \.id) { checkout in
-                                    let machine = store.supportedMachines.first { $0.daemonID == checkout.daemonID }
-                                    Button("\(machine?.name ?? checkout.daemonID) · \(checkout.name)") {
-                                        openProjectFiles(project, checkout: checkout)
-                                    }.disabled(machine?.online != true)
+                        VStack(spacing: 0) {
+                            sidebarDestinationRow(
+                                .project(project.id), title: project.name, systemImage: "folder",
+                                identifier: "ios.project.\(project.id)", emphasized: true
+                            )
+                            .contextMenu {
+                                Menu("Browse files", systemImage: "folder") {
+                                    ForEach(project.checkouts.filter { !$0.detached }, id: \.id) { checkout in
+                                        let machine = store.supportedMachines.first {
+                                            $0.daemonID == checkout.daemonID
+                                        }
+                                        Button("\(machine?.name ?? checkout.daemonID) · \(checkout.name)") {
+                                            openProjectFiles(project, checkout: checkout)
+                                        }.disabled(machine?.online != true)
+                                    }
                                 }
                             }
-                        }
-                        ForEach(store.boards.filter { $0.projectID == project.id }, id: \.id) { board in
-                            NavigationLink(value: IOSWorkspaceDestination.board(board.id)) {
-                                Label(board.name, systemImage: "rectangle.split.3x1")
-                                    .padding(.leading, 16)
+                            ForEach(store.boards.filter { $0.projectID == project.id }, id: \.id) { board in
+                                sidebarDivider(leading: 58)
+                                sidebarDestinationRow(
+                                    .board(board.id), title: board.name, systemImage: "rectangle.split.3x1",
+                                    identifier: "ios.board.\(board.id)", indent: 16)
                             }
-                            .accessibilityIdentifier("ios.board.\(board.id)")
                         }
+                        .modifier(
+                            IOSGlassCardModifier(
+                                shape: RoundedRectangle(cornerRadius: 24, style: .continuous)))
                     }
                 }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
             }
-            .listStyle(.sidebar)
+            .background { IOSWorkspaceBackdrop() }
             .navigationTitle("Dieter")
             .accessibilityIdentifier("ios.sidebar")
             .refreshable {
@@ -235,11 +269,53 @@
                     }
                     .disabled(store.supportedMachines.isEmpty)
                     .accessibilityIdentifier("ios.machine-state.open")
-                    Button("New task", systemImage: "square.and.pencil", action: presentTaskCreation)
-                        .disabled(!store.phase.isConnected || store.projects.isEmpty)
-                        .accessibilityIdentifier("ios.new-task")
+                    if horizontalSizeClass == .compact {
+                        Button("New task", systemImage: "square.and.pencil", action: presentTaskCreation)
+                            .disabled(!store.phase.isConnected || store.projects.isEmpty)
+                            .accessibilityIdentifier("ios.new-task")
+                    }
                 }
             }
+        }
+
+        private func sidebarDestinationRow(
+            _ value: IOSWorkspaceDestination,
+            title: String,
+            systemImage: String,
+            identifier: String,
+            indent: CGFloat = 0,
+            emphasized: Bool = false
+        ) -> some View {
+            Button {
+                destination = value
+            } label: {
+                HStack(spacing: 14) {
+                    Image(systemName: systemImage)
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(destination == value ? Color.accentColor : Color.primary)
+                        .frame(width: 28)
+                    Text(title)
+                        .font(emphasized ? .headline : .body)
+                        .foregroundStyle(.primary)
+                        .lineLimit(2)
+                    Spacer(minLength: 8)
+                    Image(systemName: "chevron.right")
+                        .font(.caption.bold())
+                        .foregroundStyle(.tertiary)
+                }
+                .padding(.leading, 18 + indent)
+                .padding(.trailing, 16)
+                .frame(minHeight: 56)
+                .background(destination == value ? Color.accentColor.opacity(0.12) : .clear)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier(identifier)
+            .accessibilityAddTraits(destination == value ? .isSelected : [])
+        }
+
+        private func sidebarDivider(leading: CGFloat = 58) -> some View {
+            Divider().padding(.leading, leading)
         }
 
         private var selectedProjectID: String {

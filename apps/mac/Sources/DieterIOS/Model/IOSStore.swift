@@ -702,6 +702,15 @@
             return try await plane.rpc.harnesses().harnesses
         }
 
+        func conversationHarnesses() async throws -> [Dieter_V1_Harness] {
+            guard let rpc = conversationPlane?.rpc else {
+                throw NSError(
+                    domain: "Conversation", code: 2,
+                    userInfo: [NSLocalizedDescriptionKey: "Open a conversation before changing its model settings."])
+            }
+            return try await rpc.harnesses().harnesses
+        }
+
         func createTask(
             projectID: String, checkoutID: String, boardID: String?, title: String, prompt: String,
             provider: String, model: String, effort: String, labelIDs: [String],
@@ -790,6 +799,9 @@
             request.provider = selection?.provider ?? card.provider
             request.model = selection?.model ?? card.model
             request.effort = selection?.effort ?? card.effort
+            if let selection, selection.model != card.model, selection.effort.isEmpty {
+                request.effort = "default"
+            }
             request.providerOptions = selection?.providerOptions ?? card.providerOptions
             request.clientID = clientID
             let attachmentIdentity = attachments.map(Self.attachmentIdentity).joined(separator: "\u{1}")
