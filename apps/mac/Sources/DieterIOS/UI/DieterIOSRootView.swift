@@ -182,7 +182,11 @@
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 22) {
                     if !store.phase.isConnected {
-                        IOSConnectionBanner(title: store.phase.label, detail: "Reconnect to continue working.") {
+                        IOSConnectionBanner(
+                            title: store.phase.label,
+                            detail: "Reconnect to continue working.",
+                            isConnecting: store.phase == .connecting
+                        ) {
                             Task { await store.reconnect() }
                         }
                     }

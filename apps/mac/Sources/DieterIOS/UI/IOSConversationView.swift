@@ -402,7 +402,11 @@
         private var composer: some View {
             VStack(spacing: 8) {
                 if !store.phase.isConnected {
-                    IOSConnectionBanner(title: store.phase.label, detail: "Your draft will stay here.") {
+                    IOSConnectionBanner(
+                        title: store.phase.label,
+                        detail: "Your draft will stay here.",
+                        isConnecting: store.phase == .connecting
+                    ) {
                         Task { await store.reconnect() }
                     }
                 }
@@ -882,8 +886,9 @@
         }
     }
 
-    private struct IOSDieterActivityGlyph: View {
+    struct IOSDieterActivityGlyph: View {
         let size: CGFloat
+        var tint: Color = .accentColor
         @Environment(\.accessibilityReduceMotion) private var reduceMotion
         @State private var rotation = Angle.zero
         @State private var breathing = false
@@ -891,18 +896,18 @@
         var body: some View {
             ZStack {
                 Circle()
-                    .fill(Color.accentColor.opacity(0.16))
+                    .fill(tint.opacity(0.16))
                     .frame(width: size * 1.18, height: size * 1.18)
                     .blur(radius: size * 0.17)
                     .scaleEffect(breathing ? 1.08 : 0.92)
                 Circle()
-                    .stroke(Color.accentColor.opacity(0.14), lineWidth: max(1, size * 0.025))
+                    .stroke(tint.opacity(0.14), lineWidth: max(1, size * 0.025))
                     .frame(width: size, height: size)
                 Circle()
                     .trim(from: 0.08, to: 0.73)
                     .stroke(
                         AngularGradient(
-                            colors: [.clear, Color.accentColor.opacity(0.35), .accentColor, .clear],
+                            colors: [.clear, tint.opacity(0.35), tint, .clear],
                             center: .center),
                         style: StrokeStyle(lineWidth: max(2, size * 0.055), lineCap: .round)
                     )
@@ -916,7 +921,7 @@
                     .frame(width: size * 0.52, height: size * 0.52)
                     .scaleEffect(breathing ? 1.04 : 0.94)
                     .rotationEffect(breathing ? .degrees(2) : .degrees(-2))
-                    .shadow(color: Color.accentColor.opacity(0.22), radius: size * 0.06, y: size * 0.02)
+                    .shadow(color: tint.opacity(0.22), radius: size * 0.06, y: size * 0.02)
             }
             .frame(width: size * 1.25, height: size * 1.25)
             .onAppear {

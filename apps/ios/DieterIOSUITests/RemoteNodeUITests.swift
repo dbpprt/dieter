@@ -245,6 +245,39 @@ final class RemoteNodeUITests: XCTestCase {
         return String(attributed.characters)
     }
 
+    private func captureConnectingState(_ app: XCUIApplication, triggerPath: String) throws {
+        let trigger = URL(fileURLWithPath: triggerPath)
+        try? FileManager.default.removeItem(at: trigger)
+        try Data().write(to: trigger, options: .atomic)
+        defer { try? FileManager.default.removeItem(at: trigger) }
+
+        let banner = element(app, "ios.connection.banner")
+        XCTAssertTrue(
+            banner.waitForExistence(timeout: 45),
+            "Taking the isolated daemon offline must present the connection state.\n\(app.debugDescription)")
+
+        let connecting = app.staticTexts["Connecting…"]
+        if !connecting.waitForExistence(timeout: 2) {
+            let retry = app.buttons["Retry"]
+            XCTAssertTrue(retry.waitForExistence(timeout: 10))
+            retry.tap()
+        }
+        XCTAssertTrue(
+            connecting.waitForExistence(timeout: 10),
+            "Retrying an unavailable isolated daemon must show the animated connecting state.\n\(app.debugDescription)")
+        screenshot(app, "05-connecting-activity")
+
+        try FileManager.default.removeItem(at: trigger)
+        Thread.sleep(forTimeInterval: 1)
+        let retry = app.buttons["Retry"]
+        if banner.exists, retry.isHittable { retry.tap() }
+        let recovered = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "exists == false"), object: banner)
+        XCTAssertEqual(
+            XCTWaiter.wait(for: [recovered], timeout: 60), .completed,
+            "Restoring the isolated daemon must reconnect the conversation.\n\(app.debugDescription)")
+    }
+
     private func waitForBoard(
         _ app: XCUIApplication, project: String, board: String, requireHittable: Bool = true
     ) {
@@ -347,6 +380,10 @@ final class RemoteNodeUITests: XCTestCase {
         sendComposer(app, text: markdownPrompt)
         assistantTextExists(app, "Mock harness received: \(markdownPrompt)")
         screenshot(app, "05-markdown-rendering")
+
+        try captureConnectingState(
+            app,
+            triggerPath: try XCTUnwrap(environment["DIETER_IOS_TEST_OFFLINE_TRIGGER"]))
 
         tap(app, "ios.task.actions")
         tap(app, "ios.task.files")

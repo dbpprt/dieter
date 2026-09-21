@@ -89,22 +89,69 @@
     struct IOSConnectionBanner: View {
         let title: String
         var detail: String = ""
+        var isConnecting = false
         var retry: (() -> Void)?
+        @Environment(\.accessibilityReduceMotion) private var reduceMotion
+        @State private var shimmer = false
+
+        private let tint = Color(red: 0.94, green: 0.47, blue: 0.20)
 
         var body: some View {
             HStack(spacing: 10) {
-                Image(systemName: "wifi.exclamationmark").foregroundStyle(.orange)
+                if isConnecting {
+                    IOSDieterActivityGlyph(size: 22, tint: tint)
+                } else {
+                    Image(systemName: "wifi.exclamationmark")
+                        .foregroundStyle(tint)
+                        .frame(width: 28)
+                }
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(title).font(.subheadline.weight(.medium))
+                    Text(title)
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(.secondary)
+                        .overlay {
+                            if isConnecting, !reduceMotion {
+                                GeometryReader { geometry in
+                                    LinearGradient(
+                                        colors: [.clear, tint.opacity(0.95), .clear],
+                                        startPoint: .leading,
+                                        endPoint: .trailing
+                                    )
+                                    .frame(width: geometry.size.width)
+                                    .offset(x: shimmer ? geometry.size.width : -geometry.size.width)
+                                }
+                                .mask(Text(title).font(.subheadline.weight(.medium)))
+                                .allowsHitTesting(false)
+                                .accessibilityHidden(true)
+                            }
+                        }
                     if !detail.isEmpty { Text(detail).font(.caption).foregroundStyle(.secondary) }
                 }
                 Spacer(minLength: 0)
-                if let retry { Button("Retry", action: retry).font(.subheadline.weight(.semibold)) }
+                if let retry {
+                    Button("Retry", action: retry)
+                        .font(.subheadline.weight(.semibold))
+                        .tint(tint)
+                }
             }
-            .padding(12)
-            .background(.regularMaterial)
+            .padding(.horizontal, 12)
+            .frame(minHeight: 56)
+            .modifier(
+                IOSGlassCardModifier(
+                    shape: RoundedRectangle(cornerRadius: 20, style: .continuous))
+            )
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("ios.connection.banner")
+            .onChange(of: isConnecting, initial: true) { _, connecting in
+                guard connecting, !reduceMotion else {
+                    shimmer = false
+                    return
+                }
+                shimmer = false
+                withAnimation(.linear(duration: 2).repeatForever(autoreverses: false)) {
+                    shimmer = true
+                }
+            }
         }
     }
 
