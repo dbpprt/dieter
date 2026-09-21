@@ -306,14 +306,21 @@ struct IOSModelTests {
         #expect(IOSRemoteDesktopFrameRate.capped(30, hostMaximum: 24) == 24)
     }
 
-    @Test func mixedFleetSelectionSkipsLegacyAndOfflineNodes() {
-        let legacy = machine(id: "legacy", api: "2")
+    @Test func machineCompatibilityRequiresCurrentApplicationContract() {
+        #expect(DieterContract.version == "1")
+        #expect(!IOSMachinePolicy.isCompatible(machine(id: "unknown", api: "")))
+        #expect(!IOSMachinePolicy.isCompatible(machine(id: "incompatible", api: "2")))
+        #expect(IOSMachinePolicy.isCompatible(machine(id: "current", api: DieterContract.version)))
+    }
+
+    @Test func utilityMachineSelectionSkipsIncompatibleAndOfflineMachines() {
+        let incompatible = machine(id: "incompatible", api: "2")
         let offline = machine(id: "offline", api: DieterContract.version, online: false)
         let current = machine(id: "current", api: DieterContract.version)
         #expect(
-            IOSMachinePolicy.preferred(in: [legacy, offline, current], preferredID: "legacy")?.daemonID == "current")
-        #expect(IOSMachinePolicy.preferred(in: [legacy, offline], preferredID: nil) == nil)
-        #expect(!IOSMachinePolicy.isCompatible(legacy))
+            IOSMachinePolicy.preferred(in: [incompatible, offline, current], preferredID: "incompatible")?.daemonID
+                == "current")
+        #expect(IOSMachinePolicy.preferred(in: [incompatible, offline], preferredID: nil) == nil)
     }
 
     @Test(arguments: ["127.0.0.1", "127.50.0.2", "::1", "localhost"])

@@ -20,7 +20,7 @@ import CoreGraphics
         @State private var manuallyDisconnected = false
         @State private var clickMode = IOSRemoteDesktopClickMode()
 
-        private var machine: DieterEndpoint? { store.selectedMachine }
+        private var machine: DieterEndpoint? { store.utilityMachine }
         private var isPhone: Bool { UIDevice.current.userInterfaceIdiom == .phone }
 
         init(store: IOSStore, backAction: (() -> Void)? = nil) {
@@ -41,7 +41,9 @@ import CoreGraphics
             .toolbar(isPhone ? .hidden : .visible, for: .navigationBar)
             .overlay { phoneChrome }
             .task(id: machine?.daemonID) {
+                session.disconnect()
                 manuallyDisconnected = false
+                await Task.yield()
                 connectIfPossible()
             }
             .onAppear {
@@ -215,6 +217,7 @@ import CoreGraphics
         @ToolbarContentBuilder private var screenToolbar: some ToolbarContent {
             ToolbarItemGroup(placement: .topBarTrailing) {
                 if !isPhone {
+                    machineMenu
                     if session.controlActive {
                         Button("Keyboard", systemImage: "keyboard") { session.showKeyboard(true) }
                             .accessibilityIdentifier("ios.screens.keyboard")
@@ -281,6 +284,7 @@ import CoreGraphics
         private var phoneSettingsSheet: some View {
             NavigationStack {
                 Form {
+                    Section("Machine") { machineMenu }
                     Group { streamSettingsItems }
                         .disabled(!isConnected)
                     if session.controlActive {
@@ -356,6 +360,23 @@ import CoreGraphics
                 Button("Release All Input") { session.releaseAllInput() }
             }
             .accessibilityIdentifier("ios.screens.keys")
+        }
+
+        private var machineMenu: some View {
+            Menu(machine?.name ?? "Choose machine", systemImage: "desktopcomputer") {
+                ForEach(store.supportedMachines) { candidate in
+                    Button {
+                        store.selectUtilityMachine(id: candidate.daemonID ?? candidate.id)
+                    } label: {
+                        Label(
+                            candidate.name + (candidate.online ? "" : " · Offline"),
+                            systemImage: candidate.daemonID == store.utilityMachineID
+                                ? "checkmark" : "desktopcomputer")
+                    }
+                    .accessibilityIdentifier("ios.screens.machine.\(candidate.daemonID ?? candidate.id)")
+                }
+            }
+            .accessibilityIdentifier("ios.screens.machine-picker")
         }
 
         private func modifier(_ title: String, bit: UInt32) -> some View {

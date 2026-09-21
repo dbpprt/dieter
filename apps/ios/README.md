@@ -55,15 +55,15 @@ just --yes ios testflight 0.1.0 1.1 --upload
 
 `archive-unsigned` needs no credentials and checks the device archive; it does not produce an installable distribution. `testflight` is CI-only; it signs and exports, and uploads only with `--upload`. These commands do not configure tester groups. Apple processing, export-compliance information, TestFlight group assignment, and any external beta review happen separately after upload. Simulator tests and unsigned archive checks do not establish that Apple has accepted a distribution build.
 
-## Connect to remote nodes
+## Connect to remote machines
 
 1. Enter your HTTPS Dieter gateway in the sign-in screen.
 2. Sign in with GitHub using the native authentication session, or supply an existing gateway session token in the advanced section.
-3. Select an enrolled, compatible node. The app prefers authenticated non-loopback direct routes and falls back to the gateway relay.
-4. Open **Machine state** to inspect live CPU, memory, storage, network, GPU, daemon build, and Dieter process telemetry.
-5. Open a project and board, create a task, or continue a conversation.
+3. The app loads one global workspace from every enrolled, online machine using the current application contract. Incompatible and unversioned daemons are excluded.
+4. Open a project and board, create a task on one of its checkouts, or continue a conversation. The app routes each operation to that checkout or conversation's machine without changing the workspace.
+5. Open **Machine state** to choose a machine and inspect live CPU, memory, storage, network, GPU, daemon build, and Dieter process telemetry.
 
-Select **Screens** in the sidebar to open the selected machine's remote desktop.
+Select **Screens** in the sidebar, then choose a machine to open its remote desktop.
 The app negotiates an independently authenticated H.264 WebRTC session over the
 machine's verified direct route or gateway relay. Tap to click, move the pointer
 with one finger, hold and move to drag, scroll with two fingers, and use the
@@ -80,16 +80,16 @@ The existing `dieter-mac://oauth/callback` redirect is deliberately reused insid
 
 ## Basic workflows
 
-- Browse remote nodes, projects, boards, tasks, and standalone chats.
+- Browse projects, boards, tasks, and standalone chats across compatible remote machines.
 - Create a draft or immediately run a task with provider, model, and reasoning selection.
 - Attach photos, pasted screenshots, and files from New Task or any conversation. The iOS share extension can route a shared screenshot or file into a new task, an existing task, or an existing chat. After choosing the destination, tap **Done** and open Dieter to continue; iOS does not allow a Share extension to launch its containing app directly.
 - Start a draft, send follow-up messages, stop an active turn, and read live transcript updates and older messages.
 - Read and edit remote text files with revision-checked saves.
-- Inspect the selected machine's live resource, software, and Dieter process state.
-- View and control the selected machine through authenticated remote screen sharing.
+- Inspect a chosen machine's live resource, software, and Dieter process state.
+- View and control a chosen machine through authenticated remote screen sharing.
 - Suspend observation while the app is in the background and reconnect on return. Transport disconnects do not cancel agent work.
 
-The phone uses stacked navigation; iPad uses sidebar, task list, and conversation columns. All operations remain scoped to the selected gateway, node, and workspace.
+The phone uses stacked navigation; iPad uses sidebar, task list, and conversation columns. Navigation is global within the selected gateway; machine selection is local to Screens and Machine state.
 
 ## Verification
 
@@ -97,7 +97,7 @@ See [implementation validation](VALIDATION.md) for observed results and current 
 
 The smoke command creates its own simulator, temporary gateway, enrolled daemon, mock harness, and Git repository. It exercises real native controls and real remote RPCs without production accounts or provider credentials. It stops only those owned resources and preserves test results and screenshots. Existing simulators and operator daemons are left untouched.
 
-Fixtures include an incompatible node so compatibility rejection can be verified. Certificate tests cover exact enrolled daemon URI identity and reject the wrong daemon, wrong CA, and tampered certificates. Pure model tests cover sign-in request validation, ownership across backgrounding, stale-response isolation, and bounded transcript handling. Native application-hosted tests also exercise device-only Keychain persistence and certificate trust on iOS.
+Fixtures include an incompatible node so exact application-contract filtering can be verified. Certificate tests cover exact enrolled daemon URI identity and reject the wrong daemon, wrong CA, and tampered certificates. Pure model tests cover sign-in request validation, ownership across backgrounding, stale-response isolation, and bounded transcript handling. Native application-hosted tests also exercise device-only Keychain persistence and certificate trust on iOS.
 
 An optional, read-only check verifies that an HTTPS gateway returns its explicit authentication error for an invalid session:
 

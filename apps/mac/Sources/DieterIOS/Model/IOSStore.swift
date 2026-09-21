@@ -19,19 +19,18 @@
         }
         private(set) var phase: ConnectionPhase = .disconnected
         private(set) var machines: [DieterEndpoint] = []
-        private(set) var selectedMachineID: String?
+        private(set) var utilityMachineID: String?
         private(set) var projects: [Dieter_V1_Project] = []
         private(set) var boards: [Dieter_V1_Board] = []
         private(set) var cards: [Dieter_V1_Card] = []
         private(set) var chats: [Dieter_V1_Card] = []
-        private(set) var harnesses: [Dieter_V1_Harness] = []
         private(set) var selectedCard: Dieter_V1_CardDetail?
         private(set) var conversation: Dieter_V1_Conversation?
         private(set) var hasOlderMessages = false
         private(set) var loadingOlder = false
         private(set) var isAuthenticated = false
         private(set) var errorMessage: String?
-        private(set) var routeDescription = ""
+        private(set) var machineRouteDescriptions: [String: String] = [:]
         private(set) var providerQuotaGroups: [Dieter_Gateway_V1_ProviderQuotaGroup] = []
         private(set) var providerQuotasLoading = false
         private(set) var providerQuotaError: String?
@@ -41,7 +40,8 @@
         private(set) var machineInformationError: String?
         private var pendingOperations = 0
         var busy: Bool { pendingOperations > 0 || phase == .connecting }
-        var selectedMachine: DieterEndpoint? { machines.first { $0.daemonID == selectedMachineID } }
+        var supportedMachines: [DieterEndpoint] { machines.filter(IOSMachinePolicy.isCompatible) }
+        var utilityMachine: DieterEndpoint? { supportedMachines.first { $0.daemonID == utilityMachineID } }
 
         @ObservationIgnored private let defaults: UserDefaults
         @ObservationIgnored private let connections = ConnectionManager()
@@ -49,8 +49,7 @@
         @ObservationIgnored private var authenticationOwnership = IOSAuthenticationOwnership()
         @ObservationIgnored private var gateway: DieterRPC?
         @ObservationIgnored private var gatewayTask: Task<Void, Never>?
-        @ObservationIgnored private var dataPlane: DataPlaneConnection?
-        @ObservationIgnored private var stateTask: Task<Void, Never>?
+        @ObservationIgnored private var conversationPlane: DataPlaneConnection?
         @ObservationIgnored private var transcriptTask: Task<Void, Never>?
         @ObservationIgnored private var refreshTask: Task<Void, Never>?
         @ObservationIgnored private var providerQuotaTask: Task<Void, Never>?
@@ -67,6 +66,8 @@
         @ObservationIgnored private var createIdentity = IOSMutationIdentity()
         @ObservationIgnored private var messageIdentity = IOSMutationIdentity()
         @ObservationIgnored private var startIdentity = IOSMutationIdentity()
+        @ObservationIgnored private var directoryProjection = MachineDirectoryProjection(
+            projects: [:], projectReplicaEndpointIDs: [:], boards: [:], cards: [:], chats: [])
 
         init(defaults: UserDefaults = .standard) {
             self.defaults = defaults
@@ -81,13 +82,12 @@
         }
 
         deinit {
-            stateTask?.cancel()
             transcriptTask?.cancel()
             refreshTask?.cancel()
             providerQuotaTask?.cancel()
             reconnectTask?.cancel()
             authTask?.cancel()
-            dataPlane?.shutdown()
+            conversationPlane?.shutdown()
             gatewayTask?.cancel()
             gateway?.shutdown()
         }
@@ -183,7 +183,7 @@
             cancelAuthentication()
             closeConnections(clearContent: true)
             machines = []
-            selectedMachineID = nil
+            utilityMachineID = nil
             isAuthenticated = false
             accessToken = nil
             phase = .authenticationRequired
@@ -197,11 +197,9 @@
 
         func reconnect() async {
             guard foreground else { return }
-            let previousID = selectedMachineID
             let previousCardID = selectedCard?.card.id
-            let retainingSnapshot = IOSWorkspaceContinuity.canRetainSnapshot(
-                currentOrigin: connectedOrigin, currentDaemonID: previousID,
-                requestedOrigin: configuredOriginOrNil(), requestedDaemonID: previousID)
+            let previousUtilityID = utilityMachineID
+            let retainingSnapshot = connectedOrigin?.credentialID == configuredOriginOrNil()?.credentialID
             closeConnections(clearContent: !retainingSnapshot)
             let attempt = connectionID
             phase = .connecting
@@ -210,7 +208,7 @@
                 let origin = try configuredOrigin()
                 if connectedOrigin?.credentialID != origin.credentialID {
                     machines = []
-                    selectedMachineID = nil
+                    utilityMachineID = nil
                     isAuthenticated = false
                 }
                 connectedOrigin = origin
@@ -231,29 +229,21 @@
                 let directory = try await control.daemons()
                 guard owns(attempt) else { return }
                 isAuthenticated = true
-                machines = makeMachines(directory, origin: origin)
+                updateMachines(makeMachines(directory, origin: origin), preferredUtilityID: previousUtilityID)
                 startProviderQuotaRefresh(attempt: attempt)
                 defaults.set(gatewayAddress, forKey: "DieterIOSGateway")
-                let saved = defaults.string(forKey: "DieterIOSMachine:\(origin.credentialID)")
-                let preferred = IOSMachinePolicy.preferred(in: machines, preferredID: previousID ?? saved)
-                guard let machine = preferred else {
-                    selectedMachineID =
-                        retainingSnapshot
-                        ? IOSWorkspaceContinuity.retainedOfflineSelection(in: machines, previousDaemonID: previousID)
-                        : nil
-                    if selectedMachineID == nil { clearNodeContent() }
+                await refreshGlobalDirectory(attempt: attempt)
+                guard owns(attempt) else { return }
+                guard supportedMachines.contains(where: \.online) else {
                     phase = .disconnected
                     errorMessage =
                         machines.isEmpty
-                        ? "No machines are enrolled for this account."
-                        : machines.contains(where: \.online)
-                            ? "Update your online machines to Dieter API \(IOSMachinePolicy.apiVersion)."
-                            : "Your machines are offline."
+                        ? "No compatible machines are enrolled for this account."
+                        : "Your compatible machines are offline."
                     startDirectoryRefresh(attempt: attempt)
                     return
                 }
-                try await connectMachine(machine, attempt: attempt)
-                guard owns(attempt) else { return }
+                phase = .connected(version: IOSMachinePolicy.apiVersion)
                 if let previousCardID,
                     cards.contains(where: { $0.id == previousCardID })
                         || chats.contains(where: { $0.id == previousCardID })
@@ -274,58 +264,31 @@
             do {
                 let directory = try await control.daemons()
                 guard owns(attempt) else { return }
-                machines = makeMachines(directory, origin: origin)
-                if case .incompatible = phase { return }
-                if dataPlane == nil,
-                    let first = IOSMachinePolicy.preferred(in: machines, preferredID: selectedMachineID)
-                {
-                    try await connectMachine(first, attempt: attempt)
-                    guard owns(attempt) else { return }
-                    if let cardID = selectedCard?.card.id,
-                        cards.contains(where: { $0.id == cardID }) || chats.contains(where: { $0.id == cardID })
-                    {
-                        await selectCard(id: cardID)
-                    }
-                    guard owns(attempt) else { return }
-                    // A directory poll may own this recovery. Keep that task
-                    // alive rather than canceling it while restoring the watch.
-                    if refreshTask == nil { startDirectoryRefresh(attempt: attempt) }
-                }
+                updateMachines(makeMachines(directory, origin: origin), preferredUtilityID: utilityMachineID)
+                await refreshGlobalDirectory(attempt: attempt)
+                guard owns(attempt) else { return }
+                phase =
+                    supportedMachines.contains(where: \.online)
+                    ? .connected(version: IOSMachinePolicy.apiVersion) : .disconnected
             } catch {
                 guard owns(attempt) else { return }
                 connectionFailed(error, attempt: attempt)
             }
         }
 
-        func selectMachine(id: String) async {
-            guard let machine = machines.first(where: { $0.daemonID == id || $0.id == id }) else { return }
-            guard selectedMachineID != machine.daemonID || !phase.isConnected else { return }
-            // Preserve the authenticated gateway but retire all node-owned requests.
-            connectionID = UUID()
-            let attempt = connectionID
-            stateTask?.cancel(); stateTask = nil
-            transcriptTask?.cancel(); transcriptTask = nil
-            refreshTask?.cancel(); refreshTask = nil
-            reconnectTask?.cancel(); reconnectTask = nil
-            dataPlane?.shutdown(); dataPlane = nil
-            harnesses = []; routeDescription = ""; closeConversation()
-            selectedMachineID = machine.daemonID
-            phase = .connecting
-            errorMessage = nil
-            do {
-                try await connectMachine(machine, attempt: attempt)
-                guard owns(attempt) else { return }
-                startProviderQuotaRefresh(attempt: attempt)
-                startDirectoryRefresh(attempt: attempt)
-            } catch {
-                guard owns(attempt) else { return }
-                connectionFailed(error, attempt: attempt)
-            }
+        func selectUtilityMachine(id: String) {
+            guard let machine = supportedMachines.first(where: { $0.daemonID == id || $0.id == id }) else { return }
+            guard utilityMachineID != machine.daemonID else { return }
+            utilityMachineID = machine.daemonID
+            machineInformation = nil
+            machineInformationError = nil
+            machineRouteDescriptions.removeValue(forKey: machine.daemonID ?? machine.id)
+            defaults.set(machine.daemonID, forKey: "DieterIOSUtilityMachine:\(machine.credentialID)")
         }
 
         func refreshMachineInformation() async {
             guard !machineInformationLoading else { return }
-            guard let machine = selectedMachine else {
+            guard let machine = utilityMachine else {
                 machineInformation = nil
                 machineInformationError = "Choose a machine to inspect its state."
                 return
@@ -335,12 +298,7 @@
                 machineInformationError = "\(machine.name) is offline."
                 return
             }
-            guard IOSMachinePolicy.isCompatible(machine) else {
-                machineInformation = nil
-                machineInformationError = IOSUserError.message(IOSStoreError.incompatible(machine.apiVersion))
-                return
-            }
-            guard foreground, phase.isConnected, let rpc = dataPlane?.rpc else {
+            guard foreground, phase.isConnected else {
                 machineInformationError = "Reconnect to read live machine state."
                 return
             }
@@ -350,110 +308,121 @@
             machineInformationLoading = true
             machineInformationError = nil
             defer {
-                if connectionID == attempt, selectedMachineID == daemonID {
+                if connectionID == attempt, utilityMachineID == daemonID {
                     machineInformationLoading = false
                 }
             }
             do {
-                let information = try await rpc.machineInformation()
-                guard owns(attempt), selectedMachineID == daemonID else { return }
+                let plane = try await dataPlaneConnection(to: machine)
+                defer { plane.shutdown() }
+                let information = try await plane.rpc.machineInformation()
+                guard owns(attempt), utilityMachineID == daemonID else { return }
                 machineInformation = information
+                machineRouteDescriptions[daemonID ?? machine.id] = routeLabel(plane.connection.route)
             } catch is CancellationError {
             } catch {
-                guard owns(attempt), selectedMachineID == daemonID else { return }
+                guard owns(attempt), utilityMachineID == daemonID else { return }
                 machineInformationError = IOSUserError.message(error)
             }
         }
 
-        private func connectMachine(_ machine: DieterEndpoint, attempt: UUID) async throws {
+        private func dataPlaneConnection(
+            to machine: DieterEndpoint, refreshDirectToken: Bool = false
+        ) async throws -> DataPlaneConnection {
             guard let gateway, let accessToken else { throw IOSAuthenticationError.invalidResponse }
-            if !IOSWorkspaceContinuity.canRetainSnapshot(
-                currentOrigin: connectedOrigin, currentDaemonID: selectedMachineID,
-                requestedOrigin: machine.gatewayEndpoint, requestedDaemonID: machine.daemonID)
-            {
-                if connectedOrigin?.credentialID != machine.gatewayEndpoint.credentialID {
-                    clearNodeContent()
-                } else {
-                    harnesses = []; closeConversation()
-                }
-            }
-            selectedMachineID = machine.daemonID
             guard IOSMachinePolicy.isCompatible(machine) else { throw IOSStoreError.incompatible(machine.apiVersion) }
             var candidateScope = DirectCandidateScope.nonLoopback
             #if DEBUG
                 if ProcessInfo.processInfo.environment["DIETER_IOS_TEST_GATEWAY"] != nil { candidateScope = .all }
             #endif
             let plane = try await connections.selectDataPlane(
-                gateway: gateway, target: machine, gatewayAccessToken: accessToken, directCandidateScope: candidateScope
-            )
-            guard owns(attempt) else { plane.shutdown(); return }
-            dataPlane = plane
-            let health = try await plane.rpc.health(timeout: .seconds(5))
-            guard health.version == IOSMachinePolicy.apiVersion else {
-                throw IOSStoreError.incompatible(health.version)
-            }
-            var request = Dieter_V1_GetStateRequest()
-            request.allProjects = true
-            async let state = plane.rpc.state(request)
-            async let catalog = plane.rpc.harnesses()
-            let (stateValue, catalogValue) = try await (state, catalog)
-            guard owns(attempt) else { return }
-            harnesses = catalogValue.harnesses
-            applyState(stateValue)
-            routeDescription = plane.connection.route == .local ? "Direct TLS" : plane.connection.route.rawValue
-            phase = .connected(version: health.version)
-            defaults.set(machine.daemonID, forKey: "DieterIOSMachine:\(machine.credentialID)")
-            watchState(attempt: attempt)
-        }
-
-        private func watchState(attempt: UUID) {
-            stateTask?.cancel()
-            guard let rpc = dataPlane?.rpc else { return }
-            stateTask = Task { [weak self] in
-                var request = Dieter_V1_WatchStateRequest()
-                request.filter.allProjects = true
-                request.intervalMs = 1_500
-                do {
-                    try await rpc.watchState(request) { [weak self] value in
-                        await self?.receiveState(value, attempt: attempt)
-                    }
-                    guard !Task.isCancelled else { return }
-                    self?.connectionFailed(IOSStoreError.streamEnded, attempt: attempt)
-                } catch {
-                    guard !Task.isCancelled else { return }
-                    self?.connectionFailed(error, attempt: attempt)
+                gateway: gateway, target: machine, gatewayAccessToken: accessToken,
+                directCandidateScope: candidateScope, refreshDirectToken: refreshDirectToken)
+            do {
+                let health = try await plane.rpc.health(timeout: .seconds(5))
+                guard health.version == IOSMachinePolicy.apiVersion else {
+                    throw IOSStoreError.incompatible(health.version)
                 }
+            } catch {
+                plane.shutdown()
+                throw error
+            }
+            return plane
+        }
+
+        private func loadMachineSnapshot(_ machine: DieterEndpoint, attempt: UUID) async -> MachineSnapshot? {
+            guard owns(attempt), machine.online, IOSMachinePolicy.isCompatible(machine) else { return nil }
+            do {
+                let plane = try await dataPlaneConnection(to: machine)
+                defer { plane.shutdown() }
+                var request = Dieter_V1_GetStateRequest()
+                request.allProjects = true
+                let value = try await plane.rpc.state(request)
+                guard owns(attempt), !value.notModified else { return nil }
+                let key = machine.daemonID ?? machine.id
+                machineRouteDescriptions[key] = routeLabel(plane.connection.route)
+                return MachineSnapshot(
+                    endpoint: machine, connection: plane.connection,
+                    projects: value.projects, boards: value.boards, cards: value.cards,
+                    chats: value.chats, archives: value.archives)
+            } catch {
+                return nil
             }
         }
 
-        private func receiveState(_ value: Dieter_V1_State, attempt: UUID) {
-            guard owns(attempt) else { return }
-            applyState(value)
+        private func refreshGlobalDirectory(attempt: UUID) async {
+            let online = supportedMachines.filter(\.online)
+            let tasks = online.map { machine in
+                Task { await self.loadMachineSnapshot(machine, attempt: attempt) }
+            }
+            var snapshots: [MachineSnapshot] = []
+            for task in tasks {
+                if let snapshot = await task.value { snapshots.append(snapshot) }
+            }
+            guard owns(attempt), !snapshots.isEmpty else { return }
+            directoryProjection = MachineDirectoryReducer.merging(directoryProjection, snapshots: snapshots)
+            publishDirectory()
         }
 
-        private func applyState(_ value: Dieter_V1_State) {
-            guard !value.notModified else { return }
-            let current = MachineDirectoryProjection(
-                projects: Dictionary(projects.map { ($0.id, $0) }, uniquingKeysWith: { _, b in b }),
-                projectReplicaEndpointIDs: [:], boards: Dictionary(grouping: boards, by: \.projectID),
-                cards: Dictionary(grouping: cards, by: \.projectID), chats: chats)
-            if let machine = selectedMachine {
-                let next = MachineDirectoryReducer.merging(
-                    current,
-                    snapshots: [
-                        MachineSnapshot(
-                            endpoint: machine, connection: .init(route: .gateway, latencyMilliseconds: 0),
-                            projects: value.projects, boards: value.boards, cards: value.cards, chats: value.chats,
-                            archives: value.archives)
-                    ])
-                projects = next.sortedProjects.filter { !$0.archived }
-                boards = next.boards.values.flatMap { $0 }
-                cards = next.cards.values.flatMap { $0 }.filter { !$0.archived }
-                chats = next.chats.filter { !$0.archived }
-            }
-            if let selected = selectedCard, let current = (cards + chats).first(where: { $0.id == selected.card.id }) {
+        private func publishDirectory() {
+            projects = directoryProjection.sortedProjects.filter { !$0.archived }
+            boards = directoryProjection.boards.values.flatMap { $0 }.sorted { $0.id < $1.id }
+            cards = directoryProjection.cards.values.flatMap { $0 }.filter { !$0.archived }
+            chats = directoryProjection.chats.filter { !$0.archived }
+            if let selected = selectedCard,
+                let current = (cards + chats).first(where: { $0.id == selected.card.id })
+            {
                 selectedCard?.card = current
             }
+        }
+
+        private func updateMachines(_ values: [DieterEndpoint], preferredUtilityID: String?) {
+            let previousSupported = Set(supportedMachines.compactMap(\.daemonID))
+            // Only the current application contract enters workspace or utility state.
+            machines = values.filter(IOSMachinePolicy.isCompatible)
+            let currentSupported = Set(supportedMachines.compactMap(\.daemonID))
+            if !previousSupported.subtracting(currentSupported).isEmpty {
+                directoryProjection = .init(
+                    projects: [:], projectReplicaEndpointIDs: [:], boards: [:], cards: [:], chats: [])
+                publishDirectory()
+            }
+            if let owner = selectedCard?.card.ownerDaemonID,
+                !owner.isEmpty, !currentSupported.contains(owner)
+            {
+                closeConversation()
+            }
+            let saved = connectedOrigin.flatMap {
+                defaults.string(forKey: "DieterIOSUtilityMachine:\($0.credentialID)")
+            }
+            let preferred = preferredUtilityID ?? saved
+            utilityMachineID =
+                supportedMachines.first(where: { $0.daemonID == preferred })?.daemonID
+                ?? supportedMachines.first(where: \.online)?.daemonID
+                ?? supportedMachines.first?.daemonID
+        }
+
+        private func routeLabel(_ route: MachineConnectionRoute) -> String {
+            route == .local ? "Direct TLS" : route.rawValue
         }
 
         private func startDirectoryRefresh(attempt: UUID) {
@@ -462,13 +431,6 @@
                 while !Task.isCancelled {
                     do { try await Task.sleep(for: .seconds(15)) } catch { return }
                     guard let self, self.owns(attempt) else { return }
-                    if let expiry = self.dataPlane?.directTokenExpiresAt.flatMap(DieterTimestamp.date(from:)),
-                        expiry.timeIntervalSinceNow < 45
-                    {
-                        self.refreshTask = nil
-                        await self.reconnect()
-                        return
-                    }
                     await self.refreshMachines()
                 }
             }
@@ -560,13 +522,12 @@
         }
 
         func selectCard(id: String) async {
-            if let owner = (cards + chats).first(where: { $0.id == id })?.ownerDaemonID,
-                !owner.isEmpty, owner != selectedMachineID
-            {
-                guard machines.contains(where: { $0.daemonID == owner && $0.online }) else {
-                    errorMessage = "This conversation’s machine is offline."; return
-                }
-                await selectMachine(id: owner)
+            guard let card = (cards + chats).first(where: { $0.id == id }) else { return }
+            guard !card.ownerDaemonID.isEmpty,
+                let owner = supportedMachines.first(where: { $0.daemonID == card.ownerDaemonID }), owner.online
+            else {
+                errorMessage = "This conversation’s machine is offline or incompatible."
+                return
             }
             let hasReadableSnapshot = selectedCard?.card.id == id && conversation?.cardID == id
             if hasReadableSnapshot, transcriptTask != nil { return }
@@ -578,25 +539,35 @@
             } else {
                 closeConversation()
             }
-            guard let rpc = dataPlane?.rpc else { return }
-            let scope = scope
-            selectedCard = (cards + chats).first(where: { $0.id == id }).map { card in
-                var detail = Dieter_V1_CardDetail(); detail.card = card; return detail
+            let requestScope = scope
+            do {
+                let plane = try await dataPlaneConnection(to: owner, refreshDirectToken: true)
+                guard owns(requestScope) else { plane.shutdown(); return }
+                conversationPlane?.shutdown()
+                conversationPlane = plane
+                machineRouteDescriptions[owner.daemonID ?? owner.id] = routeLabel(plane.connection.route)
+            } catch {
+                guard owns(requestScope) else { return }
+                errorMessage = IOSUserError.message(error)
+                return
             }
+            guard let rpc = conversationPlane?.rpc else { return }
+            var provisional = Dieter_V1_CardDetail(); provisional.card = card
+            selectedCard = provisional
             do {
                 let snapshot = try await rpc.conversation(cardID: id, limit: 60)
-                guard owns(scope) else { return }
+                guard owns(requestScope) else { return }
                 selectedCard = snapshot.detail
                 transcript.reset(snapshot)
                 publishTranscript()
-                watchConversation(id: id, scope: scope)
+                watchConversation(id: id, scope: requestScope)
             } catch {
-                guard owns(scope) else { return }
+                guard owns(requestScope) else { return }
                 errorMessage = IOSUserError.message(error)
                 if hasReadableSnapshot {
                     // Resume from the retained sequence even if the refresh RPC
                     // failed. The stream already owns bounded retry handling.
-                    watchConversation(id: id, scope: scope)
+                    watchConversation(id: id, scope: requestScope)
                 }
             }
         }
@@ -604,6 +575,7 @@
         func closeConversation() {
             selectionID = UUID()
             transcriptTask?.cancel(); transcriptTask = nil
+            conversationPlane?.shutdown(); conversationPlane = nil
             selectedCard = nil
             conversation = nil
             transcript = IOSTranscript()
@@ -613,7 +585,7 @@
 
         private func watchConversation(id: String, scope: IOSRequestScope) {
             transcriptTask?.cancel()
-            guard let rpc = dataPlane?.rpc else { return }
+            guard let rpc = conversationPlane?.rpc else { return }
             let sequence = transcript.conversation?.lastSeq ?? 0
             transcriptTask = Task { [weak self] in
                 do {
@@ -656,7 +628,9 @@
         }
 
         func loadOlderMessages() async {
-            guard !loadingOlder, hasOlderMessages, let rpc = dataPlane?.rpc, let current = conversation else { return }
+            guard !loadingOlder, hasOlderMessages, let rpc = conversationPlane?.rpc, let current = conversation else {
+                return
+            }
             let scope = scope
             let before = transcript.page.start
             loadingOlder = true
@@ -689,21 +663,13 @@
                 let checkout = projects.first(where: { $0.id == projectID })?.checkouts.first(where: {
                     $0.id == checkoutID && !$0.detached
                 }),
-                let machine = machines.first(where: { $0.daemonID == checkout.daemonID }), machine.online,
-                let gateway, let accessToken
+                let machine = supportedMachines.first(where: { $0.daemonID == checkout.daemonID }), machine.online
             else {
                 throw NSError(
                     domain: "Checkout", code: 1,
                     userInfo: [NSLocalizedDescriptionKey: "Choose an available checkout and machine."])
             }
-            guard IOSMachinePolicy.isCompatible(machine) else { throw IOSStoreError.incompatible(machine.apiVersion) }
-            var candidateScope = DirectCandidateScope.nonLoopback
-            #if DEBUG
-                if ProcessInfo.processInfo.environment["DIETER_IOS_TEST_GATEWAY"] != nil { candidateScope = .all }
-            #endif
-            return try await connections.selectDataPlane(
-                gateway: gateway, target: machine, gatewayAccessToken: accessToken, directCandidateScope: candidateScope
-            )
+            return try await dataPlaneConnection(to: machine)
         }
 
         func creationHarnesses(projectID: String, checkoutID: String) async throws -> [Dieter_V1_Harness] {
@@ -782,7 +748,9 @@
             text: String, attachments: [Dieter_V1_MessagePart] = [],
             selection: Dieter_V1_HarnessSelection? = nil
         ) async -> Bool {
-            guard pendingOperations == 0, let rpc = dataPlane?.rpc, let card = selectedCard?.card else { return false }
+            guard pendingOperations == 0, let rpc = conversationPlane?.rpc, let card = selectedCard?.card else {
+                return false
+            }
             let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !text.isEmpty || !attachments.isEmpty else { return false }
             let scope = scope
@@ -804,7 +772,7 @@
             let optionIdentity = request.providerOptions.sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }
             let command = messageIdentity.command(
                 for: [
-                    selectedMachine?.id ?? "", card.id, text, attachmentIdentity, request.provider, request.model,
+                    card.ownerDaemonID, card.id, text, attachmentIdentity, request.provider, request.model,
                     request.effort,
                 ] + optionIdentity)
             request.commandID = command
@@ -823,7 +791,7 @@
         }
 
         func removeQueuedMessage(_ message: Dieter_V1_QueuedMessage) async -> Dieter_V1_QueuedMessage? {
-            guard pendingOperations == 0, !message.id.isEmpty, let rpc = dataPlane?.rpc,
+            guard pendingOperations == 0, !message.id.isEmpty, let rpc = conversationPlane?.rpc,
                 let card = selectedCard?.card, conversation?.queue.contains(where: { $0.id == message.id }) == true
             else { return nil }
             let scope = scope
@@ -855,7 +823,7 @@
                 var request = Dieter_V1_StartCardRequest()
                 request.cardID = card.id
                 request.clientID = self.clientID
-                request.commandID = self.startIdentity.command(for: [self.selectedMachine?.id ?? "", card.id])
+                request.commandID = self.startIdentity.command(for: [card.ownerDaemonID, card.id])
                 _ = try await rpc.startCard(request)
                 self.startIdentity.acknowledge(command: request.commandID)
             }
@@ -871,7 +839,9 @@
         }
 
         private func mutateSelected(_ operation: (DieterRPC, Dieter_V1_Card) async throws -> Void) async {
-            guard pendingOperations == 0, let rpc = dataPlane?.rpc, let card = selectedCard?.card else { return }
+            guard pendingOperations == 0, let rpc = conversationPlane?.rpc, let card = selectedCard?.card else {
+                return
+            }
             let scope = scope
             pendingOperations += 1
             defer { pendingOperations -= 1 }
@@ -922,7 +892,7 @@
         }
 
         func readConversationImage(projectID: String, cardID: String, url: URL) async -> Dieter_V1_FileDocument? {
-            guard let rpc = dataPlane?.rpc, RemoteWorkspaceImage.isWorkspaceImageURL(url) else { return nil }
+            guard let rpc = conversationPlane?.rpc, RemoteWorkspaceImage.isWorkspaceImageURL(url) else { return nil }
             let attempt = connectionID
             do {
                 let path: String
@@ -972,7 +942,7 @@
         }
 
         func remoteDesktopConnection() async throws -> RemoteDesktopSignalingConnection {
-            guard foreground, let gateway, let accessToken, let target = selectedMachine else {
+            guard foreground, let gateway, let accessToken, let target = utilityMachine else {
                 throw NSError(
                     domain: "DieterScreens", code: 1,
                     userInfo: [NSLocalizedDescriptionKey: "Select a connected Dieter machine."])
@@ -981,9 +951,6 @@
                 throw NSError(
                     domain: "DieterScreens", code: 2,
                     userInfo: [NSLocalizedDescriptionKey: "\(target.name) is offline."])
-            }
-            guard IOSMachinePolicy.isCompatible(target) else {
-                throw IOSStoreError.incompatible(target.apiVersion)
             }
             var candidateScope = DirectCandidateScope.nonLoopback
             #if DEBUG
@@ -1027,12 +994,11 @@
             connectionID = UUID()
             selectionID = UUID()
             loadingOlder = false
-            stateTask?.cancel(); stateTask = nil
             transcriptTask?.cancel(); transcriptTask = nil
             refreshTask?.cancel(); refreshTask = nil
             providerQuotaTask?.cancel(); providerQuotaTask = nil
             reconnectTask?.cancel(); reconnectTask = nil
-            dataPlane?.shutdown(); dataPlane = nil
+            conversationPlane?.shutdown(); conversationPlane = nil
             gatewayTask?.cancel(); gatewayTask = nil
             gateway?.shutdown(); gateway = nil
             connections.invalidateTemporaryLeases()
@@ -1047,8 +1013,10 @@
         }
 
         private func clearNodeContent() {
-            projects = []; boards = []; cards = []; chats = []; harnesses = []
-            routeDescription = ""
+            directoryProjection = .init(
+                projects: [:], projectReplicaEndpointIDs: [:], boards: [:], cards: [:], chats: [])
+            projects = []; boards = []; cards = []; chats = []
+            machineRouteDescriptions = [:]
             machineInformation = nil
             machineInformationLoading = false
             machineInformationError = nil
@@ -1064,13 +1032,12 @@
             loadingOlder = false
             let retryAttempt = connectionID
             refreshTask?.cancel(); refreshTask = nil
-            stateTask?.cancel(); stateTask = nil
             transcriptTask?.cancel(); transcriptTask = nil
             let requiresSignIn = (error as? RPCError)?.code == .unauthenticated
             if case IOSStoreError.incompatible(let version) = error {
                 phase = .incompatible(found: version)
                 errorMessage = IOSUserError.message(error)
-                dataPlane?.shutdown(); dataPlane = nil
+                conversationPlane?.shutdown(); conversationPlane = nil
                 startDirectoryRefresh(attempt: retryAttempt)
                 return
             }
@@ -1083,8 +1050,7 @@
                 connections.invalidateTemporaryLeases()
             }
             errorMessage = IOSUserError.message(error)
-            dataPlane?.shutdown(); dataPlane = nil
-            stateTask?.cancel(); stateTask = nil
+            conversationPlane?.shutdown(); conversationPlane = nil
             transcriptTask?.cancel(); transcriptTask = nil
             if !requiresSignIn, gateway != nil {
                 reconnectTask?.cancel()
@@ -1137,7 +1103,7 @@
             case .invalidGateway: "Enter a gateway address such as https://board.dbpprt.com."
             case .streamEnded: "The connection ended. Reconnecting…"
             case .incompatible(let version):
-                "This machine uses API \(version). Update its Dieter daemon to API \(IOSMachinePolicy.apiVersion)."
+                "This machine uses application contract \(version). Update its Dieter daemon to contract \(IOSMachinePolicy.apiVersion)."
             }
         }
     }

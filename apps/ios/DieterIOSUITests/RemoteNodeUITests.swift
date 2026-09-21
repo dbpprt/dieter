@@ -369,23 +369,31 @@ final class RemoteNodeUITests: XCTestCase {
         waitForBoard(app, project: project, board: board)
         let incompatible = try XCTUnwrap(environment["DIETER_IOS_TEST_INCOMPATIBLE_DAEMON"])
         let daemon = try XCTUnwrap(environment["DIETER_IOS_TEST_DAEMON"])
-        tap(app, "ios.machine-picker")
-        tap(app, "ios.machine.\(incompatible)")
-        textExists(app, "This machine uses API 2", timeout: 20)
-        screenshot(app, "09-incompatible-node-rejected")
-        app.alerts.buttons["OK"].tap()
-        tap(app, "ios.machine-picker")
-        tap(app, "ios.machine.\(daemon)")
-        waitForBoard(app, project: project, board: board)
-        screenshot(app, "10-compatible-node-restored")
+        XCTAssertFalse(
+            element(app, "ios.machine-picker").exists, "The global workspace must not have a machine switcher.")
+        XCTAssertFalse(
+            element(app, "ios.machine.\(incompatible)").exists,
+            "Incompatible machines must not enter the global workspace.")
+        screenshot(app, "09-global-workspace")
+
+        tap(app, "ios.provider-quotas")
+        XCTAssertTrue(element(app, "ios.provider-quotas.details").waitForExistence(timeout: 20))
+        screenshot(app, "10-provider-quotas")
+        tap(app, "ios.provider-quotas.done")
 
         tap(app, "ios.machine-state.open")
         XCTAssertTrue(element(app, "ios.machine-state").waitForExistence(timeout: 20))
+        tap(app, "ios.machine-state.machine-picker")
+        XCTAssertFalse(
+            element(app, "ios.machine-state.machine.\(incompatible)").exists,
+            "The local utility picker must omit incompatible machines.")
+        XCTAssertTrue(element(app, "ios.machine-state.machine.\(daemon)").exists)
+        tap(app, "ios.machine-state.machine.\(daemon)")
         XCTAssertTrue(element(app, "ios.machine-state.cpu").waitForExistence(timeout: 20))
         XCTAssertTrue(element(app, "ios.machine-state.memory").exists)
         XCTAssertTrue(element(app, "ios.machine-state.system").exists)
         screenshot(app, "11-machine-state")
-        tap(app, "ios.machine-state.back")
+        tap(app, "ios.machine-state.done")
         waitForBoard(app, project: project, board: board)
 
         if environment["DIETER_IOS_TEST_LANDSCAPE"] != "1" {

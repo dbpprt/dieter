@@ -19,8 +19,8 @@
 
         private enum FileExit { case back, dismiss }
         private var isDirty: Bool { document.map { !$0.binary && text != $0.content } ?? false }
-        private var isCurrentScope: Bool { store.machines.contains { $0.daemonID == scope.machineID } }
-        private var canAccess: Bool { store.machines.contains { $0.daemonID == scope.machineID && $0.online } }
+        private var isCurrentScope: Bool { store.supportedMachines.contains { $0.daemonID == scope.machineID } }
+        private var canAccess: Bool { store.supportedMachines.contains { $0.daemonID == scope.machineID && $0.online } }
 
         var body: some View {
             NavigationStack {

@@ -84,11 +84,12 @@
                 Section("Connection") {
                     LabeledContent("Gateway", value: store.gatewayAddress)
                         .lineLimit(2)
-                    LabeledContent("Machine", value: store.selectedMachine?.name ?? "None selected")
+                    LabeledContent(
+                        "Compatible machines",
+                        value:
+                            "\(store.supportedMachines.filter(\.online).count) online · \(store.supportedMachines.count) enrolled"
+                    )
                     LabeledContent("Status", value: store.phase.label)
-                    if !store.routeDescription.isEmpty {
-                        LabeledContent("Route", value: store.routeDescription)
-                    }
                     Button("Reconnect", systemImage: "arrow.clockwise") {
                         Task { await store.reconnect() }
                     }
