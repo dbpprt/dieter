@@ -10,6 +10,7 @@ import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
@@ -84,6 +85,9 @@ class ConversationCreationPreferencesEndToEndTest {
         val fixtureTitle = "Android creation defaults ${UUID.randomUUID().toString().take(8)}"
 
         try {
+            runBlocking {
+                manager.ensureCheckoutRoute(project.id, requireNotNull(project.checkoutsList.firstOrNull()).id)
+            }
             preferences.setConversationCreationPreferences(
                 ConversationCreationPreferences(
                     provider = targetHarness.id,
@@ -103,7 +107,14 @@ class ConversationCreationPreferencesEndToEndTest {
                 composeRule.onAllNodesWithTag("new-card").fetchSemanticsNodes().isNotEmpty()
             }
             composeRule.onNodeWithTag("new-card").performClick()
-            composeRule.onNodeWithTag("conversation-title").assertIsDisplayed()
+            composeRule.waitUntil(10_000) {
+                composeRule.onAllNodesWithTag("quick-task-popover").fetchSemanticsNodes().isNotEmpty()
+            }
+            composeRule.onNodeWithText("More options").performClick()
+            composeRule.waitUntil(20_000) {
+                composeRule.onAllNodesWithTag("conversation-title").fetchSemanticsNodes().isNotEmpty()
+            }
+            composeRule.onNodeWithTag("conversation-title").performScrollTo().assertIsDisplayed()
 
             composeRule.onNodeWithTag("creation-provider").performScrollTo().assertTextEquals(targetHarness.name)
             composeRule.onNodeWithTag("creation-model").assertTextEquals(targetModel.name)
@@ -117,7 +128,6 @@ class ConversationCreationPreferencesEndToEndTest {
             composeRule.waitUntil(15_000) {
                 composeRule.onAllNodesWithTag("new-card").fetchSemanticsNodes().isNotEmpty()
             }
-
             val expected = ConversationCreationPreferences(
                 provider = targetHarness.id,
                 model = targetModel.id,
@@ -126,11 +136,50 @@ class ConversationCreationPreferencesEndToEndTest {
             )
             assertEquals(expected, preferences.conversationCreation.value)
 
+            // Reproduce opening a project chat while the app is currently
+            // routed to a different machine. The creation screen must route
+            // back to this project's checkout before exposing its catalog.
+            val expectedAlternateDaemon = arguments.getString("isolatedSecondDaemon").orEmpty()
+            val otherMachine = if (expectedAlternateDaemon.isBlank()) {
+                connected.endpointConnections.firstOrNull { candidate ->
+                    candidate.online && candidate.daemonId != null &&
+                        candidate.daemonId != project.checkoutsList.firstOrNull()?.daemonId
+                }
+            } else {
+                runBlocking {
+                    withTimeout(20_000) {
+                        manager.state.first { state ->
+                            state.endpointConnections.any { candidate ->
+                                candidate.online && candidate.daemonId == expectedAlternateDaemon
+                            }
+                        }.endpointConnections.first { it.online && it.daemonId == expectedAlternateDaemon }
+                    }
+                }
+            }
+            otherMachine?.let {
+                runBlocking { manager.ensureMachineRoute(otherMachine.id) }
+                runBlocking {
+                    withTimeout(20_000) {
+                        manager.state.first { state ->
+                            state.harnessesEndpointId == otherMachine.id && state.harnesses.any { it.modelsCount > 0 }
+                        }
+                    }
+                }
+            }
+
             composeRule.onNodeWithTag("nav-chats").performClick()
             composeRule.waitUntil(10_000) {
                 composeRule.onAllNodesWithTag("new-chat").fetchSemanticsNodes().isNotEmpty()
             }
             composeRule.onNodeWithTag("new-chat").performClick()
+            composeRule.waitUntil(20_000) {
+                manager.state.value.harnessesEndpointId ==
+                    manager.state.value.endpointConnections.firstOrNull {
+                        it.daemonId == project.checkoutsList.firstOrNull()?.daemonId
+                    }?.id &&
+                    composeRule.onAllNodesWithTag("creation-model").fetchSemanticsNodes().isNotEmpty() &&
+                    composeRule.onAllNodesWithTag("conversation-prompt").fetchSemanticsNodes().isNotEmpty()
+            }
             composeRule.onNodeWithTag("conversation-prompt").assertIsDisplayed()
             composeRule.onNodeWithTag("creation-provider").assertTextEquals(targetHarness.name)
             composeRule.onNodeWithTag("creation-model").assertTextEquals(targetModel.name)

@@ -2,6 +2,7 @@ package com.dbpprt.dieter.ui
 
 import com.dbpprt.dieter.connection.ProjectReplica
 import com.dbpprt.dieter.settings.ConversationCreationPreferences
+import com.dbpprt.dieter.v1.Checkout
 import com.dbpprt.dieter.v1.Harness
 
 internal data class ResolvedConversationCreationPreferences(
@@ -28,6 +29,33 @@ internal fun harnessCatalogSupportsSelection(
     ?.modelsList
     ?.any { it.id == model }
     ?: false
+
+internal fun preferredCreationCheckout(
+    checkouts: List<Checkout>,
+    selectedCheckoutId: String,
+    catalogEndpointId: String?,
+    endpointIdsByDaemon: Map<String, String>,
+    projectReplicaEndpointId: String?,
+): Checkout? {
+    val available = checkouts.filterNot { it.detached }
+    available.firstOrNull { it.id == selectedCheckoutId }?.let { return it }
+    catalogEndpointId?.let { endpointId ->
+        available.firstOrNull { endpointIdsByDaemon[it.daemonId] == endpointId }?.let { return it }
+    }
+    if (available.size == 1) return available.first()
+    projectReplicaEndpointId?.let { endpointId ->
+        available.firstOrNull { endpointIdsByDaemon[it.daemonId] == endpointId }?.let { return it }
+    }
+    return null
+}
+
+internal fun creationCheckoutNeedsPreparation(
+    checkoutId: String?,
+    selectedCheckoutId: String,
+    checkoutEndpointId: String?,
+    catalogEndpointId: String?,
+): Boolean = checkoutId != null &&
+    (selectedCheckoutId != checkoutId || checkoutEndpointId != catalogEndpointId)
 
 internal fun resolveConversationCreationPreferences(
     saved: ConversationCreationPreferences,

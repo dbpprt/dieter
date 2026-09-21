@@ -742,15 +742,21 @@ class DieterConnectionManager(
         if (!shouldApply || directory == null) return
         _state.update { current ->
             if (current.activeGatewayId != gatewayId || current.projects.isNotEmpty()) return@update current
+            val entries = synchronized(outbox) { outbox.toList() }
+            val cards = retainPendingOptimisticConversations(directory.state.cardsList, entries)
+            val chats = retainPendingOptimisticConversations(directory.state.chatsList, entries)
             current.copy(
-                selectedState = directory.state,
+                selectedState = directory.state.toBuilder()
+                    .clearCards().addAllCards(cards)
+                    .clearChats().addAllChats(chats)
+                    .build(),
                 projects = directory.state.projectsList,
                 projectReplicas = directory.hosts.mapValues { (_, host) ->
                     ProjectReplica(host.endpointId, host.daemonId, host.hostname, online = false)
                 },
                 boards = directory.state.boardsList,
-                cards = directory.state.cardsList,
-                chats = directory.state.chatsList,
+                cards = cards,
+                chats = chats,
             )
         }
         updateSelectedState()
@@ -1329,11 +1335,12 @@ class DieterConnectionManager(
 
     private fun persistMachineDirectory() {
         val current = _state.value
+        val entries = synchronized(outbox) { outbox.toList() }
         val directoryState = State.newBuilder()
             .addAllProjects(current.projects)
             .addAllBoards(current.boards)
-            .addAllCards(current.cards)
-            .addAllChats(current.chats)
+            .addAllCards(retainPendingOptimisticConversations(current.cards, entries))
+            .addAllChats(retainPendingOptimisticConversations(current.chats, entries))
             .build()
         val hosts = current.projectReplicas.mapValues { (_, host) ->
             CachedProjectReplica(host.endpointId, host.daemonId, host.hostname)
@@ -1395,7 +1402,7 @@ class DieterConnectionManager(
             val boards = sharedBoards(current.boards.filter { it.projectId in retainedProjectIds } + snapshot.state.boardsList)
             val incomingItems = snapshot.state.cardsList + snapshot.state.chatsList
             val presentIDs = incomingItems.mapTo(hashSetOf()) { it.id }
-            val retainedItems = (current.cards + current.chats).filter {
+            val retainedItems = retainPendingOptimisticConversations(current.cards + current.chats, entries).filter {
                 it.projectId in retainedProjectIds && !(it.ownerDaemonId == activeEndpoint?.daemonId && it.id !in presentIDs)
             }
             val items = sharedItems(retainedItems + incomingItems).filter { it.id !in snapshot.state.archives.itemIdsList || it.archived && it.scope == "chat" && it.boardId.isEmpty() }

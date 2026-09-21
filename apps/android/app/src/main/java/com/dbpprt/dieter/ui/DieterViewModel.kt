@@ -86,6 +86,7 @@ import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withContext
 import java.time.ZoneId
 import java.util.UUID
+import java.util.concurrent.atomic.AtomicBoolean
 
 private const val CONVERSATION_PAGE_SIZE = 30
 private const val SCHEDULE_PAGE_SIZE = 50
@@ -95,6 +96,13 @@ private const val POST_SEND_INITIAL_REFRESH_DELAY_MS = 750L
 private const val POST_SEND_REFRESH_INTERVAL_MS = 2_000L
 internal const val CONNECTION_DIALOG_GRACE_MS = 60_000L
 private const val CONNECTION_DIALOG_NO_INTERRUPTION_KEY = Long.MIN_VALUE
+
+internal class ConversationCreationGate {
+    private val active = AtomicBoolean(false)
+
+    fun tryAcquire(): Boolean = active.compareAndSet(false, true)
+    fun release() = active.set(false)
+}
 
 internal fun connectionDialogDelayMs(
     desiredConnected: Boolean,
@@ -401,6 +409,7 @@ class DieterViewModel internal constructor(
     internal val navigationFolders get() = appPreferences.navigationFolders
 
     private val mutationMutex = Mutex()
+    private val conversationCreationGate = ConversationCreationGate()
     private var pendingProjectCreation: Pair<CreateProjectRequest, String>? = null
     private var foreground = false
     private var stateJob: Job? = null
@@ -1707,6 +1716,15 @@ class DieterViewModel internal constructor(
         if (_state.value.destination == Destination.FILES) loadFiles("")
     }
 
+    fun prepareCreationCheckout(id: String) = action(ensureReplicaRoute = false) {
+        val checkout = _state.value.projects.flatMap { it.checkoutsList }.firstOrNull { it.id == id }
+            ?: error("Checkout is unavailable")
+        val machine = _state.value.presentedEndpointConnections.firstOrNull { it.daemonId == checkout.daemonId }
+            ?: error("Machine is unavailable")
+        connectionManager.ensureCheckoutRoute(checkout.projectId, checkout.id)
+        _state.update { it.copy(creationCheckoutId = id, fileDocument = null, filePath = "") }
+    }
+
     fun detachCheckout(id: String) = action(ensureReplicaRoute = false) {
         val checkout = _state.value.projects.flatMap { it.checkoutsList }.first { it.id == id }
         connectionManager.ensureCheckoutRoute(checkout.projectId, checkout.id)
@@ -1739,43 +1757,55 @@ class DieterViewModel internal constructor(
         workspaceBaseBranch: String = "",
         autoGenerateTitle: Boolean = false,
         onCreated: () -> Unit = {},
-    ) = action(ensureReplicaRoute = false) {
-        val current = _state.value
-        check(current.project != null) { "Select a project before creating a conversation." }
-        val checkoutId = connectionManager.ensureCheckoutRoute(current.selectedProjectId, current.creationCheckout?.id ?: current.creationCheckoutId)
-        val selectedWorkspaceMode = ConversationWorkspaceMode.resolve(workspaceMode)
-        val request = CreateConversationRequest.newBuilder()
-            .setCheckoutId(checkoutId)
-            .setProjectId(current.selectedProjectId)
-            .setBoardId(if (chat) "" else current.selectedBoardId)
-            .setLane(if (chat) "" else lane)
-            .setTitle(title)
-            .setPrompt(prompt)
-            .setProvider(provider)
-            .setModel(model)
-            .setEffort(effort)
-            .putAllProviderOptions(providerOptions)
-            .setWorkspaceMode(selectedWorkspaceMode.wire)
-            .setWorkspaceBranch(workspaceBranch.trim().takeIf { selectedWorkspaceMode == ConversationWorkspaceMode.WORKTREE }.orEmpty())
-            .setWorkspaceBaseBranch(workspaceBaseBranch.trim().takeIf { selectedWorkspaceMode == ConversationWorkspaceMode.WORKTREE }.orEmpty())
-            .setAutoGenerateTitle(autoGenerateTitle)
-            .addAllLabelIds(if (chat) emptyList() else labelIds)
-            .setDeferStart(deferStart)
-            .addAllAttachments(attachments)
-            .build()
-        appPreferences.setConversationCreationPreferences(
-            ConversationCreationPreferences(
-                provider = provider,
-                model = model,
-                effort = effort,
-                workspaceMode = selectedWorkspaceMode.wire,
-            ),
-        )
-        val card = connectionManager.enqueueConversation(request, chat)
-        onCreated()
-        _state.update { it.copy(appSurface = null, editingScheduleId = null) }
-        if (shouldOpenCreatedConversation(chat, lane)) {
-            openCard(card, if (chat) Destination.CHATS else Destination.BOARD)
+    ) {
+        // Compose does not publish working=true until the launched action gets
+        // CPU time. Admit synchronously so a rapid second tap cannot create a
+        // second command with a different idempotency identity.
+        if (!conversationCreationGate.tryAcquire()) return
+        action(
+            ensureReplicaRoute = false,
+            onFinished = conversationCreationGate::release,
+        ) {
+            val current = _state.value
+            check(current.project != null) { "Select a project before creating a conversation." }
+            val checkoutId = connectionManager.ensureCheckoutRoute(
+                current.selectedProjectId,
+                current.creationCheckout?.id ?: current.creationCheckoutId,
+            )
+            val selectedWorkspaceMode = ConversationWorkspaceMode.resolve(workspaceMode)
+            val request = CreateConversationRequest.newBuilder()
+                .setCheckoutId(checkoutId)
+                .setProjectId(current.selectedProjectId)
+                .setBoardId(if (chat) "" else current.selectedBoardId)
+                .setLane(if (chat) "" else lane)
+                .setTitle(title)
+                .setPrompt(prompt)
+                .setProvider(provider)
+                .setModel(model)
+                .setEffort(effort)
+                .putAllProviderOptions(providerOptions)
+                .setWorkspaceMode(selectedWorkspaceMode.wire)
+                .setWorkspaceBranch(workspaceBranch.trim().takeIf { selectedWorkspaceMode == ConversationWorkspaceMode.WORKTREE }.orEmpty())
+                .setWorkspaceBaseBranch(workspaceBaseBranch.trim().takeIf { selectedWorkspaceMode == ConversationWorkspaceMode.WORKTREE }.orEmpty())
+                .setAutoGenerateTitle(autoGenerateTitle)
+                .addAllLabelIds(if (chat) emptyList() else labelIds)
+                .setDeferStart(deferStart)
+                .addAllAttachments(attachments)
+                .build()
+            appPreferences.setConversationCreationPreferences(
+                ConversationCreationPreferences(
+                    provider = provider,
+                    model = model,
+                    effort = effort,
+                    workspaceMode = selectedWorkspaceMode.wire,
+                ),
+            )
+            val card = connectionManager.enqueueConversation(request, chat)
+            onCreated()
+            _state.update { it.copy(appSurface = null, editingScheduleId = null) }
+            if (shouldOpenCreatedConversation(chat, lane)) {
+                openCard(card, if (chat) Destination.CHATS else Destination.BOARD)
+            }
         }
     }
 
@@ -3574,20 +3604,28 @@ class DieterViewModel internal constructor(
 
     fun clearError() = _state.update { it.copy(error = null) }
 
-    private fun action(ensureReplicaRoute: Boolean = true, block: suspend () -> Unit) {
+    private fun action(
+        ensureReplicaRoute: Boolean = true,
+        onFinished: () -> Unit = {},
+        block: suspend () -> Unit,
+    ) {
         viewModelScope.launch {
-            mutationMutex.withLock {
-                _state.update { it.copy(working = true, error = null) }
-                try {
-                    if (ensureReplicaRoute) connectionManager.ensureReplicaRoute(_state.value.selectedProjectId)
-                    block()
-                } catch (cancelled: CancellationException) {
-                    throw cancelled
-                } catch (error: Throwable) {
-                    _state.update { it.copy(error = readableError(error)) }
-                } finally {
-                    _state.update { it.copy(working = false) }
+            try {
+                mutationMutex.withLock {
+                    _state.update { it.copy(working = true, error = null) }
+                    try {
+                        if (ensureReplicaRoute) connectionManager.ensureReplicaRoute(_state.value.selectedProjectId)
+                        block()
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (error: Throwable) {
+                        _state.update { it.copy(error = readableError(error)) }
+                    } finally {
+                        _state.update { it.copy(working = false) }
+                    }
                 }
+            } finally {
+                onFinished()
             }
         }
     }

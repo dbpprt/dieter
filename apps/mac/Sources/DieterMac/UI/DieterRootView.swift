@@ -154,6 +154,7 @@ struct DieterRootView: View {
             .allowsHitTesting(false)
         }
         .toolbar {
+            ToolbarSpacer(.flexible, placement: .primaryAction)
             ToolbarItemGroup(placement: .primaryAction) {
                 ProviderQuotaCompactView()
                 if store.section != .board || store.selectedCardID == nil {

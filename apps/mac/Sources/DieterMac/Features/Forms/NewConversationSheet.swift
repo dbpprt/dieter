@@ -85,6 +85,11 @@ struct NewConversationSheet: View {
                 }
 
                 Section {
+                    if let project, project.checkouts.filter({ !$0.detached }).count > 1 {
+                        LabeledContent("Run on") {
+                            ProjectCheckoutMenu(projectID: project.id)
+                        }
+                    }
                     Picker("Start in", selection: $lane) {
                         ForEach(store.selectedBoard?.lanes ?? [], id: \.id) { item in
                             Text(item.name).tag(item.id)
@@ -216,6 +221,9 @@ struct NewConversationSheet: View {
             if focusedField == nil { focusedField = .title }
             initializeDraft()
             await loadDestinationHarnesses()
+        }
+        .onChange(of: store.checkout(forProjectID: project?.id ?? "")?.id) { _, _ in
+            Task { await loadDestinationHarnesses() }
         }
     }
 

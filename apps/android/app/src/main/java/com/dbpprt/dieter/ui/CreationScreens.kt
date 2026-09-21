@@ -110,9 +110,9 @@ fun NewConversationScreen(
     var prompt by remember { mutableStateOf("") }
     val chosenCheckout = state.creationCheckout
     val catalogReady = state.creationCatalogReady
-    LaunchedEffect(chosenCheckout?.id) {
+    LaunchedEffect(chosenCheckout?.id, state.creationCheckoutId, state.harnessesEndpointId) {
         if (chosenCheckout != null && state.creationMachine?.online == true && !catalogReady) {
-            model.selectCreationCheckout(chosenCheckout.id)
+            model.prepareCreationCheckout(chosenCheckout.id)
         }
     }
     val destinationHarnesses = if (catalogReady) state.harnesses else emptyList()

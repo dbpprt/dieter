@@ -73,6 +73,11 @@ extension DieterStore {
     func checkout(forProjectID id: String) -> Dieter_V1_Checkout? {
         let values = projectDirectory[id]?.checkouts.filter { !$0.detached } ?? []
         if let selected = creationCheckoutIDs[id] { return values.first { $0.id == selected } }
+        if let daemonID = endpoint.daemonID,
+            let active = values.first(where: { $0.daemonID == daemonID })
+        {
+            return active
+        }
         return values.count == 1 ? values.first : nil
     }
 

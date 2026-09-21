@@ -188,6 +188,26 @@ internal fun conversationCreationFailure(entries: List<AndroidOutboxEntry>, id: 
 
 internal fun optimisticConversationId(entry: AndroidOutboxEntry): String = entry.serverId ?: entry.optimisticId
 
+/**
+ * Local conversation rows are projections of undelivered create commands, not
+ * durable directory records. Once the daemon has accepted a create, the same
+ * outbox entry is rendered under its server ID while sync catches up. Retaining
+ * the old local ID at that point would show one durable conversation twice.
+ */
+internal fun retainPendingOptimisticConversations(
+    cards: List<Card>,
+    entries: List<AndroidOutboxEntry>,
+): List<Card> {
+    val pendingLocalIds = entries.asSequence()
+        .filter {
+            it.serverId == null &&
+                it.kind in setOf(OutboxKind.CREATE_CARD, OutboxKind.CREATE_CHAT)
+        }
+        .map(AndroidOutboxEntry::optimisticId)
+        .toSet()
+    return cards.filter { card -> isServerConversationId(card.id) || card.id in pendingLocalIds }
+}
+
 internal fun optimisticInitialMessageId(entry: AndroidOutboxEntry): String? {
     if (entry.kind != OutboxKind.CREATE_CHAT) return null
     val request = runCatching { CreateConversationRequest.parseFrom(entry.request) }.getOrNull() ?: return null

@@ -3,6 +3,7 @@ package com.dbpprt.dieter.ui
 import com.dbpprt.dieter.connection.ProjectReplica
 import com.dbpprt.dieter.settings.ConversationCreationPreferences
 import com.dbpprt.dieter.v1.EffortOption
+import com.dbpprt.dieter.v1.Checkout
 import com.dbpprt.dieter.v1.Harness
 import com.dbpprt.dieter.v1.HarnessModel
 import org.junit.Assert.assertEquals
@@ -97,4 +98,82 @@ class ConversationCreationPreferencesTest {
         assertFalse(harnessCatalogSupportsSelection(listOf(codex), "codex", "retired"))
         assertFalse(harnessCatalogSupportsSelection(listOf(codex), "claude", "sol"))
     }
+
+    @Test
+    fun singleCheckoutIsPreparedEvenWithoutAStoredSelection() {
+        val checkout = checkout("checkout-mini", "mini")
+
+        assertEquals(
+            checkout,
+            preferredCreationCheckout(
+                checkouts = listOf(checkout),
+                selectedCheckoutId = "",
+                catalogEndpointId = null,
+                endpointIdsByDaemon = mapOf("mini" to "gateway#mini"),
+                projectReplicaEndpointId = null,
+            ),
+        )
+    }
+
+    @Test
+    fun activeCatalogSelectsItsCheckoutForASharedProject() {
+        val mini = checkout("checkout-mini", "mini")
+        val garuda = checkout("checkout-garuda", "garuda")
+
+        assertEquals(
+            garuda,
+            preferredCreationCheckout(
+                checkouts = listOf(mini, garuda),
+                selectedCheckoutId = "",
+                catalogEndpointId = "gateway#garuda",
+                endpointIdsByDaemon = mapOf("mini" to "gateway#mini", "garuda" to "gateway#garuda"),
+                projectReplicaEndpointId = "gateway#mini",
+            ),
+        )
+    }
+
+    @Test
+    fun ambiguousSharedProjectRequiresAnExplicitCheckout() {
+        assertEquals(
+            null,
+            preferredCreationCheckout(
+                checkouts = listOf(checkout("checkout-mini", "mini"), checkout("checkout-garuda", "garuda")),
+                selectedCheckoutId = "",
+                catalogEndpointId = null,
+                endpointIdsByDaemon = emptyMap(),
+                projectReplicaEndpointId = null,
+            ),
+        )
+    }
+
+    @Test
+    fun projectChatPreparesItsCheckoutWhenTheCatalogBelongsToAnotherMachine() {
+        assertTrue(
+            creationCheckoutNeedsPreparation(
+                checkoutId = "checkout-mini",
+                selectedCheckoutId = "checkout-mini",
+                checkoutEndpointId = "gateway#mini",
+                catalogEndpointId = "gateway#garuda",
+            ),
+        )
+    }
+
+    @Test
+    fun projectChatDoesNotReprepareAnAlreadyMatchingCheckoutAndCatalog() {
+        assertFalse(
+            creationCheckoutNeedsPreparation(
+                checkoutId = "checkout-mini",
+                selectedCheckoutId = "checkout-mini",
+                checkoutEndpointId = "gateway#mini",
+                catalogEndpointId = "gateway#mini",
+            ),
+        )
+    }
+
+    private fun checkout(id: String, daemonId: String): Checkout = Checkout.newBuilder()
+        .setId(id)
+        .setProjectId("project")
+        .setDaemonId(daemonId)
+        .setName("Dieter")
+        .build()
 }

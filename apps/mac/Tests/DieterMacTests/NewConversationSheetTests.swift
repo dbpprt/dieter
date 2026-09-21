@@ -6,6 +6,25 @@ import Testing
 
 @MainActor
 struct NewConversationSheetTests {
+    @Test func activeMachineIsTheDefaultCheckoutForSharedProjectCreation() {
+        let store = DieterStore(restoreSync: false)
+        let projectID = "shared-project"
+        var mini = Dieter_V1_Checkout()
+        mini.id = "mini-checkout"; mini.projectID = projectID; mini.daemonID = "mini"
+        var garuda = Dieter_V1_Checkout()
+        garuda.id = "garuda-checkout"; garuda.projectID = projectID; garuda.daemonID = "garuda"
+        var project = Dieter_V1_Project()
+        project.id = projectID; project.checkouts = [mini, garuda]
+        store.projectDirectory[projectID] = project
+        store.endpoint = DieterEndpoint(
+            name: "Garuda", host: "127.0.0.1", port: 1, daemonID: "garuda", online: true,
+            apiVersion: dieterExpectedAPIVersion)
+
+        #expect(store.checkout(forProjectID: projectID)?.id == garuda.id)
+        store.creationCheckoutIDs[projectID] = mini.id
+        #expect(store.checkout(forProjectID: projectID)?.id == mini.id)
+    }
+
     @Test func taskEditorSupportsNativeMultilineEditingAndScrollsLongTasks() async throws {
         let fixture = NewConversationSheetFixture()
         defer { fixture.window.close() }

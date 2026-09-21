@@ -295,6 +295,38 @@ class ConversationOutboxPolicyTest {
     }
 
     @Test
+    fun `accepted creation removes its old optimistic directory row`() {
+        val request = CreateConversationRequest.newBuilder().setTitle("One card").build()
+        val accepted = outboxEntry(
+            kind = OutboxKind.CREATE_CARD,
+            request = request.toByteArray(),
+            optimisticId = "local_card",
+            serverId = "c_server",
+        )
+        val local = Card.newBuilder().setId("local_card").setTitle("One card").build()
+        val server = local.toBuilder().setId("c_server").setOwnerDaemonId("daemon").build()
+
+        assertEquals(
+            listOf(server),
+            retainPendingOptimisticConversations(listOf(local, server), listOf(accepted)),
+        )
+    }
+
+    @Test
+    fun `undelivered creation keeps its optimistic directory row`() {
+        val pending = outboxEntry(
+            kind = OutboxKind.CREATE_CARD,
+            request = CreateConversationRequest.getDefaultInstance().toByteArray(),
+            optimisticId = "local_card",
+            serverId = null,
+        )
+        val local = Card.newBuilder().setId("local_card").setTitle("Offline card").build()
+
+        assertEquals(listOf(local), retainPendingOptimisticConversations(listOf(local), listOf(pending)))
+        assertTrue(retainPendingOptimisticConversations(listOf(local), emptyList()).isEmpty())
+    }
+
+    @Test
     fun `queued start moves the existing card optimistically and waits for durable marker`() {
         val request = StartCardRequest.newBuilder()
             .setCardId("card")
