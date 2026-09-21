@@ -135,6 +135,9 @@ class Host:
                      "stateVolume", "caddyData", "caddyConfig", "publicIPv4", "turnIPv4", "turnHost"):
             require(selection[name] == self.config[name], "settings do not match installed host policy")
         require(selection["legacyHosts"] in (self.config.get("legacyHosts", []), []), "unexpected legacy hostname selection")
+        if self.config.get("legacyHosts") and not selection["legacyHosts"]:
+            from qualification import require_retirement_ready
+            require_retirement_ready(self, Path(incoming))
         if selection["legacyHosts"]:
             require(digest(Path(incoming) / "legacy.caddy") == self.config["legacyFragmentSHA256"], "legacy route fragment differs from reviewed host policy")
 

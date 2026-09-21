@@ -11,6 +11,21 @@ from host import Host
 
 def handle(host, request):
     command = request.get("command")
+    if command == "record-qualification":
+        keys(request, ("command", "operation", "report"), "qualification")
+        from qualification import record
+        with host.lock():
+            return record(host, request["operation"], request["report"])
+    if command == "record-observation":
+        keys(request, ("command", "operation", "report"), "observation")
+        from qualification import record_observation
+        with host.lock():
+            return record_observation(host, request["operation"], request["report"])
+    if command == "qualification-status":
+        keys(request, ("command",), "qualification status")
+        from common import read_json
+        path = host.state / "qualification.json"
+        return read_json(path) if path.is_file() else {"qualified": False}
     if command == "probe-request":
         keys(request, ("command", "operation", "transport"), "probe")
         require(host.status(request["operation"])["state"] == "checking", "probes require an active deployment")

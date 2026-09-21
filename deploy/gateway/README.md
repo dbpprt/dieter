@@ -90,6 +90,16 @@ The example 64-per-user / 256-total allocation and bandwidth settings are
 clients, screens, peer traffic and reconnect bursts before increasing production
 limits. Preserve account/target concentration when testing coturn's quota bucket.
 
+Legacy route removal is blocked by the host controller until the current managed
+TLS operation has recorded complete Mac/Android API/screens, gateway-issued TURN,
+certificate, isolation and 30-minute/5-minute workload evidence. The controller
+starts its own 24-hour observation clock when that complete report is received.
+It then requires a separate normal home/office-use and peer-sync observation
+report covering that interval. Matching evidence is idempotent; changing it
+restarts the interval. Retirement keeps the qualified gateway source fixed.
+This gate covers route removal; stopping legacy services and owner agents and
+the seven-day cleanup window still require their separately recorded procedure.
+
 ## Durable operations and recovery
 
 The production repository supplies host policy, the release lock, settings and
