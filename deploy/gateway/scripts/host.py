@@ -220,6 +220,17 @@ class Host:
         except urllib.error.HTTPError as e:
             require(e.code == 404, "unexpected gateway root response")
 
+    def wait_health(self, s, revision=None, timeout=60):
+        deadline = time.monotonic() + timeout
+        while True:
+            try:
+                self.health(s, revision)
+                return
+            except Exception:
+                if time.monotonic() >= deadline:
+                    raise
+                time.sleep(1)
+
     def accept(self, operation, report):
         # No global lock here: the activation worker holds it while awaiting
         # external authenticated probes. Only root may write this evidence.
@@ -309,7 +320,7 @@ class Host:
                 deadline = time.monotonic() + self.config["readinessTimeoutSeconds"]
                 while time.monotonic() < deadline:
                     if (op / "readiness.json").is_file():
-                        self.health(s, m["sourceRevision"])
+                        self.wait_health(s, m["sourceRevision"])
                         require(digest(source / "signing" / "daemon-ca.pem") == backup["gatewayCAFingerprint"], "gateway CA changed")
                         pointer(self.install / "previous", previous)
                         pointer(current, release)
@@ -335,12 +346,13 @@ class Host:
                     try:
                         self.activate(previous)
                         old_settings = read_json(previous / "public" / "settings.json")
-                        self.health(old_settings)
+                        self.wait_health(old_settings)
                         pointer(self.install / "current", previous)
                         if self.config.get("controllerLink") and self.status(operation).get("previousController"):
                             pointer(self.config["controllerLink"], self.status(operation)["previousController"])
                         return self.transition(operation, "rolled_back")
                     except Exception:
+                        protected_log(traceback.format_exc().encode())
                         return self.transition(operation, "failed", rollbackFailed=True)
                 return self.transition(operation, "failed", failureClass=code, failureStage=failed_stage)
 

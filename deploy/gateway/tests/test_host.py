@@ -112,6 +112,14 @@ class HostTests(unittest.TestCase):
         self.assertTrue(result["rollbackFailed"])
         self.assertNotIn("private output", json.dumps(result))
 
+    def test_rollback_waits_for_recreated_processes_to_become_ready(self):
+        with patch.object(self.host, "health", side_effect=[ConnectionError("starting"), None]) as health, patch("host.time.sleep"):
+            self.host.wait_health({})
+            self.assertEqual(health.call_count, 2)
+        with patch.object(self.host, "health", side_effect=ConnectionError("unavailable")):
+            with self.assertRaises(ConnectionError):
+                self.host.wait_health({}, timeout=0)
+
     def test_readiness_binds_to_operation_and_requires_authentication_and_payload(self):
         self.admit()
         self.host.transition("first", "checking", sourceRevision="a"*40)
