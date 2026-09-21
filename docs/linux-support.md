@@ -105,7 +105,8 @@ After the dependencies above are available, run:
 
 ```sh
 curl -fsSL https://github.com/dbpprt/dieter/releases/latest/download/install.sh | sh
-dieter setup /absolute/path/to/project
+dieter setup
+dieter project open /absolute/path/to/project
 ```
 
 The installer verifies `SHA256SUMS.sigstore.json` against the GitHub Actions

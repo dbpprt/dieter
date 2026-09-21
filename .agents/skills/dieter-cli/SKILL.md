@@ -204,6 +204,7 @@ dieter card list --project <project-id> --board <board-id> \
 Paths passed to project commands are paths on the targeted daemon host:
 
 ```sh
+dieter setup
 dieter project directories /path/on/daemon
 dieter project open --prompt-file prompt.md /path/on/daemon/repo
 dieter board create --project <project-id> --name Delivery --workflow review \
@@ -220,6 +221,10 @@ dieter card create --project <project-id> --board <board-id> \
   --lane todo --auto-title --prompt "Add keyboard navigation" \
   --workspace worktree --format id
 ```
+
+`dieter setup` enrolls and starts the local daemon but never discovers or
+registers the current Git working tree, and it does not accept project paths.
+Register each project explicitly with `dieter project open PATH` after setup.
 
 Harness-defined options use repeatable `--provider-option KEY=VALUE` flags.
 For example, Codex chats and tasks using GPT-5.4, GPT-5.5, GPT-5.6, or GPT-6

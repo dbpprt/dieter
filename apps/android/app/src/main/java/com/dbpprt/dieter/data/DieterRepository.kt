@@ -368,6 +368,7 @@ class GrpcDieterRepository(context: Context) : DieterRepository {
     private var directAccessToken: String? = null
     private var directRefreshAt: Long? = null
     private var controlRoute: String? = null
+    private val webRTCRetryCooldown = WebRTCRetryCooldown()
     private var configuredEndpoints = DIETER_ENDPOINTS
     private var selectedEndpoint = DIETER_ENDPOINTS.first()
     // AndroidKeyStore.load() may touch disk. Do it on first authenticated RPC, which all run
@@ -613,13 +614,20 @@ class GrpcDieterRepository(context: Context) : DieterRepository {
                         Instant.parse(access.expiresAt).toEpochMilli() - 30_000)
                 }
             }
-            if (route.controlWebrtc && route.relayAvailable) {
+            if (route.controlWebrtc && route.relayAvailable && webRTCRetryCooldown.allowsAttempt(daemonId)) {
                 try {
                     val rtc = openControlMachine(endpoint, gateway, route, deadlineSeconds)
+                    webRTCRetryCooldown.recordSuccess(daemonId)
                     gateway.shutdownNow()
                     return rtc
                 } catch (error: kotlinx.coroutines.CancellationException) { throw error }
-                catch (error: Exception) { android.util.Log.w("DieterControlRTC", "WebRTC unavailable; using gateway relay", error) }
+                catch (error: Exception) {
+                    val retry = webRTCRetryCooldown.recordFailure(daemonId)
+                    logControlFallback(error, retry)
+                }
+            } else if (route.controlWebrtc && route.relayAvailable) {
+                val remaining = webRTCRetryCooldown.snapshot(daemonId)?.remainingMillis ?: 0
+                android.util.Log.d("DieterControlRTC", "stage=cooldown route=relay retryInMs=$remaining")
             }
             if (!route.relayAvailable) {
                 throw Status.UNAVAILABLE.withDescription("Dieter daemon is offline").asRuntimeException()
@@ -642,6 +650,9 @@ class GrpcDieterRepository(context: Context) : DieterRepository {
         endpoint: DieterEndpoint, gateway: ManagedChannel,
         route: com.dbpprt.dieter.gateway.v1.DaemonRoute, deadlineSeconds: Long,
     ): ScopedMachineConnection {
+        val started = android.os.SystemClock.elapsedRealtime()
+        var stage = "configuration"
+        try {
         val daemonId = requireNotNull(endpoint.daemonId)
         val issuer = authenticatedGatewayStub(gateway, endpoint)
         val configuration = issuer.getRTCConfiguration(DaemonRef.newBuilder().setDaemonId(daemonId).build())
@@ -653,20 +664,73 @@ class GrpcDieterRepository(context: Context) : DieterRepository {
             val bootstrap = DieterServiceGrpcKt.DieterServiceCoroutineStub(gateway)
                 .withInterceptors(MetadataUtils.newAttachHeadersInterceptor(metadata(requireNotNull(credentials.get(endpoint.credentialId)), daemonId)))
                 .withDeadlineAfter(15, TimeUnit.SECONDS)
+            stage = "ice-gathering"
+            val offer = bridge.offer()
+            val candidates = ControlRTCBridge.candidateSummary(offer)
+            android.util.Log.d(
+                "DieterControlRTC",
+                "stage=ice-gathering candidates=host:${candidates.host},srflx:${candidates.srflx},relay:${candidates.relay}",
+            )
+            stage = "signaling"
             val session = bootstrap.startControlConnection(com.dbpprt.dieter.v1.StartControlConnectionRequest.newBuilder()
-                .setRtcConfiguration(configuration).setOfferSdp(bridge.offer()).build())
+                .setRtcConfiguration(configuration).setOfferSdp(offer).build())
+            stage = "data-channel"
             val port = bridge.connect(session.answerSdp)
+            stage = "tls"
             val data = ControlRTCChannel(directChannel("127.0.0.1", port, daemonId, route.daemonCaPem.toByteArray()), bridge)
             owned = data
             val stub = DieterServiceGrpcKt.DieterServiceCoroutineStub(data)
                 .withInterceptors(MetadataUtils.newAttachHeadersInterceptor(metadata(access.accessToken)))
                 .withDeadlineAfter(deadlineSeconds, TimeUnit.SECONDS)
+            stage = "health"
             check(stub.withDeadlineAfter(5, TimeUnit.SECONDS).health(Empty.getDefaultInstance()).status == "ok")
             val status = stub.getControlConnection(com.dbpprt.dieter.v1.ControlConnectionRef.newBuilder().setSessionId(session.sessionId).build())
             val mode = when (status.mode) { "turn" -> "WebRTC · TURN"; "direct" -> "WebRTC · Direct"; else -> "WebRTC" }
+            android.util.Log.i(
+                "DieterControlRTC",
+                "stage=healthy mode=${status.mode.ifBlank { "unknown" }} elapsedMs=${android.os.SystemClock.elapsedRealtime() - started}",
+            )
             return ScopedMachineConnection(data, stub, route.daemonCertificatePem.toByteArray(), mode,
                 Instant.parse(access.expiresAt).toEpochMilli() - 30_000, access.accessToken)
         } catch (error: Throwable) { owned?.shutdownNow(); bridge.close(); throw error }
+        } catch (error: kotlinx.coroutines.CancellationException) {
+            throw error
+        } catch (error: ControlRouteException) {
+            throw error
+        } catch (error: Throwable) {
+            throw ControlRouteException(
+                stage,
+                sanitizedControlReason(error),
+                android.os.SystemClock.elapsedRealtime() - started,
+                error,
+            )
+        }
+    }
+
+    private class ControlRouteException(
+        val stage: String,
+        val reason: String,
+        val elapsedMillis: Long,
+        cause: Throwable,
+    ) : Exception("WebRTC control route failed during $stage ($reason)", cause)
+
+    private fun sanitizedControlReason(error: Throwable): String {
+        if (error is java.util.concurrent.TimeoutException) return "deadline"
+        val status = Status.fromThrowable(error)
+        if (status.code != Status.Code.UNKNOWN) return status.code.name.lowercase()
+        val text = error.message.orEmpty().lowercase()
+        if ("timed out" in text || "timeout" in text) return "deadline"
+        if ("certificate" in text || "tls" in text) return "tls"
+        return "unavailable"
+    }
+
+    private fun logControlFallback(error: Throwable, retry: WebRTCRetrySnapshot) {
+        val diagnostic = error as? ControlRouteException
+        android.util.Log.i(
+            "DieterControlRTC",
+            "stage=${diagnostic?.stage ?: "unknown"} reason=${diagnostic?.reason ?: "unavailable"} " +
+                "elapsedMs=${diagnostic?.elapsedMillis ?: 0} route=relay retryInMs=${retry.remainingMillis}",
+        )
     }
 
     private fun newGatewayChannel(endpoint: DieterEndpoint): ManagedChannel {
@@ -751,10 +815,11 @@ class GrpcDieterRepository(context: Context) : DieterRepository {
                 direct.shutdownNow()
             }
         }
-        if (route.controlWebrtc && route.relayAvailable) {
+        if (route.controlWebrtc && route.relayAvailable && webRTCRetryCooldown.allowsAttempt(daemonId)) {
             val gateway = newGatewayChannel(endpoint)
             try {
                 val rtc = openControlMachine(endpoint, gateway, route, 15)
+                webRTCRetryCooldown.recordSuccess(daemonId)
                 if (activeEndpoint.id != endpoint.id) { rtc.channel.shutdownNow(); throw kotlinx.coroutines.CancellationException() }
                 synchronized(lock) {
                     channel = rtc.channel
@@ -764,8 +829,14 @@ class GrpcDieterRepository(context: Context) : DieterRepository {
                 }
                 return rtc.route
             } catch (error: kotlinx.coroutines.CancellationException) { throw error }
-            catch (error: Exception) { android.util.Log.w("DieterControlRTC", "WebRTC unavailable; using gateway relay", error) }
+            catch (error: Exception) {
+                val retry = webRTCRetryCooldown.recordFailure(daemonId)
+                logControlFallback(error, retry)
+            }
             finally { gateway.shutdownNow() }
+        } else if (route.controlWebrtc && route.relayAvailable) {
+            val remaining = webRTCRetryCooldown.snapshot(daemonId)?.remainingMillis ?: 0
+            android.util.Log.d("DieterControlRTC", "stage=cooldown route=relay retryInMs=$remaining")
         }
         if (!route.relayAvailable) throw Status.UNAVAILABLE.withDescription("Dieter daemon is offline").asRuntimeException()
         return "Gateway relay"

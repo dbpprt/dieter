@@ -19,10 +19,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/dbpprt/dieter/internal/app"
 	dieterdaemon "github.com/dbpprt/dieter/internal/daemon"
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
-	"github.com/dbpprt/dieter/internal/model"
 	"github.com/dbpprt/dieter/internal/protocol"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -400,12 +398,12 @@ func streamLog(out io.Writer, path string, lines int, follow bool) error {
 }
 
 func (c *CLI) setup(args []string) error {
-	const usage = `Usage: dieter setup [--gateway URL] [--name NAME] [--no-open] [--no-start] [PROJECT_PATH...]
+	const usage = `Usage: dieter setup [--gateway URL] [--name NAME] [--no-open] [--no-start]
 
-Authorize this machine with GitHub, register Git projects, and start the
-platform-managed daemon service. On macOS, setup also guides and verifies Screen
-Recording and Accessibility permissions used by remote desktop. With no path, the
-current Git working tree is used.
+Authorize this machine with GitHub and start the platform-managed daemon service.
+On macOS, setup also guides and verifies Screen Recording and Accessibility
+permissions used by remote desktop. Project registration is separate; use
+"dieter project open PATH" explicitly after setup.
 `
 	set := flags("setup")
 	gatewayURL := set.String("gateway", "https://board.dbpprt.com", "gateway origin")
@@ -416,6 +414,9 @@ current Git working tree is used.
 	help, err := parse(set, args, usage, c.Out)
 	if help || err != nil {
 		return err
+	}
+	if set.NArg() != 0 {
+		return errors.New("setup does not accept project paths; register a project explicitly with `dieter project open PATH`")
 	}
 
 	identity, identityErr := dieterdaemon.LoadIdentity(c.Store.Root)
@@ -434,32 +435,9 @@ current Git working tree is used.
 		fmt.Fprintf(c.Out, "\n1. GitHub authorization\nAlready enrolled as %s (%s).\n", identity.Name, identity.ID)
 	}
 
-	paths := set.Args()
-	if len(paths) == 0 {
-		cwd, cwdErr := os.Getwd()
-		if cwdErr == nil {
-			if root, rootErr := gitWorkingTreeRoot(cwd); rootErr == nil {
-				paths = []string{root}
-			}
-		}
-	}
-	fmt.Fprintln(c.Out, "\n2. Project registration")
-	if len(paths) == 0 {
-		fmt.Fprintln(c.Out, "No Git project supplied; add one later with `dieter project open PATH`.")
-	}
-	for _, path := range paths {
-		project, existing, registerErr := c.setupProject(path)
-		if registerErr != nil {
-			return registerErr
-		}
-		label := "Registered"
-		if existing {
-			label = "Already registered"
-		}
-		fmt.Fprintf(c.Out, "%s %s (%s).\n", label, project.Path, project.ID)
-	}
+	fmt.Fprintln(c.Out, "Projects are not registered by setup; add one explicitly with `dieter project open PATH`.")
 
-	fmt.Fprintln(c.Out, "\n3. Daemon service")
+	fmt.Fprintln(c.Out, "\n2. Daemon service")
 	if *noStart {
 		fmt.Fprintln(c.Out, serviceStartHint())
 	} else if runtime.GOOS == "linux" {
@@ -482,7 +460,7 @@ current Git working tree is used.
 			return err
 		}
 	}
-	fmt.Fprintln(c.Out, "\n4. Required screen sharing permissions")
+	fmt.Fprintln(c.Out, "\n3. Required screen sharing permissions")
 	capabilities, capabilityErr := c.remoteDesktopCapabilities()
 	if capabilityErr != nil {
 		return capabilityErr
@@ -613,61 +591,6 @@ func (c *CLI) probeRemoteDesktopPermissions(requestControl bool) (*dieterv1.Remo
 		return nil, err
 	}
 	return client.ProbeRemoteDesktopPermissions(rpcCtx, &dieterv1.ProbeRemoteDesktopPermissionsRequest{RequestControl: requestControl})
-}
-
-func (c *CLI) setupProject(path string) (model.Project, bool, error) {
-	absolute, err := gitWorkingTreeRoot(path)
-	if err != nil {
-		return model.Project{}, false, err
-	}
-	active, err := c.Store.ListProjects()
-	if err != nil {
-		return model.Project{}, false, err
-	}
-	for _, project := range active {
-		if project.Path == absolute {
-			return project, true, nil
-		}
-	}
-	archived, err := c.Store.ListArchivedProjects()
-	if err != nil {
-		return model.Project{}, false, err
-	}
-	restored := false
-	for _, project := range archived {
-		if project.Path == absolute {
-			restored = true
-			break
-		}
-	}
-	project, err := c.service().RegisterProject(context.Background(), app.ProjectInput{
-		Path: absolute, InitialBoardName: "Main", InitialWorkflow: model.WorkflowReview,
-	})
-	return project, restored, err
-}
-
-func gitWorkingTreeRoot(path string) (string, error) {
-	absolute, err := filepath.Abs(strings.TrimSpace(path))
-	if err != nil {
-		return "", err
-	}
-	if resolved, resolveErr := filepath.EvalSymlinks(absolute); resolveErr == nil {
-		absolute = resolved
-	}
-	command := exec.Command("git", "-C", absolute, "rev-parse", "--show-toplevel")
-	raw, err := command.CombinedOutput()
-	if err != nil {
-		message := strings.TrimSpace(string(raw))
-		if message == "" {
-			message = err.Error()
-		}
-		return "", fmt.Errorf("project path %q must be inside an existing Git working tree: %s", path, message)
-	}
-	root := strings.TrimSpace(string(raw))
-	if resolved, resolveErr := filepath.EvalSymlinks(root); resolveErr == nil {
-		root = resolved
-	}
-	return filepath.Clean(root), nil
 }
 
 func restartHomebrewService(output io.Writer) (bool, error) {

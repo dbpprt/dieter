@@ -20,17 +20,23 @@ private let connectionLogger = Logger(subsystem: "com.dbpprt.dieter.mac", catego
         let timer: Task<Void, Never>
         let id: UUID
     }
+    private struct Promotion {
+        let id: UUID
+        let task: Task<Void, Never>
+    }
     private var idle: [Key: Idle] = [:]
+    private var promotions: [Key: Promotion] = [:]
+    private var webRTCRetries: [String: WebRTCRouteRetryState] = [:]
     private var generation: UInt64 = 0
     package init(factory: DieterClientFactory = .live, clock: ClientClock = .live) {
         self.factory = factory; self.clock = clock
     }
 
-    /// At most eight idle transports, retained for at most thirty seconds from
-    /// admission. Active UI and screen transports have their own lifetime.
+    /// At most eight healthy idle transports, retained for at most five minutes
+    /// from admission. Active UI and screen transports have their own lifetime.
     package func temporaryLease(
         target: DieterEndpoint, accessToken: String?,
-        connect: @MainActor () async throws -> DataPlaneConnection
+        connect: @escaping @MainActor () async throws -> DataPlaneConnection
     ) async throws -> DataPlaneLease {
         let key = Key(target: target, token: accessToken)
         let current = generation
@@ -43,6 +49,16 @@ private let connectionLogger = Logger(subsystem: "com.dbpprt.dieter.mac", catego
                 _ = try await cached.plane.rpc.health(timeout: .seconds(2))
                 try Task.checkCancellation()
                 guard generation == current else { throw CancellationError() }
+                if cached.plane.connection.route == .gateway,
+                    let daemonID = target.daemonID,
+                    TemporaryRouteCachePolicy.shouldProbeWebRTC(
+                        cachedRoute: cached.plane.connection.route,
+                        retry: webRTCRetries[daemonID],
+                        now: clock.now())
+                {
+                    startBackgroundPromotion(
+                        key: key, daemonID: daemonID, generation: current, connect: connect)
+                }
                 return lease(cached.plane, key: key, expires: cached.expires, generation: current)
             } catch {
                 cached.plane.shutdown()
@@ -51,9 +67,7 @@ private let connectionLogger = Logger(subsystem: "com.dbpprt.dieter.mac", catego
             }
         }
         plane = try await connect()
-        expires = min(
-            clock.now().addingTimeInterval(30),
-            plane.directTokenExpiresAt.flatMap(DieterTimestamp.date(from:))?.addingTimeInterval(-5) ?? .distantFuture)
+        expires = expiration(for: plane)
         guard !Task.isCancelled, generation == current else { plane.shutdown(); throw CancellationError() }
         return lease(plane, key: key, expires: expires, generation: current)
     }
@@ -63,22 +77,83 @@ private let connectionLogger = Logger(subsystem: "com.dbpprt.dieter.mac", catego
             guard reusable, let self, self.generation == generation, self.clock.now() < expires else {
                 plane.shutdown(); return
             }
-            if let previous = self.idle.removeValue(forKey: key) { previous.timer.cancel(); previous.plane.shutdown() }
-            if self.idle.count >= 8, let oldest = self.idle.min(by: { $0.value.expires < $1.value.expires }) {
-                self.idle.removeValue(forKey: oldest.key); oldest.value.timer.cancel(); oldest.value.plane.shutdown()
-            }
-            let id = UUID(), delay = max(0, expires.timeIntervalSince(self.clock.now()))
-            let timer = Task { [weak self, clock = self.clock] in
-                do { try await clock.sleep(.seconds(delay)) } catch { return }
-                guard let self, self.idle[key]?.id == id else { return }
-                self.idle.removeValue(forKey: key)?.plane.shutdown()
-            }
-            self.idle[key] = Idle(plane: plane, expires: expires, timer: timer, id: id)
+            self.storeIdle(plane, key: key, expires: expires)
         }
+    }
+
+    private func expiration(for plane: DataPlaneConnection) -> Date {
+        let credentialDeadline = plane.credentialRefreshTask == nil
+            ? plane.directTokenExpiresAt.flatMap(DieterTimestamp.date(from:))?.addingTimeInterval(-5)
+                ?? .distantFuture
+            : .distantFuture
+        return min(
+            clock.now().addingTimeInterval(TemporaryRouteCachePolicy.healthyIdleLifetime),
+            credentialDeadline)
+    }
+
+    private func storeIdle(_ plane: DataPlaneConnection, key: Key, expires: Date) {
+        if let previous = idle[key],
+            !TemporaryRouteCachePolicy.prefers(plane.connection.route, over: previous.plane.connection.route)
+        {
+            plane.shutdown()
+            return
+        }
+        if let previous = idle.removeValue(forKey: key) {
+            previous.timer.cancel()
+            previous.plane.shutdown()
+        }
+        if idle.count >= 8, let oldest = idle.min(by: { $0.value.expires < $1.value.expires }) {
+            idle.removeValue(forKey: oldest.key)
+            oldest.value.timer.cancel()
+            oldest.value.plane.shutdown()
+        }
+        let id = UUID(), delay = max(0, expires.timeIntervalSince(clock.now()))
+        let timer = Task { [weak self, clock = self.clock] in
+            do { try await clock.sleep(.seconds(delay)) } catch { return }
+            guard let self, self.idle[key]?.id == id else { return }
+            self.idle.removeValue(forKey: key)?.plane.shutdown()
+        }
+        idle[key] = Idle(plane: plane, expires: expires, timer: timer, id: id)
+    }
+
+    private func startBackgroundPromotion(
+        key: Key,
+        daemonID: String,
+        generation: UInt64,
+        connect: @escaping @MainActor () async throws -> DataPlaneConnection
+    ) {
+        guard promotions[key] == nil else { return }
+        let id = UUID()
+        let task = Task { [weak self] in
+            defer {
+                if self?.promotions[key]?.id == id { self?.promotions.removeValue(forKey: key) }
+            }
+            do {
+                let candidate = try await connect()
+                guard let self, !Task.isCancelled, self.generation == generation else {
+                    candidate.shutdown()
+                    return
+                }
+                guard candidate.connection.route != .gateway else {
+                    candidate.shutdown()
+                    return
+                }
+                self.storeIdle(candidate, key: key, expires: self.expiration(for: candidate))
+                connectionLogger.info(
+                    "Background WebRTC promotion succeeded for \(daemonID, privacy: .public) via \(candidate.connection.route.rawValue, privacy: .public)")
+            } catch is CancellationError {
+            } catch {
+                connectionLogger.debug(
+                    "Background WebRTC promotion did not replace the stable relay for \(daemonID, privacy: .public)")
+            }
+        }
+        promotions[key] = Promotion(id: id, task: task)
     }
 
     package func invalidateTemporaryLeases() {
         generation &+= 1
+        for value in promotions.values { value.task.cancel() }
+        promotions.removeAll()
         for value in idle.values { value.timer.cancel(); value.plane.shutdown() }
         idle.removeAll()
     }
@@ -180,15 +255,30 @@ private let connectionLogger = Logger(subsystem: "com.dbpprt.dieter.mac", catego
             }
         }
         try Task.checkCancellation()
-        if route.controlWebrtc && route.relayAvailable {
+        if route.controlWebrtc && route.relayAvailable,
+            webRTCRetries[daemonID]?.allowsAttempt(at: clock.now()) ?? true
+        {
             do {
-                return try await controlConnection(
+                let connection = try await controlConnection(
                     gateway: gateway, target: target, gatewayAccessToken: gatewayAccessToken, route: route,
                     refreshDirectToken: refreshDirectToken, run: run)
+                webRTCRetries.removeValue(forKey: daemonID)
+                return connection
             } catch {
                 try Task.checkCancellation()
-                connectionLogger.debug("WebRTC control route failed: \(error.localizedDescription, privacy: .public)")
+                var retry = webRTCRetries[daemonID] ?? WebRTCRouteRetryState()
+                let delay = retry.recordFailure(at: clock.now())
+                webRTCRetries[daemonID] = retry
+                let diagnostic = error as? ControlRouteDiagnosticError
+                let stage = diagnostic?.stage ?? "unknown"
+                let reason = diagnostic?.reason ?? "unavailable"
+                let elapsedMilliseconds = diagnostic?.elapsedMilliseconds ?? 0
+                connectionLogger.info(
+                    "WebRTC control route unavailable for \(daemonID, privacy: .public); stage=\(stage, privacy: .public) reason=\(reason, privacy: .public) elapsed_ms=\(elapsedMilliseconds) retry_in_s=\(Int(delay))")
             }
+        } else if let retryAt = webRTCRetries[daemonID]?.retryAt {
+            connectionLogger.debug(
+                "Using stable gateway relay for \(daemonID, privacy: .public); WebRTC retry in \(max(0, Int(retryAt.timeIntervalSince(clock.now()))))s")
         }
         guard route.relayAvailable else {
             throw NSError(

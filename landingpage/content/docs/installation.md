@@ -28,7 +28,8 @@ On Linux amd64/arm64, install cosign and run:
 
 ```sh
 curl -fsSL https://github.com/dbpprt/dieter/releases/latest/download/install.sh | sh
-dieter setup ~/Development/my-project
+dieter setup
+dieter project open ~/Development/my-project
 dieter doctor
 ```
 
@@ -47,12 +48,14 @@ The formula includes the `dieter` CLI and local daemon:
 
 ```sh
 brew install dbpprt/tap/dieter
-dieter setup ~/Development/my-project
+dieter setup
+dieter project open ~/Development/my-project
 ```
 
-`dieter setup` enrolls the Mac, registers the Git working tree, and starts the
-daemon as a Homebrew service. Through that running service, it guides the macOS
-Screen &amp; System Audio Recording permission, proves the exact signed
+`dieter setup` enrolls the Mac and starts the daemon as a Homebrew service. It
+never registers a project; `dieter project open PATH` is the explicit
+registration step. Through that running service, setup guides the macOS Screen
+&amp; System Audio Recording permission, proves the exact signed
 ScreenCaptureKit/VideoToolbox helper with one discarded frame, and guides and
 verifies Accessibility event-posting permission without moving or clicking the
 pointer. Screen sharing is

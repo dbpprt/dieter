@@ -83,7 +83,8 @@ a Git working tree:
 
 ```sh
 curl -fsSL https://github.com/dbpprt/dieter/releases/latest/download/install.sh | sh
-dieter setup ~/Development/my-project
+dieter setup
+dieter project open ~/Development/my-project
 dieter doctor
 ```
 
@@ -123,13 +124,15 @@ On Apple Silicon macOS, install the daemon and register a Git working tree:
 
 ```sh
 brew install dbpprt/tap/dieter
-dieter setup ~/Development/my-project
+dieter setup
+dieter project open ~/Development/my-project
 ```
 
-`dieter setup` enrolls the machine, registers the project, starts the daemon as
-a Homebrew service, and guides the required screen-recording and input grants
-through that running service. Unsupported or headless hosts report why screen
-sharing is unavailable while their other daemon features remain usable.
+`dieter setup` enrolls the machine, starts the daemon as a Homebrew service, and
+guides the required screen-recording and input grants through that running
+service. It never registers a project; `dieter project open PATH` is the explicit
+registration step. Unsupported or headless hosts report why screen sharing is
+unavailable while their other daemon features remain usable.
 
 The Mac app also requires Screen Recording and Accessibility access for capture,
 browser context, and keyboard control. Its setup screen explains each permission,

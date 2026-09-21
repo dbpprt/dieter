@@ -16,6 +16,13 @@ The daemon verifies configuration signature, daemon ID/generation, operator,
 and expiry. Offer and answer gather for at most three seconds each. Slow ICE
 servers can yield an incomplete candidate set; failure falls back to the relay.
 Version 1 uses non-trickle SDP; a failed connection is replaced, not ICE-restarted.
+After a failed attempt, native clients and daemon peer sync continue over the
+authenticated gateway relay and delay another WebRTC attempt for two minutes.
+Repeated failures double that cooldown up to fifteen minutes. A successful
+WebRTC TLS and gRPC health check clears it. macOS retains healthy temporary
+machine routes for five minutes and probes WebRTC asynchronously after the
+cooldown, promoting only a fully authenticated healthy route. Background probes
+do not replace the displayed stable route or delay relay-backed operations.
 
 The client opens exactly one reliable ordered data channel named
 `dieter-control-tls-v1`, without partial reliability. Messages are binary:
@@ -56,7 +63,19 @@ The CLI gRPC dialer can negotiate a fresh peer when its channel reconnects.
 `turn`, or `unknown`. Either selected candidate being `relay` means TURN. This
 label does not claim to identify the TURN client's UDP/TCP/TLS leg. macOS
 Machines, iOS, and Android show WebRTC Direct or TURN; CLI status exposes
-`webrtc-direct` or `webrtc-turn`. A mode describes the sampled established path.
+`webrtc-direct` or `webrtc-turn`. A mode describes the active established path,
+not an in-progress background probe. Negotiation diagnostics contain only a
+stage, bounded elapsed time, candidate-kind counts, and a sanitized reason. They
+never contain candidate addresses, raw SDP, TURN credentials, or bearer tokens.
+
+Production TURN should offer all three egress choices from the same credential
+realm: UDP 3478, TCP 3478, and TURN/TLS TCP 443 (for example,
+`turn:turn.example.com:3478?transport=udp`,
+`turn:turn.example.com:3478?transport=tcp`, and
+`turns:turn.example.com:443?transport=tcp`). Dieter's gateway already accepts
+and signs these URLs, but this repository does not provision the public TURN
+listener or its certificate. Operators must configure that listener and network
+policy separately before advertising the `turns:` URL.
 
 Tests use disposable identities, local sockets, and an in-process TURN server.
 `go test -race ./internal/controlrtc` exercises direct and forced TURN paths,

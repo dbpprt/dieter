@@ -19,6 +19,8 @@ import kotlin.coroutines.resumeWithException
 
 /** Bounded byte transport only. Existing gRPC TLS still authenticates the daemon. */
 internal class ControlRTCBridge(context: Context, configuration: RTCConfiguration) : AutoCloseable {
+    internal data class CandidateSummary(val host: Int, val srflx: Int, val relay: Int)
+
     private val closed = AtomicBoolean(false)
     private val credits = Semaphore(16)
     private val outstanding = AtomicInteger(0)
@@ -156,6 +158,21 @@ internal class ControlRTCBridge(context: Context, configuration: RTCConfiguratio
     }
     companion object {
         private var sharedFactory: PeerConnectionFactory? = null
+        fun candidateSummary(sdp: String): CandidateSummary {
+            var host = 0
+            var srflx = 0
+            var relay = 0
+            sdp.lineSequence().filter { it.startsWith("a=candidate:") }.forEach { line ->
+                val tokens = line.trim().split(Regex("\\s+"))
+                val type = tokens.indexOf("typ").takeIf { it >= 0 }?.let { tokens.getOrNull(it + 1) }
+                when (type) {
+                    "host" -> host++
+                    "srflx" -> srflx++
+                    "relay" -> relay++
+                }
+            }
+            return CandidateSummary(host, srflx, relay)
+        }
         @Synchronized private fun factory(context: Context): PeerConnectionFactory {
             sharedFactory?.let { return it }
             PeerConnectionFactory.initialize(PeerConnectionFactory.InitializationOptions.builder(context.applicationContext).createInitializationOptions())

@@ -6,6 +6,32 @@ import DieterAPI
 /// One loopback TLS socket ↔ one reliable RTC data channel. This adapter never
 /// sees plaintext RPCs; the existing gRPC transport still verifies daemon TLS.
 package final class ControlRTCBridge: NSObject, @unchecked Sendable {
+    package struct CandidateSummary: Equatable, Sendable {
+        package init(host: Int, srflx: Int, relay: Int) {
+            self.host = host
+            self.srflx = srflx
+            self.relay = relay
+        }
+        package let host: Int
+        package let srflx: Int
+        package let relay: Int
+    }
+
+    package static func candidateSummary(in sdp: String) -> CandidateSummary {
+        var host = 0, srflx = 0, relay = 0
+        for line in sdp.split(separator: "\n") where line.hasPrefix("a=candidate:") {
+            let fields = line.split(whereSeparator: \Character.isWhitespace)
+            guard let marker = fields.firstIndex(of: "typ"), fields.indices.contains(marker + 1) else { continue }
+            switch fields[marker + 1] {
+            case "host": host += 1
+            case "srflx": srflx += 1
+            case "relay": relay += 1
+            default: break
+            }
+        }
+        return CandidateSummary(host: host, srflx: srflx, relay: relay)
+    }
+
     private let queue = DispatchQueue(label: "dieter.control-rtc")
     private let callbackLock = NSLock()
     private var pendingCallbacks = 0

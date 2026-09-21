@@ -13,7 +13,8 @@ The `dieter` binary is both the daemon and the operator CLI. Many commands accep
 ## Setup & service
 
 ```sh
-dieter setup <path>              # register a tree, enroll, guide permissions, start service
+dieter setup                     # enroll, guide permissions, and start service
+dieter project open <path>       # explicitly register a Git working tree
 dieter serve                     # alias for `dieter daemon start`
 dieter daemon start              # run the daemon
 dieter daemon status             # inspect the running service

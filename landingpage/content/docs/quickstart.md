@@ -15,18 +15,22 @@ conversation with access to your gateway.
 ```sh
 # Linux (after installing cosign)
 curl -fsSL https://github.com/dbpprt/dieter/releases/latest/download/install.sh | sh
-dieter setup ~/Development/orbit
+dieter setup
 
 # Apple Silicon macOS
 brew install dbpprt/tap/dieter
-dieter setup ~/Development/orbit
+dieter setup
+
+# On either host, register a project explicitly after setup
+dieter project open ~/Development/orbit
 ```
 
-`dieter setup` opens the gateway's GitHub authorization page and registers the
-Git working tree by canonical path. On macOS it guides Screen Recording and
-Accessibility permissions and starts Homebrew. On Linux it installs a systemd
-user service and runs as a headless host without those permission steps. It
-never stores a GitHub token on the daemon host.
+`dieter setup` opens the gateway's GitHub authorization page. It never registers
+the current Git working tree or any other project; `dieter project open PATH`
+does that explicitly. On macOS setup guides Screen Recording and Accessibility
+permissions and starts Homebrew. On Linux it installs a systemd user service and
+runs as a headless host without those permission steps. It never stores a GitHub
+token on the daemon host.
 
 ## 2 · Install the app and sign in
 

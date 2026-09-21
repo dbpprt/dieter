@@ -8,6 +8,7 @@ import (
 	"math/rand/v2"
 	"net"
 	"sort"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -50,9 +51,18 @@ func (c peerGatewayConn) NewStream(ctx context.Context, desc *grpc.StreamDesc, m
 }
 
 type PeerConnection struct {
-	Client dieterv1.DieterServiceClient
-	Route  string
-	close  func()
+	Client      dieterv1.DieterServiceClient
+	Route       string
+	RTCFallback *PeerRTCFallback
+	close       func()
+}
+
+// PeerRTCFallback is safe to retain and log. It deliberately excludes the
+// underlying error, candidate addresses, SDP, and credentials.
+type PeerRTCFallback struct {
+	Stage     string
+	Reason    string
+	ElapsedMS int64
 }
 
 func (c *PeerConnection) Close() {
@@ -65,10 +75,10 @@ func (c *PeerConnection) Close() {
 // Connections are short-lived anti-entropy rounds; bearer renewal is performed
 // by the next round, well within the five-minute access-token lifetime.
 func DialPeer(ctx context.Context, identity *Identity, gatewayConnection grpc.ClientConnInterface, target string) (*PeerConnection, error) {
-	return dialPeer(ctx, identity, gatewayConnection, target, false)
+	return dialPeer(ctx, identity, gatewayConnection, target, false, false)
 }
 
-func dialPeer(ctx context.Context, identity *Identity, gatewayConnection grpc.ClientConnInterface, target string, relayOnly bool) (*PeerConnection, error) {
+func dialPeer(ctx context.Context, identity *Identity, gatewayConnection grpc.ClientConnInterface, target string, relayOnly, skipRTC bool) (*PeerConnection, error) {
 	gateway := gatewayv1.NewGatewayServiceClient(peerGatewayConn{gatewayConnection, identity, ""})
 	route, err := gateway.ResolveDaemonRoute(ctx, &gatewayv1.DaemonRef{DaemonId: target})
 	if err != nil {
@@ -89,21 +99,26 @@ func dialPeer(ctx context.Context, identity *Identity, gatewayConnection grpc.Cl
 		}
 		cancel()
 		if e == nil {
-			return &PeerConnection{dieterv1.NewDieterServiceClient(connection), "direct-tls", func() { _ = connection.Close() }}, nil
+			return &PeerConnection{Client: dieterv1.NewDieterServiceClient(connection), Route: "direct-tls", close: func() { _ = connection.Close() }}, nil
 		}
 		if connection != nil {
 			_ = connection.Close()
 		}
 	}
 	relay := dieterv1.NewDieterServiceClient(peerGatewayConn{gatewayConnection, identity, target})
-	if route.GetControlWebrtc() {
+	var fallback *PeerRTCFallback
+	if route.GetControlWebrtc() && !skipRTC {
+		rtcStarted := time.Now()
+		stage := "configuration"
 		attempt, cancel := context.WithTimeout(ctx, 15*time.Second)
 		configuration, e := gateway.GetRTCConfiguration(attempt, &gatewayv1.DaemonRef{DaemonId: target})
 		if e == nil {
+			stage = "ice-gathering"
 			stream, session, dialErr := controlrtc.DialWithPolicy(attempt, configuration, func(call context.Context, r *dieterv1.StartControlConnectionRequest) (*dieterv1.ControlConnection, error) {
 				return relay.StartControlConnection(call, r)
 			}, relayOnly)
 			if dialErr == nil {
+				stage = "data-channel-tls"
 				var used atomic.Bool
 				connection, tlsErr := DialDirectWithCredentials(attempt, "passthrough:///peer-control", target, route.GetDaemonCaPem(), daemonTokenCredential{token.GetAccessToken()}, grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
 					if used.Swap(true) {
@@ -113,27 +128,75 @@ func dialPeer(ctx context.Context, identity *Identity, gatewayConnection grpc.Cl
 				}))
 				if tlsErr == nil {
 					client := dieterv1.NewDieterServiceClient(connection)
+					stage = "health"
 					_, tlsErr = client.GetPeerStoreStatus(attempt, &emptypb.Empty{})
 					if tlsErr == nil {
+						stage = "status"
 						info, infoErr := client.GetControlConnection(attempt, &dieterv1.ControlConnectionRef{SessionId: session.GetSessionId()})
 						if infoErr == nil {
 							cancel()
-							return &PeerConnection{client, "webrtc-" + info.GetMode(), func() { _ = connection.Close(); _ = stream.Close() }}, nil
+							return &PeerConnection{Client: client, Route: "webrtc-" + info.GetMode(), close: func() { _ = connection.Close(); _ = stream.Close() }}, nil
 						}
+						tlsErr = infoErr
 					}
 				}
 				if connection != nil {
 					_ = connection.Close()
 				}
 				_ = stream.Close()
+				e = tlsErr
+			} else {
+				e = dialErr
 			}
 		}
+		var typed *controlrtc.DialError
+		if errors.As(e, &typed) {
+			stage = typed.Stage
+		}
+		fallback = &PeerRTCFallback{Stage: stage, Reason: sanitizedRTCReason(e), ElapsedMS: time.Since(rtcStarted).Milliseconds()}
 		cancel()
 	}
 	if !route.GetRelayAvailable() {
 		return nil, fmt.Errorf("peer %s has no available route", target)
 	}
-	return &PeerConnection{relay, "relay", func() {}}, nil
+	return &PeerConnection{Client: relay, Route: "relay", RTCFallback: fallback, close: func() {}}, nil
+}
+
+func sanitizedRTCReason(err error) string {
+	if err == nil {
+		return "unavailable"
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return "deadline"
+	}
+	if errors.Is(err, context.Canceled) {
+		return "canceled"
+	}
+	if code := status.Code(err); code != codes.Unknown {
+		return code.String()
+	}
+	return "unavailable"
+}
+
+type peerRTCRetry struct {
+	failures int
+	retryAt  time.Time
+}
+
+const (
+	peerRTCInitialCooldown = 2 * time.Minute
+	peerRTCMaximumCooldown = 15 * time.Minute
+)
+
+func peerRTCCooldown(failures int) time.Duration {
+	if failures < 1 {
+		return 0
+	}
+	delay := peerRTCInitialCooldown
+	for n := 1; n < failures && delay < peerRTCMaximumCooldown; n++ {
+		delay *= 2
+	}
+	return min(delay, peerRTCMaximumCooldown)
 }
 
 // PeerSync runs only from serve. No handler construction starts background work.
@@ -146,6 +209,42 @@ type PeerSync struct {
 	Interval  time.Duration
 	RelayOnly bool // Require TURN for isolated qualification; false preserves normal route preference.
 	next      int
+	rtcMu     sync.Mutex
+	rtcRetry  map[string]peerRTCRetry
+	now       func() time.Time
+}
+
+func (p *PeerSync) rtcAttemptAllowed(target string) bool {
+	p.rtcMu.Lock()
+	defer p.rtcMu.Unlock()
+	state, ok := p.rtcRetry[target]
+	return !ok || !p.timeNow().Before(state.retryAt)
+}
+
+func (p *PeerSync) recordRTCFallback(target string) peerRTCRetry {
+	p.rtcMu.Lock()
+	defer p.rtcMu.Unlock()
+	if p.rtcRetry == nil {
+		p.rtcRetry = map[string]peerRTCRetry{}
+	}
+	state := p.rtcRetry[target]
+	state.failures++
+	state.retryAt = p.timeNow().Add(peerRTCCooldown(state.failures))
+	p.rtcRetry[target] = state
+	return state
+}
+
+func (p *PeerSync) clearRTCFallback(target string) {
+	p.rtcMu.Lock()
+	defer p.rtcMu.Unlock()
+	delete(p.rtcRetry, target)
+}
+
+func (p *PeerSync) timeNow() time.Time {
+	if p.now != nil {
+		return p.now()
+	}
+	return time.Now()
 }
 
 func (p *PeerSync) Run(ctx context.Context) {
@@ -250,8 +349,23 @@ func (p *PeerSync) Round(ctx context.Context) error {
 		target := peers[p.next%len(peers)]
 		p.next++
 		attempt, cancel := context.WithTimeout(ctx, 40*time.Second)
-		connection, e := dialPeer(attempt, p.Identity, conn, target, p.RelayOnly)
+		connection, e := dialPeer(attempt, p.Identity, conn, target, p.RelayOnly, !p.RelayOnly && !p.rtcAttemptAllowed(target))
 		if e == nil {
+			if connection.RTCFallback != nil {
+				retry := p.recordRTCFallback(target)
+				logger := p.Log
+				if logger == nil {
+					logger = slog.Default()
+				}
+				logger.Info("peer WebRTC unavailable; using gateway relay",
+					"peer", target,
+					"stage", connection.RTCFallback.Stage,
+					"reason", connection.RTCFallback.Reason,
+					"elapsed_ms", connection.RTCFallback.ElapsedMS,
+					"retry_in", peerRTCCooldown(retry.failures))
+			} else if len(connection.Route) >= len("webrtc-") && connection.Route[:len("webrtc-")] == "webrtc-" {
+				p.clearRTCFallback(target)
+			}
 			e = p.Exchange(attempt, binding, connection.Client)
 			if e == nil {
 				e = p.Store.PeerSynced(binding, target, connection.Route)

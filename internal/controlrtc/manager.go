@@ -298,6 +298,24 @@ func Dial(ctx context.Context, configuration *gatewayv1.RTCConfiguration, start 
 	return DialWithPolicy(ctx, configuration, start, false)
 }
 
+// DialError identifies the sanitized negotiation stage that failed. Callers
+// may log Stage and classify Err, but must not log SDP, ICE addresses, or TURN
+// credentials.
+type DialError struct {
+	Stage string
+	Err   error
+}
+
+func (e *DialError) Error() string { return "control WebRTC " + e.Stage + " failed" }
+func (e *DialError) Unwrap() error { return e.Err }
+
+func dialError(stage string, err error) error {
+	if err == nil {
+		return nil
+	}
+	return &DialError{Stage: stage, Err: err}
+}
+
 // DialWithPolicy allows a caller to require TURN without changing signed remote
 // configuration. TLS and RPC authorization remain mandatory on the returned stream.
 func DialWithPolicy(ctx context.Context, configuration *gatewayv1.RTCConfiguration, start func(context.Context, *dieterv1.StartControlConnectionRequest) (*dieterv1.ControlConnection, error), relayOnly bool) (net.Conn, *dieterv1.ControlConnection, error) {
@@ -307,12 +325,12 @@ func DialWithPolicy(ctx context.Context, configuration *gatewayv1.RTCConfigurati
 	}
 	pc, err := webrtc.NewPeerConnection(config)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, dialError("configuration", err)
 	}
 	dc, err := pc.CreateDataChannel(Label, nil)
 	if err != nil {
 		pc.Close()
-		return nil, nil, err
+		return nil, nil, dialError("configuration", err)
 	}
 	stream := Stream(dc, func() { _ = pc.Close() })
 	good := false
@@ -328,29 +346,29 @@ func DialWithPolicy(ctx context.Context, configuration *gatewayv1.RTCConfigurati
 	})
 	offer, err := pc.CreateOffer(nil)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, dialError("ice-gathering", err)
 	}
 	complete := webrtc.GatheringCompletePromise(pc)
 	if err = pc.SetLocalDescription(offer); err != nil {
-		return nil, nil, err
+		return nil, nil, dialError("ice-gathering", err)
 	}
 	timer := time.NewTimer(3 * time.Second)
 	defer timer.Stop()
 	select {
 	case <-ctx.Done():
-		return nil, nil, ctx.Err()
+		return nil, nil, dialError("ice-gathering", ctx.Err())
 	case <-complete:
 	case <-timer.C:
 	}
 	result, err := start(ctx, &dieterv1.StartControlConnectionRequest{RtcConfiguration: configuration, OfferSdp: pc.LocalDescription().SDP})
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, dialError("signaling", err)
 	}
 	if result.GetSessionId() == "" || len(result.GetAnswerSdp()) > 64<<10 {
-		return nil, nil, errors.New("invalid control answer")
+		return nil, nil, dialError("signaling", errors.New("invalid control answer"))
 	}
 	if err = pc.SetRemoteDescription(webrtc.SessionDescription{Type: webrtc.SDPTypeAnswer, SDP: result.GetAnswerSdp()}); err != nil {
-		return nil, nil, err
+		return nil, nil, dialError("signaling", err)
 	}
 	good = true
 	return stream, result, nil

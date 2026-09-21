@@ -6,6 +6,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http/httptest"
@@ -19,6 +20,7 @@ import (
 
 	dieterdaemon "github.com/dbpprt/dieter/internal/daemon"
 	"github.com/dbpprt/dieter/internal/harness"
+	"github.com/dbpprt/dieter/internal/remotedesktop"
 	"github.com/dbpprt/dieter/internal/server"
 	"github.com/dbpprt/dieter/internal/store"
 )
@@ -313,62 +315,67 @@ func TestDaemonStatusRecognizesHealthyCurrentAPI(t *testing.T) {
 	}
 }
 
-func TestSetupProjectIsIdempotent(t *testing.T) {
-	repo := filepath.Join(t.TempDir(), "repo")
-	if output, err := exec.Command("git", "init", repo).CombinedOutput(); err != nil {
-		t.Fatalf("git init: %s: %v", output, err)
-	}
-	subdirectory := filepath.Join(repo, "nested")
-	if err := os.MkdirAll(subdirectory, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	c := New(store.New(t.TempDir()))
-	first, existing, err := c.setupProject(subdirectory)
-	if err != nil || existing {
-		t.Fatalf("first=%#v existing=%v err=%v", first, existing, err)
-	}
-	canonicalRepo, err := filepath.EvalSymlinks(repo)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if first.Path != canonicalRepo {
-		t.Fatalf("registered path=%q want=%q", first.Path, canonicalRepo)
-	}
-	boards, err := c.Store.ListBoards(first.ID)
-	if err != nil || len(boards) != 1 || boards[0].Name != "Main" {
-		t.Fatalf("setup boards=%#v err=%v", boards, err)
-	}
-	second, existing, err := c.setupProject(repo)
-	if err != nil || !existing || second.ID != first.ID {
-		t.Fatalf("second=%#v existing=%v err=%v", second, existing, err)
-	}
-	boards, err = c.Store.ListBoards(first.ID)
-	if err != nil || len(boards) != 1 {
-		t.Fatalf("idempotent setup boards=%#v err=%v", boards, err)
-	}
-}
-
-func TestSetupProjectRestoresArchivedBoardlessProject(t *testing.T) {
+func TestSetupRejectsProjectPathsBeforeOnboarding(t *testing.T) {
 	repo := filepath.Join(t.TempDir(), "repo")
 	if output, err := exec.Command("git", "init", repo).CombinedOutput(); err != nil {
 		t.Fatalf("git init: %s: %v", output, err)
 	}
 	data := store.New(t.TempDir())
-	original, err := data.CreateProject(store.CreateProjectInput{Name: "Existing", Path: repo})
+	c := New(data)
+	err := c.Run([]string{"setup", repo})
+	if err == nil || !strings.Contains(err.Error(), "register a project explicitly with `dieter project open PATH`") {
+		t.Fatalf("setup error=%v", err)
+	}
+	projects, listErr := data.ListProjects()
+	if listErr != nil || len(projects) != 0 {
+		t.Fatalf("projects=%#v err=%v", projects, listErr)
+	}
+	if _, identityErr := dieterdaemon.LoadIdentity(data.Root); !errors.Is(identityErr, os.ErrNotExist) {
+		t.Fatalf("setup started onboarding before rejecting the project path: %v", identityErr)
+	}
+}
+
+func TestSetupDoesNotRegisterCurrentGitProject(t *testing.T) {
+	repo := filepath.Join(t.TempDir(), "repo")
+	if output, err := exec.Command("git", "init", repo).CombinedOutput(); err != nil {
+		t.Fatalf("git init: %s: %v", output, err)
+	}
+	t.Chdir(repo)
+
+	data := store.New(t.TempDir())
+	identity, err := dieterdaemon.LoadOrCreateEnrollmentIdentity(data.Root, "test", "https://gateway.example")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = data.ArchiveProject(original.ID, true); err != nil {
+	if err := identity.SaveCredential("d_test", "test", []byte("certificate"), nil, nil, time.Now().Add(time.Hour).Format(time.RFC3339Nano), 1); err != nil {
 		t.Fatal(err)
 	}
+
+	var out bytes.Buffer
 	c := New(data)
-	restored, existing, err := c.setupProject(repo)
-	if err != nil || !existing || restored.ID != original.ID || restored.Archived {
-		t.Fatalf("restored=%#v existing=%v err=%v", restored, existing, err)
+	c.Out, c.Err = &out, &out
+	remoteDesktop := remotedesktop.New(remotedesktop.Options{
+		Source: remotedesktop.SourceOptions{HelperPath: filepath.Join(t.TempDir(), "missing-capture-helper")},
+	})
+	application := server.NewWithRemoteDesktop(data, slog.New(slog.NewTextHandler(io.Discard, nil)), c.Runner, remoteDesktop)
+	host := httptest.NewServer(application.Handler())
+	t.Cleanup(host.Close)
+	if _, err := dieterdaemon.NewStatusWriter(data.Root, dieterdaemon.RuntimeStatus{
+		PID: os.Getpid(), State: "running", ListenAddress: strings.TrimPrefix(host.URL, "http://"),
+	}); err != nil {
+		t.Fatal(err)
 	}
-	boards, err := data.ListBoards(original.ID)
-	if err != nil || len(boards) != 1 || boards[0].Name != "Main" {
-		t.Fatalf("boards=%#v err=%v", boards, err)
+	t.Cleanup(c.Close)
+
+	if err := c.Run([]string{"setup", "--no-open", "--no-start"}); err != nil {
+		t.Fatal(err)
+	}
+	projects, err := data.ListProjects()
+	if err != nil || len(projects) != 0 {
+		t.Fatalf("projects=%#v err=%v", projects, err)
+	}
+	if !strings.Contains(out.String(), "Projects are not registered by setup; add one explicitly with `dieter project open PATH`.") {
+		t.Fatalf("setup output=%q", out.String())
 	}
 }
 
