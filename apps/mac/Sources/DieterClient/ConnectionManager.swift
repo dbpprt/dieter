@@ -82,7 +82,8 @@ private let connectionLogger = Logger(subsystem: "com.dbpprt.dieter.mac", catego
     }
 
     private func expiration(for plane: DataPlaneConnection) -> Date {
-        let credentialDeadline = plane.credentialRefreshTask == nil
+        let credentialDeadline =
+            plane.credentialRefreshTask == nil
             ? plane.directTokenExpiresAt.flatMap(DieterTimestamp.date(from:))?.addingTimeInterval(-5)
                 ?? .distantFuture
             : .distantFuture
@@ -140,7 +141,8 @@ private let connectionLogger = Logger(subsystem: "com.dbpprt.dieter.mac", catego
                 }
                 self.storeIdle(candidate, key: key, expires: self.expiration(for: candidate))
                 connectionLogger.info(
-                    "Background WebRTC promotion succeeded for \(daemonID, privacy: .public) via \(candidate.connection.route.rawValue, privacy: .public)")
+                    "Background WebRTC promotion succeeded for \(daemonID, privacy: .public) via \(candidate.connection.route.rawValue, privacy: .public)"
+                )
             } catch is CancellationError {
             } catch {
                 connectionLogger.debug(
@@ -274,11 +276,13 @@ private let connectionLogger = Logger(subsystem: "com.dbpprt.dieter.mac", catego
                 let reason = diagnostic?.reason ?? "unavailable"
                 let elapsedMilliseconds = diagnostic?.elapsedMilliseconds ?? 0
                 connectionLogger.info(
-                    "WebRTC control route unavailable for \(daemonID, privacy: .public); stage=\(stage, privacy: .public) reason=\(reason, privacy: .public) elapsed_ms=\(elapsedMilliseconds) retry_in_s=\(Int(delay))")
+                    "WebRTC control route unavailable for \(daemonID, privacy: .public); stage=\(stage, privacy: .public) reason=\(reason, privacy: .public) elapsed_ms=\(elapsedMilliseconds) retry_in_s=\(Int(delay))"
+                )
             }
         } else if let retryAt = webRTCRetries[daemonID]?.retryAt {
             connectionLogger.debug(
-                "Using stable gateway relay for \(daemonID, privacy: .public); WebRTC retry in \(max(0, Int(retryAt.timeIntervalSince(self.clock.now()))))s")
+                "Using stable gateway relay for \(daemonID, privacy: .public); WebRTC retry in \(max(0, Int(retryAt.timeIntervalSince(self.clock.now()))))s"
+            )
         }
         guard route.relayAvailable else {
             throw NSError(

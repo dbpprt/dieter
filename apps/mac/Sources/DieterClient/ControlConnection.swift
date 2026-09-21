@@ -53,7 +53,8 @@ extension ConnectionManager {
             request.offerSdp = try await bridge.offer()
             let candidateSummary = ControlRTCBridge.candidateSummary(in: request.offerSdp)
             controlConnectionLogger.debug(
-                "WebRTC offer gathered host=\(candidateSummary.host) srflx=\(candidateSummary.srflx) relay=\(candidateSummary.relay)")
+                "WebRTC offer gathered host=\(candidateSummary.host) srflx=\(candidateSummary.srflx) relay=\(candidateSummary.relay)"
+            )
             stage = "signaling"
             let session = try await bootstrap.service.startControlConnection(
                 request: .init(message: request), options: DieterRPC.boundedUnaryCallOptions())
@@ -96,7 +97,8 @@ extension ConnectionManager {
                 }
                 accepted = true
                 controlConnectionLogger.info(
-                    "WebRTC control route healthy for \(daemonID, privacy: .public); mode=\(mode.rawValue, privacy: .public) elapsed_ms=\(max(0, Int(Date().timeIntervalSince(routeStarted) * 1000)))")
+                    "WebRTC control route healthy for \(daemonID, privacy: .public); mode=\(mode.rawValue, privacy: .public) elapsed_ms=\(max(0, Int(Date().timeIntervalSince(routeStarted) * 1000)))"
+                )
                 return DataPlaneConnection(
                     rpc: rpc, task: task,
                     connection: .init(
