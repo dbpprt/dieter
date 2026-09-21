@@ -38,7 +38,11 @@ import androidx.compose.material.icons.outlined.Archive
 import androidx.compose.material.icons.outlined.Cancel
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.material.icons.outlined.Computer
+import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -107,18 +111,25 @@ import com.dbpprt.dieter.ui.theme.DieterShellTint
 internal fun BoardLabelFilters(
     state: DieterUiState,
     selectedLabelId: String,
+    selectedMachineId: String? = null,
+    onMachineSelect: (String?) -> Unit = {},
     dragState: BoardLabelDragState,
     onSelect: (String) -> Unit,
     onDrop: (cardId: String, labelId: String) -> Unit,
 ) {
     val board = state.board ?: return
-    val boardCards = state.cards.filter { it.boardId == board.id }
+    val allCards = state.cards.filter { it.boardId == board.id }
+    val machineIds = allCards.map { it.ownerDaemonId }.distinct().sortedBy { state.machineLabel(it) }
+    val boardCards = allCards.filter { selectedMachineId == null || it.ownerDaemonId == selectedMachineId }
     val haptic = LocalHapticFeedback.current
     val currentOnDrop by rememberUpdatedState(onDrop)
     Row(
         Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 5.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
+        if (machineIds.size > 1 || selectedMachineId != null) {
+            BoardMachineFilter(state, machineIds, selectedMachineId, onMachineSelect)
+        }
         val filters = listOf("" to "All cards") + board.labelsList.map { it.id to it.name }
         filters.forEach { (labelId, name) ->
             val selected = labelId == selectedLabelId
@@ -156,7 +167,7 @@ internal fun BoardLabelFilters(
             Surface(
                 onClick = { onSelect(labelId) },
                 modifier = dragModifier,
-                shape = RoundedCornerShape(50),
+                shape = RoundedCornerShape(10.dp),
                 color = if (selected) DieterShellTint else Color.Transparent,
                 contentColor = if (selected) MaterialTheme.colorScheme.onBackground else DieterMuted,
                 border = if (selected) null else androidx.compose.foundation.BorderStroke(1.dp, DieterOutline.copy(alpha = 0.72f)),
@@ -266,10 +277,10 @@ internal fun SwipeableWorkCard(
 
     Box(
         Modifier.fillMaxWidth()
-            .clip(RoundedCornerShape(20.dp))
+            .clip(RoundedCornerShape(12.dp))
             .background(DieterSurfaceHigh)
             .then(
-                if (labelDropTargeted) Modifier.border(2.dp, DieterEyes, RoundedCornerShape(20.dp))
+                if (labelDropTargeted) Modifier.border(2.dp, DieterEyes, RoundedCornerShape(12.dp))
                 else Modifier,
             )
             .onGloballyPositioned { labelDragState.registerCard(card.id, it.boundsInRoot()) }
@@ -493,24 +504,29 @@ internal fun WorkCard(
     val starting = operation == CardOperation.STARTING || card.runtime.equals("starting", ignoreCase = true)
     val activityAge = boardCardActivityText(card.updatedAt, card.lastActivityAt, activityNow)
     val hasStartAction = starting || onStart != null
-    val hasWorkspaceBadge = workspaceCardBadgeInfo(card) != null
     val isDone = card.lane.contains("done", ignoreCase = true)
     val startContentColor = MaterialTheme.colorScheme.onPrimary
     Card(
         onClick = onClick,
         modifier = modifier.fillMaxWidth().then(
-            if (selected) Modifier.border(1.dp, DieterShellDeep, RoundedCornerShape(20.dp)) else Modifier,
+            if (selected) Modifier.border(1.dp, DieterShellDeep, RoundedCornerShape(12.dp)) else Modifier,
         ),
         colors = CardDefaults.cardColors(containerColor = if (selected) DieterShellTintDeep else DieterSurfaceHigh),
-        shape = RoundedCornerShape(20.dp),
+        shape = RoundedCornerShape(12.dp),
     ) {
         // Keep the surface opaque while an optimistic card is syncing. Fading
         // the entire card exposes the swipe actions rendered underneath it.
         Column(Modifier.alpha(if (pending) 0.52f else 1f)) {
             Column(
-                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
-                verticalArrangement = Arrangement.spacedBy(9.dp),
+                Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
+                verticalArrangement = Arrangement.spacedBy(7.dp),
             ) {
+                if (labels.isNotEmpty()) {
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(5.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        labels.take(3).forEach { LabelPill(it.name, it.color, compact = true) }
+                        if (labels.size > 3) MoreLabelsPill(labels.size - 3)
+                    }
+                }
                 Row(verticalAlignment = Alignment.Top) {
                     Text(
                         card.title.ifBlank { "Untitled conversation" },
@@ -527,6 +543,7 @@ internal fun WorkCard(
                             activityAge,
                             color = DieterMuted,
                             fontSize = 11.sp,
+                            lineHeight = 14.sp,
                             fontWeight = FontWeight.Medium,
                             modifier = Modifier.padding(top = 2.dp)
                                 .testTag("card-activity-${card.id}")
@@ -534,68 +551,43 @@ internal fun WorkCard(
                         )
                     }
                 }
-                Text(machineName.ifBlank { card.ownerDaemonId }, color = DieterMuted, fontSize = 11.sp,
-                    modifier = Modifier.semantics { contentDescription = "Machine ${machineName.ifBlank { card.ownerDaemonId }}" })
                 if (card.summary.isNotBlank()) {
                     Text(
                         card.summary,
                         color = DieterMuted,
-                        fontSize = 13.sp,
-                        lineHeight = 18.sp,
-                        maxLines = 2,
+                        fontSize = 12.sp,
+                        lineHeight = 16.sp,
+                        maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
-                if (labels.isNotEmpty() || hasWorkspaceBadge) {
-                    FlowRow(
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp),
-                    ) {
-                        labels.take(3).forEach { label -> LabelPill(label.name, label.color) }
-                        if (labels.size > 3) MoreLabelsPill(labels.size - 3)
-                        if (hasWorkspaceBadge) WorkspaceCardBadge(card, Modifier.widthIn(max = 176.dp))
-                    }
-                }
-                if (card.hasTokenUsage() && (card.tokenUsage.reportedMessages > 0 || card.tokenUsage.missingMessages > 0 || card.tokenUsage.partial)) {
-                    Text(
-                        taskTokenUsageLabel(card.tokenUsage),
-                        color = DieterMuted,
-                        fontSize = 11.sp,
-                        modifier = Modifier.semantics { contentDescription = taskTokenUsageDetail(card.tokenUsage) },
-                    )
-                    if (card.tokenUsage.reportedMessages > 0) {
-                        Text("${card.tokenUsage.inputTokens} input · ${card.tokenUsage.outputTokens} output",
-                            color = DieterMuted, fontSize = 10.sp)
-                    }
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(5.dp),
+                ) {
+                    MachineCardBadge(machineName.ifBlank { card.ownerDaemonId.ifBlank { "Unassigned" } }, card.id)
+                    WorkspaceCardBadge(card, Modifier.widthIn(max = 160.dp))
                 }
                 if (!operationError.isNullOrBlank()) {
                     Text(operationError, color = MaterialTheme.colorScheme.error, fontSize = 11.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 }
             }
-            HorizontalDivider(color = DieterOutline)
             Row(
                 Modifier.fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = if (hasStartAction) 8.dp else 11.dp)
+                    .padding(start = 12.dp, end = 12.dp, bottom = 8.dp)
                     .then(if (hasStartAction) Modifier.heightIn(min = 48.dp) else Modifier),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(
-                    buildAnnotatedString {
-                        pushStyle(SpanStyle(fontWeight = FontWeight.SemiBold))
-                        append(card.provider.ifBlank { "agent" })
-                        pop()
-                        if (card.model.isNotBlank()) {
-                            append("  ")
-                            pushStyle(SpanStyle(color = DieterMuted))
-                            append(card.model)
-                            pop()
-                        }
-                    },
-                    modifier = Modifier.weight(1f),
-                    fontSize = 12.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(
+                        listOf(card.provider.ifBlank { "agent" }, card.model).filter { it.isNotBlank() }.joinToString(" · "),
+                        color = DieterMuted, fontSize = 11.sp, lineHeight = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    )
+                    if (card.hasTokenUsage() && card.tokenUsage.reportedMessages > 0) {
+                        Text(taskTokenUsageLabel(card.tokenUsage), color = DieterMuted, fontSize = 10.sp, lineHeight = 13.sp,
+                            modifier = Modifier.semantics { contentDescription = taskTokenUsageDetail(card.tokenUsage) })
+                    }
+                }
                 if (card.commentCount > 0) {
                     Row(
                         Modifier.padding(start = 12.dp)
@@ -606,7 +598,7 @@ internal fun WorkCard(
                     ) {
                         Icon(Icons.Outlined.ChatBubbleOutline, null, Modifier.size(15.dp), tint = DieterMuted)
                         Spacer(Modifier.width(4.dp))
-                        Text(card.commentCount.toString(), color = DieterMuted, fontSize = 12.sp)
+                        Text(card.commentCount.toString(), color = DieterMuted, fontSize = 12.sp, lineHeight = 15.sp)
                     }
                 }
                 if (isDone) {
@@ -659,12 +651,12 @@ internal fun WorkspaceCardBadge(card: BoardCard, modifier: Modifier = Modifier) 
         modifier = modifier
             .testTag("workspace-badge-${card.id}")
             .semantics { contentDescription = badge.accessibilityLabel },
-        shape = RoundedCornerShape(50),
+        shape = RoundedCornerShape(6.dp),
         color = tint.copy(alpha = 0.13f),
         contentColor = tint,
     ) {
         Row(
-            Modifier.padding(horizontal = 9.dp, vertical = 6.dp),
+            Modifier.padding(horizontal = 7.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(5.dp),
         ) {
@@ -676,6 +668,7 @@ internal fun WorkspaceCardBadge(card: BoardCard, modifier: Modifier = Modifier) 
             Text(
                 badge.title,
                 fontSize = 11.sp,
+                lineHeight = 14.sp,
                 fontWeight = FontWeight.SemiBold,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -704,14 +697,14 @@ internal fun boardCardActivityText(
 }
 
 @Composable
-internal fun LabelPill(name: String, color: String) {
+internal fun LabelPill(name: String, color: String, compact: Boolean = false) {
     val tint = runCatching { Color(color.toColorInt()) }.getOrDefault(DieterShell)
     val tintContrast = colorContrastRatio(tint, DieterSurfaceHigh)
     val contentTint = if (tintContrast < 3f) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.76f) else tint
     val backgroundTint = if (tintContrast < 1.5f) DieterOutline.copy(alpha = 0.3f) else tint.copy(alpha = 0.18f)
     Row(
-        Modifier.widthIn(max = 134.dp).clip(RoundedCornerShape(20.dp))
-            .background(backgroundTint).padding(horizontal = 9.dp, vertical = 5.dp),
+        Modifier.widthIn(max = 134.dp).clip(RoundedCornerShape(if (compact) 5.dp else 20.dp))
+            .background(backgroundTint).padding(horizontal = 8.dp, vertical = if (compact) 3.dp else 5.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
@@ -725,6 +718,7 @@ internal fun LabelPill(name: String, color: String) {
             name,
             color = contentTint,
             fontSize = 11.sp,
+            lineHeight = 14.sp,
             fontWeight = FontWeight.SemiBold,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
@@ -771,5 +765,59 @@ internal fun StatusPill(status: String) {
         )
         Spacer(Modifier.width(6.dp))
         Text(status.replaceFirstChar { it.uppercase() }, color = DieterMuted, fontSize = 11.sp)
+    }
+}
+
+@Composable
+internal fun BoardMachineFilter(
+    state: DieterUiState,
+    machineIds: List<String>,
+    selected: String?,
+    onSelect: (String?) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        Surface(
+            onClick = { expanded = true },
+            shape = RoundedCornerShape(10.dp),
+            color = if (selected != null) DieterShellTint else Color.Transparent,
+            border = androidx.compose.foundation.BorderStroke(1.dp, DieterOutline),
+            modifier = Modifier.testTag("board-machine-filter"),
+        ) {
+            Row(Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Outlined.Computer, null, Modifier.size(15.dp), tint = DieterMuted)
+                Text(selected?.let(state::machineLabel) ?: "All machines", fontSize = 13.sp,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 140.dp))
+                Icon(Icons.Outlined.KeyboardArrowDown, null, Modifier.size(15.dp), tint = DieterMuted)
+            }
+        }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            (listOf<String?>(null) + machineIds).forEach { id ->
+                DropdownMenuItem(
+                    text = { Text(id?.let(state::machineLabel) ?: "All machines", maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                    trailingIcon = { if (selected == id) Icon(Icons.Default.Check, "Selected", Modifier.size(16.dp)) },
+                    onClick = { expanded = false; onSelect(id) },
+                    modifier = Modifier.testTag("board-machine-${id ?: "all"}"),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun MachineCardBadge(name: String, cardId: String) {
+    Surface(
+        color = DieterOutline.copy(alpha = 0.3f),
+        contentColor = DieterMuted,
+        shape = RoundedCornerShape(6.dp),
+        modifier = Modifier.widthIn(max = 160.dp).testTag("machine-badge-$cardId")
+            .semantics(mergeDescendants = true) { contentDescription = "Machine $name" },
+    ) {
+        Row(Modifier.padding(horizontal = 7.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(5.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Outlined.Computer, null, Modifier.size(14.dp))
+            Text(name, fontSize = 11.sp, lineHeight = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
     }
 }

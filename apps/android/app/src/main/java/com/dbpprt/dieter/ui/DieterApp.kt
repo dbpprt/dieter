@@ -264,7 +264,8 @@ fun DieterApp(container: DieterContainer) {
                     DieterNavigationRail(
                         selected = state.destination,
                         onSelect = handleNavigate,
-                        onTools = { toolsOpen = true },
+                        projectSurfacesEnabled = projectScopedNavigationEnabled(state),
+                        onSettings = { model.openSurface(AppSurface.APP_SETTINGS) },
                         onCreate = {
                             when (state.destination) {
                                 Destination.CHATS -> model.openSurface(AppSurface.NEW_CHAT)

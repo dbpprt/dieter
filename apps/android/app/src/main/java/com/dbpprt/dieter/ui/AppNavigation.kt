@@ -118,7 +118,8 @@ internal fun DieterBottomBar(
 internal fun DieterNavigationRail(
     selected: Destination,
     onSelect: (Destination) -> Unit,
-    onTools: () -> Unit,
+    projectSurfacesEnabled: Boolean,
+    onSettings: () -> Unit,
     onCreate: () -> Unit,
 ) {
     NavigationRail(containerColor = DieterSurface) {
@@ -144,12 +145,23 @@ internal fun DieterNavigationRail(
                 modifier = Modifier.testTag("nav-${item.destination.name.lowercase()}"),
             )
         }
+        toolNavigationItems.forEach { item ->
+            NavigationRailItem(
+                selected = item.destination == selected,
+                onClick = { onSelect(item.destination) },
+                icon = { Icon(item.icon, contentDescription = null) },
+                label = { Text(item.label) },
+                enabled = projectSurfacesEnabled ||
+                    (item.destination != Destination.FILES && item.destination != Destination.SCHEDULES),
+                modifier = Modifier.testTag("nav-${item.destination.name.lowercase()}"),
+            )
+        }
         NavigationRailItem(
-            selected = !selected.isPrimaryDestination(),
-            onClick = onTools,
-            icon = { Icon(Icons.Outlined.KeyboardArrowUp, contentDescription = "Open tools") },
-            label = { Text("Tools") },
-            modifier = Modifier.testTag("nav-tools"),
+            selected = false,
+            onClick = onSettings,
+            icon = { Icon(Icons.Outlined.Settings, contentDescription = null) },
+            label = { Text("Settings") },
+            modifier = Modifier.testTag("nav-settings"),
         )
     }
 }

@@ -44,6 +44,50 @@ class ScreenNavigationTest {
         }
     }
 
+    @Test fun navigationRailShowsEveryDestinationAndSettingsWithoutTools() {
+        var selected: Destination? = null
+        var settingsOpened = false
+        compose.setContent {
+            DieterTheme {
+                DieterNavigationRail(
+                    selected = Destination.CHATS,
+                    onSelect = { selected = it },
+                    projectSurfacesEnabled = true,
+                    onSettings = { settingsOpened = true },
+                    onCreate = {},
+                )
+            }
+        }
+
+        (primaryNavigationItems.map { it.destination } +
+            listOf(Destination.TERMINALS, Destination.FILES, Destination.SCHEDULES, Destination.SCREENS)).forEach {
+            compose.onNodeWithTag("nav-${it.name.lowercase()}").assertIsDisplayed().assertIsEnabled().performClick()
+            compose.runOnIdle { assertEquals(it, selected) }
+        }
+        compose.onNodeWithTag("nav-settings").assertIsDisplayed().assertIsEnabled().performClick()
+        compose.runOnIdle { assertTrue(settingsOpened) }
+        compose.onNodeWithTag("nav-tools").assertDoesNotExist()
+    }
+
+    @Test fun navigationRailDisablesProjectDestinationsWithoutAnAvailableProject() {
+        compose.setContent {
+            DieterTheme {
+                DieterNavigationRail(
+                    selected = Destination.CHATS,
+                    onSelect = {},
+                    projectSurfacesEnabled = false,
+                    onSettings = {},
+                    onCreate = {},
+                )
+            }
+        }
+
+        compose.onNodeWithTag("nav-files").assertIsNotEnabled()
+        compose.onNodeWithTag("nav-schedules").assertIsNotEnabled()
+        compose.onNodeWithTag("nav-terminals").assertIsEnabled()
+        compose.onNodeWithTag("nav-screens").assertIsEnabled()
+    }
+
     @Test fun toolsOfferExistingDestinationsAndSettings() {
         var selected: Destination? = null
         var settingsOpened = false

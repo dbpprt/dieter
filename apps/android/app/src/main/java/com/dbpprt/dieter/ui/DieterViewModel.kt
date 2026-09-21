@@ -1738,10 +1738,11 @@ class DieterViewModel internal constructor(
         workspaceBranch: String = "",
         workspaceBaseBranch: String = "",
         autoGenerateTitle: Boolean = false,
+        onCreated: () -> Unit = {},
     ) = action(ensureReplicaRoute = false) {
         val current = _state.value
         check(current.project != null) { "Select a project before creating a conversation." }
-        val checkoutId = connectionManager.ensureCheckoutRoute(current.selectedProjectId, current.creationCheckoutId)
+        val checkoutId = connectionManager.ensureCheckoutRoute(current.selectedProjectId, current.creationCheckout?.id ?: current.creationCheckoutId)
         val selectedWorkspaceMode = ConversationWorkspaceMode.resolve(workspaceMode)
         val request = CreateConversationRequest.newBuilder()
             .setCheckoutId(checkoutId)
@@ -1771,17 +1772,20 @@ class DieterViewModel internal constructor(
             ),
         )
         val card = connectionManager.enqueueConversation(request, chat)
+        onCreated()
         _state.update { it.copy(appSurface = null, editingScheduleId = null) }
         if (shouldOpenCreatedConversation(chat, lane)) {
             openCard(card, if (chat) Destination.CHATS else Destination.BOARD)
         }
     }
 
-    fun createQuickTask(story: String) {
+    fun createQuickTask(story: String, onCreated: () -> Unit = {}) {
         val cleanStory = story.trim()
         if (cleanStory.isEmpty()) return
         val current = _state.value
+        if (current.working || !current.creationCatalogReady) return
         val defaults = resolveConversationCreationPreferences(conversationCreationPreferences, current.harnesses)
+        if (!harnessCatalogSupportsSelection(current.harnesses, defaults.provider, defaults.model)) return
         val harness = current.harnesses.firstOrNull { it.id == defaults.provider }
         val lane = current.board?.lanesList?.firstOrNull()?.id.orEmpty().ifBlank { "todo" }
         createConversation(
@@ -1798,6 +1802,7 @@ class DieterViewModel internal constructor(
             workspaceMode = defaults.workspaceMode.wire,
             workspaceBaseBranch = current.project?.baseBranch.orEmpty(),
             autoGenerateTitle = true,
+            onCreated = onCreated,
         )
     }
 

@@ -108,10 +108,13 @@ fun NewConversationScreen(
 ) {
     var title by remember { mutableStateOf("") }
     var prompt by remember { mutableStateOf("") }
-    val eligibleCheckouts = state.project?.checkoutsList.orEmpty().filterNot { it.detached }
-    val chosenCheckout = eligibleCheckouts.firstOrNull { it.id == state.creationCheckoutId } ?: eligibleCheckouts.singleOrNull()
-    val chosenEndpoint = state.presentedEndpointConnections.firstOrNull { it.daemonId == chosenCheckout?.daemonId }
-    val catalogReady = chosenEndpoint != null && chosenEndpoint.id == state.harnessesEndpointId
+    val chosenCheckout = state.creationCheckout
+    val catalogReady = state.creationCatalogReady
+    LaunchedEffect(chosenCheckout?.id) {
+        if (chosenCheckout != null && state.creationMachine?.online == true && !catalogReady) {
+            model.selectCreationCheckout(chosenCheckout.id)
+        }
+    }
     val destinationHarnesses = if (catalogReady) state.harnesses else emptyList()
     val creationDefaults = remember(destinationHarnesses) {
         resolveConversationCreationPreferences(model.conversationCreationPreferences, destinationHarnesses)
@@ -197,29 +200,7 @@ fun NewConversationScreen(
             },
         )
         SurfaceErrorBanner(state.error, model::clearError)
-        val checkouts = state.project?.checkoutsList.orEmpty().filterNot { it.detached }
-        Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
-            checkouts.forEach { checkout ->
-                val machine = state.presentedEndpointConnections.firstOrNull { it.daemonId == checkout.daemonId }
-                TextButton(onClick = { model.selectCreationCheckout(checkout.id) }, enabled = machine?.online == true) {
-                    Text((if (state.creationCheckoutId == checkout.id) "✓ " else "") + "${machine?.label ?: checkout.daemonId} · ${checkout.name}")
-                }
-            }
-        }
-        if (!catalogReady) {
-            val destination = chosenEndpoint?.label
-                ?.takeIf(String::isNotBlank)
-                ?: state.project?.name
-                ?: "the selected project"
-            Text(
-                "Loading models from $destination…",
-                color = DieterMuted,
-                style = MaterialTheme.typography.bodySmall,
-                modifier = Modifier.fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 6.dp)
-                    .testTag("creation-model-catalog-loading"),
-            )
-        }
+        CreationDestinationPicker(state, model::selectCreationCheckout, Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
         attachmentError?.let { message ->
             Text(
                 message,

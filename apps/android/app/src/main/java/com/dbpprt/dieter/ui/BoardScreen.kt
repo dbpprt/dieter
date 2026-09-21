@@ -880,14 +880,14 @@ internal fun BoardList(state: DieterUiState, model: DieterViewModel, modifier: M
     var searchOpen by remember { mutableStateOf(false) }
     var query by remember(state.selectedBoardId) { mutableStateOf("") }
     var selectedLabelId by remember(state.selectedBoardId) { mutableStateOf("") }
-    var selectedMachineId by remember(state.selectedBoardId) { mutableStateOf("") }
+    var selectedMachineId by remember(state.selectedBoardId) { mutableStateOf<String?>(null) }
     val labelDragState = remember(state.selectedBoardId) { BoardLabelDragState() }
     var boardListOrigin by remember { mutableStateOf(Offset.Zero) }
     val dragPreviewOffsetPx = with(LocalDensity.current) { 18.dp.roundToPx() }
     val boardCards = remember(state.cards, state.selectedBoardId, selectedLabelId, selectedMachineId, query) {
         state.cards.filter { card ->
             card.boardId == state.selectedBoardId &&
-                (selectedMachineId.isBlank() || selectedMachineId == card.ownerDaemonId) &&
+                (selectedMachineId == null || selectedMachineId == card.ownerDaemonId) &&
                 (selectedLabelId.isBlank() || selectedLabelId in card.labelIdsList) &&
                 (query.isBlank() || card.title.contains(query, ignoreCase = true) || card.summary.contains(query, ignoreCase = true))
         }
@@ -915,21 +915,12 @@ internal fun BoardList(state: DieterUiState, model: DieterViewModel, modifier: M
             BoardLabelFilters(
                 state = state,
                 selectedLabelId = selectedLabelId,
+                selectedMachineId = selectedMachineId,
+                onMachineSelect = { selectedMachineId = it },
                 dragState = labelDragState,
                 onSelect = { selectedLabelId = it },
                 onDrop = { cardId, labelId -> model.assignLabelToBoardCard(cardId, labelId) },
             )
-            val machineIDs = state.cards.filter { it.boardId == state.selectedBoardId }.map { it.ownerDaemonId }.distinct().sorted()
-            if (machineIDs.size > 1) {
-                Row(Modifier.horizontalScroll(rememberScrollState())) {
-                    TextButton(onClick = { selectedMachineId = "" }) { Text(if (selectedMachineId.isEmpty()) "✓ All machines" else "All machines") }
-                    machineIDs.forEach { id ->
-                        TextButton(onClick = { selectedMachineId = id }) {
-                            Text((if (selectedMachineId == id) "✓ " else "") + (state.presentedEndpointConnections.firstOrNull { it.daemonId == id }?.label ?: id))
-                        }
-                    }
-                }
-            }
             LaneTabs(state, model, boardCards)
             val lanes = state.board?.lanesList.orEmpty()
             if (state.loading && lanes.isEmpty()) {
@@ -985,7 +976,8 @@ internal fun BoardList(state: DieterUiState, model: DieterViewModel, modifier: M
     if (quickTaskOpen) {
         QuickTaskPopover(
             state = state,
-            defaults = resolveConversationCreationPreferences(model.conversationCreationPreferences, state.harnesses),
+            defaults = resolveConversationCreationPreferences(model.conversationCreationPreferences, if (state.creationCatalogReady) state.harnesses else emptyList()),
+            onSelectCheckout = model::selectCreationCheckout,
             story = quickTaskStory,
             onStoryChange = { quickTaskStory = it },
             onDismiss = { quickTaskOpen = false },
@@ -994,9 +986,10 @@ internal fun BoardList(state: DieterUiState, model: DieterViewModel, modifier: M
                 model.openSurface(AppSurface.NEW_CARD)
             },
             onCreate = { story ->
-                quickTaskOpen = false
-                quickTaskStory = ""
-                model.createQuickTask(story)
+                model.createQuickTask(story) {
+                    quickTaskOpen = false
+                    quickTaskStory = ""
+                }
             },
         )
     }
@@ -1042,7 +1035,14 @@ internal fun QuickTaskPopover(
     onDismiss: () -> Unit,
     onOpenFull: () -> Unit,
     onCreate: (String) -> Unit,
+    onSelectCheckout: (String) -> Unit = {},
 ) {
+    val checkout = state.creationCheckout
+    LaunchedEffect(checkout?.id) {
+        if (checkout != null && state.creationMachine?.online == true && !state.creationCatalogReady) {
+            onSelectCheckout(checkout.id)
+        }
+    }
     val cleanStory = story.trim()
     val harness = state.harnesses.firstOrNull { it.id == defaults.provider }
     val selectedModel = harness?.modelsList?.firstOrNull { it.id == defaults.model }
@@ -1103,12 +1103,14 @@ internal fun QuickTaskPopover(
                 Spacer(Modifier.width(10.dp))
                 Column(Modifier.weight(1f)) {
                     Text("Quick task", fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
-                    Text("Enter the story. GPT Spark writes a 4–6 word title.", color = DieterMuted, fontSize = 11.sp)
+                    Text("Describe the task. A title is added automatically.", color = DieterMuted, fontSize = 11.sp)
                 }
                 IconButton(onClick = onDismiss) {
                     Icon(Icons.Outlined.Close, contentDescription = "Close quick task", tint = DieterMuted)
                 }
             }
+            CreationDestinationPicker(state, onSelectCheckout)
+            state.error?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 12.sp) }
             OutlinedTextField(
                 value = story,
                 onValueChange = onStoryChange,
@@ -1124,7 +1126,8 @@ internal fun QuickTaskPopover(
                 Spacer(Modifier.weight(1f))
                 Button(
                     onClick = { onCreate(cleanStory) },
-                    enabled = cleanStory.isNotEmpty() && !state.working && state.project != null && state.board != null,
+                    enabled = cleanStory.isNotEmpty() && !state.working && state.creationCatalogReady &&
+                        harnessCatalogSupportsSelection(state.harnesses, defaults.provider, defaults.model) && state.board != null,
                     modifier = Modifier.testTag("quick-task-create"),
                 ) {
                     Icon(Icons.Outlined.Bolt, contentDescription = null, modifier = Modifier.size(17.dp))
@@ -1211,7 +1214,7 @@ internal fun BoardLanePager(
                     items(visible, key = { it.id }) { card ->
                         SwipeableWorkCard(
                             card = card,
-                            machineName = state.conversationHost(card)?.hostname ?: card.ownerDaemonId,
+                            machineName = state.machineLabel(card.ownerDaemonId),
                             board = state.board,
                             selected = card.id == state.selectedCardId,
                             pending = card.id in state.pendingCardIds,
