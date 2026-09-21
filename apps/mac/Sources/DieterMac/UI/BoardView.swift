@@ -1505,9 +1505,10 @@ struct BoardCardView: View {
                             ProjectMachineBadge(
                                 machine: machine,
                                 online: store.machineIsAvailable(machine),
-                                compact: true,
+                                compact: false,
                                 alignsWithStatus: true
                             )
+                            .fixedSize()
                         }
                         Spacer()
                         let age = BoardCardActivityText.compact(

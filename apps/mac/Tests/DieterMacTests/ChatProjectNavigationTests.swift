@@ -70,17 +70,22 @@ import Testing
 
 @Test @MainActor func sharedProjectMachineBadgeRendersOnlineAndOfflineStates() {
     let machine = DieterEndpoint(
-        name: "Build Mac", host: "build.example", port: 443, daemonID: "build-mac", online: true)
+        name: "mini-home-workstation", host: "build.example", port: 443, daemonID: "build-mac", online: true)
 
     for online in [true, false] {
         let renderer = ImageRenderer(content: ProjectMachineBadge(machine: machine, online: online))
         renderer.proposedSize = .init(width: 100, height: 20)
         #expect(renderer.nsImage != nil)
 
-        let machineBadge = NSHostingView(
+        let compactMachineBadge = NSHostingView(
             rootView: ProjectMachineBadge(
                 machine: machine, online: online, compact: true, alignsWithStatus: true))
+        let boardMachineBadge = NSHostingView(
+            rootView: ProjectMachineBadge(
+                machine: machine, online: online, compact: false, alignsWithStatus: true))
         let runtimeBadge = NSHostingView(rootView: StatusPill(text: "idle", color: DieterTheme.subtle))
-        #expect(abs(machineBadge.fittingSize.height - runtimeBadge.fittingSize.height) < 1)
+        #expect(abs(compactMachineBadge.fittingSize.height - runtimeBadge.fittingSize.height) < 1)
+        #expect(abs(boardMachineBadge.fittingSize.height - runtimeBadge.fittingSize.height) < 1)
+        #expect(boardMachineBadge.fittingSize.width > 72)
     }
 }
