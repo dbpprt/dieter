@@ -10,6 +10,8 @@ import re
 import shutil
 import tarfile
 import tempfile
+import time
+import subprocess
 from common import ROOT, IMAGE, IDENTITY, ISSUER, NAME, atomic, digest, keys, read_json, require, run
 
 ARCHIVE = "dieter-gateway-deploy.tar.gz"
@@ -17,6 +19,17 @@ MANIFEST = "gateway-manifest.json"
 SIGNATURE = "gateway-manifest.sigstore.json"
 REGISTRY = "ghcr.io/dbpprt/dieter-gateway-deploy"
 IDENTITIES = (IDENTITY, "https://github.com/dbpprt/dieter/.github/workflows/release.yml@refs/heads/main")
+
+
+def publish_retry(argv, **options):
+    """Retry only idempotent artifact/signature publication, never activation."""
+    for attempt in range(4):
+        try:
+            return run(argv, **options)
+        except (ValueError, subprocess.TimeoutExpired):
+            if attempt == 3:
+                raise
+            time.sleep(2 ** attempt)
 
 
 def pack(output, revision, version, image, built_at, probes=None):
@@ -145,8 +158,8 @@ def publish():
              "-ldflags=-s -w", "-o", path, "./scripts/gateway-turn-probe"], timeout=300)
         probes[name] = path
     pack(out, revision, version, image, built_at, probes)
-    run(["cosign", "sign", "--yes", "-a", "sourceRevision=" + revision, image], timeout=300, capture=False)
-    run(["cosign", "sign-blob", "--yes", "--bundle", out / SIGNATURE, out / MANIFEST], timeout=300, capture=False)
+    publish_retry(["cosign", "sign", "--yes", "-a", "sourceRevision=" + revision, image], timeout=300, capture=False)
+    publish_retry(["cosign", "sign-blob", "--yes", "--bundle", out / SIGNATURE, out / MANIFEST], timeout=300, capture=False)
     verify(out, revision, image)
     # The durable OCI artifact is independent of GitHub release pruning. Neither
     # repository's workflows delete these tags. Backups also retain pulled images.
@@ -154,7 +167,7 @@ def publish():
     previous = Path.cwd()
     try:
         os.chdir(out)
-        run(["oras", "push", REGISTRY + ":" + version, "--artifact-type", "application/vnd.dieter.gateway.deployment.v1",
+        publish_retry(["oras", "push", REGISTRY + ":" + version, "--artifact-type", "application/vnd.dieter.gateway.deployment.v1",
              "--annotation", "org.opencontainers.image.revision=" + revision,
              ARCHIVE + ":application/gzip", MANIFEST + ":application/json", SIGNATURE + ":application/json"], timeout=300, capture=False)
         descriptor = json.loads(run(["oras", "manifest", "fetch", "--descriptor", REGISTRY + ":" + version]))
