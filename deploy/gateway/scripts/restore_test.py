@@ -10,7 +10,7 @@ import shutil
 import sqlite3
 import tempfile
 import time
-from common import digest, read_json, require, run
+from common import atomic, canonical, digest, read_json, require, run
 from host import Host
 
 
@@ -69,9 +69,37 @@ def test_restore(snapshot, policy):
             run(["docker", "rm", "-f", name])
 
 
+def repository_restore_test(policy, snapshot_id):
+    """Restore an exact encrypted snapshot, verify bytes, and cold-start offline."""
+    from backup import command
+    host = Host(policy)
+    host.initialize()
+    cfg = read_json(host.etc / "backup/config.json")
+    image = cfg["image"]
+    require(re.fullmatch(r"restic/restic@sha256:[a-f0-9]{64}", image), "restic image must be pinned")
+    require(snapshot_id == "latest" or re.fullmatch(r"[a-f0-9]{64}", snapshot_id), "invalid snapshot ID")
+    if snapshot_id == "latest":
+        snapshots = json.loads(run(command(host.etc, image, "--no-cache", "snapshots", "--host", cfg["host"], "--tag", "gateway", "--json")))
+        require(snapshots, "no gateway recovery snapshot exists")
+        snapshot_id = max(snapshots, key=lambda snapshot: snapshot["time"])["id"]
+    require(shutil.disk_usage(host.state).free > 3*1024**3, "insufficient bounded restore-test space")
+    started = time.monotonic()
+    with tempfile.TemporaryDirectory(prefix="repository-restore-", dir=host.state) as temporary:
+        run(command(host.etc, "-v", temporary + ":/restore", image, "--no-cache", "restore", snapshot_id,
+                    "--target", "/restore", "--verify"), timeout=900)
+        result = test_restore(Path(temporary) / "snapshot", policy)
+        result.update(snapshotID=snapshot_id, durationSeconds=round(time.monotonic()-started, 2))
+        import datetime
+        result["completedAt"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        atomic(host.state / "restore-test.json", canonical(result))
+        return result
+
+
 if __name__ == "__main__":
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("snapshot")
+    p.add_argument("snapshot", nargs="?", help="Already restored protected snapshot directory.")
+    p.add_argument("--repository-snapshot", help="Restore an exact encrypted snapshot ID, or resolve latest once.")
     p.add_argument("--policy", default="/etc/dieter-deploy/host-policy.json")
     a = p.parse_args()
-    print(json.dumps(test_restore(a.snapshot, a.policy)))
+    require(bool(a.snapshot) != bool(a.repository_snapshot), "select one snapshot directory or repository snapshot")
+    print(json.dumps(repository_restore_test(a.policy, a.repository_snapshot) if a.repository_snapshot else test_restore(a.snapshot, a.policy)))

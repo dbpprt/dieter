@@ -63,6 +63,17 @@ def handle(host, request):
         keys(request, ("command",), "backup")
         run(["systemctl", "start", "--no-block", "dieter-backup.service"])
         return {"backupStarted": True}
+    if command == "restore-test":
+        keys(request, ("command",), "restore test")
+        run(["systemctl", "start", "--no-block", "dieter-restore-test.service"])
+        return {"restoreTestStarted": True}
+    if command == "restore-test-status":
+        keys(request, ("command",), "restore test status")
+        from common import read_json
+        path = host.state / "restore-test.json"
+        result = read_json(path) if path.is_file() else {"completed": False}
+        result["service"] = run(["systemctl", "show", "dieter-restore-test.service", "--property", "ActiveState,SubState,Result", "--no-pager"]).decode().splitlines()
+        return result
     raise ValueError("unsupported deployment operation")
 
 

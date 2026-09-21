@@ -86,7 +86,14 @@ class Host:
             dest = self.operation(operation)
             if dest.exists():
                 require(self.status(operation)["requestSHA256"] == request_hash, "operation ID already has different inputs")
+                if self.status(operation)["state"] not in TERMINAL:
+                    # Admission may have reached disk just before the observer
+                    # or systemctl client died. Starting an already active unit
+                    # is idempotent and never restarts its worker.
+                    run(["systemctl", "start", "--no-block", "dieter-deploy@" + operation + ".service"])
                 return self.status(operation)
+            for abandoned in self.ops.glob(".admitting-*"):
+                shutil.rmtree(abandoned)
             pending = sum(1 for op in self.ops.iterdir() if (op / "status.json").is_file()
                           and read_json(op / "status.json")["state"] not in TERMINAL)
             require(pending < 8, "deployment admission queue is full")
@@ -122,6 +129,14 @@ class Host:
         # Reuse the same verification, backup, activation and external readiness
         # path. A rollback is itself a new durable deployment, never a DB restore.
         return self.admit(operation, target / "input")
+
+    def validate_selection(self, selection, incoming):
+        for name in ("installRoot", "configRoot", "runtimeRoot", "project", "gatewayHost", "allowedUserIDs",
+                     "stateVolume", "caddyData", "caddyConfig", "publicIPv4", "turnIPv4", "turnHost"):
+            require(selection[name] == self.config[name], "settings do not match installed host policy")
+        require(selection["legacyHosts"] in (self.config.get("legacyHosts", []), []), "unexpected legacy hostname selection")
+        if selection["legacyHosts"]:
+            require(digest(Path(incoming) / "legacy.caddy") == self.config["legacyFragmentSHA256"], "legacy route fragment differs from reviewed host policy")
 
     def backup(self, s, operation):
         """Online SQLite backup plus the corresponding stable identity/config."""
@@ -241,8 +256,7 @@ class Host:
                 incoming = op / "input"
                 m = verify(incoming)
                 s = settings(read_json(incoming / "settings.json"))
-                for name in ("installRoot", "configRoot", "runtimeRoot", "project", "gatewayHost", "allowedUserIDs"):
-                    require(s[name] == self.config[name], "settings do not match installed host policy")
+                self.validate_selection(s, incoming)
                 current = self.install / "current"
                 require(current.is_symlink(), "import and verify the existing deployment before activation")
                 previous = current.resolve()
@@ -273,6 +287,8 @@ class Host:
                 os.chmod(target_private / "turnserver.conf", 0o640)
                 for directory in ("acme-webroot", "certificates"):
                     (self.etc / directory).mkdir(mode=0o755, exist_ok=True)
+                for kind in ("gateway", "turn"):
+                    (self.etc / "certificates" / kind).mkdir(mode=0o755, exist_ok=True)
                 self.compose(release, "config", "--quiet")
                 self.compose(release, "pull")
                 # Validate with the exact deployed binaries before touching any listener.

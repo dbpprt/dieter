@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
-from common import atomic, canonical
+from common import atomic, canonical, digest
 from host import Host
 from bundle import ARCHIVE, MANIFEST, SIGNATURE
 
@@ -36,12 +36,18 @@ class HostTests(unittest.TestCase):
         reconstructed = Host(self.policy)
         with patch("host.run") as start:
             same = reconstructed.admit("first", self.incoming)
-            start.assert_not_called()
+            start.assert_called_once()
+            self.assertIn("dieter-deploy@first.service", start.call_args.args[0])
         self.assertEqual(first, same)
         (self.incoming / "settings.json").write_text('{"tls":"existing"}')
         with self.assertRaisesRegex(ValueError, "different inputs"):
             self.admit()
         self.assertEqual(reconstructed.status("first")["state"], "admitted")
+        reconstructed.transition("first", "committed")
+        (self.incoming / "settings.json").write_text('{"tls":"managed"}')
+        with patch("host.run") as start:
+            reconstructed.admit("first", self.incoming)
+            start.assert_not_called()
 
     def test_reboot_resumes_only_nonterminal_operations(self):
         self.admit("one")
@@ -62,6 +68,25 @@ class HostTests(unittest.TestCase):
         self.assertEqual(result["state"], "admitted")
         self.assertEqual(result["requestSHA256"], self.host.status("old")["requestSHA256"])
         self.assertEqual(self.host.status("old")["state"], "committed")
+
+    def test_deployment_key_cannot_change_host_mounts_identity_or_routes(self):
+        selection = json.loads((Path(__file__).resolve().parents[1] / "profiles/example.settings.json").read_text())
+        self.host.config.update(selection)
+        self.host.validate_selection(selection, self.incoming)
+        for field, bad in (("caddyData", "/etc"), ("caddyConfig", "/root"), ("stateVolume", "unrelated-volume"),
+                           ("publicIPv4", "192.0.2.99"), ("turnHost", "other.example.com"), ("allowedUserIDs", [99]),
+                           ("legacyHosts", ["unreviewed.example.com"])):
+            with self.assertRaises(ValueError, msg=field):
+                self.host.validate_selection(dict(selection, **{field: bad}), self.incoming)
+        selection["legacyHosts"] = ["legacy.example.com"]
+        self.host.config["legacyHosts"] = selection["legacyHosts"]
+        path = self.incoming / "legacy.caddy"
+        path.write_text("reviewed routes")
+        self.host.config["legacyFragmentSHA256"] = digest(path)
+        self.host.validate_selection(selection, self.incoming)
+        path.write_text("unreviewed routes")
+        with self.assertRaisesRegex(ValueError, "fragment"):
+            self.host.validate_selection(selection, self.incoming)
 
     def test_interrupted_activation_rolls_back_instead_of_replaying(self):
         self.admit()

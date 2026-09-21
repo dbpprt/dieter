@@ -184,10 +184,10 @@ backend turn
     caddy_service = service(deps["caddy"], limits["caddyMemoryMiB"], "0:0")
     caddy_service.update({"cap_add": ["NET_BIND_SERVICE"], "volumes": [install + "/public/Caddyfile:/etc/caddy/Caddyfile:ro",
         s["caddyData"] + ":/data", s["caddyConfig"] + ":/config", s["runtimeRoot"] + ":/run/dieter",
-        s["configRoot"] + "/acme-webroot:/acme:ro", certs + ":/certificates:ro"]})
+        s["configRoot"] + "/acme-webroot:/acme:ro", certs + "/gateway:/certificates/gateway:ro"]})
     coturn = service(deps["coturn"], limits["turnMemoryMiB"], "65534:65533")
     coturn.update({"entrypoint": ["turnserver"], "command": ["-c", "/etc/coturn/turnserver.conf"],
-                   "volumes": [protected + "/turnserver.conf:/etc/coturn/turnserver.conf:ro", certs + ":/certificates:ro"]})
+                   "volumes": [protected + "/turnserver.conf:/etc/coturn/turnserver.conf:ro", certs + "/turn:/certificates/turn:ro"]})
     # The pinned coturn executable carries cap_net_bind_service in its file
     # capabilities. Linux rejects exec when that capability is absent from the
     # bounding set, even when all selected listener ports are above 1024.
