@@ -90,6 +90,20 @@ The example 64-per-user / 256-total allocation and bandwidth settings are
 clients, screens, peer traffic and reconnect bursts before increasing production
 limits. Preserve account/target concentration when testing coturn's quota bucket.
 
+Coturn reserves `max-bps` for each allocation when the client omits BANDWIDTH.
+The renderer requires `bpsCapacity >= maxBps * totalQuota` so the reservation
+pool cannot silently lower the declared allocation limit. At 1,250,000 bytes/s
+per allocation, 16 allocations need a 20,000,000 bytes/s pool; the 256-allocation
+candidate needs 320,000,000 bytes/s. This accounting pool is not a measured link
+capacity or aggregate traffic shaper. Qualify actual traffic and host headroom
+before raising production quotas or per-allocation bandwidth.
+
+`tests/allocation_soak.py` measures 64 concentrated allocations and release under
+UDP/TCP/TLS on the named disposable VM. Its colocated probes exchange only 1 KiB
+per second in each direction. The 30-minute steady and five-minute reconnect
+report is allocation lifecycle evidence, not native screen or throughput
+qualification; the qualification gate still requires those separate workloads.
+
 Legacy route removal is blocked by the host controller until the current managed
 TLS operation has recorded complete Mac/Android API/screens, gateway-issued TURN,
 certificate, isolation and 30-minute/5-minute workload evidence. The controller

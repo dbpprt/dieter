@@ -1224,8 +1224,11 @@ The first three use generated pixels and dry-run input; the 180-second run inclu
 45 seconds idle, intermittent updates and resumed motion. The last two require Screen
 Recording and event-posting permission and send events only to an owned native
 fixture window. All use random loopback listeners and disposable daemon data;
-the installed daemon is untouched. Viewer integration refuses to start while an
-operator Dieter app is running. Evidence paths are printed by the test.
+the installed daemon is untouched. Native Mac viewer integration refuses to start
+while an operator Dieter Mac app is running. Android screen tests install the
+separate `com.dbpprt.dieter.screenfixture` package on the selected emulator,
+preserve the normal Android app, and refuse an already-running fixture package.
+Evidence paths are printed by the test.
 
 Screen sharing supports up to four clients per machine. Matching display,
 codec profile, and stream settings share a hardware encoder when decoded-reference

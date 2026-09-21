@@ -51,7 +51,10 @@ def settings(value):
     require(all(type(n) is int and n > 0 for n in t.values()), "TURN bounds must be positive integers")
     require(1024 <= t["minPort"] < t["maxPort"] <= 65535, "invalid relay port range")
     require(t["userQuota"] <= t["totalQuota"] <= 4096 and t["maxPort"] - t["minPort"] + 1 >= 2 * t["totalQuota"], "insufficient relay ports")
-    require(t["maxBps"] <= t["bpsCapacity"] <= 1250000000, "invalid TURN bandwidth budget")
+    # Coturn reserves max-bps on Allocate when clients omit BANDWIDTH. A
+    # smaller pool silently reduces total-quota and rejects valid load with 486.
+    require(t["maxBps"] * t["totalQuota"] <= t["bpsCapacity"] <= 1250000000,
+            "TURN bandwidth reservation pool must cover maxBps * totalQuota")
     keys(value["limits"], "gatewayMemoryMiB turnMemoryMiB caddyMemoryMiB haproxyMemoryMiB pids nofile".split(), "limits")
     require(all(type(n) is int and 16 <= n <= 1048576 for n in value["limits"].values()), "invalid resource bounds")
     return value

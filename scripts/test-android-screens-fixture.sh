@@ -11,11 +11,14 @@ if [[ "${DIETER_SCREEN_DEVICE_LEASE_V2:-}" != "$serial" ]]; then
 fi
 case "$variant:$serial" in
     debug:emulator-*) package=com.dbpprt.dieter; task=connectedDebugAndroidTest ;;
-    screenFixture:emulator-*) echo 'Physical runner requires a physical serial.' >&2; exit 2 ;;
     screenFixture:*) package=com.dbpprt.dieter.screenfixture; task=connectedScreenFixtureAndroidTest ;;
     *) echo 'Invalid device/build policy.' >&2; exit 2 ;;
 esac
 [[ "$($adb -s "$serial" get-state)" == device ]]
+if [[ -n "$("$adb" -s "$serial" shell pidof "$package" 2>/dev/null | tr -d '\r' || true)" ]]; then
+    echo "The selected package $package is already running; preserving its owner." >&2
+    exit 1
+fi
 root=$(mktemp -d "${TMPDIR:-/tmp}/dieter-android-screens.XXXXXX")
 fixture_pid=""; target_pid=""; port=""; mac_pid=""
 cleanup() {
@@ -28,7 +31,7 @@ cleanup() {
     [[ -z "$fixture_pid" ]] || wait "$fixture_pid" 2>/dev/null || true
     [[ -z "$target_pid" ]] || wait "$target_pid" 2>/dev/null || true
     [[ -z "$port" ]] || "$adb" -s "$serial" reverse --remove "tcp:$port" >/dev/null 2>&1 || true
-    # The physical fixture has its own application identity; retire only that
+    # The fixture has its own application identity; retire only that
     # task-owned process before releasing the shared device lease.
     if [[ "$variant" == screenFixture ]]; then
         "$adb" -s "$serial" shell am force-stop "$package" >/dev/null 2>&1 || true

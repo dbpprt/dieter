@@ -16,6 +16,6 @@
   "caddyData": "/var/lib/dieter-gateway/caddy-data",
   "caddyConfig": "/var/lib/dieter-gateway/caddy-config",
   "legacyHosts": [],
-  "turn": {"minPort": 49160, "maxPort": 50183, "userQuota": 64, "totalQuota": 256, "maxBps": 1250000, "bpsCapacity": 12500000},
+  "turn": {"minPort": 49160, "maxPort": 50183, "userQuota": 64, "totalQuota": 256, "maxBps": 1250000, "bpsCapacity": 320000000},
   "limits": {"gatewayMemoryMiB": 192, "turnMemoryMiB": 192, "caddyMemoryMiB": 96, "haproxyMemoryMiB": 64, "pids": 128, "nofile": 8192}
 }

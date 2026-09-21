@@ -96,8 +96,10 @@ and disables uninstalling incompatible APKs; do not override these safeguards. N
 gateway and authenticated routes. Never expose or replace the operator's raw
 loopback service or edit `DIETER_HOME`. Isolated integration fixtures are allowed
 and preferred for input, transport, and lifecycle tests. `just android screens-test`
-uses disposable storage, an enrolled test identity, a random loopback port and a
-one-run bearer token. Its temporary ADB reverse maps only that fixture port and
+installs the separate `com.dbpprt.dieter.screenfixture` application and uses
+disposable storage, an enrolled test identity, a random loopback port and a
+one-run bearer token. It refuses an already-running fixture package. The operator's
+normal application is not replaced or stopped. Its temporary ADB reverse maps only that fixture port and
 is removed on exit. It never changes saved Android credentials or the live service.
 Use `DIETER_SCREEN_TEST_SOURCE=screen just android screens-test` to additionally
 exercise real ScreenCaptureKit; the default exercises native synthetic video and
