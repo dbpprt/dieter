@@ -40,6 +40,11 @@
         private(set) var machineInformationError: String?
         private var pendingOperations = 0
         var busy: Bool { pendingOperations > 0 || phase == .connecting }
+        var canSendMessage: Bool {
+            IOSConversationAvailability.canSend(
+                phase: phase, busy: busy, hasConversationTransport: conversationPlane != nil,
+                hasSelection: selectedCard != nil)
+        }
         var supportedMachines: [DieterEndpoint] { machines.filter(IOSMachinePolicy.isCompatible) }
         var utilityMachine: DieterEndpoint? { supportedMachines.first { $0.daemonID == utilityMachineID } }
 
@@ -243,7 +248,6 @@
                     startDirectoryRefresh(attempt: attempt)
                     return
                 }
-                phase = .connected(version: IOSMachinePolicy.apiVersion)
                 if let previousCardID,
                     cards.contains(where: { $0.id == previousCardID })
                         || chats.contains(where: { $0.id == previousCardID })
@@ -251,6 +255,11 @@
                     await selectCard(id: previousCardID)
                 }
                 guard owns(attempt) else { return }
+                // Keep conversation mutations disabled until a retained
+                // selection has restored its owner transport. Publishing the
+                // connected phase first lets foregrounded views submit into a
+                // readable snapshot while conversationPlane is still nil.
+                phase = .connected(version: IOSMachinePolicy.apiVersion)
                 startDirectoryRefresh(attempt: attempt)
             } catch {
                 guard owns(attempt) else { return }
@@ -261,15 +270,30 @@
         func refreshMachines() async {
             guard let control = gateway, let origin = connectedOrigin else { await reconnect(); return }
             let attempt = connectionID
+            let previousCardID = selectedCard?.card.id
             do {
                 let directory = try await control.daemons()
                 guard owns(attempt) else { return }
                 updateMachines(makeMachines(directory, origin: origin), preferredUtilityID: utilityMachineID)
                 await refreshGlobalDirectory(attempt: attempt)
                 guard owns(attempt) else { return }
-                phase =
-                    supportedMachines.contains(where: \.online)
-                    ? .connected(version: IOSMachinePolicy.apiVersion) : .disconnected
+                guard supportedMachines.contains(where: \.online) else {
+                    phase = .disconnected
+                    return
+                }
+                if errorMessage == "No compatible machines are enrolled for this account."
+                    || errorMessage == "Your compatible machines are offline."
+                {
+                    errorMessage = nil
+                }
+                if let previousCardID,
+                    cards.contains(where: { $0.id == previousCardID })
+                        || chats.contains(where: { $0.id == previousCardID })
+                {
+                    await selectCard(id: previousCardID)
+                }
+                guard owns(attempt) else { return }
+                phase = .connected(version: IOSMachinePolicy.apiVersion)
             } catch {
                 guard owns(attempt) else { return }
                 connectionFailed(error, attempt: attempt)
@@ -1105,6 +1129,14 @@
             case .incompatible(let version):
                 "This machine uses application contract \(version). Update its Dieter daemon to contract \(IOSMachinePolicy.apiVersion)."
             }
+        }
+    }
+
+    enum IOSConversationAvailability {
+        static func canSend(
+            phase: ConnectionPhase, busy: Bool, hasConversationTransport: Bool, hasSelection: Bool
+        ) -> Bool {
+            phase.isConnected && !busy && hasConversationTransport && hasSelection
         }
     }
 #endif

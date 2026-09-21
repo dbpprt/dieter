@@ -204,6 +204,22 @@ struct IOSModelTests {
         #expect(!scope.accepts(connection: connection, selection: selection, active: false))
     }
 
+    @Test func composerSendReadinessRequiresTheRestoredConversationTransport() {
+        let connected = ConnectionPhase.connected(version: "1")
+        #expect(
+            !IOSConversationAvailability.canSend(
+                phase: .connecting, busy: true, hasConversationTransport: true, hasSelection: true))
+        #expect(
+            !IOSConversationAvailability.canSend(
+                phase: connected, busy: false, hasConversationTransport: false, hasSelection: true))
+        #expect(
+            !IOSConversationAvailability.canSend(
+                phase: connected, busy: true, hasConversationTransport: true, hasSelection: true))
+        #expect(
+            IOSConversationAvailability.canSend(
+                phase: connected, busy: false, hasConversationTransport: true, hasSelection: true))
+    }
+
     @Test func remoteDesktopCoordinatesRespectAspectFitLetterboxing() throws {
         let bounds = CGRect(x: 0, y: 0, width: 300, height: 300)
         let video = CGSize(width: 300, height: 150)

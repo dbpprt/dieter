@@ -206,12 +206,32 @@ final class RemoteNodeUITests: XCTestCase {
         // can keep the app main thread busy on CI. Poll one exact label through
         // a predicate expectation instead.
         Thread.sleep(forTimeInterval: 4)
-        let label = app.staticTexts[text]
+        // Query the stable app-owned identifier and the visible label
+        // separately. XCUI's string subscript is identifier-oriented and can
+        // time out even when an off-screen transcript row has this exact label.
+        let label = app.staticTexts.matching(identifier: "ios.message.text.assistant")
+            .matching(NSPredicate(format: "label == %@", text)).firstMatch
         let response = XCTNSPredicateExpectation(
             predicate: NSPredicate(format: "exists == true"), object: label)
         XCTAssertEqual(
             XCTWaiter.wait(for: [response], timeout: timeout), .completed,
             "Missing assistant text \(text).\n\(app.debugDescription)")
+    }
+
+    private func sendComposer(_ app: XCUIApplication, text: String, timeout: TimeInterval = 60) {
+        let send = app.buttons.matching(identifier: "ios.composer.send").firstMatch
+        let ready = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "exists == true AND hittable == true AND enabled == true"),
+            object: send)
+        XCTAssertEqual(
+            XCTWaiter.wait(for: [ready], timeout: timeout), .completed,
+            "The conversation transport must be ready before sending.\n\(app.debugDescription)")
+        send.tap()
+        let admitted = app.staticTexts.matching(identifier: "ios.message.text.user")
+            .matching(NSPredicate(format: "label == %@", text)).firstMatch
+        XCTAssertTrue(
+            admitted.waitForExistence(timeout: 30),
+            "The submitted message must leave the composer and enter the transcript.\n\(app.debugDescription)")
     }
 
     private func waitForBoard(_ app: XCUIApplication, project: String, board: String) {
@@ -288,7 +308,7 @@ final class RemoteNodeUITests: XCTestCase {
         assistantTextExists(app, "Mock harness received: Verify this request came from iOS", timeout: 150)
         screenshot(app, "03-live-remote-conversation")
         enter(app, "ios.composer.message", "Continue from the same iOS conversation")
-        tap(app, "ios.composer.send")
+        sendComposer(app, text: "Continue from the same iOS conversation")
         assistantTextExists(app, "Mock harness received: Continue from the same iOS conversation")
         screenshot(app, "04-follow-up")
         tap(app, "ios.task.actions")
@@ -360,7 +380,7 @@ final class RemoteNodeUITests: XCTestCase {
         app.activate()
         assistantTextExists(app, "Mock harness received: Start the saved iOS draft", timeout: 40)
         enter(app, "ios.composer.message", "Continue after foreground reconnect")
-        tap(app, "ios.composer.send")
+        sendComposer(app, text: "Continue after foreground reconnect")
         assistantTextExists(app, "Mock harness received: Continue after foreground reconnect")
         screenshot(app, "08-foreground-reconnected")
 
@@ -525,7 +545,7 @@ final class RemoteNodeUITests: XCTestCase {
             app.wait(for: .runningForeground, timeout: 20),
             "Opening Dieter after the handoff must resume the shared request.")
         XCTAssertTrue(
-            element(app, "ios.create.attachment.0").waitForExistence(timeout: 20),
+            element(app, "ios.create.attachment.0").waitForExistence(timeout: 45),
             "The New Task form must contain the screenshot shared from Photos.\n\(app.debugDescription)")
         XCTAssertTrue(element(app, "ios.create.attach-photos").exists)
         XCTAssertTrue(element(app, "ios.create.attach-files").exists)

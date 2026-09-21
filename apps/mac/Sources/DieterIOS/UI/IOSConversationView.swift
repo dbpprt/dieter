@@ -450,7 +450,7 @@
         }
 
         private var composerControls: some View {
-            let sendEnabled = !sending && !draft.isEmpty && store.phase.isConnected
+            let sendEnabled = !sending && !draft.isEmpty && store.canSendMessage
 
             return HStack(alignment: .bottom, spacing: 8) {
                 VStack(spacing: 0) {
