@@ -193,6 +193,7 @@ class DieterConnectionManager(
         ?.let(syncStore::projectionPersistedAtMillis)
     private var projectionSnapshotDirty = false
     private var projectionCursorDirty = false
+    private val ownerCards = OwnerCardDirectory()
     private val outbox = mutableListOf<AndroidOutboxEntry>()
     private val conversationIdResolutions = linkedMapOf<String, String>()
     private var hydrationJob: Job? = null
@@ -551,6 +552,7 @@ class DieterConnectionManager(
             lastProjectionPersistedAtMillis = null
             projectionSnapshotDirty = false
             projectionCursorDirty = false
+            ownerCards.clear()
             lastSyncFrameAtMs = 0L
             _state.update {
                 it.copy(
@@ -654,6 +656,7 @@ class DieterConnectionManager(
             lastProjectionPersistedAtMillis = null
             projectionSnapshotDirty = false
             projectionCursorDirty = false
+            ownerCards.clear()
         }
         _state.update {
             it.copy(
@@ -701,6 +704,7 @@ class DieterConnectionManager(
         lastProjectionPersistedAtMillis = null
         projectionSnapshotDirty = false
         projectionCursorDirty = false
+        ownerCards.clear()
         repository.replaceEndpoints(listOf(gateway))
         _state.update {
             it.copy(
@@ -740,6 +744,7 @@ class DieterConnectionManager(
             true
         }
         if (!shouldApply || directory == null) return
+        ownerCards.seed(directory.state.cardsList + directory.state.chatsList)
         _state.update { current ->
             if (current.activeGatewayId != gatewayId || current.projects.isNotEmpty()) return@update current
             val entries = synchronized(outbox) { outbox.toList() }
@@ -1296,6 +1301,10 @@ class DieterConnectionManager(
             }.awaitAll().filterNotNull()
         }
         if (snapshots.isEmpty()) return
+        snapshots.forEach { snapshot ->
+            ownerCards.replace(snapshot.endpoint.daemonId.orEmpty(), snapshot.cards + snapshot.chats)
+        }
+        val ownerDetails = ownerCards.snapshot()
         val refreshedEndpointIDs = snapshots.mapTo(hashSetOf()) { it.endpoint.id }
         _state.update { current ->
             val incomingProjectIDs = snapshots.flatMap { it.projects }.mapTo(hashSetOf()) { it.id }
@@ -1308,7 +1317,7 @@ class DieterConnectionManager(
                 val present = (snapshot.cards + snapshot.chats).mapTo(hashSetOf()) { it.id }
                 allItems.filter { it.ownerDaemonId == snapshot.endpoint.daemonId && it.id !in present }.map { it.id }
             }.toSet() + snapshots.flatMap { it.archives.itemIdsList }
-            val combinedItems = sharedItems(allItems).filter { (it.id !in removedItems || it.archived && it.scope == "chat" && it.boardId.isEmpty()) && it.projectId in projects.map { p -> p.id } }
+            val combinedItems = sharedItems(allItems, ownerDetails).filter { (it.id !in removedItems || it.archived && it.scope == "chat" && it.boardId.isEmpty()) && it.projectId in projects.map { p -> p.id } }
             val hosts = current.projectReplicas.filterKeys { it in retainedProjectIDs }.toMutableMap()
             snapshots.forEach { snapshot ->
                 snapshot.projects.forEach { project ->
@@ -1381,6 +1390,13 @@ class DieterConnectionManager(
         refreshedConversationIds: Set<String> = emptySet(),
         refreshedAtMillis: Long? = null,
     ) {
+        val snapshotItems = snapshot.state.cardsList + snapshot.state.chatsList
+        val activeOwnerDaemonId = _state.value.endpoint?.daemonId.orEmpty()
+        val ownerDetails = if (activeOwnerDaemonId.isBlank()) {
+            ownerCards.snapshot()
+        } else {
+            ownerCards.replace(activeOwnerDaemonId, snapshotItems)
+        }
         _state.update { current ->
             // Read the outbox inside StateFlow's CAS update. The lambda may be
             // retried after a foreground conversation frame reconciles a send;
@@ -1400,12 +1416,12 @@ class DieterConnectionManager(
             val projects = sharedProjects(retainedProjects + incomingProjects).filter { it.id !in snapshot.state.archives.projectIdsList }
             val retainedProjectIds = projects.mapTo(hashSetOf()) { it.id }
             val boards = sharedBoards(current.boards.filter { it.projectId in retainedProjectIds } + snapshot.state.boardsList)
-            val incomingItems = snapshot.state.cardsList + snapshot.state.chatsList
+            val incomingItems = snapshotItems
             val presentIDs = incomingItems.mapTo(hashSetOf()) { it.id }
             val retainedItems = retainPendingOptimisticConversations(current.cards + current.chats, entries).filter {
                 it.projectId in retainedProjectIds && !(it.ownerDaemonId == activeEndpoint?.daemonId && it.id !in presentIDs)
             }
-            val items = sharedItems(retainedItems + incomingItems).filter { it.id !in snapshot.state.archives.itemIdsList || it.archived && it.scope == "chat" && it.boardId.isEmpty() }
+            val items = sharedItems(retainedItems + incomingItems, ownerDetails).filter { it.id !in snapshot.state.archives.itemIdsList || it.archived && it.scope == "chat" && it.boardId.isEmpty() }
             val cards = overlayPendingCardStarts(items.filter { it.scope != "chat" || it.boardId.isNotEmpty() }, boards, entries).toMutableList()
             val chats = items.filter { it.scope == "chat" && it.boardId.isEmpty() }.toMutableList()
             val hosts = current.projectReplicas

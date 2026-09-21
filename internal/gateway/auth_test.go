@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dbpprt/dieter/internal/linkauth"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -362,6 +363,31 @@ func TestAuthenticatedStreamsCloseAfterRevocation(t *testing.T) {
 		}
 	case <-time.After(sessionCheckInterval + 2*time.Second):
 		t.Fatal("revoked session retained streaming access")
+	}
+}
+
+func TestDaemonStreamAuthorizationFollowsEnrollmentAfterOpeningProof(t *testing.T) {
+	service, private, credential := newEnrolledSecurityService(t)
+	proof := linkauth.SignPeer(private, credential.GetDaemonId(), service.config.PublicURL.String(), credential.GetGeneration(), time.Now())
+	if _, ok := service.auth.AuthenticateBearer("Bearer " + proof); !ok {
+		t.Fatal("fresh daemon proof was rejected")
+	}
+	claims, _, _, err := linkauth.ParsePeer(proof)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The opening proof may expire during a long watch. Once verified, the
+	// stream remains authorized by the live enrollment rather than the proof's
+	// timestamp.
+	claims.Expires = 1
+	if !service.auth.daemonEnrollmentCurrent(claims) {
+		t.Fatal("current daemon enrollment did not retain stream authorization")
+	}
+	if _, err := service.store.RevokeDaemon(credential.GetDaemonId(), 1234); err != nil {
+		t.Fatal(err)
+	}
+	if service.auth.daemonEnrollmentCurrent(claims) {
+		t.Fatal("revoked daemon enrollment retained stream authorization")
 	}
 }
 

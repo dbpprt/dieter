@@ -196,11 +196,7 @@ func testPeerMachines(t *testing.T, wantRoute string) {
 		t.Fatal(db, err)
 	}
 	// Exercise the actual CLI over local and routed transports.
-	cliRoot := store.New(t.TempDir())
-	proof := linkauth.SignPeer(a.PrivateKey, a.ID, a.GatewayURL, a.Generation, time.Now())
-	if err = saveClientConfig(cliRoot.Root, clientConfig{DefaultGateway: origin.String(), Sessions: map[string]clientSession{origin.String(): {AccessToken: proof, ExpiresAt: time.Now().Add(time.Minute).Format(time.RFC3339Nano), Login: "owner"}}}); err != nil {
-		t.Fatal(err)
-	}
+	cliRoot := store.New(a.Root)
 	client := New(cliRoot)
 
 	client.Machine = b.ID

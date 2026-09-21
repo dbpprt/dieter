@@ -93,7 +93,7 @@ func Main(args []string) int {
 	root := global.String("store", store.DefaultRoot(), "DIETER_HOME data directory")
 	short := global.String("s", "", "DIETER_HOME data directory")
 	harnessConfig := global.String("harness-config", "", "harness registry YAML")
-	gatewayURL := global.String("gateway", "", "gateway URL for authenticated remote commands")
+	gatewayURL := global.String("gateway", "", "gateway origin; must match the local daemon enrollment")
 	machine := global.String("machine", "", "target enrolled daemon ID or exact name")
 	timeout := global.Duration("timeout", 15*time.Second, "command timeout")
 	help := global.Bool("help", false, "help")
@@ -172,7 +172,7 @@ Usage:
 
 Global options:
   --store PATH             DIETER_HOME (default ~/.dieter)
-  --gateway URL            HTTPS gateway origin (HTTP only on literal loopback)
+  --gateway URL            Require this enrolled gateway origin
   --machine ID|NAME        Target an enrolled daemon; omit for the local daemon
   --timeout DURATION       Unary command and connection timeout (default 15s)
   --harness-config PATH    Local daemon harness registry YAML
@@ -180,7 +180,6 @@ Global options:
   --version                Print the version
 
 Commands:
-  auth         Sign in to a gateway and manage the CLI session
   machine      List, route, rename, revoke, inspect, or control machines
   status       Show target daemon health, runtime, route, and state counts
   harness      List target daemon harnesses, models, and options
@@ -208,8 +207,9 @@ Commands:
   version      Print the version
 
 Without --machine, operational commands use the running local daemon API. With
---machine, the CLI authenticates to the gateway, prefers direct TLS, then tries
-WebRTC (direct or TURN), and falls back to the bounded gateway relay.
+--machine, the CLI uses the local daemon's enrollment to authenticate to the
+gateway, prefers direct TLS, then tries WebRTC (direct or TURN), and falls back
+to the bounded gateway relay.
 Status reports the selected route. It never reads a remote machine's storage.
 Read watches renew credentials and resume after transient failures, with five
 retries between delivered frames. Revocation stops recovery; mutations and

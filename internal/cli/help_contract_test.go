@@ -69,7 +69,6 @@ func TestEveryDaemonCLICommandHasOfflineHelp(t *testing.T) {
 		"machine connection", "machine connection start", "machine connection show", "machine connection close",
 		"screen resolution", "screen resolution modes", "screen resolution set", "screen resolution restore",
 		"card present", "chat present",
-		"auth", "auth login", "auth status", "auth logout",
 		"machine", "machine list", "machine gateway", "machine watch", "machine show", "machine route", "machine info", "machine rename", "machine revoke", "machine restart", "machine shutdown", "machine update", "machine rtc",
 		"quota", "quota list", "quota watch", "quota refresh", "quota include", "quota exclude", "quota reset",
 		"status", "storage", "harness", "harness list", "watch", "watch state", "watch sync",

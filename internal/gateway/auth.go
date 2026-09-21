@@ -117,6 +117,22 @@ func (a *Auth) AuthenticateSession(ctx context.Context, authorization string) (c
 	if !ok {
 		return nil, nil, status.Error(codes.Unauthenticated, "authentication required")
 	}
+	stillAuthorized := func() bool {
+		_, valid := a.AuthenticateBearer(authorization)
+		return valid
+	}
+	// Daemon proofs are deliberately short-lived and prove possession when the
+	// stream opens. Keep that stream tied to the current enrollment rather than
+	// expiring it with the opening proof; revocation, account removal,
+	// certificate expiry, or generation replacement still closes it promptly.
+	raw := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(authorization), "Bearer "))
+	if strings.HasPrefix(raw, linkauth.PeerPrefix) {
+		claims, _, _, parseErr := linkauth.ParsePeer(raw)
+		if parseErr != nil {
+			return nil, nil, status.Error(codes.Unauthenticated, "authentication required")
+		}
+		stillAuthorized = func() bool { return a.daemonEnrollmentCurrent(claims) }
+	}
 	select {
 	case a.activeSessions <- struct{}{}:
 	default:
@@ -132,7 +148,7 @@ func (a *Auth) AuthenticateSession(ctx context.Context, authorization string) (c
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				if _, ok := a.AuthenticateBearer(authorization); !ok {
+				if !stillAuthorized() {
 					cancel(status.Error(codes.Unauthenticated, "gateway session expired or revoked"))
 					return
 				}
@@ -140,6 +156,17 @@ func (a *Auth) AuthenticateSession(ctx context.Context, authorization string) (c
 		}
 	}()
 	return ctx, func() { cancel(context.Canceled) }, nil
+}
+
+func (a *Auth) daemonEnrollmentCurrent(claims linkauth.PeerClaims) bool {
+	record, err := a.store.Daemon(claims.DaemonID)
+	if err != nil || record.Revoked || record.Generation != claims.Generation || !a.config.AllowsGitHubUser(record.GitHubID) {
+		return false
+	}
+	certificateDER, _ := pemDecode(record.Certificate)
+	certificate, err := x509.ParseCertificate(certificateDER)
+	now := time.Now()
+	return err == nil && !now.Before(certificate.NotBefore) && now.Before(certificate.NotAfter)
 }
 
 type contextServerStream struct {

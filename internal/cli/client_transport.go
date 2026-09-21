@@ -16,7 +16,9 @@ import (
 	dieterdaemon "github.com/dbpprt/dieter/internal/daemon"
 	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
+	"github.com/dbpprt/dieter/internal/linkauth"
 	"github.com/dbpprt/dieter/internal/protocol"
+	"github.com/dbpprt/dieter/internal/trust"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
@@ -25,10 +27,9 @@ import (
 )
 
 type gatewayTransport struct {
-	url     string
-	session clientSession
-	conn    *grpc.ClientConn
-	client  gatewayv1.GatewayServiceClient
+	url    string
+	conn   *grpc.ClientConn
+	client gatewayv1.GatewayServiceClient
 }
 
 type dieterTransport struct {
@@ -46,24 +47,24 @@ func (value *dieterTransport) context(ctx context.Context) context.Context {
 	return ctx
 }
 
-type bearerCredential struct {
-	token    string
+// daemonGatewayCredential gives the CLI the same account authority as its
+// installed daemon without creating or persisting a second gateway session.
+// A fresh, short-lived proof is generated for every RPC and stream.
+type daemonGatewayCredential struct {
+	identity *dieterdaemon.Identity
 	secure   bool
-	metadata map[string]string
 }
 
-func (credential bearerCredential) GetRequestMetadata(context.Context, ...string) (map[string]string, error) {
-	result := make(map[string]string, len(credential.metadata)+1)
-	for key, value := range credential.metadata {
-		result[key] = value
+func (credential daemonGatewayCredential) GetRequestMetadata(context.Context, ...string) (map[string]string, error) {
+	identity := credential.identity
+	if identity == nil || !identity.Enrolled() {
+		return nil, errors.New("the local Dieter daemon is not enrolled; run `dieter setup`")
 	}
-	if strings.TrimSpace(credential.token) != "" {
-		result["authorization"] = "Bearer " + credential.token
-	}
-	return result, nil
+	proof := linkauth.SignPeer(identity.PrivateKey, identity.ID, identity.GatewayURL, identity.Generation, time.Now())
+	return map[string]string{"authorization": "Bearer " + proof}, nil
 }
 
-func (credential bearerCredential) RequireTransportSecurity() bool { return credential.secure }
+func (credential daemonGatewayCredential) RequireTransportSecurity() bool { return credential.secure }
 
 func (c *CLI) Close() {
 	if c.transport != nil && c.transport.conn != nil {
@@ -86,24 +87,39 @@ func (c *CLI) connectionTimeout() time.Duration {
 	return 15 * time.Second
 }
 
-func (c *CLI) gatewayOrigin() (string, error) {
-	if value := strings.TrimSpace(c.GatewayURL); value != "" {
-		return normalizeGatewayURL(value)
+func normalizeGatewayURL(value string) (string, error) {
+	return trust.GatewayOrigin(value)
+}
+
+func (c *CLI) gatewayIdentity() (*dieterdaemon.Identity, string, error) {
+	identity, err := dieterdaemon.LoadIdentity(c.Store.Root)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, "", errors.New("the local Dieter daemon is not enrolled; run `dieter setup`")
 	}
-	if value := strings.TrimSpace(os.Getenv("DIETER_GATEWAY")); value != "" {
-		return normalizeGatewayURL(value)
-	}
-	configuration, err := loadClientConfig(c.Store.Root)
 	if err != nil {
-		return "", err
+		return nil, "", fmt.Errorf("load local Dieter daemon enrollment: %w", err)
 	}
-	if value := strings.TrimSpace(configuration.DefaultGateway); value != "" {
-		return normalizeGatewayURL(value)
+	if !identity.Enrolled() {
+		return nil, "", errors.New("the local Dieter daemon is not enrolled; run `dieter setup`")
 	}
-	if identity, identityErr := dieterdaemon.LoadIdentity(c.Store.Root); identityErr == nil && strings.TrimSpace(identity.GatewayURL) != "" {
-		return normalizeGatewayURL(identity.GatewayURL)
+	origin, err := normalizeGatewayURL(identity.GatewayURL)
+	if err != nil {
+		return nil, "", fmt.Errorf("load local Dieter daemon gateway: %w", err)
 	}
-	return normalizeGatewayURL("https://board.dbpprt.com")
+	requested := strings.TrimSpace(c.GatewayURL)
+	if requested == "" {
+		requested = strings.TrimSpace(os.Getenv("DIETER_GATEWAY"))
+	}
+	if requested != "" {
+		requested, err = normalizeGatewayURL(requested)
+		if err != nil {
+			return nil, "", err
+		}
+		if requested != origin {
+			return nil, "", fmt.Errorf("gateway %s does not match this daemon's enrollment at %s; enroll the daemon with the intended gateway", requested, origin)
+		}
+	}
+	return identity, origin, nil
 }
 
 func (c *CLI) dialGateway(ctx context.Context) (*gatewayTransport, error) {
@@ -113,17 +129,9 @@ func (c *CLI) dialGateway(ctx context.Context) (*gatewayTransport, error) {
 	connectCtx, cancel := context.WithTimeout(ctx, c.connectionTimeout())
 	defer cancel()
 	ctx = connectCtx
-	origin, err := c.gatewayOrigin()
+	identity, origin, err := c.gatewayIdentity()
 	if err != nil {
 		return nil, err
-	}
-	configuration, err := loadClientConfig(c.Store.Root)
-	if err != nil {
-		return nil, err
-	}
-	session := configuration.Sessions[origin]
-	if !session.valid(time.Now()) {
-		return nil, fmt.Errorf("not signed in to %s; run dieter auth login --gateway %s", origin, origin)
 	}
 	parsed, err := url.Parse(origin)
 	if err != nil || parsed.Host == "" {
@@ -139,13 +147,13 @@ func (c *CLI) dialGateway(ctx context.Context) (*gatewayTransport, error) {
 	connection, err := grpc.NewClient(
 		parsed.Host,
 		grpc.WithTransportCredentials(transport),
-		grpc.WithPerRPCCredentials(bearerCredential{token: session.AccessToken, secure: secure}),
+		grpc.WithPerRPCCredentials(daemonGatewayCredential{identity: identity, secure: secure}),
 		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(16<<20), grpc.MaxCallSendMsgSize(16<<20)),
 	)
 	if err != nil {
 		return nil, err
 	}
-	result := &gatewayTransport{url: origin, session: session, conn: connection, client: gatewayv1.NewGatewayServiceClient(connection)}
+	result := &gatewayTransport{url: origin, conn: connection, client: gatewayv1.NewGatewayServiceClient(connection)}
 	if _, err := result.client.GetAccount(ctx, &emptypb.Empty{}); err != nil {
 		_ = connection.Close()
 		return nil, fmt.Errorf("authenticate with Dieter gateway %s: %w", origin, err)

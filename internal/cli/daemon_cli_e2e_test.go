@@ -3,9 +3,6 @@ package cli
 import (
 	"bytes"
 	"context"
-	"crypto/hmac"
-	"crypto/sha256"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"io"
@@ -18,7 +15,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -33,23 +29,6 @@ import (
 	"github.com/dbpprt/dieter/internal/store"
 	"google.golang.org/protobuf/encoding/protojson"
 )
-
-type synchronizedBuffer struct {
-	mu sync.Mutex
-	b  bytes.Buffer
-}
-
-func (value *synchronizedBuffer) Write(raw []byte) (int, error) {
-	value.mu.Lock()
-	defer value.mu.Unlock()
-	return value.b.Write(raw)
-}
-
-func (value *synchronizedBuffer) String() string {
-	value.mu.Lock()
-	defer value.mu.Unlock()
-	return value.b.String()
-}
 
 func initTestRepository(t *testing.T, name string) string {
 	t.Helper()
@@ -359,137 +338,6 @@ func TestOperationalCLINeverFallsBackToDirectStorage(t *testing.T) {
 	}
 }
 
-func gatewaySessionDigest(secret []byte, token string) string {
-	mac := hmac.New(sha256.New, secret)
-	_, _ = mac.Write([]byte(token))
-	return base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
-}
-
-func TestDaemonCLIAuthenticatesWithLoopbackPKCEEndToEnd(t *testing.T) {
-	github := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		switch request.URL.Path {
-		case "/login/oauth/authorize":
-			callback, err := url.Parse(request.URL.Query().Get("redirect_uri"))
-			if err != nil {
-				t.Error(err)
-				http.Error(writer, "bad callback", http.StatusBadRequest)
-				return
-			}
-			query := callback.Query()
-			query.Set("code", "github-code")
-			query.Set("state", request.URL.Query().Get("state"))
-			callback.RawQuery = query.Encode()
-			http.Redirect(writer, request, callback.String(), http.StatusFound)
-		case "/login/oauth/access_token":
-			writer.Header().Set("Content-Type", "application/json")
-			_, _ = io.WriteString(writer, `{"access_token":"github-token","token_type":"bearer"}`)
-		case "/user":
-			if request.Header.Get("Authorization") != "Bearer github-token" {
-				http.Error(writer, "unauthorized", http.StatusUnauthorized)
-				return
-			}
-			writer.Header().Set("Content-Type", "application/json")
-			_, _ = io.WriteString(writer, `{"id":42,"login":"owner"}`)
-		default:
-			http.NotFound(writer, request)
-		}
-	}))
-	defer github.Close()
-
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer listener.Close()
-	publicURL, _ := url.Parse("http://" + listener.Addr().String())
-	configuration := gateway.Config{Root: t.TempDir(), Address: listener.Addr().String(), PublicURL: publicURL, GitHubClientID: "client", GitHubSecret: "secret", AllowedUserIDs: map[int64]struct{}{42: {}}, AuthSecret: []byte("0123456789abcdef0123456789abcdef"), SessionTTL: time.Hour, NativeRedirects: map[string]struct{}{}, GitHubBaseURL: github.URL, GitHubAPIURL: github.URL, DevInsecure: true}
-	gatewayStore, err := gateway.OpenStore(configuration.Root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer gatewayStore.Close()
-	serverValue, err := gateway.NewServer(configuration, gatewayStore, slog.New(slog.NewTextHandler(io.Discard, nil)))
-	if err != nil {
-		t.Fatal(err)
-	}
-	go func() { _ = serverValue.Serve(listener) }()
-
-	cliStore := store.New(t.TempDir())
-	output := &synchronizedBuffer{}
-	client := New(cliStore)
-	client.GatewayURL, client.Timeout = publicURL.String(), 10*time.Second
-	client.Out, client.Err = output, output
-	defer client.Close()
-	result := make(chan error, 1)
-	go func() { result <- client.Run([]string{"auth", "login", "--no-open"}) }()
-
-	var authorizationURL string
-	deadline := time.Now().Add(5 * time.Second)
-	for authorizationURL == "" && time.Now().Before(deadline) {
-		for _, line := range strings.Split(output.String(), "\n") {
-			if strings.Contains(line, "/auth/github/start?") {
-				authorizationURL = strings.TrimSpace(line)
-				break
-			}
-		}
-		if authorizationURL == "" {
-			time.Sleep(10 * time.Millisecond)
-		}
-	}
-	if authorizationURL == "" {
-		t.Fatalf("CLI did not print an authorization URL: %s", output.String())
-	}
-
-	noRedirect := &http.Client{Timeout: 5 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
-	start, err := noRedirect.Get(authorizationURL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if start.StatusCode != http.StatusFound || len(start.Cookies()) == 0 {
-		t.Fatalf("gateway auth start status=%s cookies=%v", start.Status, start.Cookies())
-	}
-	cookie := start.Cookies()[0]
-	githubAuthorization := start.Header.Get("Location")
-	_ = start.Body.Close()
-	authorized, err := noRedirect.Get(githubAuthorization)
-	if err != nil {
-		t.Fatal(err)
-	}
-	callbackURL := authorized.Header.Get("Location")
-	_ = authorized.Body.Close()
-	callbackRequest, _ := http.NewRequest(http.MethodGet, callbackURL, nil)
-	callbackRequest.AddCookie(cookie)
-	callback, err := noRedirect.Do(callbackRequest)
-	if err != nil {
-		t.Fatal(err)
-	}
-	loopbackCallback := callback.Header.Get("Location")
-	_ = callback.Body.Close()
-	completed, err := noRedirect.Get(loopbackCallback)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_ = completed.Body.Close()
-	if completed.StatusCode != http.StatusOK {
-		t.Fatalf("CLI loopback callback status=%s", completed.Status)
-	}
-	select {
-	case err := <-result:
-		if err != nil {
-			t.Fatal(err)
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("CLI login did not finish after its loopback callback")
-	}
-	loaded, err := loadClientConfig(cliStore.Root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !loaded.Sessions[publicURL.String()].valid(time.Now()) {
-		t.Fatalf("CLI session was not persisted: %#v", loaded)
-	}
-}
-
 func TestDaemonCLIUsesDirectRouteThenRelayFallback(t *testing.T) { testDaemonRoutes(t, false) }
 func TestDaemonCLIUsesWebRTCControlAndFallback(t *testing.T)     { testDaemonRoutes(t, true) }
 func testDaemonRoutes(t *testing.T, withRTC bool) {
@@ -502,8 +350,7 @@ func testDaemonRoutes(t *testing.T, withRTC bool) {
 	}
 	defer gatewayListener.Close()
 	publicURL, _ := url.Parse("http://" + gatewayListener.Addr().String())
-	secret := []byte("0123456789abcdef0123456789abcdef")
-	configuration := gateway.Config{Root: t.TempDir(), Address: gatewayListener.Addr().String(), PublicURL: publicURL, GitHubClientID: "test", GitHubSecret: "test", AllowedUserIDs: map[int64]struct{}{42: {}}, AuthSecret: secret, SessionTTL: time.Hour, NativeRedirects: map[string]struct{}{}, GitHubBaseURL: "https://github.invalid", GitHubAPIURL: "https://api.github.invalid", DevInsecure: true}
+	configuration := gateway.Config{Root: t.TempDir(), Address: gatewayListener.Addr().String(), PublicURL: publicURL, GitHubClientID: "test", GitHubSecret: "test", AllowedUserIDs: map[int64]struct{}{42: {}}, AuthSecret: []byte("0123456789abcdef0123456789abcdef"), SessionTTL: time.Hour, NativeRedirects: map[string]struct{}{}, GitHubBaseURL: "https://github.invalid", GitHubAPIURL: "https://api.github.invalid", DevInsecure: true}
 	gatewayStore, err := gateway.OpenStore(configuration.Root)
 	if err != nil {
 		t.Fatal(err)
@@ -610,18 +457,8 @@ func testDaemonRoutes(t *testing.T, withRTC bool) {
 		t.Fatal("isolated daemon did not connect to isolated gateway")
 	}
 
-	token := "cli-e2e-session"
-	if err := gatewayStore.UpdateAuthState(func(state *gateway.AuthState) error {
-		state.Sessions = append(state.Sessions, gateway.Session{TokenHash: gatewaySessionDigest(secret, token), GitHubID: int64(42), Login: "owner", CreatedAt: time.Now().UTC(), ExpiresAt: time.Now().UTC().Add(time.Hour)})
-		return nil
-	}); err != nil {
-		t.Fatal(err)
-	}
-	cliStore := store.New(t.TempDir())
+	cliStore := store.New(identityRoot)
 	if err := cliStore.Ensure(); err != nil {
-		t.Fatal(err)
-	}
-	if err := saveClientConfig(cliStore.Root, clientConfig{DefaultGateway: publicURL.String(), Sessions: map[string]clientSession{publicURL.String(): {AccessToken: token, ExpiresAt: time.Now().UTC().Add(time.Hour).Format(time.RFC3339Nano), Login: "owner"}}}); err != nil {
 		t.Fatal(err)
 	}
 	first := New(cliStore)

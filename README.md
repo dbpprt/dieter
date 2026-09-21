@@ -212,16 +212,17 @@ Resume uses an exact retained projection identity, or an explicit reset if that
 projection is unavailable. Frames stay below 8 MiB; large directories use pages.
 
 The same `dieter` binary is a complete daemon client. Local commands use the
-running daemon on this machine. To control another enrolled machine, sign in
-once and select it globally; the CLI prefers verified direct TLS and falls back
-to the gateway relay. State, sync, conversation, terminal, execution, and
-Git-operation watches renew direct credentials and resume after transient
-failures. Recovery uses the last delivered sequence or complete sync projection,
-with up to five retries between frames. Revoked credentials and permanent errors
-stop recovery. Mutations, process starts, and stdin writes are never replayed:
+running daemon on this machine. Gateway and remote commands automatically use
+that daemon's enrollment; the CLI does not keep a separate login or credential.
+To control another enrolled machine, select it globally. The CLI prefers verified
+direct TLS and falls back to the gateway relay. State, sync, conversation,
+terminal, execution, and Git-operation watches renew direct credentials and
+resume after transient failures. Recovery uses the last delivered sequence or
+complete sync projection, with up to five retries between frames. Revoked
+credentials and permanent errors stop recovery. Mutations, process starts, and
+stdin writes are never replayed:
 
 ```sh
-dieter auth login
 dieter machine list --format jsonl
 dieter machine gateway
 dieter machine info

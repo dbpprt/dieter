@@ -30,11 +30,13 @@ workspace data. Persist a cursor only with its complete projection, never from a
 heartbeat or a frame with `projectionPending=true`. Native resume falls back to
 an explicit reset when the exact projection identity is no longer retained.
 
-For another enrolled machine, authenticate once and pass its exact ID or unique
-name as a global option before the command:
+For another enrolled machine, first enroll the local daemon, then pass the
+target's exact ID or unique name as a global option before the command. The CLI
+uses the local daemon enrollment automatically and never stores a separate CLI
+login. An explicit global `--gateway` must match that enrollment:
 
 ```sh
-dieter auth login --gateway https://dieter.example.com
+dieter setup --gateway https://dieter.example.com
 dieter machine list --format jsonl
 dieter --machine <machine-id> status
 dieter --machine <machine-id> project list --format jsonl
@@ -67,8 +69,8 @@ Use `dieter machine gateway` for the running gateway build identity and
 optional Apple/NVIDIA/AMD GPU telemetry. Optional GPU fields are omitted when a
 driver cannot provide them; zero remains a real measurement.
 
-Provider quotas are scoped to the signed-in gateway account, not one daemon.
-Do not pass global `--machine`:
+Provider quotas are scoped to the enrolled daemon's gateway account, not one
+daemon. Do not pass global `--machine`:
 
 ```sh
 dieter quota list
