@@ -2,7 +2,7 @@ set default-list
 set shell := ["bash", "-euo", "pipefail", "-c"]
 set working-directory := '..'
 
-platform_artifacts := "Dieter-Android.apk Dieter-macOS-arm64.zip dieter-darwin-arm64.pkg dieter-darwin-arm64.tar.gz dieter-gateway-linux-amd64.tar.gz dieter-gateway-linux-arm64.tar.gz dieter-linux-amd64.tar.gz dieter-linux-arm64.tar.gz"
+platform_artifacts := "Dieter-Android.apk Dieter-macOS-arm64.zip dieter-darwin-arm64.pkg dieter-darwin-arm64.tar.gz dieter-gateway-linux-amd64.tar.gz dieter-gateway-linux-arm64.tar.gz dieter-linux-amd64.tar.gz dieter-linux-arm64.tar.gz dieter-gateway-deploy.tar.gz gateway-manifest.json gateway-manifest.sigstore.json gateway-release.lock.json"
 
 # List the shared release commands.
 default:
@@ -172,7 +172,7 @@ publish:
         --target "$GITHUB_SHA" --title "Dieter $RELEASE_TAG" \
         --notes "Automated signed build from $GITHUB_SHA." --generate-notes
 
-# Keep only the two newest releases in the main repository.
+# Keep only the two newest GitHub releases; signed gateway bundles remain in GHCR.
 [confirm]
 prune:
     #!/usr/bin/env bash

@@ -1427,3 +1427,7 @@ through the same API, including global `--machine`. Writes acknowledge local
 durability and converge causally; revision checks are not global locks. See
 [shared navigation and KV](docs/client-navigation-folders.md) for record keys,
 conflicts, retry receipts, bounds, and the clean pre-release preference cutover.
+
+Gateway operators can use the [signed deployment bundle](deploy/gateway/README.md)
+for pinned images, strict configuration rendering, durable activation and rollback,
+and verified TURN TLS on port 443.

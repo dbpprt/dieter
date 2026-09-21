@@ -1,0 +1,9 @@
+[Unit]
+Description=Renew and activate Dieter gateway certificates
+After=network-online.target docker.service
+
+[Service]
+Type=oneshot
+UMask=0077
+ExecStart=/usr/local/lib/dieter-deploy/scripts/certificates.py
+TimeoutStartSec=15min

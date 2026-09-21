@@ -1,0 +1,9 @@
+[Unit]
+Description=Encrypted off-host Dieter gateway backup
+After=network-online.target docker.service
+
+[Service]
+Type=oneshot
+UMask=0077
+ExecStart=/usr/local/lib/dieter-deploy/scripts/host.py backup
+TimeoutStartSec=20min

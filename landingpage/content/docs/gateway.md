@@ -111,3 +111,12 @@ TLS, then attempt WebRTC, retaining the gateway relay for older peers or failed
 ICE negotiation. Machine connection details distinguish WebRTC Direct from
 WebRTC TURN using the selected candidate pair. TURN traffic is still relayed;
 the daemon's TLS certificate and per-RPC access token remain verified.
+
+## Signed deployment bundles
+
+Gateway releases include a signed deployment bundle alongside the image. The
+bundle binds the image digest, source commit, application contract, store schema
+and infrastructure dependencies. It provides strict configuration rendering,
+durable deployment operations, encrypted off-host backup hooks, and tested
+UDP/TCP/TLS TURN transport configuration. See the
+[gateway deployment guide](https://github.com/dbpprt/dieter/tree/main/deploy/gateway).

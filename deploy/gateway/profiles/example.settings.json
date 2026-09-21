@@ -1,0 +1,21 @@
+{
+  "interfaceVersion": 1,
+  "project": "dieter-gateway",
+  "gatewayHost": "gateway.example.com",
+  "turnHost": "turn.example.com",
+  "publicIPv4": "203.0.113.10",
+  "turnIPv4": "203.0.113.10",
+  "topology": "single-ip",
+  "tls": "managed",
+  "acmeEmail": "operator@example.com",
+  "allowedUserIDs": [7000188],
+  "stateVolume": "dieter-gateway-data",
+  "installRoot": "/opt/dieter-gateway",
+  "configRoot": "/etc/dieter-gateway",
+  "runtimeRoot": "/run/dieter-gateway",
+  "caddyData": "/var/lib/dieter-gateway/caddy-data",
+  "caddyConfig": "/var/lib/dieter-gateway/caddy-config",
+  "legacyHosts": [],
+  "turn": {"minPort": 49160, "maxPort": 50183, "userQuota": 64, "totalQuota": 256, "maxBps": 1250000, "bpsCapacity": 12500000},
+  "limits": {"gatewayMemoryMiB": 192, "turnMemoryMiB": 192, "caddyMemoryMiB": 96, "haproxyMemoryMiB": 64, "pids": 128, "nofile": 8192}
+}

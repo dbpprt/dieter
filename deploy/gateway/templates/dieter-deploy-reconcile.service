@@ -1,0 +1,12 @@
+[Unit]
+Description=Recover interrupted Dieter gateway operations
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+UMask=0077
+ExecStart=/usr/local/lib/dieter-deploy/scripts/host.py resume
+
+[Install]
+WantedBy=multi-user.target

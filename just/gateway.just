@@ -102,3 +102,29 @@ image-publish:
 [confirm]
 clean:
     rm -rf "{{ binary }}" dist/dieter-gateway-*.tar.gz stage/dieter-gateway-*
+
+# Render public configuration and protected secret files; see --help.
+[positional-arguments]
+render *args:
+    python3 deploy/gateway/scripts/render.py "$@"
+
+# Build, verify, or fetch an immutable gateway deployment bundle.
+[positional-arguments]
+bundle *args:
+    python3 deploy/gateway/scripts/bundle.py "$@"
+
+# Validate deployment settings, secret handling, signatures, and recovery logic.
+deployment-test:
+    python3 -m unittest discover -s deploy/gateway/tests -p 'test_*.py'
+
+# Exercise the pinned gateway, Caddy, HAProxy and coturn in disposable containers.
+deployment-integration:
+    python3 deploy/gateway/tests/integration.py
+
+# Probe real bidirectional TURN payloads using short-lived credentials on stdin.
+turn-test:
+    go run ./scripts/gateway-turn-probe
+
+# Publish the signed image and durable OCI deployment bundle from the same commit.
+publish-bundle:
+    python3 deploy/gateway/scripts/bundle.py publish

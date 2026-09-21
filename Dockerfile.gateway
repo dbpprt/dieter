@@ -1,9 +1,10 @@
-FROM --platform=$BUILDPLATFORM golang:1.26.8-alpine AS build
+FROM --platform=$BUILDPLATFORM golang:1.26.8-alpine@sha256:8ac98ca534ac3f51e1f420a1dd2c15e74c75cfa0f23f3ad27eb5d7236c349a0c AS build
 
 ARG TARGETOS
 ARG TARGETARCH
 ARG RELEASE_VERSION=main
 ARG SOURCE_REVISION=unknown
+ARG BUILT_AT=unknown
 
 WORKDIR /src
 COPY go.mod go.sum ./
@@ -12,16 +13,16 @@ COPY api ./api
 COPY cmd ./cmd
 COPY internal ./internal
 RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath \
-    -ldflags="-s -w -X github.com/dbpprt/dieter/internal/buildinfo.ReleaseVersion=$RELEASE_VERSION -X github.com/dbpprt/dieter/internal/buildinfo.SourceRevision=$SOURCE_REVISION" \
+    -ldflags="-s -w -X github.com/dbpprt/dieter/internal/buildinfo.ReleaseVersion=$RELEASE_VERSION -X github.com/dbpprt/dieter/internal/buildinfo.SourceRevision=$SOURCE_REVISION -X github.com/dbpprt/dieter/internal/buildinfo.BuiltAt=$BUILT_AT" \
     -o /out/dieter-gateway ./cmd/dieter-gateway
 
-FROM alpine:3.23
+FROM alpine:3.23@sha256:85fe1e81d6758c208f3e1eed4338a1997e19d4be002d4dd32d3100c9a8c010a0
 RUN apk add --no-cache ca-certificates \
-    && addgroup -S dieter \
-    && adduser -S -G dieter -h /var/lib/dieter-gateway dieter \
+    && addgroup -S -g 101 dieter \
+    && adduser -S -u 100 -G dieter -h /var/lib/dieter-gateway dieter \
     && install -d -o dieter -g dieter -m 0700 /var/lib/dieter-gateway
 COPY --from=build /out/dieter-gateway /usr/local/bin/dieter-gateway
-USER dieter
+USER 100:101
 VOLUME ["/var/lib/dieter-gateway"]
 EXPOSE 4243
 ENTRYPOINT ["/usr/local/bin/dieter-gateway"]

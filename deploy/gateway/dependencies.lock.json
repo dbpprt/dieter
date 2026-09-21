@@ -1,0 +1,7 @@
+{
+  "caddy": "caddy@sha256:5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648",
+  "coturn": "coturn/coturn@sha256:771a95d04cb97bbc5bfc672e5fdf455591c7d2b2a15f02bb9ceda3e27561695f",
+  "haproxy": "haproxy@sha256:5961c68bc8a81c5124d0a98ab20f81b74717d6afe596e805977d9cf84c126222",
+  "certbot": "certbot/certbot@sha256:9626d72120577cf72da4fc7948806e9993598981720a4cbe04340a502468d67b",
+  "restic": "restic/restic@sha256:4cf4a61ef9786f4de53e9de8c8f5c040f33830eb0a10bf3d614410ee2fcb6120"
+}

@@ -1,0 +1,183 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Dieter gateway deployment settings v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "interfaceVersion",
+    "project",
+    "gatewayHost",
+    "turnHost",
+    "publicIPv4",
+    "turnIPv4",
+    "topology",
+    "tls",
+    "acmeEmail",
+    "allowedUserIDs",
+    "stateVolume",
+    "installRoot",
+    "configRoot",
+    "runtimeRoot",
+    "caddyData",
+    "caddyConfig",
+    "legacyHosts",
+    "turn",
+    "limits"
+  ],
+  "properties": {
+    "interfaceVersion": {
+      "const": 1,
+      "type": "integer"
+    },
+    "project": {
+      "type": "string",
+      "minLength": 1
+    },
+    "gatewayHost": {
+      "type": "string",
+      "minLength": 1
+    },
+    "turnHost": {
+      "type": "string",
+      "minLength": 1
+    },
+    "publicIPv4": {
+      "type": "string",
+      "minLength": 1
+    },
+    "turnIPv4": {
+      "type": "string",
+      "minLength": 1
+    },
+    "topology": {
+      "enum": [
+        "single-ip",
+        "two-ip"
+      ]
+    },
+    "tls": {
+      "enum": [
+        "existing",
+        "managed"
+      ]
+    },
+    "acmeEmail": {
+      "type": "string",
+      "minLength": 1
+    },
+    "allowedUserIDs": {
+      "type": "array",
+      "items": {
+        "type": "integer"
+      },
+      "uniqueItems": true
+    },
+    "stateVolume": {
+      "type": "string",
+      "minLength": 1
+    },
+    "installRoot": {
+      "type": "string",
+      "minLength": 1
+    },
+    "configRoot": {
+      "type": "string",
+      "minLength": 1
+    },
+    "runtimeRoot": {
+      "type": "string",
+      "minLength": 1
+    },
+    "caddyData": {
+      "type": "string",
+      "minLength": 1
+    },
+    "caddyConfig": {
+      "type": "string",
+      "minLength": 1
+    },
+    "legacyHosts": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true
+    },
+    "turn": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "minPort",
+        "maxPort",
+        "userQuota",
+        "totalQuota",
+        "maxBps",
+        "bpsCapacity"
+      ],
+      "properties": {
+        "minPort": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "maxPort": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "userQuota": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "totalQuota": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "maxBps": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "bpsCapacity": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "limits": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "gatewayMemoryMiB",
+        "turnMemoryMiB",
+        "caddyMemoryMiB",
+        "haproxyMemoryMiB",
+        "pids",
+        "nofile"
+      ],
+      "properties": {
+        "gatewayMemoryMiB": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "turnMemoryMiB": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "caddyMemoryMiB": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "haproxyMemoryMiB": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "pids": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "nofile": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    }
+  }
+}

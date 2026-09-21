@@ -179,6 +179,10 @@ def plan_checks(root, paths, packages=None):
         add("python3", "-m", "unittest", "discover", "-s", "scripts", "-p", "check_changed_test.py")
     if any(p.startswith("scripts/qualify_screens") or p == "docs/screenshare-qualification-local.json" for p in code):
         add("python3", "-m", "unittest", "discover", "-s", "scripts", "-p", "qualify_screens_test.py")
+    if any(p.startswith(("deploy/gateway/", "scripts/gateway-turn-probe/"))
+           or p in {"Dockerfile.gateway", "just/gateway.just", ".github/workflows/gateway-image.yml"} for p in code):
+        add("just", "gateway", "deployment-test")
+        add("just", "gateway", "deployment-integration")
     if any(p == "justfile" or p.startswith("just/") for p in code):
         add("just", "justfile-check")
     if any(p.startswith("native/linux-capture/") for p in code):

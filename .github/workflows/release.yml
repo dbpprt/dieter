@@ -339,10 +339,23 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
+  gateway-distribution:
+    name: Signed gateway distribution
+    if: github.event_name != 'workflow_dispatch' || inputs.publish
+    needs: version
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    uses: ./.github/workflows/gateway-image.yml
+    with:
+      source_revision: ${{ github.sha }}
+      release_version: ${{ needs.version.outputs.tag }}
+
   release:
     name: Publish release
     if: github.event_name != 'workflow_dispatch' || inputs.publish
-    needs: [version, linux-test, linux-distros, go-binaries, macos-daemon, android, macos]
+    needs: [version, linux-test, linux-distros, go-binaries, macos-daemon, android, macos, gateway-distribution]
     runs-on: ubuntu-latest
     permissions:
       contents: write

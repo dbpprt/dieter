@@ -1,0 +1,17 @@
+[Unit]
+Description=Dieter gateway deployment %i
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+OnFailure=dieter-deploy-reconcile.service
+
+[Service]
+Type=oneshot
+UMask=0077
+ExecStart=/usr/local/lib/dieter-deploy/scripts/host.py execute %i
+TimeoutStartSec=45min
+KillMode=control-group
+MemoryMax=256M
+TasksMax=64
+StandardOutput=journal
+StandardError=journal
