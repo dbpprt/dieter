@@ -152,6 +152,7 @@ func (c *CLI) rpcCardCreate(args []string, chat bool) error {
 	usage := `Usage: dieter card create --project PROJECT --board BOARD (--title TITLE | --auto-title) --workspace project|worktree [options]
 
 Options:
+  --checkout CHECKOUT      Checkout on the target machine; required if it has several
   --lane todo|running       Todo creates a draft; Running starts immediately
   --auto-title              Save immediately; GPT Spark improves the title in the background
   --prompt TEXT             Initial task brief
@@ -168,6 +169,9 @@ Options:
   --base-remote REMOTE      Optional board/project remote override
   --remote-publish MODE     manual, pull_request, or push_base
   --format json|id          Output format
+
+Destination defaults to the running local daemon. Pass global --machine ID|NAME
+before the command to create on another enrolled machine.
 `
 	if chat {
 		group = "chat"
@@ -226,6 +230,10 @@ Options:
 	if err != nil {
 		return err
 	}
+	checkoutID, err := creationCheckoutID(project, *checkout)
+	if err != nil {
+		return err
+	}
 	boardID := ""
 	if !chat {
 		board, err := resolveProtoBoard(state, project.GetId(), *boardRef)
@@ -238,7 +246,7 @@ Options:
 	if err != nil {
 		return err
 	}
-	request := &dieterv1.CreateConversationRequest{CheckoutId: *checkout,
+	request := &dieterv1.CreateConversationRequest{CheckoutId: checkoutID,
 		ProjectId: project.GetId(), BoardId: boardID, Lane: *lane, Title: *title, Prompt: promptValue,
 		Provider: *provider, Model: *modelName, Effort: *effort, ProviderOptions: providerOptions,
 		LabelIds: splitCSV(*labels), DeferStart: !chat && *lane != "running", Attachments: messageParts(attachments),
@@ -264,6 +272,40 @@ Options:
 		return nil
 	}
 	return protoJSONOut(c.Out, value)
+}
+
+func creationCheckoutID(project *dieterv1.Project, requested string) (string, error) {
+	requested = strings.TrimSpace(requested)
+	targetCheckouts := make([]*dieterv1.Checkout, 0, len(project.GetCheckouts()))
+	for _, checkout := range project.GetCheckouts() {
+		if checkout.GetDetached() || strings.TrimSpace(checkout.GetPath()) == "" {
+			continue
+		}
+		targetCheckouts = append(targetCheckouts, checkout)
+		if requested != "" && checkout.GetId() == requested {
+			return checkout.GetId(), nil
+		}
+	}
+	if requested != "" {
+		return "", fmt.Errorf(
+			"checkout %q is not registered on the target machine; use global --machine to target its owner",
+			requested,
+		)
+	}
+	switch len(targetCheckouts) {
+	case 0:
+		return "", fmt.Errorf(
+			"project %q has no checkout on the target machine; use global --machine to target a machine that has one",
+			project.GetName(),
+		)
+	case 1:
+		return targetCheckouts[0].GetId(), nil
+	default:
+		return "", fmt.Errorf(
+			"project %q has multiple checkouts on the target machine; pass --checkout CHECKOUT",
+			project.GetName(),
+		)
+	}
 }
 
 func (c *CLI) rpcCardList(args []string, chat bool) error {
