@@ -56,7 +56,16 @@ jobs:
           node-version: "22"
           cache: npm
           cache-dependency-path: internal/harness/runtime/package-lock.json
-      - uses: arduino/setup-protoc@v3
+      - name: Set up protoc
+        id: setup_protoc
+        continue-on-error: true
+        uses: arduino/setup-protoc@v3
+        with:
+          version: "35.1"
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Retry protoc setup after a transient download failure
+        if: steps.setup_protoc.outcome == 'failure'
+        uses: arduino/setup-protoc@v3
         with:
           version: "35.1"
           repo-token: ${{ secrets.GITHUB_TOKEN }}
