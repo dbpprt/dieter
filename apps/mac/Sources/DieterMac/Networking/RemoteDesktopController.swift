@@ -353,6 +353,11 @@ final class RemoteDesktopController {
         guard let connection else { return }
         phase = remoteDesktopNeedsHostApproval(capabilities) ? .waitingForHostApproval : .connecting
         let configuration = RTCConfiguration()
+        #if DEBUG
+            if ProcessInfo.processInfo.environment["DIETER_TEST_FORCE_TURN"] == "1" {
+                configuration.iceTransportPolicy = .relay
+            }
+        #endif
         configuration.sdpSemantics = .unifiedPlan
         configuration.continualGatheringPolicy = .gatherContinually
         configuration.iceServers = connection.rtcConfiguration.iceServers.map {
@@ -713,18 +718,19 @@ final class RemoteDesktopController {
             peerWatchdog?.cancel(); peerWatchdog = nil
             phase = presentedGeneration > 0 ? .streaming : .connecting
             startStatistics()
-        case .disconnected:
+        case .disconnected, .failed:
+            // A denied private candidate can fail ICE before the TURN candidate
+            // arrives. Keep trickle signaling alive during the bounded grace.
             releaseAllInput(failOnError: false)
             phase = .reconnecting
             let token = generation
-            peerWatchdog?.cancel()
+            guard peerWatchdog == nil else { return }
             peerWatchdog = Task { [weak self] in
                 try? await DieterTaskSleep.seconds(3)
-                guard let self, self.owns(token), self.peerConnection?.connectionState != .connected else { return }
+                guard !Task.isCancelled, let self, self.owns(token), self.peerConnection?.connectionState != .connected
+                else { return }
                 self.recover(message: "The peer did not recover after losing connectivity")
             }
-        case .failed:
-            recover(message: "The WebRTC connection failed.")
         case .closed:
             if case .failed = phase { return }
             if phase != .idle { recover(message: "The WebRTC connection closed.") }

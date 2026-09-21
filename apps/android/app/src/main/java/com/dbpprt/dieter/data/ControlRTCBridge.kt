@@ -1,6 +1,7 @@
 package com.dbpprt.dieter.data
 
 import android.content.Context
+import com.dbpprt.dieter.BuildConfig
 import com.dbpprt.dieter.gateway.v1.RTCConfiguration
 import io.grpc.*
 import kotlinx.coroutines.*
@@ -36,7 +37,12 @@ internal class ControlRTCBridge(context: Context, configuration: RTCConfiguratio
     init {
         val config = PeerConnection.RTCConfiguration(configuration.iceServersList.map {
             PeerConnection.IceServer.builder(it.urlsList).setUsername(it.username).setPassword(it.credential).createIceServer()
-        }).apply { sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN }
+        }).apply {
+            sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN
+            if (BuildConfig.DEBUG && java.lang.Boolean.getBoolean("dieter.test.forceTURN")) {
+                iceTransportsType = PeerConnection.IceTransportsType.RELAY
+            }
+        }
         peer = requireNotNull(factory(context).createPeerConnection(config, object : PeerConnection.Observer {
             override fun onSignalingChange(state: PeerConnection.SignalingState) {}
             override fun onIceConnectionChange(state: PeerConnection.IceConnectionState) {

@@ -104,6 +104,11 @@ per second in each direction. The 30-minute steady and five-minute reconnect
 report is allocation lifecycle evidence, not native screen or throughput
 qualification; the qualification gate still requires those separate workloads.
 
+Native fixtures can explicitly require TURN for both API traffic and screens.
+See [the native TURN test guide](../../docs/gateway-native-turn-testing.md).
+The debug-only policy and protected fixture credentials preserve the real signed
+RTC configuration path; release clients retain their normal ICE policy.
+
 Legacy route removal is blocked by the host controller until the current managed
 TLS operation has recorded complete Mac/Android API/screens, gateway-issued TURN,
 certificate, isolation and 30-minute/5-minute workload evidence. The controller

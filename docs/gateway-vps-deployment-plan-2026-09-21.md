@@ -1,6 +1,10 @@
 # Dieter gateway and VPS deployment plan
 
-**Status: proposed; approval required before implementation or deployment.**
+**Status: implementation authorized and in progress.** Production uses the
+signed distribution and durable deployment controller. Public TURN TLS,
+native workload qualification, observation and legacy retirement retain the
+acceptance gates below. Current production evidence is recorded in the private
+VPS repository's `docs/gateway-rollout-status.md`.
 
 The outcome is a documented, reproducible Dieter gateway distribution in
 `dbpprt/dieter`, and a small `dbpprt/vps` repository that deploys a pinned release

@@ -82,6 +82,7 @@ export ANDROID_SERIAL ANDROID_HOME JAVA_HOME
 apps/android/gradlew --project-dir apps/android "$task" "-Pdieter.screenTestBuildType=$variant" \
     "-Pandroid.testInstrumentationRunnerArguments.class=${DIETER_SCREEN_TEST_CLASS:-com.dbpprt.dieter.screens.ScreenEndToEndTest}" \
     "-Pandroid.testInstrumentationRunnerArguments.screenFixture=$argument" \
+    "-Pandroid.testInstrumentationRunnerArguments.forceTURN=${DIETER_TEST_FORCE_TURN:-0}" \
     "-Pandroid.testInstrumentationRunnerArguments.screenLowLatency=${DIETER_SCREEN_TEST_LOW_LATENCY:-1}" \
     "-Pandroid.testInstrumentationRunnerArguments.screenSurface=${DIETER_SCREEN_TEST_SURFACE:-0}" \
     "-Pandroid.testInstrumentationRunnerArguments.screenDirectSurface=${DIETER_SCREEN_TEST_DIRECT_SURFACE:-0}"

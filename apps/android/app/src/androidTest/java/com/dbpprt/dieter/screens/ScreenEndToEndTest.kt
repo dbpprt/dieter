@@ -44,6 +44,17 @@ import java.util.concurrent.atomic.AtomicReference
  */
 class ScreenEndToEndTest {
     @get:Rule val compose = createComposeRule()
+    private var previousForceTURN: String? = null
+
+    @org.junit.Before fun setFixtureTransportPolicy() {
+        previousForceTURN = System.getProperty("dieter.test.forceTURN")
+        System.setProperty("dieter.test.forceTURN", (InstrumentationRegistry.getArguments().getString("forceTURN") == "1").toString())
+    }
+
+    @org.junit.After fun restoreFixtureTransportPolicy() {
+        previousForceTURN?.let { System.setProperty("dieter.test.forceTURN", it) }
+            ?: System.clearProperty("dieter.test.forceTURN")
+    }
 
     @Test fun nativeVideoCanvasGesturesKeyboardAndSessionLifecycle() {
         val arguments = InstrumentationRegistry.getArguments()
@@ -361,10 +372,14 @@ class ScreenEndToEndTest {
                 com.dbpprt.dieter.v1.RemoteDesktopRenderMeasurement.REMOTE_DESKTOP_RENDER_MEASUREMENT_ANDROID_FRAME_RENDERED
                 else com.dbpprt.dieter.v1.RemoteDesktopRenderMeasurement.REMOTE_DESKTOP_RENDER_MEASUREMENT_EGL_SUBMITTED
             compose.waitUntil(5_000) { controller.state.value.session.renderMeasurement == measuredEndpoint && controller.state.value.decodedFrames > 0 }
+            if (arguments.getString("forceTURN") == "1") {
+                assertEquals("Relayed media", controller.state.value.mediaRoute)
+            }
             File(context.getExternalFilesDir(null), "screen-e2e-stats.json").writeText(JSONObject(mapOf(
                 "schemaVersion" to 1, "sessionId" to controller.id, "nativeFramesDecoded" to controller.state.value.decodedFrames,
                 "width" to controller.state.value.session.width, "height" to controller.state.value.session.height,
                 "fps" to controller.state.value.receivedFps, "inputAck" to controller.state.value.session.lastInputOrdinal,
+                "mediaRoute" to controller.state.value.mediaRoute,
                 "encodeMs" to controller.state.value.session.encodeMs, "captureToSendMs" to controller.state.value.session.captureToSendMs,
                 "jitterBufferMs" to controller.state.value.session.jitterBufferMs,
                 "renderMs" to controller.state.value.session.renderMs,

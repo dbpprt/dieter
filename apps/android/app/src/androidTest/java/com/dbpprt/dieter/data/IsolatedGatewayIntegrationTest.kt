@@ -40,16 +40,29 @@ import kotlin.system.measureTimeMillis
  */
 @RunWith(AndroidJUnit4::class)
 class IsolatedGatewayIntegrationTest {
+    private var previousForceTURN: String? = null
+
+    @org.junit.Before fun setFixtureTransportPolicy() {
+        previousForceTURN = System.getProperty("dieter.test.forceTURN")
+        System.setProperty("dieter.test.forceTURN", (argument("forceTURN") == "1").toString())
+    }
+
+    @org.junit.After fun restoreFixtureTransportPolicy() {
+        previousForceTURN?.let { System.setProperty("dieter.test.forceTURN", it) }
+            ?: System.clearProperty("dieter.test.forceTURN")
+    }
+
     @Test
     fun webRTCControlCarriesRPCAndReportsICEPath() = runBlocking {
         assumeTrue("Requires the WebRTC fixture", argument("isolatedControlWebRTC") == "1")
         val token = argument("isolatedGatewayToken")
         assumeTrue(token.isNotBlank())
         val repository = GrpcDieterRepository(InstrumentationRegistry.getInstrumentation().targetContext)
+        val expectedRoute = if (argument("forceTURN") == "1") "WebRTC · TURN" else "WebRTC · Direct"
         try {
             val endpoint = connect(repository, isolatedOrigin(), token)
-            assertEquals("WebRTC · Direct", repository.prepareDaemon())
-            assertEquals("WebRTC · Direct", repository.dataRoute())
+            assertEquals(expectedRoute, repository.prepareDaemon())
+            assertEquals(expectedRoute, repository.dataRoute())
             assertTrue(repository.state().projectsCount > 0)
             assertTrue(repository.relayState(endpoint).projectsCount > 0)
             // First cancels the watch. The next RPC must retain its transport.
@@ -117,7 +130,7 @@ class IsolatedGatewayIntegrationTest {
                     .setDaemonId(info.daemonId).setOperationId(UUID.randomUUID().toString()).build())
                 assertEquals("true", updated.valueJson.toStringUtf8())
             }
-            assertEquals("WebRTC · Direct", repository.prepareDaemon())
+            assertEquals(expectedRoute, repository.prepareDaemon())
             assertTrue(repository.state().projectsCount > 0)
         } finally { repository.close() }
     }

@@ -26,6 +26,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/dbpprt/dieter/internal/fixtureturn"
 	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
 	"github.com/dbpprt/dieter/internal/remotedesktop"
 	"github.com/dbpprt/dieter/internal/server"
@@ -104,6 +105,13 @@ func run(helper, kind, ready string, authenticate bool) error {
 		return err
 	}
 	config := &gatewayv1.RTCConfiguration{ExpiresAt: now.Add(30 * time.Minute).Format(time.RFC3339Nano), DaemonId: "d_screens_fixture", OperatorSubject: "github:1", ConfigurationId: "rtc_screens_fixture", DaemonGeneration: 1, IssuedAt: now.Format(time.RFC3339Nano)}
+	turn, err := fixtureturn.Load()
+	if err != nil {
+		return err
+	}
+	if turn != nil {
+		config.IceServers = []*gatewayv1.RTCIceServer{turn.IceServer(fmt.Sprintf("%d:dieter:1:%s", now.Add(time.Hour).Unix(), config.DaemonId))}
+	}
 	raw, err := proto.MarshalOptions{Deterministic: true}.Marshal(config)
 	if err != nil {
 		return err

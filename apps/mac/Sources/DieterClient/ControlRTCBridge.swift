@@ -54,6 +54,11 @@ package final class ControlRTCBridge: NSObject, @unchecked Sendable {
     package init(configuration: Dieter_Gateway_V1_RTCConfiguration) throws {
         super.init()
         let config = RTCConfiguration()
+        #if DEBUG
+            if ProcessInfo.processInfo.environment["DIETER_TEST_FORCE_TURN"] == "1" {
+                config.iceTransportPolicy = .relay
+            }
+        #endif
         config.iceServers = configuration.iceServers.map {
             RTCIceServer(urlStrings: $0.urls, username: $0.username, credential: $0.credential)
         }

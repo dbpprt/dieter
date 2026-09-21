@@ -515,6 +515,9 @@ private struct ScreenFixtureConnection: Decodable {
     print(
         "Latency stages: capture→send \(controller.sessionState.captureToSendMs) ms, paced send \(controller.sessionState.sendMs) ms, jitter buffer \(controller.sessionState.jitterBufferMs) ms, render \(controller.sessionState.renderMs) ms. Cursor embedded=\(controller.sessionState.embeddedCursor) shape=\(controller.remoteCursorState.shapeID); displayed \(controller.sessionState.width)x\(controller.sessionState.height), \(controller.sessionState.receiverFps) fps, encode \(controller.sessionState.encodeMs) ms, RTT \(controller.sessionState.rttMs) ms, \(controller.mediaRouteLabel)"
     )
+    if environment["DIETER_TEST_FORCE_TURN"] == "1" {
+        #expect(controller.mediaRouteLabel == "Relayed media")
+    }
     if !real {
         #expect(routeOpenings == 1, "A healthy peer must survive missing unary lease renewals")
         let rejected = try await inject("/test/reject-screen-signals?enabled=false")
