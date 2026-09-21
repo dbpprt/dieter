@@ -150,7 +150,7 @@ internal fun DieterUiState.preserveConnectionPresentation(previous: DieterUiStat
     connectionError = previous.connectionError,
 )
 
-enum class Destination { CHATS, BOARD, TERMINALS, SCREENS, FILES, SCHEDULES }
+enum class Destination { ACTIVITY, CHATS, BOARD, TERMINALS, SCREENS, FILES, SCHEDULES }
 
 enum class AppSurface { NEW_CHAT, NEW_CARD, NEW_BOARD, SCHEDULE_EDITOR, WORKSPACE, NEW_PROJECT, APP_SETTINGS }
 
@@ -160,7 +160,7 @@ enum class CardOperation { STARTING, MOVING, CANCELLING }
 data class DieterUiState(
     val sharedConflicts: List<com.dbpprt.dieter.v1.PeerRecord> = emptyList(),
     val creationCheckoutId: String = "",
-    val destination: Destination = Destination.BOARD,
+    val destination: Destination = Destination.ACTIVITY,
     val appSurface: AppSurface? = null,
     val editingScheduleId: String? = null,
     val endpoint: String = DIETER_LOCAL_ENDPOINT,
@@ -208,6 +208,7 @@ data class DieterUiState(
     val cards: List<Card> = emptyList(),
     val spaceBoards: List<Board> = emptyList(),
     val spaceCards: List<Card> = emptyList(),
+    val activityDetails: Map<String, ActivityDetail> = emptyMap(),
     val spacesLoading: Boolean = false,
     val boardOverviewVisible: Boolean = true,
     val chats: List<Card> = emptyList(),
@@ -317,6 +318,7 @@ data class DieterUiState(
         get() = conversation?.detail?.card
             ?: cards.firstOrNull { it.id == selectedCardId }
             ?: chats.firstOrNull { it.id == selectedCardId }
+            ?: spaceCards.firstOrNull { it.id == selectedCardId }
     val selectedSchedule: Schedule? get() = schedules.firstOrNull { it.id == selectedScheduleId }
     val selectedTerminal: Terminal? get() = terminals.firstOrNull { it.id == selectedTerminalId }
     val conversationMessages: List<UiMessage>
@@ -764,6 +766,7 @@ class DieterViewModel internal constructor(
                 providerQuotasLoading = if (gatewayChanged) false else current.providerQuotasLoading,
                 providerQuotaError = if (gatewayChanged) null else current.providerQuotaError,
                 providerQuotaMutatingAccounts = if (gatewayChanged) emptySet() else current.providerQuotaMutatingAccounts,
+                activityDetails = activityDetails(connection.activeConversations),
                 chats = connection.chats,
                 projects = orderedProjects(connection.projects, current.projectOrder),
                 projectReplicas = connection.projectReplicas,
@@ -1075,7 +1078,7 @@ class DieterViewModel internal constructor(
             Destination.SCHEDULES -> viewModelScope.launch { loadSchedules() }
             Destination.SCREENS -> Unit
             Destination.TERMINALS -> loadTerminals()
-            Destination.BOARD -> refreshSpaces()
+            Destination.ACTIVITY, Destination.BOARD -> refreshSpaces()
         }
     }
 

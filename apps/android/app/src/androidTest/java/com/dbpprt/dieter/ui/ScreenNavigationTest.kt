@@ -22,7 +22,7 @@ import org.junit.Test
 class ScreenNavigationTest {
     @get:Rule val compose = createComposeRule()
 
-    @Test fun bottomBarKeepsOnlyChatsBoardsAndTools() {
+    @Test fun bottomBarIncludesActivityBoardsChatsAndTools() {
         var selected: Destination? = null
         var toolsOpened = false
         compose.setContent {
@@ -34,6 +34,8 @@ class ScreenNavigationTest {
                 )
             }
         }
+        compose.onNodeWithTag("nav-activity").assertIsDisplayed().performClick()
+        compose.runOnIdle { assertEquals(Destination.ACTIVITY, selected) }
         compose.onNodeWithTag("nav-chats").assertIsSelected()
         compose.onNodeWithTag("nav-board").assertIsDisplayed().performClick()
         compose.runOnIdle { assertEquals(Destination.BOARD, selected) }

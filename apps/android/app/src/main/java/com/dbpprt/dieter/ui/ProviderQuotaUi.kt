@@ -151,12 +151,13 @@ private fun ProviderQuotaGroupView(
 }
 
 @Composable
-private fun ProviderQuotaAccountView(
+internal fun ProviderQuotaAccountView(
     account: ProviderQuotaSnapshot,
     provider: ProviderQuotaProvider,
     state: DieterUiState,
     onSetSummaryInclusion: (ProviderQuotaProvider, String, Boolean) -> Unit,
     onUseReset: (String) -> Unit,
+    showMonetaryBalances: Boolean = true,
 ) {
     var resetConfirmation by remember(account.accountKey) { mutableStateOf(false) }
     Surface(
@@ -184,13 +185,13 @@ private fun ProviderQuotaAccountView(
                 Text(account.displayEmail, color = DieterMuted, fontSize = 11.sp)
             }
             account.windowsList.forEach { ProviderQuotaWindowView(it, provider) }
-            if (account.hasCredits()) {
+            if (showMonetaryBalances && account.hasCredits()) {
                 ProviderQuotaMetadata(
                     "Credits",
                     if (account.credits.unlimited) "Unlimited" else account.credits.balance.ifBlank { "Available" },
                 )
             }
-            if (account.hasSpendAllowance()) {
+            if (showMonetaryBalances && account.hasSpendAllowance()) {
                 ProviderQuotaMetadata(
                     "Spend",
                     listOf(account.spendAllowance.used, account.spendAllowance.limit)
@@ -268,13 +269,13 @@ private fun ProviderQuotaWindowView(window: ProviderQuotaWindow, provider: Provi
     }
 }
 
-private fun quotaProviderName(provider: ProviderQuotaProvider): String = when (provider) {
+internal fun quotaProviderName(provider: ProviderQuotaProvider): String = when (provider) {
     ProviderQuotaProvider.PROVIDER_QUOTA_PROVIDER_OPENAI_CODEX -> "OpenAI Codex"
     ProviderQuotaProvider.PROVIDER_QUOTA_PROVIDER_ANTHROPIC_CLAUDE -> "Anthropic Claude"
     else -> "Provider"
 }
 
-private fun quotaAvailability(value: ProviderQuotaAvailability): String = when (value) {
+internal fun quotaAvailability(value: ProviderQuotaAvailability): String = when (value) {
     ProviderQuotaAvailability.PROVIDER_QUOTA_AVAILABILITY_AVAILABLE -> "Available"
     ProviderQuotaAvailability.PROVIDER_QUOTA_AVAILABILITY_SIGNED_OUT -> "Signed out"
     ProviderQuotaAvailability.PROVIDER_QUOTA_AVAILABILITY_UNSUPPORTED -> "Unsupported"
@@ -284,7 +285,7 @@ private fun quotaAvailability(value: ProviderQuotaAvailability): String = when (
 }
 
 @Composable
-private fun quotaTint(provider: ProviderQuotaProvider, remaining: Int): Color = when {
+internal fun quotaTint(provider: ProviderQuotaProvider, remaining: Int): Color = when {
     provider == ProviderQuotaProvider.PROVIDER_QUOTA_PROVIDER_OPENAI_CODEX -> DieterOpenAIQuota
     provider == ProviderQuotaProvider.PROVIDER_QUOTA_PROVIDER_ANTHROPIC_CLAUDE -> DieterAmber
     remaining <= 10 -> MaterialTheme.colorScheme.error

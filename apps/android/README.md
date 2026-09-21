@@ -51,8 +51,22 @@ board's overflow menu. Expanding either the connection notification or a
 running-chat notification shows a compact live preview of the main model and
 active subagents without exposing raw tool input.
 
-The classic six-destination Material navigation remains the default. Its
-native Terminal workspace lists daemon-owned PTYs across projects, renders ANSI
+Activity is the default landing page, followed by Boards, Chats, and Tools.
+It combines cards and standalone chats across projects with search, project filters,
+a 1h/6h/24h timeline, Needs you, Running, account usage remaining, and Recent.
+The timeline uses the latest synchronized activity for each conversation, with
+recorded intervals where a start is available and event dots otherwise; it does
+not reconstruct complete execution history. Account quota windows remain separate
+and account-wide when filtering projects, and show reset times and stale/unavailable
+status without cost estimates. Opening a conversation returns to the same Activity
+filter and scroll position on Back. Android palettes and light/dark appearance apply.
+
+For a disposable mock-agent navigation journey, run
+`python3 apps/android/scripts/test-activity.py` with the standard emulator running
+and Android SDK/JBR environment configured. It tests both chats and cards through
+the real gateway and restores the app’s previous connection configuration.
+
+The native Terminal workspace lists daemon-owned PTYs across projects, renders ANSI
 and VT sequences with the reusable Apache-2.0 Termux emulator/renderer modules,
 and forwards IME, hardware keys, clipboard paste, accessory keys, and live
 window-size changes over gRPC. Output is resumed from a monotonic sequence

@@ -14,6 +14,7 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.outlined.Timeline
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.DesktopWindows
@@ -54,8 +55,9 @@ import com.dbpprt.dieter.ui.theme.DieterText
 internal data class NavItem(val destination: Destination, val label: String, val icon: ImageVector)
 
 internal val primaryNavigationItems = listOf(
-    NavItem(Destination.CHATS, "Chats", Icons.Outlined.ChatBubbleOutline),
+    NavItem(Destination.ACTIVITY, "Activity", Icons.Outlined.Timeline),
     NavItem(Destination.BOARD, "Boards", Icons.Outlined.ViewKanban),
+    NavItem(Destination.CHATS, "Chats", Icons.Outlined.ChatBubbleOutline),
 )
 
 private val toolNavigationItems = listOf(

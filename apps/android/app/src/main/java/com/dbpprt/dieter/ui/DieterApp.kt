@@ -98,7 +98,7 @@ private fun Destination.usesSynchronizedWorkspace(): Boolean =
     this != Destination.TERMINALS && this != Destination.SCREENS
 
 private fun Destination.supportsOfflineOutbox(): Boolean =
-    this == Destination.CHATS || this == Destination.BOARD
+    this == Destination.ACTIVITY || this == Destination.CHATS || this == Destination.BOARD
 
 internal enum class WorkspaceSurfaceTreatment {
     CURRENT,
@@ -268,7 +268,7 @@ fun DieterApp(container: DieterContainer) {
                         onSettings = { model.openSurface(AppSurface.APP_SETTINGS) },
                         onCreate = {
                             when (state.destination) {
-                                Destination.CHATS -> model.openSurface(AppSurface.NEW_CHAT)
+                                Destination.ACTIVITY, Destination.CHATS -> model.openSurface(AppSurface.NEW_CHAT)
                                 Destination.BOARD -> model.openSurface(
                                     if (state.boardOverviewVisible) AppSurface.NEW_PROJECT else AppSurface.NEW_CARD,
                                 )
@@ -857,6 +857,7 @@ private fun DestinationContent(
         Box(Modifier.fillMaxSize().weight(1f)) {
             Box(Modifier.fillMaxSize().alpha(if (blocksInteraction) 0.82f else 1f)) {
                 when (destination) {
+                    Destination.ACTIVITY -> ActivityScreen(state, model, expanded, destinationPadding)
                     Destination.CHATS -> ChatsScreen(state, model, expanded, destinationPadding)
                     Destination.BOARD -> BoardScreen(state, model, expanded, destinationPadding)
                     Destination.SCREENS -> ScreensScreen(state, model, destinationPadding)
