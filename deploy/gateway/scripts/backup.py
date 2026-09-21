@@ -17,7 +17,10 @@ def command(config_root, *arguments):
     return ["docker", "run", "--rm", "--network", "host", "--read-only", "--cap-drop", "ALL",
             "--security-opt", "no-new-privileges:true", "--memory", "192m", "--cpus", "0.4", "--pids-limit", "64",
             "--env-file", str(config_root / "backup/environment"), "-e", "RESTIC_REPOSITORY=" + cfg["repository"], "-e", "RESTIC_PASSWORD_FILE=/credentials/password",
-            "-v", str(config_root / "backup") + ":/credentials:ro", "--tmpfs", "/tmp:size=32m",
+            # Default 16 MiB packs and five concurrent REST uploads can exhaust
+            # a small tmpfs even when the source and repository have free space.
+            "-e", "RESTIC_PACK_SIZE=4", "-e", "GOMEMLIMIT=128MiB",
+            "-v", str(config_root / "backup") + ":/credentials:ro", "--tmpfs", "/tmp:size=64m",
             *arguments]
 
 
@@ -32,7 +35,8 @@ def main():
     dep = cfg["image"]
     require(dep.startswith("restic/restic@sha256:") and len(dep.rsplit(":", 1)[1]) == 64, "restic image must be pinned")
     output = run(command(a.config_root, "-v", str(snapshot) + ":/snapshot:ro", dep,
-                        "--no-cache", "backup", "/snapshot", "--host", cfg["host"], "--tag", "gateway", "--json"), timeout=900)
+                        "--no-cache", "-o", "rest.connections=2", "backup", "/snapshot", "--read-concurrency", "2",
+                        "--host", cfg["host"], "--tag", "gateway", "--json"), timeout=900)
     reports = [json.loads(line) for line in output.splitlines()]
     summary = next((r for r in reports if r.get("message_type") == "summary"), None)
     require(summary and summary.get("snapshot_id"), "backup did not produce a durable snapshot")
