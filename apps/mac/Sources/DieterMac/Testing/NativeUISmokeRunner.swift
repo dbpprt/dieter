@@ -1705,7 +1705,8 @@
             let live = QuickTaskStoryTextView.smokeLiveInstance.flatMap {
                 expectedText == nil || $0.string == expectedText ? $0 : nil
             }
-            let native = existing ?? live
+            let native =
+                existing ?? live
                 ?? nativeQuickTaskField(in: window.contentView, expectedText: expectedText)
                 ?? NSApp.windows.lazy.compactMap {
                     nativeQuickTaskField(in: $0.contentView, expectedText: expectedText)
@@ -1748,18 +1749,20 @@
                 to: nil)
             let timestamp = ProcessInfo.processInfo.systemUptime
             for type in [NSEvent.EventType.mouseMoved, .leftMouseDown, .leftMouseUp] {
-                guard let event = NSEvent.mouseEvent(
-                    with: type, location: location, modifierFlags: [], timestamp: timestamp,
-                    windowNumber: window.windowNumber, context: nil, eventNumber: 0,
-                    clickCount: type == .mouseMoved ? 0 : 1,
-                    pressure: type == .leftMouseDown ? 1 : 0)
+                guard
+                    let event = NSEvent.mouseEvent(
+                        with: type, location: location, modifierFlags: [], timestamp: timestamp,
+                        windowNumber: window.windowNumber, context: nil, eventNumber: 0,
+                        clickCount: type == .mouseMoved ? 0 : 1,
+                        pressure: type == .leftMouseDown ? 1 : 0)
                 else { continue }
                 NSApp.postEvent(event, atStart: false)
             }
         }
 
         private static func replaceQuickTaskStory(_ text: String, in window: NSWindow) -> Bool {
-            let editor = QuickTaskStoryTextView.smokeLiveInstance
+            let editor =
+                QuickTaskStoryTextView.smokeLiveInstance
                 ?? (window.firstResponder as? QuickTaskStoryTextView)
                 ?? NSApp.windows.lazy.compactMap { $0.firstResponder as? QuickTaskStoryTextView }.first
             guard let editor, editor.isEditable, editor.window != nil else { return false }
@@ -1770,7 +1773,8 @@
 
         private static func quickTaskEditorDiagnostics() -> String {
             guard let editor = QuickTaskStoryTextView.smokeLiveInstance else { return "missing" }
-            return "window=\(editor.window?.windowNumber ?? -1) visible=\(editor.window?.isVisible ?? false) key=\(editor.window?.isKeyWindow ?? false) hidden=\(editor.isHiddenOrHasHiddenAncestor) responder=\(editor.window?.firstResponder === editor) text=\(String(reflecting: editor.string))"
+            return
+                "window=\(editor.window?.windowNumber ?? -1) visible=\(editor.window?.isVisible ?? false) key=\(editor.window?.isKeyWindow ?? false) hidden=\(editor.isHiddenOrHasHiddenAncestor) responder=\(editor.window?.firstResponder === editor) text=\(String(reflecting: editor.string))"
         }
 
         private static func assessFileResponsiveness(
