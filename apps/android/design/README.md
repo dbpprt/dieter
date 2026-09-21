@@ -21,5 +21,5 @@ replaces the expected references and fails loudly if its page structure
 changes.
 
 Android uses Chats and Boards as primary destinations. Tools opens a compact
-panel for Terminal, Files, Schedules, Screens, and Settings. The panel uses
+panel for Machines, Terminal, Files, Schedules, Screens, and Settings. The panel uses
 opaque surfaces from the selected app palette.

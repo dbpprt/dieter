@@ -102,9 +102,18 @@ input window, removes its ADB port mapping on exit, and preserves app credential
 and the running operator daemon.
 
 Chats and Boards are the primary Android destinations. Tools opens a compact,
-opaque panel for Terminal, Files, Schedules, Screens, and Settings. Files and
+opaque panel for Machines, Terminal, Files, Schedules, Screens, and Settings. Machines
+lists every enrolled daemon with cached reachability and live per-host CPU, memory,
+GPU, software, process, disk, network, and temperature telemetry. Its authenticated
+actions expose only capabilities authorized by the daemon and require a second
+confirmation before update, restart, or shutdown. Files and
 Schedules offer a project picker when multiple projects are available. Settings
 uses horizontally scrollable tabs, and Display contains the app's color palettes.
+
+Run `just android machines-test` on the visible emulator for the isolated Machines
+journey. It starts a disposable gateway and daemon, verifies the real telemetry route
+and Compose presentation, and accepts only the fixture's no-op update operation. It
+restores the app's previous gateway configuration afterward.
 
 Chats render their cached tail immediately. A tail already covered by the
 healthy Live projection is current on open and resumes from its sequence

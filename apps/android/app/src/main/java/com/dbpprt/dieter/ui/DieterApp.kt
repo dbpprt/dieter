@@ -95,7 +95,7 @@ private fun Destination.isOfflineSensitiveProjectSurface(): Boolean =
     this == Destination.FILES || this == Destination.SCHEDULES
 
 private fun Destination.usesSynchronizedWorkspace(): Boolean =
-    this != Destination.TERMINALS && this != Destination.SCREENS
+    this != Destination.MACHINES && this != Destination.TERMINALS && this != Destination.SCREENS
 
 private fun Destination.supportsOfflineOutbox(): Boolean =
     this == Destination.ACTIVITY || this == Destination.CHATS || this == Destination.BOARD
@@ -272,7 +272,7 @@ fun DieterApp(container: DieterContainer) {
                                 Destination.BOARD -> model.openSurface(
                                     if (state.boardOverviewVisible) AppSurface.NEW_PROJECT else AppSurface.NEW_CARD,
                                 )
-                                Destination.SCREENS -> Unit
+                                Destination.MACHINES, Destination.SCREENS -> Unit
                                 Destination.TERMINALS -> model.showTerminalCreate()
                                 Destination.FILES -> fileCreateVisible = true
                                 Destination.SCHEDULES -> model.openSurface(AppSurface.SCHEDULE_EDITOR)
@@ -860,6 +860,7 @@ private fun DestinationContent(
                     Destination.ACTIVITY -> ActivityScreen(state, model, expanded, destinationPadding)
                     Destination.CHATS -> ChatsScreen(state, model, expanded, destinationPadding)
                     Destination.BOARD -> BoardScreen(state, model, expanded, destinationPadding)
+                    Destination.MACHINES -> MachinesScreen(state, model, expanded, destinationPadding)
                     Destination.SCREENS -> ScreensScreen(state, model, destinationPadding)
                     Destination.TERMINALS -> TerminalsScreen(state, model, expanded, destinationPadding)
                     Destination.FILES -> FilesScreen(state, model, expanded, destinationPadding)

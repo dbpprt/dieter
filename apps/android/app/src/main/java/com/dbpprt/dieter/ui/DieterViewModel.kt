@@ -17,6 +17,7 @@ import com.dbpprt.dieter.connection.isServerConversationId
 import com.dbpprt.dieter.connection.resolveConversationId
 import com.dbpprt.dieter.connection.rpcReadFailureIsTransient
 import com.dbpprt.dieter.data.DIETER_ENDPOINTS
+import com.dbpprt.dieter.data.DIETER_API_VERSION
 import com.dbpprt.dieter.data.DIETER_LOCAL_ENDPOINT
 import com.dbpprt.dieter.data.DieterEndpoint
 import com.dbpprt.dieter.data.DieterRepository
@@ -45,6 +46,9 @@ import com.dbpprt.dieter.v1.FileEntry
 import com.dbpprt.dieter.v1.GetStateRequest
 import com.dbpprt.dieter.v1.Harness
 import com.dbpprt.dieter.v1.MessagePart
+import com.dbpprt.dieter.v1.MachineInformation
+import com.dbpprt.dieter.v1.MachineOperationAction
+import com.dbpprt.dieter.v1.MachineOperationRequest
 import com.dbpprt.dieter.v1.Project
 import com.dbpprt.dieter.v1.QueuedMessage
 import com.dbpprt.dieter.v1.RuntimeStatus
@@ -81,6 +85,8 @@ import kotlinx.coroutines.flow.retryWhen
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withContext
@@ -150,7 +156,7 @@ internal fun DieterUiState.preserveConnectionPresentation(previous: DieterUiStat
     connectionError = previous.connectionError,
 )
 
-enum class Destination { ACTIVITY, CHATS, BOARD, TERMINALS, SCREENS, FILES, SCHEDULES }
+enum class Destination { ACTIVITY, CHATS, BOARD, MACHINES, TERMINALS, SCREENS, FILES, SCHEDULES }
 
 enum class AppSurface { NEW_CHAT, NEW_CARD, NEW_BOARD, SCHEDULE_EDITOR, WORKSPACE, NEW_PROJECT, APP_SETTINGS }
 
@@ -270,6 +276,14 @@ data class DieterUiState(
     val acceptedOutboxIds: Set<String> = emptySet(),
     val failedOutboxIds: Set<String> = emptySet(),
     val machineOutboxSummaries: Map<String, MachineOutboxSummary> = emptyMap(),
+    val selectedMachineId: String? = null,
+    val machineInformation: Map<String, MachineInformation> = emptyMap(),
+    val machineInformationLoading: Set<String> = emptySet(),
+    val machineInformationErrors: Map<String, String> = emptyMap(),
+    val machineCpuHistory: Map<String, List<Double>> = emptyMap(),
+    val machineGpuHistory: Map<String, Map<String, List<Double>>> = emptyMap(),
+    val machineOperationInFlight: Boolean = false,
+    val machineOperationMessage: String? = null,
     val cardOperations: Map<String, CardOperation> = emptyMap(),
     val cardOperationErrors: Map<String, String> = emptyMap(),
     val workspaceReview: WorkspaceReviewState = WorkspaceReviewState(),
@@ -421,6 +435,8 @@ class DieterViewModel internal constructor(
     private var postSendRefreshCardId: String? = null
     private var postSendRefreshGeneration = 0L
     private var terminalWatchJob: Job? = null
+    private var machineListRefreshJob: Job? = null
+    private var machineTelemetryJob: Job? = null
     private var conversationStreamCardId: String? = null
     private var terminalEndpointId: String? = null
     private val terminalSequences = mutableMapOf<String, Long>()
@@ -534,6 +550,10 @@ class DieterViewModel internal constructor(
         startStateStream()
         refreshProviderQuotas(requestRefresh = false)
         if (_state.value.destination == Destination.TERMINALS) loadTerminals()
+        if (_state.value.destination == Destination.MACHINES) {
+            refreshMachines()
+            _state.value.selectedMachineId?.let(::startMachineTelemetry)
+        }
     }
 
     fun stop() {
@@ -545,6 +565,9 @@ class DieterViewModel internal constructor(
         cancelConversationStream()
         cancelPostSendRefresh()
         stopTerminalWatch()
+        stopMachineTelemetry()
+        machineListRefreshJob?.cancel()
+        machineListRefreshJob = null
         // Backgrounding cancels only the local watch tasks; the durable Git
         // operation keeps running on the daemon and is resumed by sequence.
         workspaceSurfaceJob?.cancel()
@@ -712,6 +735,9 @@ class DieterViewModel internal constructor(
         if (gatewayChanged) {
             providerQuotaWatchJob?.cancel()
             providerQuotaWatchJob = null
+            stopMachineTelemetry()
+            machineListRefreshJob?.cancel()
+            machineListRefreshJob = null
         }
         val connectedEndpointId = connection.endpoint?.id
         val endpointChanged = connectedEndpointId != null && connectedEndpointId != terminalEndpointId
@@ -731,6 +757,7 @@ class DieterViewModel internal constructor(
         }
         val remote = connection.selectedState
         _state.update { current ->
+            val liveMachineIds = connection.endpointConnections.mapTo(hashSetOf(), EndpointConnection::id)
             val selectedCardId = resolveConversationId(current.selectedCardId, connection.resolvedConversationIds)
             conversationDrafts.retarget(current.selectedCardId, selectedCardId)
             val liveConversation = selectedCardId?.takeIf { cardId ->
@@ -793,6 +820,12 @@ class DieterViewModel internal constructor(
                 acceptedOutboxIds = connection.acceptedOutboxIds,
                 failedOutboxIds = connection.failedOutboxIds,
                 machineOutboxSummaries = connection.machineOutboxSummaries,
+                selectedMachineId = if (gatewayChanged) null else current.selectedMachineId?.takeIf(liveMachineIds::contains),
+                machineInformation = if (gatewayChanged) emptyMap() else current.machineInformation.filterKeys(liveMachineIds::contains),
+                machineInformationLoading = if (gatewayChanged) emptySet() else current.machineInformationLoading.intersect(liveMachineIds),
+                machineInformationErrors = if (gatewayChanged) emptyMap() else current.machineInformationErrors.filterKeys(liveMachineIds::contains),
+                machineCpuHistory = if (gatewayChanged) emptyMap() else current.machineCpuHistory.filterKeys(liveMachineIds::contains),
+                machineGpuHistory = if (gatewayChanged) emptyMap() else current.machineGpuHistory.filterKeys(liveMachineIds::contains),
             )
         }
         val resolvedSelectedCardId = _state.value.selectedCardId
@@ -1056,6 +1089,11 @@ class DieterViewModel internal constructor(
     fun navigate(destination: Destination) {
         rememberConversation()
         if (destination != Destination.TERMINALS) stopTerminalWatch()
+        if (destination != Destination.MACHINES) {
+            stopMachineTelemetry()
+            machineListRefreshJob?.cancel()
+            machineListRefreshJob = null
+        }
         resetWorkspaceReview(null)
         _state.update {
             it.copy(
@@ -1067,6 +1105,7 @@ class DieterViewModel internal constructor(
                 conversation = null,
                 olderMessages = emptyList(),
                 fileDocument = null,
+                selectedMachineId = if (destination == Destination.MACHINES) it.selectedMachineId else null,
                 projectFilesMode = if (destination == Destination.FILES) "browse" else it.projectFilesMode,
                 boardOverviewVisible = if (destination == Destination.BOARD) true else it.boardOverviewVisible,
             )
@@ -1077,8 +1116,198 @@ class DieterViewModel internal constructor(
             Destination.FILES -> viewModelScope.launch { loadFiles() }
             Destination.SCHEDULES -> viewModelScope.launch { loadSchedules() }
             Destination.SCREENS -> Unit
+            Destination.MACHINES -> refreshMachines()
             Destination.TERMINALS -> loadTerminals()
             Destination.ACTIVITY, Destination.BOARD -> refreshSpaces()
+        }
+    }
+
+    fun refreshMachines() {
+        connectionManager.refreshProjectDirectory()
+        val machineIds = _state.value.presentedEndpointConnections
+            .filter { it.daemonId != null && it.online && it.apiVersion == DIETER_API_VERSION }
+            .map(EndpointConnection::id)
+        machineListRefreshJob?.cancel()
+        if (machineIds.isEmpty()) return
+        machineListRefreshJob = viewModelScope.launch {
+            val permits = Semaphore(4)
+            coroutineScope {
+                machineIds.map { machineId ->
+                    async { permits.withPermit { fetchMachineInformation(machineId) } }
+                }.forEach { it.await() }
+            }
+        }
+    }
+
+    fun selectMachine(machineId: String) {
+        val machine = _state.value.presentedEndpointConnections.firstOrNull { it.id == machineId } ?: return
+        val unavailable = machineUnavailableMessage(machine)
+        _state.update {
+            it.copy(
+                selectedMachineId = machineId,
+                machineInformationErrors = if (unavailable == null) {
+                    it.machineInformationErrors - machineId
+                } else {
+                    it.machineInformationErrors + (machineId to unavailable)
+                },
+                machineOperationMessage = null,
+            )
+        }
+        stopMachineTelemetry()
+        if (unavailable == null) {
+            viewModelScope.launch { fetchMachineInformation(machineId) }
+            startMachineTelemetry(machineId)
+        }
+    }
+
+    fun closeMachine() {
+        stopMachineTelemetry()
+        _state.update { it.copy(selectedMachineId = null, machineOperationMessage = null) }
+    }
+
+    fun refreshSelectedMachineInformation() {
+        val machineId = _state.value.selectedMachineId ?: return
+        val machine = _state.value.presentedEndpointConnections.firstOrNull { it.id == machineId }
+        if (machine == null) {
+            _state.update {
+                it.copy(machineInformationErrors = it.machineInformationErrors + (machineId to "This machine is no longer enrolled."))
+            }
+            return
+        }
+        val unavailable = machineUnavailableMessage(machine)
+        if (unavailable != null) {
+            _state.update {
+                it.copy(machineInformationErrors = it.machineInformationErrors + (machineId to unavailable))
+            }
+            return
+        }
+        viewModelScope.launch { fetchMachineInformation(machineId) }
+    }
+
+    fun performMachineOperation(action: MachineOperationAction, confirmation: String) {
+        val machineId = _state.value.selectedMachineId ?: return
+        if (_state.value.machineOperationInFlight) return
+        _state.update { it.copy(machineOperationInFlight = true, machineOperationMessage = null) }
+        viewModelScope.launch {
+            try {
+                val response = repository.performMachineOperationOn(
+                    machineId,
+                    MachineOperationRequest.newBuilder()
+                        .setAction(action)
+                        .setConfirmation(confirmation)
+                        .setIdempotencyKey(UUID.randomUUID().toString())
+                        .build(),
+                )
+                _state.update {
+                    it.copy(
+                        machineOperationInFlight = false,
+                        machineOperationMessage = response.message.ifBlank { "Machine operation accepted." },
+                    )
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Throwable) {
+                _state.update {
+                    it.copy(
+                        machineOperationInFlight = false,
+                        machineOperationMessage = readableError(error),
+                    )
+                }
+            }
+        }
+    }
+
+    fun dismissMachineOperationMessage() {
+        _state.update { it.copy(machineOperationMessage = null) }
+    }
+
+    fun openMachineTerminals(machineId: String) {
+        val machine = _state.value.presentedEndpointConnections.firstOrNull { it.id == machineId }
+        if (machine == null) {
+            _state.update { it.copy(machineOperationMessage = "This machine is no longer enrolled.") }
+            return
+        }
+        val unavailable = machineUnavailableMessage(machine)
+        if (unavailable != null) {
+            _state.update {
+                it.copy(machineOperationMessage = unavailable)
+            }
+            return
+        }
+        viewModelScope.launch {
+            try {
+                connectionManager.ensureMachineRoute(machineId)
+                navigate(Destination.TERMINALS)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Throwable) {
+                _state.update { it.copy(machineOperationMessage = readableError(error)) }
+            }
+        }
+    }
+
+    private fun startMachineTelemetry(machineId: String) {
+        machineTelemetryJob?.cancel()
+        if (!foreground) return
+        machineTelemetryJob = viewModelScope.launch {
+            while (_state.value.destination == Destination.MACHINES && _state.value.selectedMachineId == machineId) {
+                delay(2_000)
+                val machine = _state.value.presentedEndpointConnections.firstOrNull { it.id == machineId }
+                if (machine?.online == true && machine.apiVersion == DIETER_API_VERSION) {
+                    fetchMachineInformation(machineId)
+                }
+            }
+        }
+    }
+
+    private fun stopMachineTelemetry() {
+        machineTelemetryJob?.cancel()
+        machineTelemetryJob = null
+    }
+
+    private fun machineUnavailableMessage(machine: EndpointConnection): String? = when {
+        !machine.online -> "${machine.label} is offline."
+        machine.apiVersion != DIETER_API_VERSION ->
+            "Dieter API ${machine.apiVersion.ifBlank { "unknown" }} is incompatible; Android requires $DIETER_API_VERSION."
+        else -> null
+    }
+
+    private suspend fun fetchMachineInformation(machineId: String) {
+        if (_state.value.machineInformationLoading.contains(machineId)) return
+        _state.update {
+            it.copy(
+                machineInformationLoading = it.machineInformationLoading + machineId,
+                machineInformationErrors = it.machineInformationErrors - machineId,
+            )
+        }
+        try {
+            val information = repository.machineInformationOn(machineId)
+            _state.update { current ->
+                val cpuHistory = (current.machineCpuHistory[machineId].orEmpty() + information.cpuUsagePercent).takeLast(12)
+                val gpuHistory = current.machineGpuHistory[machineId].orEmpty().toMutableMap()
+                val liveGpuIds = information.gpu.devicesList.mapTo(hashSetOf()) { it.id }
+                gpuHistory.keys.retainAll(liveGpuIds)
+                information.gpu.devicesList.filter { it.hasUtilizationPercent() }.forEach { gpu ->
+                    gpuHistory[gpu.id] = (gpuHistory[gpu.id].orEmpty() + gpu.utilizationPercent).takeLast(12)
+                }
+                current.copy(
+                    machineInformation = current.machineInformation + (machineId to information),
+                    machineInformationLoading = current.machineInformationLoading - machineId,
+                    machineInformationErrors = current.machineInformationErrors - machineId,
+                    machineCpuHistory = current.machineCpuHistory + (machineId to cpuHistory),
+                    machineGpuHistory = current.machineGpuHistory + (machineId to gpuHistory),
+                )
+            }
+        } catch (cancelled: CancellationException) {
+            _state.update { it.copy(machineInformationLoading = it.machineInformationLoading - machineId) }
+            throw cancelled
+        } catch (error: Throwable) {
+            _state.update {
+                it.copy(
+                    machineInformationLoading = it.machineInformationLoading - machineId,
+                    machineInformationErrors = it.machineInformationErrors + (machineId to readableError(error)),
+                )
+            }
         }
     }
 

@@ -17,6 +17,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.outlined.Timeline
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
+import androidx.compose.material.icons.outlined.Computer
 import androidx.compose.material.icons.outlined.DesktopWindows
 import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
@@ -61,6 +62,7 @@ internal val primaryNavigationItems = listOf(
 )
 
 private val toolNavigationItems = listOf(
+    NavItem(Destination.MACHINES, "Machines", Icons.Outlined.Computer),
     NavItem(Destination.TERMINALS, "Terminal", Icons.Outlined.Terminal),
     NavItem(Destination.FILES, "Files", Icons.Outlined.FolderOpen),
     NavItem(Destination.SCHEDULES, "Schedules", Icons.Outlined.CalendarMonth),
@@ -125,7 +127,7 @@ internal fun DieterNavigationRail(
     onCreate: () -> Unit,
 ) {
     NavigationRail(containerColor = DieterSurface) {
-        if (selected != Destination.SCREENS) {
+        if (selected != Destination.SCREENS && selected != Destination.MACHINES) {
             Surface(
                 onClick = onCreate,
                 color = DieterShell,

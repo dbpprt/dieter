@@ -355,6 +355,10 @@ app-stop:
 screens-test:
     ANDROID_SERIAL="{{ serial }}" ANDROID_HOME="{{ sdk }}" JAVA_HOME="{{ java }}" scripts/test-android-screens.sh
 
+# Exercise the Machines fleet, telemetry, and fixture-only operation journey.
+machines-test:
+    ANDROID_SERIAL="{{ serial }}" ANDROID_HOME="{{ sdk }}" JAVA_HOME="{{ java }}" python3 {{ app_root }}/scripts/test-machines.py
+
 # Run all connected tests, or one fully qualified test class.
 connected-test class="":
     #!/usr/bin/env bash

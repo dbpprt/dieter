@@ -56,6 +56,9 @@ import com.dbpprt.dieter.v1.ListFilesRequest
 import com.dbpprt.dieter.v1.ListScheduleRunsRequest
 import com.dbpprt.dieter.v1.ListSchedulesRequest
 import com.dbpprt.dieter.v1.ListTerminalsRequest
+import com.dbpprt.dieter.v1.MachineInformation
+import com.dbpprt.dieter.v1.MachineOperationRequest
+import com.dbpprt.dieter.v1.MachineOperationResponse
 import com.dbpprt.dieter.v1.AddChangeCommentRequest
 import com.dbpprt.dieter.v1.ChangeComment
 import com.dbpprt.dieter.v1.ChangeCommentsResponse
@@ -257,6 +260,12 @@ interface DieterRepository {
     suspend fun settings(): Settings
     suspend fun settingsOptions(): SettingsOptions
     suspend fun updateSettings(settings: Settings): Settings
+
+    suspend fun machineInformationOn(endpointId: String): MachineInformation
+    suspend fun performMachineOperationOn(
+        endpointId: String,
+        request: MachineOperationRequest,
+    ): MachineOperationResponse
 
     suspend fun listDirectories(path: String = ""): DirectoryListing
     suspend fun listDirectoriesOn(endpointId: String, path: String = ""): DirectoryListing
@@ -921,6 +930,16 @@ class GrpcDieterRepository(context: Context) : DieterRepository {
     override suspend fun updateSettings(settings: Settings): Settings = unary().updateSettings(
         UpdateSettingsRequest.newBuilder().setSettings(settings).build(),
     )
+
+    override suspend fun machineInformationOn(endpointId: String): MachineInformation =
+        withMachine(endpointId) { getMachineInformation(Empty.getDefaultInstance()) }
+
+    override suspend fun performMachineOperationOn(
+        endpointId: String,
+        request: MachineOperationRequest,
+    ): MachineOperationResponse = withMachine(endpointId, deadlineSeconds = 60) {
+        performMachineOperation(request)
+    }
 
     override suspend fun listDirectories(path: String): DirectoryListing = unary().listDirectories(
         ListDirectoriesRequest.newBuilder().setPath(path).build(),

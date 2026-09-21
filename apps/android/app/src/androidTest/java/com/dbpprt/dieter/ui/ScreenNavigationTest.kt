@@ -41,7 +41,7 @@ class ScreenNavigationTest {
         compose.runOnIdle { assertEquals(Destination.BOARD, selected) }
         compose.onNodeWithTag("nav-tools").assertIsDisplayed().performClick()
         compose.runOnIdle { assertTrue(toolsOpened) }
-        listOf("Terminal", "Files", "Schedules", "Screens", "Settings", "Worktrees").forEach {
+        listOf("Machines", "Terminal", "Files", "Schedules", "Screens", "Settings", "Worktrees").forEach {
             compose.onNodeWithText(it).assertDoesNotExist()
         }
     }
@@ -62,7 +62,7 @@ class ScreenNavigationTest {
         }
 
         (primaryNavigationItems.map { it.destination } +
-            listOf(Destination.TERMINALS, Destination.FILES, Destination.SCHEDULES, Destination.SCREENS)).forEach {
+            listOf(Destination.MACHINES, Destination.TERMINALS, Destination.FILES, Destination.SCHEDULES, Destination.SCREENS)).forEach {
             compose.onNodeWithTag("nav-${it.name.lowercase()}").assertIsDisplayed().assertIsEnabled().performClick()
             compose.runOnIdle { assertEquals(it, selected) }
         }
@@ -87,6 +87,7 @@ class ScreenNavigationTest {
         compose.onNodeWithTag("nav-files").assertIsNotEnabled()
         compose.onNodeWithTag("nav-schedules").assertIsNotEnabled()
         compose.onNodeWithTag("nav-terminals").assertIsEnabled()
+        compose.onNodeWithTag("nav-machines").assertIsEnabled()
         compose.onNodeWithTag("nav-screens").assertIsEnabled()
     }
 
@@ -104,7 +105,7 @@ class ScreenNavigationTest {
                 )
             }
         }
-        listOf(Destination.TERMINALS, Destination.FILES, Destination.SCHEDULES, Destination.SCREENS).forEach {
+        listOf(Destination.MACHINES, Destination.TERMINALS, Destination.FILES, Destination.SCHEDULES, Destination.SCREENS).forEach {
             compose.onNodeWithTag("tool-${it.name.lowercase()}").assertIsDisplayed().assertIsEnabled().performClick()
             compose.runOnIdle { assertEquals(it, selected) }
         }
@@ -130,6 +131,8 @@ class ScreenNavigationTest {
         compose.onNodeWithTag("tool-files").assertIsNotEnabled().performClick()
         compose.onNodeWithTag("tool-schedules").assertIsNotEnabled().performClick()
         compose.runOnIdle { assertEquals(null, selected) }
+        compose.onNodeWithTag("tool-machines").assertIsEnabled().performClick()
+        compose.runOnIdle { assertEquals(Destination.MACHINES, selected) }
         compose.onNodeWithTag("tool-screens").assertIsEnabled().performClick()
         compose.runOnIdle { assertEquals(Destination.SCREENS, selected) }
         compose.onNodeWithTag("tool-terminals").assertIsEnabled().performClick()
