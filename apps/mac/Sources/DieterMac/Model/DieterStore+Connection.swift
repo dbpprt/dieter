@@ -1375,14 +1375,14 @@ extension DieterStore {
             ?? machine.gatewayEndpoint
         let gatewayAccessToken = await accessToken(for: origin)
         return try await connections.temporaryLease(target: machine, accessToken: gatewayAccessToken) {
-            let gateway = try environment.clients.client(
+            let gateway = try self.environment.clients.client(
                 endpoint: origin, accessToken: gatewayAccessToken)
             let gatewayTask = Task { try? await gateway.run() }
             defer {
                 gatewayTask.cancel()
                 gateway.shutdown()
             }
-            return try await selectDataPlane(
+            return try await self.selectDataPlane(
                 gateway: gateway, target: machine, gatewayAccessToken: gatewayAccessToken,
                 directCandidateScope: .loopbackOnly, refreshDirectToken: true
             )
