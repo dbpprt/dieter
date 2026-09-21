@@ -82,7 +82,7 @@ func runDaemonCLI(t *testing.T, client *CLI, output *bytes.Buffer, args ...strin
 
 func TestDaemonCLIControlsLocalDaemonEndToEnd(t *testing.T) {
 	t.Setenv("DIETER_ENABLE_MOCK_HARNESS", "1")
-	client, output, _ := daemonCLIForTest(t)
+	client, output, data := daemonCLIForTest(t)
 	repository := initTestRepository(t, "first")
 	createdJSON := runDaemonCLI(t, client, output, "project", "open", "--name", "CLI fixture", "--format", "json", repository)
 	var created struct {
@@ -109,11 +109,30 @@ func TestDaemonCLIControlsLocalDaemonEndToEnd(t *testing.T) {
 	cardJSON := runDaemonCLI(t, client, output, "card", "create", "--project", created.Project.ID, "--board", created.Board.ID, "--lane", "todo", "--title", "Daemon parity", "--prompt", "Exercise the API", "--workspace", "project", "--provider", "mock", "--model", "mock")
 	var card struct {
 		ID                  string `json:"id"`
+		OwnerDaemonID       string `json:"ownerDaemonId"`
+		CheckoutID          string `json:"checkoutId"`
 		WorkspaceBaseRemote string `json:"workspaceBaseRemote"`
 		RemotePublishMode   string `json:"remotePublishMode"`
 	}
 	if err := json.Unmarshal([]byte(cardJSON), &card); err != nil || card.ID == "" || card.WorkspaceBaseRemote != "private" || card.RemotePublishMode != "pull_request" {
 		t.Fatalf("created card JSON=%q err=%v", cardJSON, err)
+	}
+	localProject, err := data.ResolveProject(created.Project.ID)
+	if err != nil || len(localProject.Checkouts) != 1 {
+		t.Fatalf("local project=%+v err=%v", localProject, err)
+	}
+	localCheckout := localProject.Checkouts[0]
+	if card.OwnerDaemonID != localCheckout.DaemonID || card.CheckoutID != localCheckout.ID {
+		t.Fatalf("card owner=%q checkout=%q, want local owner=%q checkout=%q", card.OwnerDaemonID, card.CheckoutID, localCheckout.DaemonID, localCheckout.ID)
+	}
+	chatJSON := runDaemonCLI(t, client, output, "chat", "create", "--project", created.Project.ID, "--title", "Local chat", "--prompt", "Use this machine", "--workspace", "project", "--provider", "mock", "--model", "mock")
+	var chat struct {
+		ID            string `json:"id"`
+		OwnerDaemonID string `json:"ownerDaemonId"`
+		CheckoutID    string `json:"checkoutId"`
+	}
+	if err := json.Unmarshal([]byte(chatJSON), &chat); err != nil || chat.ID == "" || chat.OwnerDaemonID != localCheckout.DaemonID || chat.CheckoutID != localCheckout.ID {
+		t.Fatalf("created local chat JSON=%q parsed=%#v err=%v", chatJSON, chat, err)
 	}
 	quickJSON := runDaemonCLI(t, client, output, "card", "create", "--project", created.Project.ID, "--board", created.Board.ID, "--lane", "todo", "--auto-title", "--prompt", "Add keyboard navigation", "--workspace", "project", "--provider", "mock", "--model", "mock")
 	var quick struct {

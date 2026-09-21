@@ -1402,9 +1402,13 @@ for explicit resolution. No project content is stored on the gateway. Separate
 conversations have no configurable parallel-session caps; each conversation still
 has at most one active turn.
 
-Use `project attach`, `project checkouts`, `project detach`, and `project consolidate`;
-use `--checkout` with machine-local project operations. `card move --after/--before`
-uses stable neighbor IDs. `peer status` reports the last completed peer exchange.
+Use `project attach`, `project checkouts`, `project detach`, and `project consolidate`.
+Without global `--machine`, `card create` and `chat create` use a checkout on the
+local daemon; pass global `--machine ID|NAME` to create on another machine.
+`--checkout` only disambiguates multiple checkouts on that targeted machine and
+never redirects creation to a different owner. Use `--checkout` with other
+machine-local project operations. `card move --after/--before` uses stable neighbor
+IDs. `peer status` reports the last completed peer exchange.
 The pre-release baseline supports only application contract 1. Unsupported
 development stores require a fresh `DIETER_HOME`; there is no import or migration
 command. Existing directories are never converted automatically. See the

@@ -1338,11 +1338,15 @@
                 destinationGroups.filter {
                     $0.destinations.contains { $0.project.name == project.name }
                 }.count >= 2
+            let hasSeparateDestinationInputs =
+                NativeUIAccessibility.find("chats.new.machine", in: window) != nil
+                && NativeUIAccessibility.find("chats.new.project", in: window) != nil
             results["13g-new-chat-projects-grouped-by-machine"] =
                 duplicateNamesAreGrouped
                     && duplicateDestination?.title == "\(project.name) · Smoke remote Mac"
+                    && hasSeparateDestinationInputs
                 ? "passed"
-                : "failed: groups=\(destinationGroups.map(\.title)), selection=\(duplicateDestination?.title ?? "none")"
+                : "failed: groups=\(destinationGroups.map(\.title)), selection=\(duplicateDestination?.title ?? "none"), separateInputs=\(hasSeparateDestinationInputs)"
             await captureAppearances(window, named: "13g-new-chat-project-machine.png", in: output)
             store.projectDirectory[project.id] = savedProject
             store.creationCheckoutIDs.removeValue(forKey: project.id)

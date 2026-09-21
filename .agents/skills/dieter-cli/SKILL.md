@@ -228,6 +228,11 @@ dieter card create --project <project-id> --board <board-id> \
 registers the current Git working tree, and it does not accept project paths.
 Register each project explicitly with `dieter project open PATH` after setup.
 
+`card create` and `chat create` use the running local daemon when global
+`--machine` is omitted. Pass global `--machine ID|NAME` before the command to
+create on another enrolled machine. `--checkout` selects among checkouts on the
+already targeted machine; it never redirects creation to another checkout owner.
+
 Harness-defined options use repeatable `--provider-option KEY=VALUE` flags.
 For example, Codex chats and tasks using GPT-5.4, GPT-5.5, GPT-5.6, or GPT-6
 Astra can select Fast mode with `--provider-option fast_mode=true`; schedules

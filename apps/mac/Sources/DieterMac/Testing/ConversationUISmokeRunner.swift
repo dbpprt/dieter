@@ -803,7 +803,10 @@
                 let columnFrame = window.convertToScreen(column.convert(column.bounds, to: nil))
                 var failures: [String] = []
                 var frames: [String: CGRect] = [:]
-                var names = ["prompt", "attach", "provider", "model", "send", "project", "workspace", "destination"]
+                var names = [
+                    "prompt", "attach", "provider", "model", "send", "machine", "project", "workspace",
+                    "destination",
+                ]
                 for optional in ["reasoning", "fast-mode", "additional-options"] {
                     if NativeUIAccessibility.find("chats.new.\(optional)", in: window) != nil { names.append(optional) }
                 }
@@ -821,7 +824,9 @@
                     }
                     frames[identifier] = frame
                 }
-                let contextual = Set(["chats.new.project", "chats.new.workspace", "chats.new.destination"])
+                let contextual = Set([
+                    "chats.new.machine", "chats.new.project", "chats.new.workspace", "chats.new.destination",
+                ])
                 let toolbar = frames.filter { !contextual.contains($0.key) && $0.key != "chats.new.prompt" }
                 let ordered = toolbar.values.sorted { $0.minX < $1.minX }
                 let centers = ordered.map(\.midY)
