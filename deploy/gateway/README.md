@@ -117,6 +117,36 @@ run on the backup owner. Keep recovery credentials outside the VPS. RPO/RTO clai
 require a measured restore, and legacy retirement requires its recorded observation
 and rollback windows.
 
+`scripts/recover.py SNAPSHOT` inspects an already decrypted recovery point.
+Recovery must run through independent administrative root access on an empty
+Debian destination with Docker and the pinned Compose plugin installed. Preserve
+the original origin/IP/DNS, prepare its firewall and restore the backup receiver
+route before external acceptance. The restricted deployment key cannot restore
+production data.
+
+```sh
+python3 scripts/recover.py /protected/exact-snapshot
+python3 scripts/recover.py /protected/exact-snapshot --operation recovery-ID \
+  --expected-ca RETAINED_CA_SHA256 --acknowledge-loss-after EXACT_CREATED_AT \
+  --confirm-host EMPTY_DESTINATION_HOSTNAME --activate
+```
+
+The exact timestamp declares the possible loss of newer sessions/enrollments.
+Existing application paths, installed host policy, a controller, named state
+volume or running project cause rejection before installation. Cold validation
+starts a cloned gateway with no network. Recovery then restores images by their
+archived image IDs, configuration, certificates, UID/GID 100:101 state and units.
+It validates every bind source and never fabricates an omitted legacy file.
+It does not enable backup/certificate timers until their external dependencies
+have been retested. Partial failure is recorded and never erased or silently
+overwritten on retry. Inspect the protected recovery record before intervention.
+
+With `--activate`, services start and local identity/liveness are checked. The
+result remains `active-awaiting-external-verification`: use the existing enrolled
+client to verify gateway/directory/daemon access and all selected TURN transports
+before recording recovery acceptance. A fast restore inside an already provisioned
+fixture is not a measured bare-host provisioning or production RTO guarantee.
+
 ## Validation
 
 ```sh
