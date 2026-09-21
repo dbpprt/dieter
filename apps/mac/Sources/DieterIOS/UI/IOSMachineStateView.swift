@@ -7,13 +7,11 @@
     @MainActor
     struct IOSMachineStateView: View {
         @Bindable var store: IOSStore
-        let backAction: (() -> Void)?
 
-        private var machine: DieterEndpoint? { store.selectedMachine }
-
-        init(store: IOSStore, backAction: (() -> Void)? = nil) {
-            self.store = store
-            self.backAction = backAction
+        private var machine: DieterEndpoint? { store.utilityMachine }
+        private var routeDescription: String {
+            guard let id = machine?.daemonID else { return "" }
+            return store.machineRouteDescriptions[id] ?? ""
         }
 
         var body: some View {
@@ -58,14 +56,23 @@
             }
             .navigationTitle("Machine state")
             .navigationBarTitleDisplayMode(.inline)
-            .navigationBarBackButtonHidden(backAction != nil)
             .accessibilityIdentifier("ios.machine-state")
             .toolbar {
-                if let backAction {
-                    ToolbarItem(placement: .topBarLeading) {
-                        Button("Back", systemImage: "chevron.left", action: backAction)
-                            .accessibilityIdentifier("ios.machine-state.back")
+                ToolbarItem(placement: .topBarTrailing) {
+                    Menu(machine?.name ?? "Machine", systemImage: "desktopcomputer") {
+                        ForEach(store.supportedMachines) { candidate in
+                            Button {
+                                store.selectUtilityMachine(id: candidate.daemonID ?? candidate.id)
+                            } label: {
+                                Label(
+                                    candidate.name + (candidate.online ? "" : " · Offline"),
+                                    systemImage: candidate.daemonID == store.utilityMachineID
+                                        ? "checkmark" : "desktopcomputer")
+                            }
+                            .accessibilityIdentifier("ios.machine-state.machine.\(candidate.daemonID ?? candidate.id)")
+                        }
                     }
+                    .accessibilityIdentifier("ios.machine-state.machine-picker")
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     if store.machineInformationLoading {
@@ -107,8 +114,8 @@
                     }
                     .font(.subheadline.weight(.medium))
                     .foregroundStyle(.secondary)
-                    if !store.routeDescription.isEmpty {
-                        Label(store.routeDescription, systemImage: "network")
+                    if !routeDescription.isEmpty {
+                        Label(routeDescription, systemImage: "network")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .accessibilityIdentifier("ios.machine-state.route")
@@ -375,18 +382,4 @@
         }
     }
 
-    struct IOSMachineStatePlaceholderView: View {
-        let open: () -> Void
-
-        var body: some View {
-            ContentUnavailableView {
-                Label("Machine state", systemImage: "gauge.with.dots.needle.67percent")
-            } description: {
-                Text("Inspect live CPU, memory, storage, GPU, software, and Dieter process state.")
-            } actions: {
-                Button("Open Machine State", action: open).buttonStyle(.borderedProminent)
-            }
-            .navigationTitle("Machine state")
-        }
-    }
 #endif

@@ -12,28 +12,29 @@
         }
 
         var body: some View {
-            if !groups.isEmpty || store.providerQuotasLoading {
-                Button {
-                    presented = true
-                } label: {
-                    if groups.isEmpty {
-                        ProgressView().controlSize(.mini)
-                    } else {
-                        HStack(spacing: 7) {
-                            ForEach(groups, id: \.provider.rawValue) { group in
-                                IOSProviderQuotaCompactLabel(group: group)
-                            }
+            Button {
+                presented = true
+            } label: {
+                if groups.isEmpty, store.providerQuotasLoading {
+                    ProgressView().controlSize(.mini)
+                } else if groups.isEmpty {
+                    Image(systemName: "chart.bar.xaxis")
+                        .foregroundStyle(.secondary)
+                } else {
+                    HStack(spacing: 7) {
+                        ForEach(groups, id: \.provider.rawValue) { group in
+                            IOSProviderQuotaCompactLabel(group: group)
                         }
                     }
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Provider quotas")
-                .accessibilityIdentifier("ios.provider-quotas")
-                .sheet(isPresented: $presented) {
-                    IOSProviderQuotaDetailsView(store: store)
-                        .presentationDetents([.medium, .large])
-                        .presentationDragIndicator(.visible)
-                }
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Provider quotas")
+            .accessibilityIdentifier("ios.provider-quotas")
+            .sheet(isPresented: $presented) {
+                IOSProviderQuotaDetailsView(store: store)
+                    .presentationDetents([.medium, .large])
+                    .presentationDragIndicator(.visible)
             }
         }
     }
@@ -188,9 +189,11 @@
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) {
                         Button("Done") { dismiss() }
+                            .accessibilityIdentifier("ios.provider-quotas.done")
                     }
                 }
             }
+            .accessibilityIdentifier("ios.provider-quotas.details")
             .task {
                 if store.providerQuotaGroups.isEmpty { await store.loadProviderQuotas() }
             }

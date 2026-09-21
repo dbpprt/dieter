@@ -11,6 +11,7 @@
         @State private var selectedTaskID: String?
         @State private var preferredColumn: NavigationSplitViewColumn = .sidebar
         @State private var settingsPresented = false
+        @State private var machineStatePresented = false
         @State private var createPresentation: IOSCreateTaskPresentation?
         @State private var pendingShareRequest: IOSShareInbox.Request?
         @State private var loadingShareID: String?
@@ -85,9 +86,6 @@
                 if destination == .screens {
                     IOSScreensPlaceholderView { preferredColumn = .detail }
                         .navigationSplitViewColumnWidth(min: 280, ideal: 350, max: 480)
-                } else if destination == .machine {
-                    IOSMachineStatePlaceholderView { preferredColumn = .detail }
-                        .navigationSplitViewColumnWidth(min: 280, ideal: 350, max: 480)
                 } else {
                     IOSTaskListView(
                         store: store, destination: destination ?? .allTasks, selectedTaskID: $selectedTaskID,
@@ -101,19 +99,13 @@
                         destination = nil
                         preferredColumn = .sidebar
                     }
-                    .id(store.selectedMachine?.daemonID ?? "")
-                } else if destination == .machine {
-                    IOSMachineStateView(store: store) {
-                        destination = nil
-                        preferredColumn = .sidebar
-                    }
-                    .id(store.selectedMachine?.daemonID ?? "")
+                    .id(store.utilityMachine?.daemonID ?? "")
                 } else if let id = selectedTaskID {
                     IOSConversationView(
                         store: store, cardID: id, draft: draftBinding(for: id),
                         browseFiles: { openFiles(for: store.selectedCard?.card) }
                     )
-                    .id((store.selectedMachine?.id ?? "") + ":" + id)
+                    .id(id)
                 } else {
                     ContentUnavailableView(
                         "Choose a task", systemImage: "bubble.left.and.bubble.right",
@@ -123,6 +115,19 @@
             .accessibilityIdentifier("ios.workspace")
             .sheet(isPresented: $settingsPresented) {
                 NavigationStack { IOSSettingsView(store: store) }
+            }
+            .sheet(isPresented: $machineStatePresented) {
+                NavigationStack {
+                    IOSMachineStateView(store: store)
+                        .toolbar {
+                            ToolbarItem(placement: .confirmationAction) {
+                                Button("Done") { machineStatePresented = false }
+                                    .accessibilityIdentifier("ios.machine-state.done")
+                            }
+                        }
+                }
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
             }
             .sheet(item: $createPresentation) { presentation in
                 IOSCreateTaskView(
@@ -151,7 +156,7 @@
                     selectedTaskID = nil
                     store.closeConversation()
                 }
-                if destination == .screens || destination == .machine { preferredColumn = .detail }
+                if destination == .screens { preferredColumn = .detail }
             }
             .onChange(of: selectedTaskID) { _, id in
                 if id != nil { preferredColumn = .detail } else { store.closeConversation() }
@@ -160,21 +165,14 @@
 
         private var sidebar: some View {
             List(selection: $destination) {
-                Section {
-                    machinePicker
-                    if !store.phase.isConnected {
+                if !store.phase.isConnected {
+                    Section {
                         IOSConnectionBanner(title: store.phase.label, detail: "Reconnect to continue working.") {
                             Task { await store.reconnect() }
-                        }
-                        .listRowInsets(EdgeInsets())
+                        }.listRowInsets(EdgeInsets())
                     }
                 }
                 Section {
-                    NavigationLink(value: IOSWorkspaceDestination.machine) {
-                        Label("Machine state", systemImage: "gauge.with.dots.needle.67percent")
-                    }
-                    .disabled(store.selectedMachine == nil)
-                    .accessibilityIdentifier("ios.machine-state.open")
                     NavigationLink(value: IOSWorkspaceDestination.allTasks) {
                         Label("All tasks", systemImage: "square.grid.2x2")
                     }
@@ -202,7 +200,7 @@
                         .contextMenu {
                             Menu("Browse files", systemImage: "folder") {
                                 ForEach(project.checkouts.filter { !$0.detached }, id: \.id) { checkout in
-                                    let machine = store.machines.first { $0.daemonID == checkout.daemonID }
+                                    let machine = store.supportedMachines.first { $0.daemonID == checkout.daemonID }
                                     Button("\(machine?.name ?? checkout.daemonID) · \(checkout.name)") {
                                         openProjectFiles(project, checkout: checkout)
                                     }.disabled(machine?.online != true)
@@ -223,53 +221,25 @@
             .navigationTitle("Dieter")
             .accessibilityIdentifier("ios.sidebar")
             .refreshable {
-                await store.refreshMachines(); await store.reconnect()
+                await store.refreshMachines()
             }
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("Settings", systemImage: "gearshape") { settingsPresented = true }
                         .accessibilityIdentifier("ios.settings")
                 }
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItemGroup(placement: .topBarTrailing) {
+                    IOSProviderQuotaCompactView(store: store)
+                    Button("Machine state", systemImage: "gauge.with.dots.needle.67percent") {
+                        machineStatePresented = true
+                    }
+                    .disabled(store.supportedMachines.isEmpty)
+                    .accessibilityIdentifier("ios.machine-state.open")
                     Button("New task", systemImage: "square.and.pencil", action: presentTaskCreation)
                         .disabled(!store.phase.isConnected || store.projects.isEmpty)
                         .accessibilityIdentifier("ios.new-task")
                 }
             }
-        }
-
-        private var machinePicker: some View {
-            Menu {
-                ForEach(store.machines) { machine in
-                    Button {
-                        Task { await store.selectMachine(id: machine.daemonID ?? machine.id) }
-                    } label: {
-                        Label(
-                            machine.name + (machine.online ? "" : " · Offline"),
-                            systemImage: (machine.daemonID ?? machine.id) == store.selectedMachineID
-                                ? "checkmark" : "desktopcomputer")
-                    }
-                    .accessibilityIdentifier("ios.machine.\(machine.daemonID ?? machine.id)")
-                }
-                Divider()
-                Button("Refresh machines", systemImage: "arrow.clockwise") {
-                    Task { await store.refreshMachines() }
-                }
-            } label: {
-                HStack(spacing: 10) {
-                    Image(systemName: "desktopcomputer").font(.title3).foregroundStyle(.tint)
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(store.selectedMachine?.name ?? "Choose a machine")
-                            .font(.headline).foregroundStyle(.primary).lineLimit(2)
-                        Text(store.routeDescription.isEmpty ? store.phase.label : store.routeDescription)
-                            .font(.caption).foregroundStyle(.secondary).lineLimit(2)
-                    }
-                    Spacer(minLength: 0)
-                    Image(systemName: "chevron.up.chevron.down").font(.caption).foregroundStyle(.secondary)
-                }
-                .padding(.vertical, 4)
-            }
-            .accessibilityIdentifier("ios.machine-picker")
         }
 
         private var selectedProjectID: String {
@@ -295,7 +265,7 @@
                 return false
             }
             switch request.destination {
-            case .newTask: return !store.projects.isEmpty && !store.harnesses.isEmpty
+            case .newTask: return !store.projects.isEmpty
             case .task, .chat: return true
             }
         }
@@ -365,14 +335,13 @@
         }
 
         private func draftKey(for cardID: String) -> String {
-            (store.selectedMachine?.id ?? "") + ":" + cardID
+            let owner = (store.cards + store.chats).first { $0.id == cardID }?.ownerDaemonID ?? ""
+            return owner + ":" + cardID
         }
 
         private var selectedTaskBelongsToDestination: Bool {
             guard let selectedTaskID, let destination else { return false }
             switch destination {
-            case .machine:
-                return false
             case .allTasks:
                 return store.cards.contains { $0.id == selectedTaskID }
             case .chats:
@@ -478,7 +447,6 @@
 
         private var title: String {
             switch destination {
-            case .machine: "Machine state"
             case .allTasks: "All tasks"
             case .chats: "Chats"
             case .screens: "Screens"
@@ -494,7 +462,7 @@
                 switch destination {
                 case let .project(id): if card.projectID != id { return false }
                 case let .board(id): if card.boardID != id { return false }
-                case .machine, .screens: return false
+                case .screens: return false
                 default: break
                 }
                 return (lane.isEmpty || destination == .chats || card.lane == lane)
@@ -510,7 +478,9 @@
                         IOSTaskRow(
                             card: card, projectName: store.projects.first { $0.id == card.projectID }?.name,
                             machineName: store.machines.first { $0.daemonID == card.ownerDaemonID }?.name,
-                            machineOnline: store.machines.first { $0.daemonID == card.ownerDaemonID }?.online == true)
+                            machineOnline: store.supportedMachines.first {
+                                $0.daemonID == card.ownerDaemonID
+                            }?.online == true)
                     }
                     .accessibilityIdentifier("ios.task.\(card.id)")
                 }

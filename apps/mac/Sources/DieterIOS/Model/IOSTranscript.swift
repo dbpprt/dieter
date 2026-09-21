@@ -128,7 +128,7 @@ enum IOSMachinePolicy {
     static let apiVersion = DieterContract.version
 
     static func isCompatible(_ machine: DieterEndpoint) -> Bool {
-        machine.daemonID == nil || machine.apiVersion == apiVersion
+        machine.apiVersion == apiVersion
     }
 
     static func preferred(in machines: [DieterEndpoint], preferredID: String?) -> DieterEndpoint? {

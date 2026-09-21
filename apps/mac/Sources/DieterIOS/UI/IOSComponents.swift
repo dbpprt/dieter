@@ -103,7 +103,6 @@
     }
 
     enum IOSWorkspaceDestination: Hashable {
-        case machine
         case allTasks
         case chats
         case screens
