@@ -42,7 +42,16 @@ expiry, capture-helper recovery and cancellation during backoff on this path.
 ## macOS
 
 With no conflicting native app or test process, run the normal canonical-cache
-recipes. Preserve the operator daemon and use fresh fixture storage:
+recipes from an active desktop and use fresh fixture storage. The presentation
+checks need positive Metal presentation timestamps: GPU completion alone is not
+display evidence. Some virtual displays return zero timestamps, and jobs launched
+by a background daemon can inherit its scheduling restrictions. Record an
+unavailable desktop test honestly and use an appropriate desktop context.
+
+The frame-rate check samples initial motion before the synthetic source's
+deliberate idle period. Clipboard transfers can otherwise shift the measurement
+into that idle period, especially over TURN. Later checks measure idle recovery,
+capture/input latency and the complete session lifecycle.
 
 ```sh
 DIETER_TEST_TURN_CONFIG=/absolute/private/turn.json \
