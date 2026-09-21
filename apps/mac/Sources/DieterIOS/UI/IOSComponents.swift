@@ -1,6 +1,7 @@
 #if os(iOS)
     import DieterAPI
     import SwiftUI
+    import Textual
 
     struct IOSStatusBadge: View {
         let state: String
@@ -67,16 +68,21 @@
     struct IOSMessageText: View {
         let text: String
 
-        private var formatted: AttributedString {
+        private var accessibilityText: AttributedString {
             (try? AttributedString(
                 markdown: text,
                 options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))) ?? AttributedString(text)
         }
 
         var body: some View {
-            Text(formatted)
-                .textSelection(.enabled)
+            StructuredText(markdown: text)
+                .textual.structuredTextStyle(.gitHub)
+                .textual.textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
+                // Keep each message exposed as the same single StaticText
+                // element used by VoiceOver and the UI smoke journey. Textual
+                // remains responsible for the richer visual block hierarchy.
+                .accessibilityRepresentation { Text(accessibilityText) }
         }
     }
 

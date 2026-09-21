@@ -209,8 +209,9 @@ final class RemoteNodeUITests: XCTestCase {
         // Query the stable app-owned identifier and the visible label
         // separately. XCUI's string subscript is identifier-oriented and can
         // time out even when an off-screen transcript row has this exact label.
+        let accessibilityText = markdownAccessibilityText(text)
         let label = app.staticTexts.matching(identifier: "ios.message.text.assistant")
-            .matching(NSPredicate(format: "label == %@", text)).firstMatch
+            .matching(NSPredicate(format: "label == %@", accessibilityText)).firstMatch
         let response = XCTNSPredicateExpectation(
             predicate: NSPredicate(format: "exists == true"), object: label)
         XCTAssertEqual(
@@ -227,11 +228,21 @@ final class RemoteNodeUITests: XCTestCase {
             XCTWaiter.wait(for: [ready], timeout: timeout), .completed,
             "The conversation transport must be ready before sending.\n\(app.debugDescription)")
         send.tap()
+        let accessibilityText = markdownAccessibilityText(text)
         let admitted = app.staticTexts.matching(identifier: "ios.message.text.user")
-            .matching(NSPredicate(format: "label == %@", text)).firstMatch
+            .matching(NSPredicate(format: "label == %@", accessibilityText)).firstMatch
         XCTAssertTrue(
             admitted.waitForExistence(timeout: 30),
             "The submitted message must leave the composer and enter the transcript.\n\(app.debugDescription)")
+    }
+
+    private func markdownAccessibilityText(_ text: String) -> String {
+        guard
+            let attributed = try? AttributedString(
+                markdown: text,
+                options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))
+        else { return text }
+        return String(attributed.characters)
     }
 
     private func waitForBoard(
@@ -319,6 +330,24 @@ final class RemoteNodeUITests: XCTestCase {
         sendComposer(app, text: "Continue from the same iOS conversation")
         assistantTextExists(app, "Mock harness received: Continue from the same iOS conversation")
         screenshot(app, "04-follow-up")
+
+        let markdownPrompt = """
+            Render this Markdown:
+
+            ## Markdown showcase
+
+            - **Bold list item**
+            - Inline `code`
+
+            | Workspace | Model settings |
+            | --- | --- |
+            | Liquid Glass | Fast mode |
+            """
+        enter(app, "ios.composer.message", markdownPrompt)
+        sendComposer(app, text: markdownPrompt)
+        assistantTextExists(app, "Mock harness received: \(markdownPrompt)")
+        screenshot(app, "05-markdown-rendering")
+
         tap(app, "ios.task.actions")
         tap(app, "ios.task.files")
         tap(app, "ios.files.entry.README.md")

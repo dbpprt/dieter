@@ -22,6 +22,7 @@ let package = Package(
         .package(url: "https://github.com/grpc/grpc-swift-protobuf.git", from: "2.4.0"),
         .package(url: "https://github.com/apple/swift-protobuf.git", from: "1.38.0"),
         .package(url: "https://github.com/migueldeicaza/SwiftTerm.git", exact: "1.19.0"),
+        .package(url: "https://github.com/gonzalezreal/textual", from: "0.5.0"),
         .package(path: "Vendor/swift-markdown-engine"),
     ],
     targets: [
@@ -31,6 +32,7 @@ let package = Package(
                 "DieterCore", "DieterClient", "DieterAPI",
                 .product(name: "GRPCCore", package: "grpc-swift-2"),
                 .product(name: "SwiftProtobuf", package: "swift-protobuf"),
+                .product(name: "Textual", package: "textual"),
                 "WebRTC",
             ]
         ),
