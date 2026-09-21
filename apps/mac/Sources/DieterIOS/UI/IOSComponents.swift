@@ -102,6 +102,56 @@
         }
     }
 
+    struct IOSWorkspaceBackdrop: View {
+        var body: some View {
+            ZStack {
+                Color(uiColor: .systemGroupedBackground)
+                RadialGradient(
+                    colors: [Color.accentColor.opacity(0.13), .clear],
+                    center: .topTrailing,
+                    startRadius: 0,
+                    endRadius: 420
+                )
+                LinearGradient(
+                    colors: [Color.white.opacity(0.08), .clear, Color.accentColor.opacity(0.04)],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            }
+            .ignoresSafeArea()
+            .accessibilityHidden(true)
+        }
+    }
+
+    struct IOSFloatingGlassModifier<GlassShape: Shape>: ViewModifier {
+        let shape: GlassShape
+
+        @ViewBuilder func body(content: Content) -> some View {
+            if #available(iOS 26.0, *) {
+                content.glassEffect(.regular.interactive(), in: shape)
+            } else {
+                content
+                    .background(.ultraThinMaterial, in: shape)
+                    .overlay(shape.stroke(Color.secondary.opacity(0.18), lineWidth: 0.75))
+            }
+        }
+    }
+
+    struct IOSGlassCardModifier<GlassShape: Shape>: ViewModifier {
+        let shape: GlassShape
+
+        @ViewBuilder func body(content: Content) -> some View {
+            if #available(iOS 26.0, *) {
+                content.glassEffect(.regular, in: shape)
+            } else {
+                content
+                    .background(.regularMaterial, in: shape)
+                    .overlay(shape.stroke(Color.white.opacity(0.24), lineWidth: 0.75))
+                    .shadow(color: .black.opacity(0.06), radius: 14, y: 6)
+            }
+        }
+    }
+
     enum IOSWorkspaceDestination: Hashable {
         case allTasks
         case chats

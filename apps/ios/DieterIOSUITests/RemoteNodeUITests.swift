@@ -309,6 +309,11 @@ final class RemoteNodeUITests: XCTestCase {
             "Run task should remain visible and enabled after entering the task.\n\(app.debugDescription)")
         tap(app, "ios.create.run")
         assistantTextExists(app, "Mock harness received: Verify this request came from iOS", timeout: 150)
+        tap(app, "ios.conversation.model-settings")
+        XCTAssertTrue(element(app, "ios.conversation.model-settings.sheet").waitForExistence(timeout: 10))
+        XCTAssertTrue(element(app, "ios.conversation.model").exists)
+        screenshot(app, "03-next-message-settings")
+        tap(app, "ios.conversation.model-settings.done")
         screenshot(app, "03-live-remote-conversation")
         enter(app, "ios.composer.message", "Continue from the same iOS conversation")
         sendComposer(app, text: "Continue from the same iOS conversation")
@@ -419,8 +424,11 @@ final class RemoteNodeUITests: XCTestCase {
         tap(app, "ios.machine-state.done")
         waitForBoard(app, project: project, board: board)
 
+        tap(app, "ios.screens.open")
+        XCTAssertTrue(element(app, "ios.screens.machine-picker-view").waitForExistence(timeout: 10))
+        screenshot(app, "12-screens-machine-picker")
         if environment["DIETER_IOS_TEST_LANDSCAPE"] != "1" {
-            tap(app, "ios.screens.open")
+            tap(app, "ios.screens.machine-choice.\(daemon)")
             XCTAssertTrue(element(app, "ios.screens.back").waitForExistence(timeout: 10))
             let window = app.windows.firstMatch
             XCTAssertGreaterThan(
@@ -439,7 +447,7 @@ final class RemoteNodeUITests: XCTestCase {
             XCTAssertEqual(
                 XCTWaiter.wait(for: [settingsReady], timeout: 10), .completed,
                 "Screen settings should be usable after the landscape transition.\n\(app.debugDescription)")
-            screenshot(app, "12-remote-screen-phone-chrome")
+            screenshot(app, "13-remote-screen-phone-chrome")
             XCUIDevice.shared.orientation = .portrait
             let portrait = XCTNSPredicateExpectation(
                 predicate: NSPredicate { _, _ in window.frame.height > window.frame.width }, object: window)

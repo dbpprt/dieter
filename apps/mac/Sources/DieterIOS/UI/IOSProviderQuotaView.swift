@@ -76,7 +76,6 @@
             }
             .padding(.horizontal, 7)
             .padding(.vertical, 5)
-            .background(.thinMaterial, in: Capsule())
         }
     }
 
@@ -148,7 +147,6 @@
             .tint(IOSProviderQuotaPresentation.tint(provider))
             .padding(.horizontal, 7)
             .frame(height: 28)
-            .background(.thinMaterial, in: Capsule())
         }
     }
 

@@ -8,6 +8,101 @@ import CoreGraphics
     @preconcurrency import WebRTC
 
     @MainActor
+    struct IOSScreensMachinePickerView: View {
+        @Bindable var store: IOSStore
+        let select: (String) -> Void
+
+        private var machines: [DieterEndpoint] {
+            store.supportedMachines.sorted {
+                if $0.online != $1.online { return $0.online && !$1.online }
+                return $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+            }
+        }
+
+        var body: some View {
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 14) {
+                    VStack(alignment: .leading, spacing: 7) {
+                        Label("Choose where to connect", systemImage: "display.2")
+                            .font(.title2.bold())
+                        Text("Screen sessions belong to one machine. Pick the host you want to view or control.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.horizontal, 4)
+
+                    if machines.isEmpty {
+                        ContentUnavailableView(
+                            "No compatible machines",
+                            systemImage: "desktopcomputer.trianglebadge.exclamationmark",
+                            description: Text("Bring an enrolled machine online, then refresh.")
+                        )
+                        .frame(maxWidth: .infinity, minHeight: 260)
+                        .modifier(
+                            IOSGlassCardModifier(
+                                shape: RoundedRectangle(cornerRadius: 24, style: .continuous)))
+                    } else {
+                        ForEach(machines) { machine in
+                            Button {
+                                select(machine.daemonID ?? machine.id)
+                            } label: {
+                                HStack(spacing: 14) {
+                                    Image(systemName: "desktopcomputer")
+                                        .font(.title2.weight(.semibold))
+                                        .foregroundStyle(machine.online ? Color.accentColor : Color.secondary)
+                                        .frame(width: 48, height: 48)
+                                        .background(
+                                            (machine.online ? Color.accentColor : Color.secondary).opacity(0.12),
+                                            in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                                    VStack(alignment: .leading, spacing: 5) {
+                                        Text(machine.name).font(.headline).foregroundStyle(.primary)
+                                        HStack(spacing: 6) {
+                                            Circle()
+                                                .fill(machine.online ? Color.green : Color.orange)
+                                                .frame(width: 7, height: 7)
+                                            Text(
+                                                machine.online
+                                                    ? screenAvailability(machine)
+                                                    : MachinePresenceText.lastSeen(machine.lastSeenAt))
+                                        }
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                    }
+                                    Spacer(minLength: 8)
+                                    Image(systemName: "chevron.right")
+                                        .font(.caption.bold())
+                                        .foregroundStyle(.tertiary)
+                                }
+                                .padding(16)
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(!machine.online || !store.phase.isConnected)
+                            .modifier(
+                                IOSGlassCardModifier(
+                                    shape: RoundedRectangle(cornerRadius: 22, style: .continuous))
+                            )
+                            .accessibilityIdentifier(
+                                "ios.screens.machine-choice.\(machine.daemonID ?? machine.id)")
+                        }
+                    }
+                }
+                .padding(18)
+            }
+            .background { IOSWorkspaceBackdrop() }
+            .navigationTitle("Choose a screen")
+            .navigationBarTitleDisplayMode(.inline)
+            .refreshable { await store.refreshMachines() }
+            .accessibilityIdentifier("ios.screens.machine-picker-view")
+        }
+
+        private func screenAvailability(_ machine: DieterEndpoint) -> String {
+            if machine.remoteDesktopReady { return "Ready to connect" }
+            return machine.remoteDesktopReason.isEmpty ? "Checking availability" : machine.remoteDesktopReason
+        }
+    }
+
+    @MainActor
     struct IOSScreensView: View {
         @Environment(\.dismiss) private var dismiss
         @Environment(\.scenePhase) private var scenePhase
@@ -514,13 +609,14 @@ import CoreGraphics
 
         var body: some View {
             ContentUnavailableView {
-                Label("Remote Screen", systemImage: "display")
+                Label("Choose a screen", systemImage: "display.2")
             } description: {
-                Text("View and control the selected machine over an authenticated screen session.")
+                Text("Select the machine you want to view or control.")
             } actions: {
-                Button("Open Screen", action: open).buttonStyle(.borderedProminent)
+                Button("Choose Machine", action: open).buttonStyle(.borderedProminent)
             }
             .navigationTitle("Screens")
+            .background { IOSWorkspaceBackdrop() }
         }
     }
 

@@ -25,6 +25,9 @@
         @State private var imageLoadID: UUID?
         @State private var imageLoadingTitle: String?
         @State private var imagePreview: IOSConversationImagePreview?
+        @State private var harnesses: [Dieter_V1_Harness] = []
+        @State private var harnessError: String?
+        @State private var modelSettingsPresented = false
         @FocusState private var composerFocused: Bool
 
         private var card: Dieter_V1_Card? {
@@ -71,8 +74,27 @@
             .fullScreenCover(item: $imagePreview) { preview in
                 IOSConversationImageLightbox(preview: preview)
             }
+            .sheet(isPresented: $modelSettingsPresented) {
+                if let card {
+                    IOSConversationModelSettingsView(
+                        card: card,
+                        harnesses: harnesses,
+                        conversationLocked: conversationLocked,
+                        selection: selectionBinding(for: card)
+                    )
+                    .presentationDetents([.medium, .large])
+                    .presentationDragIndicator(.visible)
+                }
+            }
             .toolbar {
                 ToolbarItemGroup(placement: .topBarTrailing) {
+                    if let card, !harnesses.isEmpty {
+                        Button("Model settings", systemImage: "slider.horizontal.3") {
+                            modelSettingsPresented = true
+                        }
+                        .accessibilityIdentifier("ios.conversation.model-settings")
+                        .accessibilityValue(selectionSummary(for: card))
+                    }
                     if let card {
                         IOSConversationProviderQuotaView(store: store, card: card)
                     }
@@ -116,7 +138,10 @@
                 userScrolling = false
                 pageAnchorToRestore = nil
                 pageRestoreRequest = 0
+                harnesses = []
+                harnessError = nil
                 await store.selectCard(id: cardID)
+                await loadHarnesses()
             }
             .fileImporter(
                 isPresented: $fileImporterPresented,
@@ -388,6 +413,37 @@
                     )
                     .frame(maxWidth: 900)
                 }
+                if let card, !harnesses.isEmpty {
+                    Button {
+                        composerFocused = false
+                        modelSettingsPresented = true
+                    } label: {
+                        HStack(spacing: 7) {
+                            Image(systemName: fastModeEnabled(for: card) ? "bolt.fill" : "sparkles")
+                                .foregroundStyle(fastModeEnabled(for: card) ? Color.orange : Color.accentColor)
+                            Text(selectionSummary(for: card))
+                                .lineLimit(1)
+                            Image(systemName: "chevron.down")
+                                .font(.caption2.bold())
+                                .foregroundStyle(.tertiary)
+                        }
+                        .font(.caption.weight(.semibold))
+                        .padding(.horizontal, 12)
+                        .frame(minHeight: 34)
+                        .contentShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .modifier(IOSFloatingGlassModifier(shape: Capsule()))
+                    .frame(maxWidth: 900, alignment: .leading)
+                    .accessibilityLabel("Next message model settings")
+                    .accessibilityValue(selectionSummary(for: card))
+                    .accessibilityIdentifier("ios.composer.model-settings")
+                } else if let harnessError, !harnessError.isEmpty {
+                    Label(harnessError, systemImage: "exclamationmark.triangle")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: 900, alignment: .leading)
+                }
                 if !draft.attachments.isEmpty {
                     ScrollView(.horizontal) {
                         HStack(spacing: 8) {
@@ -541,10 +597,62 @@
                         == IOSConversationPresentation.attachmentIdentity(message.attachments),
                     draft.selection == message.selection
                 {
-                    draft = IOSConversationDraft()
+                    draft.text = ""
+                    draft.attachments = []
                 }
                 sending = false
             }
+        }
+
+        private var conversationLocked: Bool {
+            guard let card else { return false }
+            return !card.initialPromptSentAt.isEmpty || !messages.isEmpty || isRunning
+        }
+
+        private func loadHarnesses() async {
+            do {
+                harnesses = try await store.conversationHarnesses()
+                harnessError = nil
+                if let card, draft.selection == nil {
+                    draft.selection = resolvedSelection(for: card)
+                }
+            } catch {
+                harnessError = IOSUserError.message(error)
+            }
+        }
+
+        private func selectionBinding(for card: Dieter_V1_Card) -> Binding<Dieter_V1_HarnessSelection> {
+            Binding(
+                get: { draft.selection ?? resolvedSelection(for: card) },
+                set: { draft.selection = $0 })
+        }
+
+        private func resolvedSelection(for card: Dieter_V1_Card) -> Dieter_V1_HarnessSelection {
+            let harness = harnesses.first { $0.id == card.provider }
+            var selection = Dieter_V1_HarnessSelection()
+            selection.provider = card.provider
+            selection.model = card.model
+            selection.effort = card.effort
+            selection.providerOptions = ProviderOptionValues.normalized(
+                for: harness, model: card.model, saved: card.providerOptions)
+            return selection
+        }
+
+        private func selectionSummary(for card: Dieter_V1_Card) -> String {
+            let selection = draft.selection ?? resolvedSelection(for: card)
+            let harness = harnesses.first { $0.id == selection.provider }
+            let model = harness?.models.first { $0.id == selection.model }
+            var labels = [model?.name ?? selection.model]
+            if !selection.effort.isEmpty {
+                labels.append(selection.effort == "default" ? "Default reasoning" : selection.effort.capitalized)
+            }
+            if selection.providerOptions["fast_mode"]?.lowercased() == "true" { labels.append("Fast") }
+            return labels.filter { !$0.isEmpty }.joined(separator: " · ")
+        }
+
+        private func fastModeEnabled(for card: Dieter_V1_Card) -> Bool {
+            let selection = draft.selection ?? resolvedSelection(for: card)
+            return selection.providerOptions["fast_mode"]?.lowercased() == "true"
         }
 
         private func appendPastedImages(_ payloads: [IOSAttachmentPayload]) {
@@ -562,6 +670,184 @@
 
         private func showAttachmentError(_ error: Error) {
             attachmentError = error.localizedDescription
+        }
+    }
+
+    private struct IOSConversationModelSettingsView: View {
+        @Environment(\.dismiss) private var dismiss
+        let card: Dieter_V1_Card
+        let harnesses: [Dieter_V1_Harness]
+        let conversationLocked: Bool
+        @Binding var selection: Dieter_V1_HarnessSelection
+
+        private var harness: Dieter_V1_Harness? {
+            harnesses.first { $0.id == selection.provider }
+                ?? harnesses.first { $0.id == card.provider }
+        }
+
+        private var model: Dieter_V1_HarnessModel? {
+            harness?.models.first { $0.id == selection.model }
+        }
+
+        private var efforts: [String] {
+            guard let harness, let model else { return [] }
+            let supported = model.efforts.isEmpty ? harness.effort.options.map(\.id) : model.efforts
+            return Array(Set(supported)).sorted()
+        }
+
+        private var options: [Dieter_V1_ProviderOption] {
+            ProviderOptionValues.options(for: harness, model: selection.model)
+        }
+
+        var body: some View {
+            NavigationStack {
+                Form {
+                    Section {
+                        LabeledContent("Provider", value: harness?.name ?? selection.provider)
+                        Picker("Model", selection: modelBinding) {
+                            ForEach(harness?.models ?? [], id: \.id) { model in
+                                Text(model.name).tag(model.id)
+                            }
+                        }
+                        .disabled(!canChange("model-selection"))
+                        .accessibilityIdentifier("ios.conversation.model")
+
+                        if !efforts.isEmpty {
+                            Picker("Reasoning", selection: effortBinding) {
+                                Text("Default").tag("default")
+                                ForEach(efforts.filter { $0 != "default" }, id: \.self) { effort in
+                                    Text(effort.capitalized).tag(effort)
+                                }
+                            }
+                            .disabled(!canChange("effort-selection"))
+                            .accessibilityIdentifier("ios.conversation.effort")
+                        }
+                    } header: {
+                        Text("Agent")
+                    } footer: {
+                        if conversationLocked {
+                            Text(
+                                "Changes apply to the next message. Each agent controls which settings stay mutable after a conversation starts."
+                            )
+                        } else {
+                            Text("These settings apply when the conversation starts.")
+                        }
+                    }
+
+                    if !options.isEmpty {
+                        Section("Provider options") {
+                            ForEach(options, id: \.id) { option in
+                                optionField(option)
+                            }
+                        }
+                    }
+                }
+                .scrollContentBackground(.hidden)
+                .background { IOSWorkspaceBackdrop() }
+                .navigationTitle("Next message")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Done") { dismiss() }
+                            .accessibilityIdentifier("ios.conversation.model-settings.done")
+                    }
+                }
+            }
+            .onAppear { normalizeSelection() }
+            .accessibilityIdentifier("ios.conversation.model-settings.sheet")
+        }
+
+        private var modelBinding: Binding<String> {
+            Binding(
+                get: { selection.model },
+                set: { modelID in
+                    var next = selection
+                    next.provider = harness?.id ?? card.provider
+                    next.model = modelID
+                    if canChange("effort-selection") {
+                        let preferred = harness?.models.first { $0.id == modelID }?.defaultEffort ?? ""
+                        next.effort = preferred.isEmpty ? "default" : preferred
+                    }
+                    next.providerOptions = ProviderOptionValues.normalized(
+                        for: harness, model: modelID, saved: next.providerOptions)
+                    selection = next
+                })
+        }
+
+        private var effortBinding: Binding<String> {
+            Binding(
+                get: {
+                    let current = selection.effort
+                    return current.isEmpty ? "default" : current
+                },
+                set: { value in
+                    var next = selection
+                    next.effort = value
+                    selection = next
+                })
+        }
+
+        @ViewBuilder
+        private func optionField(_ option: Dieter_V1_ProviderOption) -> some View {
+            let enabled = ProviderOptionValues.isEnabled(option, conversationLocked: conversationLocked)
+            let value = optionBinding(option)
+            if ["boolean", "bool"].contains(option.type.lowercased()) {
+                Toggle(
+                    isOn: Binding(
+                        get: { value.wrappedValue.lowercased() == "true" },
+                        set: { value.wrappedValue = $0 ? "true" : "false" }
+                    )
+                ) {
+                    Label(option.name, systemImage: option.id == "fast_mode" ? "bolt.fill" : "switch.2")
+                }
+                .disabled(!enabled)
+                .accessibilityIdentifier("ios.conversation.option.\(option.id)")
+            } else if ["enum", "select"].contains(option.type.lowercased()) {
+                Picker(option.name, selection: value) {
+                    ForEach(option.choices, id: \.value) { choice in
+                        Text(choice.name.isEmpty ? choice.value : choice.name).tag(choice.value)
+                    }
+                }
+                .disabled(!enabled)
+                .accessibilityIdentifier("ios.conversation.option.\(option.id)")
+            } else {
+                TextField(option.name, text: value)
+                    .disabled(!enabled)
+                    .accessibilityIdentifier("ios.conversation.option.\(option.id)")
+            }
+        }
+
+        private func optionBinding(_ option: Dieter_V1_ProviderOption) -> Binding<String> {
+            Binding(
+                get: { selection.providerOptions[option.id, default: option.defaultValue] },
+                set: { value in
+                    var next = selection
+                    next.providerOptions[option.id] = value
+                    selection = next
+                })
+        }
+
+        private func canChange(_ capability: String) -> Bool {
+            !conversationLocked
+                || harness?.capabilities.contains {
+                    $0.id == capability && $0.level == "between-turns"
+                } == true
+        }
+
+        private func normalizeSelection() {
+            guard let harness else { return }
+            var next = selection
+            next.provider = harness.id
+            if !harness.models.contains(where: { $0.id == next.model }) {
+                next.model = harness.defaultModel.isEmpty ? (harness.models.first?.id ?? "") : harness.defaultModel
+            }
+            if next.effort.isEmpty {
+                let preferred = harness.models.first { $0.id == next.model }?.defaultEffort ?? ""
+                next.effort = preferred.isEmpty ? "default" : preferred
+            }
+            next.providerOptions = ProviderOptionValues.normalized(
+                for: harness, model: next.model, saved: next.providerOptions)
+            selection = next
         }
     }
 
@@ -868,20 +1154,6 @@
                 contentHeight: geometry.contentSize.height,
                 bottomInset: geometry.contentInsets.bottom)
             canScroll = geometry.contentSize.height > geometry.visibleRect.height - geometry.contentInsets.bottom + 2
-        }
-    }
-
-    private struct IOSFloatingGlassModifier<GlassShape: Shape>: ViewModifier {
-        let shape: GlassShape
-
-        @ViewBuilder func body(content: Content) -> some View {
-            if #available(iOS 26.0, *) {
-                content.glassEffect(.regular.interactive(), in: shape)
-            } else {
-                content
-                    .background(.ultraThinMaterial, in: shape)
-                    .overlay(shape.stroke(Color.secondary.opacity(0.18), lineWidth: 0.75))
-            }
         }
     }
 
