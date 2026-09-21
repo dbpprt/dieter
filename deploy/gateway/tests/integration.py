@@ -93,7 +93,9 @@ def main():
             output.chmod(0o755)
             turn = (output / "private/turnserver.conf").read_text().replace("/certificates/turn/current/", "/fixture/")
             # The namespace's relay address is reserved for benchmarking, never a real host.
-            atomic(temp / "turnserver.conf", turn, 0o644)
+            # Rotate nonces during the held payload/certificate test so manual
+            # permission refreshes cannot accidentally pass only short probes.
+            atomic(temp / "turnserver.conf", turn + "\nstale-nonce=2\n", 0o644)
             caddy = (output / "public/Caddyfile").read_text().replace("/certificates/gateway/current/", "/fixture/")
             caddy = caddy.replace("unix//run/dieter/caddy-admin.sock", "localhost:2019")
             atomic(temp / "Caddyfile", caddy, 0o644)

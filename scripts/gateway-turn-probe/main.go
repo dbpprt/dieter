@@ -120,13 +120,6 @@ func allocate(r request) (_ *allocation, err error) {
 }
 
 func exchange(a, b *allocation) error {
-	// Establish both permissions before sending the actual measured payload.
-	if err := a.client.CreatePermission(b.relay.LocalAddr()); err != nil {
-		return err
-	}
-	if err := b.client.CreatePermission(a.relay.LocalAddr()); err != nil {
-		return err
-	}
 	payload := make([]byte, 1024)
 	if _, err := rand.Read(payload); err != nil {
 		return err
@@ -252,6 +245,16 @@ func probe(r request) error {
 		return err
 	}
 	defer b.close()
+	// Establish both permissions before the first payload. WriteTo registers
+	// them with Pion's refresh lifecycle, which handles stale nonces. Reissuing
+	// CreatePermission manually on every payload instead surfaces Pion's private
+	// "try again" sentinel when coturn rotates the nonce on a long-lived probe.
+	if err = a.client.CreatePermission(b.relay.LocalAddr()); err != nil {
+		return err
+	}
+	if err = b.client.CreatePermission(a.relay.LocalAddr()); err != nil {
+		return err
+	}
 	deadline := time.Now().Add(time.Duration(r.HoldSeconds) * time.Second)
 	for {
 		if err := exchange(a, b); err != nil {

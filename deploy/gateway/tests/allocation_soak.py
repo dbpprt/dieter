@@ -18,7 +18,7 @@ def command(*args):
 
 def main():
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument('--probe', required=True, help='Signature-verified Linux ARM64 gateway-turn-probe binary.')
+    p.add_argument('--probe', required=True, help='Linux ARM64 gateway-turn-probe binary; its SHA-256 is recorded.')
     p.add_argument('--output', required=True, help='New protected evidence directory.')
     p.add_argument('--steady-seconds', type=int, default=1800)
     p.add_argument('--reconnect-seconds', type=int, default=300)
