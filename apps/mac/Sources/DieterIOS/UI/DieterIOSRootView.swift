@@ -173,14 +173,6 @@
                     }
                 }
                 Section {
-                    Button {
-                        machineStatePresented = true
-                    } label: {
-                        Label("Machine state", systemImage: "gauge.with.dots.needle.67percent")
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(store.supportedMachines.isEmpty)
-                    .accessibilityIdentifier("ios.machine-state.open")
                     NavigationLink(value: IOSWorkspaceDestination.allTasks) {
                         Label("All tasks", systemImage: "square.grid.2x2")
                     }
@@ -238,6 +230,11 @@
                 }
                 ToolbarItemGroup(placement: .topBarTrailing) {
                     IOSProviderQuotaCompactView(store: store)
+                    Button("Machine state", systemImage: "gauge.with.dots.needle.67percent") {
+                        machineStatePresented = true
+                    }
+                    .disabled(store.supportedMachines.isEmpty)
+                    .accessibilityIdentifier("ios.machine-state.open")
                     Button("New task", systemImage: "square.and.pencil", action: presentTaskCreation)
                         .disabled(!store.phase.isConnected || store.projects.isEmpty)
                         .accessibilityIdentifier("ios.new-task")
