@@ -76,3 +76,18 @@ import Testing
             now: now
         ) == "Updated 6m ago")
 }
+
+@Test @MainActor func workspaceLivenessIgnoresCachedContentsButTracksConnectionAndSync() {
+    let store = DieterStore(restoreSync: false)
+    let phases = [
+        store.phase, .connecting, .connected(version: "1"),
+        .authenticationRequired, .incompatible(found: "2"), .failed("offline"),
+    ]
+    for phase in phases {
+        store.phase = phase
+        for syncing in [false, true] {
+            store.globalSyncing = syncing
+            #expect(store.workspaceIsLive == store.workspaceFreshness.isLive)
+        }
+    }
+}

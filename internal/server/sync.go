@@ -186,12 +186,12 @@ func (api *grpcAPI) globalSnapshotContext(ctx context.Context, limit, recent int
 		if cached := previousConversations[cardID]; cached != nil && previousRevisions[cardID] == revision && proto.Equal(cached.GetDetail(), protoCardDetail(detail)) {
 			tail = cached
 		} else {
-			conversation, err := api.conversationAtRevision(cardID, revision)
+			window, err := api.server.store.ConversationWindowByID(cardID, limit, nil)
 			if err != nil {
 				api.server.log.Warn("sync conversation hydration failed", "cardID", cardID, "error", err)
 				continue
 			}
-			tail = api.boundedConversationSnapshot(detail, conversation, limit, nil, maxSyncConversationBytes, false)
+			tail = api.windowedConversationSnapshot(detail, window, maxSyncConversationBytes, false)
 		}
 		size := proto.Size(tail)
 		if size > maxSyncConversationBytes || used+size > maxSyncFrameBytes-65536 {

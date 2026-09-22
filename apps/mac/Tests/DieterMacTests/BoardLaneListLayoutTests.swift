@@ -48,6 +48,110 @@ import Testing
     }
 }
 
+@Test @MainActor func boardLaneResizeRetainsMountedCellsAndSelectionOnlyRedrawsDecoration() async throws {
+    let store = boardLaneFixtureStore()
+    let cards = boardLaneFixtureCards(count: 3)
+    store.state.cards = cards
+    let root = NSHostingView(rootView: AnyView(boardLaneFixtureView(cards: cards, store: store)))
+    root.sizingOptions = []
+    let window = boardLaneFixtureWindow(root: root, width: 440, height: 1000)
+    defer { window.close() }
+    await settleBoardLane(root)
+    let table = try #require(boardLaneNativeTable(in: root))
+    let originalCells = try cards.indices.map { index in
+        try #require(table.view(atColumn: 0, row: index, makeIfNecessary: false))
+    }
+    BoardRenderingDiagnostics.start()
+    window.setContentSize(NSSize(width: 264, height: 1000))
+    await settleBoardLane(root)
+    let resized = BoardRenderingDiagnostics.stop()
+    #expect(resized["widthChanged", default: 0] > 0)
+    #expect(resized["fullReload"] == 0)
+    #expect(resized["rowConfigured"] == 0)
+    for index in cards.indices {
+        #expect(table.view(atColumn: 0, row: index, makeIfNecessary: false) === originalCells[index])
+    }
+    try assertBoardLaneRowsFitContent(table: table, root: root, cards: cards, store: store)
+
+    BoardRenderingDiagnostics.start()
+    store.selectedCardID = cards[0].id
+    await settleBoardLane(root)
+    store.selectedCardID = cards[1].id
+    await settleBoardLane(root)
+    store.selectedCardID = nil
+    await settleBoardLane(root)
+    let selected = BoardRenderingDiagnostics.stop()
+    #expect(selected["fullReload"] == 0)
+    #expect(selected["rowConfigured"] == 0)
+    #expect(selected["cardBody"] == 0)
+}
+
+@Test @MainActor func boardLanePresenceRefreshDoesNotReevaluateRichCards() async throws {
+    let store = boardLaneFixtureStore()
+    var cards = boardLaneFixtureCards(count: 3)
+    var machine = store.endpoint
+    machine.daemonID = "board-machine"
+    machine.online = true
+    machine.lastSeenAt = "2026-09-22T12:00:00Z"
+    store.endpoints = [machine]
+    store.endpoint = machine
+    for index in cards.indices { cards[index].ownerDaemonID = "board-machine" }
+    store.state.cards = cards
+    let root = NSHostingView(rootView: AnyView(boardLaneFixtureView(cards: cards, store: store)))
+    root.sizingOptions = []
+    let window = boardLaneFixtureWindow(root: root, width: 300, height: 1000)
+    defer { window.close() }
+    await settleBoardLane(root)
+    BoardRenderingDiagnostics.start()
+    machine.lastSeenAt = "2026-09-22T12:00:05Z"
+    store.endpoints = [machine]
+    store.endpoint = machine
+    await settleBoardLane(root)
+    machine.online = false
+    store.endpoints = [machine]
+    store.endpoint = machine
+    await settleBoardLane(root)
+    let updated = BoardRenderingDiagnostics.stop()
+    #expect(updated["fullReload"] == 0)
+    #expect(updated["rowConfigured"] == 0)
+    #expect(updated["cardBody"] == 0)
+    #expect(store.machine(for: cards[0])?.online == false)
+}
+
+@Test @MainActor func boardLaneMetadataUpdateOnlyReconfiguresTheChangedCard() async throws {
+    let store = boardLaneFixtureStore()
+    var cards = boardLaneFixtureCards(count: 3)
+    store.state.cards = cards
+    let root = NSHostingView(rootView: AnyView(boardLaneFixtureView(cards: cards, store: store)))
+    root.sizingOptions = []
+    let window = boardLaneFixtureWindow(root: root, width: 300, height: 1000)
+    defer { window.close() }
+    await settleBoardLane(root)
+    BoardRenderingDiagnostics.start()
+    cards[1].summary = "New streaming activity on one card"
+    store.state.cards = cards
+    root.rootView = AnyView(boardLaneFixtureView(cards: cards, store: store))
+    await settleBoardLane(root)
+    let updated = BoardRenderingDiagnostics.stop()
+    #expect(updated["fullReload"] == 0)
+    #expect(updated["rowConfigured"] == 1)
+    #expect(updated["cardBody"] == 1)
+
+    // Board configuration remains live despite removing the per-card broad
+    // state dependency. A label rename must reach all affected mounted cards.
+    cards[0].labelIds = ["label-one"]
+    store.state.cards = cards
+    root.rootView = AnyView(boardLaneFixtureView(cards: cards, store: store))
+    await settleBoardLane(root)
+    BoardRenderingDiagnostics.start()
+    store.state.boards[0].labels[0].name = "Renamed label with more words"
+    await settleBoardLane(root)
+    let renamed = BoardRenderingDiagnostics.stop()
+    #expect(renamed["reloadedRows"] == cards.count)
+    let table = try #require(boardLaneNativeTable(in: root))
+    try assertBoardLaneRowsFitContent(table: table, root: root, cards: cards, store: store)
+}
+
 @Test @MainActor func boardLaneListRecyclesOffscreenRowsAndScrollsToTheLastCard() async throws {
     let store = boardLaneFixtureStore()
     let cards = boardLaneFixtureCards(count: 1000)
@@ -93,6 +197,105 @@ import Testing
     #expect(NSLocationInRange(cards.count - 1, visibleRows))
     #expect(table.rowView(atRow: cards.count - 1, makeIfNecessary: false) != nil)
     #expect(table.visibleRect.maxY >= table.rect(ofRow: cards.count - 1).maxY - 1)
+
+    // Opening an inspector must retain the same visible conversation even
+    // when old offscreen measurements are discarded for a different width.
+    table.scrollRowToVisible(500)
+    await settleBoardLane(root)
+    let anchorRow = table.rows(in: table.visibleRect).location
+    let anchorOffset = table.visibleRect.minY - table.rect(ofRow: anchorRow).minY
+    window.setContentSize(NSSize(width: 440, height: 600))
+    await settleBoardLane(root)
+    #expect(table.rows(in: table.visibleRect).location == anchorRow)
+    #expect(abs(table.visibleRect.minY - table.rect(ofRow: anchorRow).minY - anchorOffset) < 1)
+}
+
+@Test @MainActor func boardNavigationRetainsRowsWithoutRenderingWhileHidden() async throws {
+    let store = boardLaneFixtureStore()
+    store.state.cards = boardLaneFixtureCards(count: 100)
+    func board(active: Bool = true) -> AnyView {
+        AnyView(
+            BoardConversationOverlay(
+                board: AnyView(BoardLaneNavigationFixture().environment(store)),
+                conversation: AnyView(Text("Conversation")),
+                presented: false, maximized: false, active: active))
+    }
+    let root = NSHostingView(rootView: board())
+    root.sizingOptions = []
+    let window = boardLaneFixtureWindow(root: root, width: 440, height: 600)
+    defer { window.close() }
+    await settleBoardLane(root)
+    let table = try #require(boardLaneNativeTable(in: root))
+    table.scrollRowToVisible(50)
+    await settleBoardLane(root)
+    let anchorRow = table.rows(in: table.visibleRect).location
+    let anchorOffset = table.visibleRect.minY - table.rect(ofRow: anchorRow).minY
+    let originalCell = try #require(table.view(atColumn: 0, row: anchorRow, makeIfNecessary: false))
+
+    root.rootView = board(active: false)
+    await settleBoardLane(root)
+    #expect(table.window === window)
+    #expect(table.isHiddenOrHasHiddenAncestor)
+    BoardRenderingDiagnostics.start()
+    store.state.cards[50].summary = "Updated while away"
+    store.endpoint.name = "Updated machine"
+    try? await Task.sleep(for: .milliseconds(200))
+    let hidden = BoardRenderingDiagnostics.stop()
+    #expect(hidden["cardBody"] == 0)
+    #expect(hidden["rowConfigured"] == 0)
+    #expect(hidden["heightMeasured"] == 0)
+
+    BoardRenderingDiagnostics.start()
+    root.rootView = board()
+    await settleBoardLane(root)
+    let returned = BoardRenderingDiagnostics.stop()
+    #expect(boardLaneNativeTable(in: root) === table)
+    #expect(!table.isHiddenOrHasHiddenAncestor)
+    #expect(returned["tableCreated"] == 0)
+    #expect(returned["fullReload"] == 0)
+    #expect(returned["reloadedRows"] == 1)
+    #expect(table.rows(in: table.visibleRect).location == anchorRow)
+    #expect(abs(table.visibleRect.minY - table.rect(ofRow: anchorRow).minY - anchorOffset) < 1)
+    // A separate unchanged row also retains its native identity across trips.
+    let updatedCell = try #require(table.view(atColumn: 0, row: anchorRow, makeIfNecessary: false))
+    #expect(updatedCell === originalCell)
+
+    // Switching boards while away must replace the old board's identity and
+    // content, rather than returning a stale retained table.
+    root.rootView = board(active: false)
+    await settleBoardLane(root)
+    store.selectedBoardID = "another-board"
+    store.state.cards = boardLaneFixtureCards(count: 2)
+    for index in store.state.cards.indices { store.state.cards[index].boardID = "another-board" }
+    root.rootView = board()
+    await settleBoardLane(root)
+    let nextBoard = try #require(boardLaneNativeTable(in: root))
+    #expect(nextBoard !== table)
+    #expect(nextBoard.numberOfRows == 2)
+}
+
+@Test @MainActor func boardNavigationReleasesNativeRowsWhenItsWindowContentIsRemoved() async throws {
+    let store = boardLaneFixtureStore()
+    store.state.cards = boardLaneFixtureCards(count: 10)
+    var root: NSHostingView<AnyView>? = NSHostingView(rootView: AnyView(BoardConversationOverlay(
+        board: AnyView(BoardLaneNavigationFixture().environment(store)),
+        conversation: AnyView(EmptyView()), presented: false, maximized: false)))
+    let window = boardLaneFixtureWindow(root: root!, width: 440, height: 600)
+    defer { window.close() }
+    await settleBoardLane(root!)
+    weak var table = boardLaneNativeTable(in: root!)
+    #expect(table != nil)
+    window.contentView = nil
+    root = nil
+    try? await Task.sleep(for: .milliseconds(200))
+    #expect(table == nil)
+}
+
+private struct BoardLaneNavigationFixture: View {
+    @Environment(DieterStore.self) private var store
+    var body: some View {
+        BoardLaneList(laneID: "todo", cards: store.state.cards, sortDirection: .descending)
+    }
 }
 
 @MainActor private func assertBoardLaneRowsFitContent(

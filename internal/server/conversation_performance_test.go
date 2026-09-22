@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"os"
@@ -303,4 +304,39 @@ func BenchmarkConversationIdleRead(b *testing.B) {
 			}
 		}
 	})
+}
+
+// Windowed snapshots still need the durable conversation projection. Track a
+// tool-heavy fork as well as the small text-only fixture so historical payload
+// cloning and preview work cannot disappear behind a 30-message output limit.
+func BenchmarkToolHeavyConversationSnapshot(b *testing.B) {
+	for _, count := range []int{30, 300} {
+		b.Run(fmt.Sprint(count), func(b *testing.B) {
+			api, card := performanceConversation(b, slog.New(slog.NewTextHandler(io.Discard, nil)))
+			messages := make([]model.UIMessage, count)
+			for i := range messages {
+				output, _ := json.Marshal(map[string]any{"index": i, "content": strings.Repeat("output ", 2048)})
+				messages[i] = model.UIMessage{ID: fmt.Sprint(i), Role: "assistant", Parts: []model.UIMessagePart{
+					{Type: "tool", ToolCallID: fmt.Sprint(i), ToolName: "exec", State: "output-available", Output: output},
+				}}
+			}
+			if _, err := api.server.store.InitializeForkConversation(card.ID, messages); err != nil {
+				b.Fatal(err)
+			}
+			if _, err := api.conversationSnapshot(card.ID, 30, nil); err != nil {
+				b.Fatal(err)
+			}
+			b.ReportAllocs()
+			b.ResetTimer()
+			for b.Loop() {
+				result, err := api.conversationSnapshot(card.ID, 30, nil)
+				if err != nil {
+					b.Fatal(err)
+				}
+				if len(result.GetConversation().GetMessages()) != 30 {
+					b.Fatal("missing window")
+				}
+			}
+		})
+	}
 }

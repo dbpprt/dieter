@@ -719,11 +719,11 @@ func (api *grpcAPI) conversationSnapshot(cardID string, limit int, before *int32
 	if err != nil {
 		return nil, err
 	}
-	conversation, err := api.conversation(cardID)
+	window, err := api.server.store.ConversationWindowByID(cardID, limit, before)
 	if err != nil {
 		return nil, err
 	}
-	snapshot := api.conversationSnapshotFrom(detail, conversation, limit, before)
+	snapshot := api.windowedConversationSnapshot(detail, window, 12<<20, before == nil)
 	if proto.Size(snapshot) > 12<<20 {
 		return nil, status.Error(codes.ResourceExhausted, "one conversation message or its details exceed the 12 MiB response budget")
 	}
@@ -746,6 +746,13 @@ func (api *grpcAPI) boundedConversationSnapshot(detail model.CardDetail, convers
 	start := max(0, end-limit)
 	total := len(conversation.Messages)
 	conversation.Messages = append([]model.UIMessage(nil), conversation.Messages[start:end]...)
+	return api.windowedConversationSnapshot(detail, store.ConversationWindow{
+		Conversation: conversation, Start: start, End: end, Total: total,
+	}, budget, before == nil && remember)
+}
+
+func (api *grpcAPI) windowedConversationSnapshot(detail model.CardDetail, window store.ConversationWindow, budget int, remember bool) *dieterv1.ConversationSnapshot {
+	conversation := window.Conversation
 	visibleMessages := make(map[string]bool, len(conversation.Messages))
 	for _, message := range conversation.Messages {
 		visibleMessages[message.ID] = true
@@ -767,7 +774,7 @@ func (api *grpcAPI) boundedConversationSnapshot(detail model.CardDetail, convers
 	snapshot := &dieterv1.ConversationSnapshot{
 		Detail: protoCardDetail(detail), Conversation: protoConversation(conversation),
 		Page: &dieterv1.ConversationPage{
-			Start: int32(start), End: int32(end), Total: int32(total), HasMore: start > 0,
+			Start: int32(window.Start), End: int32(window.End), Total: int32(window.Total), HasMore: window.Start > 0,
 		},
 	}
 	for proto.Size(snapshot) > budget && len(snapshot.Conversation.Messages) > 1 {
@@ -778,7 +785,7 @@ func (api *grpcAPI) boundedConversationSnapshot(detail model.CardDetail, convers
 		snapshot.Page.Start++
 		snapshot.Page.HasMore = true
 	}
-	if before == nil && remember {
+	if remember {
 		api.rememberConversationSnapshot(detail.Card.ID, snapshot)
 	}
 	return snapshot

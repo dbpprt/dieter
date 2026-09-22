@@ -118,6 +118,20 @@ The complete connected suite includes production-mode frame performance checks
 and restores the debug APK without clearing data. A class filter runs debug
 instrumentation only; `just android performance-test` runs the performance case.
 
+For a separate diagnostic run:
+
+```sh
+env 'ORG_GRADLE_PROJECT_android.testInstrumentationRunnerArguments.dieterPerformanceFrames=true' \
+  just android performance-test
+```
+
+The diagnostic records up to 4,096 frame phase
+samples on a dedicated callback thread and reports dropped samples, percentiles,
+and the slowest frames under the `DieterPerformance` logcat tag. The optional
+`dieterPerformanceControl=true` argument runs the same input journey against
+native buttons to identify system/rendering costs. Neither diagnostic replaces
+a clean Dieter timing run without extra tracing; the p95 and severe-frame limits stay active.
+
 Default integration uses disposable enrolled gateway/daemon fixtures and mock
 agents. Configured-account tests are skipped unless explicitly enabled with
 `-Pandroid.testInstrumentationRunnerArguments.configuredGatewayTests=1`; those can

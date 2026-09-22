@@ -1,6 +1,17 @@
 import AppKit
 import SwiftUI
 
+private struct BoardRenderingActiveKey: EnvironmentKey {
+    static let defaultValue = true
+}
+
+extension EnvironmentValues {
+    var boardRenderingActive: Bool {
+        get { self[BoardRenderingActiveKey.self] }
+        set { self[BoardRenderingActiveKey.self] = newValue }
+    }
+}
+
 enum BoardConversationSizing {
     static let minimumWidth: CGFloat = 320
     static let maximumWidth: CGFloat = 720
@@ -34,10 +45,18 @@ struct BoardConversationOverlay: NSViewControllerRepresentable {
     let presented: Bool
     let maximized: Bool
     var defaults: UserDefaults = DieterAppearance.applicationDefaults()
+    var active = true
     var onRequestMaximize: () -> Void = {}
 
     func makeNSViewController(context: Context) -> BoardConversationContainerController {
         BoardConversationContainerController(defaults: defaults)
+    }
+
+    static func dismantleNSViewController(_ controller: BoardConversationContainerController, coordinator: ()) {
+        // Conversation views can own tasks and editor state. Only the board's
+        // mounted rows need to survive destination changes.
+        controller.inspector.conversationHost.rootView = AnyView(EmptyView())
+        controller.inspector.onRequestMaximize = {}
     }
 
     func sizeThatFits(
@@ -52,7 +71,14 @@ struct BoardConversationOverlay: NSViewControllerRepresentable {
     }
 
     func updateNSViewController(_ controller: BoardConversationContainerController, context: Context) {
-        controller.boardHost.rootView = board
+        BoardRenderingDiagnostics.record(.overlayUpdated)
+        controller.view.isHidden = !active
+        controller.boardHost.rootView = AnyView(board.environment(\.boardRenderingActive, active))
+        guard active else {
+            controller.inspector.conversationHost.rootView = AnyView(EmptyView())
+            controller.inspector.onRequestMaximize = {}
+            return
+        }
         controller.inspector.conversationHost.rootView = conversation
         controller.inspector.onRequestMaximize = onRequestMaximize
         controller.setPresentation(presented: presented, maximized: maximized)

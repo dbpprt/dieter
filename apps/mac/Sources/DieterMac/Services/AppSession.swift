@@ -213,7 +213,9 @@ final class AppSession {
     }
 
     var workspaceIsLive: Bool {
-        workspaceFreshness.isLive
+        // Cached workspace contents distinguish offline presentation states,
+        // but cannot affect liveness. Avoid observing all cards for this flag.
+        phase.isConnected && !globalSyncing
     }
 
     func machineIsAvailable(_ machine: DieterEndpoint) -> Bool {

@@ -8,6 +8,7 @@ import android.view.accessibility.AccessibilityNodeInfo
 import androidx.test.ext.junit.rules.ActivityScenarioRule
 import android.os.Looper
 import android.os.Handler
+import android.os.HandlerThread
 import android.os.Process
 import android.os.SystemClock
 import android.util.Log
@@ -69,6 +70,33 @@ class MainActivityFramePerformanceTest {
         measuring = true
         aggregator.add(activity)
         val sampleMain = InstrumentationRegistry.getArguments().getString("dieterPerformanceSample") == "true"
+        val traceFrames = InstrumentationRegistry.getArguments().getString("dieterPerformanceFrames") == "true"
+        val framePhases = mutableListOf<LongArray>()
+        var droppedPhaseFrames = 0
+        var truncatedPhaseFrames = 0
+        val phaseThread = if (traceFrames) HandlerThread("frame-phase-diagnostics").apply { start() } else null
+        val phaseMetrics = linkedMapOf(
+            "total" to FrameMetrics.TOTAL_DURATION,
+            "input" to FrameMetrics.INPUT_HANDLING_DURATION,
+            "animation" to FrameMetrics.ANIMATION_DURATION,
+            "layout" to FrameMetrics.LAYOUT_MEASURE_DURATION,
+            "draw" to FrameMetrics.DRAW_DURATION,
+            "sync" to FrameMetrics.SYNC_DURATION,
+            "command" to FrameMetrics.COMMAND_ISSUE_DURATION,
+            "swap" to FrameMetrics.SWAP_BUFFERS_DURATION,
+            "delay" to FrameMetrics.UNKNOWN_DELAY_DURATION,
+            "gpu" to FrameMetrics.GPU_DURATION,
+        )
+        val phaseListener = Window.OnFrameMetricsAvailableListener { _, frame, dropped ->
+            // The framework reuses FrameMetrics. Copy bounded primitive values
+            // on the callback thread; never inspect stacks or log on Main.
+            val values = phaseMetrics.values.map(frame::getMetric).toLongArray()
+            synchronized(framePhases) {
+                droppedPhaseFrames += dropped
+                if (framePhases.size < 4096) framePhases += values else truncatedPhaseFrames++
+            }
+        }
+        if (phaseThread != null) activity.window.addOnFrameMetricsAvailableListener(phaseListener, Handler(phaseThread.looper))
         val sampling = AtomicBoolean(sampleMain)
         val samples = mutableMapOf<String, Int>()
         val sampler = if (sampleMain) thread(name = "performance-main-sampler") {
@@ -92,6 +120,9 @@ class MainActivityFramePerformanceTest {
         if (sampleMain) activity.window.addOnFrameMetricsAvailableListener(slowFrames, Handler(Looper.getMainLooper()))
         val cpuStarted = Process.getElapsedCpuTime()
         val wallStarted = SystemClock.elapsedRealtime()
+        var navigationCpuMs: Long
+        var navigationWallMs: Long
+        var metrics: Array<android.util.SparseIntArray?>?
 
         try {
             repeat(4) {
@@ -100,6 +131,14 @@ class MainActivityFramePerformanceTest {
                 navigate("nav-terminals")
             }
         } finally {
+            navigationCpuMs = Process.getElapsedCpuTime() - cpuStarted
+            navigationWallMs = SystemClock.elapsedRealtime() - wallStarted
+            metrics = aggregator.remove(activity)
+            if (phaseThread != null) {
+                activity.window.removeOnFrameMetricsAvailableListener(phaseListener)
+                phaseThread.quitSafely()
+                phaseThread.join(2_000)
+            }
             sampling.set(false)
             sampler?.join(2_000)
             if (sampleMain) {
@@ -110,10 +149,21 @@ class MainActivityFramePerformanceTest {
             }
         }
 
-        val navigationCpuMs = Process.getElapsedCpuTime() - cpuStarted
-        val navigationWallMs = SystemClock.elapsedRealtime() - wallStarted
-        val metrics = requireNotNull(aggregator.remove(activity))
-        val histogram = requireNotNull(metrics[FrameMetricsAggregator.TOTAL_INDEX])
+        if (phaseThread != null) {
+            val captured = synchronized(framePhases) { framePhases.toList() }
+            Log.i("DieterPerformance", "frameDiagnostics captured=${captured.size} dropped=$droppedPhaseFrames truncated=$truncatedPhaseFrames")
+            phaseMetrics.keys.forEachIndexed { index, name ->
+                val values = captured.map { it[index] / 1_000_000.0 }.filter { it >= 0 }.sorted()
+                if (values.isNotEmpty()) Log.i("DieterPerformance", "phase=$name frames=${values.size} " +
+                    "p50Ms=${values[values.size / 2]} p95Ms=${values[(values.size * 0.95).toInt().coerceAtMost(values.lastIndex)]} maxMs=${values.last()}")
+            }
+            captured.sortedByDescending { it[0] }.take(20).forEach { frame ->
+                Log.i("DieterPerformance", "framePhases " + phaseMetrics.keys.mapIndexed { index, name ->
+                    "$name=${frame[index] / 1_000_000.0}"
+                }.joinToString(" "))
+            }
+        }
+        val histogram = requireNotNull(requireNotNull(metrics)[FrameMetricsAggregator.TOTAL_INDEX])
         var totalFrames = 0
         var severeFrames = 0
         val orderedDurations = mutableListOf<Int>()
@@ -135,9 +185,6 @@ class MainActivityFramePerformanceTest {
                 "over16Ms=${sorted.count { it > 16 }} over33Ms=${sorted.count { it > 33 }} " +
                 "cpuMs=$navigationCpuMs wallMs=$navigationWallMs",
         )
-        assertEquals("Detected a >=${SEVERE_FRAME_MS}ms UI-thread stall", 0, severeFrames)
-        assertTrue("Navigation p95 was ${p95}ms", p95 < P95_FRAME_MS)
-
         // Separate passive-window CPU from navigation. These are process
         // counters (including the test runner), not a physical battery estimate.
         instrumentation.waitForIdleSync()
@@ -149,6 +196,9 @@ class MainActivityFramePerformanceTest {
             "idle cpuMs=${Process.getElapsedCpuTime() - idleCpuStarted} " +
                 "wallMs=${SystemClock.elapsedRealtime() - idleWallStarted}",
         )
+        // Retain idle evidence even when navigation fails its unchanged budget.
+        assertEquals("Detected a >=${SEVERE_FRAME_MS}ms UI-thread stall", 0, severeFrames)
+        assertTrue("Navigation p95 was ${p95}ms", p95 < P95_FRAME_MS)
     }
 
     // Optional diagnostic control: the same window, renderer and input driver

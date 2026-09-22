@@ -1,5 +1,6 @@
 import AppKit
 import DieterAPI
+import Observation
 import SwiftUI
 
 /// A view-based native table asks SwiftUI to build only mounted rows. Native
@@ -7,12 +8,15 @@ import SwiftUI
 /// rich card graph for every item in every lane during the first layout.
 struct BoardLaneList: View {
     @Environment(DieterStore.self) private var store
+    @Environment(\.boardRenderingActive) private var renderingActive
     let laneID: String
     let cards: [Dieter_V1_Card]
     let sortDirection: BoardCardSortDirection
 
     var body: some View {
-        NativeBoardLaneList(store: store, laneID: laneID, cards: cards)
+        NativeBoardLaneList(
+            store: store, laneID: laneID, cards: cards, board: store.selectedBoard,
+            renderingActive: renderingActive)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .padding(.top, -LaneInsertionTarget.beforeCardHeight)
             .foregroundStyle(DieterTheme.text)
@@ -25,9 +29,12 @@ private struct NativeBoardLaneList: NSViewRepresentable {
     let store: DieterStore
     let laneID: String
     let cards: [Dieter_V1_Card]
+    let board: Dieter_V1_Board?
+    let renderingActive: Bool
 
     func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
     func makeNSView(context: Context) -> NSScrollView {
+        BoardRenderingDiagnostics.record(.tableCreated)
         let scroll = NSScrollView()
         scroll.drawsBackground = false
         scroll.hasVerticalScroller = true
@@ -52,24 +59,30 @@ private struct NativeBoardLaneList: NSViewRepresentable {
         }
         table.widthDidChange = { [weak table, weak coordinator = context.coordinator] in
             guard let table, let coordinator else { return }
-            coordinator.heights.removeAll()
-            table.reloadData()
-            table.noteHeightOfRows(withIndexesChanged: IndexSet(integersIn: 0..<table.numberOfRows))
+            BoardRenderingDiagnostics.record(.widthChanged)
+            coordinator.resize(to: table.bounds.width)
         }
         scroll.documentView = table
         context.coordinator.table = table
         return scroll
     }
     func updateNSView(_ scroll: NSScrollView, context: Context) {
+        // Hidden destination updates coalesce until the board is visible. Keep
+        // the last rendered parent so reactivation diffs against those rows.
+        guard renderingActive else { return }
         let coordinator = context.coordinator
         let old = coordinator.parent.cards
+        let boardChanged = coordinator.parent.board != board
         coordinator.parent = self
         guard let table = coordinator.table else { return }
         if old.map(\.id) != cards.map(\.id) {
-            coordinator.heights = coordinator.heights.filter { entry in cards.contains { $0.id == entry.key } }
+            BoardRenderingDiagnostics.record(.fullReload)
+            let retainedIDs = Set(cards.map(\.id))
+            coordinator.heights = coordinator.heights.filter { retainedIDs.contains($0.key) }
             table.reloadData()
-        } else if old != cards {
-            let changed = IndexSet(cards.indices.filter { old[$0] != cards[$0] })
+        } else if boardChanged || old != cards {
+            let changed = IndexSet(cards.indices.filter { boardChanged || old[$0] != cards[$0] })
+            BoardRenderingDiagnostics.record(.reloadedRows, count: changed.count)
             for index in changed { coordinator.heights.removeValue(forKey: cards[index].id) }
             table.reloadData(forRowIndexes: changed, columnIndexes: IndexSet(integer: 0))
         }
@@ -82,6 +95,48 @@ private struct NativeBoardLaneList: NSViewRepresentable {
         private var pendingHeightIDs: Set<String> = []
         private var heightUpdateScheduled = false
         init(parent: NativeBoardLaneList) { self.parent = parent }
+        func resize(to width: CGFloat) {
+            guard let table else { return }
+            let anchor = viewportAnchor()
+            // Preserve mounted rows, focus, hover and drag state when opening
+            // the inspector. Offscreen estimates are remeasured on reuse.
+            heights.removeAll(keepingCapacity: true)
+            table.enumerateAvailableRowViews { rowView, _ in
+                guard let cell = rowView.view(atColumn: 0) as? BoardLaneCell else { return }
+                cell.sizing.width = max(1, width)
+                cell.measureContent()
+                cell.needsLayout = true
+            }
+            table.noteHeightOfRows(withIndexesChanged: IndexSet(integersIn: 0..<table.numberOfRows))
+            restoreViewport(anchor)
+        }
+
+        private struct ViewportAnchor {
+            let row: Int
+            let offset: CGFloat
+        }
+
+        private func viewportAnchor() -> ViewportAnchor? {
+            guard let table, let scroll = table.enclosingScrollView else { return nil }
+            let origin = scroll.documentVisibleRect.minY
+            let row = table.row(at: NSPoint(x: 0, y: origin))
+            guard row >= 0, row < table.numberOfRows else { return nil }
+            return ViewportAnchor(row: row, offset: origin - table.rect(ofRow: row).minY)
+        }
+
+        private func restoreViewport(_ anchor: ViewportAnchor?) {
+            guard let anchor, let table, anchor.row < table.numberOfRows,
+                let scroll = table.enclosingScrollView
+            else { return }
+            let row = table.rect(ofRow: anchor.row)
+            let offset = min(anchor.offset, max(0, row.height - 1))
+            let y = min(max(0, row.minY + offset), max(0, table.bounds.height - scroll.documentVisibleRect.height))
+            let point = NSPoint(x: scroll.contentView.bounds.minX, y: y)
+            guard abs(scroll.contentView.bounds.minY - y) > 0.5 else { return }
+            scroll.contentView.scroll(to: point)
+            scroll.reflectScrolledClipView(scroll.contentView)
+        }
+
         private func measured(_ height: CGFloat, cardID: String) {
             guard abs((heights[cardID] ?? 140) - height) > 0.5 else { return }
             heights[cardID] = height
@@ -102,11 +157,14 @@ private struct NativeBoardLaneList: NSViewRepresentable {
             pendingHeightIDs.removeAll(keepingCapacity: true)
             let changed = IndexSet(parent.cards.indices.filter { ids.contains(parent.cards[$0].id) })
             guard !changed.isEmpty else { return false }
+            BoardRenderingDiagnostics.record(.heightTransaction)
+            let anchor = viewportAnchor()
             NSAnimationContext.runAnimationGroup { context in
                 context.duration = 0
                 context.allowsImplicitAnimation = false
                 table.noteHeightOfRows(withIndexesChanged: changed)
             }
+            restoreViewport(anchor)
             return true
         }
         func numberOfRows(in tableView: NSTableView) -> Int { parent.cards.count }
@@ -115,6 +173,7 @@ private struct NativeBoardLaneList: NSViewRepresentable {
             heights[parent.cards[row].id] ?? 140
         }
         func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
+            BoardRenderingDiagnostics.record(.rowConfigured)
             let id = NSUserInterfaceItemIdentifier("board-card")
             let cell = tableView.makeView(withIdentifier: id, owner: nil) as? BoardLaneCell ?? BoardLaneCell()
             cell.identifier = id
@@ -122,13 +181,19 @@ private struct NativeBoardLaneList: NSViewRepresentable {
             cell.measured = { [weak self] height in
                 self?.measured(height, cardID: cardID)
             }
-            cell.host.rootView = AnyView(
-                BoardLaneRow(card: parent.cards[row], laneID: parent.laneID, isLast: row == parent.cards.count - 1)
+            cell.needsMeasurement = true
+            cell.sizing.width = max(1, tableView.bounds.width)
+            cell.host.rootView = BoardLaneCellContent(
+                sizing: cell.sizing,
+                content: AnyView(
+                    BoardLaneRow(
+                        card: parent.cards[row], laneID: parent.laneID, isLast: row == parent.cards.count - 1,
+                        board: parent.board
+                    )
                     .id(cardID)
                     .environment(parent.store)
                     .foregroundStyle(DieterTheme.text)
-                    .frame(width: max(1, tableView.bounds.width))
-            )
+                ))
             // Prime the height while the native table constructs this visible
             // cell. Deferring the first measurement to a later layout leaves
             // a briefly clipped card at the estimated height on first draw.
@@ -160,19 +225,49 @@ private struct NativeBoardLaneList: NSViewRepresentable {
     }
 }
 
+@MainActor @Observable private final class BoardLaneCellSizing {
+    var width: CGFloat = 1
+}
+
+private struct BoardLaneCellContent: View {
+    let sizing: BoardLaneCellSizing
+    let content: AnyView
+
+    var body: some View { content.frame(width: sizing.width) }
+}
+
+@MainActor private final class BoardLaneHostingView: NSHostingView<BoardLaneCellContent> {
+    var measurementInvalidated: (() -> Void)?
+    override func invalidateIntrinsicContentSize() {
+        super.invalidateIntrinsicContentSize()
+        measurementInvalidated?()
+    }
+}
+
 @MainActor private final class BoardLaneCell: NSTableCellView {
-    let host = NSHostingView(rootView: AnyView(EmptyView()))
+    let sizing = BoardLaneCellSizing()
+    lazy var host = BoardLaneHostingView(rootView: BoardLaneCellContent(sizing: sizing, content: AnyView(EmptyView())))
+    var needsMeasurement = true
+    private var measuredWidth: CGFloat?
     var measured: ((CGFloat) -> Void)?
     override func layout() {
         super.layout()
         measureContent()
     }
     func measureContent() {
+        guard needsMeasurement || measuredWidth != sizing.width else { return }
+        needsMeasurement = false
+        measuredWidth = sizing.width
+        BoardRenderingDiagnostics.record(.heightMeasured)
         measured?(max(1, ceil(host.fittingSize.height)))
     }
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         host.sizingOptions = [.intrinsicContentSize]
+        host.measurementInvalidated = { [weak self] in
+            self?.needsMeasurement = true
+            self?.needsLayout = true
+        }
         host.translatesAutoresizingMaskIntoConstraints = false
         addSubview(host)
         NSLayoutConstraint.activate([
@@ -190,10 +285,11 @@ struct BoardLaneRow: View {
     let card: Dieter_V1_Card
     let laneID: String
     let isLast: Bool
+    var board: Dieter_V1_Board? = nil
     var body: some View {
         VStack(spacing: 0) {
             LaneInsertionTarget(laneID: laneID, beforeCardID: card.id)
-            BoardCardView(card: card)
+            BoardCardView(card: card, board: board)
                 .opacity(store.movingCardIDs.contains(card.id) ? 0.48 : 1)
             if isLast {
                 LaneInsertionTarget(laneID: laneID, beforeCardID: nil)

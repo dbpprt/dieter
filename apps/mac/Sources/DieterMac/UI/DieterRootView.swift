@@ -44,6 +44,7 @@ struct DieterRootView: View {
     @AppStorage(SidebarSizing.storageKey, store: SidebarProjectNavigationPreferences.applicationDefaults())
     private var navigationWidth = Double(SidebarSizing.defaultWidth)
     @State private var sidebarVisibility: NavigationSplitViewVisibility = .all
+    @State private var hasOpenedBoard = false
 
     private var showsSynchronizedWorkspace: Bool {
         switch store.section {
@@ -94,10 +95,22 @@ struct DieterRootView: View {
                     )
                     .transition(.move(edge: .top).combined(with: .opacity))
                 }
-                Group {
+                ZStack {
+                    // Keep one board attached to this window after its first
+                    // visit. Detaching NSHostingView discards its row graph even
+                    // when its controller survives. The native host is hidden
+                    // while away, excluding its content from drawing and input.
+                    if hasOpenedBoard || store.section == .board {
+                        BoardView(
+                            usesTitlebarSpace: sidebarVisibility != .detailOnly,
+                            active: store.section == .board)
+                            .opacity(store.section == .board ? 1 : 0)
+                            .allowsHitTesting(store.section == .board)
+                            .accessibilityHidden(store.section != .board)
+                    }
                     switch store.section {
                     case .board:
-                        BoardView(usesTitlebarSpace: sidebarVisibility != .detailOnly)
+                        Color.clear.allowsHitTesting(false)
                     case .chats: ChatsView()
                     case .terminals:
                         TerminalsView(model: store.terminalsModel, showAll: { await store.showAllTerminals() })
@@ -138,6 +151,9 @@ struct DieterRootView: View {
                     case .archive: ArchiveView()
                     case .settings: DieterSettingsView()
                     }
+                }
+                .onChange(of: store.section, initial: true) { _, section in
+                    if section == .board { hasOpenedBoard = true }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }

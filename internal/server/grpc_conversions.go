@@ -7,7 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
-	"unicode/utf8"
+	"unicode"
 
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
 	"github.com/dbpprt/dieter/internal/harness"
@@ -371,11 +371,26 @@ func payloadSummary(raw json.RawMessage) (string, bool, int64) {
 	if len(trimmed) == 0 {
 		return "", false, 0
 	}
+	// Small inputs are cheaper to decode directly. Large immutable tool results
+	// recur in each active transcript snapshot; retain only their short preview.
+	if len(trimmed) < 4096 {
+		return payloadPreview(trimmed), true, int64(len(raw))
+	}
+	key := sha256.Sum256(trimmed)
+	if preview, ok := toolPayloadPreviews.get(key); ok {
+		return preview, true, int64(len(raw))
+	}
+	preview := payloadPreview(trimmed)
+	toolPayloadPreviews.put(key, preview)
+	return preview, true, int64(len(raw))
+}
+
+func payloadPreview(trimmed []byte) string {
 	var value any
 	decoder := json.NewDecoder(bytes.NewReader(trimmed))
 	decoder.UseNumber()
 	if decoder.Decode(&value) != nil {
-		return truncatePreview(string(trimmed), 160), true, int64(len(raw))
+		return truncatePreview(string(trimmed), 160)
 	}
 	if object, ok := value.(map[string]any); ok {
 		for _, key := range []string{"command", "path", "file_path", "query", "url"} {
@@ -393,16 +408,33 @@ func payloadSummary(raw json.RawMessage) (string, bool, int64) {
 		}
 		text = string(encoded)
 	}
-	return truncatePreview(text, 160), true, int64(len(raw))
+	return truncatePreview(text, 160)
 }
 
 func truncatePreview(value string, limit int) string {
-	value = strings.Join(strings.Fields(value), " ")
-	if utf8.RuneCountInString(value) <= limit {
-		return value
+	if limit <= 0 {
+		return ""
 	}
-	runes := []rune(value)
-	return string(runes[:limit-1]) + "…"
+	// Normalize whitespace only until the preview is full. Splitting, joining,
+	// counting and converting the entire multi-MiB tool result wasted work for
+	// a 160-rune label. One lookahead distinguishes exact length from truncation.
+	runes := make([]rune, 0, min(limit+1, len(value)))
+	space := false
+	for _, r := range value {
+		if unicode.IsSpace(r) {
+			space = len(runes) > 0
+			continue
+		}
+		if space {
+			runes = append(runes, ' ')
+			space = false
+		}
+		runes = append(runes, r)
+		if len(runes) > limit {
+			return string(runes[:limit-1]) + "…"
+		}
+	}
+	return string(runes)
 }
 
 func toolPayloadRevision(value model.UIMessagePart) string {

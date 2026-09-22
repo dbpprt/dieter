@@ -174,6 +174,7 @@ struct EditCardSheet: View {
                 Spacer()
                 Button("Cancel") { dismiss() }
                     .buttonStyle(DieterSecondaryButtonStyle()).disabled(saving)
+                    .smokeTarget("card-editor.cancel")
                 Button {
                     Task { await save() }
                 } label: {
@@ -190,6 +191,7 @@ struct EditCardSheet: View {
             .padding(.horizontal, 24).padding(.vertical, 14)
         }
         .frame(width: 620, height: min(700, max(360, availableHeight - 80)))
+        .smokeTarget("card-editor.\(card.id)")
         .background(DieterTheme.background)
         .background(SheetOutsideClickDismissal(enabled: !saving && !hasChanges) { dismiss() })
         .interactiveDismissDisabled(saving || hasChanges)

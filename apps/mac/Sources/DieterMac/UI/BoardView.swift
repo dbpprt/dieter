@@ -184,6 +184,7 @@ enum BoardPresentationState: Equatable {
 struct BoardView: View {
     @Environment(DieterStore.self) private var store
     var usesTitlebarSpace = false
+    var active = true
     @State private var conversationMaximized = false
 
     private var contentPresented: Bool {
@@ -193,11 +194,7 @@ struct BoardView: View {
     var body: some View {
         BoardConversationOverlay(
             board: AnyView(
-                boardContent.environment(store)
-                    .safeAreaInset(edge: .top) { SharedConflictsButton(keys: store.selectedBoard?.conflictKeys ?? []) }
-                    .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity)
-                    .background(DieterTheme.surface)
-                    .smokeTarget("board.canvas")
+                BoardCanvas().environment(store)
                     .dieterThemeRoot(
                         palette: store.themeSelection.palette, appearance: store.themeSelection.appearance)),
             conversation: AnyView(
@@ -223,6 +220,7 @@ struct BoardView: View {
                     palette: store.themeSelection.palette, appearance: store.themeSelection.appearance)),
             presented: store.selectedCardID != nil,
             maximized: conversationMaximized || contentPresented,
+            active: active,
             onRequestMaximize: { conversationMaximized = true }
         )
         .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity)
@@ -238,7 +236,21 @@ struct BoardView: View {
         }
     }
 
-    private var boardContent: some View {
+}
+
+/// Keep board observations separate from conversation presentation and tokens.
+private struct BoardCanvas: View {
+    @Environment(DieterStore.self) private var store
+
+    var body: some View {
+        content
+            .safeAreaInset(edge: .top) { SharedConflictsButton(keys: store.selectedBoard?.conflictKeys ?? []) }
+            .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity)
+            .background(DieterTheme.surface)
+            .smokeTarget("board.canvas")
+    }
+
+    private var content: some View {
         Group {
             switch BoardPresentationState.resolve(
                 hasLoadedWorkspace: store.hasLoadedWorkspace,
@@ -1345,9 +1357,8 @@ private struct BoardCardDragPreview: View {
     }
 }
 
-/// Delay the single-click action until the double-click recognizer has failed.
-/// Opening the conversation on the first mouse-up can otherwise remove the
-/// card before the second click has a chance to open its editor.
+/// Open on the first click. The optional second click edits the retained row;
+/// it must never make every ordinary click wait for the double-click timeout.
 private struct BoardCardClickStyle: PrimitiveButtonStyle {
     let edit: () -> Void
 
@@ -1355,15 +1366,12 @@ private struct BoardCardClickStyle: PrimitiveButtonStyle {
         configuration.label
             .contentShape(Rectangle())
             .gesture(
-                TapGesture(count: 2)
-                    .exclusively(before: TapGesture(count: 1))
-                    .onEnded { action in
-                        switch action {
-                        case .first: edit()
-                        case .second: configuration.trigger()
-                        }
-                    }
+                TapGesture(count: 1).onEnded {
+                    BoardCardDoubleClickTracker.shared.arm(after: NSApp.currentEvent, edit: edit)
+                    configuration.trigger()
+                }
             )
+            .simultaneousGesture(TapGesture(count: 2).onEnded { edit() })
             .focusable()
             .focusEffectDisabled()
             .onKeyPress(keys: [.return, .space]) { _ in
@@ -1375,69 +1383,71 @@ private struct BoardCardClickStyle: PrimitiveButtonStyle {
     }
 }
 
-struct BoardCardView: View {
+/// Selection changes only redraw decoration, not every visible card's rich content.
+private struct BoardCardBackground: View {
+    @Environment(DieterStore.self) private var store
+    let cardID: String
+    let hovering: Bool
+    var body: some View {
+        RoundedRectangle(cornerRadius: DieterMetrics.cardRadius, style: .continuous)
+            .fill(
+                store.selectedCardID == cardID
+                    ? DieterTheme.elevated.opacity(0.82)
+                    : (hovering ? DieterTheme.raised.opacity(0.9) : DieterTheme.surface))
+    }
+}
+
+private struct BoardCardBorder: View {
+    @Environment(DieterStore.self) private var store
+    let cardID: String
+    let labelDropTargeted: Bool
+    var body: some View {
+        RoundedRectangle(cornerRadius: DieterMetrics.cardRadius, style: .continuous)
+            .stroke(
+                labelDropTargeted
+                    ? DieterTheme.eyes.opacity(0.9)
+                    : (store.selectedCardID == cardID ? DieterTheme.shell.opacity(0.45) : DieterTheme.border),
+                lineWidth: labelDropTargeted ? 1.5 : 1)
+    }
+}
+
+/// Presence timestamps and harness directory refreshes must not invalidate the
+/// entire rich card. These small subviews own the corresponding observations.
+private struct BoardCardMachineBadge: View {
     @Environment(DieterStore.self) private var store
     let card: Dieter_V1_Card
-    @State private var renamePresented = false
-    @State private var editPresented = false
-    @State private var renameText = ""
-    @State private var hovering = false
-    @State private var cardDrop = BoardCardDropState()
-    private var labelDropTargeted: Bool {
-        cardDrop.targeted && cardDrop.payload.flatMap(BoardLabelDragPayload.init) != nil
-    }
 
-    init(card: Dieter_V1_Card, dropState: BoardCardDropState = BoardCardDropState()) {
-        self.card = card
-        _cardDrop = State(initialValue: dropState)
-    }
-
-    var labels: [Dieter_V1_Label] {
-        store.selectedBoard?.labels.filter { card.labelIds.contains($0.id) } ?? []
-    }
-    private func canMergePayload(_ value: String) -> Bool {
-        guard let payload = BoardCardDragPayload(value),
-            let source = store.state.cards.first(where: { $0.id == payload.cardID })
-        else { return false }
-        return BoardCardMergePolicy.canMerge(source, into: card)
-    }
-
-    private func performCardDrop(_ value: String, merge: Bool) -> Bool {
-        if let payload = BoardLabelDragPayload(value) {
-            guard payload.boardID == store.selectedBoardID,
-                store.selectedBoard?.labels.contains(where: { $0.id == payload.labelID }) == true
-            else { return false }
-            let ids = BoardLabelAssignment.adding(payload.labelID, to: card.labelIds)
-            guard ids != card.labelIds else { return true }
-            Task { await store.setLabels(card, ids: ids) }
-            return true
+    var body: some View {
+        if let machine = store.machine(for: card) {
+            ProjectMachineBadge(
+                machine: machine, online: store.machineIsAvailable(machine),
+                compact: false, alignsWithStatus: true
+            )
         }
-        guard let payload = BoardCardDragPayload(value),
-            payload.boardID == store.selectedBoardID,
-            let dragged = store.state.cards.first(where: { $0.id == payload.cardID })
-        else { return false }
-        guard payload.cardID != card.id else { return true }
-        if merge {
-            Task { await store.merge(dragged, into: card) }
-            return true
-        }
-        let laneCards = store.displayedCards.filter { $0.lane == card.lane }.sorted {
-            $0.position < $1.position
-        }
-        let position = BoardDropOrdering.position(
-            before: card.id, movingCardID: payload.cardID, cards: laneCards)
-        Task { await store.move(dragged, lane: card.lane, position: position) }
-        return true
     }
+}
 
-    private var starting: Bool { store.pendingCardStarts[card.id] != nil }
-    private var canStart: Bool {
-        store.isConversationServerBacked(card.id) && BoardCardStartPolicy.canStart(card, board: store.selectedBoard)
+private struct BoardCardAvailability: ViewModifier {
+    @Environment(DieterStore.self) private var store
+    let projectID: String
+
+    func body(content: Content) -> some View {
+        content.disabled(!store.projectIsAvailable(projectID))
     }
-    private var showsRunAction: Bool { canStart || starting }
-    private var runActionAccessibilityLabel: String {
-        let title = card.title.isEmpty ? "card" : card.title
-        return starting ? "Starting \(title)" : "Run \(title)"
+}
+
+private struct BoardCardHelp: ViewModifier {
+    @Environment(DieterStore.self) private var store
+    let card: Dieter_V1_Card
+    let labels: [Dieter_V1_Label]
+    let accessibility: Bool
+
+    func body(content: Content) -> some View {
+        if accessibility {
+            content.accessibilityValue(accessibilityDetails)
+        } else {
+            content.quickHelp(metadataHelp, maximumWidth: 320)
+        }
     }
 
     private var metadataHelp: String {
@@ -1476,10 +1486,83 @@ struct BoardCardView: View {
         return details.joined(separator: ". ")
     }
 
+}
+
+struct BoardCardView: View {
+    @Environment(DieterStore.self) private var store
+    let card: Dieter_V1_Card
+    let board: Dieter_V1_Board?
+    private var currentBoard: Dieter_V1_Board? { board ?? store.selectedBoard }
+    @State private var renamePresented = false
+    @State private var editPresented = false
+    @State private var renameText = ""
+    @State private var hovering = false
+    @State private var cardDrop = BoardCardDropState()
+    private var labelDropTargeted: Bool {
+        cardDrop.targeted && cardDrop.payload.flatMap(BoardLabelDragPayload.init) != nil
+    }
+
+    init(card: Dieter_V1_Card, board: Dieter_V1_Board? = nil, dropState: BoardCardDropState = BoardCardDropState()) {
+        self.card = card
+        self.board = board
+        _cardDrop = State(initialValue: dropState)
+    }
+
+    var labels: [Dieter_V1_Label] {
+        currentBoard?.labels.filter { card.labelIds.contains($0.id) } ?? []
+    }
+    private func canMergePayload(_ value: String) -> Bool {
+        guard let payload = BoardCardDragPayload(value),
+            let source = store.state.cards.first(where: { $0.id == payload.cardID })
+        else { return false }
+        return BoardCardMergePolicy.canMerge(source, into: card)
+    }
+
+    private func performCardDrop(_ value: String, merge: Bool) -> Bool {
+        if let payload = BoardLabelDragPayload(value) {
+            guard payload.boardID == store.selectedBoardID,
+                currentBoard?.labels.contains(where: { $0.id == payload.labelID }) == true
+            else { return false }
+            let ids = BoardLabelAssignment.adding(payload.labelID, to: card.labelIds)
+            guard ids != card.labelIds else { return true }
+            Task { await store.setLabels(card, ids: ids) }
+            return true
+        }
+        guard let payload = BoardCardDragPayload(value),
+            payload.boardID == store.selectedBoardID,
+            let dragged = store.state.cards.first(where: { $0.id == payload.cardID })
+        else { return false }
+        guard payload.cardID != card.id else { return true }
+        if merge {
+            Task { await store.merge(dragged, into: card) }
+            return true
+        }
+        let laneCards = store.displayedCards.filter { $0.lane == card.lane }.sorted {
+            $0.position < $1.position
+        }
+        let position = BoardDropOrdering.position(
+            before: card.id, movingCardID: payload.cardID, cards: laneCards)
+        Task { await store.move(dragged, lane: card.lane, position: position) }
+        return true
+    }
+
+    private var starting: Bool { store.pendingCardStarts[card.id] != nil }
+    private var canStart: Bool {
+        store.isConversationServerBacked(card.id) && BoardCardStartPolicy.canStart(card, board: currentBoard)
+    }
+    private var showsRunAction: Bool { canStart || starting }
+    private var runActionAccessibilityLabel: String {
+        let title = card.title.isEmpty ? "card" : card.title
+        return starting ? "Starting \(title)" : "Run \(title)"
+    }
+
     var body: some View {
+        let _ = BoardRenderingDiagnostics.record(.cardBody)
         ZStack(alignment: .bottomTrailing) {
             Button {
-                Task { await store.openConversation(cardID: card.id) }
+                Task {
+                    if store.selectedCardID != card.id { await store.openConversation(cardID: card.id) }
+                }
             } label: {
                 VStack(alignment: .leading, spacing: 9) {
                     HStack(alignment: .top) {
@@ -1501,16 +1584,9 @@ struct BoardCardView: View {
                     }
                     HStack(spacing: 7) {
                         StatusPill(text: card.runtime, color: runtimeColor(card.runtime))
-                        if let machine = store.machine(for: card) {
-                            ProjectMachineBadge(
-                                machine: machine,
-                                online: store.machineIsAvailable(machine),
-                                compact: false,
-                                alignsWithStatus: true
-                            )
-                            .fixedSize()
-                        }
-                        Spacer()
+                        BoardCardMachineBadge(card: card)
+                            .layoutPriority(-1)
+                        Spacer(minLength: 0)
                         let age = BoardCardActivityText.compact(
                             updatedAt: card.updatedAt,
                             lastActivityAt: card.lastActivityAt,
@@ -1519,6 +1595,7 @@ struct BoardCardView: View {
                         if !age.isEmpty {
                             Text(age)
                                 .font(.system(size: 10, weight: .medium))
+                                .fixedSize()
                                 .foregroundStyle(DieterTheme.tertiary)
                                 .accessibilityLabel("Last activity \(age)")
                         }
@@ -1536,22 +1613,8 @@ struct BoardCardView: View {
                 }
                 .padding(12)
                 .padding(.bottom, card.mergedIntoCardID.isEmpty ? 0 : 28)
-                .background(
-                    store.selectedCardID == card.id
-                        ? DieterTheme.elevated.opacity(0.82)
-                        : (hovering ? DieterTheme.raised.opacity(0.9) : DieterTheme.surface),
-                    in: RoundedRectangle(cornerRadius: DieterMetrics.cardRadius, style: .continuous)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: DieterMetrics.cardRadius, style: .continuous)
-                        .stroke(
-                            labelDropTargeted
-                                ? DieterTheme.eyes.opacity(0.9)
-                                : (store.selectedCardID == card.id
-                                    ? DieterTheme.shell.opacity(0.45) : DieterTheme.border),
-                            lineWidth: labelDropTargeted ? 1.5 : 1
-                        )
-                )
+                .background { BoardCardBackground(cardID: card.id, hovering: hovering) }
+                .overlay { BoardCardBorder(cardID: card.id, labelDropTargeted: labelDropTargeted) }
                 .overlay(alignment: .topTrailing) {
                     if labelDropTargeted {
                         Image(systemName: "tag.fill")
@@ -1615,7 +1678,7 @@ struct BoardCardView: View {
             .buttonStyle(BoardCardClickStyle(edit: openEditor))
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(card.title.isEmpty ? "Untitled card" : card.title)
-            .accessibilityValue(accessibilityDetails)
+            .modifier(BoardCardHelp(card: card, labels: labels, accessibility: true))
             .accessibilityAddTraits(.isButton)
             .accessibilityIdentifier("card.open.\(card.id)")
             if !card.mergedIntoCardID.isEmpty {
@@ -1657,7 +1720,7 @@ struct BoardCardView: View {
             }
         }
         .onHover { hovering = $0 }
-        .quickHelp(metadataHelp, maximumWidth: 320)
+        .modifier(BoardCardHelp(card: card, labels: labels, accessibility: false))
         .animation(.easeOut(duration: 0.12), value: hovering)
         .contextMenu {
             if store.isFailedOutboxItem(card.id) {
@@ -1681,11 +1744,11 @@ struct BoardCardView: View {
                     renamePresented = true
                 }
                 Menu("Move to") {
-                    ForEach(store.selectedBoard?.lanes ?? [], id: \.id) { lane in
+                    ForEach(currentBoard?.lanes ?? [], id: \.id) { lane in
                         Button(lane.name) { Task { await store.move(card, lane: lane.id) } }
                     }
                 }
-                if let labels = store.selectedBoard?.labels, !labels.isEmpty {
+                if let labels = currentBoard?.labels, !labels.isEmpty {
                     Menu("Labels") {
                         ForEach(labels, id: \.id) { label in
                             Button {
@@ -1710,7 +1773,7 @@ struct BoardCardView: View {
                 }
                 Divider()
                 Button("Archive", role: .destructive) { Task { await store.archive(card, archived: true) } }
-            }.disabled(!store.projectIsAvailable(card.projectID))
+            }.modifier(BoardCardAvailability(projectID: card.projectID))
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("card.\(card.id)")
@@ -1723,6 +1786,7 @@ struct BoardCardView: View {
                 HStack {
                     Spacer()
                     Button("Cancel") { renamePresented = false }
+                        .smokeTarget("card-editor.cancel")
                     Button("Rename") {
                         Task {
                             await store.rename(card, title: renameText)
@@ -1732,6 +1796,7 @@ struct BoardCardView: View {
                         renameText.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
             }.padding(22).frame(width: 440)
+                .smokeTarget("card-editor.\(card.id)")
         }
         .sheet(isPresented: $editPresented) {
             EditCardSheet(card: card).environment(store)

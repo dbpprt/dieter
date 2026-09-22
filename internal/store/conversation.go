@@ -146,6 +146,12 @@ func (s *Store) ConversationRevisionByID(cardID string) (string, error) {
 }
 
 func (s *Store) loadConversation(cardID string) (model.Conversation, error) {
+	return s.loadConversationView(cardID, nil)
+}
+
+// view must return independently owned mutable data. It runs only after a full
+// projection is available; reducers and the cache always retain full histories.
+func (s *Store) loadConversationView(cardID string, view func(model.Conversation) model.Conversation) (model.Conversation, error) {
 	// A replicated directory entry is never a local conversation.
 	if !s.cardExists(cardID) {
 		return model.Conversation{}, ErrRemoteConversation
@@ -181,7 +187,12 @@ func (s *Store) loadConversation(cardID string) (model.Conversation, error) {
 			s.conversations.clock++
 			cached.used = s.conversations.clock
 			s.conversations.entries[cardID] = cached
-			result := cloneConversation(cached.conversation)
+			var result model.Conversation
+			if view == nil {
+				result = cloneConversation(cached.conversation)
+			} else {
+				result = view(cached.conversation)
+			}
 			s.conversations.mu.Unlock()
 			return result, nil
 		}
@@ -216,6 +227,9 @@ func (s *Store) loadConversation(cardID string) (model.Conversation, error) {
 	file, err := os.Open(eventsPath)
 	if errors.Is(err, os.ErrNotExist) {
 		conversation.ProjectionVersion = conversationProjectionVersion
+		if view != nil {
+			conversation = view(conversation)
+		}
 		return conversation, nil
 	}
 	if err != nil {
@@ -261,6 +275,9 @@ func (s *Store) loadConversation(cardID string) (model.Conversation, error) {
 	afterSnapshot, _ := os.Stat(snapshotPath)
 	if sameFileRevision(eventsInfo, afterEvents) && sameFileRevision(snapshotInfo, afterSnapshot) && afterEvents != nil && offset == afterEvents.Size() {
 		s.cacheConversation(cardID, conversation, snapshotInfo, eventsInfo, offset)
+	}
+	if view != nil {
+		conversation = view(conversation)
 	}
 	return conversation, nil
 }

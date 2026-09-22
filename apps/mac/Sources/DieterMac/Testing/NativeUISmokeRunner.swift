@@ -1651,7 +1651,7 @@
             writeReport(results, to: output)
         }
 
-        private static func waitUntil(
+        static func waitUntil(
             timeout: TimeInterval,
             intervalMilliseconds: Int = 200,
             condition: @escaping @MainActor () -> Bool
@@ -2256,9 +2256,13 @@
         ) async {
             var selection: [Double] = []
             var display: [Double] = []
+            var rendering: [String] = []
+            var retained = true
             for _ in 0..<3 {
+                let previousTables = nativeTables(in: window.contentView)
                 store.openScreens()
                 try? await DieterTaskSleep.milliseconds(150)
+                BoardRenderingDiagnostics.start()
                 let start = Date()
                 await store.openBoard(board.id, projectID: project.id)
                 let selected = Date()
@@ -2267,7 +2271,17 @@
                 selection.append(selected.timeIntervalSince(start) * 1_000)
                 display.append(Date().timeIntervalSince(selected) * 1_000)
                 try? await DieterTaskSleep.milliseconds(150)
+                let counts = BoardRenderingDiagnostics.stop()
+                rendering.append(counts.keys.sorted().map { "\($0)=\(counts[$0]!)" }.joined(separator: " "))
+                let nextTables = nativeTables(in: window.contentView)
+                retained =
+                    retained && previousTables.count == 4 && nextTables.count == 4
+                    && previousTables.allSatisfy { old in nextTables.contains { $0 === old } }
+                    && counts["tableCreated"] == 0 && counts["fullReload"] == 0
             }
+            results["board-return-retains-lanes"] =
+                retained ? "passed" : "failed: destination navigation rebuilt native lanes"
+            results["board-return-rendering"] = rendering.joined(separator: "; ")
             results["board-open-selection-ms"] = selection.map { String(format: "%.1f", $0) }.joined(
                 separator: ", ")
             results["board-open-layout-display-ms"] = display.map { String(format: "%.1f", $0) }.joined(
@@ -2328,6 +2342,7 @@
             table.scrollRowToVisible(0)
             try? await DieterTaskSleep.milliseconds(200)
             capture(window, to: output.appending(path: "03-board-returned-to-top.png"))
+            await runBoardCardOpeningMeasurements(store: store, window: window, results: &results, output: output)
         }
 
         private static func scrollNativeLaneToBottom(_ table: NSTableView, window: NSWindow) async -> Bool {
@@ -2667,7 +2682,7 @@
             try? await DieterTaskSleep.milliseconds(450)
         }
 
-        private static func capture(_ window: NSWindow, to url: URL) {
+        static func capture(_ window: NSWindow, to url: URL) {
             guard let view = window.contentView,
                 let representation = view.bitmapImageRepForCachingDisplay(in: view.bounds)
             else { return }

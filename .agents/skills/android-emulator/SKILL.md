@@ -164,6 +164,19 @@ the real-input frame and idle-CPU measurement. Keep debug timings as diagnostic
 evidence, not release frame qualification. Physical-device energy and display
 qualification remain separate.
 
+For a separate diagnostic run:
+
+```sh
+env 'ORG_GRADLE_PROJECT_android.testInstrumentationRunnerArguments.dieterPerformanceFrames=true' \
+  just android performance-test
+```
+
+The diagnostic logs bounded off-main frame phase
+samples and drop counts under `DieterPerformance`. The existing
+`dieterPerformanceControl=true` argument substitutes native buttons to measure
+system overhead; it does not qualify the Dieter app. Keep clean timing runs
+separate from tracing and retain the unchanged frame limits.
+
 Inspect instrumentation before running it because it uses the configured real
 gateway. Use a class filter while iterating and the complete connected suite
 only when the requested confidence warrants it. Protect user data from test

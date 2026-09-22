@@ -382,7 +382,8 @@
 
         @discardableResult
         static func click(
-            _ identifier: String, in window: NSWindow, horizontalFraction: CGFloat = 0.5, fallbackLabel: String? = nil
+            _ identifier: String, in window: NSWindow, horizontalFraction: CGFloat = 0.5, fallbackLabel: String? = nil,
+            clickCount: Int = 1
         ) -> Bool {
             guard let element = find(identifier, in: window, fallbackLabel: fallbackLabel) else {
                 recordMissingTarget(identifier, in: window, reason: "no native click target")
@@ -398,14 +399,44 @@
                 fromScreen: NSPoint(x: frame.minX + frame.width * horizontalFraction, y: frame.midY))
             NSApp.activate(ignoringOtherApps: true)
             window.makeKeyAndOrderFront(nil)
-            for type in [NSEvent.EventType.mouseMoved, .leftMouseDown, .leftMouseUp] {
-                if let event = NSEvent.mouseEvent(
-                    with: type, location: point, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
-                    windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1,
-                    pressure: type == .leftMouseDown ? 1 : 0)
-                {
-                    // Native tracking controls consume mouse-up from the event
-                    // queue while handling mouse-down. Queue the complete gesture.
+            for count in 1...max(1, clickCount) {
+                for type in [NSEvent.EventType.mouseMoved, .leftMouseDown, .leftMouseUp] {
+                    if let event = NSEvent.mouseEvent(
+                        with: type, location: point, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                        windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: count,
+                        pressure: type == .leftMouseDown ? 1 : 0)
+                    {
+                        // Queue complete gestures: native tracking consumes mouse-up
+                        // while processing mouse-down. Double clicks retain the
+                        // original pointer location, even if the board resizes.
+                        NSApp.postEvent(event, atStart: false)
+                    }
+                }
+            }
+            return true
+        }
+
+        /// Keep the pointer at its original location while the first click
+        /// has time to resize the board. Queuing both clicks together alone
+        /// misses cards which move under the newly opened inspector.
+        static func doubleClickAcrossLayout(_ identifier: String, in window: NSWindow) async -> Bool {
+            guard let element = find(identifier, in: window) else { return false }
+            let frame = element.recordedFrame ?? element.frame
+            guard frame.width > 0, frame.height > 0 else { return false }
+            let targetWindow = element.recordedWindow ?? window
+            let point = targetWindow.convertPoint(fromScreen: NSPoint(x: frame.midX, y: frame.midY))
+            let timestamp = ProcessInfo.processInfo.systemUptime
+            let interval = min(0.15, NSEvent.doubleClickInterval / 2)
+            for count in 1...2 {
+                if count == 2 { try? await Task.sleep(for: .seconds(interval)) }
+                for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+                    guard
+                        let event = NSEvent.mouseEvent(
+                            with: type, location: point, modifierFlags: [],
+                            timestamp: timestamp + Double(count - 1) * interval,
+                            windowNumber: targetWindow.windowNumber, context: nil, eventNumber: 0,
+                            clickCount: count, pressure: type == .leftMouseDown ? 1 : 0)
+                    else { return false }
                     NSApp.postEvent(event, atStart: false)
                 }
             }
