@@ -199,13 +199,22 @@ final class RemoteNodeUITests: XCTestCase {
         XCTAssertTrue(label.waitForExistence(timeout: timeout), "Missing text \(text).\n\(app.debugDescription)")
     }
 
-    private func assistantTextExists(_ app: XCUIApplication, _ text: String, timeout: TimeInterval = 60) {
-        // Let the isolated harness finish its short streamed response before
-        // snapshotting SwiftUI's changing transcript. `waitForExistence` also
-        // captures a full debug hierarchy after each unsuccessful probe, which
-        // can keep the app main thread busy on CI. Poll one exact label through
-        // a predicate expectation instead.
-        Thread.sleep(forTimeInterval: 4)
+    private func assistantTextExists(
+        _ app: XCUIApplication,
+        _ text: String,
+        timeout: TimeInterval = 60,
+        settleBeforeQuery: TimeInterval? = nil
+    ) {
+        // Let the isolated harness finish its streamed response before asking
+        // XCTest to snapshot SwiftUI's changing transcript. iPad CI needs a
+        // longer quiet window: each unsuccessful accessibility probe captures
+        // another hierarchy, and repeated probes can starve the fixture that
+        // is producing the response. Once the deterministic fixture has
+        // settled, the exact-label assertion normally succeeds in one snapshot.
+        let defaultSettleTime =
+            ProcessInfo.processInfo.environment["DIETER_IOS_TEST_LANDSCAPE"] == "1"
+            ? 30.0 : 4.0
+        Thread.sleep(forTimeInterval: settleBeforeQuery ?? defaultSettleTime)
         // Query the stable app-owned identifier and the visible label
         // separately. XCUI's string subscript is identifier-oriented and can
         // time out even when an off-screen transcript row has this exact label.
@@ -544,7 +553,11 @@ final class RemoteNodeUITests: XCTestCase {
 
         XCUIDevice.shared.press(.home)
         app.activate()
-        assistantTextExists(app, "Mock harness received: Start the saved iOS draft", timeout: 40)
+        assistantTextExists(
+            app,
+            "Mock harness received: Start the saved iOS draft",
+            timeout: 40,
+            settleBeforeQuery: 0)
         enter(app, "ios.composer.message", "Continue after foreground reconnect")
         sendComposer(app, text: "Continue after foreground reconnect")
         assistantTextExists(app, "Mock harness received: Continue after foreground reconnect")
