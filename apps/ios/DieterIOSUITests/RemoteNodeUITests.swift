@@ -84,15 +84,24 @@ final class RemoteNodeUITests: XCTestCase {
         }
     }
 
-    private func tapPicker(_ picker: XCUIElement) {
-        if picker.isHittable {
-            picker.tap()
-        } else {
-            // Xcode 26.5 can keep reporting a fully visible SwiftUI Picker as
-            // non-hittable after the app relaunches and presents this sheet a
-            // second time. Its resolved frame still receives native events.
-            picker.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+    private func hasUsableFrame(_ frame: CGRect) -> Bool {
+        frame.minX.isFinite && frame.minY.isFinite && frame.maxX.isFinite && frame.maxY.isFinite
+            && frame.width > 0 && frame.height > 0
+    }
+
+    private func tapPicker(_ app: XCUIApplication, frame: CGRect) {
+        // SwiftUI can replace a visible Picker between accessibility snapshots.
+        // Asking XCTest for `isHittable` on that stale element raises a test
+        // failure when its activation frame becomes {inf, inf, 0, 0}. Capture
+        // verified screen geometry instead, then synthesize the same center tap
+        // without resolving the Picker again.
+        guard hasUsableFrame(frame) else {
+            XCTFail("The Picker must have a finite visible frame.")
+            return
         }
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0))
+            .withOffset(CGVector(dx: frame.midX, dy: frame.midY))
+            .tap()
     }
 
     private func fillTask(_ app: XCUIApplication, title: String, prompt: String) {
@@ -108,21 +117,31 @@ final class RemoteNodeUITests: XCTestCase {
         // frame is read again while scrolling back to the title field.
         // SwiftUI can also keep the off-screen Agent rows out of the iPad
         // accessibility hierarchy until the form scrolls near them.
+        var providerFrame: CGRect?
         for _ in 0..<6 {
-            if provider.exists, provider.frame.maxY < footer.frame.minY - 8, provider.isHittable { break }
+            if provider.exists {
+                let candidateFrame = provider.frame
+                if hasUsableFrame(candidateFrame), candidateFrame.maxY < footer.frame.minY - 8,
+                    candidateFrame.minY >= form.frame.minY
+                {
+                    providerFrame = candidateFrame
+                    break
+                }
+            }
             form.swipeUp()
             provider = element(app, "ios.create.provider")
         }
         XCTAssertTrue(provider.exists, "The Provider row must appear after scrolling.\n\(app.debugDescription)")
+        guard let providerFrame else {
+            XCTFail("The Provider row must have a finite frame after scrolling.\n\(app.debugDescription)")
+            return
+        }
         XCTAssertLessThan(
-            provider.frame.maxY, footer.frame.minY - 8, "Provider must be above the footer before tapping.")
+            providerFrame.maxY, footer.frame.minY - 8, "Provider must be above the footer before tapping.")
         XCTAssertGreaterThanOrEqual(
-            provider.frame.minY, form.frame.minY, "Provider must be inside the visible form before tapping.")
-        let providerReady = XCTNSPredicateExpectation(
-            predicate: NSPredicate(format: "exists == true AND hittable == true"), object: provider)
-        _ = XCTWaiter.wait(for: [providerReady], timeout: 5)
+            providerFrame.minY, form.frame.minY, "Provider must be inside the visible form before tapping.")
         let previousProvider = provider.value as? String
-        tapPicker(provider)
+        tapPicker(app, frame: providerFrame)
         let openingOption = app.buttons.matching(NSPredicate(format: "label == 'Mock'")).firstMatch
         if !openingOption.waitForExistence(timeout: 5), !openingOption.exists,
             provider.exists, let previousProvider,
@@ -130,7 +149,8 @@ final class RemoteNodeUITests: XCTestCase {
         {
             // A native picker can leave an opening tap unconsumed after relaunch.
             // Retry once only while no option appeared and the selection is unchanged.
-            tapPicker(provider)
+            provider = element(app, "ios.create.provider")
+            tapPicker(app, frame: provider.frame)
         }
         var mockSelected = false
         for attempt in 0..<2 {
