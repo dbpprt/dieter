@@ -12,7 +12,7 @@
 <p align="center">
   <a href="https://github.com/dbpprt/dieter/actions/workflows/release.yml"><img src="https://github.com/dbpprt/dieter/actions/workflows/release.yml/badge.svg" alt="Release"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-62B6CB.svg" alt="MIT license"></a>
-  <a href="https://dbpprt.github.io/dieter/"><img src="https://img.shields.io/badge/website-live-1C1C1E.svg" alt="Website"></a>
+  <a href="https://getdieter.com/"><img src="https://img.shields.io/badge/website-live-1C1C1E.svg" alt="Website"></a>
 </p>
 
 <p align="center">
