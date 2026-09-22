@@ -821,6 +821,12 @@ private struct SidebarProjectRow: View {
                             .truncationMode(.tail)
                             .layoutPriority(1)
                             .smokeTarget("sidebar.project.\(project.id).name")
+                        if store.pinnedProjectNavigation.isPinned(project.id) {
+                            Image(systemName: "pin.fill")
+                                .font(.system(size: 8, weight: .semibold))
+                                .foregroundStyle(DieterTheme.shell)
+                                .accessibilityLabel("Pinned project")
+                        }
                         Spacer(minLength: 0)
 
                     }
@@ -1001,6 +1007,17 @@ private struct ProjectContextMenuModifier: ViewModifier {
     func body(content: Content) -> some View {
         content
             .contextMenu {
+                Button(
+                    store.pinnedProjectNavigation.isPinned(project.id) ? "Unpin project" : "Pin project",
+                    systemImage: store.pinnedProjectNavigation.isPinned(project.id) ? "pin.slash" : "pin"
+                ) {
+                    var navigation = store.pinnedProjectNavigation
+                    guard navigation.setPinned(
+                        project.id, pinned: !navigation.isPinned(project.id))
+                    else { return }
+                    store.pinnedProjectNavigation = navigation
+                }
+                Divider()
                 Button("Rename project…", systemImage: "pencil") {
                     store.presentRenameProject(projectID: project.id)
                 }

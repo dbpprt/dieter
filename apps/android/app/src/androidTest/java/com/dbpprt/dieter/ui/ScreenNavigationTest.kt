@@ -76,7 +76,7 @@ class ScreenNavigationTest {
         compose.onNodeWithTag("tools-sheet").assertDoesNotExist()
     }
 
-    @Test fun bottomBarIncludesActivityBoardsChatsAndTools() {
+    @Test fun bottomBarIncludesInboxProjectsChatsAndTools() {
         var selected: Destination? = null
         var toolsOpened = false
         compose.setContent {
@@ -88,6 +88,8 @@ class ScreenNavigationTest {
                 )
             }
         }
+        compose.onNodeWithText("Inbox").assertIsDisplayed()
+        compose.onNodeWithText("Projects").assertIsDisplayed()
         compose.onNodeWithTag("nav-activity").assertIsDisplayed().performClick()
         compose.runOnIdle { assertEquals(Destination.ACTIVITY, selected) }
         compose.onNodeWithTag("nav-chats").assertIsSelected()

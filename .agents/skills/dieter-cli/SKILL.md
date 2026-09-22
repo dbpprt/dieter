@@ -874,8 +874,9 @@ Never stop or replace the operator's daemon as part of testing or implementation
 
 Use `kv get`, `kv list`, `kv put`, `kv delete`, `kv move`, and `kv watch` for
 account-scoped portable JSON. All use the daemon API and global `--machine`.
-Folders, membership, project/pinned ordering, disclosure, and lane sort direction
-share the `navigation` namespace across native clients. See
+Folders, membership, project ordering, pinned-project membership/order,
+pinned-chat ordering, disclosure, and lane sort direction share the `navigation`
+namespace across native clients. See
 `docs/client-navigation-folders.md` for keys and projection rules.
 
 `kv put --namespace NS --key KEY --file value.json --revision REV` replaces the

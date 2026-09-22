@@ -47,6 +47,29 @@ import Testing
     )
 }
 
+@Test @MainActor func projectPinsAreSharedThroughTheAppSessionAndPersisted() throws {
+    let suite = "dieter-project-pin-navigation-\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    defaults.set("test-account", forKey: "DieterSharedKV.activeAccount")
+    let environment = DieterAppEnvironment.testing(defaults: defaults)
+    let store = DieterStore(environment: environment, restoreSync: false)
+
+    var pins = store.pinnedProjectNavigation
+    #expect(pins.setPinned("p_one", pinned: true))
+    #expect(pins.setPinned("p_two", pinned: true))
+    store.pinnedProjectNavigation = pins
+
+    let restored = DieterStore(environment: environment, restoreSync: false)
+    #expect(restored.pinnedProjectNavigation.projectOrder == ["p_one", "p_two"])
+
+    pins = restored.pinnedProjectNavigation
+    #expect(pins.setPinned("p_one", pinned: false))
+    restored.pinnedProjectNavigation = pins
+    #expect(
+        DieterStore(environment: environment, restoreSync: false).pinnedProjectNavigation.projectOrder == ["p_two"])
+}
+
 @Test @MainActor func chatFoldersAreSharedThroughTheAppSessionAndPersisted() throws {
     let suite = "dieter-chat-folder-navigation-\(UUID().uuidString)"
     let defaults = try #require(UserDefaults(suiteName: suite))

@@ -13,6 +13,12 @@ internal fun orderedProjects(projects: List<Project>, projectOrder: List<String>
     }
 }
 
+internal fun orderedPinnedProjects(projects: List<Project>, pinnedProjectOrder: List<String>): List<Project> {
+    if (projects.isEmpty() || pinnedProjectOrder.isEmpty()) return emptyList()
+    val projectsById = projects.associateBy(Project::getId)
+    return pinnedProjectOrder.asSequence().distinct().mapNotNull(projectsById::get).toList()
+}
+
 internal fun moveProjectToTarget(projectIds: List<String>, projectId: String, targetProjectId: String): List<String> {
     val sourceIndex = projectIds.indexOf(projectId)
     val targetIndex = projectIds.indexOf(targetProjectId)

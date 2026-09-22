@@ -73,6 +73,7 @@ internal fun NavigationFolderHeader(
     preferences: NavigationFolderPreferences,
     store: NavigationFolderStore,
     revealSearchResults: Boolean = false,
+    summary: String? = null,
 ) {
     var options by remember { mutableStateOf(false) }
     var rename by rememberSaveable { mutableStateOf(false) }
@@ -91,8 +92,25 @@ internal fun NavigationFolderHeader(
             Icon(Icons.Outlined.KeyboardArrowDown, if (expanded) "Collapse ${folder.name}" else "Expand ${folder.name}",
                 tint = DieterMuted, modifier = Modifier.size(20.dp).rotate(if (expanded) 0f else -90f))
             Icon(Icons.Outlined.Folder, null, tint = DieterShell, modifier = Modifier.size(20.dp))
-            Text(folder.name, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-            Text("$count", color = DieterMuted)
+            if (summary == null) {
+                Text(folder.name, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                Text("$count", color = DieterMuted)
+            } else {
+                Column(Modifier.weight(1f)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(folder.name, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Spacer(Modifier.width(7.dp))
+                        androidx.compose.material3.Surface(
+                            shape = androidx.compose.foundation.shape.CircleShape,
+                            color = DieterShell.copy(alpha = 0.16f),
+                        ) {
+                            Text("$count", color = DieterShell, modifier = Modifier.padding(horizontal = 7.dp, vertical = 1.dp))
+                        }
+                    }
+                    Text(summary, color = DieterMuted, style = androidx.compose.material3.MaterialTheme.typography.labelSmall,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
         }
         Box {
             IconButton(onClick = { options = true }, modifier = Modifier.testTag("folder-options-${folder.id}")) {

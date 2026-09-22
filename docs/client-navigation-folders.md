@@ -51,7 +51,8 @@ daemon. Peer synchronization remains bounded and coalesces local wakeups.
 | `projects-folder.ID.expanded`, `chats-folder.ID.expanded` | Boolean |
 | `projects-folder.ID.position`, `chats-folder.ID.position` | Parent/rank tuple |
 | `projects-item.ID.position`, `chats-item.ID.position` | Folder ID and rank together |
-| `projects-order.ID.position`, `pinned-order.ID.position` | Top-level ordering |
+| `projects-order.ID.position`, `pinned-order.ID.position` | Top-level project and pinned-chat ordering |
+| `projects-pinned.ID.position` | Pinned-project membership and ordering; deleting the record unpins the project |
 | `projects-disclosure.ID.expanded` | Project sidebar disclosure |
 | `chats-section.ID.expanded`, `chats-disclosure.ID.expanded` | Chat project section and details disclosure |
 | `lane.BOARD.LANE.sort` | `ascending` or `descending` |

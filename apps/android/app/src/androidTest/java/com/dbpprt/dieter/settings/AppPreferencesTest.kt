@@ -50,6 +50,7 @@ class AppPreferencesTest {
         try {
             withContext(Dispatchers.Main) {
                 preferences.setProjectOrder(listOf("c", "a", "b"))
+                preferences.setPinnedProjectOrder(listOf("project-two", "project-one"))
                 preferences.setPinnedChatOrder(listOf("two", "one"))
                 preferences.setChatProjectCollapsed("p", true)
                 preferences.setChatProjectExpanded("p", true)
@@ -58,11 +59,20 @@ class AppPreferencesTest {
             val reloaded = withContext(Dispatchers.Main) { AppPreferences(context) }
             restored = reloaded
             withTimeout(5_000) {
-                reloaded.sharedNavigation.status.first { it.pending == 7 }
+                reloaded.sharedNavigation.status.first { it.pending == 9 }
                 reloaded.projectOrder.first { it == listOf("c", "a", "b") }
+                reloaded.pinnedProjectOrder.first { it == listOf("project-two", "project-one") }
                 reloaded.pinnedChatOrder.first { it == listOf("two", "one") }
                 reloaded.collapsedChatProjectIds.first { "p" in it }
                 reloaded.expandedChatProjectIds.first { "p" in it }
+            }
+            withContext(Dispatchers.Main) {
+                reloaded.setPinnedProjectOrder(listOf("project-one"))
+            }
+            reloaded.sharedNavigation.awaitPendingWrites()
+            withTimeout(5_000) {
+                reloaded.sharedNavigation.status.first { it.pending == 10 }
+                reloaded.pinnedProjectOrder.first { it == listOf("project-one") }
             }
             reloaded.sharedNavigation.clearAccount()
             reloaded.sharedNavigation.awaitPendingWrites()
@@ -70,6 +80,7 @@ class AppPreferencesTest {
             signedOut = cleared
             cleared.sharedNavigation.awaitPendingWrites()
             assertTrue(cleared.projectOrder.value.isEmpty())
+            assertTrue(cleared.pinnedProjectOrder.value.isEmpty())
             assertEquals(0, cleared.sharedNavigation.status.value.pending)
         } finally {
             preferences.sharedNavigation.close()

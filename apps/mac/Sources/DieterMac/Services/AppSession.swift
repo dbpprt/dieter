@@ -109,6 +109,13 @@ final class AppSession {
     var navigationPendingCount = 0
     var navigationSyncError: String?
     var sharedLaneSortDirections: [String: String] = [:]
+    var pinnedProjectNavigation = PinnedProjectNavigationPreferences() {
+        didSet {
+            guard pinnedProjectNavigation != oldValue else { return }
+            syncNavigationMembership(
+                oldValue.projectOrder, pinnedProjectNavigation.projectOrder, prefix: "projects-pinned")
+        }
+    }
     var pinnedChatNavigation = PinnedChatNavigationPreferences() {
         didSet { syncNavigationOrder(oldValue.chatOrder, pinnedChatNavigation.chatOrder, prefix: "pinned-order") }
     }

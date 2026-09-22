@@ -65,3 +65,40 @@ struct SidebarProjectNavigationPreferences: Equatable {
         return values.filter { seen.insert($0).inserted }
     }
 }
+
+/// Portable project pins. Presence in `projectOrder` is both membership and
+/// display order, unlike chat pins whose membership comes from the card.
+struct PinnedProjectNavigationPreferences: Equatable {
+    private(set) var projectOrder: [String]
+
+    init(projectOrder: [String] = []) {
+        self.projectOrder = Self.unique(projectOrder)
+    }
+
+    func isPinned(_ projectID: String) -> Bool {
+        projectOrder.contains(projectID)
+    }
+
+    func orderedIDs(from availableIDs: [String]) -> [String] {
+        let available = Set(availableIDs)
+        return projectOrder.filter(available.contains)
+    }
+
+    @discardableResult
+    mutating func setPinned(_ projectID: String, pinned: Bool) -> Bool {
+        guard !projectID.isEmpty else { return false }
+        if pinned {
+            guard !projectOrder.contains(projectID) else { return false }
+            projectOrder.append(projectID)
+            return true
+        }
+        guard projectOrder.contains(projectID) else { return false }
+        projectOrder.removeAll { $0 == projectID }
+        return true
+    }
+
+    private static func unique(_ values: [String]) -> [String] {
+        var seen: Set<String> = []
+        return values.filter { !$0.isEmpty && seen.insert($0).inserted }
+    }
+}

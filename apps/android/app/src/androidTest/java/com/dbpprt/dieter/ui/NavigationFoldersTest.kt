@@ -133,6 +133,7 @@ class NavigationFoldersTest {
                 }
             }
         }
+        compose.onNodeWithTag("project-actions-p1").performClick()
         compose.onNodeWithTag("project-folder-p1").performClick()
         compose.onNodeWithText("New folder").performClick()
         compose.onNodeWithTag("folder-name").performTextInput("Work")
@@ -143,6 +144,7 @@ class NavigationFoldersTest {
         compose.onNodeWithTag("folder-$id").performClick()
         compose.onNodeWithTag("space-project-p1").assertDoesNotExist()
         compose.onNodeWithTag("folder-$id").performClick()
+        compose.onNodeWithTag("project-actions-p1").performClick()
         compose.onNodeWithTag("project-folder-p1").performClick()
         compose.onNodeWithTag("move-no-folder").performClick()
         compose.onNodeWithText("No projects in this folder").assertIsDisplayed()
@@ -152,6 +154,31 @@ class NavigationFoldersTest {
         compose.onNodeWithTag("delete-folder-confirm").performClick()
         compose.onNodeWithTag("space-project-p1").assertIsDisplayed()
         compose.runOnIdle { assertTrue(model.state.value.chatFolders.folders.isEmpty()) }
+    }
+
+    @Test fun projectPinsPersistInSharedNavigationAndCanBeRemovedFromThePinnedCard() {
+        compose.setContent {
+            val state by model.state.collectAsState()
+            DieterTheme {
+                Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                    SpacesOverview(state.copy(projects = projects), model, Modifier.fillMaxSize())
+                }
+            }
+        }
+
+        compose.onNodeWithTag("project-actions-p1").performClick()
+        compose.onNodeWithTag("project-pin-p1").performClick()
+        compose.onNodeWithText("PINNED").assertIsDisplayed()
+        compose.onNodeWithTag("project-pinned-p1").assertIsDisplayed()
+        compose.runOnIdle {
+            assertEquals(listOf("p1"), AppPreferences(context).pinnedProjectOrder.value)
+        }
+
+        compose.onNodeWithTag("project-unpin-p1").performClick()
+        compose.onNodeWithTag("project-pinned-p1").assertDoesNotExist()
+        compose.runOnIdle {
+            assertTrue(AppPreferences(context).pinnedProjectOrder.value.isEmpty())
+        }
     }
 
     @Test fun boardlessProjectsExposeBoardCreationInsteadOfAnEmptyBoard() {

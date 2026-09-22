@@ -199,6 +199,7 @@ data class DieterUiState(
     val providerQuotaMutatingAccounts: Set<String> = emptySet(),
     val projects: List<Project> = emptyList(),
     val projectOrder: List<String> = emptyList(),
+    val pinnedProjectOrder: List<String> = emptyList(),
     val sharedLaneSortDirections: Map<String, String> = emptyMap(),
     val navigationPendingCount: Int = 0,
     val navigationSyncError: String? = null,
@@ -512,6 +513,11 @@ class DieterViewModel internal constructor(
                         projectOrder = projectOrder,
                     )
                 }
+            }
+        }
+        viewModelScope.launch {
+            appPreferences.pinnedProjectOrder.collectLatest { pinnedProjectOrder ->
+                _state.update { it.copy(pinnedProjectOrder = pinnedProjectOrder) }
             }
         }
         viewModelScope.launch {
@@ -1347,6 +1353,17 @@ class DieterViewModel internal constructor(
             }
         }
         updatedOrder?.let(appPreferences::setProjectOrder)
+    }
+
+    fun setProjectPinned(projectId: String, pinned: Boolean) {
+        if (projectId.isBlank()) return
+        val current = appPreferences.pinnedProjectOrder.value
+        val next = if (pinned) {
+            if (projectId in current) current else current + projectId
+        } else {
+            current.filterNot { it == projectId }
+        }
+        if (next != current) appPreferences.setPinnedProjectOrder(next)
     }
 
     fun toggleChatProjectCollapsed(projectId: String) {

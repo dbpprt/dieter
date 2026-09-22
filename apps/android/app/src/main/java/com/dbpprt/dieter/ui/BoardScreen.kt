@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.lazy.LazyListScope
 import com.dbpprt.dieter.settings.NavigationFolderScope
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -48,9 +49,11 @@ import androidx.compose.material.icons.outlined.DragHandle
 import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.MoreVert
+import androidx.compose.material.icons.outlined.PushPin
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material.icons.outlined.ViewKanban
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -218,40 +221,57 @@ internal fun SpacesOverview(state: DieterUiState, model: DieterViewModel, modifi
     var moveProjectID by rememberSaveable { mutableStateOf<String?>(null) }
     var searchOpen by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
+    var sort by rememberSaveable { mutableStateOf(ProjectOverviewSort.MANUAL) }
+    var sortMenuOpen by remember { mutableStateOf(false) }
+    var topSortMenuOpen by remember { mutableStateOf(false) }
+    var expandedProjectIDs by remember { mutableStateOf(emptySet<String>()) }
     val projectDragState = remember { ProjectDragState() }
     val haptic = LocalHapticFeedback.current
     val boardsByProject = remember(state.spaceBoards) { state.spaceBoards.groupBy(Board::getProjectId) }
     val cardsByProject = remember(state.spaceCards) { state.spaceCards.groupBy(BoardCard::getProjectId) }
-    val visibleProjects = remember(state.projects, boardsByProject, query) {
-        state.projects.filter { project ->
+    val visibleProjects = remember(state.projects, boardsByProject, cardsByProject, query, sort) {
+        val filtered = state.projects.filter { project ->
             query.isBlank() || project.name.contains(query, true) || project.path.contains(query, true) ||
                 boardsByProject[project.id].orEmpty().any { it.name.contains(query, true) }
         }
+        when (sort) {
+            ProjectOverviewSort.MANUAL -> filtered
+            ProjectOverviewSort.ATTENTION -> filtered.sortedWith(
+                compareByDescending<Project> { projectAttentionCount(cardsByProject[it.id].orEmpty()) }
+                    .thenBy { it.name.lowercase() },
+            )
+            ProjectOverviewSort.NAME -> filtered.sortedBy { it.name.lowercase() }
+        }
     }
-    val reviewCount = remember(state.spaceCards) { state.spaceCards.count { it.lane.contains("review", true) } }
+    val pinnedProjects = remember(state.projects, state.pinnedProjectOrder) {
+        orderedPinnedProjects(state.projects, state.pinnedProjectOrder)
+    }
 
     Column(modifier) {
         Row(
-            Modifier.fillMaxWidth().padding(start = 20.dp, end = 10.dp, top = 18.dp, bottom = 4.dp),
+            Modifier.fillMaxWidth().padding(start = 20.dp, end = 10.dp, top = 17.dp, bottom = 7.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(Modifier.weight(1f)) {
-                Text("Spaces", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.SemiBold)
-                Text(
-                    "${state.projects.size} ${plural(state.projects.size, "project")} · ${state.spaceBoards.size} ${plural(state.spaceBoards.size, "board")} · $reviewCount ${if (reviewCount == 1) "needs" else "need"} you",
-                    color = DieterMuted,
-                    fontSize = 12.sp,
-                )
+                Text("Projects", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
+                ProjectOverviewStatus(state)
             }
-            NewNavigationFolderButton(NavigationFolderScope.PROJECTS, state.projectFolders, model.navigationFolders)
-            IconButton(onClick = { searchOpen = !searchOpen }) { Icon(Icons.Outlined.Search, "Search spaces") }
-            IconButton(onClick = { model.openSurface(AppSurface.APP_SETTINGS) }) {
-                Icon(Icons.Outlined.Settings, "App settings", tint = DieterMuted)
+            IconButton(onClick = { searchOpen = !searchOpen }) { Icon(Icons.Outlined.Search, "Search projects") }
+            Box {
+                IconButton(onClick = { topSortMenuOpen = true }) {
+                    Icon(Icons.Outlined.Tune, "Sort projects", tint = DieterMuted)
+                }
+                ProjectOverviewSortMenu(
+                    expanded = topSortMenuOpen,
+                    selected = sort,
+                    onSelect = { sort = it; topSortMenuOpen = false },
+                    onDismiss = { topSortMenuOpen = false },
+                    onSettings = { topSortMenuOpen = false; model.openSurface(AppSurface.APP_SETTINGS) },
+                )
             }
         }
         NavigationSyncStatus(state)
         if (searchOpen) CompactSearchField(query, { query = it }, "Search projects and boards")
-        val showProjectReplicas = state.presentedProjectReplicas.values.map { it.daemonId }.distinct().size > 1
         if (state.spacesLoading) LinearProgressIndicator(Modifier.fillMaxWidth().height(2.dp), color = DieterShell)
         SurfaceErrorBanner(state.error, model::clearError)
         if (!state.connected && state.projects.isEmpty() && state.projectFolders.folders.isEmpty()) {
@@ -261,28 +281,115 @@ internal fun SpacesOverview(state: DieterUiState, model: DieterViewModel, modifi
         } else {
             LazyColumn(
                 modifier = Modifier.fillMaxSize().testTag("spaces-overview"),
-                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 24.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
+                contentPadding = PaddingValues(top = 4.dp, bottom = 24.dp),
+                verticalArrangement = Arrangement.spacedBy(7.dp),
             ) {
-                fun LazyListScope.projectItems(projects: List<Project>) {
+                if (query.isBlank() && pinnedProjects.isNotEmpty()) {
+                    item(key = "project-pinned-label") {
+                        ListSectionLabel("Pinned", Modifier.padding(horizontal = 20.dp))
+                    }
+                    item(key = "project-pinned") {
+                        LazyRow(
+                            contentPadding = PaddingValues(horizontal = 20.dp),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            modifier = Modifier.fillMaxWidth().testTag("project-pinned"),
+                        ) {
+                            items(pinnedProjects, key = { it.id }) { project ->
+                                PinnedProjectCard(
+                                    project = project,
+                                    host = state.presentedProjectReplicas[project.id],
+                                    boards = boardsByProject[project.id].orEmpty(),
+                                    cards = cardsByProject[project.id].orEmpty(),
+                                    chatCount = state.chats.count { it.projectId == project.id && !it.archived },
+                                    selected = project.id == state.selectedProjectId,
+                                    onUnpin = { model.setProjectPinned(project.id, false) },
+                                    onOpenBoard = { model.openBoard(project.id, it.id) },
+                                    onCreateBoard = { model.openNewBoard(project.id) },
+                                )
+                            }
+                        }
+                    }
+                    item(key = "project-overview-divider") {
+                        Box(
+                            Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 5.dp).height(1.dp)
+                                .background(DieterOutline.copy(alpha = 0.46f)),
+                        )
+                    }
+                }
+                item(key = "all-projects-header") {
+                    Row(
+                        Modifier.fillMaxWidth().padding(start = 20.dp, end = 12.dp, top = 2.dp, bottom = 1.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            "ALL PROJECTS  ·  ${state.projectFolders.folders.size} ${plural(state.projectFolders.folders.size, "folder")}".uppercase(),
+                            color = DieterMuted,
+                            fontSize = 10.sp,
+                            letterSpacing = 1.15.sp,
+                            modifier = Modifier.weight(1f),
+                        )
+                        NewNavigationFolderButton(NavigationFolderScope.PROJECTS, state.projectFolders, model.navigationFolders)
+                        Box {
+                            Surface(
+                                onClick = { sortMenuOpen = true },
+                                color = DieterSurface,
+                                shape = RoundedCornerShape(9.dp),
+                            ) {
+                                Row(
+                                    Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(5.dp),
+                                ) {
+                                    Text(sort.label, fontSize = 10.sp, fontWeight = FontWeight.Medium)
+                                    Icon(Icons.Outlined.KeyboardArrowDown, null, Modifier.size(14.dp), tint = DieterMuted)
+                                }
+                            }
+                            ProjectOverviewSortMenu(
+                                expanded = sortMenuOpen,
+                                selected = sort,
+                                onSelect = { sort = it; sortMenuOpen = false },
+                                onDismiss = { sortMenuOpen = false },
+                            )
+                        }
+                    }
+                }
+                fun LazyListScope.projectItems(projects: List<Project>, nested: Boolean = false) {
                     items(projects, key = { it.id }) { project ->
                         val dragged = projectDragState.projectId == project.id
                         var originInRoot by remember(project.id) { mutableStateOf(Offset.Zero) }
+                        val projectBoards = boardsByProject[project.id].orEmpty()
                         DisposableEffect(projectDragState, project.id) {
                             onDispose { projectDragState.unregister(project.id) }
                         }
-                        ProjectSpaceCard(
+                        CompactProjectRow(
                             project = project,
+                            pinned = project.id in state.pinnedProjectOrder,
+                            onTogglePinned = {
+                                model.setProjectPinned(project.id, project.id !in state.pinnedProjectOrder)
+                            },
                             onMoveToFolder = { moveProjectID = project.id },
-                            host = null,
-                            boards = boardsByProject[project.id].orEmpty(),
+                            host = state.presentedProjectReplicas[project.id],
+                            boards = projectBoards,
                             cards = cardsByProject[project.id].orEmpty(),
                             dragged = dragged,
                             dropTarget = projectDragState.targetProjectId == project.id,
+                            nested = nested,
+                            expanded = project.id in expandedProjectIDs,
                             onOpenBoard = { board -> model.openBoard(project.id, board.id) },
                             onCreateBoard = { model.openNewBoard(project.id) },
+                            onToggle = {
+                                when (projectBoards.size) {
+                                    0 -> model.openNewBoard(project.id)
+                                    1 -> model.openBoard(project.id, projectBoards.single().id)
+                                    else -> expandedProjectIDs = if (project.id in expandedProjectIDs) {
+                                        expandedProjectIDs - project.id
+                                    } else {
+                                        expandedProjectIDs + project.id
+                                    }
+                                }
+                            },
                             modifier = Modifier
-                                .fillMaxWidth()
+                                .fillMaxWidth().padding(horizontal = 20.dp)
                                 .onGloballyPositioned {
                                     originInRoot = it.positionInRoot()
                                     projectDragState.register(project.id, it.boundsInRoot())
@@ -316,34 +423,54 @@ internal fun SpacesOverview(state: DieterUiState, model: DieterViewModel, modifi
                 }
                 val projectsByID = visibleProjects.associateBy { it.id }
                 state.projectFolders.folders.forEach { folder ->
-                    val members = folder.itemIDs.mapNotNull(projectsByID::get)
+                    val members = sortProjects(folder.itemIDs.mapNotNull(projectsByID::get), sort, cardsByProject)
                     if (query.isBlank() || members.isNotEmpty()) {
                         item(key = "project-folder-${folder.id}") {
-                            NavigationFolderHeader(folder, members.size, NavigationFolderScope.PROJECTS,
-                                state.projectFolders, model.navigationFolders, revealSearchResults = query.isNotBlank())
+                            val folderBoards = members.flatMap { boardsByProject[it.id].orEmpty() }
+                            val attentionBoards = folderBoards.count { board ->
+                                cardsByProject[board.projectId].orEmpty().any { it.boardId == board.id && it.lane.contains("review", true) }
+                            }
+                            Surface(
+                                color = DieterSurface,
+                                shape = RoundedCornerShape(11.dp),
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
+                            ) {
+                                NavigationFolderHeader(
+                                    folder,
+                                    attentionBoards.takeIf { it > 0 } ?: members.size,
+                                    NavigationFolderScope.PROJECTS,
+                                    state.projectFolders,
+                                    model.navigationFolders,
+                                    revealSearchResults = query.isNotBlank(),
+                                    summary = buildString {
+                                        append(members.size).append(" ").append(plural(members.size, "project"))
+                                        if (attentionBoards > 0) append(" · ").append(attentionBoards).append(" need review")
+                                        else append(" · ").append(folderBoards.size).append(" ").append(plural(folderBoards.size, "board"))
+                                    },
+                                )
+                            }
                         }
                         if (folder.isExpanded || query.isNotBlank()) {
                             if (members.isEmpty()) item(key = "project-folder-empty-${folder.id}") {
-                                Text("No projects in this folder", color = DieterMuted, modifier = Modifier.padding(horizontal = 16.dp))
+                                Text("No projects in this folder", color = DieterMuted, modifier = Modifier.padding(horizontal = 32.dp, vertical = 6.dp))
                             }
-                            projectItems(members)
+                            projectItems(members, nested = true)
                         }
                     }
                 }
                 val unfiled = state.projectFolders.unfiledIDs(visibleProjects.map { it.id }).mapNotNull(projectsByID::get)
-                if (state.projectFolders.folders.isNotEmpty() && unfiled.isNotEmpty()) item { ListSectionLabel("Projects") }
                 projectItems(unfiled)
                 item {
                     Surface(
                         onClick = { model.openSurface(AppSurface.NEW_PROJECT) },
                         color = Color.Transparent,
-                        shape = RoundedCornerShape(18.dp),
-                        modifier = Modifier.fillMaxWidth()
-                            .dashedBorder(DieterOutline.copy(alpha = 0.9f), cornerRadius = 18.dp)
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp)
+                            .dashedBorder(DieterOutline.copy(alpha = 0.9f), cornerRadius = 12.dp)
                             .testTag("add-git-project"),
                     ) {
                         Row(
-                            Modifier.fillMaxWidth().padding(vertical = 15.dp),
+                            Modifier.fillMaxWidth().padding(vertical = 12.dp),
                             horizontalArrangement = Arrangement.Center,
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
@@ -363,66 +490,144 @@ internal fun SpacesOverview(state: DieterUiState, model: DieterViewModel, modifi
 }
 
 @Composable
-internal fun ProjectSpaceCard(
+private fun ProjectOverviewSortMenu(
+    expanded: Boolean,
+    selected: ProjectOverviewSort,
+    onSelect: (ProjectOverviewSort) -> Unit,
+    onDismiss: () -> Unit,
+    onSettings: (() -> Unit)? = null,
+) {
+    DropdownMenu(expanded = expanded, onDismissRequest = onDismiss) {
+        ProjectOverviewSort.entries.forEach { option ->
+            DropdownMenuItem(
+                text = { Text(option.label) },
+                trailingIcon = { if (selected == option) Icon(Icons.Default.Check, "Selected") },
+                onClick = { onSelect(option) },
+            )
+        }
+        onSettings?.let { openSettings ->
+            DropdownMenuItem(
+                text = { Text("App settings") },
+                leadingIcon = { Icon(Icons.Outlined.Settings, null) },
+                onClick = openSettings,
+            )
+        }
+    }
+}
+
+internal enum class ProjectOverviewSort(val label: String) {
+    MANUAL("Manual"),
+    ATTENTION("Needs you"),
+    NAME("Name"),
+}
+
+internal fun projectAttentionCount(cards: List<BoardCard>): Int = cards.count {
+    it.lane.contains("review", true) || it.runtime.contains("running", true)
+}
+
+internal fun sortProjects(
+    projects: List<Project>,
+    sort: ProjectOverviewSort,
+    cardsByProject: Map<String, List<BoardCard>>,
+): List<Project> = when (sort) {
+    ProjectOverviewSort.MANUAL -> projects
+    ProjectOverviewSort.ATTENTION -> projects.sortedWith(
+        compareByDescending<Project> { projectAttentionCount(cardsByProject[it.id].orEmpty()) }.thenBy { it.name.lowercase() },
+    )
+    ProjectOverviewSort.NAME -> projects.sortedBy { it.name.lowercase() }
+}
+
+@Composable
+private fun ProjectOverviewStatus(state: DieterUiState) {
+    var now by remember(state.lastConnectedAtMillis) { mutableStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(state.lastConnectedAtMillis) {
+        while (true) {
+            delay(30_000)
+            now = System.currentTimeMillis()
+        }
+    }
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            "${state.projects.size} ${plural(state.projects.size, "project")} · ${state.projectFolders.folders.size} ${plural(state.projectFolders.folders.size, "folder")} · ",
+            color = DieterMuted,
+            fontSize = 11.sp,
+        )
+        Box(Modifier.size(5.dp).background(if (state.connected) DieterEyes else DieterMuted, CircleShape))
+        Spacer(Modifier.width(5.dp))
+        Text(
+            if (state.connected) "synced" else "cached",
+            color = if (state.connected) DieterEyes else DieterMuted,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Medium,
+        )
+        compactSyncAge(state.lastConnectedAtMillis, now)?.let {
+            Text("  ·  $it", color = DieterMuted, fontSize = 11.sp)
+        }
+    }
+}
+
+internal fun compactSyncAge(lastConnectedAtMillis: Long?, nowMillis: Long): String? {
+    if (lastConnectedAtMillis == null || lastConnectedAtMillis <= 0L) return null
+    val elapsedSeconds = ((nowMillis - lastConnectedAtMillis).coerceAtLeast(0L) / 1_000L)
+    return when {
+        elapsedSeconds < 60L -> "now"
+        elapsedSeconds < 3_600L -> "${elapsedSeconds / 60L}m"
+        elapsedSeconds < 86_400L -> "${elapsedSeconds / 3_600L}h"
+        else -> "${elapsedSeconds / 86_400L}d"
+    }
+}
+
+@Composable
+internal fun PinnedProjectCard(
     project: Project,
     host: ProjectReplica?,
     boards: List<Board>,
     cards: List<BoardCard>,
-    dragged: Boolean,
-    dropTarget: Boolean,
+    chatCount: Int,
+    selected: Boolean,
+    onUnpin: () -> Unit,
     onOpenBoard: (Board) -> Unit,
     onCreateBoard: () -> Unit,
-    modifier: Modifier = Modifier,
-    onMoveToFolder: (() -> Unit)? = null,
 ) {
     val accent = stableAccent(project.id)
     val reviewCount = cards.count { it.lane.contains("review", true) }
     Card(
         colors = CardDefaults.cardColors(containerColor = DieterSurface),
         border = androidx.compose.foundation.BorderStroke(
-            if (dropTarget) 2.dp else 1.dp,
-            when {
-                dropTarget -> DieterShellDeep
-                reviewCount > 0 -> DieterShell.copy(alpha = 0.24f)
-                else -> DieterOutline.copy(alpha = 0.72f)
-            },
+            1.dp,
+            if (selected) DieterShell.copy(alpha = 0.78f) else DieterOutline.copy(alpha = 0.7f),
         ),
-        shape = RoundedCornerShape(20.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = if (dragged) 10.dp else 0.dp),
-        modifier = modifier,
+        shape = RoundedCornerShape(19.dp),
+        modifier = Modifier.width(252.dp).testTag("project-pinned-${project.id}"),
     ) {
-        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Surface(shape = RoundedCornerShape(12.dp), color = accent, modifier = Modifier.size(40.dp)) {
+                Surface(shape = RoundedCornerShape(11.dp), color = accent, modifier = Modifier.size(38.dp)) {
                     Box(contentAlignment = Alignment.Center) {
-                        Text(project.name.trim().take(1).lowercase().ifBlank { "·" }, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                        Text(project.name.trim().take(1).lowercase().ifBlank { "·" }, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
                     }
                 }
-                Spacer(Modifier.width(12.dp))
+                Spacer(Modifier.width(10.dp))
                 Column(Modifier.weight(1f)) {
                     Text(project.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(compactProjectPath(project.path), color = DieterMuted, fontSize = 11.sp, fontFamily = FontFamily.Monospace, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
-                        host?.let {
-                            Spacer(Modifier.width(7.dp))
-                            ProjectReplicaBadge(it)
-                        }
-                    }
+                    ProjectHostLine(host, project.path)
                 }
                 if (reviewCount > 0) {
                     Surface(shape = RoundedCornerShape(50), color = DieterAmber.copy(alpha = 0.14f)) {
-                        Text("$reviewCount review", color = DieterAmber, fontWeight = FontWeight.SemiBold, fontSize = 11.sp, modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp))
-                    }
-                } else {
-                    Text("quiet", color = DieterMuted, fontSize = 11.sp)
-                }
-                Spacer(Modifier.width(8.dp))
-                if (onMoveToFolder != null) {
-                    IconButton(onClick = onMoveToFolder, modifier = Modifier.testTag("project-folder-${project.id}")) {
-                        Icon(Icons.Outlined.FolderOpen, "Move ${project.name} to folder", tint = DieterMuted)
+                        Text("$reviewCount", color = DieterAmber, fontWeight = FontWeight.SemiBold, fontSize = 10.sp, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp))
                     }
                 }
-                Icon(Icons.Outlined.DragHandle, null, tint = DieterMuted, modifier = Modifier.size(20.dp))
+                IconButton(
+                    onClick = onUnpin,
+                    modifier = Modifier.size(28.dp).testTag("project-unpin-${project.id}"),
+                ) {
+                    Icon(
+                        Icons.Outlined.PushPin,
+                        "Unpin ${project.name}",
+                        tint = DieterShell,
+                        modifier = Modifier.size(15.dp),
+                    )
+                }
             }
             if (boards.isEmpty()) {
                 Row(
@@ -437,25 +642,193 @@ internal fun ProjectSpaceCard(
                     }
                 }
             }
-            boards.forEach { board ->
+            boards.take(2).forEach { board ->
                 val boardCards = cards.filter { it.boardId == board.id }
-                Surface(
-                    onClick = { onOpenBoard(board) },
-                    color = MaterialTheme.colorScheme.background.copy(alpha = 0.58f),
-                    shape = RoundedCornerShape(17.dp),
-                    modifier = Modifier.fillMaxWidth().testTag("space-board-${board.id}"),
+                ProjectBoardRow(board, boardCards, onOpenBoard)
+            }
+            if (boards.size > 2 || chatCount > 0) {
+                Row(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        if (boards.size > 2) "+${boards.size - 2} ${plural(boards.size - 2, "board")}" else "",
+                        color = DieterMuted,
+                        fontSize = 10.sp,
+                        modifier = Modifier.weight(1f),
+                    )
+                    if (chatCount > 0) Text("$chatCount ${plural(chatCount, "chat")}", color = DieterMuted, fontSize = 10.sp)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+internal fun CompactProjectRow(
+    project: Project,
+    pinned: Boolean,
+    onTogglePinned: () -> Unit,
+    host: ProjectReplica?,
+    boards: List<Board>,
+    cards: List<BoardCard>,
+    dragged: Boolean,
+    dropTarget: Boolean,
+    nested: Boolean,
+    expanded: Boolean,
+    onToggle: () -> Unit,
+    onOpenBoard: (Board) -> Unit,
+    onCreateBoard: () -> Unit,
+    onMoveToFolder: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val accent = stableAccent(project.id)
+    val attention = projectAttentionCount(cards)
+    var actionsOpen by remember { mutableStateOf(false) }
+    Row(modifier, verticalAlignment = Alignment.CenterVertically) {
+        if (nested) {
+            Box(
+                Modifier.padding(start = 16.dp).width(1.dp).height(52.dp)
+                    .background(DieterOutline.copy(alpha = 0.7f)),
+            )
+            Spacer(Modifier.width(8.dp))
+        }
+        Card(
+            colors = CardDefaults.cardColors(containerColor = if (dropTarget) DieterShellTint else DieterSurface),
+            border = androidx.compose.foundation.BorderStroke(
+                if (dropTarget) 1.5.dp else 0.5.dp,
+                if (dropTarget) DieterShell else DieterOutline.copy(alpha = 0.55f),
+            ),
+            shape = RoundedCornerShape(11.dp),
+            elevation = CardDefaults.cardElevation(defaultElevation = if (dragged) 8.dp else 0.dp),
+            modifier = Modifier.weight(1f),
+        ) {
+            Column {
+                Row(
+                    Modifier.fillMaxWidth().clickable(onClick = onToggle).padding(start = 10.dp, end = 3.dp, top = 8.dp, bottom = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Row(Modifier.padding(horizontal = 12.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
-                        BoardMark(stableAccent(board.id), Modifier.size(22.dp))
-                        Spacer(Modifier.width(10.dp))
-                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                            Text(board.name, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            BoardProgress(board, boardCards)
+                    Icon(Icons.Outlined.DragHandle, "Reorder ${project.name}", tint = DieterMuted.copy(alpha = 0.72f), modifier = Modifier.size(15.dp))
+                    Spacer(Modifier.width(7.dp))
+                    Surface(shape = RoundedCornerShape(10.dp), color = accent, modifier = Modifier.size(36.dp)) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Text(project.name.trim().take(1).lowercase().ifBlank { "·" }, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
                         }
-                        Icon(Icons.Outlined.ChevronRight, null, tint = DieterMuted, modifier = Modifier.size(18.dp))
+                    }
+                    Spacer(Modifier.width(10.dp))
+                    Column(Modifier.weight(1f)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(project.name, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                            if (attention > 0) {
+                                Spacer(Modifier.width(6.dp))
+                                Surface(shape = CircleShape, color = DieterShellTint) {
+                                    Text("$attention", color = DieterShell, fontSize = 9.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp))
+                                }
+                            }
+                        }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("${boards.size} ${plural(boards.size, "board")}", color = DieterMuted, fontSize = 10.sp)
+                            host?.let {
+                                Text("  ·  ", color = DieterMuted, fontSize = 10.sp)
+                                Box(Modifier.size(4.dp).background(if (it.online) DieterEyes else DieterMuted, CircleShape))
+                                Spacer(Modifier.width(4.dp))
+                                Text(it.hostname, color = DieterMuted, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            }
+                        }
+                    }
+                    ProjectActivityBars(cards)
+                    Box {
+                        IconButton(
+                            onClick = { actionsOpen = true },
+                            modifier = Modifier.size(32.dp).testTag("project-actions-${project.id}"),
+                        ) {
+                            Icon(Icons.Outlined.MoreVert, "Project actions for ${project.name}", tint = DieterMuted, modifier = Modifier.size(17.dp))
+                        }
+                        DropdownMenu(expanded = actionsOpen, onDismissRequest = { actionsOpen = false }) {
+                            DropdownMenuItem(
+                                text = { Text(if (pinned) "Unpin project" else "Pin project") },
+                                leadingIcon = { Icon(Icons.Outlined.PushPin, null) },
+                                modifier = Modifier.testTag("project-pin-${project.id}"),
+                                onClick = { actionsOpen = false; onTogglePinned() },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Move to folder") },
+                                leadingIcon = { Icon(Icons.Outlined.FolderOpen, null) },
+                                modifier = Modifier.testTag("project-folder-${project.id}"),
+                                onClick = { actionsOpen = false; onMoveToFolder() },
+                            )
+                        }
+                    }
+                    Icon(
+                        if (boards.size > 1 && expanded) Icons.Outlined.KeyboardArrowDown else Icons.Outlined.ChevronRight,
+                        contentDescription = null,
+                        tint = DieterMuted,
+                        modifier = Modifier.size(17.dp),
+                    )
+                }
+                if (expanded && boards.size > 1) {
+                    Column(
+                        Modifier.fillMaxWidth().padding(start = 46.dp, end = 8.dp, bottom = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(5.dp),
+                    ) {
+                        boards.forEach { board -> ProjectBoardRow(board, cards.filter { it.boardId == board.id }, onOpenBoard) }
+                    }
+                } else if (expanded && boards.isEmpty()) {
+                    TextButton(onClick = onCreateBoard, modifier = Modifier.align(Alignment.End).padding(end = 8.dp, bottom = 5.dp)) {
+                        Text("Create board")
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun ProjectHostLine(host: ProjectReplica?, fallback: String) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        if (host != null) {
+            Box(Modifier.size(5.dp).background(if (host.online) DieterEyes else DieterMuted, CircleShape))
+            Spacer(Modifier.width(5.dp))
+            Text(host.hostname, color = DieterMuted, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        } else {
+            Text(compactProjectPath(fallback), color = DieterMuted, fontSize = 10.sp, fontFamily = FontFamily.Monospace, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+    }
+}
+
+@Composable
+private fun ProjectBoardRow(board: Board, cards: List<BoardCard>, onOpenBoard: (Board) -> Unit) {
+    val review = cards.count { it.lane.contains("review", true) }
+    val running = cards.count { it.runtime.contains("running", true) || it.lane.contains("running", true) }
+    Surface(
+        onClick = { onOpenBoard(board) },
+        color = MaterialTheme.colorScheme.background.copy(alpha = 0.62f),
+        shape = RoundedCornerShape(10.dp),
+        modifier = Modifier.fillMaxWidth().testTag("space-board-${board.id}"),
+    ) {
+        Row(Modifier.padding(horizontal = 10.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            BoardMark(stableAccent(board.id), Modifier.size(18.dp))
+            Spacer(Modifier.width(8.dp))
+            Text(board.name, fontWeight = FontWeight.SemiBold, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+            when {
+                review > 0 -> Text("$review review", color = DieterAmber, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
+                running > 0 -> Text("$running running", color = DieterRunning, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
+                else -> Text("${cards.size} ${plural(cards.size, "card")}", color = DieterMuted, fontSize = 10.sp)
+            }
+            Spacer(Modifier.width(5.dp))
+            Icon(Icons.Outlined.ChevronRight, null, tint = DieterMuted, modifier = Modifier.size(15.dp))
+        }
+    }
+}
+
+@Composable
+private fun ProjectActivityBars(cards: List<BoardCard>) {
+    val active = cards.any { it.runtime.contains("running", true) || it.lane.contains("running", true) }
+    val color = if (active) DieterShell else DieterMuted.copy(alpha = 0.48f)
+    Row(
+        Modifier.width(32.dp).height(18.dp),
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
+        verticalAlignment = Alignment.Bottom,
+    ) {
+        listOf(4, 8, 5, 12, 7, 15).forEachIndexed { index, height ->
+            Box(Modifier.width(3.dp).height(height.dp).background(color.copy(alpha = if (active && index >= 3) 1f else 0.48f), CircleShape))
         }
     }
 }
@@ -677,7 +1050,7 @@ internal fun BoardDetailHeader(
                         },
                         modifier = Modifier.testTag("board-notifications-setting"),
                     )
-                    DropdownMenuItem(text = { Text("All spaces") }, onClick = { menuOpen = false; model.showBoardOverview() })
+                    DropdownMenuItem(text = { Text("All projects") }, onClick = { menuOpen = false; model.showBoardOverview() })
                     DropdownMenuItem(text = { Text("Refresh") }, onClick = { menuOpen = false; model.refresh() })
                     DropdownMenuItem(text = { Text("Workspace settings") }, onClick = { menuOpen = false; model.openSurface(AppSurface.WORKSPACE) })
                     DropdownMenuItem(text = { Text("App settings") }, onClick = { menuOpen = false; model.openSurface(AppSurface.APP_SETTINGS) })
@@ -757,7 +1130,7 @@ internal fun BoardQuickSwitcher(state: DieterUiState, model: DieterViewModel, on
             FilledTonalButton(onClick = { onDismiss(); model.showBoardOverview() }, modifier = Modifier.fillMaxWidth().height(48.dp)) {
                 Icon(Icons.Outlined.ViewKanban, null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
-                Text("All spaces")
+                Text("All projects")
             }
         }
     }

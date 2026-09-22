@@ -47,6 +47,8 @@ class AppPreferences(
     val notificationSettings: StateFlow<DieterNotificationSettings> = _notificationSettings.asStateFlow()
     private val _projectOrder = MutableStateFlow<List<String>>(emptyList())
     val projectOrder: StateFlow<List<String>> = _projectOrder.asStateFlow()
+    private val _pinnedProjectOrder = MutableStateFlow<List<String>>(emptyList())
+    val pinnedProjectOrder: StateFlow<List<String>> = _pinnedProjectOrder.asStateFlow()
     private val _collapsedChatProjectIds = MutableStateFlow<Set<String>>(emptySet())
     val collapsedChatProjectIds: StateFlow<Set<String>> = _collapsedChatProjectIds.asStateFlow()
     private val _expandedChatProjectIds = MutableStateFlow<Set<String>>(emptySet())
@@ -157,6 +159,7 @@ class AppPreferences(
     private fun projectSharedNavigation(values: Map<String,String>) {
         navigationFolders.project(values)
         _projectOrder.value = SharedNavigation.ordered(values, "projects-order")
+        _pinnedProjectOrder.value = SharedNavigation.ordered(values, "projects-pinned")
         _pinnedChatOrder.value = SharedNavigation.ordered(values, "pinned-order")
         _collapsedChatProjectIds.value = SharedNavigation.flags(values, "chats-section", inverted = true)
         _expandedChatProjectIds.value = SharedNavigation.flags(values, "chats-disclosure")
@@ -166,6 +169,17 @@ class AppPreferences(
         val next = projectIds.distinct()
         sharedNavigation.edit { values ->
             SharedNavigation.order(this, SharedNavigation.ordered(values, "projects-order"), next, "projects-order")
+        }
+    }
+    fun setPinnedProjectOrder(projectIds: List<String>) {
+        val next = projectIds.filter(String::isNotBlank).distinct()
+        sharedNavigation.edit { values ->
+            val current = SharedNavigation.ordered(values, "projects-pinned")
+            val nextIDs = next.toSet()
+            current.filterNot(nextIDs::contains).forEach {
+                delete("projects-pinned.$it.position")
+            }
+            SharedNavigation.order(this, current.filter(nextIDs::contains), next, "projects-pinned")
         }
     }
     fun setChatProjectCollapsed(projectId: String, collapsed: Boolean) {

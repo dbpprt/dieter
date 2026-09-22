@@ -48,6 +48,7 @@ extension AppSession {
         allChatsFolders = folders("chats")
         sidebarProjectNavigation = .init(
             projectOrder: ordered("projects-order"), expandedProjectIDs: enabled("projects-disclosure"))
+        pinnedProjectNavigation = .init(projectOrder: ordered("projects-pinned"))
         pinnedChatNavigation = .init(chatOrder: ordered("pinned-order"))
         chatProjectDisclosure = .init(
             collapsedProjectIDs: enabled("chats-section", inverted: true),
@@ -95,6 +96,14 @@ extension AppSession {
                 next.dropFirst(index + 1).first { !changed.contains($0) }.map { "\(prefix).\($0).position" } ?? ""
             sharedNavigation.move("\(prefix).\(id).position", parent: parent, after: after, before: before)
         }
+    }
+    func syncNavigationMembership(_ old: [String], _ next: [String], prefix: String) {
+        guard !applyingSharedNavigation else { return }
+        let nextIDs = Set(next)
+        for id in old where !nextIDs.contains(id) {
+            sharedNavigation.delete("\(prefix).\(id).position")
+        }
+        syncNavigationOrder(old.filter(nextIDs.contains), next, prefix: prefix)
     }
     func syncNavigationFlags(_ old: Set<String>, _ next: Set<String>, prefix: String, inverted: Bool = false) {
         guard !applyingSharedNavigation else { return }
