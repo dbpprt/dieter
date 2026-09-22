@@ -29,9 +29,13 @@ dieter --machine MACHINE_ID harness list --format jsonl
 ```
 
 The catalog is machine-local. Clients load it from the selected execution owner;
-a model available on one host is not assumed available on another. DSH models
-are discovered from its standard ACP session options. A successful prior catalog
-is retained through transient refresh failures.
+a model available on one host is not assumed available on another. OMP models
+are discovered with the exact pinned OMP build used for new turns, so a separate
+global `omp` upgrade cannot advertise an incompatible model. Dieter passes the
+chosen selector when it launches OMP because OMP's ACP model option intentionally
+contains only the user's smaller cycling list. DSH models are discovered from its
+standard ACP session options. A successful prior catalog is retained through
+transient refresh failures.
 
 The embedded registry is
 [`config/harnesses.yaml`](https://github.com/dbpprt/dieter/blob/main/config/harnesses.yaml).
@@ -57,8 +61,9 @@ Changing that selection does not reconfigure the already-running turn.
 
 ## Runtime lifecycle
 
-The first turn installs the exact locked runtime under `DIETER_HOME`. Updating
-a separately installed global agent CLI does not update Dieter's bundled bridge.
+The first catalog refresh or turn installs the exact locked OMP/DSH runtime under
+`DIETER_HOME`. Updating a separately installed global agent CLI does not update
+Dieter's bundled bridge or its advertised OMP catalog.
 Managed daemon updates prepare the new content-addressed runtime first; a turn
 already in flight remains pinned to its digest across recovery, and the next turn
 uses the current runtime.

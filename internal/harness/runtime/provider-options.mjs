@@ -3,6 +3,18 @@ export const ompACPModelMapping = Object.freeze({
   path: 'model',
 });
 
+// OMP's CLI accepts every selector reported by `omp models`, while its ACP
+// model config option exposes only the user's small model-cycling list. Launch
+// new bridges with the selected CLI model so Dieter's full discovered catalog
+// remains executable. Retain the previous config-option implementation solely
+// to restore lifecycle state created before this change.
+export const ompImplementations = Object.freeze([
+  Object.freeze({ packageVersion: '18.2.9', modelStrategy: 'launch-argument' }),
+  Object.freeze({ packageVersion: '18.1.10', modelStrategy: 'session-config-option' }),
+]);
+export const ompPackageVersions = Object.freeze(ompImplementations.map(item => item.packageVersion));
+export const ompPackageVersion = ompImplementations[0].packageVersion;
+
 export const ompStreamTimeoutSeconds = 30 * 60;
 
 export function ompRuntimeConfig() {
@@ -17,13 +29,14 @@ export function codexConfig(request) {
   };
 }
 
-export function ompACPArgs(request, hookPath, configPath) {
+export function ompACPArgs(request, hookPath, configPath, modelStrategy = 'session-config-option') {
   return [
     'acp',
     ...(configPath ? ['--config', configPath] : []),
     '--hook', hookPath,
     ...(request.effort ? [`--thinking=${request.effort}`] : []),
     ...(request.options?.advisor === 'true' ? ['--advisor'] : []),
+    ...(modelStrategy === 'launch-argument' && request.model ? [`--model=${request.model}`] : []),
   ];
 }
 

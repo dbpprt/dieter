@@ -286,6 +286,31 @@ func TestParseOMPModelsUsesIntegrationSelectorsAndThinking(t *testing.T) {
 	}
 }
 
+func TestDiscoverOMPModelsUsesPinnedCatalog(t *testing.T) {
+	previous := runOMPDiscovery
+	runOMPDiscovery = func(context.Context) ([]byte, error) {
+		return []byte(`{"models":[{"selector":"openrouter/openai/gpt-6-sol","name":"GPT-6 Sol","thinking":["max"]}]}`), nil
+	}
+	t.Cleanup(func() { runOMPDiscovery = previous })
+	models, err := discoverModels(context.Background(), "omp")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(models) != 1 || models[0].ID != "openrouter/openai/gpt-6-sol" {
+		t.Fatalf("unexpected pinned OMP models: %#v", models)
+	}
+}
+
+func TestParseOMPModelsSelectsTheExactConfiguredModelAndEffort(t *testing.T) {
+	models, err := parseOMPModels([]byte(`{"defaultModel":"openrouter/model:free:high","models":[{"selector":"openrouter/model","name":"Base","thinking":["high"]},{"selector":"openrouter/model:free","name":"Free","thinking":["low","high"]}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(models) != 2 || models[0].ID != "openrouter/model:free" || models[0].DefaultEffort != "high" {
+		t.Fatalf("unexpected configured OMP model: %#v", models)
+	}
+}
+
 func TestParseClaudeHelpUsesAdvertisedAliasesAndEfforts(t *testing.T) {
 	models, err := parseClaudeHelp([]byte(`
   --effort <level> Effort level for the current session

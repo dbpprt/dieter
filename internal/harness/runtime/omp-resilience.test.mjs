@@ -14,16 +14,26 @@ import {
   prioritizeOMPLaunchCandidates,
 } from './omp-resilience.mjs';
 
-const ompSettings = (hookPath, configPath) => ({
+const ompSettings = (
+  hookPath,
+  configPath,
+  packageVersion = '18.1.10',
+  modelStrategy = 'session-config-option',
+) => ({
   harnessId: 'omp',
   source: {
     type: 'npm-simple',
     packageName: '@oh-my-pi/pi-coding-agent',
-    packageVersion: '18.1.10',
+    packageVersion,
   },
   executable: 'omp',
-  args: ['acp', ...(configPath ? ['--config', configPath] : []), '--hook', hookPath, '--thinking=max'],
-  modelMapping: { type: 'session-config-option', path: 'model' },
+  args: [
+    'acp', ...(configPath ? ['--config', configPath] : []), '--hook', hookPath, '--thinking=max',
+    ...(modelStrategy === 'launch-argument' ? ['--model=openrouter/openai/gpt-6-sol'] : []),
+  ],
+  ...(modelStrategy === 'session-config-option'
+    ? { modelMapping: { type: 'session-config-option', path: 'model' } }
+    : {}),
   forwardEnv: ['HOME', 'PI_CODING_AGENT_DIR', 'OMP_PROFILE', 'DIETER_OMP_CAPABILITY_FILE'],
 });
 
@@ -84,8 +94,8 @@ test('retries an ACP implementation mismatch with a legacy OMP hook path', async
   const fallbacks = [];
   const expectedSession = { id: 'resumed' };
   const candidates = [
-    { hookPath: '/stable/hook.mjs', configPath: '/runtime/omp.yml' },
-    { hookPath: '/legacy/hook.mjs', configPath: undefined },
+    { packageVersion: '18.2.9', modelStrategy: 'launch-argument', hookPath: '/stable/hook.mjs', configPath: '/runtime/omp.yml' },
+    { packageVersion: '18.1.10', modelStrategy: 'session-config-option', hookPath: '/legacy/hook.mjs', configPath: undefined },
   ];
   const result = await createOMPSessionWithCompatibility({
     candidates,
@@ -107,18 +117,21 @@ test('retries an ACP implementation mismatch with a legacy OMP hook path', async
   assert.deepEqual(fallbacks, [candidates[1]]);
 });
 
-test('preselects the legacy launch matching the persisted ACP implementation identity', async () => {
+test('preselects the legacy package and launch matching the persisted ACP implementation identity', async () => {
   const legacyHookPath = '/runtime/harness/old/omp-capabilities-hook.mjs';
   const configPath = '/runtime/config/omp.yml';
-  const settingsForCandidate = candidate => ompSettings(candidate.hookPath, candidate.configPath);
   const candidates = createOMPLaunchCandidates({
     hookPaths: ['/runtime/stable/omp-capabilities-new.mjs', legacyHookPath],
     configPath,
+    implementations: [
+      { packageVersion: '18.2.9', modelStrategy: 'launch-argument' },
+      { packageVersion: '18.1.10', modelStrategy: 'session-config-option' },
+    ],
   });
   const lifecycleState = {
     data: {
       implementationIdentity: acpImplementationIdentity({
-        settings: ompSettings(legacyHookPath),
+        settings: ompSettings(legacyHookPath, undefined, '18.1.10'),
         acpPackageVersion,
       }),
     },
@@ -126,11 +139,32 @@ test('preselects the legacy launch matching the persisted ACP implementation ide
   const prioritized = prioritizeOMPLaunchCandidates({
     candidates,
     lifecycleState,
-    settingsForCandidate,
+    settingsForCandidate: candidate => ompSettings(
+      candidate.hookPath, candidate.configPath, candidate.packageVersion, candidate.modelStrategy,
+    ),
     acpPackageVersion,
   });
-  assert.deepEqual(prioritized[0], { hookPath: legacyHookPath, configPath: undefined });
+  assert.deepEqual(prioritized[0], {
+    packageVersion: '18.1.10', modelStrategy: 'session-config-option',
+    hookPath: legacyHookPath, configPath: undefined,
+  });
   assert.deepEqual(prioritized.slice(1), candidates.filter(candidate => candidate !== prioritized[0]));
+});
+
+test('orders bounded OMP package compatibility candidates newest first', () => {
+  assert.deepEqual(createOMPLaunchCandidates({
+    hookPaths: ['/stable/hook.mjs'],
+    configPath: '/runtime/omp.yml',
+    implementations: [
+      { packageVersion: '18.2.9', modelStrategy: 'launch-argument' },
+      { packageVersion: '18.1.10', modelStrategy: 'session-config-option' },
+    ],
+  }), [
+    { packageVersion: '18.2.9', modelStrategy: 'launch-argument', hookPath: '/stable/hook.mjs', configPath: '/runtime/omp.yml' },
+    { packageVersion: '18.2.9', modelStrategy: 'launch-argument', hookPath: '/stable/hook.mjs', configPath: undefined },
+    { packageVersion: '18.1.10', modelStrategy: 'session-config-option', hookPath: '/stable/hook.mjs', configPath: '/runtime/omp.yml' },
+    { packageVersion: '18.1.10', modelStrategy: 'session-config-option', hookPath: '/stable/hook.mjs', configPath: undefined },
+  ]);
 });
 
 test('stages the Dieter OMP overlay atomically with private permissions', async t => {
