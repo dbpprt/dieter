@@ -279,13 +279,20 @@ final class RemoteNodeUITests: XCTestCase {
         // The machine name appears before its workspace loads. Project links
         // navigate away from the sidebar; board links are their siblings.
         let predicate = requireHittable ? "exists == true AND hittable == true" : "exists == true"
+        // Do not call `element`, which performs a synchronous `.exists` probe
+        // before returning. A freshly relaunched iPad can spend XCTest's whole
+        // snapshot timeout on that first probe even though the board appears
+        // moments later. The predicate expectation owns the bounded wait.
+        let boardButton = app.buttons.matching(identifier: "ios.board.\(board)").firstMatch
         let ready = XCTNSPredicateExpectation(
             predicate: NSPredicate(format: predicate),
-            object: element(app, "ios.board.\(board)"))
+            object: boardButton)
         XCTAssertEqual(
             XCTWaiter.wait(for: [ready], timeout: 40), .completed,
             "The fixture board must be ready in the sidebar.\n\(app.debugDescription)")
-        XCTAssertTrue(element(app, "ios.project.\(project)").exists, "The fixture project must be present.")
+        let projectButton = app.buttons.matching(identifier: "ios.project.\(project)").firstMatch
+        XCTAssertTrue(
+            projectButton.waitForExistence(timeout: 10), "The fixture project must be present.")
     }
 
     private func screenshot(_ app: XCUIApplication, _ name: String) {

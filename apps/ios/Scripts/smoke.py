@@ -270,6 +270,7 @@ def main():
         run('bash', 'native/macos-capture/build.sh', str(capture_helper))
         run('go', 'build', '-o', str(screen_fixture_binary), './scripts/screens-fixture')
         screen_log = (evidence / 'screen-fixture.log').open('w')
+        os.chmod(evidence / 'screen-fixture.log', 0o600)
         screen_fixture = subprocess.Popen([
             str(screen_fixture_binary), '--helper', str(capture_helper), '--source', 'native-synthetic',
             '--authenticate', '--ready', str(screen_ready),
