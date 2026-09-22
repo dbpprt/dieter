@@ -740,7 +740,13 @@ final class RemoteNodeUITests: XCTestCase {
         let done = photos.buttons.matching(identifier: "ios.share.done").firstMatch
         XCTAssertTrue(done.waitForExistence(timeout: 5))
         done.tap()
-        app.activate()
+        // Reopening the app is the user-facing handoff described by the share
+        // extension. `activate()` can leave an already-running host process in
+        // `Running Background` on a loaded CI simulator and then fail inside
+        // XCTest before its state can be retried. `launch()` replaces that
+        // background instance while preserving the app-group request that this
+        // assertion is intended to exercise.
+        app.launch()
         XCTAssertTrue(
             app.wait(for: .runningForeground, timeout: 20),
             "Opening Dieter after the handoff must resume the shared request.")
