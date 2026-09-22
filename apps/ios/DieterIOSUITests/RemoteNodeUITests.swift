@@ -568,7 +568,9 @@ final class RemoteNodeUITests: XCTestCase {
         tap(app, "ios.provider-quotas.done")
 
         tap(app, "ios.machine-state.open")
-        XCTAssertTrue(element(app, "ios.machine-state").waitForExistence(timeout: 20))
+        let machineState = app.descendants(matching: .any)
+            .matching(identifier: "ios.machine-state").firstMatch
+        XCTAssertTrue(machineState.waitForExistence(timeout: 20))
         tap(app, "ios.machine-state.machine-picker")
         XCTAssertFalse(
             element(app, "ios.machine-state.machine.\(incompatible)").exists,
@@ -579,7 +581,19 @@ final class RemoteNodeUITests: XCTestCase {
         XCTAssertTrue(element(app, "ios.machine-state.memory").exists)
         XCTAssertTrue(element(app, "ios.machine-state.system").exists)
         screenshot(app, "11-machine-state")
-        tap(app, "ios.machine-state.done")
+        // After the long machine-state scroll, XCTest can resolve the visible
+        // toolbar button but still try to scroll it, producing an invalid
+        // {-1, -1} hit point. Tap its already-visible frame directly and prove
+        // the sheet closed before querying the covered sidebar.
+        let machineStateDone = app.navigationBars["Machine state"].buttons
+            .matching(identifier: "ios.machine-state.done").firstMatch
+        XCTAssertTrue(machineStateDone.waitForExistence(timeout: 10))
+        machineStateDone.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        let machineStateDismissed = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "exists == false"), object: machineState)
+        XCTAssertEqual(
+            XCTWaiter.wait(for: [machineStateDismissed], timeout: 10), .completed,
+            "Done must dismiss machine state before returning to the sidebar.\n\(app.debugDescription)")
         waitForBoard(app, project: project, board: board)
 
         tap(app, "ios.screens.open")
