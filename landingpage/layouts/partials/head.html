@@ -5,7 +5,7 @@
 <title>{{ if $isHome }}{{ .Site.Title }}{{ else }}{{ $title }} · Dieter{{ end }}</title>
 {{ $desc := .Description | default .Site.Params.description }}
 <meta name="description" content="{{ $desc }}">
-<meta name="theme-color" content="#ffffff">
+<meta name="theme-color" content="#fafaf7">
 <meta name="color-scheme" content="light">
 <link rel="canonical" href="{{ .Permalink }}">
 
@@ -27,9 +27,7 @@
 <link rel="icon" href="{{ "favicon.ico" | relURL }}" sizes="any">
 <link rel="apple-touch-icon" href="{{ "images/app-icon-dark-512.png" | relURL }}">
 
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&family=Inter:wght@400;450;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="preload" href="{{ "fonts/Sora-Variable.ttf" | relURL }}" as="font" type="font/ttf" crossorigin>
 
 {{ $main := resources.Get "css/main.css" }}
 {{ $chroma := resources.Get "css/_chroma.css" }}
@@ -43,7 +41,7 @@
   "@type": "SoftwareApplication",
   "name": "Dieter",
   "applicationCategory": "DeveloperApplication",
-  "operatingSystem": "macOS, Android",
+  "operatingSystem": "macOS, Linux, Android, iOS",
   "description": {{ $desc | jsonify }},
   "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
   "url": "{{ .Site.BaseURL }}"

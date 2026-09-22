@@ -1,3 +1,7 @@
+> **Historical engineering record.** This dated investigation or implementation
+> report describes the state at the time it was written. For current behavior and
+> setup, use the [documentation index](README.md).
+
 # Mac navigation and action feedback audit — 8 September 2026
 
 The app needs a common **input → acknowledgment → destination shell → usable content** contract. Data-loading indicators alone do not provide it. A navigation method returning in 0.2 ms does not mean the selected button or destination appears in 0.2 ms.

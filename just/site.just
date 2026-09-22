@@ -38,6 +38,10 @@ build:
     if [[ -n "${SITE_BASE_URL:-}" ]]; then arguments+=(--baseURL "${SITE_BASE_URL%/}/"); fi
     HUGO_ENVIRONMENT=production TZ=Europe/Berlin hugo "${arguments[@]}"
 
+# Build and validate local documentation links, anchors, assets, and search.
+check: build
+    python3 landingpage/tools/check_docs.py
+
 # Remove only the generated website output.
 [confirm]
 clean:

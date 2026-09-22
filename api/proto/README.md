@@ -1,9 +1,9 @@
 # Dieter RPC API
 
 `dieter/v1/dieter.proto` is Dieter's only application transport contract. The Go
-daemon exposes native gRPC on its authenticated listeners. Native macOS and
+daemon exposes native gRPC on its authenticated listeners. Native macOS, iOS, and
 Android clients use the same contract locally, over an authenticated direct TLS
-route, or through the gateway relay. There is no parallel REST API, JSON view
+route, a data-only WebRTC route, or through the gateway relay. There is no parallel REST API, JSON view
 model, SSE event format, or web client.
 
 `GetConversation` returns a bounded lightweight tail. Tool inputs and outputs

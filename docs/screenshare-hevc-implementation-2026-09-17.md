@@ -1,3 +1,7 @@
+> **Historical engineering record.** This dated investigation or implementation
+> report describes the state at the time it was written. For current behavior and
+> setup, use the [documentation index](README.md).
+
 # Hardware HEVC screen sharing
 
 The initial HEVC path is implemented as an opt-in feature. H.264 remains the

@@ -1,3 +1,7 @@
+> **Historical engineering record.** This dated investigation or implementation
+> report describes the state at the time it was written. For current behavior and
+> setup, use the [documentation index](README.md).
+
 # Porting Dieter to Linux (Garuda on box) — assessment
 
 > Superseded by the implemented support contract in

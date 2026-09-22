@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" class="{{ if .IsHome }}is-home{{ else }}is-page{{ end }}">
+<html lang="en" class="no-js {{ if .IsHome }}is-home{{ else }}is-page{{ end }}">
 <head>
   {{ partial "head.html" . }}
 </head>
@@ -10,6 +10,7 @@
     {{ block "main" . }}{{ end }}
   </main>
   {{ partial "footer.html" . }}
+  {{ partial "search.html" . }}
   {{ $js := resources.Get "js/main.js" | minify | fingerprint }}
   <script src="{{ $js.RelPermalink }}" integrity="{{ $js.Data.Integrity }}" defer></script>
   {{ block "scripts" . }}{{ end }}

@@ -1,3 +1,7 @@
+> **Historical engineering record.** This dated investigation or implementation
+> report describes the state at the time it was written. For current behavior and
+> setup, use the [documentation index](README.md).
+
 # Native Mac screen sharing implementation — 14 September 2026
 
 Dieter now has a native, adaptive Mac screen and input pipeline. This implements the Mac scope of the [assessment](screenshare-assessment-2026-09-13.md): ScreenCaptureKit → hardware VideoToolbox H.264 → bounded Pion/WebRTC transport → native libwebrtc/Metal display, with a separate cursor and reliable stateful input. Linux capture remains explicitly unsupported behind a portable backend contract.

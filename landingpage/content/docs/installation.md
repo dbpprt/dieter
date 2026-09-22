@@ -1,123 +1,130 @@
 ---
 title: "Installation"
 linkTitle: "Installation"
-description: "Install a signed Linux daemon service, use Homebrew on Apple Silicon, or build from source."
-group: "Guides"
+description: "Choose a daemon host and a native client."
+group: "Start here"
 weight: 10
 slug: "installation"
 ---
 
-Dieter supports headless Linux daemon hosts and Apple Silicon macOS. The native
-viewer clients are available for macOS and Android.
+The daemon runs agents; the app connects to them. Install both on a Mac that will
+host work, or install just a client when your agents run on another machine.
 
-## Requirements
+## Supported platforms
 
-- Go 1.26.8 or newer *(source builds)*
-- Node.js 22.19 or newer on each daemon host
-- Git working trees for registered projects
-- One configured harness login or API key
-- macOS 26+ or Android 8+ for the official clients
-- systemd user manager and cosign for managed Linux installation and updates
+| Role | Apple Silicon macOS | Linux amd64 / arm64 | Android | iPhone / iPad |
+| --- | --- | --- | --- | --- |
+| CLI and daemon | Yes | Yes | — | — |
+| Native client | macOS 26+ | — | Android 8+ | iOS 18+, beta |
+| Screen host | With OS permissions | Active X11 / Wayland desktop | — | — |
+| Gateway | Source build | Published image and binaries | — | — |
 
-The first agent turn installs the exact JavaScript harness runtime from
-`internal/harness/runtime/package-lock.json` under `DIETER_HOME`.
+Each daemon host needs **Node.js 22.19+**, **npm**, **Git**, and a configured
+[harness account](/docs/harnesses/). Install **tmux** if terminals should survive
+daemon restarts. Published binaries do not require Go or `just`.
 
-## Install the daemon
+## macOS
 
-On Linux amd64/arm64, install cosign and run:
-
-```sh
-curl -fsSL https://github.com/dbpprt/dieter/releases/latest/download/install.sh | sh
-dieter setup
-dieter project open ~/Development/my-project
-dieter doctor
-```
-
-The installer verifies the GitHub OIDC Sigstore signature and archive checksum,
-then installs a private systemd user service when available. Linux hosts support
-agents, projects, schedules, terminals, remote execution, telemetry, power
-operations, and rollback-capable updates. Screen hosting requires an active
-X11 or Wayland desktop and the dependencies in the
-[Linux host guide](https://github.com/dbpprt/dieter/blob/main/docs/linux-support.md).
-Use `--version`, `--install-dir`, or `--no-service` when the defaults do not fit
-the host; `install.sh --help` documents their environment-variable equivalents.
-
-On Apple Silicon macOS, Homebrew installs the daemon and app separately:
-
-The formula includes the `dieter` CLI and local daemon:
+Install the daemon with Homebrew:
 
 ```sh
 brew install dbpprt/tap/dieter
-dieter setup
+dieter setup --gateway https://dieter.example.com
 dieter project open ~/Development/my-project
 ```
 
-`dieter setup` enrolls the Mac and starts the daemon as a Homebrew service. It
-never registers a project; `dieter project open PATH` is the explicit
-registration step. Through that running service, setup guides the macOS Screen
-&amp; System Audio Recording permission, proves the exact signed
-ScreenCaptureKit/VideoToolbox helper with one discarded frame, and guides and
-verifies Accessibility event-posting permission without moving or clicking the
-pointer. Screen sharing is
-automatically available after the required OS permissions are granted.
+Use your actual gateway origin and an existing Git checkout. Setup enrolls the
+machine, starts the Homebrew service, and guides the daemon's Screen Recording
+and Accessibility grants. Unsupported screen hosting does not prevent agent work.
 
-There is no screen-sharing enable switch. Unsupported/headless hosts report why
-screen sharing is unavailable. Re-run the standalone check at any time with:
-
-```sh
-dieter daemon permissions --check
-```
-
-The Mac app separately requires Accessibility and Screen Recording for Dieter.app.
-Its setup screen guides each grant and checks automatically when you return from
-System Settings. App grants and daemon grants are separate.
-
-## Install the Mac app
-
-The cask installs `Dieter.app`:
+Install the native app separately:
 
 ```sh
 brew install --cask dbpprt/tap/dieter-app
 open -a Dieter
 ```
 
-Sign in to the configured gateway. Dieter indexes every enrolled machine and
-shows all of their projects together. There is no machine picker to manage. The
-same workspace is available from Android.
+The app signs in to your gateway. Its capture and browser-context features have
+separate app permissions; grant access to **Dieter.app** when its setup asks.
+Daemon capture permissions apply to the executable identified by the daemon's
+guide. Recheck the host with `dieter daemon permissions --check`.
 
-{{< callout type="tip" title="Upgrading" >}}
-`brew upgrade dieter` updates the daemon in place. When upgrading from the old
-manual LaunchAgent, `dieter setup` unloads it and preserves its plist with a
-`.disabled` suffix before starting the Homebrew-managed service.
-{{< /callout >}}
+## Linux
 
-## Build from source
+Use a systemd user session. Install Node.js 22.19+, npm, Git, and
+[cosign](https://docs.sigstore.dev/cosign/system_config/installation/) first;
+`tmux` is recommended. Then:
 
 ```sh
-just build
+curl -fsSL https://github.com/dbpprt/dieter/releases/latest/download/install.sh | sh
+dieter setup --gateway https://dieter.example.com
+dieter project open ~/Development/my-project
+dieter doctor
 ```
 
-This produces separate `bin/dieter` and `bin/dieter-gateway` executables. A
-normal daemon machine installs only `dieter`; the public host installs only
-`dieter-gateway`.
+The installer verifies the release's Sigstore-signed SHA-256 manifest and installs
+the daemon/capture-helper pair. It creates a private systemd user service when a
+user manager is available. Use `--version`, `--install-dir`, or `--no-service`
+when needed; download the script and run `sh install.sh --help` for all options.
 
-The macOS app builds via `just mac build` (producing
-`apps/mac/build/Dieter.app`); Android builds via `just android build` and
-installs with `just android install`.
+Agents work on headless hosts. Screen hosting additionally needs an active
+graphical session, GStreamer, and X11 or Wayland portal packages. The
+[Linux host reference](https://github.com/dbpprt/dieter/blob/main/docs/linux-support.md)
+lists distribution packages and service details. Do not run the daemon as root.
 
 ## Android
 
-The Android client aggregates the same enrolled daemons and encrypts its gateway
-session with a device-bound Android Keystore key. It auto-updates by checking the
-latest `dbpprt/dieter` GitHub release for `Dieter-Android.apk`. See
-`apps/android/README.md` for platform builds.
+Download [Dieter-Android.apk from the latest release](https://github.com/dbpprt/dieter/releases/latest/download/Dieter-Android.apk).
+Allow installation from your download source when Android asks, install it, and
+sign in to your gateway. No daemon runs on the phone.
+
+The app checks public releases for updates, verifies the asset's published
+SHA-256 digest, and hands installation to Android. You still confirm each
+installation. A manual check is available in **App Settings → Updates**.
+
+For source builds, see the [Android developer guide](https://github.com/dbpprt/dieter/blob/main/apps/android/README.md).
+
+## iPhone and iPad beta
+
+The SwiftUI client supports iOS 18+ on iPhone and iPad. It provides project and
+board navigation, conversations, attachments and screenshot sharing, remote file
+editing, machine telemetry, and Screens. It connects to remote daemons and does
+not host agents.
+
+iOS distribution uses the manual TestFlight workflow. Availability depends on
+beta access; there is no App Store download promised here. You can also build
+with Xcode using the [iOS guide](https://github.com/dbpprt/dieter/blob/main/apps/ios/README.md).
+
+## Updates
+
+Homebrew stages the next daemon/helper pair without replacing the running pair.
+Activate it with a service restart at an appropriate time:
+
+```sh
+brew upgrade dieter
+brew services restart dieter
+```
+
+Managed macOS and Linux hosts also expose an explicit authenticated update:
+
+```sh
+dieter machine update --confirm UPDATE
+```
+
+Use global `--machine MACHINE_ID` to select another host. Capability checks explain
+when managed update is unavailable. Updates prepare the pinned harness runtime
+before restarting; an active turn retains its runtime digest across recovery.
+See [service activation and rollback](https://github.com/dbpprt/dieter/blob/main/docs/homebrew-service-runtime.md).
+
+## Build from source
+
+See [Development](/docs/development/) for tool versions and checks.
+`just build` produces `bin/dieter` and `bin/dieter-gateway`.
+`just mac build` packages the Mac app; `just android build` produces the debug APK.
 
 ## Uninstall
 
-Homebrew uninstall removes the service and binary but intentionally preserves
-`DIETER_HOME`, so your projects, conversations, and schedules survive a
-reinstall.
-
-On Linux, `dieter daemon service uninstall` disables and removes the user unit
-while preserving the same data. Remove the installed CLI separately only after
-the service is gone.
+Homebrew uninstall removes the installed program while preserving `DIETER_HOME`.
+On Linux, `dieter daemon service uninstall` removes the user unit; remove the
+installed binaries separately. Neither operation deletes your conversations or
+registered repositories.

@@ -1,65 +1,97 @@
 ---
-title: "Harnesses"
-linkTitle: "Harnesses"
-description: "Dieter runs Codex, Claude Code, Pi, and Oh My Pi through each harness's own configuration, no re-auth, no proxy, no sandbox."
+title: "Agents & models"
+linkTitle: "Agents & models"
+description: "Use your existing local agent configuration and the capabilities of the selected host."
 group: "Reference"
-weight: 21
+weight: 42
 slug: "harnesses"
 ---
 
-Dieter uses each harness's normal user configuration. Nothing is proxied or
-re-authenticated; your existing agent credentials are read from their usual
-location on the daemon host.
+Dieter integrates five harnesses through a pinned JavaScript runtime. Each uses
+its normal local configuration on the **execution machine**.
 
-## Supported harnesses
-
-| Harness | Configuration |
+| Harness | Default configuration |
 | --- | --- |
 | Codex | `~/.codex` or `CODEX_HOME` |
 | Claude Code | `~/.claude` or `CLAUDE_CONFIG_DIR` |
 | Pi | `~/.pi/agent` or `PI_AGENT_DIR` |
 | Oh My Pi | `~/.omp/agent`, with `OMP_PROFILE` when set |
+| DeepSeek Harness (DSH) | `~/.dsh` or `DSH_HOME` |
 
-Codex, Claude Code, Pi, and Oh My Pi run through pinned
-[Vercel AI SDK Harnesses](https://ai-sdk.dev/docs/ai-sdk-harnesses/overview)
-without a sandbox. The first agent turn installs the exact JavaScript harness
-runtime from `internal/harness/runtime/package-lock.json` under `DIETER_HOME`.
+Authenticate or configure the provider on that machine first. Dieter does not
+transfer provider credentials between hosts or store them on the gateway.
 
-## The registry
-
-The model, effort, context, capability, and typed provider-option registry is
-`config/harnesses.yaml`. Each harness declares a default model, a list of
-selectable models, an effort/thinking scale, and capability flags such as
-subagents and task-plan.
-
-Provider options appear only for harnesses and models that advertise them.
-Codex exposes `fast_mode` for GPT-5.4, GPT-5.5, GPT-5.6, and GPT-6 Astra chats,
-board tasks, and scheduled task templates. GPT-5.3 Codex and Spark do not show
-or accept the option. It defaults to standard speed and remains changeable
-between turns; Fast mode uses the provider's faster service tier at a higher
-usage rate.
-
-Override the entire registry with any of:
+## Inspect the actual catalog
 
 ```sh
-$DIETER_HOME/harnesses.yaml     # per-daemon file
-DIETER_HARNESS_CONFIG=<path>    # environment
---harness-config <path>         # flag
+dieter harness list --format jsonl
+dieter --machine MACHINE_ID harness list --format jsonl
 ```
 
-## Capabilities
+The catalog is machine-local. Clients load it from the selected execution owner;
+a model available on one host is not assumed available on another. DSH models
+are discovered from its standard ACP session options. A successful prior catalog
+is retained through transient refresh failures.
 
-- **Concurrent turns** are permitted in the same registered project folder. Only
-  explicit global, harness, and board parallel-session limits restrict separate
-  chats; a single conversation still has at most one active turn.
-- **Parallel-session limits** are enforced at runtime lease acquisition, so
-  HTTP, CLI, and scheduled starts share one policy.
-- **Durability** is built in. A graceful daemon shutdown parks active harness
-  turns with provider continuation state, and startup resumes them without
-  replaying the user prompt.
+The embedded registry is
+[`config/harnesses.yaml`](https://github.com/dbpprt/dieter/blob/main/config/harnesses.yaml).
+It declares models, reasoning levels, capabilities, and typed provider options.
+Override it with `$DIETER_HOME/harnesses.yaml`, `DIETER_HARNESS_CONFIG`, or the
+`--harness-config` flag. The registry and discovered catalog are the authoritative
+model list; this page does not freeze a second copy of it.
 
-{{< callout type="warn" title="Harnesses run unsandboxed as your user" >}}
-Harness workers run locally on the daemon host with the permissions of the user
-running the daemon. This is what keeps agents close to the code, credentials,
-and tools, so treat daemon host access accordingly.
-{{< /callout >}}
+## Choose model and reasoning
+
+A new conversation uses the selected model's `defaultEffort` when defined.
+`--effort default` explicitly selects the provider's native default.
+
+Codex, Claude Code, and Pi support model and effort changes between turns.
+OMP and DSH support model changes; OMP thinking stays fixed after the first
+message. Provider options appear only where the catalog advertises them.
+Supported Codex models expose mutable **Fast mode** with
+`--provider-option fast_mode=true`; it uses the provider's faster service tier
+at a higher usage rate.
+
+A queued follow-up retains its own model, effort, attachments, and options.
+Changing that selection does not reconfigure the already-running turn.
+
+## Runtime lifecycle
+
+The first turn installs the exact locked runtime under `DIETER_HOME`. Updating
+a separately installed global agent CLI does not update Dieter's bundled bridge.
+Managed daemon updates prepare the new content-addressed runtime first; a turn
+already in flight remains pinned to its digest across recovery, and the next turn
+uses the current runtime.
+
+DSH is installed lazily through the ACP bootstrap at its tested version; a global
+`dsh` installation is not required. See the
+[DSH integration reference](https://github.com/dbpprt/dieter/blob/main/docs/deepseek-dsh-harness.md)
+for provider configuration and diagnostics.
+
+## Provider quotas
+
+Mac and Android can show remaining account allowance and reset windows. Separate
+accounts and windows stay separate. A provider summary takes the lowest remaining
+percentage among included accounts; it never adds or averages allowances.
+
+```sh
+dieter quota list
+dieter quota refresh openai
+dieter quota exclude openai --account OPAQUE_KEY
+dieter quota include openai --account OPAQUE_KEY
+```
+
+These commands are **gateway-account scoped** and do not accept `--machine`.
+Explicit `DIETER_CODEX_ACCOUNT_HOMES` paths can expose up to eight local Codex
+profiles on a daemon. OpenAI reset credits require an exact confirmation:
+`dieter quota reset openai --account OPAQUE_KEY --confirm RESET` consumes a credit.
+
+Quota snapshots can be stale or unavailable. Card token totals are a different
+measure: provider-reported usage, potentially partial, and not a cost estimate.
+
+## Execution permissions
+
+Harness workers run unsandboxed as the daemon user. Independent conversations
+can run concurrently; there is no global, harness, or board parallel-session cap.
+Each conversation has one active turn, and machine/storage/process resource
+bounds still apply. Read the [security model](/docs/security/).

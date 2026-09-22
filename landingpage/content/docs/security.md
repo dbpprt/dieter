@@ -1,94 +1,99 @@
 ---
 title: "Security model"
 linkTitle: "Security model"
-description: "Binary access, cryptographic daemon identity, a bounded relay, and a gateway with nothing sensitive to leak."
-group: "Overview"
-weight: 3
+description: "Understand the trust boundary before connecting your machines."
+group: "Reference"
+weight: 41
 slug: "security"
 ---
 
-Dieter's security posture follows one rule: **keep the code and credentials on
-the machine that owns them, and give the gateway nothing worth stealing.**
+Dieter runs agents with the permissions of the user running the daemon. There is
+no Dieter sandbox. Treat an authenticated client as an operator of those machines.
 
-## Binary access, no scopes
+## Account access
 
-Client sessions have binary full access or no access. The configured GitHub
-identity is allowed or it is not, matched on immutable numeric IDs from
-`DIETER_GITHUB_ALLOWED_USER_IDS` rather than
-mutable logins. Each account can access only its own enrolled daemons. There are
-no scopes to over-grant and no tokens to scope down.
+The gateway authorizes immutable numeric GitHub IDs from
+`DIETER_GITHUB_ALLOWED_USER_IDS`. Each allowed account is isolated from other
+accounts. A client session has full access within its account or no access;
+there are no granular read-only scopes.
 
-## Cryptographic daemon identity
+Machine enrollment requires GitHub sign-in and a separate browser approval of
+the machine name and enrollment code. The page also shows the public-key
+fingerprint. Merely opening the verification link does not enroll a machine.
 
-A daemon proves possession of its enrolled `Ed25519` key on **every** tunnel
-connection. Each relayed request additionally carries a short-lived, method- and
-payload-bound assertion, so a captured request cannot be replayed against a
-different method or body.
+## Machine identity and transport
 
-Direct routes use a verified daemon certificate and a five-minute bearer.
+An enrolled daemon proves possession of its Ed25519 key on each tunnel connection.
+Relay requests carry short-lived, method- and payload-bound assertions. Direct
+routes verify the daemon certificate and a short-lived daemon-targeted bearer.
+WebRTC API routes retain this daemon TLS authentication, including through TURN.
 
-{{< callout type="warn" title="Never expose the raw data plane" >}}
-The raw local data plane listens on `127.0.0.1:4242` and must stay
-loopback-only. An enrolled daemon separately advertises an authenticated TLS
-route on an ephemeral loopback port that clients discover through the gateway.
-Do not advertise raw port 4242.
-{{< /callout >}}
+The raw daemon API stays on loopback (`127.0.0.1:4242`). Never publish that port.
+Enrolled daemons advertise a separate authenticated loopback TLS route; an
+additional LAN or tailnet TLS route is optional. Public gateway origins require
+HTTPS. Literal loopback HTTP is reserved for isolated local setups.
+
+External TLS uses TLS 1.3. If a reverse proxy terminates TLS, configure that
+policy at the proxy too. Relay messages, queues, and concurrent streams are
+bounded. Transport cancellation never implicitly stops an agent.
+
+## Storage is different from transit
+
+| Location | Stored data |
+| --- | --- |
+| Daemon | Checkouts and local execution state; transcripts, files, schedules; shared metadata replicas; local harness credentials in their normal configuration locations |
+| Gateway | Account sessions, daemon identities, presence, routes, revocation metadata, and normalized credential-free provider quota snapshots |
+| Native client | Session credential, caches, drafts, and pending commands appropriate to that platform |
+
+The gateway **does not store** repositories, transcripts, project files, schedules,
+provider credentials, or raw provider responses. Authenticated API payloads can
+nevertheless pass through its relay. Do not interpret “not stored” as a claim
+that the gateway cannot process relay traffic.
+
+Quota snapshots may include a bounded account display email when returned by the
+provider's structured account API. Opaque account keys are account-scoped HMACs,
+not raw provider account IDs.
+
+Agent model requests follow your provider's configuration. Cloud model providers
+may receive prompts, code, and tool output. Dieter does not make that inference
+local or replace the provider's data policy.
 
 ## Revocation
 
-Revoking a daemon closes its relay immediately and invalidates direct access as
-its five-minute bearers expire. Unenrolling from the machine itself signs the
-request with the enrolled identity, revokes the gateway record, closes the
-relay, and removes the local gateway credential, without touching projects,
-conversations, schedules, or harness settings. Signing out or expiring a gateway
-session closes its existing gateway streams within approximately five seconds.
-Direct streams end when their five-minute bearer expires, allowing ten seconds
-of clock tolerance. Native clients renew credentials before expiry; CLI read
-subscriptions renew credentials and resume from their last delivered checkpoint.
-Revocation stops recovery, and retrying a read never restarts an agent or process.
+Revoking a daemon closes its relay immediately. Direct access ends as its
+five-minute credentials expire. Signing out or expiring a gateway session closes
+its gateway streams within approximately five seconds; direct streams expire
+with their bearer, with ten seconds of clock tolerance.
 
-## What the gateway can and cannot see
+`dieter daemon unenroll` signs its revocation request, removes the local gateway
+credential, and leaves projects and conversations intact. Clients stop recovery
+on revocation. Read-subscription retries do not restart agents or processes.
 
-| The gateway stores | The gateway never stores |
-| --- | --- |
-| Account sessions | Projects or working trees |
-| Daemon public identities | Transcripts or conversations |
-| Presence and route metadata | Files |
-| Revocation generations | Harness credentials or API keys |
+## Native session storage
 
-The public origin intentionally serves only `/healthz`, the minimal GitHub OAuth
-routes, the gateway gRPC services, and authenticated `dieter.v1.DieterService`
-relay calls. **All other paths, including `/`, return 404.**
+- **macOS:** a user-only session file under
+  `~/Library/Application Support/com.dbpprt.dieter.mac`, with `0700` directory and
+  `0600` file permissions. It is not encrypted by the app and does not use Keychain.
+- **Android:** session encryption uses a device-bound Android Keystore key.
+- **iOS:** device-only Keychain items are separated by gateway origin.
 
-## Transport hardening
+Clients retain Dieter sessions, not GitHub access tokens or provider credentials.
+Protect the operating-system account and device that hold those sessions.
 
-- TLS 1.3 is enforced on every external hop.
-- A reverse proxy must configure TLS 1.3 explicitly; the gateway cannot control
-  the proxy's public TLS policy.
-- Relay messages are capped at 16 MiB; queues, buffers, and concurrent streams
-  are bounded.
-- A canceled relay RPC cancels only that transport RPC and never implicitly
-  stops an agent.
-- Screens media never flows through the gateway; only bounded WebRTC signaling
-  and short-lived ICE configuration do.
+## Screens and clipboard
 
-## Screens admission
+Clients verify the signed screen binding before accepting video or input.
+Up to four viewers can connect, with one revocable input controller. Held keys
+and buttons are released on focus loss or disconnect. Host capture requires the
+relevant OS permissions; there is no separate enable switch.
 
-Before applying a WebRTC answer the Mac verifies an Ed25519 binding across the
-offer, daemon DTLS fingerprint, session, nonce, lease, control grant, display,
-and input epoch. Capture starts only after WebRTC connects and stops when its
-renewable lease expires. One explicitly enabled viewer/controller is allowed per
-daemon, and every held input is released immediately on disconnect.
+Clipboard sharing is opt-in and available only to the focused controlling viewer.
+Its contents do not enter transcript history or logs. Reconnection never replays
+an uncertain paste. See [Screens](/docs/screens/) for platform limits.
 
-## Local secret storage
+## Reporting a vulnerability
 
-The macOS app stores its gateway session unencrypted in a user-only file under
-`~/Library/Application Support/com.dbpprt.dieter.mac` and never touches Keychain.
-Android encrypts the session with a device-bound Android Keystore key. Neither
-client retains a GitHub token or a harness credential.
-
-## Dependency checks
-
-`just gateway vulncheck` and `just daemon vulncheck` scan reachable code using the
-pinned Go release. CI requires these checks before publishing gateway images or
-daemon/gateway release packages.
+Use [GitHub private vulnerability reporting](https://github.com/dbpprt/dieter/security/advisories/new)
+when available. Do not put credentials or an unpatched exploit into a public
+issue. The repository's [security policy](https://github.com/dbpprt/dieter/blob/main/SECURITY.md)
+describes the report details and fallback.

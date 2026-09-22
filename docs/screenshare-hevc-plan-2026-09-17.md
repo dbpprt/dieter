@@ -1,3 +1,7 @@
+> **Historical engineering record.** This dated investigation or implementation
+> report describes the state at the time it was written. For current behavior and
+> setup, use the [documentation index](README.md).
+
 # Hardware HEVC screen-sharing plan
 
 Status: the opt-in 1080p60 implementation and native interoperability checks are complete. See [implementation and validation](screenshare-hevc-implementation-2026-09-17.md). Matched-quality bandwidth, real presentation latency, and physical Android performance gates remain open; H.264 stays the default.

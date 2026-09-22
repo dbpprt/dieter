@@ -1,3 +1,7 @@
+> **Historical engineering record.** This dated investigation or implementation
+> report describes the state at the time it was written. For current behavior and
+> setup, use the [documentation index](README.md).
+
 # iOS remote screen access plan
 
 Status: the first usable H.264 implementation is in the working tree. It covers

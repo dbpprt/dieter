@@ -1,3 +1,7 @@
+> **Historical engineering record.** This dated investigation or implementation
+> report describes the state at the time it was written. For current behavior and
+> setup, use the [documentation index](README.md).
+
 # Account peer settings sync after WebRTC implementation
 
 > Historical assessment, superseded by the leaderless implementation in

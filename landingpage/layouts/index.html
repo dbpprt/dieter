@@ -1,283 +1,88 @@
 {{ define "main" }}
-{{ $gh := .Site.Params.github }}
-
-<!-- ============================ HERO ============================ -->
-<section class="hero">
-  <div class="wrap">
-    <div class="hero__inner">
-      <span class="hero__kicker"><span class="dot"></span>Open source · macOS &amp; Android</span>
-
-      <h1>Many agents, many machines,<span class="line2 grad-text">one interface.</span></h1>
-
-      <p class="hero__sub">
-        Run Codex, Claude Code, Pi, and Oh My Pi across every machine you own. Your
-        office Mac mini, a server at home, your laptop, all from one app.
-      </p>
-
-      <div class="hero__cta">
-        <a class="btn btn--primary btn--lg" href="#install">Get started</a>
-        <a class="btn btn--ghost btn--lg" href="{{ "docs/" | relURL }}">Documentation</a>
+<section class="hero wrap">
+  <div class="hero__heading">
+    <div>
+      <p class="eyebrow"><span class="status-dot"></span> Local agents. Native apps. Open source.</p>
+      <h1>Your agents.<br>Your machines.<br><em>One workspace.</em></h1>
+    </div>
+    <div class="hero__intro">
+      <p>Start on your Mac. Let your workstation handle the work. Pick it up from your phone.</p>
+      <p class="muted">Dieter brings coding agents, conversations, and the tools around them into one native workspace.</p>
+      <div class="actions">
+        <a class="btn btn--primary" href="#install">Get Dieter <span aria-hidden="true">↗</span></a>
+        <a class="text-link" href="{{ "docs/tour/" | relURL }}">Take the tour <span aria-hidden="true">→</span></a>
       </div>
+      <p class="platform-note">macOS · Android · iOS beta<br>Agent hosts on macOS and Linux</p>
+    </div>
+  </div>
+  <figure class="product-stage">
+    <div class="stage-label"><span>THE WORK, ALL TOGETHER</span><span>01 / CONVERSATION WORKSPACE</span></div>
+    <a href="{{ "docs/tour/" | relURL }}" aria-label="Explore the Dieter product tour">
+      <img class="stage-desktop" src="{{ "images/screenshots/macos-workspace.png" | relURL }}" alt="Dieter on macOS with a project document beside a native conversation" width="1380" height="870" fetchpriority="high">
+      <img class="stage-phone" src="{{ "images/screenshots/android-activity.png" | relURL }}" alt="Android Activity brings recent tasks and chats into one feed" width="540" height="1212">
+    </a>
+    <figcaption>Real native apps. Demo data. Experimental workspace panel enabled. <a href="{{ "docs/tour/" | relURL }}">Explore the screens →</a></figcaption>
+  </figure>
+  <div class="agent-strip" aria-label="Supported agent harnesses">
+    <span>Bring your agent.</span>
+    {{ range hugo.Data.landing.harnesses }}<strong>{{ .name }}</strong>{{ end }}
+  </div>
+</section>
 
-      <div class="hero__install">
-        <code><span class="sigil">$</span> brew install dbpprt/tap/dieter</code>
-        <button class="copy-btn" data-copy="brew install dbpprt/tap/dieter" aria-label="Copy install command">
-          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-          <span data-copy-label>Copy</span>
-        </button>
-      </div>
+<section class="section wrap" id="features">
+  <div class="section-heading"><p class="eyebrow">A place for the whole job</p><h2>From “look into this”<br>to ready for review.</h2><p>A conversation is the beginning. Keep the code, the result, and the next step within reach.</p></div>
+  <div class="feature-grid">
+    <article><span class="feature-number">01</span><h3>Give work a home.</h3><p>Organize tasks on boards or open a standalone chat. Choose an isolated worktree or your project checkout. Each keeps its own durable conversation.</p><a class="text-link" href="{{ "docs/projects/" | relURL }}">Projects &amp; tasks →</a></article>
+    <article><span class="feature-number">02</span><h3>Stay with the context.</h3><p>Read a document, inspect a diff, open a preview, and follow a build beside the Mac conversation. The tools stay close to the work.</p><a class="text-link" href="{{ "docs/workspace/" | relURL }}">Conversation workspace →</a></article>
+    <article><span class="feature-number">03</span><h3>Keep moving.</h3><p>Agents run on their host when you close the app. Queue a follow-up from your phone, check a result, or return to the same conversation later.</p><a class="text-link" href="{{ "docs/automation/" | relURL }}">Terminals &amp; automation →</a></article>
+  </div>
+</section>
 
-      <p class="hero__meta">Open source · Runs on your machines · MIT</p>
-
-      <!-- Signature install terminal -->
-      <div class="terminal" data-terminal>
-        <div class="terminal__bar">
-          <div class="terminal__dots"><i></i><i></i><i></i></div>
-          <span class="terminal__title">zsh · dieter setup</span>
-          <button class="terminal__replay" aria-label="Replay">
-            {{ partial "icon" "replay" }} replay
-          </button>
-        </div>
-        <div class="terminal__body" aria-label="Animated installation walkthrough"></div>
-      </div>
+<section class="section section--tinted" id="command-deck">
+  <div class="wrap story">
+    <div class="story__copy"><p class="eyebrow">Native where it matters</p><h2>Your desk.<br>Your pocket.<br>The same work.</h2><p>Android puts Activity, Boards, and Chats one tap away. Open a machine’s tools when you need files, a terminal, or a remote screen.</p><p>On Mac, keep a full conversation workspace open. Both clients connect to the machine that owns the work.</p><a class="text-link" href="{{ "docs/tour/" | relURL }}">See the product tour →</a></div>
+    <div class="phone-pair">
+      <figure><img src="{{ "images/screenshots/android-chat.png" | relURL }}" alt="A durable conversation in the Dieter Android app" width="540" height="1212" loading="lazy"><figcaption>Continue a conversation</figcaption></figure>
+      <figure><img src="{{ "images/screenshots/android-machines.png" | relURL }}" alt="Android Machines lists enrolled hosts and their availability" width="540" height="1212" loading="lazy"><figcaption>Check your machines</figcaption></figure>
     </div>
   </div>
 </section>
 
-<!-- ============================ PILLARS ============================ -->
-<section class="section section--tight">
-  <div class="wrap">
-    <div class="pillars" data-reveal>
-      <div class="pillar">
-        <h3>{{ partial "icon" "layers" }} Every machine</h3>
-        <p>Enroll your office Mac mini, a home server, your laptop. See one project list.</p>
-      </div>
-      <div class="pillar">
-        <h3>{{ partial "icon" "cpu" }} Every agent</h3>
-        <p>Codex, Claude Code, Pi, and Oh My Pi, each running from its own config.</p>
-      </div>
-      <div class="pillar">
-        <h3>{{ partial "icon" "globe" }} From anywhere</h3>
-        <p>Drive all of it from macOS or Android, wherever you happen to be.</p>
-      </div>
+<section class="section wrap" id="architecture">
+  <div class="section-heading"><p class="eyebrow">Built around your machines</p><h2>The code already has a home.<br>Keep the agents there.</h2><p>One shared project can have checkouts on several hosts. Each conversation knows exactly where it runs.</p></div>
+  <div class="architecture" role="img" aria-label="Native clients connect through verified direct TLS, WebRTC, or the gateway relay to daemons on your Macs and Linux hosts. Agents execute beside local Git checkouts.">
+    <div><span class="eyebrow">You</span><h3>Native clients</h3><p>macOS · Android · iOS beta</p></div>
+    <div class="architecture__routes"><span>Direct TLS / WebRTC</span><span aria-hidden="true">↔</span><span>Gateway relay fallback</span></div>
+    <div><span class="eyebrow">Your machines</span><h3>Local daemons</h3><p>Git checkouts · Agents · Tools</p></div>
+  </div>
+  <a class="text-link" href="{{ "docs/architecture/" | relURL }}">Understand the architecture →</a>
+</section>
+
+<section class="section wrap" id="security">
+  <div class="ownership">
+    <div><p class="eyebrow">Open by design</p><h2>Yours to run.<br>Yours to understand.</h2></div>
+    <div class="ownership__details">
+      <article><h3>Local execution, clear boundaries.</h3><p>The gateway stores identity, routes, and normalized quota snapshots. It does not store your repositories or conversations. Agents use your host permissions and your chosen model provider.</p><a class="text-link" href="{{ "docs/security/" | relURL }}">Read the security model →</a></article>
+      <article><h3>Self-hostable. MIT-licensed.</h3><p>Run your own gateway, inspect the source, and shape the project. No per-seat software license; model-provider and infrastructure costs remain yours.</p><a class="text-link" href="{{ "docs/gateway/" | relURL }}">Run a gateway →</a></article>
     </div>
   </div>
 </section>
 
-<!-- ============================ FEATURES ============================ -->
-<section class="section" id="features">
+<section class="section section--tinted" id="install">
   <div class="wrap">
-    <div class="section-head" data-reveal>
-      <span class="eyebrow">What you get</span>
-      <h2>Built to run a lot of agents at once.</h2>
-      <p>A board of work, spread across your machines, that you can steer and step away from.</p>
-    </div>
-
-    <div class="bento">
-      <article class="card card--wide" id="command-deck" data-reveal>
-        <div class="card__icon">{{ partial "icon" "board" }}</div>
-        <h3>A board for your agents</h3>
-        <p>Every task is a card. Start it, watch an agent work through it, review the result, move it along. Standalone chats too, when you just want to ask.</p>
-        <div class="deckmock" aria-hidden="true">
-          <div class="deckmock__bar"><i></i><i></i><i></i></div>
-          <div class="deckmock__cols">
-            <div class="deckcol">
-              <span class="deckcol__label">Backlog</span>
-              <div class="chip"><span class="status s-wait"></span>Refactor auth flow</div>
-              <div class="chip"><span class="status s-wait"></span>Wire up webhooks</div>
-            </div>
-            <div class="deckcol">
-              <span class="deckcol__label">Running</span>
-              <div class="chip"><span class="status s-run"></span>Add rate limiting</div>
-              <div class="chip"><span class="status s-run"></span>Fix flaky tests</div>
-            </div>
-            <div class="deckcol">
-              <span class="deckcol__label">Review</span>
-              <div class="chip"><span class="status s-done"></span>Upgrade deps</div>
-            </div>
-            <div class="deckcol">
-              <span class="deckcol__label">Done</span>
-              <div class="chip"><span class="status s-done"></span>Ship changelog</div>
-              <div class="chip"><span class="status s-err"></span>Retry queue</div>
-            </div>
-          </div>
-        </div>
-      </article>
-
-      <article class="card card--tall" data-reveal data-reveal-delay="80">
-        <div class="card__icon">{{ partial "icon" "bolt" }}</div>
-        <h3>Run them in parallel</h3>
-        <p>Start many agents at once and let your fastest machines do the heavy lifting while you keep moving.</p>
-      </article>
-
-      <article class="card card--third" data-reveal>
-        <div class="card__icon">{{ partial "icon" "refresh" }}</div>
-        <h3>Pick up anywhere</h3>
-        <p>Conversations are durable. Close the app, switch to your phone, come back later. Nothing is lost.</p>
-      </article>
-
-      <article class="card card--third" data-reveal data-reveal-delay="60">
-        <div class="card__icon">{{ partial "icon" "sliders" }}</div>
-        <h3>Stay in control</h3>
-        <p>See the plan and every step. Queue a follow-up, switch the model, or stop a run.</p>
-      </article>
-
-      <article class="card card--third" data-reveal data-reveal-delay="120">
-        <div class="card__icon">{{ partial "icon" "terminal" }}</div>
-        <h3>Real terminals</h3>
-        <p>A live terminal on any machine that keeps running after you disconnect.</p>
-      </article>
-
-      <article class="card card--half" data-reveal>
-        <div class="card__icon">{{ partial "icon" "monitor" }}</div>
-        <h3>See the screen</h3>
-        <p>When an agent needs a human eye, open the machine&rsquo;s screen and take a look for yourself.</p>
-      </article>
-
-      <article class="card card--half" data-reveal data-reveal-delay="80">
-        <div class="card__icon">{{ partial "icon" "bell" }}</div>
-        <h3>Schedules &amp; alerts</h3>
-        <p>Put recurring work on a cadence, and get a notification the moment an agent finishes or needs a decision.</p>
-      </article>
-    </div>
-  </div>
-</section>
-
-<!-- ============================ HOW IT CONNECTS ============================ -->
-<section class="section section--alt" id="architecture">
-  <div class="wrap">
-    <div class="section-head section-head--center" data-reveal>
-      <span class="eyebrow" style="justify-content:center">How it connects</span>
-      <h2>One app, all your machines.</h2>
-      <p>Sign in once. A small gateway links your devices to the machines running your agents.</p>
-    </div>
-
-    <div class="flow" data-reveal>
-      <div class="flow__tier">
-        <span class="flow__label">You</span>
-        <div class="flow__devices">
-          <span class="flow__pill">{{ partial "icon" "laptop" }} macOS</span>
-          <span class="flow__pill">{{ partial "icon" "phone" }} Android</span>
-        </div>
-      </div>
-
-      <div class="flow__link"><span class="flow__caption">sign in with GitHub</span></div>
-
-      <div class="flow__tier">
-        <span class="flow__gate">{{ partial "icon" "globe" }} Gateway</span>
-        <p class="flow__note">Connects you to your machines. Never stores your code.</p>
-      </div>
-
-      <div class="flow__link"><span class="flow__caption">from anywhere, or direct on your own network</span></div>
-
-      <div class="flow__tier">
-        <span class="flow__label">Your machines</span>
-        <div class="flow__machines">
-          <div class="flow__machine">
-            <div class="flow__machine-top">{{ partial "icon" "server" }} Office Mac mini</div>
-            <div class="flow__agents"><span>Codex</span><span>Claude</span><span>+2</span></div>
-          </div>
-          <div class="flow__machine">
-            <div class="flow__machine-top">{{ partial "icon" "server" }} Home server</div>
-            <div class="flow__agents"><span>Pi</span><span>Codex</span></div>
-          </div>
-          <div class="flow__machine">
-            <div class="flow__machine-top">{{ partial "icon" "laptop" }} Laptop</div>
-            <div class="flow__agents"><span>Claude</span></div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- ============================ HARNESSES ============================ -->
-<section class="section section--tight">
-  <div class="wrap">
-    <div class="harness-strip" data-reveal>
-      <p class="harness-strip__lead">Works with the agents you already use.</p>
-      <div class="harness-strip__names">
-        {{ range (index hugo.Data.landing "harnesses") }}<span>{{ .name }}</span>{{ end }}
-      </div>
-      <p class="harness-strip__sub">Each runs from its own config. No re-auth, no proxy.</p>
-    </div>
-  </div>
-</section>
-
-<!-- ============================ OWNERSHIP ============================ -->
-<section class="section" id="security">
-  <div class="wrap">
-    <div class="section-head" data-reveal>
-      <span class="eyebrow">Yours to keep</span>
-      <h2>It runs on your hardware, not someone else&rsquo;s cloud.</h2>
-    </div>
-    <div class="sec-grid">
-      <div class="sec" data-reveal>
-        {{ partial "icon" "home" }}
-        <h3>Your code stays home</h3>
-        <p>Agents run on your machines, next to the code. The gateway only connects you. It never stores projects, chats, or keys.</p>
-      </div>
-      <div class="sec" data-reveal data-reveal-delay="60">
-        {{ partial "icon" "server" }}
-        <h3>Self-hosted</h3>
-        <p>Run your own gateway, tied to a single GitHub account. No seats, no vendor, no lock-in.</p>
-      </div>
-      <div class="sec" data-reveal data-reveal-delay="120">
-        {{ partial "icon" "github" }}
-        <h3>Open source</h3>
-        <p>Free under the MIT license. Read it, fork it, send a pull request.</p>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- ============================ INSTALL ============================ -->
-<section class="section section--alt" id="install">
-  <div class="wrap">
-    <div class="section-head section-head--center" data-reveal>
-      <span class="eyebrow" style="justify-content:center">Get started</span>
-      <h2>Run the daemon on macOS or Linux.</h2>
-      <p>Homebrew supports Apple Silicon; signed static releases install a systemd user service on Linux.</p>
-    </div>
-
+    <div class="section-heading"><p class="eyebrow">Make room for your next idea</p><h2>Get started with Dieter.</h2><p>Install a host and a client. Bring a configured agent account and your gateway origin.</p></div>
     <div class="install-grid">
-      <div class="install-card" data-reveal>
-        <div class="install-card__top">{{ partial "icon" "terminal" }}<h3>Daemon</h3></div>
-        <p>Signed Linux release or managed Apple Silicon Homebrew service.</p>
-        {{ partial "codeblock" (dict "lines" (slice "# Linux (cosign required)" "curl -fsSL https://github.com/dbpprt/dieter/releases/latest/download/install.sh | sh" "# Apple Silicon macOS" "brew install dbpprt/tap/dieter" "dieter setup ~/Development/my-project")) }}
-      </div>
-      <div class="install-card" data-reveal data-reveal-delay="90">
-        <div class="install-card__top">{{ partial "icon" "apple" }}<h3>Mac app</h3></div>
-        <p>Install <code>Dieter.app</code>, then sign in.</p>
-        {{ partial "codeblock" (dict "lines" (slice "brew install --cask dbpprt/tap/dieter-app" "open -a Dieter")) }}
-      </div>
-    </div>
-
-    <p style="text-align:center;color:var(--faint);margin-top:22px;font-size:.9rem">
-      Also on Android · build from source with <code style="font-family:var(--font-mono);color:var(--ink)">just android build</code> ·
-      <a href="{{ "docs/installation/" | relURL }}" style="color:var(--ink);text-decoration:underline;text-underline-offset:3px">Full guide &rarr;</a>
-    </p>
-  </div>
-</section>
-
-<!-- ============================ CLOSING ============================ -->
-<section class="section section--tight">
-  <div class="wrap">
-    <div class="cta-final" data-reveal>
-      <img src="{{ "brand/mark-mono-dark.svg" | relURL }}" width="52" height="52" alt="" style="margin:0 auto 20px">
-      <span class="eyebrow" style="justify-content:center">Open source</span>
-      <h2 style="margin-top:14px">Built for running agents at scale.</h2>
-      <p>
-        I built Dieter to run my own coding agents across the machines on my desk and
-        around my life. It works for me, so I&rsquo;m sharing it. Free, open source, and
-        staying that way. Contributions welcome.
-      </p>
-      <div class="hero__cta">
-        <a class="btn btn--primary btn--lg" href="#install">Get started</a>
-        <a class="btn btn--ghost btn--lg" href="{{ $gh }}" rel="noopener">{{ partial "icon" "github" }} GitHub</a>
-      </div>
-      <p style="margin-top:26px;font-family:var(--font-mono);font-size:.8rem;color:var(--faint)">Made with &hearts; in Berlin</p>
+      <article class="install-card"><span class="eyebrow">01 / Apple Silicon macOS</span><h3>A host and a workspace.</h3>
+        {{ partial "codeblock" (dict "lines" (slice "brew install dbpprt/tap/dieter" "brew install --cask dbpprt/tap/dieter-app" "dieter setup --gateway https://dieter.example.com" "dieter project open ~/Development/my-project" "open -a Dieter")) }}
+        <p>Replace the example gateway with yours. Requires macOS 26+ for the app and Node.js 22.19+, npm, and Git on the host.</p>
+      </article>
+      <article class="install-card"><span class="eyebrow">02 / Everywhere else</span><h3>Choose your role.</h3><div class="download-list">
+        <a href="{{ "docs/installation/#linux" | relURL }}"><span><strong>Linux</strong><small>Signed daemon · amd64 / arm64</small></span><span aria-hidden="true">↗</span></a>
+        <a href="{{ .Site.Params.github }}/releases/latest/download/Dieter-Android.apk"><span><strong>Android</strong><small>Native client · Android 8+</small></span><span aria-hidden="true">↓</span></a>
+        <a href="{{ "docs/installation/#iphone-and-ipad-beta" | relURL }}"><span><strong>iPhone &amp; iPad</strong><small>iOS 18+ · Beta and source builds</small></span><span aria-hidden="true">↗</span></a>
+      </div><a class="text-link" href="{{ "docs/quickstart/" | relURL }}">Your first task, step by step →</a></article>
     </div>
   </div>
 </section>
+<section class="section wrap closing"><p class="eyebrow">Made in Berlin. Built in the open.</p><h2>A small project.<br>A lot of work ahead.</h2><p>Dieter started as a way to run coding agents across everyday machines. Explore it, make it useful for your own work, and help improve what comes next.</p><div class="actions"><a class="btn btn--primary" href="{{ .Site.Params.github }}">Explore the source ↗</a><a class="text-link" href="{{ "docs/development/" | relURL }}">Contribute →</a></div></section>
 {{ end }}

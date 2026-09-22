@@ -2,14 +2,14 @@
 {{- $cur := . -}}
 {{- $index := site.GetPage "/docs" -}}
 {{- $docs := where site.RegularPages "Section" "docs" -}}
-{{- $groups := slice "Overview" "Guides" "Reference" -}}
+{{- $groups := slice "Overview" "Start here" "Workflows" "Operate" "Reference" "Contribute" -}}
 <nav class="docnav" aria-label="Documentation">
   {{- range $group := $groups }}
   <div class="docnav__group">
     <span class="docnav__label">{{ $group }}</span>
     <ul>
       {{- if eq $group "Overview" }}
-      <li><a href="{{ $index.RelPermalink }}"{{ if eq $cur.RelPermalink $index.RelPermalink }} aria-current="page"{{ end }}>Introduction</a></li>
+      <li><a href="{{ $index.RelPermalink }}"{{ if eq $cur.RelPermalink $index.RelPermalink }} aria-current="page"{{ end }}>Meet Dieter</a></li>
       {{- end }}
       {{- range (where $docs "Params.group" $group).ByWeight }}
       <li><a href="{{ .RelPermalink }}"{{ if eq $cur.RelPermalink .RelPermalink }} aria-current="page"{{ end }}>{{ .LinkTitle }}</a></li>

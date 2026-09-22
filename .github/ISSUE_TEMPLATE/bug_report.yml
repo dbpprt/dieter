@@ -1,0 +1,32 @@
+name: Bug report
+description: Report a reproducible problem in Dieter.
+body:
+  - type: markdown
+    attributes:
+      value: For security issues, follow SECURITY.md. Remove tokens, credentials, and private conversation content from all evidence.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What happened?
+      description: Describe the expected behavior and what you saw instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Include the smallest repeatable example.
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Dieter release and contract versions, component, OS/device, and route (local, direct TLS, WebRTC, or relay).
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Relevant evidence
+      description: Short redacted logs or screenshots. Please avoid full private transcript dumps.

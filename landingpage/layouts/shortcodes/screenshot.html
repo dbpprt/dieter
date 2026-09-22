@@ -1,0 +1,5 @@
+{{- $source := printf "images/screenshots/%s" (.Get "src") | relURL -}}
+<figure class="shot{{ if eq (.Get "kind") "phone" }} shot--phone{{ end }}">
+  <a href="{{ $source }}" aria-label="Open full-size screenshot: {{ .Get "alt" }}"><img src="{{ $source }}" alt="{{ .Get "alt" }}" loading="lazy"{{ with .Get "width" }} width="{{ . }}"{{ end }}{{ with .Get "height" }} height="{{ . }}"{{ end }}></a>
+  <figcaption>{{ .Get "caption" | markdownify }}</figcaption>
+</figure>

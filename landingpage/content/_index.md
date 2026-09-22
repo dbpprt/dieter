@@ -1,4 +1,4 @@
 ---
-title: "Dieter · coding agents across all your machines"
-description: "Run Codex, Claude Code, Pi, and Oh My Pi across every machine you own, from one open-source app. Chats, boards, and schedules for coding agents at scale."
+title: "Dieter · Your agents. Your machines. One workspace."
+description: "A native workspace for Codex, Claude Code, Pi, Oh My Pi, and DeepSeek Harness. Run agents on macOS and Linux; follow the work from your Mac or phone."
 ---

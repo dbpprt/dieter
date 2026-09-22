@@ -1,3 +1,7 @@
+> **Historical engineering record.** This dated investigation or implementation
+> report describes the state at the time it was written. For current behavior and
+> setup, use the [documentation index](README.md).
+
 # Dieter screen sharing assessment — 13 September 2026
 
 **Historical assessment.** The subsequent Mac implementation and validation are documented in [Native Mac screen sharing implementation](screenshare-implementation-2026-09-14.md). Findings below describe the pre-change code.

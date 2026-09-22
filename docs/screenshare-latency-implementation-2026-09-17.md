@@ -1,3 +1,7 @@
+> **Historical engineering record.** This dated investigation or implementation
+> report describes the state at the time it was written. For current behavior and
+> setup, use the [documentation index](README.md).
+
 # Screen bitrate response and Mac presentation scheduling
 
 Implemented options 3 and 2 on the existing hardware/WebRTC path. No session RPC,

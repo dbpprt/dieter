@@ -1,187 +1,117 @@
 # Dieter for macOS
 
-A native SwiftUI client for Dieter. It signs in to the machine-only gateway,
-discovers every enrolled daemon, and automatically routes native gRPC/HTTP2
-through either verified direct TLS or the bounded relay.
+The native SwiftUI workspace for Dieter, requiring macOS 26+ on Apple Silicon.
+For installation and everyday use, start with the [product tour](../../landingpage/content/docs/tour.md)
+and [workspace guide](../../landingpage/content/docs/workspace.md). This page is
+for building, testing, and maintaining the app.
 
-## What is included
+## Build and run
 
-- Kanban boards with native card drag/drop and ordering, draggable label chips,
-  label filtering and assignment, retention,
-  project context, and archives
-- A board-independent global Chats workspace, with pinned and archived
-  standalone conversations grouped by project, plus live server streams. The
-  chat list stays available while files, browsers, or terminals are open alongside
-  the conversation.
-- Daemon-owned terminal tabs with a real VT renderer, reconnectable scrollback,
-  working-directory and shell selection, resize forwarding, and explicit close
-- A machine-oriented Screens workspace with persistent tabs, explicit host
-  enablement, signed WebRTC admission, Metal-rendered H.264 video with signed
-  control grants, and reconnectable signaling over direct TLS or the gateway
-- Message parts, reasoning, lazy full tool output, plans, subagents, and comments
-- Project file browsing/editing and file mutations
-- Schedule editing, previewing, enabling, manual runs, and occurrence history
-- Server/agent settings, endpoint management, notifications, command palette,
-  and a menu-bar status surface
-
-The 41 view-level design references are indexed in
-[`reference`](reference/README.md). They are reproducibly and losslessly
-extracted from the source design PDF by `design/extract_reference_images.py`;
-the source PDF itself is not checked in.
-
-The workspace uses native macOS 26 glass, with blurred desktop colors showing
-through the sidebar, boards, conversations, and file panes. Cards and controls
-use subtle tinted surfaces to keep content readable. In **Settings → General →
-Appearance**, turn off **Window transparency** for solid surfaces. This choice
-is saved on this Mac and applies immediately in light, dark, and system
-appearance across all designs. macOS **Reduce Transparency** also makes
-surfaces solid without changing the saved preference.
-Terminal canvases and document pages retain their own backgrounds for readable
-content; their surrounding workspace controls follow the transparency setting.
-
-## Develop
-
-Requirements: macOS 26+, Xcode 26.5+, a Dieter gateway, and at least one enrolled daemon.
+Use Xcode 26.5+ and the repository's Just commands:
 
 ```sh
-dieter daemon start
+just mac doctor
+just mac status
+just mac build
 just mac run
 ```
 
-For an isolated development server on another port, launch the app with
-`--dieter-endpoint host:port`. That command-line selection is transient and
-does not replace the user's saved endpoint.
+The canonical bundle is `apps/mac/build/Dieter.app`. `just mac run` reuses it and
+refuses conflicting processes. A closed window does not quit the menu-bar app;
+use `just mac quit` when you own its lifecycle. Never launch repeated copies with
+`open -n`, `swift run DieterMac`, or a second scratch path.
 
-Saved endpoints are HTTPS gateway origins. The app signs in through GitHub
-using a native PKCE flow. Only the resulting Dieter session is retained in a
-user-only file under `~/Library/Application Support/com.dbpprt.dieter.mac`;
-the GitHub token never enters the app. The containing directory and session
-file use `0700` and `0600` permissions respectively. Daemons at the same origin
-share that one credential and form one combined workspace.
-The sidebar keeps online and offline machines visible as presence indicators,
-annotates every project with its owning hostname, and automatically routes to
-that machine before opening any project surface or conversation. This directory is
-built on-device from authenticated daemon responses; it is not stored by the
-gateway.
-For a daemon on the same Mac, the app automatically discovers and uses its
-authenticated loopback TLS route; there is no separate local connection to
-configure. Other daemons transparently use the encrypted gateway relay.
+Before rebuilding a running task-owned app, quit it normally. Do not stop an
+operator app or daemon for a test. Observation can reuse an existing app.
 
-`Package.swift` can also be opened directly in Xcode. `just mac build`
-creates an ad-hoc-signed `apps/mac/build/Dieter.app` that launches like a normal
-macOS app. The underlying packaging script reuses SwiftPM's incremental build directory, disables the
-CLI-only index store, keeps app-build artifacts under
-`apps/mac/.build/dieter-local`, reuses SwiftPM's shared dependency download
-cache, and avoids network version resolution. `just mac test` has its own
-`apps/mac/.build/dieter-tests` scratch path because SwiftPM test and product
-builds use incompatible compiler flags that otherwise invalidate one another.
-These dedicated paths also keep Xcode, direct SwiftPM commands, and concurrent
-project sessions from invalidating the canonical caches. Keep `apps/mac/.build`
-between builds to retain them, or set `DIETER_SWIFT_SCRATCH_PATH` when invoking
-the underlying packaging script directly.
+## Build caches and signing
 
-General settings include eight Dieter designs, with the native Monochrome
-design first and selected by default. Monochrome follows the Mac's light or dark
-appearance without adding a color tint. Selection is
-persisted locally and updates every SwiftUI surface, terminal colors, menu-bar
-surface, and the running Dock app icon. The bundle's fallback icon and
-small-size product mark match Monochrome, while the 1024-pixel design icon
-variants under `Resources/PaletteIcons` support runtime switching.
+App builds use `apps/mac/.build/dieter-local`; unit tests use
+`apps/mac/.build/dieter-tests`. Keep both caches. Product and test compiler flags
+are different, so sharing their scratch directory causes avoidable rebuilds.
+Do not run concurrent commands against the same cache or use `swift package clean`
+as a routine fix.
 
-Public SwiftProtobuf messages and grpc-swift v2 client stubs are checked in so
-ordinary builds do not compile `protoc` and both Swift generator plugins. The
-build verifies their input and output fingerprints and only regenerates them
-after an authoritative schema changes. Run `just mac proto-check` to verify the
-checked-in sources and `just mac proto-generate` to sync both package inputs
-with the repository's authoritative schemas and regenerate their clients.
+Local builds use the sole available Apple Development identity when possible.
+Set `DIETER_MAC_SIGNING_IDENTITY` to a certificate fingerprint when needed, or
+`-` for ad-hoc signing. Ad-hoc or changed identities can require privacy grants
+again. Release signing and notarization use the [Apple signing guide](../../docs/apple-release-signing.md).
 
-Navigation follows the desktop reference hierarchy: All chats is global, while
-boards, Files, and Schedules live beneath each project. Creating a chat calls
-`CreateChat` with an empty board ID; it never creates or appears as a board
-card.
+## Connection and ownership
 
-Project setup is routed to the selected daemon host. The native form can open
-an existing Git working tree, including a linked worktree whose `.git` is a
-file, or create a directory and initialize a new Git repository there. Its
-directory browser reads the daemon's filesystem through `ListDirectories`; it
-never substitutes a local macOS file panel for a remote project path.
+The app signs in to an HTTPS gateway using GitHub OAuth with PKCE. It retains a
+Dieter session in a user-only file under
+`~/Library/Application Support/com.dbpprt.dieter.mac` (`0700` directory, `0600`
+file); it does not use Keychain or retain the GitHub token.
 
-The Terminals header switches explicitly between enrolled machines and retains
-the selected tab for each destination. A new shell can start inside a registered
-project or directly in the selected daemon user's home, so machines without a
-project remain usable. Sessions are owned by the host, not by a Mac window or
-RPC. Closing or disconnecting the app cancels only its output observer. When
-`tmux` is available on the host, daemon replacement also detaches and reattaches
-the same shell; otherwise persistence remains limited to client reconnects.
-Reopening the app resumes the sequenced output cursor. Both the daemon and
-client retain a bounded 2 MiB replay baseline. Input and resize use separate
-priority unary calls so output backpressure cannot make typing wait behind the
-long-lived stream. Project shells stay inside their registered tree and
-machine-home shells stay inside the user's home after symlink resolution.
+One workspace combines shared projects and their checkouts. A conversation,
+file, terminal, or schedule routes to its execution owner. Routes prefer verified
+direct TLS, then supported data-only WebRTC, then gateway relay. Same-Mac access
+uses the discovered authenticated loopback TLS route, not raw port 4242.
 
-Screens are intentionally independent of the project RPC connection. The app
-opens each machine share in its own tab, prefers its verified direct route, falls
-back to the gateway for signaling, and then establishes peer-to-peer WebRTC media.
-Tabs and their connections survive navigation to another Dieter workspace; closing
-a tab or choosing Disconnect tears down that client-owned session. General settings
-has a persisted, switchable inactivity timeout (30 minutes by default) that closes
-unattended media without removing its tab. The app verifies the
-daemon's Ed25519 signature over the client offer, DTLS fingerprint, nonce,
-session ID, and lease before accepting the answer. The client selects H.264
-video and supports keyboard, pointer, and scroll input through a signed control
-grant when host control is enabled. Signaling, connection attempts, peer callbacks,
-and input channels have explicit session ownership and teardown. Clipboard,
-audio, file transfer, and Android viewing remain future work. The Google WebRTC M151 community XCFramework is pinned
-directly to the byte-verified `151.0.1` release asset. This avoids the upstream
-package manifest's removed `151.0.0` asset while a Dieter-built, reproducibly
-packaged artifact remains future work.
+`--dieter-endpoint` supplies a transient endpoint for an isolated fixture; it does
+not replace the saved selection. Production remote origins require HTTPS.
+
+## Product surfaces
+
+- Boards and standalone chats, durable queues, labels, archives, model selection,
+  plans, reasoning, and lazy full tool output.
+- Conversation files, rich Markdown, code, PDFs, images, browser previews,
+  terminal tabs, Processes, and Git Changes.
+- Project files and schedules; shared project/chat folders and portable settings.
+- Machines with routes and live telemetry; account quota details.
+- Screens with H.264 and optional compatible HEVC, up to four viewers per host,
+  one input controller, opt-in text/image/file clipboard, and undocked windows.
+- Quick Task capture, image markup, command palette, notifications, and Dieter Island.
+
+Screen hosting is permission-based; there is no separate host enable switch.
+Screen inactivity disconnect is optional and disabled by default. Clipboard and
+Android viewing are implemented. Audio is not a promised feature. The
+[screen reference](../../docs/screen-sharing.md) documents negotiated limits.
+
+Appearance includes eight designs and light/dark modes. Native Monochrome is the
+default. Disable **Settings → General → Appearance → Window transparency** for
+solid surfaces. macOS Reduce Transparency also disables translucency.
 
 ## Verify
 
 ```sh
+just check-changed --dry-run
+just check-changed
 just mac test
 just mac smoke core
-just mac smoke-all
 ```
 
-`just mac smoke <suite>` accepts `core`, `board`, `conversation`, `machine`,
-`sidebar`, `terminal`, `island`, or `workspace`. One Swift driver owns the exact
-packaged-app and isolated-gateway PIDs, asks the gateway for an ephemeral
-loopback port, uses unique state and preferences roots, and refuses to run
-beside an existing Dieter app. Multi-phase sidebar and terminal checks wait for
-the first app process to quit before launching the second. Reports, logs, and
-screenshots are retained under `apps/mac/.build/smoke/<run-id>`.
+`just mac smoke SUITE` supports `core`, `board`, `conversation`, `machine`,
+`sidebar`, `terminal`, `island`, and `workspace`. `just mac smoke-suites board
+conversation` builds once and runs the requested suites serially;
+`just mac smoke-all` runs all eight.
 
-The isolated gateway includes compatible and incompatible API machines. The core
-suite verifies that startup chooses a compatible daemon and that explicitly
-probing the incompatible daemon neither replaces the healthy route nor turns cached
-projects from other machines offline.
+The driver refuses any running Dieter app and owns its exact app/gateway PIDs.
+It uses a random loopback port, disposable credentials, unique state/preferences,
+and a mock harness. It preserves reports, logs, and screenshots under
+`apps/mac/.build/smoke/<run-id>` and verifies shutdown. Read reports and inspect
+screenshots; an exit code alone does not verify the visual result.
 
-The app-side smoke hooks compile only in debug builds. A release build has no
-smoke command-line interface. Remove generated smoke evidence with the
-confirmed `just mac clean-smoke` recipe; it never removes the canonical SwiftPM
-compilation caches.
+Smoke hooks exist only in debug builds. Screen integration uses
+`just mac screens-native-test` and `just mac screens-test`; real capture modes
+need OS permissions and inject input only into their owned fixture window.
 
+## Architecture and generated code
 
-## Architecture and maintenance
+`DieterCore` holds identities, contracts, and pure policies; `DieterClient` owns
+RPC, routing, and persistence. `DieterMac/Features` contains native feature models.
+`AppSession` owns the menu-bar lifetime and `WindowWorkspace` owns the workspace
+window. Pending commands have a durable journal separate from cached projections.
 
-The executable composes `DieterCore` (identities, contracts and pure policies),
-`DieterClient` (RPC, routing and persistence), and native feature models under
-`Sources/DieterMac/Features`. `AppSession` owns the menu-bar application's
-lifetime; `WindowWorkspace` owns the single workspace window. Native views use
-focused models and explicit commands. Pending commands have their own atomic
-journal, separate from disposable projection checkpoints.
-
-See [the implementation and recovery notes](../../docs/mac-refactoring-implementation-2026-09-09.md)
-for feature ownership, migration behavior, resource limits and verification.
+SwiftProtobuf messages and grpc-swift v2 stubs are checked in. `just proto`
+regenerates authoritative schema outputs; `just mac proto-check` checks fingerprints.
+Formatting excludes Generated and Vendor:
 
 ```sh
-just mac format
 just mac format-check
 just mac check
-just mac smoke-all
 ```
 
-Swift formatting applies to handwritten sources, tests and tools, excluding
-Generated and Vendor. CI runs core/navigation smoke on pull requests and full
-native qualification on scheduled/manual runs, retaining reports and screenshots.
+Historical design references live in [reference](reference/README.md). They are
+not current product screenshots; see [screenshot provenance](../../docs/screenshots/README.md).

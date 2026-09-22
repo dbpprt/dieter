@@ -1,3 +1,7 @@
+> **Historical engineering record.** This dated investigation or implementation
+> report describes the state at the time it was written. For current behavior and
+> setup, use the [documentation index](README.md).
+
 **Dieter gateway/VPS plan assessment — 21 September 2026**
 
 > **22 September amendment:** the public gateway and TURN service have moved to

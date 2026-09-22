@@ -1,3 +1,7 @@
+> **Historical engineering record.** This dated investigation or implementation
+> report describes the state at the time it was written. For current behavior and
+> setup, use the [documentation index](README.md).
+
 **Dieter Mac code quality review and refactoring proposal — 8 September 2026**
 
 The Mac app has a solid functional foundation and several good reusable components. Its main constraint is ownership: connection management, replicated data, pending commands, navigation, editor sessions, and feature presentation still meet in one mutable `DieterStore`. The next refactor should make those responsibilities independently testable and give each asynchronous operation an explicit owner and destination.
