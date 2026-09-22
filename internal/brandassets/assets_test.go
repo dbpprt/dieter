@@ -52,7 +52,7 @@ func TestBrandPackIsWiredIntoReleaseSurfaces(t *testing.T) {
 	}
 
 	assertContains(t, filepath.Join(root, "README.md"),
-		"Your agents. Your machines.",
+		`<h1 align="center">Close your laptop.<br>Keep your agents running.</h1>`,
 		"assets/brand/assets/svg/logo-horizontal-dark.svg",
 		"assets/brand/assets/svg/logo-horizontal-light.svg",
 	)
