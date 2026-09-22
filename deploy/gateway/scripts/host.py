@@ -162,10 +162,18 @@ class Host:
                 path = Path(s[key])
                 require(path.is_dir(), "existing Caddy recovery storage is missing")
                 shutil.copytree(path, stage / key, symlinks=True)
-            shutil.copyfile(self.policy, stage / "host-policy.json")
             current = self.install / "current"
+            recovery_policy = dict(self.config)
             if current.is_symlink():
                 shutil.copytree(current.resolve(), stage / "release", symlinks=True)
+                # A root-reviewed TURN rename may precede activation, and the
+                # host policy retains legacy routes after their gated removal.
+                # Recovery must pin the routes actually archived with this
+                # snapshot, not the next selection authorized on the host.
+                active = read_json(current / "public/settings.json")
+                for name in ("turnHost", "legacyHosts"):
+                    recovery_policy[name] = active[name]
+            atomic(stage / "host-policy.json", canonical(recovery_policy))
             # Save runnable image bytes as well as manifests: a digest alone is
             # not a recovery archive when registry tags are later removed.
             if current.is_symlink():

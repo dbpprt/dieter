@@ -146,6 +146,13 @@ run on the backup owner. Keep recovery credentials outside the VPS. RPO/RTO clai
 require a measured restore, and legacy retirement requires its recorded observation
 and rollback windows.
 
+Recovery snapshots pin the active release's TURN hostname and legacy route
+selection. This preserves a consistent recovery point when an administrator has
+authorized the next TURN hostname in the root-owned host policy before deploying
+it. Install a controller with this behavior before changing that policy; retain
+the old policy for an explicit rollback. The deployment key still cannot change
+the policy or select any other TURN hostname.
+
 `scripts/recover.py SNAPSHOT` inspects an already decrypted recovery point.
 Recovery must run through independent administrative root access on an empty
 Debian destination with Docker and the pinned Compose plugin installed. Preserve
