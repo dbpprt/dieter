@@ -28,6 +28,7 @@ import (
 
 	"github.com/dbpprt/dieter/internal/fixtureturn"
 	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
+	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
 	"github.com/dbpprt/dieter/internal/remotedesktop"
 	"github.com/dbpprt/dieter/internal/server"
 	"github.com/dbpprt/dieter/internal/store"
@@ -128,7 +129,29 @@ func run(helper, kind, ready string, authenticate bool) error {
 			return err
 		}
 	}
-	manager := remotedesktop.New(remotedesktop.Options{MediaInterceptors: []interceptor.Factory{loss}, Identity: remotedesktop.Identity{DaemonID: config.DaemonId, GatewayURL: "http://screens.fixture", Generation: 1, PrivateKey: dk, GatewaySigningPublicKey: pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: publicDER})}, Source: remotedesktop.SourceOptions{Logger: slog.Default(), ClipboardDirectory: filepath.Join(root, "clipboard"), Kind: kind, HelperPath: helper, ClipboardName: "com.dbpprt.dieter.fixture." + fmt.Sprint(os.Getpid())}})
+	source := remotedesktop.SourceOptions{Logger: slog.Default(), ClipboardDirectory: filepath.Join(root, "clipboard"), Kind: kind, HelperPath: helper, ClipboardName: "com.dbpprt.dieter.fixture." + fmt.Sprint(os.Getpid())}
+	// Prove the exact native helper once before publishing fixture readiness.
+	// Production capability calls intentionally have a short latency budget,
+	// but a cold helper launch can exceed it on a loaded simulator runner. The
+	// fixture still streams through the real helper; only its immutable passive
+	// capability snapshot is reused during the later XCTest journey.
+	probeContext, stopProbe := context.WithTimeout(ctx, 30*time.Second)
+	nativeCapabilities, err := remotedesktop.ProbeCapabilities(probeContext, source)
+	stopProbe()
+	if err != nil {
+		return fmt.Errorf("probe native screen fixture: %w", err)
+	}
+	manager := remotedesktop.New(remotedesktop.Options{
+		MediaInterceptors: []interceptor.Factory{loss},
+		Identity: remotedesktop.Identity{
+			DaemonID: config.DaemonId, GatewayURL: "http://screens.fixture", Generation: 1,
+			PrivateKey: dk, GatewaySigningPublicKey: pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: publicDER}),
+		},
+		Source: source,
+		CapabilityProbe: func(context.Context, remotedesktop.SourceOptions) (*dieterv1.RemoteDesktopCapabilities, error) {
+			return proto.Clone(nativeCapabilities).(*dieterv1.RemoteDesktopCapabilities), nil
+		},
+	})
 	defer manager.Shutdown(context.Background())
 	api := server.NewWithOptions(data, slog.Default(), server.Options{RemoteDesktop: manager})
 	listener, err := net.Listen("tcp4", "127.0.0.1:0")

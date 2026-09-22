@@ -2,7 +2,9 @@ import CoreGraphics
 
 #if os(iOS)
     import DieterAPI
+    import DieterClient
     import DieterCore
+    import Foundation
     import SwiftUI
     import UIKit
     @preconcurrency import WebRTC
@@ -101,6 +103,96 @@ import CoreGraphics
             return machine.remoteDesktopReason.isEmpty ? "Checking availability" : machine.remoteDesktopReason
         }
     }
+
+    #if DEBUG
+        private struct IOSRemoteDesktopFixture: Decodable {
+            let url: String
+            let certificate: Data
+            let rtc: Data
+            let token: String
+        }
+
+        /// DEBUG-only real-media route used by the disposable simulator smoke.
+        /// Reaching `.streaming` proves that signaling, WebRTC decode, and the
+        /// UIKit renderer have all delivered at least one native video frame.
+        @MainActor
+        struct IOSRemoteDesktopFixtureView: View {
+            let encodedFixture: String
+            @State private var session = IOSRemoteDesktopSession()
+            @State private var fixtureError = ""
+
+            var body: some View {
+                ZStack {
+                    Color.black.ignoresSafeArea()
+                    IOSRemoteDesktopSurface(session: session, rightClickArmed: false, clickSent: {}) {}
+                        .accessibilityIdentifier("ios.screens.fixture")
+                    if session.phase != .streaming {
+                        VStack(spacing: 12) {
+                            if case .failed = session.phase {
+                                Image(systemName: "exclamationmark.triangle.fill")
+                                    .foregroundStyle(.orange)
+                            } else {
+                                ProgressView().tint(.white)
+                            }
+                            Text(session.phase.label)
+                                .font(.headline)
+                            let detail = fixtureError.isEmpty ? session.errorMessage : fixtureError
+                            if !detail.isEmpty {
+                                Text(detail)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .multilineTextAlignment(.center)
+                            }
+                        }
+                        .foregroundStyle(.white)
+                        .padding(20)
+                        .background(.black.opacity(0.76), in: RoundedRectangle(cornerRadius: 16))
+                    }
+                }
+                .overlay(alignment: .bottomLeading) {
+                    Text(session.phase.label)
+                        .font(.caption.monospaced().weight(.semibold))
+                        .foregroundStyle(session.phase == .streaming ? .green : .orange)
+                        .padding(10)
+                        .background(.black.opacity(0.72), in: Capsule())
+                        .padding(12)
+                        .accessibilityIdentifier("ios.screens.fixture.phase")
+                }
+                .task { connect() }
+                .onDisappear { session.disconnect() }
+            }
+
+            private func connect() {
+                do {
+                    guard let raw = Data(base64Encoded: encodedFixture) else {
+                        throw CocoaError(.fileReadCorruptFile)
+                    }
+                    let fixture = try JSONDecoder().decode(IOSRemoteDesktopFixture.self, from: raw)
+                    let endpoint = try fixtureEndpoint(fixture.url)
+                    let rtc = try Dieter_Gateway_V1_RTCConfiguration(serializedBytes: fixture.rtc)
+                    session.connect(machineName: "Isolated screen fixture") {
+                        let rpc = try DieterRPC(endpoint: endpoint, accessToken: fixture.token)
+                        let task = Task<Void, Never> { try? await rpc.run() }
+                        return RemoteDesktopSignalingConnection(
+                            rpc: rpc,
+                            connectionTask: task,
+                            rtcConfiguration: rtc,
+                            daemonCertificatePEM: fixture.certificate,
+                            routeLabel: "Fixture loopback")
+                    }
+                } catch {
+                    fixtureError = IOSUserError.message(error)
+                }
+            }
+
+            private func fixtureEndpoint(_ value: String) throws -> DieterEndpoint {
+                guard let endpoint = DieterEndpoint.parse(value) else {
+                    throw CocoaError(.fileReadCorruptFile)
+                }
+                return endpoint
+            }
+        }
+    #endif
 
     @MainActor
     struct IOSScreensView: View {

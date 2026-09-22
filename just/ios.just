@@ -9,11 +9,11 @@ doctor:
 
 # Build the native iPhone/iPad app for Simulator without signing credentials.
 build:
-    xcodebuild -project apps/ios/DieterIOS.xcodeproj -scheme DieterIOS -configuration Debug -destination 'generic/platform=iOS Simulator' -derivedDataPath apps/ios/.build/DerivedData build-for-testing CODE_SIGN_IDENTITY=- CODE_SIGNING_ALLOWED=YES
+    xcodebuild -skipPackagePluginValidation -project apps/ios/DieterIOS.xcodeproj -scheme DieterIOS -configuration Debug -destination 'generic/platform=iOS Simulator' -derivedDataPath apps/ios/.build/DerivedData build-for-testing CODE_SIGN_IDENTITY=- CODE_SIGNING_ALLOWED=YES
 
 # Compile the native iPhone/iPad app for physical devices, without signing.
 build-device:
-    xcodebuild -project apps/ios/DieterIOS.xcodeproj -scheme DieterIOS -configuration Release -destination 'generic/platform=iOS' -derivedDataPath apps/ios/.build/DerivedData build CODE_SIGNING_ALLOWED=NO
+    xcodebuild -skipPackagePluginValidation -project apps/ios/DieterIOS.xcodeproj -scheme DieterIOS -configuration Release -destination 'generic/platform=iOS' -derivedDataPath apps/ios/.build/DerivedData build CODE_SIGNING_ALLOWED=NO
 
 # Run remote-node journeys against an isolated gateway in an owned simulator.
 smoke device="iPhone 17 Pro": smoke-runner-test

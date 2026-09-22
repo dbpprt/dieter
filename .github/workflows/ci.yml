@@ -203,6 +203,7 @@ jobs:
             apps/ios/.build/smoke/**/cleanup.log
             apps/ios/.build/smoke/**/boot.log
             apps/ios/.build/smoke/**/gateway.log
+            apps/ios/.build/smoke/**/screen-fixture.log
             apps/ios/.build/smoke/**/tests.log
             apps/ios/.build/smoke/**/failure-console.log
             apps/ios/.build/smoke/**/attachments/*

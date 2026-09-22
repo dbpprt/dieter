@@ -3,6 +3,7 @@ package remotedesktop
 import (
 	"context"
 	"errors"
+	"path/filepath"
 	"testing"
 )
 
@@ -32,5 +33,15 @@ func TestPermissionProbeChecksBothPermissionsWithoutPrompt(t *testing.T) {
 	value, err := m.ProbePermissions(context.Background(), false)
 	if err != nil || value.CaptureVerified || !value.ControlVerified || value.CaptureError != "capture denied" || value.DaemonExecutable == "" {
 		t.Fatalf("probe: %v %v", value, err)
+	}
+}
+
+func TestNativeSyntheticControlProbeDoesNotRequireHostPermission(t *testing.T) {
+	err := ProbeControl(context.Background(), SourceOptions{
+		Kind:       "native-synthetic",
+		HelperPath: filepath.Join(t.TempDir(), "missing-helper"),
+	}, false)
+	if err != nil {
+		t.Fatalf("native synthetic control probe: %v", err)
 	}
 }
