@@ -76,7 +76,14 @@
 
         init(defaults: UserDefaults = .standard) {
             self.defaults = defaults
-            gatewayAddress = defaults.string(forKey: "DieterIOSGateway") ?? "https://board.dbpprt.com"
+            let storedGateway = defaults.string(forKey: "DieterIOSGateway") ?? "https://gateway.getdieter.com"
+            if let endpoint = DieterEndpoint.parse(storedGateway), endpoint.currentPublicGateway != endpoint {
+                let relocatedAddress = endpoint.currentPublicGateway.address
+                gatewayAddress = relocatedAddress
+                defaults.set(relocatedAddress, forKey: "DieterIOSGateway")
+            } else {
+                gatewayAddress = storedGateway
+            }
             clientID = defaults.string(forKey: "DieterIOSClientID") ?? "ios-\(UUID().uuidString.lowercased())"
             defaults.set(clientID, forKey: "DieterIOSClientID")
             #if DEBUG
@@ -1136,7 +1143,7 @@
         case invalidGateway, streamEnded, incompatible(String)
         var errorDescription: String? {
             switch self {
-            case .invalidGateway: "Enter a gateway address such as https://board.dbpprt.com."
+            case .invalidGateway: "Enter a gateway address such as https://gateway.getdieter.com."
             case .streamEnded: "The connection ended. Reconnecting…"
             case .incompatible(let version):
                 "This machine uses application contract \(version). Update its Dieter daemon to contract \(IOSMachinePolicy.apiVersion)."

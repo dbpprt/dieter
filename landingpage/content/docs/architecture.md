@@ -14,17 +14,17 @@ the same `dieter.v1.DieterService` API, so the UI does not care which one won.
 
 ```text
    ┌───────────────────────────┐
-   │   macOS  +  Android        │   all projects, one list
+   │   macOS  +  Android       │   all projects, one list
    └─────────────┬─────────────┘
          direct TLS │ or relay
    ┌─────────────┴─────────────┐
-   │   board.dbpprt.com         │   auth + bounded relay
-   │   sessions + routes only   │   (no project code)
+   │   gateway.getdieter.com    │   auth + bounded relay
+   │   sessions + routes only  │   (no project code)
    └─────────────┬─────────────┘
        authenticated tunnel
    ┌─────────────┴─────────────┐
-   │   dieter daemon            │   work Mac · home Linux
-   │   Git + DIETER_HOME        │   Codex · Claude Code · Pi
+   │   dieter daemon           │   work Mac · home Linux
+   │   Git + DIETER_HOME       │   Codex · Claude Code · Pi
    └───────────────────────────┘
 ```
 

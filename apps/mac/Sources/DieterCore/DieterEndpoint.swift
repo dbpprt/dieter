@@ -24,8 +24,17 @@ package struct DieterEndpoint: Codable, Equatable, Hashable, Identifiable, Senda
     }
 
     package static let defaults = [
-        DieterEndpoint(name: "Dieter Gateway", host: "board.dbpprt.com", port: 443, secure: true)
+        DieterEndpoint(name: "Dieter Gateway", host: "gateway.getdieter.com", port: 443, secure: true)
     ]
+
+    /// Move the standard public address only. Credentials remain keyed by origin,
+    /// so the new gateway requires its own sign-in instead of copying a token.
+    package var currentPublicGateway: DieterEndpoint {
+        guard secure, port == 443, host.lowercased() == "board.dbpprt.com" else { return self }
+        var endpoint = self
+        endpoint.host = Self.defaults[0].host
+        return endpoint
+    }
 
     package static func parse(_ value: String, name: String = "Custom") -> DieterEndpoint? {
         var trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)

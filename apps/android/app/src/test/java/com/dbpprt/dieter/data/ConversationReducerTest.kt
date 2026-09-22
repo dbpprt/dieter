@@ -71,9 +71,22 @@ class ConversationReducerTest {
     @Test
     fun defaultEndpointIsTheAuthenticatedGateway() {
         assertEquals("127.0.0.1:4242", DIETER_LOCAL_ENDPOINT)
-        assertEquals(listOf("https://board.dbpprt.com:443"), DIETER_ENDPOINTS.map { it.address })
+        assertEquals(listOf("https://gateway.getdieter.com:443"), DIETER_ENDPOINTS.map { it.address })
         assertEquals(true, DIETER_ENDPOINTS.single().secure)
         assertEquals("1", DIETER_API_VERSION)
+    }
+
+    @Test
+    fun publicGatewayMoveKeepsMachineSelectionAndSeparatesCredentialOrigins() {
+        val old = DieterEndpoint("selected", "Machine", "board.dbpprt.com", 443, true, daemonId = "daemon")
+        val moved = old.currentPublicGateway
+        assertEquals(old.id, moved.id)
+        assertEquals(old.daemonId, moved.daemonId)
+        assertEquals("https://gateway.getdieter.com:443", moved.credentialId)
+        assertEquals("https://board.dbpprt.com:443", old.credentialId)
+        for (custom in listOf(old.copy(port = 8443), old.copy(secure = false), old.copy(host = "private.example"))) {
+            assertEquals(custom, custom.currentPublicGateway)
+        }
     }
 
     private fun snapshot(vararg messages: UiMessage): ConversationSnapshot = ConversationSnapshot.newBuilder()

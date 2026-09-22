@@ -177,6 +177,12 @@ brew install --cask dbpprt/tap/dieter-app
 open -a Dieter
 ```
 
+The standard gateway is `https://gateway.getdieter.com`, with STUN/TURN at
+`turn.getdieter.com`. App updates move saved standard gateway addresses and ask
+for a fresh sign-in at the new origin; custom gateway addresses are preserved.
+Existing daemon enrollments relocate through the gateway's signed endpoint
+assertion without changing their identity or local data.
+
 Sign in to the configured gateway. Projects from every enrolled machine appear
 in one workspace; Dieter selects the correct daemon automatically. See the
 [macOS](apps/mac/README.md), [iOS](apps/ios/README.md), and

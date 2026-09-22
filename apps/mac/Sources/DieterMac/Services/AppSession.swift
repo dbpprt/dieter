@@ -381,19 +381,25 @@ final class AppSession {
         let defaults = environment.defaults
         let storedEndpoints = defaults.data(forKey: "DieterEndpoints")
             .flatMap { try? JSONDecoder().decode([DieterEndpoint].self, from: $0) }
-        let secureEndpoints = storedEndpoints?.filter { $0.secure && $0.daemonID == nil } ?? []
+        var seenOrigins = Set<String>()
+        let secureEndpoints =
+            storedEndpoints?.filter { $0.secure && $0.daemonID == nil }
+            .map(\.currentPublicGateway)
+            .filter { seenOrigins.insert($0.credentialID).inserted } ?? []
         let loadedEndpoints = secureEndpoints.isEmpty ? DieterEndpoint.defaults : secureEndpoints
         endpoints = loadedEndpoints
         gatewayOrigins = loadedEndpoints
+        var activeEndpointChanged = false
         if let data = defaults.data(forKey: "DieterActiveEndpoint"),
             let decoded = try? JSONDecoder().decode(DieterEndpoint.self, from: data), decoded.secure
         {
-            endpoint = decoded
+            endpoint = decoded.currentPublicGateway
+            activeEndpointChanged = endpoint != decoded
         } else {
             endpoint = loadedEndpoints[0]
         }
         bindSharedNavigation(); applySharedNavigation()
-        if loadedEndpoints != storedEndpoints { persistEndpoints() }
+        if loadedEndpoints != storedEndpoints || activeEndpointChanged { persistEndpoints() }
         if restoreSync {
             syncRestoreTask = Task { [weak self] in await self?.restorePersistentSync() }
         }

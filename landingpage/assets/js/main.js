@@ -174,7 +174,7 @@
       { k: "check", text: "screen recording permission", val: "verified · dieter-capture" },
       { k: "check", text: "accessibility permission", val: "verified · no pointer moved" },
       { k: "check", text: "daemon service", val: "running · brew services" },
-      { k: "arrow", text: "gateway tunnel", val: "board.dbpprt.com  connected" },
+      { k: "arrow", text: "gateway tunnel", val: "gateway.getdieter.com  connected" },
       { k: "blank" },
       { k: "final", html: `<span class="spark">◈</span> <b>Dieter's on it.</b> Open the app to conduct your fleet.` },
     ];

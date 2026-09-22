@@ -28,7 +28,9 @@ extension DieterStore {
                 projectDirectory[project.id] = project
                 projectReplicaEndpointIDs[project.id] = endpoint.id
             }
-            let combined = chats.filter { !previousProjectIDs.contains($0.projectID) || (!includeArchived && $0.archived) } + refreshedChats
+            let combined =
+                chats.filter { !previousProjectIDs.contains($0.projectID) || (!includeArchived && $0.archived) }
+                + refreshedChats
             let nextChats = Array(
                 combined.reduce(into: [String: Dieter_V1_Card]()) { $0[$1.id] = $1 }.values
             ).sorted {

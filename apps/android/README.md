@@ -7,7 +7,7 @@ an adaptive master-detail layout for medium and expanded windows at 600 dp and
 above, including unfolded Galaxy Fold displays, and talks to Dieter through the
 machine-only gateway protocol and native gRPC/Protobuf Lite.
 
-The default endpoint is `https://board.dbpprt.com`. One native OAuth/PKCE
+The default endpoint is `https://gateway.getdieter.com`. One native OAuth/PKCE
 session discovers every daemon enrolled to the GitHub account. The connection
 dialog shows their presence and route state. Dieter automatically works across
 all online machines, tries gateway-provided authenticated TLS candidates, and
@@ -175,7 +175,7 @@ just android sync-brand
 Enroll and run a daemon on the machine that owns the projects:
 
 ```sh
-dieter daemon enroll --gateway https://board.dbpprt.com --name "Studio Mac"
+dieter daemon enroll --gateway https://gateway.getdieter.com --name "Studio Mac"
 dieter daemon start
 ```
 
