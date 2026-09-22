@@ -545,6 +545,7 @@
                 && stateChannel?.readyState == .open && hostChannel?.readyState == .open
                 && sessionState.displayGeneration > 0
                 && presentedGeneration == sessionState.displayGeneration
+            if !controlActive { keyboardModifiers = 0 }
             feedbackPump.input(active: controlActive)
         }
 
@@ -657,6 +658,12 @@
 
         func text(_ text: String) {
             guard !text.isEmpty, text.utf8.count <= 8_192 else { return }
+            if let stroke = IOSRemoteDesktopKeyStroke(text: text, modifiers: keyboardModifiers) {
+                key(hid: stroke.hid, down: true, modifiers: stroke.modifiers)
+                key(hid: stroke.hid, down: false, modifiers: stroke.modifiers)
+                keyboardModifiers = 0
+                return
+            }
             var chunk = ""
             for character in text {
                 let value = String(character)
@@ -676,18 +683,33 @@
             sendState(.text(value))
         }
 
-        func key(hid: UInt32, down: Bool, repeat isRepeat: Bool = false) {
+        func key(
+            hid: UInt32,
+            down: Bool,
+            repeat isRepeat: Bool = false,
+            modifiers: UInt32? = nil
+        ) {
             var value = Dieter_V1_RemoteDesktopKey()
             value.physicalKey = min(255, hid)
             value.down = down
             value.repeat = isRepeat
-            value.modifiers = keyboardModifiers
+            value.modifiers = modifiers ?? keyboardModifiers
             sendState(.key(value))
         }
 
+        func hardwareKey(hid: UInt32, down: Bool, repeat isRepeat: Bool = false, modifiers: UInt32) {
+            let combinedModifiers = keyboardModifiers | modifiers
+            key(hid: hid, down: down, repeat: isRepeat, modifiers: combinedModifiers)
+            if IOSRemoteDesktopModifierPolicy.consumesArmedModifiers(hid: hid, down: down) {
+                keyboardModifiers = 0
+            }
+        }
+
         func press(hid: UInt32) {
-            key(hid: hid, down: true)
-            key(hid: hid, down: false)
+            let modifiers = keyboardModifiers
+            key(hid: hid, down: true, modifiers: modifiers)
+            key(hid: hid, down: false, modifiers: modifiers)
+            keyboardModifiers = 0
         }
 
         func releaseAllInput() {
@@ -695,6 +717,7 @@
             pointerFlushTask?.cancel()
             pointerFlushTask = nil
             pointerLastSent = -.infinity
+            keyboardModifiers = 0
             guard controlActive else { return }
             sendState(.releaseAll(Dieter_V1_RemoteDesktopReleaseAll()), failOnError: false)
         }
@@ -1083,6 +1106,71 @@ enum IOSRemoteDesktopFrameTimestamp {
         // timeStampNs at its zero sentinel and causing every frame to be skipped.
         let ticks = UInt64(UInt32(bitPattern: rtpTimestamp)) + 1
         return Int64(ticks * nanosecondsPerSecond / rtpClockRate)
+    }
+}
+
+struct IOSRemoteDesktopKeyStroke: Equatable {
+    let hid: UInt32
+    let modifiers: UInt32
+
+    init?(text: String, modifiers: UInt32) {
+        guard modifiers != 0, text.unicodeScalars.count == 1,
+            let scalar = text.unicodeScalars.first, scalar.isASCII,
+            let key = Self.key(for: UInt8(scalar.value))
+        else { return nil }
+        hid = key.hid
+        self.modifiers = modifiers | key.impliedModifiers
+    }
+
+    private static func key(for value: UInt8) -> (hid: UInt32, impliedModifiers: UInt32)? {
+        switch value {
+        case 0x61...0x7a: (UInt32(value - 0x61) + 4, 0)
+        case 0x41...0x5a: (UInt32(value - 0x41) + 4, 1)
+        case 0x31...0x39: (UInt32(value - 0x31) + 30, 0)
+        case 0x30: (39, 0)
+        case 0x0a, 0x0d: (40, 0)
+        case 0x09: (43, 0)
+        case 0x20: (44, 0)
+        case 0x2d: (45, 0)
+        case 0x3d: (46, 0)
+        case 0x5b: (47, 0)
+        case 0x5d: (48, 0)
+        case 0x5c: (49, 0)
+        case 0x3b: (51, 0)
+        case 0x27: (52, 0)
+        case 0x60: (53, 0)
+        case 0x2c: (54, 0)
+        case 0x2e: (55, 0)
+        case 0x2f: (56, 0)
+        case 0x21: (30, 1)
+        case 0x40: (31, 1)
+        case 0x23: (32, 1)
+        case 0x24: (33, 1)
+        case 0x25: (34, 1)
+        case 0x5e: (35, 1)
+        case 0x26: (36, 1)
+        case 0x2a: (37, 1)
+        case 0x28: (38, 1)
+        case 0x29: (39, 1)
+        case 0x5f: (45, 1)
+        case 0x2b: (46, 1)
+        case 0x7b: (47, 1)
+        case 0x7d: (48, 1)
+        case 0x7c: (49, 1)
+        case 0x3a: (51, 1)
+        case 0x22: (52, 1)
+        case 0x7e: (53, 1)
+        case 0x3c: (54, 1)
+        case 0x3e: (55, 1)
+        case 0x3f: (56, 1)
+        default: nil
+        }
+    }
+}
+
+enum IOSRemoteDesktopModifierPolicy {
+    static func consumesArmedModifiers(hid: UInt32, down: Bool) -> Bool {
+        !down && !(224...231).contains(hid)
     }
 }
 
