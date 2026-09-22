@@ -52,8 +52,9 @@ func TestBrandPackIsWiredIntoReleaseSurfaces(t *testing.T) {
 	}
 
 	assertContains(t, filepath.Join(root, "README.md"),
-		"Many agents, many machines, one interface.",
-		"assets/brand/assets/social/og-image.png",
+		"Your agents. Your machines.",
+		"assets/brand/assets/svg/logo-horizontal-dark.svg",
+		"assets/brand/assets/svg/logo-horizontal-light.svg",
 	)
 	assertContains(t, filepath.Join(root, "apps/android/app/src/main/AndroidManifest.xml"),
 		`android:icon="@mipmap/ic_launcher_monochrome"`,
