@@ -30,6 +30,7 @@ import (
 
 	"github.com/dbpprt/dieter/internal/controlrtc"
 	"github.com/dbpprt/dieter/internal/daemon"
+	"github.com/dbpprt/dieter/internal/fixtureturn"
 	"github.com/dbpprt/dieter/internal/gateway"
 	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
 	"github.com/dbpprt/dieter/internal/harness"
@@ -114,6 +115,14 @@ func run(address, home, offlineTrigger, daemonRestartTrigger string, boardStress
 		GitHubClientID: "isolated", GitHubSecret: "isolated", AllowedUserIDs: map[int64]struct{}{1: {}}, AuthSecret: authSecret, SessionTTL: 12 * time.Hour, RTCTTL: 5 * time.Minute,
 		NativeRedirects: map[string]struct{}{}, GitHubBaseURL: "https://github.invalid", GitHubAPIURL: "https://api.github.invalid",
 		DevInsecure: true,
+	}
+	turn, err := fixtureturn.Load()
+	if err != nil {
+		return err
+	}
+	if turn != nil {
+		config.RTCTURNURLs = turn.URLs
+		config.RTCTURNSecret = []byte(turn.SharedSecret)
 	}
 	gatewayStore, err := gateway.OpenStore(config.Root)
 	if err != nil {

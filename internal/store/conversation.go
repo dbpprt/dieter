@@ -12,6 +12,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/dbpprt/dieter/internal/model"
 )
@@ -342,12 +343,39 @@ func (s *Store) appendConversationEvent(card model.Card, conversation model.Conv
 		s.cacheConversation(card.ID, conversation, snapshotInfo, eventsInfo, eventsInfo.Size())
 	}
 	s.rememberTokenUsage(card.ID, conversation)
-	card.LastActivityAt = event.CreatedAt
-	card.UpdatedAt = event.CreatedAt
-	if err := s.writeCard(card); err != nil {
-		return model.ConversationEvent{}, model.Conversation{}, err
+	// Activity is a derived directory hint, not the event durability boundary.
+	// Publish it at most four times/second during token bursts. Every semantic
+	// event (including finish/error/abort, tools and runtime transitions) flushes
+	// immediately. A killed worker can leave the hint <250ms behind; replay of
+	// the fsynced journal still recovers every acknowledged token and timestamp.
+	if shouldPublishConversationActivity(card.LastActivityAt, event) {
+		card.LastActivityAt = event.CreatedAt
+		card.UpdatedAt = event.CreatedAt
+		if err := s.writeCard(card); err != nil {
+			return model.ConversationEvent{}, model.Conversation{}, err
+		}
 	}
 	return event, conversation, nil
+}
+
+func shouldPublishConversationActivity(previous string, event model.ConversationEvent) bool {
+	if event.Type != "ui-chunk" {
+		return true
+	}
+	var chunk struct {
+		Type string `json:"type"`
+	}
+	if json.Unmarshal(event.Data, &chunk) != nil {
+		return true
+	}
+	switch chunk.Type {
+	case "text-delta", "reasoning-delta", "tool-input-delta":
+		before, err := time.Parse(time.RFC3339Nano, previous)
+		at, atErr := time.Parse(time.RFC3339Nano, event.CreatedAt)
+		return err != nil || atErr != nil || at.Before(before) || at.Sub(before) >= 250*time.Millisecond
+	default:
+		return true
+	}
 }
 
 func (s *Store) StartConversationTurn(cardRef, turnID, messageID, text string) (model.Conversation, error) {

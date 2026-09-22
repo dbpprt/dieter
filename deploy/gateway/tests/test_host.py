@@ -1,11 +1,13 @@
 import json
+import shutil
+import sqlite3
 from pathlib import Path
 import sys
 import tempfile
 import unittest
 from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
-from common import atomic, canonical
+from common import atomic, canonical, digest, pointer, read_json
 from host import Host
 from bundle import ARCHIVE, MANIFEST, SIGNATURE
 
@@ -21,6 +23,9 @@ class HostTests(unittest.TestCase):
             "backupCommand": ["/fixture/backup"], "readinessTimeoutSeconds": 20}))
         self.host = Host(self.policy)
         self.host.initialize()
+        space = patch("host.shutil.disk_usage", return_value=shutil._ntuple_diskusage(8 << 30, 0, 8 << 30))
+        space.start()
+        self.addCleanup(space.stop)
         self.incoming = self.root / "incoming"
         self.incoming.mkdir()
         for name in (ARCHIVE, MANIFEST, SIGNATURE):
@@ -36,12 +41,18 @@ class HostTests(unittest.TestCase):
         reconstructed = Host(self.policy)
         with patch("host.run") as start:
             same = reconstructed.admit("first", self.incoming)
-            start.assert_not_called()
+            start.assert_called_once()
+            self.assertIn("dieter-deploy@first.service", start.call_args.args[0])
         self.assertEqual(first, same)
         (self.incoming / "settings.json").write_text('{"tls":"existing"}')
         with self.assertRaisesRegex(ValueError, "different inputs"):
             self.admit()
         self.assertEqual(reconstructed.status("first")["state"], "admitted")
+        reconstructed.transition("first", "committed")
+        (self.incoming / "settings.json").write_text('{"tls":"managed"}')
+        with patch("host.run") as start:
+            reconstructed.admit("first", self.incoming)
+            start.assert_not_called()
 
     def test_reboot_resumes_only_nonterminal_operations(self):
         self.admit("one")
@@ -51,6 +62,12 @@ class HostTests(unittest.TestCase):
             Host(self.policy).resume()
             self.assertEqual(start.call_count, 1)
             self.assertIn("dieter-deploy@one.service", start.call_args.args[0])
+
+    def test_admission_rejects_low_disk_before_creating_an_operation(self):
+        with patch("host.shutil.disk_usage", return_value=shutil._ntuple_diskusage(8 << 30, 7 << 30, 1 << 30)):
+            with self.assertRaisesRegex(ValueError, "insufficient deployment staging space"):
+                self.admit()
+        self.assertFalse(self.host.operation("first").exists())
 
     def test_rollback_readmits_only_a_previously_accepted_signed_release(self):
         self.admit("old")
@@ -62,6 +79,25 @@ class HostTests(unittest.TestCase):
         self.assertEqual(result["state"], "admitted")
         self.assertEqual(result["requestSHA256"], self.host.status("old")["requestSHA256"])
         self.assertEqual(self.host.status("old")["state"], "committed")
+
+    def test_deployment_key_cannot_change_host_mounts_identity_or_routes(self):
+        selection = json.loads((Path(__file__).resolve().parents[1] / "profiles/example.settings.json").read_text())
+        self.host.config.update(selection)
+        self.host.validate_selection(selection, self.incoming)
+        for field, bad in (("caddyData", "/etc"), ("caddyConfig", "/root"), ("stateVolume", "unrelated-volume"),
+                           ("publicIPv4", "192.0.2.99"), ("turnHost", "other.example.com"), ("allowedUserIDs", [99]),
+                           ("legacyHosts", ["unreviewed.example.com"])):
+            with self.assertRaises(ValueError, msg=field):
+                self.host.validate_selection(dict(selection, **{field: bad}), self.incoming)
+        selection["legacyHosts"] = ["legacy.example.com"]
+        self.host.config["legacyHosts"] = selection["legacyHosts"]
+        path = self.incoming / "legacy.caddy"
+        path.write_text("reviewed routes")
+        self.host.config["legacyFragmentSHA256"] = digest(path)
+        self.host.validate_selection(selection, self.incoming)
+        path.write_text("unreviewed routes")
+        with self.assertRaisesRegex(ValueError, "fragment"):
+            self.host.validate_selection(selection, self.incoming)
 
     def test_interrupted_activation_rolls_back_instead_of_replaying(self):
         self.admit()
@@ -86,6 +122,63 @@ class HostTests(unittest.TestCase):
         self.assertEqual(result["state"], "failed")
         self.assertTrue(result["rollbackFailed"])
         self.assertNotIn("private output", json.dumps(result))
+
+    def test_backup_recovers_active_routes_during_root_reviewed_hostname_change(self):
+        from recover import inspect_snapshot
+        selection = read_json(Path(__file__).resolve().parents[1] / "profiles/example.settings.json")
+        for key in ("installRoot", "configRoot", "runtimeRoot"):
+            selection[key] = self.host.config[key]
+        for key in ("caddyData", "caddyConfig"):
+            selection[key] = str(self.root / key)
+            Path(selection[key]).mkdir()
+        self.host.config.update(selection, controllerLink="/usr/local/lib/dieter-deploy")
+        self.host.config["turnHost"] = "next-turn.example.com"
+        self.host.config["legacyHosts"] = ["retired.example.com"]
+        atomic(self.policy, canonical(self.host.config))
+        original_policy = self.policy.read_bytes()
+        release = self.host.install / "releases/accepted"
+        (release / "public").mkdir(parents=True)
+        atomic(release / "public/settings.json", canonical(selection))
+        image = "registry/gateway@sha256:" + "a" * 64
+        atomic(release / "public/compose.json", canonical({"services": {"dieter-gateway": {"image": image}}}))
+        pointer(self.host.install / "current", release)
+        source = self.root / "volume"
+        (source / "signing").mkdir(parents=True)
+        for name in ("gateway-ed25519.pem", "daemon-ca-ed25519.pem", "daemon-ca.pem"):
+            (source / "signing" / name).write_text("fixture identity")
+        with sqlite3.connect(source / "gateway.db") as db:
+            db.execute("PRAGMA user_version=1")
+        archived = []
+
+        def external(argv, **kwargs):
+            if argv[:3] == ["docker", "image", "inspect"]:
+                return canonical([{"Id": "sha256:" + "b" * 64, "Size": 1}])
+            if argv[:3] == ["docker", "image", "save"]:
+                Path(argv[argv.index("--output") + 1]).write_bytes(b"fixture image archive")
+                return b""
+            self.assertEqual(argv[0], "/fixture/backup")
+            # Exercise the actual clean-host recovery contract on the prepared
+            # snapshot, including SQLite integrity and archived image mapping.
+            _, _, policy, active, _, _ = inspect_snapshot(argv[-1])
+            self.assertEqual(policy["turnHost"], selection["turnHost"])
+            self.assertEqual(policy["legacyHosts"], active["legacyHosts"])
+            archived.append(policy)
+            return canonical({"snapshotID": "fixture", "offHost": True})
+
+        with patch.object(self.host, "volume", return_value=source), patch("host.run", side_effect=external):
+            result = self.host.backup(dict(selection, turnHost="next-turn.example.com"), "rename")
+        self.assertTrue(result["offHost"])
+        self.assertEqual(len(archived), 1)
+        self.assertEqual(self.policy.read_bytes(), original_policy)
+        self.assertEqual(self.host.config["turnHost"], "next-turn.example.com")
+
+    def test_rollback_waits_for_recreated_processes_to_become_ready(self):
+        with patch.object(self.host, "health", side_effect=[ConnectionError("starting"), None]) as health, patch("host.time.sleep"):
+            self.host.wait_health({})
+            self.assertEqual(health.call_count, 2)
+        with patch.object(self.host, "health", side_effect=ConnectionError("unavailable")):
+            with self.assertRaises(ConnectionError):
+                self.host.wait_health({}, timeout=0)
 
     def test_readiness_binds_to_operation_and_requires_authentication_and_payload(self):
         self.admit()

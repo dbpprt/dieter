@@ -119,6 +119,22 @@ func (api *grpcAPI) globalSnapshotContext(ctx context.Context, limit, recent int
 	}
 
 	conversationCards := append(append([]*dieterv1.Card(nil), protoState.Cards...), protoState.Chats...)
+	if len(conversationCards) > 0 {
+		identity, err := api.server.store.PeerIdentity()
+		if err != nil {
+			return nil, err
+		}
+		local := conversationCards[:0]
+		for _, card := range conversationCards {
+			if card.GetOwnerDaemonId() == identity.DaemonID {
+				local = append(local, card)
+			}
+		}
+		// Remote directory rows remain visible, but cannot be hydrated here.
+		// Filter before applying the recent/active budget so they cannot evict
+		// local tails or produce a warning on every streamed text update.
+		conversationCards = local
+	}
 	if recent > 0 {
 		conversationCards = syncConversationCards(conversationCards, min(recent, 16))
 	}
@@ -355,6 +371,8 @@ func (api *grpcAPI) watchSync(parent context.Context, request *dieterv1.SyncRequ
 }
 
 func (api *grpcAPI) buildSyncFrames(ctx context.Context, request *dieterv1.SyncRequest, send func(*dieterv1.SyncFrame) error) error {
+	wake := newChangeWait(api.server.store)
+	defer wake.close()
 	limit, recent := int(request.GetConversationLimit()), int(request.GetRecentConversationLimit())
 	cursor, _, err := api.server.store.SyncEvents(^uint64(0), 1)
 	if err != nil {
@@ -413,13 +431,9 @@ func (api *grpcAPI) buildSyncFrames(ctx context.Context, request *dieterv1.SyncR
 			return err
 		}
 	}
-	poll := time.NewTicker(200 * time.Millisecond)
-	defer poll.Stop()
 	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-poll.C:
+		if err := wake.wait(ctx); err != nil {
+			return err
 		}
 		current, events, err := api.server.store.SyncEvents(projection.cursor.Sequence, 256)
 		if err != nil {

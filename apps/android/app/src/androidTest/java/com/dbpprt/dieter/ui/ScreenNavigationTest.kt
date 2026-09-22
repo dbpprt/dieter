@@ -1,6 +1,12 @@
 package com.dbpprt.dieter.ui
 
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.input.InputMode
+import androidx.compose.ui.input.InputModeManager
+import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
@@ -12,6 +18,15 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipeDown
+import androidx.compose.ui.test.assertIsFocused
+import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.isFocused
+import androidx.compose.ui.test.performKeyInput
+import androidx.compose.ui.test.pressKey
+import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.unit.Density
 import com.dbpprt.dieter.ui.theme.DieterTheme
 import org.junit.Assert.assertEquals
@@ -21,6 +36,45 @@ import org.junit.Test
 
 class ScreenNavigationTest {
     @get:Rule val compose = createComposeRule()
+
+    @Test fun toolsTakeKeyboardFocusAndKeepTabTraversalInsideTheSheet() {
+        var open by mutableStateOf(false)
+        lateinit var inputMode: InputModeManager
+        compose.setContent {
+            inputMode = LocalInputModeManager.current
+            DieterTheme {
+                if (open) DieterToolsSheet(Destination.BOARD, true, {}, {}, {})
+                else DieterBottomBar(Destination.BOARD, {}, { open = true })
+            }
+        }
+        compose.runOnIdle {
+            // Clickable surfaces intentionally reject keyboard focus in touch
+            // mode. Open as a keyboard user before checking modal traversal.
+            assertTrue("Keyboard mode must be available with the bottom bar mounted",
+                inputMode.requestInputMode(InputMode.Keyboard))
+        }
+        compose.onNodeWithTag("nav-tools").performClick()
+        compose.onNodeWithTag("tool-machines").assertIsFocused()
+        compose.onNodeWithTag("tools-content").performKeyInput { repeat(15) { pressKey(Key.Tab) } }
+        compose.onNode(isFocused()).assert(hasAnyAncestor(hasTestTag("tools-content")))
+    }
+
+    @Test fun toolsDismissWhenDraggedToTheZeroHeightPeek() {
+        var open by mutableStateOf(true)
+        compose.setContent {
+            DieterTheme {
+                if (open) DieterToolsSheet(
+                    selected = Destination.BOARD,
+                    projectSurfacesEnabled = true,
+                    onSelect = {},
+                    onSettings = {},
+                    onDismiss = { open = false },
+                )
+            }
+        }
+        compose.onNodeWithTag("tools-content").performTouchInput { swipeDown() }
+        compose.onNodeWithTag("tools-sheet").assertDoesNotExist()
+    }
 
     @Test fun bottomBarIncludesActivityBoardsChatsAndTools() {
         var selected: Destination? = null

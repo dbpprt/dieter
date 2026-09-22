@@ -475,7 +475,7 @@ projection (projectionPending=false), never from a heartbeat.
 		return nil
 	}
 	set := flags("watch " + args[0])
-	interval := set.Int("interval", 1000, "state polling interval in milliseconds")
+	interval := set.Int("interval", 1000, "minimum interval between state updates in milliseconds")
 	count := set.Int("count", 0, "stop after N frames; zero streams until interrupted")
 	help, err := parse(set, args[1:], usage, c.Out)
 	if help || err != nil {

@@ -22,7 +22,7 @@ object SharedNavigation {
                 ordered(values,"$scope-item",id), values["$prefix.$id.expanded"] != "false")
         })
     }
-    fun order(kv: SharedKV, old: List<String>, next: List<String>, prefix: String, parent: String = "") {
+    fun order(kv: SharedKV.Editor, old: List<String>, next: List<String>, prefix: String, parent: String = "") {
         // Keep the longest increasing subsequence of old indices. Only inserted
         // or moved items receive new positions; other devices' edits stay intact.
         val indices = old.withIndex().associate { it.value to it.index }

@@ -90,6 +90,17 @@ class RenderTests(unittest.TestCase):
         self.assertNotIn("haproxy", read_json(out / "public/compose.json")["services"])
         self.assertIn("tls-listening-port=443", (out / "private/turnserver.conf").read_text())
 
+    def test_bandwidth_reservations_cover_declared_allocations(self):
+        turn = self.settings["turn"]
+        turn["bpsCapacity"] = 12500000
+        with self.assertRaisesRegex(ValueError, "reservation pool"):
+            settings(self.settings)
+        turn["bpsCapacity"] = turn["maxBps"] * turn["totalQuota"]
+        self.assertEqual(settings(self.settings)["turn"]["bpsCapacity"], 320000000)
+        turn["bpsCapacity"] -= 1
+        with self.assertRaisesRegex(ValueError, "reservation pool"):
+            settings(self.settings)
+
     def test_unsafe_hosts_paths_and_quota_fail(self):
         for key, value in (("gatewayHost", "x.example.com\nadmin off"), ("configRoot", "/etc/../tmp"),
                            ("publicIPv4", "127.0.0.1"), ("allowedUserIDs", [])):

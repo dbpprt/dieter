@@ -24,22 +24,70 @@ internal fun Card.optimisticStart(board: Board?): Card? {
         .build()
 }
 
+data class OptimisticCardMove(
+    val operationId: String,
+    val lane: String,
+    val position: Long,
+    val confirmsPosition: Boolean,
+) {
+    fun isConfirmedBy(card: Card): Boolean =
+        card.lane == lane && (!confirmsPosition || card.position == position)
+
+    fun applyingTo(card: Card): Card = card.toBuilder()
+        .setLane(lane)
+        .setPosition(position)
+        .build()
+}
+
+internal data class CardOperationProjection(
+    val cards: List<Card>,
+    val pendingMoves: Map<String, OptimisticCardMove>,
+)
+
+/** Keeps local lane changes visible while stale workspace frames catch up. */
+internal fun projectCardsDuringOperations(
+    remoteCards: List<Card>,
+    localCards: List<Card>,
+    operations: Map<String, CardOperation>,
+    pendingMoves: Map<String, OptimisticCardMove>,
+): CardOperationProjection {
+    if (pendingMoves.isEmpty() && operations.values.none { it == CardOperation.STARTING }) {
+        return CardOperationProjection(remoteCards, pendingMoves)
+    }
+    val localById = localCards.associateBy(Card::getId)
+    val startingCards = localById.filterKeys { operations[it] == CardOperation.STARTING }
+    val remainingMoves = pendingMoves.toMutableMap()
+    val projected = remoteCards.map { remote ->
+        val move = pendingMoves[remote.id]
+        when {
+            move != null && move.isConfirmedBy(remote) -> {
+                remainingMoves.remove(remote.id)
+                remote
+            }
+            move != null -> move.applyingTo(remote)
+            startingCards[remote.id] != null && remote.initialPromptSentAt.isBlank() ->
+                requireNotNull(startingCards[remote.id])
+            else -> remote
+        }
+    }.toMutableList()
+    val remoteIds = remoteCards.mapTo(hashSetOf(), Card::getId)
+    startingCards.values.filterTo(projected) { it.id !in remoteIds }
+    pendingMoves.forEach { (cardId, move) ->
+        if (cardId !in remoteIds) localById[cardId]?.let { projected += move.applyingTo(it) }
+    }
+    return CardOperationProjection(projected, remainingMoves)
+}
+
 internal fun reconcileCardsDuringOperations(
     remoteCards: List<Card>,
     localCards: List<Card>,
     operations: Map<String, CardOperation>,
-): List<Card> {
-    val startingCards = localCards.associateBy(Card::getId).filterKeys { operations[it] == CardOperation.STARTING }
-    if (startingCards.isEmpty()) return remoteCards
-
-    val reconciled = remoteCards.map { remote ->
-        val optimistic = startingCards[remote.id]
-        if (optimistic != null && remote.initialPromptSentAt.isBlank()) optimistic else remote
-    }.toMutableList()
-    val remoteIds = remoteCards.mapTo(hashSetOf(), Card::getId)
-    startingCards.values.filterTo(reconciled) { it.id !in remoteIds }
-    return reconciled
-}
+): List<Card> = projectCardsDuringOperations(
+    remoteCards = remoteCards,
+    localCards = localCards,
+    operations = operations,
+    pendingMoves = emptyMap(),
+).cards
 
 internal fun resolvedCardRuntime(
     cardRuntime: String,

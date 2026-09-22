@@ -90,6 +90,35 @@ The example 64-per-user / 256-total allocation and bandwidth settings are
 clients, screens, peer traffic and reconnect bursts before increasing production
 limits. Preserve account/target concentration when testing coturn's quota bucket.
 
+Coturn reserves `max-bps` for each allocation when the client omits BANDWIDTH.
+The renderer requires `bpsCapacity >= maxBps * totalQuota` so the reservation
+pool cannot silently lower the declared allocation limit. At 1,250,000 bytes/s
+per allocation, 16 allocations need a 20,000,000 bytes/s pool; the 256-allocation
+candidate needs 320,000,000 bytes/s. This accounting pool is not a measured link
+capacity or aggregate traffic shaper. Qualify actual traffic and host headroom
+before raising production quotas or per-allocation bandwidth.
+
+`tests/allocation_soak.py` measures 64 concentrated allocations and release under
+UDP/TCP/TLS on the named disposable VM. Its colocated probes exchange only 1 KiB
+per second in each direction. The 30-minute steady and five-minute reconnect
+report is allocation lifecycle evidence, not native screen or throughput
+qualification; the qualification gate still requires those separate workloads.
+
+Native fixtures can explicitly require TURN for both API traffic and screens.
+See [the native TURN test guide](../../docs/gateway-native-turn-testing.md).
+The debug-only policy and protected fixture credentials preserve the real signed
+RTC configuration path; release clients retain their normal ICE policy.
+
+Legacy route removal is blocked by the host controller until the current managed
+TLS operation has recorded complete Mac/Android API/screens, gateway-issued TURN,
+certificate, isolation and 30-minute/5-minute workload evidence. The controller
+starts its own 24-hour observation clock when that complete report is received.
+It then requires a separate normal home/office-use and peer-sync observation
+report covering that interval. Matching evidence is idempotent; changing it
+restarts the interval. Retirement keeps the qualified gateway source fixed.
+This gate covers route removal; stopping legacy services and owner agents and
+the seven-day cleanup window still require their separately recorded procedure.
+
 ## Durable operations and recovery
 
 The production repository supplies host policy, the release lock, settings and
@@ -117,6 +146,43 @@ run on the backup owner. Keep recovery credentials outside the VPS. RPO/RTO clai
 require a measured restore, and legacy retirement requires its recorded observation
 and rollback windows.
 
+Recovery snapshots pin the active release's TURN hostname and legacy route
+selection. This preserves a consistent recovery point when an administrator has
+authorized the next TURN hostname in the root-owned host policy before deploying
+it. Install a controller with this behavior before changing that policy; retain
+the old policy for an explicit rollback. The deployment key still cannot change
+the policy or select any other TURN hostname.
+
+`scripts/recover.py SNAPSHOT` inspects an already decrypted recovery point.
+Recovery must run through independent administrative root access on an empty
+Debian destination with Docker and the pinned Compose plugin installed. Preserve
+the original origin/IP/DNS, prepare its firewall and restore the backup receiver
+route before external acceptance. The restricted deployment key cannot restore
+production data.
+
+```sh
+python3 scripts/recover.py /protected/exact-snapshot
+python3 scripts/recover.py /protected/exact-snapshot --operation recovery-ID \
+  --expected-ca RETAINED_CA_SHA256 --acknowledge-loss-after EXACT_CREATED_AT \
+  --confirm-host EMPTY_DESTINATION_HOSTNAME --activate
+```
+
+The exact timestamp declares the possible loss of newer sessions/enrollments.
+Existing application paths, installed host policy, a controller, named state
+volume or running project cause rejection before installation. Cold validation
+starts a cloned gateway with no network. Recovery then restores images by their
+archived image IDs, configuration, certificates, UID/GID 100:101 state and units.
+It validates every bind source and never fabricates an omitted legacy file.
+It does not enable backup/certificate timers until their external dependencies
+have been retested. Partial failure is recorded and never erased or silently
+overwritten on retry. Inspect the protected recovery record before intervention.
+
+With `--activate`, services start and local identity/liveness are checked. The
+result remains `active-awaiting-external-verification`: use the existing enrolled
+client to verify gateway/directory/daemon access and all selected TURN transports
+before recording recovery acceptance. A fast restore inside an already provisioned
+fixture is not a measured bare-host provisioning or production RTO guarantee.
+
 ## Validation
 
 ```sh
@@ -136,6 +202,13 @@ filesystem sharing.
 `just gateway turn-test` takes a bounded JSON request on stdin and prints only
 probe results. It verifies the allocated public relay IP and bidirectional random
 payloads between two allocations; credentials never appear in arguments or logs.
+Set `singleAllocation: true` for readiness in an active quota bucket: a normal UDP
+peer exchanges distinct random payloads with one TURN allocation. This mode needs
+UDP reachability from the probe host to port 3478 and the relay range; it does not
+qualify a network that permits only TLS. The default two-relay mode and the
+concentrated allocation soak remain unchanged. The container test exercises all
+three transports with a one-allocation user quota and rejects the two-allocation
+probe under the same limit.
 # Disposable Debian lifecycle qualification
 
 `tests/debian-vm.yaml` creates a separate Lima VM with one CPU, 1 GiB memory,

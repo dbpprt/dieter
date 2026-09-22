@@ -1,8 +1,8 @@
 name: Deploy getdieter.com
 
 # Builds the Hugo site in landingpage/ and publishes it to GitHub Pages.
-# The base URL is taken from the Pages configuration, so this works unchanged at
-# the project-pages subpath today and at the getdieter.com custom domain later.
+# The base URL comes from the Pages configuration. The custom domain is
+# getdieter.com; local previews can still supply another SITE_BASE_URL.
 
 on:
   push:

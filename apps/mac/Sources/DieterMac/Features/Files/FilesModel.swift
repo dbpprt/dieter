@@ -3,6 +3,7 @@ import DieterCore
 import Foundation
 import GRPCCore
 import Observation
+import OSLog
 
 /// Owns one file surface. Every completion belongs to a binding and read generation.
 @MainActor @Observable
@@ -135,6 +136,10 @@ final class FilesModel {
 
     func openFile(path: String) async {
         guard let rpc = client else { return }
+        let log = MacPerformanceSignposts.editor
+        let signpostID = OSSignpostID(log: log)
+        os_signpost(.begin, log: log, name: "Open file", signpostID: signpostID)
+        defer { os_signpost(.end, log: log, name: "Open file", signpostID: signpostID) }
         var request = Dieter_V1_ReadFileRequest(); request.projectID = target.projectID;
         request.checkoutID = target.checkoutID; request.path = path;
         request.cardID = target.conversationID
@@ -142,6 +147,7 @@ final class FilesModel {
         let generation = fileReadGeneration
         if selectedFilePath != path { fileDocument = nil }
         selectedFilePath = path
+        os_signpost(.event, log: log, name: "File selected", signpostID: signpostID)
         fileLoading = true
         fileError = nil
         defer { if generation == fileReadGeneration { fileLoading = false } }
@@ -152,11 +158,14 @@ final class FilesModel {
             ) {
                 try await rpc.readFile(readRequest)
             }
+            os_signpost(.event, log: log, name: "File read completed", signpostID: signpostID)
             guard self.client === rpc, generation == fileReadGeneration, target.projectID == request.projectID,
                 target.conversationID == request.cardID
             else { return }
             fileDocument = document
-            fileEditorSession.prepare(documentKey: documentKey, text: document.content)
+            MacPerformanceSignposts.measure("Prepare file editor", log: log) {
+                fileEditorSession.prepare(documentKey: documentKey, text: document.content)
+            }
         } catch {
             guard self.client === rpc, generation == fileReadGeneration, target.projectID == request.projectID,
                 target.conversationID == request.cardID

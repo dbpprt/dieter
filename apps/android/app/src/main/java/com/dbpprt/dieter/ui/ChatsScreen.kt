@@ -65,8 +65,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
@@ -533,7 +536,7 @@ internal fun ChatRuntimeStatus(
         targetValue = 360f,
         animationSpec = infiniteRepeatable(tween(1_450, easing = LinearEasing)),
         label = "chat-running-orbit",
-    )?.value ?: 0f
+    )
     val glow = transition?.animateFloat(
         initialValue = 0.42f,
         targetValue = 1f,
@@ -542,7 +545,7 @@ internal fun ChatRuntimeStatus(
             repeatMode = RepeatMode.Reverse,
         ),
         label = "chat-running-glow",
-    )?.value ?: 0f
+    )
 
     Box(
         modifier.semantics(mergeDescendants = true) {
@@ -552,10 +555,27 @@ internal fun ChatRuntimeStatus(
     ) {
         if (running) {
             Surface(
-                color = DieterRunning.copy(alpha = 0.09f + glow * 0.025f),
+                color = Color.Transparent,
                 contentColor = DieterRunning,
-                border = androidx.compose.foundation.BorderStroke(1.dp, DieterRunning.copy(alpha = 0.2f + glow * 0.16f)),
                 shape = RoundedCornerShape(50),
+                // Observe animation values while drawing. Reading them during
+                // composition rebuilt the entire badge, including text/layout,
+                // on every display frame for every mounted running chat.
+                modifier = Modifier.drawBehind {
+                    val pulse = glow?.value ?: 0f
+                    drawRoundRect(
+                        color = DieterRunning.copy(alpha = 0.09f + pulse * 0.025f),
+                        cornerRadius = CornerRadius(size.height / 2),
+                    )
+                    val stroke = 1.dp.toPx()
+                    drawRoundRect(
+                        color = DieterRunning.copy(alpha = 0.2f + pulse * 0.16f),
+                        topLeft = Offset(stroke / 2, stroke / 2),
+                        size = Size(size.width - stroke, size.height - stroke),
+                        cornerRadius = CornerRadius((size.height - stroke) / 2),
+                        style = Stroke(stroke),
+                    )
+                },
             ) {
                 Row(
                     Modifier.padding(start = 5.dp, end = 8.dp, top = 3.dp, bottom = 3.dp),
@@ -563,17 +583,18 @@ internal fun ChatRuntimeStatus(
                 ) {
                     Canvas(Modifier.size(18.dp)) {
                         val strokeWidth = 1.7.dp.toPx()
+                        val pulse = glow?.value ?: 0f
                         drawCircle(DieterRunning.copy(alpha = 0.16f), style = Stroke(strokeWidth))
-                        rotate(rotation) {
+                        rotate(rotation?.value ?: 0f) {
                             drawArc(
-                                color = DieterRunning.copy(alpha = 0.55f + glow * 0.45f),
+                                color = DieterRunning.copy(alpha = 0.55f + pulse * 0.45f),
                                 startAngle = -90f,
                                 sweepAngle = 112f,
                                 useCenter = false,
                                 style = Stroke(strokeWidth, cap = StrokeCap.Round),
                             )
                         }
-                        drawCircle(DieterRunning.copy(alpha = 0.2f + glow * 0.15f), radius = 4.dp.toPx())
+                        drawCircle(DieterRunning.copy(alpha = 0.2f + pulse * 0.15f), radius = 4.dp.toPx())
                         drawCircle(DieterRunning, radius = 2.2.dp.toPx())
                     }
                     Spacer(Modifier.width(4.dp))

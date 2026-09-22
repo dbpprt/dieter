@@ -5,6 +5,7 @@ go 1.26.8
 require (
 	connectrpc.com/connect v1.20.0
 	github.com/creack/pty v1.1.24
+	github.com/fsnotify/fsnotify v1.9.0
 	github.com/pion/ice/v4 v4.4.0
 	github.com/pion/interceptor v0.1.47
 	github.com/pion/logging v0.2.4

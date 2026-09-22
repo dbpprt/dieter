@@ -86,7 +86,14 @@ class Host:
             dest = self.operation(operation)
             if dest.exists():
                 require(self.status(operation)["requestSHA256"] == request_hash, "operation ID already has different inputs")
+                if self.status(operation)["state"] not in TERMINAL:
+                    # Admission may have reached disk just before the observer
+                    # or systemctl client died. Starting an already active unit
+                    # is idempotent and never restarts its worker.
+                    run(["systemctl", "start", "--no-block", "dieter-deploy@" + operation + ".service"])
                 return self.status(operation)
+            for abandoned in self.ops.glob(".admitting-*"):
+                shutil.rmtree(abandoned)
             pending = sum(1 for op in self.ops.iterdir() if (op / "status.json").is_file()
                           and read_json(op / "status.json")["state"] not in TERMINAL)
             require(pending < 8, "deployment admission queue is full")
@@ -123,6 +130,17 @@ class Host:
         # path. A rollback is itself a new durable deployment, never a DB restore.
         return self.admit(operation, target / "input")
 
+    def validate_selection(self, selection, incoming):
+        for name in ("installRoot", "configRoot", "runtimeRoot", "project", "gatewayHost", "allowedUserIDs",
+                     "stateVolume", "caddyData", "caddyConfig", "publicIPv4", "turnIPv4", "turnHost"):
+            require(selection[name] == self.config[name], "settings do not match installed host policy")
+        require(selection["legacyHosts"] in (self.config.get("legacyHosts", []), []), "unexpected legacy hostname selection")
+        if self.config.get("legacyHosts") and not selection["legacyHosts"]:
+            from qualification import require_retirement_ready
+            require_retirement_ready(self, Path(incoming))
+        if selection["legacyHosts"]:
+            require(digest(Path(incoming) / "legacy.caddy") == self.config["legacyFragmentSHA256"], "legacy route fragment differs from reviewed host policy")
+
     def backup(self, s, operation):
         """Online SQLite backup plus the corresponding stable identity/config."""
         source = self.volume(s)
@@ -144,10 +162,18 @@ class Host:
                 path = Path(s[key])
                 require(path.is_dir(), "existing Caddy recovery storage is missing")
                 shutil.copytree(path, stage / key, symlinks=True)
-            shutil.copyfile(self.policy, stage / "host-policy.json")
             current = self.install / "current"
+            recovery_policy = dict(self.config)
             if current.is_symlink():
                 shutil.copytree(current.resolve(), stage / "release", symlinks=True)
+                # A root-reviewed TURN rename may precede activation, and the
+                # host policy retains legacy routes after their gated removal.
+                # Recovery must pin the routes actually archived with this
+                # snapshot, not the next selection authorized on the host.
+                active = read_json(current / "public/settings.json")
+                for name in ("turnHost", "legacyHosts"):
+                    recovery_policy[name] = active[name]
+            atomic(stage / "host-policy.json", canonical(recovery_policy))
             # Save runnable image bytes as well as manifests: a digest alone is
             # not a recovery archive when registry tags are later removed.
             if current.is_symlink():
@@ -205,6 +231,17 @@ class Host:
         except urllib.error.HTTPError as e:
             require(e.code == 404, "unexpected gateway root response")
 
+    def wait_health(self, s, revision=None, timeout=60):
+        deadline = time.monotonic() + timeout
+        while True:
+            try:
+                self.health(s, revision)
+                return
+            except Exception:
+                if time.monotonic() >= deadline:
+                    raise
+                time.sleep(1)
+
     def accept(self, operation, report):
         # No global lock here: the activation worker holds it while awaiting
         # external authenticated probes. Only root may write this evidence.
@@ -241,8 +278,7 @@ class Host:
                 incoming = op / "input"
                 m = verify(incoming)
                 s = settings(read_json(incoming / "settings.json"))
-                for name in ("installRoot", "configRoot", "runtimeRoot", "project", "gatewayHost", "allowedUserIDs"):
-                    require(s[name] == self.config[name], "settings do not match installed host policy")
+                self.validate_selection(s, incoming)
                 current = self.install / "current"
                 require(current.is_symlink(), "import and verify the existing deployment before activation")
                 previous = current.resolve()
@@ -273,6 +309,8 @@ class Host:
                 os.chmod(target_private / "turnserver.conf", 0o640)
                 for directory in ("acme-webroot", "certificates"):
                     (self.etc / directory).mkdir(mode=0o755, exist_ok=True)
+                for kind in ("gateway", "turn"):
+                    (self.etc / "certificates" / kind).mkdir(mode=0o755, exist_ok=True)
                 self.compose(release, "config", "--quiet")
                 self.compose(release, "pull")
                 # Validate with the exact deployed binaries before touching any listener.
@@ -293,7 +331,7 @@ class Host:
                 deadline = time.monotonic() + self.config["readinessTimeoutSeconds"]
                 while time.monotonic() < deadline:
                     if (op / "readiness.json").is_file():
-                        self.health(s, m["sourceRevision"])
+                        self.wait_health(s, m["sourceRevision"])
                         require(digest(source / "signing" / "daemon-ca.pem") == backup["gatewayCAFingerprint"], "gateway CA changed")
                         pointer(self.install / "previous", previous)
                         pointer(current, release)
@@ -319,12 +357,13 @@ class Host:
                     try:
                         self.activate(previous)
                         old_settings = read_json(previous / "public" / "settings.json")
-                        self.health(old_settings)
+                        self.wait_health(old_settings)
                         pointer(self.install / "current", previous)
                         if self.config.get("controllerLink") and self.status(operation).get("previousController"):
                             pointer(self.config["controllerLink"], self.status(operation)["previousController"])
                         return self.transition(operation, "rolled_back")
                     except Exception:
+                        protected_log(traceback.format_exc().encode())
                         return self.transition(operation, "failed", rollbackFailed=True)
                 return self.transition(operation, "failed", failureClass=code, failureStage=failed_stage)
 

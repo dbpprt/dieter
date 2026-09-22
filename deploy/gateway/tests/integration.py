@@ -93,7 +93,9 @@ def main():
             output.chmod(0o755)
             turn = (output / "private/turnserver.conf").read_text().replace("/certificates/turn/current/", "/fixture/")
             # The namespace's relay address is reserved for benchmarking, never a real host.
-            atomic(temp / "turnserver.conf", turn, 0o644)
+            # Rotate nonces during the held payload/certificate test so manual
+            # permission refreshes cannot accidentally pass only short probes.
+            atomic(temp / "turnserver.conf", turn + "\nstale-nonce=2\n", 0o644)
             caddy = (output / "public/Caddyfile").read_text().replace("/certificates/gateway/current/", "/fixture/")
             caddy = caddy.replace("unix//run/dieter/caddy-admin.sock", "localhost:2019")
             atomic(temp / "Caddyfile", caddy, 0o644)
@@ -157,6 +159,28 @@ def main():
             process.wait(timeout=30)
             if process.returncode:
                 raise RuntimeError("TURN allocation did not survive certificate reload")
+            # An active fleet may leave only one allocation in its target's
+            # quota bucket. Readiness must still exchange real relay payloads.
+            config = (temp / "turnserver.conf").read_text()
+            import re
+            config, replacements = re.subn(r"(?m)^user-quota=\d+$", "user-quota=1", config)
+            assert replacements == 1
+            (temp / "turnserver.conf").write_text(config)
+            run("docker", "cp", temp / "turnserver.conf", anchor + ":/fixture/turnserver.conf")
+            run("docker", "restart", turn_name)
+            time.sleep(3)
+            try:
+                probe(request("tcp"))
+                raise AssertionError("two allocations bypassed a one-allocation quota")
+            except RuntimeError:
+                pass
+            time.sleep(3)
+            for transport in ("udp", "tcp", "tls"):
+                single = dict(request(transport), singleAllocation=True)
+                result = probe(single)
+                assert result["allocations"] == 1 and result["payloadBidirectional"]
+                print(json.dumps(result), flush=True)
+                time.sleep(3)
             print("Gateway TLS 1.3/h2, unauthorized gRPC, UDP/TCP/TLS TURN payloads and certificate reload passed", flush=True)
         except Exception:
             for name in containers:

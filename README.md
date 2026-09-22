@@ -12,7 +12,7 @@
 <p align="center">
   <a href="https://github.com/dbpprt/dieter/actions/workflows/release.yml"><img src="https://github.com/dbpprt/dieter/actions/workflows/release.yml/badge.svg" alt="Release"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-62B6CB.svg" alt="MIT license"></a>
-  <a href="https://dbpprt.github.io/dieter/"><img src="https://img.shields.io/badge/website-live-1C1C1E.svg" alt="Website"></a>
+  <a href="https://getdieter.com/"><img src="https://img.shields.io/badge/website-live-1C1C1E.svg" alt="Website"></a>
 </p>
 
 <p align="center">
@@ -1224,8 +1224,11 @@ The first three use generated pixels and dry-run input; the 180-second run inclu
 45 seconds idle, intermittent updates and resumed motion. The last two require Screen
 Recording and event-posting permission and send events only to an owned native
 fixture window. All use random loopback listeners and disposable daemon data;
-the installed daemon is untouched. Viewer integration refuses to start while an
-operator Dieter app is running. Evidence paths are printed by the test.
+the installed daemon is untouched. Native Mac viewer integration refuses to start
+while an operator Dieter Mac app is running. Android screen tests install the
+separate `com.dbpprt.dieter.screenfixture` package on the selected emulator,
+preserve the normal Android app, and refuse an already-running fixture package.
+Evidence paths are printed by the test.
 
 Screen sharing supports up to four clients per machine. Matching display,
 codec profile, and stream settings share a hardware encoder when decoded-reference
@@ -1431,3 +1434,17 @@ conflicts, retry receipts, bounds, and the clean pre-release preference cutover.
 Gateway operators can use the [signed deployment bundle](deploy/gateway/README.md)
 for pinned images, strict configuration rendering, durable activation and rollback,
 and verified TURN TLS on port 443.
+
+### Performance verification
+
+For chat performance verification, `just android sync-test` runs isolated live
+and background synchronization checks on the selected emulator. Daemon state,
+conversation and KV watches use commit notifications with a two-second recovery
+check; `dieter watch state --interval` limits update frequency during bursts.
+`just android performance-test` measures real native navigation with the
+non-debuggable, release-equivalent app on that emulator, then restores the
+debug APK without clearing data. The complete `just android connected-test`
+includes this performance run after the debug functional suite.
+See [the investigation](docs/performance-investigation-2026-09-21.md) and
+[implementation report](docs/performance-implementation-2026-09-21.md)
+for measured workloads, profiling commands and validation limits.

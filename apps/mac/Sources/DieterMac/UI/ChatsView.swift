@@ -231,7 +231,7 @@ struct ChatsView: View {
                 StandaloneChatStartView()
             }
         }
-        .task { await store.refreshChats() }
+        .task(id: showArchived) { await store.ensureChatDirectory(includeArchived: showArchived) }
         .task(id: pinnedChatMembership) { initializePinnedChatOrderIfNeeded() }
         .onChange(of: projection.pinned.count) { _, _ in pinnedPageIndex = pinnedPage.page }
         .sheet(item: $folderEditor) { editor in

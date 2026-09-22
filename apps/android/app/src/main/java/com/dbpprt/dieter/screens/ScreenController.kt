@@ -1,6 +1,7 @@
 package com.dbpprt.dieter.screens
 
 import com.dbpprt.dieter.data.DIETER_PROTOCOL_VERSION
+import com.dbpprt.dieter.BuildConfig
 
 import android.content.Context
 import android.os.SystemClock
@@ -196,6 +197,9 @@ class ScreenController(context: Context) : AutoCloseable {
                     PeerConnection.IceServer.builder(it.urlsList).setUsername(it.username).setPassword(it.credential).createIceServer()
                 }).apply {
                     sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN
+                    if (BuildConfig.DEBUG && java.lang.Boolean.getBoolean("dieter.test.forceTURN")) {
+                        iceTransportsType = PeerConnection.IceTransportsType.RELAY
+                    }
                     continualGatheringPolicy = PeerConnection.ContinualGatheringPolicy.GATHER_CONTINUALLY
                 }
                 val pc = requireNotNull(factory!!.createPeerConnection(rtc, observer(current)))
@@ -315,11 +319,14 @@ class ScreenController(context: Context) : AutoCloseable {
         override fun onConnectionChange(value: PeerConnection.PeerConnectionState) { scope.launch {
             if (token != current) return@launch
             when (value) {
-                PeerConnection.PeerConnectionState.FAILED, PeerConnection.PeerConnectionState.CLOSED -> recover("The video connection failed")
-                PeerConnection.PeerConnectionState.DISCONNECTED -> {
+                PeerConnection.PeerConnectionState.CLOSED -> recover("The video connection closed")
+                PeerConnection.PeerConnectionState.FAILED, PeerConnection.PeerConnectionState.DISCONNECTED -> {
+                    // A denied private candidate can fail ICE before a slower
+                    // TURN candidate arrives. Keep trickle signaling alive for
+                    // the same bounded grace used for a disconnected peer.
                     releaseInput(); peerConnected = false; recovery.interrupted(SystemClock.elapsedRealtime())
                     mutable.value = mutable.value.copy(phase = "reconnecting", control = false)
-                    peerWatchdog?.cancel()
+                    if (peerWatchdog?.isActive == true) return@launch
                     peerWatchdog = scope.launch {
                         delay(3_000)
                         if (token == current && !peerConnected) recover("The peer did not recover after losing connectivity")

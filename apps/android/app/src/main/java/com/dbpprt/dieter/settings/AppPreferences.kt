@@ -163,20 +163,22 @@ class AppPreferences(
     }
 
     fun setProjectOrder(projectIds: List<String>) {
-        SharedNavigation.order(sharedNavigation, _projectOrder.value, projectIds.distinct(), "projects-order")
-        projectSharedNavigation(sharedNavigation.values.value)
+        val next = projectIds.distinct()
+        sharedNavigation.edit { values ->
+            SharedNavigation.order(this, SharedNavigation.ordered(values, "projects-order"), next, "projects-order")
+        }
     }
     fun setChatProjectCollapsed(projectId: String, collapsed: Boolean) {
         sharedNavigation.put("chats-section.$projectId.expanded", !collapsed)
-        projectSharedNavigation(sharedNavigation.values.value)
     }
     fun setChatProjectExpanded(projectId: String, expanded: Boolean) {
         sharedNavigation.put("chats-disclosure.$projectId.expanded", expanded)
-        projectSharedNavigation(sharedNavigation.values.value)
     }
     fun setPinnedChatOrder(chatIds: List<String>) {
-        SharedNavigation.order(sharedNavigation, _pinnedChatOrder.value, chatIds.distinct(), "pinned-order")
-        projectSharedNavigation(sharedNavigation.values.value)
+        val next = chatIds.distinct()
+        sharedNavigation.edit { values ->
+            SharedNavigation.order(this, SharedNavigation.ordered(values, "pinned-order"), next, "pinned-order")
+        }
     }
 
     fun setChatsPaneLeadingFraction(fraction: Float) {

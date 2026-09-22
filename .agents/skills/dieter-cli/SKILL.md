@@ -24,6 +24,9 @@ counts; it is the cheapest bounded directory overview for one machine.
 Use `dieter daemon status` when diagnosing this machine's process and gateway
 tunnel. Its `gatewayLastAcknowledgedAt` value is bidirectional liveness proof;
 a reconnect affects relay transports only and does not stop a running agent.
+State, conversation and KV watches wake on commit notifications; a two-second
+recovery check covers missed filesystem notifications and interrupted writers.
+`watch state --interval` bounds the rate of updates during bursts.
 `dieter watch sync --count 3` emits metadata, deltas, and transport-only
 heartbeats. A heartbeat or `observedCursor` is reachability evidence, not applied
 workspace data. Persist a cursor only with its complete projection, never from a

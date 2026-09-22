@@ -108,12 +108,19 @@ extension DieterStore {
         stopTerminalWatch()
         closeConversation()
         section = .chats
-        await refreshChats()
+        if !hasLiveChatDirectory { await refreshChats(includeArchived: false) }
+        guard section == .chats else { return }
         if let lastUsedChatID,
             chats.contains(where: { $0.id == lastUsedChatID && !$0.archived })
         {
             await openConversation(cardID: lastUsedChatID, chat: true)
         }
+    }
+
+    var hasLiveChatDirectory: Bool { workspaceIsLive && syncSnapshot != nil }
+
+    func ensureChatDirectory(includeArchived: Bool) async {
+        if includeArchived || !hasLiveChatDirectory { await refreshChats(includeArchived: includeArchived) }
     }
 
     func openTerminals() async {

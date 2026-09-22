@@ -275,9 +275,16 @@ func (s *Store) OrphanedTurnCards() ([]model.Card, error) {
 	if err != nil {
 		return nil, err
 	}
+	if len(cards) == 0 {
+		return nil, nil
+	}
+	identity, err := s.PeerIdentity()
+	if err != nil {
+		return nil, err
+	}
 	orphaned := make([]model.Card, 0)
 	for _, card := range cards {
-		if active[card.ID] {
+		if active[card.ID] || card.OwnerDaemonID != identity.DaemonID {
 			continue
 		}
 		status, statusErr := s.conversationStatus(card.ID)

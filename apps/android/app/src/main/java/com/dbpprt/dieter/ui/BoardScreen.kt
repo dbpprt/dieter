@@ -1217,7 +1217,8 @@ internal fun BoardLanePager(
                             machineName = state.machineLabel(card.ownerDaemonId),
                             board = state.board,
                             selected = card.id == state.selectedCardId,
-                            pending = card.id in state.pendingCardIds,
+                            pending = card.id in state.pendingCardIds ||
+                                state.cardOperations[card.id] == CardOperation.MOVING,
                             operation = state.cardOperations[card.id],
                             operationError = state.cardOperationErrors[card.id],
                             activityNow = activityNow,

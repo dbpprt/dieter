@@ -17,7 +17,15 @@ final class ConversationModel {
     var selectedCardID: String?
     var selectedChatID: String?
     var conversation: Dieter_V1_ConversationSnapshot? {
-        didSet { if conversation != oldValue { refreshConversationPresentationState() } }
+        didSet {
+            let invalidate =
+                conversation?.conversation.taskPlans != oldValue?.conversation.taskPlans
+                || conversation?.conversation.subagents != oldValue?.conversation.subagents
+                || conversation?.conversation.queue != oldValue?.conversation.queue
+            if invalidate || conversation?.conversation.messages != oldValue?.conversation.messages {
+                refreshConversationPresentationState(invalidate: invalidate)
+            }
+        }
     }
     var olderConversationMessages: [Dieter_V1_UiMessage] = [] {
         didSet { if olderConversationMessages != oldValue { refreshConversationPresentationState() } }
@@ -29,7 +37,7 @@ final class ConversationModel {
     var conversationHistoryHasMore = false
     var conversationHistoryLoading = false
     var browsingEarlierHistory = false {
-        didSet { if browsingEarlierHistory != oldValue { refreshConversationPresentationState() } }
+        didSet { if browsingEarlierHistory != oldValue { refreshConversationPresentationState(invalidate: true) } }
     }
     var selectedDetail: Dieter_V1_CardDetail?
     var conversationSelectionGeneration: UInt64 = 0
@@ -62,14 +70,15 @@ final class ConversationModel {
         rpc = client; self.endpointID = endpointID
     }
 
-    func refreshConversationPresentationState() {
+    func refreshConversationPresentationState(invalidate: Bool = false) {
         let live = browsingEarlierHistory ? [] : conversation?.conversation.messages ?? []
         let liveIDs = Set(live.lazy.map(\.id).filter { !$0.isEmpty })
         var seen = Set<String>()
         let history = olderConversationMessages.filter { $0.id.isEmpty || !liveIDs.contains($0.id) }
         let next = (history + live).filter { $0.id.isEmpty || seen.insert($0.id).inserted }
-        if conversationMessages != next { conversationMessages = next }
-        conversationPresentationRevision &+= 1
+        let messagesChanged = conversationMessages != next
+        if messagesChanged { conversationMessages = next }
+        if messagesChanged || invalidate { conversationPresentationRevision &+= 1 }
     }
 
     nonisolated static func isExpectedCancellation(_ error: Error) -> Bool { DieterRPCFailure.isCancellation(error) }
@@ -78,10 +87,25 @@ final class ConversationModel {
         cardID: String,
         chat: Bool,
         rpc: any ConversationRPC,
-        recoveryAttempts: Int = 0
+        recoveryAttempts: Int = 0,
+        preferStream: Bool = false
     ) async {
         let selectionGeneration = conversationSelectionGeneration
         do {
+            if preferStream {
+                let openedAt = Date()
+                startConversationWatch(
+                    cardID: cardID, rpc: rpc, selectionGeneration: selectionGeneration,
+                    initialSequence: 0, requireSnapshot: true)
+                // Give the already-open stream a chance before spending a second
+                // RPC on the same cold projection. A slow stream still gets a
+                // bounded unary hedge; cached sequence never hides fresh comments.
+                try await DieterTaskSleep.milliseconds(500)
+                guard !Task.isCancelled, self.rpc === rpc, selectionGeneration == conversationSelectionGeneration,
+                    (selectedCardID ?? selectedChatID) == cardID
+                else { return }
+                if let refreshed = conversationLastRefreshedAt, refreshed >= openedAt { return }
+            }
             let snapshot = try await conversationRead.value(key: "\(ObjectIdentifier(rpc)):\(cardID)") {
                 try await rpc.conversation(cardID: cardID, limit: conversationPageSize, before: nil)
             }
@@ -92,12 +116,14 @@ final class ConversationModel {
             guard self.rpc === rpc, selectionGeneration == conversationSelectionGeneration,
                 (selectedCardID ?? selectedChatID) == cardID
             else { return }
-            startConversationWatch(
-                cardID: cardID,
-                rpc: rpc,
-                selectionGeneration: selectionGeneration,
-                initialSequence: snapshot.conversation.lastSeq
-            )
+            if !preferStream {
+                startConversationWatch(
+                    cardID: cardID,
+                    rpc: rpc,
+                    selectionGeneration: selectionGeneration,
+                    initialSequence: snapshot.conversation.lastSeq
+                )
+            }
         } catch {
             switch DieterConversationOpenFailurePolicy.disposition(
                 for: error,
@@ -125,7 +151,8 @@ final class ConversationModel {
                         cardID: cardID,
                         chat: chat,
                         rpc: currentRPC,
-                        recoveryAttempts: recoveryAttempts + 1
+                        recoveryAttempts: recoveryAttempts + 1,
+                        preferStream: preferStream
                     )
                 }
             case .report:
@@ -145,7 +172,8 @@ final class ConversationModel {
         cardID: String,
         rpc: any ConversationRPC,
         selectionGeneration: UInt64,
-        initialSequence: Int64
+        initialSequence: Int64,
+        requireSnapshot: Bool = false
     ) {
         conversationTask?.cancel()
         conversationTask = Task { [weak self] in
@@ -155,7 +183,7 @@ final class ConversationModel {
                 selectionGeneration == self.conversationSelectionGeneration,
                 (self.selectedCardID ?? self.selectedChatID) == cardID
             {
-                let after = self.conversation?.conversation.lastSeq ?? initialSequence
+                let after = requireSnapshot ? 0 : (self.conversation?.conversation.lastSeq ?? initialSequence)
                 let attemptStartedAt = Date()
                 var failure: Error?
                 do {
@@ -369,10 +397,16 @@ final class ConversationModel {
         if let client, rpc !== client { return }
         if let selectionGeneration, selectionGeneration != conversationSelectionGeneration { return }
         guard (selectedCardID ?? selectedChatID) == cardID else { return }
+        let previous = conversation
         apply(update)
+        if update.hasSnapshot, let conversation {
+            conversationLoading = false
+            conversationError = nil
+            onAccepted(conversation, selectedChatID == cardID)
+        }
         conversationSyncing = false
         conversationLastRefreshedAt = Date()
-        if let conversation {
+        if let conversation, conversation != previous {
             await onSnapshot(conversation, endpointID, Date())
         }
     }
@@ -390,6 +424,10 @@ final class ConversationModel {
     }
 
     func apply(_ incoming: Dieter_V1_ConversationUpdate) {
+        let log = MacPerformanceSignposts.conversation
+        let signpostID = OSSignpostID(log: log)
+        os_signpost(.begin, log: log, name: "Apply conversation update", signpostID: signpostID)
+        defer { os_signpost(.end, log: log, name: "Apply conversation update", signpostID: signpostID) }
         var update = incoming
         if update.hasSnapshot {
             update.snapshot = TranscriptFreshness.merging(update.snapshot, with: conversation)
@@ -407,8 +445,9 @@ final class ConversationModel {
                 olderConversationMessages = []
             }
             trimStreamingHistory()
-            conversation = presentSnapshot(update.snapshot)
-            selectedDetail = update.snapshot.detail
+            let presented = presentSnapshot(update.snapshot)
+            if conversation != presented { conversation = presented }
+            if selectedDetail != update.snapshot.detail { selectedDetail = update.snapshot.detail }
             if olderConversationMessages.isEmpty {
                 conversationHistoryStart = Int(update.snapshot.page.start)
                 conversationHistoryHasMore = update.snapshot.page.hasMore_p
@@ -458,7 +497,8 @@ final class ConversationModel {
             }
             conversationHistoryTotal = max(conversationHistoryTotal, Int(update.page.total))
         }
-        conversation = presentSnapshot(snapshot)
+        let presented = presentSnapshot(snapshot)
+        if conversation != presented { conversation = presented }
         presentContent(from: value)
     }
 

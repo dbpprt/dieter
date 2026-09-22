@@ -1,0 +1,16 @@
+[Unit]
+Description=Verify encrypted Dieter gateway recovery in an isolated container
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+UMask=0077
+ExecStart=/usr/local/lib/dieter-deploy/scripts/restore_test.py --repository-snapshot latest
+TimeoutStartSec=30min
+MemoryMax=256M
+TasksMax=64
+Nice=10
+IOSchedulingClass=idle
+

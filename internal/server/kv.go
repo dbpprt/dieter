@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"strings"
-	"time"
 
 	"connectrpc.com/connect"
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
@@ -136,10 +135,8 @@ func (api *grpcAPI) watchKV(ctx context.Context, r *dieterv1.KVWatchRequest, sen
 	}
 	epoch, seq := r.GetAfter().GetEpoch(), r.GetAfter().GetSequence()
 	reset := epoch == ""
-	// Polling the persisted sequence also catches writes by other local processes;
-	// no unbounded per-subscriber queue or stolen replication wakeup is involved.
-	ticker := time.NewTicker(250 * time.Millisecond)
-	defer ticker.Stop()
+	wake := newChangeWait(api.server.store)
+	defer wake.close()
 	first := true
 	for {
 		current, e := api.kvIdentity(ctx, identity.Account)
@@ -172,10 +169,8 @@ func (api *grpcAPI) watchKV(ctx context.Context, r *dieterv1.KVWatchRequest, sen
 		if changes.More {
 			continue
 		}
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-ticker.C:
+		if err := wake.wait(ctx); err != nil {
+			return err
 		}
 	}
 }

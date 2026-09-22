@@ -63,6 +63,9 @@ import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -239,47 +242,14 @@ fun DieterApp(container: DieterContainer) {
             )
         val globalConnectionStatusVisible =
             state.connectionPhase != ConnectionPhase.CONNECTED && !workspaceStatusIsInline
-        if (state.appSurface != null) {
-            Scaffold(
-                containerColor = MaterialTheme.colorScheme.background,
-                topBar = {
-                    if (globalConnectionStatusVisible) {
-                        ConnectionStatusTopBar(
-                            phase = state.connectionPhase,
-                            lastConnectedAtMillis = state.lastConnectedAtMillis,
-                            showingCachedData = state.hasCachedWorkspace,
-                        )
-                    }
-                },
-            ) { padding ->
-                AppSurfaceContent(state, model, container.appUpdateManager, Modifier.fillMaxSize(), padding)
-            }
-        } else if (tabletLayout) {
-            Surface(
-                modifier = Modifier.fillMaxSize(),
-                color = MaterialTheme.colorScheme.background,
-                contentColor = MaterialTheme.colorScheme.onBackground,
-            ) {
-                Row(Modifier.fillMaxSize()) {
-                    DieterNavigationRail(
-                        selected = state.destination,
-                        onSelect = handleNavigate,
-                        projectSurfacesEnabled = projectScopedNavigationEnabled(state),
-                        onSettings = { model.openSurface(AppSurface.APP_SETTINGS) },
-                        onCreate = {
-                            when (state.destination) {
-                                Destination.ACTIVITY, Destination.CHATS -> model.openSurface(AppSurface.NEW_CHAT)
-                                Destination.BOARD -> model.openSurface(
-                                    if (state.boardOverviewVisible) AppSurface.NEW_PROJECT else AppSurface.NEW_CARD,
-                                )
-                                Destination.MACHINES, Destination.SCREENS -> Unit
-                                Destination.TERMINALS -> model.showTerminalCreate()
-                                Destination.FILES -> fileCreateVisible = true
-                                Destination.SCHEDULES -> model.openSurface(AppSurface.SCHEDULE_EDITOR)
-                            }
-                        },
-                    )
-                    Column(Modifier.weight(1f).fillMaxHeight()) {
+        // Tools is modal inside this window: its scrim handles pointer input,
+        // and underlying destinations leave the accessibility/focus traversal.
+        Box(Modifier.fillMaxSize().then(if (toolsOpen) Modifier
+            .clearAndSetSemantics { }.focusProperties { canFocus = false } else Modifier)) {
+            if (state.appSurface != null) {
+                Scaffold(
+                    containerColor = MaterialTheme.colorScheme.background,
+                    topBar = {
                         if (globalConnectionStatusVisible) {
                             ConnectionStatusTopBar(
                                 phase = state.connectionPhase,
@@ -287,49 +257,97 @@ fun DieterApp(container: DieterContainer) {
                                 showingCachedData = state.hasCachedWorkspace,
                             )
                         }
-                        Box(
-                            Modifier.weight(1f).fillMaxWidth().then(
-                                if (globalConnectionStatusVisible) Modifier else Modifier.statusBarsPadding(),
-                            ),
-                        ) {
-                            DestinationContent(state, model, expanded = true)
+                    },
+                ) { padding ->
+                    AppSurfaceContent(state, model, container.appUpdateManager, Modifier.fillMaxSize(), padding)
+                }
+            } else if (tabletLayout) {
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = MaterialTheme.colorScheme.background,
+                    contentColor = MaterialTheme.colorScheme.onBackground,
+                ) {
+                    Row(Modifier.fillMaxSize()) {
+                        DieterNavigationRail(
+                            selected = state.destination,
+                            onSelect = handleNavigate,
+                            projectSurfacesEnabled = projectScopedNavigationEnabled(state),
+                            onSettings = { model.openSurface(AppSurface.APP_SETTINGS) },
+                            onCreate = {
+                                when (state.destination) {
+                                    Destination.ACTIVITY, Destination.CHATS -> model.openSurface(AppSurface.NEW_CHAT)
+                                    Destination.BOARD -> model.openSurface(
+                                        if (state.boardOverviewVisible) AppSurface.NEW_PROJECT else AppSurface.NEW_CARD,
+                                    )
+                                    Destination.MACHINES, Destination.SCREENS -> Unit
+                                    Destination.TERMINALS -> model.showTerminalCreate()
+                                    Destination.FILES -> fileCreateVisible = true
+                                    Destination.SCHEDULES -> model.openSurface(AppSurface.SCHEDULE_EDITOR)
+                                }
+                            },
+                        )
+                        Column(Modifier.weight(1f).fillMaxHeight()) {
+                            if (globalConnectionStatusVisible) {
+                                ConnectionStatusTopBar(
+                                    phase = state.connectionPhase,
+                                    lastConnectedAtMillis = state.lastConnectedAtMillis,
+                                    showingCachedData = state.hasCachedWorkspace,
+                                )
+                            }
+                            Box(
+                                Modifier.weight(1f).fillMaxWidth().then(
+                                    if (globalConnectionStatusVisible) Modifier else Modifier.statusBarsPadding(),
+                                ),
+                            ) {
+                                DestinationContent(state, model, expanded = true)
+                            }
                         }
                     }
                 }
-            }
-        } else {
-            val detailVisible = state.selectedCardId != null || state.fileDocument != null
-            val boardLanePagerVisible = state.destination == Destination.BOARD && !state.boardOverviewVisible
-            Scaffold(
-                containerColor = MaterialTheme.colorScheme.background,
-                topBar = {
-                    if (globalConnectionStatusVisible) {
-                        ConnectionStatusTopBar(
-                            phase = state.connectionPhase,
-                            lastConnectedAtMillis = state.lastConnectedAtMillis,
-                            showingCachedData = state.hasCachedWorkspace,
+            } else {
+                val detailVisible = state.selectedCardId != null || state.fileDocument != null
+                val boardLanePagerVisible = state.destination == Destination.BOARD && !state.boardOverviewVisible
+                Scaffold(
+                    containerColor = MaterialTheme.colorScheme.background,
+                    topBar = {
+                        if (globalConnectionStatusVisible) {
+                            ConnectionStatusTopBar(
+                                phase = state.connectionPhase,
+                                lastConnectedAtMillis = state.lastConnectedAtMillis,
+                                showingCachedData = state.hasCachedWorkspace,
+                            )
+                        }
+                    },
+                    bottomBar = {
+                        if (!detailVisible) {
+                            val toolsFocus = remember { FocusRequester() }
+                            var toolsWereOpen by remember { mutableStateOf(false) }
+                            LaunchedEffect(toolsOpen) {
+                                if (toolsOpen) toolsWereOpen = true
+                                else if (toolsWereOpen) {
+                                    toolsWereOpen = false
+                                    toolsFocus.requestFocus()
+                                }
+                            }
+                            DieterBottomBar(
+                                selected = state.destination,
+                                onSelect = handleNavigate,
+                                onTools = { toolsOpen = true },
+                                toolsFocusRequester = toolsFocus,
+                            )
+                        }
+                    },
+                ) { padding ->
+                    if (state.destination.isPrimaryDestination()) {
+                        PrimaryDestinationPager(
+                            state = state,
+                            model = model,
+                            contentPadding = padding,
+                            userScrollEnabled = !detailVisible && !boardLanePagerVisible,
                         )
+                    } else {
+                        DestinationContent(state, model, expanded = false, contentPadding = padding)
                     }
-                },
-                bottomBar = {
-                    if (!detailVisible) {
-                        DieterBottomBar(
-                            selected = state.destination,
-                            onSelect = handleNavigate,
-                            onTools = { toolsOpen = true },
-                        )
-                    }
-                },
-            ) { padding ->
-                if (state.destination.isPrimaryDestination()) {
-                    PrimaryDestinationPager(
-                        state = state,
-                        model = model,
-                        contentPadding = padding,
-                        userScrollEnabled = !detailVisible && !boardLanePagerVisible,
-                    )
-                } else {
-                    DestinationContent(state, model, expanded = false, contentPadding = padding)
                 }
             }
         }
@@ -387,7 +405,10 @@ private fun PrimaryDestinationPager(
     )
     LaunchedEffect(state.destination) {
         val page = primaryNavigationItems.indexOfFirst { it.destination == state.destination }.coerceAtLeast(0)
-        if (pagerState.currentPage != page) pagerState.animateScrollToPage(page)
+        // A tab tap selects its destination immediately. Animating a full
+        // pager here repeatedly lays out every intervening page and delays
+        // input readiness; gesture-driven swipes retain the pager animation.
+        if (pagerState.currentPage != page) pagerState.scrollToPage(page)
     }
     LaunchedEffect(pagerState) {
         snapshotFlow { pagerState.settledPage }
@@ -404,9 +425,11 @@ private fun PrimaryDestinationPager(
         beyondViewportPageCount = 1,
         key = { primaryNavigationItems[it].destination },
     ) { page ->
+        val pageDestination = primaryNavigationItems[page].destination
+        val pageState = remember(pageDestination) { PrimaryPageState(pageDestination) }.project(state)
         DestinationContent(
-            destination = primaryNavigationItems[page].destination,
-            state = state,
+            destination = pageDestination,
+            state = pageState,
             model = model,
             expanded = false,
             contentPadding = contentPadding,

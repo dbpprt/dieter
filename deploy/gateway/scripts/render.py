@@ -51,7 +51,10 @@ def settings(value):
     require(all(type(n) is int and n > 0 for n in t.values()), "TURN bounds must be positive integers")
     require(1024 <= t["minPort"] < t["maxPort"] <= 65535, "invalid relay port range")
     require(t["userQuota"] <= t["totalQuota"] <= 4096 and t["maxPort"] - t["minPort"] + 1 >= 2 * t["totalQuota"], "insufficient relay ports")
-    require(t["maxBps"] <= t["bpsCapacity"] <= 1250000000, "invalid TURN bandwidth budget")
+    # Coturn reserves max-bps on Allocate when clients omit BANDWIDTH. A
+    # smaller pool silently reduces total-quota and rejects valid load with 486.
+    require(t["maxBps"] * t["totalQuota"] <= t["bpsCapacity"] <= 1250000000,
+            "TURN bandwidth reservation pool must cover maxBps * totalQuota")
     keys(value["limits"], "gatewayMemoryMiB turnMemoryMiB caddyMemoryMiB haproxyMemoryMiB pids nofile".split(), "limits")
     require(all(type(n) is int and 16 <= n <= 1048576 for n in value["limits"].values()), "invalid resource bounds")
     return value
@@ -184,10 +187,10 @@ backend turn
     caddy_service = service(deps["caddy"], limits["caddyMemoryMiB"], "0:0")
     caddy_service.update({"cap_add": ["NET_BIND_SERVICE"], "volumes": [install + "/public/Caddyfile:/etc/caddy/Caddyfile:ro",
         s["caddyData"] + ":/data", s["caddyConfig"] + ":/config", s["runtimeRoot"] + ":/run/dieter",
-        s["configRoot"] + "/acme-webroot:/acme:ro", certs + ":/certificates:ro"]})
+        s["configRoot"] + "/acme-webroot:/acme:ro", certs + "/gateway:/certificates/gateway:ro"]})
     coturn = service(deps["coturn"], limits["turnMemoryMiB"], "65534:65533")
     coturn.update({"entrypoint": ["turnserver"], "command": ["-c", "/etc/coturn/turnserver.conf"],
-                   "volumes": [protected + "/turnserver.conf:/etc/coturn/turnserver.conf:ro", certs + ":/certificates:ro"]})
+                   "volumes": [protected + "/turnserver.conf:/etc/coturn/turnserver.conf:ro", certs + "/turn:/certificates/turn:ro"]})
     # The pinned coturn executable carries cap_net_bind_service in its file
     # capabilities. Linux rejects exec when that capability is absent from the
     # bounding set, even when all selected listener ports are above 1024.

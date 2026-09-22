@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"crypto/sha256"
 	"errors"
 	"io/fs"
 	"mime"
@@ -81,6 +80,19 @@ func (api *grpcAPI) RenameBoard(_ context.Context, request *dieterv1.RenameBoard
 
 func (api *grpcAPI) GetState(ctx context.Context, request *dieterv1.GetStateRequest) (*dieterv1.State, error) {
 	if request.GetAllProjects() {
+		// Conditional peer-directory reads need no workspace clone when the
+		// durable commit boundary is unchanged. Pending mutations must still
+		// cross the writer lock/recovery path below.
+		if unchanged := request.GetIfNotModified(); unchanged != nil {
+			cursor, _, err := api.server.store.SyncEvents(^uint64(0), 1)
+			if err != nil {
+				return nil, grpcFailure(err)
+			}
+			current := protoSyncCursor(cursor)
+			if unchanged.GetEpoch() == current.GetEpoch() && unchanged.GetSequence() == current.GetSequence() && unchanged.GetProjectionVersion() == current.GetProjectionVersion() && !api.server.store.SyncMutationPending() {
+				return &dieterv1.State{Cursor: current, NotModified: true}, nil
+			}
+		}
 		value, cursor, err := api.server.store.GlobalStateContext(ctx)
 		if err != nil {
 			return nil, grpcFailure(err)
@@ -104,41 +116,46 @@ func (api *grpcAPI) GetState(ctx context.Context, request *dieterv1.GetStateRequ
 }
 
 func (api *grpcAPI) watchState(ctx context.Context, request *dieterv1.WatchStateRequest, send func(*dieterv1.State) error) error {
-	interval := boundedInterval(request.GetIntervalMs(), time.Second)
+	wake := newChangeWait(api.server.store)
+	defer wake.close()
+	if request.GetIntervalMs() > 0 {
+		wake.minimumInterval = boundedInterval(request.GetIntervalMs(), time.Second)
+	}
 	filter := request.GetFilter()
 	if filter == nil {
 		filter = &dieterv1.GetStateRequest{}
 	}
-	var previous [sha256.Size]byte
+	var previous *dieterv1.State
+	var revision store.SyncCursor
 	sendChanged := func() error {
+		nextRevision, err := api.server.store.MetadataCursor()
+		if err != nil {
+			return err
+		}
+		if previous != nil && nextRevision == revision && !api.server.store.SyncMutationPending() {
+			return nil
+		}
 		value, err := api.GetState(ctx, filter)
 		if err != nil {
 			return err
 		}
-		raw, err := proto.MarshalOptions{Deterministic: true}.Marshal(value)
-		if err != nil {
-			return err
-		}
-		digest := sha256.Sum256(raw)
-		if digest == previous {
+		if proto.Equal(value, previous) {
+			revision = nextRevision
 			return nil
 		}
-		previous = digest
+		revision = nextRevision
+		previous = value
 		return send(value)
 	}
 	if err := sendChanged(); err != nil {
 		return grpcFailure(err)
 	}
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
 	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-ticker.C:
-			if err := sendChanged(); err != nil {
-				return grpcFailure(err)
-			}
+		if err := wake.wait(ctx); err != nil {
+			return err
+		}
+		if err := sendChanged(); err != nil {
+			return grpcFailure(err)
 		}
 	}
 }
@@ -888,58 +905,60 @@ func (api *grpcAPI) GetToolOutput(_ context.Context, request *dieterv1.GetToolOu
 }
 
 func (api *grpcAPI) watchConversation(ctx context.Context, request *dieterv1.WatchConversationRequest, send func(*dieterv1.ConversationUpdate) error) error {
-	interval := time.Duration(request.GetIntervalMs()) * time.Millisecond
-	if interval <= 0 {
-		interval = 350 * time.Millisecond
+	wake := newChangeWait(api.server.store)
+	if request.GetIntervalMs() > 0 {
+		wake.minimumInterval = max(100*time.Millisecond, min(5*time.Second, time.Duration(request.GetIntervalMs())*time.Millisecond))
 	}
-	if interval < 100*time.Millisecond {
-		interval = 100 * time.Millisecond
-	}
-	if interval > 5*time.Second {
-		interval = 5 * time.Second
-	}
-	var previous [sha256.Size]byte
+	defer wake.close()
 	var previousSnapshot *dieterv1.ConversationSnapshot
+	var revision conversationWatchRevision
+	var polls, builds, frames uint64
+	started := time.Now()
+	defer func() {
+		api.server.log.Debug("conversation watch", "durationMs", time.Since(started).Milliseconds(), "polls", polls, "snapshotBuilds", builds, "frames", frames)
+	}()
 	resumeSeq := request.GetAfterSeq()
 	sendChanged := func() error {
+		polls++
+		nextRevision, pending, err := api.conversationWatchRevision(request.GetCardId())
+		if err != nil {
+			return err
+		}
+		if previousSnapshot != nil && nextRevision == revision && !pending {
+			return nil
+		}
+		builds++
 		snapshot, err := api.conversationSnapshot(request.GetCardId(), int(request.GetLimit()), nil)
 		if err != nil {
 			return err
 		}
-		raw, err := proto.MarshalOptions{Deterministic: true}.Marshal(snapshot)
-		if err != nil {
-			return err
-		}
-		digest := sha256.Sum256(raw)
+		// Capture the revision before reading. A concurrent commit then forces
+		// another read, rather than pairing older data with a newer checkpoint.
+		revision = nextRevision
 		if previousSnapshot == nil && resumeSeq > 0 && resumeSeq == snapshot.GetConversation().GetLastSeq() {
-			previous = digest
 			previousSnapshot = snapshot
 			return nil
 		}
-		if digest == previous {
+		if proto.Equal(snapshot, previousSnapshot) {
 			return nil
 		}
 		update := conversationDelta(previousSnapshot, snapshot)
 		if err := send(update); err != nil {
 			return err
 		}
-		previous = digest
+		frames++
 		previousSnapshot = snapshot
 		return nil
 	}
 	if err := sendChanged(); err != nil {
 		return grpcFailure(err)
 	}
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
 	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-ticker.C:
-			if err := sendChanged(); err != nil {
-				return grpcFailure(err)
-			}
+		if err := wake.wait(ctx); err != nil {
+			return err
+		}
+		if err := sendChanged(); err != nil {
+			return grpcFailure(err)
 		}
 	}
 }

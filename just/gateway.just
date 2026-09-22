@@ -125,6 +125,11 @@ deployment-integration:
 turn-test:
     go run ./scripts/gateway-turn-probe
 
+# Inspect a protected recovery point or restore onto an empty Debian host; see --help.
+[positional-arguments]
+recover *args:
+    python3 deploy/gateway/scripts/recover.py "$@"
+
 # Publish the signed image and durable OCI deployment bundle from the same commit.
 publish-bundle:
     python3 deploy/gateway/scripts/bundle.py publish

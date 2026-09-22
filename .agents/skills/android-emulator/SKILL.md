@@ -96,8 +96,10 @@ and disables uninstalling incompatible APKs; do not override these safeguards. N
 gateway and authenticated routes. Never expose or replace the operator's raw
 loopback service or edit `DIETER_HOME`. Isolated integration fixtures are allowed
 and preferred for input, transport, and lifecycle tests. `just android screens-test`
-uses disposable storage, an enrolled test identity, a random loopback port and a
-one-run bearer token. Its temporary ADB reverse maps only that fixture port and
+installs the separate `com.dbpprt.dieter.screenfixture` application and uses
+disposable storage, an enrolled test identity, a random loopback port and a
+one-run bearer token. It refuses an already-running fixture package. The operator's
+normal application is not replaced or stopped. Its temporary ADB reverse maps only that fixture port and
 is removed on exit. It never changes saved Android credentials or the live service.
 Use `DIETER_SCREEN_TEST_SOURCE=screen just android screens-test` to additionally
 exercise real ScreenCaptureKit; the default exercises native synthetic video and
@@ -141,7 +143,26 @@ authorization.
 ```sh
 just android connected-test
 just android connected-test com.dbpprt.dieter.SomeTest
+just android sync-test
+just android performance-test
 ```
+
+`sync-test` builds a disposable enrolled gateway, maps its random port only to
+the selected emulator, runs live/background transcript, queue and offline
+admission checks, then removes the reverse and reaps its fixture. Evidence is
+retained under `tmp/performance-sync`. It needs a healthy running emulator.
+
+The full, unfiltered `connected-test` also runs `performance-test`. Frame
+budgets execute against a non-debuggable build inheriting release settings;
+debug instrumentation explicitly skips that performance-only case. The
+performance recipe is emulator-only, uses the debug signing key with the same
+application ID to preserve fixture data, and restores the normal debug APK on
+exit without uninstalling either APK. It retains its results under
+`app/build/outputs/androidTest-results/connected/performance`. A class-filtered
+`connected-test` runs debug instrumentation only; use `performance-test` for
+the real-input frame and idle-CPU measurement. Keep debug timings as diagnostic
+evidence, not release frame qualification. Physical-device energy and display
+qualification remain separate.
 
 Inspect instrumentation before running it because it uses the configured real
 gateway. Use a class filter while iterating and the complete connected suite

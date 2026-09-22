@@ -61,7 +61,8 @@ def main():
                       runtimeRoot='/run/dieter-lifecycle', caddyData=str(FIXTURE / 'caddy-data'), caddyConfig=str(FIXTURE / 'caddy-config'))
         private = {'githubClientID': 'fixture', 'githubClientSecret': 'fixture', 'authSecret': secrets.token_hex(32),
                    'turnSharedSecret': 'fixture-$"\\= café/' + secrets.token_hex(32)}
-        policy = {key: config[key] for key in ('installRoot', 'configRoot', 'runtimeRoot', 'project', 'gatewayHost', 'allowedUserIDs')}
+        policy = {key: config[key] for key in ('installRoot', 'configRoot', 'runtimeRoot', 'project', 'gatewayHost', 'allowedUserIDs',
+                                              'stateVolume', 'caddyData', 'caddyConfig', 'publicIPv4', 'turnIPv4', 'turnHost', 'legacyHosts')}
         policy.update(stateRoot=str(FIXTURE / 'state'), readinessTimeoutSeconds=600,
                       controllerLink='/usr/local/lib/dieter-deploy', backupCommand=[str(FIXTURE / 'backup.py')])
         atomic(policy_file, canonical(policy))

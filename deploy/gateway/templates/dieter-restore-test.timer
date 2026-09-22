@@ -1,0 +1,10 @@
+[Unit]
+Description=Monthly isolated gateway recovery verification
+
+[Timer]
+OnCalendar=*-*-01 05:30:00
+RandomizedDelaySec=30min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -1318,7 +1318,7 @@ extension DieterStore {
         let started = Date()
         var request = Dieter_V1_GetStateRequest()
         request.allProjects = true
-        if let cursorData = syncDiskState.projections[machine.id]?.cursor,
+        if !includeArchivedChats, let cursorData = syncDiskState.projections[machine.id]?.cursor,
             let cursor = try? Dieter_V1_SyncCursor(serializedBytes: cursorData)
         {
             request.ifNotModified = cursor

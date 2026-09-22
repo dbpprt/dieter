@@ -1,6 +1,8 @@
 package com.dbpprt.dieter.data
 
 import android.os.SystemClock
+import android.os.Process
+import android.util.Log
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.dbpprt.dieter.DieterApplication
@@ -137,7 +139,7 @@ class BackgroundTranscriptSyncIntegrationTest {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val application = context.applicationContext as DieterApplication
         val manager = application.container.connectionManager
-        val originalMode = manager.state.value.backgroundSyncMode
+        val originalConnection = SavedConnectionConfiguration(manager)
         val fixture = GrpcDieterRepository(context)
         var chatId: String? = null
         var secondChatId: String? = null
@@ -213,7 +215,8 @@ class BackgroundTranscriptSyncIntegrationTest {
                     state.selectedCardId == chat.id && state.conversation?.detail?.card?.id == chat.id
                 }
             }
-            assertTrue("The warmed transcript should be visible within one second", SystemClock.elapsedRealtime() - openedAt < 1_000)
+            val initialOpenMs = SystemClock.elapsedRealtime() - openedAt
+            assertTrue("Warm transcript open took ${initialOpenMs}ms", initialOpenMs < 250)
             assertFalse("Opening a Live-projected chat must not show a redundant sync", opened.conversationSyncing)
 
             phaseObserver = launch {
@@ -221,22 +224,60 @@ class BackgroundTranscriptSyncIntegrationTest {
                     if (it.phase !in setOf(ConnectionPhase.CONNECTED, ConnectionPhase.SYNCING)) lostConnection.set(true)
                 }
             }
+            val switchTimes = mutableListOf<Long>()
             repeat(25) {
                 manager.onAppBackgrounded()
                 delay(150)
                 manager.onAppForegrounded(project.id)
                 for (selected in listOf(secondChat, chat)) {
+                    val switchedAt = SystemClock.elapsedRealtime()
                     model.openCard(selected, Destination.CHATS)
                     val switched = withTimeout(1_000) {
                         model.state.first { it.selectedCardId == selected.id && it.conversation?.detail?.card?.id == selected.id }
                     }
+                    switchTimes += SystemClock.elapsedRealtime() - switchedAt
                     assertFalse("Switching warmed chats must keep the workspace live", switched.conversationSyncing)
                 }
             }
 
+            val sortedSwitches = switchTimes.sorted()
+            val switchP95 = sortedSwitches[(sortedSwitches.size * 0.95).toInt().coerceAtMost(sortedSwitches.lastIndex)]
+            Log.i("DieterPerformance", "liveChatOpen initialMs=$initialOpenMs switches=${switchTimes.size} p95Ms=$switchP95 maxMs=${sortedSwitches.last()}")
+            assertTrue("Warm chat-switch p95 was ${switchP95}ms", switchP95 < 250)
+
             // The old implementation treated a correctly silent resumed
             // stream as dead after 4.5 seconds and rebuilt the connection.
-            delay(6_000)
+            // Initial prompts can reach the cache before the mock worker has
+            // started. Require both replies and terminal state before calling
+            // this idle; worker startup and streaming belong to active cost.
+            withTimeout(60_000) {
+                manager.state.first { state ->
+                    listOf(chat.id, secondChat.id).all { id ->
+                        state.activeConversations[id]?.let { snapshot ->
+                            snapshot.detail.card.runtime == "idle" &&
+                                snapshot.conversation.status == "idle" &&
+                                snapshot.conversation.messagesList.any { it.role == "assistant" }
+                        } == true
+                    }
+                }
+            }
+            // Exclude pending cache/transport cleanup from the 50 switches.
+            delay(2_000)
+            val idleSampleMillis = argument("idleSampleMillis").toLongOrNull()?.coerceIn(6_000, 60_000) ?: 6_000
+            repeat(argument("idleSampleWindows").toIntOrNull()?.coerceIn(1, 2) ?: 1) { window ->
+                val beforeThreads = threadCpuTicks()
+                val idleCpuStarted = Process.getElapsedCpuTime()
+                val idleStarted = SystemClock.elapsedRealtime()
+                delay(idleSampleMillis)
+                val cpuMillis = Process.getElapsedCpuTime() - idleCpuStarted
+                val wallMillis = SystemClock.elapsedRealtime() - idleStarted
+                val ticksPerSecond = android.system.Os.sysconf(android.system.OsConstants._SC_CLK_TCK)
+                val threadCosts = threadCpuTicks().mapNotNull { (id, current) ->
+                    val previous = beforeThreads[id] ?: return@mapNotNull null
+                    current.first to (current.second - previous.second) * 1000 / ticksPerSecond
+                }.sortedByDescending { it.second }.take(8)
+                Log.i("DieterPerformance", "liveIdle window=${window + 1} cpuMs=$cpuMillis wallMs=$wallMillis threads=$threadCosts")
+            }
             assertFalse(model.state.value.conversationSyncing)
             assertEquals(ConnectionPhase.CONNECTED, manager.state.value.phase)
             assertEquals(daemon.id, manager.state.value.projectReplicas[project.id]?.daemonId)
@@ -250,12 +291,20 @@ class BackgroundTranscriptSyncIntegrationTest {
             }
             fixture.close()
             runCatching {
-                manager.disconnect()
-                manager.updateEndpoints(DIETER_ENDPOINTS)
-                manager.setBackgroundSyncMode(originalMode)
+                originalConnection.restore()
             }
         }
     }
+
+    private fun threadCpuTicks(): Map<String, Pair<String, Long>> =
+        java.io.File("/proc/self/task").listFiles().orEmpty().mapNotNull { directory ->
+            runCatching {
+                val stat = java.io.File(directory, "stat").readText()
+                val name = stat.substringAfter('(').substringBeforeLast(')')
+                val fields = stat.substringAfterLast(") ").split(' ')
+                directory.name to (name to (fields[11].toLong() + fields[12].toLong()))
+            }.getOrNull()
+        }.toMap()
 
     private fun isolatedOrigin(): DieterEndpoint = DieterEndpoint(
         id = "isolated_gateway_bg_sync_${UUID.randomUUID()}",

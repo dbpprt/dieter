@@ -24,11 +24,13 @@ func controlWebRTCRoutesNativeRPCAndReportsSelectedMode() async throws {
     let gatewayTask = Task { try await gateway.run() }
     defer { gatewayTask.cancel(); gateway.shutdown() }
     let manager = ConnectionManager()
+    let expectedRoute: MachineConnectionRoute =
+        ProcessInfo.processInfo.environment["DIETER_TEST_FORCE_TURN"] == "1"
+        ? .webrtcTURN : .webrtcDirect
     let plane = try await manager.selectDataPlane(gateway: gateway, target: target, gatewayAccessToken: token)
     defer { plane.shutdown() }
-    #expect(plane.connection.route == .webrtcDirect)
+    #expect(plane.connection.route == expectedRoute)
     #expect(!plane.rpc.isLoopbackDataPlane)
-    #expect(plane.connection.route.rawValue == "WebRTC · Direct")
     let health = try await plane.rpc.health(timeout: .seconds(5))
     #expect(health.status == "ok")
     var request = Dieter_V1_GetStateRequest(); request.allProjects = true
@@ -88,7 +90,7 @@ func controlWebRTCRoutesNativeRPCAndReportsSelectedMode() async throws {
     let reconnected = try await manager.selectDataPlane(
         gateway: gateway, target: target, gatewayAccessToken: token, directCandidateScope: .loopbackOnly)
     defer { reconnected.shutdown() }
-    #expect(reconnected.connection.route == .webrtcDirect)
+    #expect(reconnected.connection.route == expectedRoute)
     #expect(try await reconnected.rpc.health(timeout: .seconds(5)).status == "ok")
 }
 

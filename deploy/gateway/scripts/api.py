@@ -11,6 +11,21 @@ from host import Host
 
 def handle(host, request):
     command = request.get("command")
+    if command == "record-qualification":
+        keys(request, ("command", "operation", "report"), "qualification")
+        from qualification import record
+        with host.lock():
+            return record(host, request["operation"], request["report"])
+    if command == "record-observation":
+        keys(request, ("command", "operation", "report"), "observation")
+        from qualification import record_observation
+        with host.lock():
+            return record_observation(host, request["operation"], request["report"])
+    if command == "qualification-status":
+        keys(request, ("command",), "qualification status")
+        from common import read_json
+        path = host.state / "qualification.json"
+        return read_json(path) if path.is_file() else {"qualified": False}
     if command == "probe-request":
         keys(request, ("command", "operation", "transport"), "probe")
         require(host.status(request["operation"])["state"] == "checking", "probes require an active deployment")
@@ -63,6 +78,17 @@ def handle(host, request):
         keys(request, ("command",), "backup")
         run(["systemctl", "start", "--no-block", "dieter-backup.service"])
         return {"backupStarted": True}
+    if command == "restore-test":
+        keys(request, ("command",), "restore test")
+        run(["systemctl", "start", "--no-block", "dieter-restore-test.service"])
+        return {"restoreTestStarted": True}
+    if command == "restore-test-status":
+        keys(request, ("command",), "restore test status")
+        from common import read_json
+        path = host.state / "restore-test.json"
+        result = read_json(path) if path.is_file() else {"completed": False}
+        result["service"] = run(["systemctl", "show", "dieter-restore-test.service", "--property", "ActiveState,SubState,Result", "--no-pager"]).decode().splitlines()
+        return result
     raise ValueError("unsupported deployment operation")
 
 

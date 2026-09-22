@@ -286,6 +286,7 @@ data class DieterUiState(
     val machineOperationMessage: String? = null,
     val cardOperations: Map<String, CardOperation> = emptyMap(),
     val cardOperationErrors: Map<String, String> = emptyMap(),
+    val pendingCardMoves: Map<String, OptimisticCardMove> = emptyMap(),
     val workspaceReview: WorkspaceReviewState = WorkspaceReviewState(),
 ) {
     fun conversationHost(card: Card): ProjectReplica? = presentedEndpointConnections.firstOrNull { it.daemonId == card.ownerDaemonId }?.let {
@@ -462,6 +463,8 @@ class DieterViewModel internal constructor(
     private var connectionDialogManuallyRequested = false
     private var connectionDialogDismissedInterruptionKey: Long? = null
     private var lastRemoteState: State? = null
+    private val activityProjection = ActivityDetailsProjection()
+    private val projectOrderProjection = ProjectOrderProjection()
     private val conversationCache = ConversationUiCache()
     private val projectWorkspaceJobs = mutableMapOf<String, Job>()
     private var directoryListingGeneration = 0L
@@ -763,6 +766,13 @@ class DieterViewModel internal constructor(
             val liveConversation = selectedCardId?.takeIf { cardId ->
                 connection.activeConversations.containsKey(cardId) && connectionManager.liveSyncCoversConversation(cardId)
             }
+            val cardProjection = projectCardsDuringOperations(
+                remoteCards = connection.cards,
+                localCards = if (current.cardOperations.isEmpty() && current.pendingCardMoves.isEmpty()) emptyList() else current.spaceCards + current.cards,
+                operations = current.cardOperations,
+                pendingMoves = current.pendingCardMoves,
+            )
+            val confirmedMoveIds = current.pendingCardMoves.keys - cardProjection.pendingMoves.keys
             current.copy(
                 endpoint = connection.endpoint?.address
                     ?: connection.configuredConnections.firstOrNull { it.id == connection.activeGatewayId }?.address
@@ -793,16 +803,12 @@ class DieterViewModel internal constructor(
                 providerQuotasLoading = if (gatewayChanged) false else current.providerQuotasLoading,
                 providerQuotaError = if (gatewayChanged) null else current.providerQuotaError,
                 providerQuotaMutatingAccounts = if (gatewayChanged) emptySet() else current.providerQuotaMutatingAccounts,
-                activityDetails = activityDetails(connection.activeConversations),
+                activityDetails = activityProjection.apply(connection.activeConversations),
                 chats = connection.chats,
-                projects = orderedProjects(connection.projects, current.projectOrder),
+                projects = projectOrderProjection.apply(connection.projects, current.projectOrder),
                 projectReplicas = connection.projectReplicas,
                 spaceBoards = connection.boards,
-                spaceCards = reconcileCardsDuringOperations(
-                    remoteCards = connection.cards,
-                    localCards = current.spaceCards + current.cards,
-                    operations = current.cardOperations,
-                ),
+                spaceCards = cardProjection.cards,
                 selectedCardId = selectedCardId,
                 composerDraft = conversationDrafts.draft(selectedCardId),
                 conversation = selectedCardId?.let(connection.activeConversations::get) ?: current.conversation,
@@ -826,6 +832,8 @@ class DieterViewModel internal constructor(
                 machineInformationErrors = if (gatewayChanged) emptyMap() else current.machineInformationErrors.filterKeys(liveMachineIds::contains),
                 machineCpuHistory = if (gatewayChanged) emptyMap() else current.machineCpuHistory.filterKeys(liveMachineIds::contains),
                 machineGpuHistory = if (gatewayChanged) emptyMap() else current.machineGpuHistory.filterKeys(liveMachineIds::contains),
+                pendingCardMoves = cardProjection.pendingMoves,
+                cardOperations = current.cardOperations - confirmedMoveIds,
             )
         }
         val resolvedSelectedCardId = _state.value.selectedCardId
@@ -1062,18 +1070,23 @@ class DieterViewModel internal constructor(
         val lane = previous.selectedLane.takeIf { id -> board?.lanesList?.any { it.id == id } == true }
             ?: board?.lanesList?.firstOrNull()?.id.orEmpty()
         _state.update { current ->
+            val cardProjection = projectCardsDuringOperations(
+                remoteCards = remote.cardsList,
+                localCards = current.cards,
+                operations = current.cardOperations,
+                pendingMoves = current.pendingCardMoves,
+            )
+            val confirmedMoveIds = current.pendingCardMoves.keys - cardProjection.pendingMoves.keys
             current.copy(
                 loading = false,
                 error = null,
                 boards = remote.boardsList,
-                cards = reconcileCardsDuringOperations(
-                    remoteCards = remote.cardsList,
-                    localCards = current.cards,
-                    operations = current.cardOperations,
-                ),
+                cards = cardProjection.cards,
                 selectedProjectId = projectId,
                 selectedBoardId = boardId,
                 selectedLane = lane,
+                pendingCardMoves = cardProjection.pendingMoves,
+                cardOperations = current.cardOperations - confirmedMoveIds,
             ).preserveConnectionPresentation(current)
         }
         when (_state.value.destination) {
@@ -1509,7 +1522,22 @@ class DieterViewModel internal constructor(
         spacesJob = viewModelScope.launch {
             _state.update { it.copy(spacesLoading = true) }
             val connection = connectionManager.state.value
-            _state.update { it.copy(spaceBoards = connection.boards, spaceCards = connection.cards, spacesLoading = false) }
+            _state.update { current ->
+                val cardProjection = projectCardsDuringOperations(
+                    remoteCards = connection.cards,
+                    localCards = if (current.cardOperations.isEmpty() && current.pendingCardMoves.isEmpty()) emptyList() else current.spaceCards + current.cards,
+                    operations = current.cardOperations,
+                    pendingMoves = current.pendingCardMoves,
+                )
+                val confirmedMoveIds = current.pendingCardMoves.keys - cardProjection.pendingMoves.keys
+                current.copy(
+                    spaceBoards = connection.boards,
+                    spaceCards = cardProjection.cards,
+                    spacesLoading = false,
+                    pendingCardMoves = cardProjection.pendingMoves,
+                    cardOperations = current.cardOperations - confirmedMoveIds,
+                )
+            }
         }
     }
 
@@ -1675,11 +1703,13 @@ class DieterViewModel internal constructor(
             if (plan.cacheIsCurrent) {
                 Log.i(DieterConnectionManager.SYNC_LOG_TAG, "chatReady source=live-cache elapsedMs=${System.currentTimeMillis() - openedAt}")
             }
-            // Cold, Smart, and App-only opens hedge the fresh stream with a
-            // unary fetch. A Live-projected tail is already authoritative and
+            // Cold, Smart, and App-only opens give the stream a head start
+            // before hedging a stalled initial snapshot with a unary fetch. A Live-projected tail is already authoritative and
             // must not be mistaken for a dead stream when its resume is quiet.
             val hedge = if (plan.needsFreshFrame) {
                 launch {
+                    delay(500L)
+                    if (delivered) return@launch
                     val snapshot = runCatching {
                         withTimeout(HEDGE_FETCH_TIMEOUT_MS) { repository.conversation(cardId, limit = CONVERSATION_PAGE_SIZE) }
                     }.getOrNull() ?: return@launch
@@ -2165,20 +2195,103 @@ class DieterViewModel internal constructor(
         repository.addComment(id, text)
     }
 
-    fun moveCard(lane: String, position: Long? = null) = action {
-        val id = _state.value.selectedCardId ?: return@action
-        if (lane == "running") connectionManager.ensureConversationRoute(id)
-        val card = _state.value.cards.firstOrNull { it.id == id }
-        val peers = _state.value.cards.filter { it.id != id && it.boardId == card?.boardId && it.lane == lane }.sortedBy { it.position }
-        val after = position?.let { pos -> peers.lastOrNull { it.position < pos }?.id }.orEmpty()
-        val before = position?.let { pos -> peers.firstOrNull { it.position >= pos }?.id }.orEmpty()
-        val moved = repository.moveCard(id, lane, after, before, card?.placementRevision.orEmpty())
-        updateCard(moved)
+    fun moveCard(lane: String, position: Long? = null) {
+        val id = _state.value.selectedCardId ?: return
+        moveCardOptimistically(id, lane, position)
     }
 
-    fun moveBoardCard(cardId: String, lane: String) = action {
-        if (lane == "running") connectionManager.ensureConversationRoute(cardId)
-        updateCard(repository.moveCard(cardId, lane))
+    fun moveBoardCard(cardId: String, lane: String) {
+        moveCardOptimistically(cardId, lane)
+    }
+
+    private fun moveCardOptimistically(cardId: String, lane: String, position: Long? = null) {
+        val snapshot = _state.value
+        if (snapshot.cardOperations.containsKey(cardId)) return
+        val original = (snapshot.cards + snapshot.spaceCards).firstOrNull { it.id == cardId }
+            ?: snapshot.selectedCard?.takeIf { it.id == cardId }
+            ?: return
+        val peers = (snapshot.cards + snapshot.spaceCards)
+            .distinctBy(Card::getId)
+            .filter { it.id != cardId && it.boardId == original.boardId && it.lane == lane }
+            .sortedBy { it.position }
+        val optimisticPosition = position ?: ((peers.maxOfOrNull(Card::getPosition) ?: 0L) + 1_024L)
+        val after = position?.let { target -> peers.lastOrNull { it.position < target }?.id }.orEmpty()
+        val before = position?.let { target -> peers.firstOrNull { it.position >= target }?.id }.orEmpty()
+        val operationId = UUID.randomUUID().toString()
+        val pending = OptimisticCardMove(
+            operationId = operationId,
+            lane = lane,
+            position = optimisticPosition,
+            confirmsPosition = position != null || original.lane == lane,
+        )
+        val optimistic = pending.applyingTo(original)
+        _state.update { current ->
+            current.replacingCard(optimistic).copy(
+                pendingCardMoves = current.pendingCardMoves + (cardId to pending),
+                cardOperations = current.cardOperations + (cardId to CardOperation.MOVING),
+                cardOperationErrors = current.cardOperationErrors - cardId,
+                error = null,
+            )
+        }
+        viewModelScope.launch {
+            try {
+                if (lane == "running") connectionManager.ensureConversationRoute(cardId)
+                else connectionManager.ensureReplicaRoute(original.projectId)
+                if (_state.value.pendingCardMoves[cardId]?.operationId != operationId) return@launch
+                val moved = repository.moveCard(
+                    cardId,
+                    lane,
+                    after,
+                    before,
+                    original.placementRevision,
+                )
+                _state.update { current ->
+                    val active = current.pendingCardMoves[cardId]
+                    when {
+                        active?.operationId == operationId -> {
+                            val updatedMove = active.copy(position = moved.position)
+                            val synchronized = connectionManager.state.value.cards
+                                .firstOrNull { it.id == cardId && updatedMove.isConfirmedBy(it) }
+                            if (synchronized != null) {
+                                current.replacingCard(synchronized).copy(
+                                    pendingCardMoves = current.pendingCardMoves - cardId,
+                                    cardOperations = current.cardOperations - cardId,
+                                )
+                            } else {
+                                current.replacingCard(moved).copy(
+                                    pendingCardMoves = current.pendingCardMoves + (cardId to updatedMove),
+                                )
+                            }
+                        }
+                        active != null -> current
+                        else -> current.replacingCard(moved)
+                    }
+                }
+            } catch (cancelled: CancellationException) {
+                rollbackCardMove(cardId, operationId, original)
+                throw cancelled
+            } catch (error: Throwable) {
+                rollbackCardMove(cardId, operationId, original, readableError(error))
+            }
+        }
+    }
+
+    private fun rollbackCardMove(
+        cardId: String,
+        operationId: String,
+        original: Card,
+        message: String? = null,
+    ) {
+        _state.update { current ->
+            if (current.pendingCardMoves[cardId]?.operationId != operationId) return@update current
+            current.replacingCard(original).copy(
+                pendingCardMoves = current.pendingCardMoves - cardId,
+                cardOperations = current.cardOperations - cardId,
+                cardOperationErrors = if (message == null) current.cardOperationErrors
+                    else current.cardOperationErrors + (cardId to message),
+                error = message ?: current.error,
+            )
+        }
     }
 
     fun startBoardCard(cardId: String) {

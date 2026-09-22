@@ -149,6 +149,26 @@ private struct ScreenFixtureConnection: Decodable {
     window.makeKeyAndOrderFront(nil); window.makeFirstResponder(surface)
     controller.inputFocused = true
 
+    var presentedFPS = 0.0
+    if !real {
+        // Measure initial motion before the synthetic source's deliberate
+        // five-second idle cycle. Clipboard transfer duration depends on the
+        // route, so sampling after those transfers can measure idle instead.
+        let presentationStart = Date(), presentedBefore = controller.renderer.framesPresented
+        try await Task.sleep(for: .seconds(2))
+        presentedFPS =
+            Double(controller.renderer.framesPresented - presentedBefore)
+            / Date().timeIntervalSince(presentationStart)
+        print("Actual Metal presentation rate: \(presentedFPS) fps")
+        #expect(presentedFPS >= 45, "A 60 Hz stream must not be capped by a 30 Hz renderer")
+        #expect(
+            controller.renderer.lastPixelFormat == kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange
+                || controller.renderer.lastPixelFormat == kCVPixelFormatType_420YpCbCr8BiPlanarFullRange)
+    }
+    if environment["DIETER_TEST_FORCE_TURN"] == "1" {
+        #expect(controller.mediaRouteLabel == "Relayed media")
+    }
+
     let clipboardContext = try #require(controller.clipboard.makeRequest?())
     let hostClipboard = NSPasteboard(name: .init(try #require(fixture.clipboardName)))
     defer { hostClipboard.releaseGlobally() }
@@ -252,16 +272,6 @@ private struct ScreenFixtureConnection: Decodable {
         // Continue real native media/feedback for longer than the 15-second
         // session lease while every unary renewal fails. No reconnect allowed.
         try await inject("/test/reject-screen-signals?enabled=true")
-        let presentationStart = Date(), presentedBefore = controller.renderer.framesPresented
-        try await Task.sleep(for: .seconds(2))
-        let presentedFPS =
-            Double(controller.renderer.framesPresented - presentedBefore)
-            / Date().timeIntervalSince(presentationStart)
-        print("Actual Metal presentation rate: \(presentedFPS) fps")
-        #expect(presentedFPS >= 45, "A 60 Hz stream must not be capped by a 30 Hz renderer")
-        #expect(
-            controller.renderer.lastPixelFormat == kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange
-                || controller.renderer.lastPixelFormat == kCVPixelFormatType_420YpCbCr8BiPlanarFullRange)
         let pointerBefore = controller.pointerSequence
         controller.sendPointerMove(x: 0.2, y: 0.2)
         #expect(controller.pointerSequence == pointerBefore + 1, "First pointer movement must dispatch synchronously")
@@ -515,6 +525,9 @@ private struct ScreenFixtureConnection: Decodable {
     print(
         "Latency stages: capture→send \(controller.sessionState.captureToSendMs) ms, paced send \(controller.sessionState.sendMs) ms, jitter buffer \(controller.sessionState.jitterBufferMs) ms, render \(controller.sessionState.renderMs) ms. Cursor embedded=\(controller.sessionState.embeddedCursor) shape=\(controller.remoteCursorState.shapeID); displayed \(controller.sessionState.width)x\(controller.sessionState.height), \(controller.sessionState.receiverFps) fps, encode \(controller.sessionState.encodeMs) ms, RTT \(controller.sessionState.rttMs) ms, \(controller.mediaRouteLabel)"
     )
+    if environment["DIETER_TEST_FORCE_TURN"] == "1" {
+        #expect(controller.mediaRouteLabel == "Relayed media")
+    }
     if !real {
         #expect(routeOpenings == 1, "A healthy peer must survive missing unary lease renewals")
         let rejected = try await inject("/test/reject-screen-signals?enabled=false")

@@ -14,6 +14,30 @@ import (
 	"github.com/dbpprt/dieter/internal/model"
 )
 
+func TestOrphanScanIgnoresReplicatedRemoteTurns(t *testing.T) {
+	local, remote := peerFixture(t, "local"), peerFixture(t, "remote")
+	for _, replica := range []*Store{local, remote} {
+		project, err := replica.CreateProject(CreateProjectInput{Name: "Orphan fixture", Path: sharedRepo(t)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		card, err := replica.CreateChat(CreateCardInput{Project: project.ID, Title: "Running"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err = replica.UpdateCardCache(card.ID, CardCacheInput{Runtime: "running"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	joinStores(t, remote, local)
+	for range 2 {
+		cards, err := local.OrphanedTurnCards()
+		if err != nil || len(cards) != 1 || cards[0].OwnerDaemonID != "local" {
+			t.Fatalf("orphan scan must keep local candidates and skip remote transcripts: %+v %v", cards, err)
+		}
+	}
+}
+
 // The production daemon has more histories than the transcript cache can hold.
 // Its periodic orphan scan must not cycle those histories through that cache
 // while message admission waits for the same central writer lock.
