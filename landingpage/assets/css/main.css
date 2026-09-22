@@ -1315,3 +1315,29 @@ h3 {
     transition: none !important;
   }
 }
+
+.tool-showcase {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 2rem;
+}
+.tool-showcase img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+.tool-showcase h3 {
+  margin: 1.5rem 0 0.75rem;
+}
+.tool-showcase p {
+  color: var(--muted);
+  max-width: 52ch;
+}
+@media (max-width: 800px) {
+  .tool-showcase {
+    grid-template-columns: 1fr;
+    gap: 3rem;
+  }
+}

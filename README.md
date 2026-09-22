@@ -5,10 +5,10 @@
   </picture>
 </p>
 
-<h1 align="center">Your agents. Your machines.<br>One workspace.</h1>
+<h1 align="center">Close your laptop.<br>Keep your agents running.</h1>
 
 <p align="center">
-  Run coding agents beside your code. Follow the work from your Mac or phone.<br>
+  Run coding agents on always-on Macs and headless Linux hosts.<br>Follow the work from your Mac or phone.<br>
   Open source. Native apps. Self-hostable.
 </p>
 
@@ -25,11 +25,15 @@
   <a href="https://github.com/dbpprt/dieter/releases/latest">Downloads</a>
 </p>
 
-![Dieter on macOS: a conversation with its project document open beside it](landingpage/static/images/screenshots/macos-workspace.png)
+![Dieter on macOS: a shared project board with tasks across multiple machines](landingpage/static/images/screenshots/macos-board.png)
 
 Dieter is a native workspace for **Codex, Claude Code, Pi, Oh My Pi, and DeepSeek
 Harness**. A local daemon runs agents on the machine with your Git checkout,
 credentials, and tools. Native clients bring those machines together.
+
+Your laptop is the remote control. An agent on another host keeps running when
+you close the app, disconnect, or put your laptop to sleep. Keep that execution
+host powered on and awake; a headless Linux host needs no desktop.
 
 - **Give work a home.** Boards, standalone chats, labels, and schedules. Every
   task keeps one durable conversation.

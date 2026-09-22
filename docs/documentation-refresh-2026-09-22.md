@@ -87,3 +87,57 @@ resolving the documentation overlaps.
 Publication to `main` triggers the Pages workflow, which builds and validates the
 site before deploying; the GitHub README updates from the same change. A successful
 local check does not by itself confirm completion of the Pages deployment.
+
+## Follow-up: headless agents and a busier Mac workspace
+
+The README, homepage, metadata, and sharing artwork now lead with **“Close your
+laptop. Keep your agents running.”** The copy explains that execution stays on
+an awake, powered-on host; closing a client or sleeping the client laptop does
+not transfer or stop an agent on another machine. The README is now 136 lines.
+
+Five Mac captures replace the initial three. They use dark Electric Blue styling
+with the right conversation workspace panel disabled. The board shows five
+projects in navigation and 17 labeled tasks across two enrolled daemon owners,
+with three mock turns active at capture. Other images show a native terminal
+running eight real sample-project tests, the main Files surface, host telemetry,
+and a live screen-sharing session. The five Android images remain unchanged.
+
+The homepage has a new terminal and screen-sharing section. The product tour and
+projects, workspace, automation, machines, and screens guides now use the updated
+set, with meaningful alt text and accurate captions. The two obsolete side-panel
+images were removed. The 1200 × 630 sharing artwork was regenerated and inspected.
+
+### Evidence and limits
+
+- `just mac build` passed using the canonical packaged debug app and existing
+  SwiftPM cache. Existing source warnings remained; no app source changed.
+- Actual native journeys covered the multi-owner board, terminal, Files,
+  machine telemetry, and live Screens. Every final PNG was visually inspected.
+- The two daemon identities run on one physical Mac. The screen fixture limits
+  capture to its owned demo window through a development copy of the helper;
+  the production feature remains display sharing. These limitations and the
+  sample data are recorded in [screenshot provenance](screenshots/README.md).
+- A prior Release Control interaction showed a clipboard cancellation warning.
+  A fresh session produced the clean live capture. This does not establish a
+  complete clipboard or remote-input test, and no app fix is claimed here.
+- Both owned Mac app sessions exited cleanly; `just mac status` reported zero
+  app processes. The registered fixtures and visual target were explicitly
+  stopped. The operator daemon was left running. The site preview remains
+  registered separately.
+
+### Verification
+
+- `just check-changed --dry-run`, `just check-changed`, `just site check`, and
+  `git diff --check` passed. Documentation validation covered 19 rendered pages
+  and 43 maintained Markdown files, including links, fragments, images, and search.
+- BrowserOS neo review verified the current headline, desktop hero, native
+  screenshot loading, and the new terminal/screen layout. The homepage had no
+  horizontal overflow at 360, 390, 768, 1024, or 1440 pixels; the new section
+  changes from two columns to one. The tour had no horizontal overflow at
+  360 or 1024 pixels and contained all ten images with their new alt text.
+- Desktop and phone screenshots and the sharing artwork were visually checked.
+  An asynchronous image-decode browser probe timed out; subsequent direct visual
+  inspection confirmed both new homepage images loaded. It is not counted as a
+  passing automated browser assertion.
+- Native integration suites were not repeated for this documentation-only
+  follow-up. The initial refresh's suite results above remain historical evidence.

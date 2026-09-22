@@ -1,4 +1,4 @@
 ---
-title: "Dieter · Your agents. Your machines. One workspace."
-description: "A native workspace for Codex, Claude Code, Pi, Oh My Pi, and DeepSeek Harness. Run agents on macOS and Linux; follow the work from your Mac or phone."
+title: "Dieter · Close your laptop. Keep your agents running."
+description: "Run Codex and other coding agents on always-on Macs and headless Linux hosts. Manage tasks across machines from native Mac and Android apps."
 ---

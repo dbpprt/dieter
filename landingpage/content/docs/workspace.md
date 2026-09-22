@@ -11,7 +11,7 @@ The Mac conversation workspace opens files, web pages, terminals, changes, and
 registered processes beside the chat. Android offers project files and machine
 tools through **Tools**, alongside its native conversations.
 
-> **Enable it first:** On Mac, open **Settings → Experimental → Show the workspace side panel**. The panel is off by default. The screenshots in this guide show it enabled.
+> **Enable it first:** On Mac, open **Settings → Experimental → Show the workspace side panel**. The panel is off by default. The Files screenshot below uses the main project workspace and leaves this panel disabled.
 
 ## Open the result
 
@@ -36,7 +36,13 @@ Presentation opens or focuses a native content tab. It does not wake an agent or
 prove that somebody has read it. A file must be within the conversation workspace,
 regular, outside `.git`, and no larger than 5 MiB; symlink escapes are rejected.
 
-{{< screenshot src="macos-workspace.png" width="1380" height="870" alt="Mac conversation with an onboarding plan open in the native Markdown editor" caption="Review a document beside its conversation, with the experimental workspace panel enabled." >}}
+## Browse project files
+
+A project's **Files** surface works independently of the conversation side panel.
+Choose the checkout to browse, then open a file in the main workspace. This is
+also where shared project-directory conversations expose their Git changes.
+
+{{< screenshot src="macos-files.png" width="1380" height="870" alt="Orbit project Files with a launch plan and host-assignment table open in the native Markdown editor" caption="Read and edit the project’s actual files. This capture uses the main Files surface with the conversation side panel disabled." >}}
 
 ## Edit Markdown
 

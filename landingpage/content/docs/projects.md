@@ -104,4 +104,4 @@ usage is marked partial instead of being shown as zero.
 
 ## See the board
 
-{{< screenshot src="macos-board.png" width="1380" height="870" alt="Mac board for a demo project, showing tasks across workflow lanes" caption="Each card keeps its conversation, workspace choice, and execution machine." >}}
+{{< screenshot src="macos-board.png" width="1380" height="870" alt="Orbit board with 17 labeled tasks and execution owners on Studio Mac and Build Mac" caption="A shared board brings work from two execution machines together, with the owner visible on each card." >}}

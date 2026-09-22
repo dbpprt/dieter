@@ -7,6 +7,11 @@ weight: 22
 slug: "automation"
 ---
 
+Run the daemon on the host that should keep working: an always-on workstation,
+Mac, or headless Linux machine. The client can disconnect while that host keeps
+running agents, terminals, and scheduled work. Putting the execution host itself
+to sleep pauses its work; switching clients does not transfer execution.
+
 ## Interactive terminals
 
 Mac and Android terminal workspaces connect to daemon-owned PTYs. A shell can
@@ -23,6 +28,8 @@ dieter terminal list --format jsonl
 dieter terminal create --home --name shell --format id
 dieter --machine MACHINE_ID terminal list --format jsonl
 ```
+
+{{< screenshot src="macos-terminal.png" width="1380" height="870" alt="Native Mac terminal connected to Build Mac with eight passing demo tests and Git status" caption="A host-owned shell in the native terminal workspace. The output is from a small disposable sample project." >}}
 
 ## Run a command without an interactive shell
 

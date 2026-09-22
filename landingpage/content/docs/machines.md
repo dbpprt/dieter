@@ -7,6 +7,12 @@ weight: 30
 slug: "machines"
 ---
 
+An enrolled Mac or Linux daemon can run agents without an open native client.
+Use an always-on host for long tasks: your laptop or phone can disconnect while
+the execution host keeps working. Keep the host awake and its daemon service
+running. A headless Linux host needs no graphical login for agents or terminals;
+[screen hosting](/docs/screens/) has additional desktop requirements.
+
 ## Enroll another host
 
 On the new machine, install the daemon and run:
@@ -58,6 +64,8 @@ transport and ownership boundaries.
 An absent sensor is unknown, not a measurement of zero. Release version and
 application contract version are separate fields; clients require an exact
 contract match.
+
+{{< screenshot src="macos-machines.png" width="1380" height="870" alt="Build Mac machine details showing live route, CPU, memory, and GPU values over a multi-machine board" caption="Inspect the host from the Mac sidebar. These are capture-time values from an isolated fixture, not performance claims." >}}
 
 ## Optional direct TLS route
 

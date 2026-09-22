@@ -1,6 +1,6 @@
 baseURL = "https://getdieter.com/"
 defaultContentLanguage = "en"
-title = "Dieter · coding agents across all your machines"
+title = "Dieter · headless coding agents across your machines"
 
 enableRobotsTXT = true
 enableInlineShortcodes = true
@@ -22,7 +22,7 @@ disableKinds = ["taxonomy", "term", "rss"]
   docs = "/docs/:slug/"
 
 [params]
-  description = "A native workspace for coding agents on your machines. Boards, chats, files, terminals, and remote screens on macOS and Android, with iOS in beta."
+  description = "Run coding agents on always-on Macs and headless Linux hosts. Boards, conversations, terminals, and screens across your machines, from native Mac and Android clients."
   tagline = "Many agents, many machines, one interface."
   subtitle = "Coding agents across all your machines."
   author = "Dieter contributors"

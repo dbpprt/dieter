@@ -11,6 +11,11 @@ Screens gives you a view-and-control experience of an enrolled machine's
 display. Media and remote input travel between your client and the daemon, directly or
 through TURN. The gateway only brokers bounded signaling.
 
+Agents and terminals can run headless. Screen hosting additionally needs an active
+graphical session and the platform's capture and control permissions.
+
+{{< screenshot src="macos-screens.png" width="1380" height="870" alt="Native Mac screen-sharing viewer streaming an Orbit sample dashboard from Studio Mac" caption="Live screen sharing through the native viewer. The documentation fixture captures only its owned demo window; the shipped host shares a display." >}}
+
 ## Open a screen
 
 Choose **Screens**, select an enrolled machine, and choose a display and quality.
