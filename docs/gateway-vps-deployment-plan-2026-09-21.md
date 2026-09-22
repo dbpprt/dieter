@@ -44,8 +44,9 @@ The proposed choices are:
 | Decision | Proposed choice | Reason |
 | --- | --- | --- |
 | Gateway origin | Keep `https://board.dbpprt.com` | Preserve origin-bound enrollment, signed credentials, OAuth configuration, and client settings |
-| TURN hostname | Add `turn.dbpprt.com` | Separate TLS/SNI routing from gateway HTTPS |
-| Domain ownership | Use the `dbpprt.com` DNS zone | The gateway need not occupy the apex; DNS checks found no apex A record and no current TURN record |
+| TURN hostname | Add `turn.getdieter.com` (approved 22 September) | Separate TLS/SNI routing from gateway HTTPS |
+| Public website | `https://getdieter.com`, with `www` redirect | GitHub Pages; separate from the enrolled gateway origin |
+| Domain ownership | Use `getdieter.com` for the website and TURN; retain the existing `dbpprt.com` gateway and legacy records | Approved domain update on 22 September; preserve enrolled origins and the retirement window |
 | Old endpoints | Retire Hermes, Kanna, and shared auth routes | Their FRP/OAuth infrastructure is being removed |
 | Registry | Public GHCR package in `dbpprt/dieter` | Existing supported distribution, no VPS pull token required |
 | Deployment selection | Reviewed immutable image digest plus matching bundle | Reproducibility and rollback; `latest` remains a convenience tag |
@@ -63,7 +64,7 @@ flowchart LR
     clients["Native clients and enrolled daemons"] -->|"TLS :443"| edge["HAProxy: inspect SNI, pass TLS through"]
     edge -->|"board.dbpprt.com"| caddy["Caddy HTTPS on loopback :8443"]
     caddy -->|"h2c on loopback :4243"| gateway["Dieter gateway"]
-    edge -->|"turn.dbpprt.com"| turn["coturn TLS :5349, public access blocked"]
+    edge -->|"turn.getdieter.com"| turn["coturn TLS :5349, public access blocked"]
     clients -->|"STUN / TURN UDP and TCP :3478"| turn
     turn -->|"UDP relay range"| peers["WebRTC peers"]
     acme["ACME HTTP-01 and renewal job"] --> caddy
