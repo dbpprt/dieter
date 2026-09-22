@@ -33,6 +33,7 @@ type request struct {
 	ExpectedRelayIP           string `json:"expectedRelayIP"`
 	CAFile                    string `json:"caFile,omitempty"`
 	HoldSeconds               int    `json:"holdSeconds,omitempty"`
+	SingleAllocation          bool   `json:"singleAllocation,omitempty"`
 }
 
 type allocation struct {
@@ -143,6 +144,95 @@ func exchange(a, b *allocation) error {
 	return nil
 }
 
+// A normal UDP peer lets readiness use the last free allocation in an active
+// account/target bucket. The default two-relay mode remains useful when the
+// probe host cannot receive UDP and for the concentrated allocation soak.
+func udpPeer(r request) (*net.UDPConn, *net.UDPAddr, error) {
+	host, _, err := net.SplitHostPort(r.Address)
+	if err != nil {
+		return nil, nil, err
+	}
+	server, err := net.ResolveUDPAddr("udp4", net.JoinHostPort(host, "3478"))
+	if err != nil {
+		return nil, nil, err
+	}
+	peer, err := net.ListenUDP("udp4", &net.UDPAddr{})
+	if err != nil {
+		return nil, nil, err
+	}
+	ok := false
+	defer func() {
+		if !ok {
+			_ = peer.Close()
+		}
+	}()
+	if err = peer.SetDeadline(time.Now().Add(8 * time.Second)); err != nil {
+		return nil, nil, err
+	}
+	binding := stun.MustBuild(stun.TransactionID, stun.BindingRequest)
+	if _, err = peer.WriteToUDP(binding.Raw, server); err != nil {
+		return nil, nil, err
+	}
+	buffer := make([]byte, 2048)
+	n, from, err := peer.ReadFromUDP(buffer)
+	if err != nil {
+		return nil, nil, err
+	}
+	response := &stun.Message{Raw: buffer[:n]}
+	if from.String() != server.String() || response.Decode() != nil ||
+		response.TransactionID != binding.TransactionID || response.Type != stun.BindingSuccess {
+		return nil, nil, errors.New("invalid peer STUN response")
+	}
+	var mapped stun.XORMappedAddress
+	if err = mapped.GetFrom(response); err != nil {
+		return nil, nil, err
+	}
+	ok = true
+	return peer, &net.UDPAddr{IP: mapped.IP, Port: mapped.Port}, nil
+}
+
+func exchangeUDP(a *allocation, peer *net.UDPConn, mapped *net.UDPAddr) error {
+	up, down := make([]byte, 1024), make([]byte, 1024)
+	if _, err := rand.Read(up); err != nil {
+		return err
+	}
+	if _, err := rand.Read(down); err != nil {
+		return err
+	}
+	deadline := time.Now().Add(8 * time.Second)
+	if err := peer.SetDeadline(deadline); err != nil {
+		return err
+	}
+	if err := a.relay.SetReadDeadline(deadline); err != nil {
+		return err
+	}
+	// Sending to the relay opens the peer's NAT mapping. TURN permissions match
+	// the public IP; a destination-dependent NAT may select another source port.
+	if _, err := peer.WriteTo(up, a.relay.LocalAddr()); err != nil {
+		return err
+	}
+	buffer := make([]byte, 2048)
+	n, from, err := a.relay.ReadFrom(buffer)
+	if err != nil {
+		return err
+	}
+	address, ok := from.(*net.UDPAddr)
+	if !ok || !address.IP.Equal(mapped.IP) || !bytes.Equal(buffer[:n], up) {
+		return errors.New("UDP peer payload mismatch")
+	}
+	if _, err = a.relay.WriteTo(down, from); err != nil {
+		return err
+	}
+	n, from, err = peer.ReadFrom(buffer)
+	if err != nil {
+		return err
+	}
+	if from.String() != a.relay.LocalAddr().String() || !bytes.Equal(buffer[:n], down) {
+		return errors.New("TURN peer payload mismatch")
+	}
+	return nil
+}
+
 func edge(r request) error {
 	var roots *x509.CertPool
 	if r.CAFile != "" {
@@ -240,6 +330,27 @@ func probe(r request) error {
 		return err
 	}
 	defer a.close()
+	if r.SingleAllocation {
+		peer, mapped, err := udpPeer(r)
+		if err != nil {
+			return err
+		}
+		defer peer.Close()
+		if err = a.client.CreatePermission(mapped); err != nil {
+			return err
+		}
+		deadline := time.Now().Add(time.Duration(r.HoldSeconds) * time.Second)
+		for {
+			if err = exchangeUDP(a, peer, mapped); err != nil {
+				return err
+			}
+			if !time.Now().Before(deadline) {
+				break
+			}
+			time.Sleep(time.Second)
+		}
+		return nil
+	}
 	b, err := allocate(r)
 	if err != nil {
 		return err
@@ -295,6 +406,10 @@ func main() {
 		result["relayAddressVerified"] = true
 		result["payloadBidirectional"] = true
 		result["heldSeconds"] = r.HoldSeconds
+		result["allocations"] = 2
+		if r.SingleAllocation {
+			result["allocations"] = 1
+		}
 	}
 	_ = json.NewEncoder(os.Stdout).Encode(result)
 }

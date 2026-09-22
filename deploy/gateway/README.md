@@ -202,6 +202,13 @@ filesystem sharing.
 `just gateway turn-test` takes a bounded JSON request on stdin and prints only
 probe results. It verifies the allocated public relay IP and bidirectional random
 payloads between two allocations; credentials never appear in arguments or logs.
+Set `singleAllocation: true` for readiness in an active quota bucket: a normal UDP
+peer exchanges distinct random payloads with one TURN allocation. This mode needs
+UDP reachability from the probe host to port 3478 and the relay range; it does not
+qualify a network that permits only TLS. The default two-relay mode and the
+concentrated allocation soak remain unchanged. The container test exercises all
+three transports with a one-allocation user quota and rejects the two-allocation
+probe under the same limit.
 # Disposable Debian lifecycle qualification
 
 `tests/debian-vm.yaml` creates a separate Lima VM with one CPU, 1 GiB memory,
