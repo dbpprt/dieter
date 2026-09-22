@@ -1,5 +1,11 @@
 **Dieter gateway/VPS plan assessment — 21 September 2026**
 
+> **22 September amendment:** the public gateway and TURN service have moved to
+> `gateway.getdieter.com` and `turn.getdieter.com`. The old gateway name remains
+> the immutable issuer and a temporary transport alias. This assessment records
+> the earlier state; see the [domain migration](gateway-domain-migration-2026-09-22.md)
+> for the accepted design and remaining qualification.
+
 The proposed architecture is sound and addresses the observed TURN failures and
 deployment drift. It is a good basis for implementation, but it needs the
 concrete amendments below before production activation. The most consequential
