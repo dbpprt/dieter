@@ -1,3 +1,7 @@
+> **Historical engineering record.** This dated investigation or implementation
+> report describes the state at the time it was written. For current behavior and
+> setup, use the [documentation index](README.md).
+
 # Mac app performance and Changes assessment
 
 Assessment of checkout `e9da649f`, 7 September 2026. App implementation is unchanged. This document records the assessment requested before implementation.

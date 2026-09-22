@@ -1,3 +1,7 @@
+> **Historical engineering record.** This dated investigation or implementation
+> report describes the state at the time it was written. For current behavior and
+> setup, use the [documentation index](README.md).
+
 # Screen performance implementation and evidence
 
 18 September 2026. Implementation starts from `e68087d5`. The working tree

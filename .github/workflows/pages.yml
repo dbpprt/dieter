@@ -50,7 +50,7 @@ jobs:
       - name: Build
         env:
           SITE_BASE_URL: ${{ steps.pages.outputs.base_url }}
-        run: just site build
+        run: just site check
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3

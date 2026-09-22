@@ -1,3 +1,7 @@
+> **Historical engineering record.** This dated investigation or implementation
+> report describes the state at the time it was written. For current behavior and
+> setup, use the [documentation index](README.md).
+
 # Screen-sharing latency implementation — 17 September 2026
 
 Dieter keeps its authenticated WebRTC media path, native ScreenCaptureKit / VideoToolbox host, and native clients. This change reduces avoidable receiver/input waits, adds high refresh configuration, and gives the isolated fixture a pixel-verified input latency benchmark.

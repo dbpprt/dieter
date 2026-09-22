@@ -1,3 +1,7 @@
+> **Historical engineering record.** This dated investigation or implementation
+> report describes the state at the time it was written. For current behavior and
+> setup, use the [documentation index](README.md).
+
 # One project, many machines
 
 Implementation record, updated 2026-09-20. See [peer-store.md](peer-store.md)

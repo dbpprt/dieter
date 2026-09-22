@@ -1,3 +1,7 @@
+> **Historical engineering record.** This dated investigation or implementation
+> report describes the state at the time it was written. For current behavior and
+> setup, use the [documentation index](README.md).
+
 **Dieter Mac responsiveness implementation — 8 September 2026**
 
 This implements the concrete responsiveness and presentation fixes identified in the [assessment](mac-responsiveness-assessment-2026-09-08.md), against the 0.4.101 source. The Homebrew installation was updated to 0.4.101 before that assessment. Development and native tests use the separately packaged app at `apps/mac/build/Dieter.app` and disposable services; this change is not a published Homebrew release.

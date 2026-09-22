@@ -1,3 +1,7 @@
+> **Historical engineering record.** This dated investigation or implementation
+> report describes the state at the time it was written. For current behavior and
+> setup, use the [documentation index](README.md).
+
 # Mac screenshare blur during window resizing
 
 The Mac viewer had two avoidable scaling artifacts. `setViewport` rounded the

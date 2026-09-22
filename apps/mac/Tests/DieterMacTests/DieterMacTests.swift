@@ -470,11 +470,11 @@ private actor CardStartRPCStub: DieterCardStartRPC {
     #expect(DieterTransportTarget.hostKind("127.0.0.1") == .ipv4)
     #expect(DieterTransportTarget.hostKind("::1") == .ipv6)
     #expect(DieterTransportTarget.hostKind("fe80::1%en0") == .ipv6)
-    #expect(DieterTransportTarget.hostKind("board.dbpprt.com") == .dns)
+    #expect(DieterTransportTarget.hostKind("gateway.getdieter.com") == .dns)
 
     #expect(DieterTransportTarget.make(host: "127.0.0.1", port: 4242) is ResolvableTargets.IPv4)
     #expect(DieterTransportTarget.make(host: "::1", port: 4242) is ResolvableTargets.IPv6)
-    #expect(DieterTransportTarget.make(host: "board.dbpprt.com", port: 443) is ResolvableTargets.DNS)
+    #expect(DieterTransportTarget.make(host: "gateway.getdieter.com", port: 443) is ResolvableTargets.DNS)
 }
 
 @Test func backgroundMachineRefreshOnlyProbesLoopbackDirectCandidates() {
@@ -586,7 +586,7 @@ func liveDirectRouteRejectsTheWrongDaemonIdentity() async throws {
 @Test(.enabled(if: ProcessInfo.processInfo.environment["DIETER_LIVE_DAEMON_ID"] != nil))
 @MainActor func liveMachineDirectorySelectsTheAuthenticatedLoopbackDaemon() async throws {
     let daemonID = try #require(ProcessInfo.processInfo.environment["DIETER_LIVE_DAEMON_ID"])
-    let gateway = try #require(DieterEndpoint.parse("https://board.dbpprt.com"))
+    let gateway = try #require(DieterEndpoint.parse("https://gateway.getdieter.com"))
     let endpoint = DieterEndpoint(
         name: "Live machine directory route",
         host: gateway.host,

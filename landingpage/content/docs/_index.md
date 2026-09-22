@@ -1,59 +1,55 @@
 ---
-title: "Introduction"
-linkTitle: "Introduction"
-description: "Run Codex, Claude Code, Pi, and Oh My Pi across every machine you own, from one open-source app. Chats, boards, and schedules for coding agents at scale."
+title: "Meet Dieter"
+linkTitle: "Meet Dieter"
+description: "Your coding agents. Your machines. One native workspace."
 group: "Overview"
 weight: 1
 ---
 
-Dieter is pronounced **DEE-ter** (/ˈdiː.tər/).
+Dieter brings coding agents running on your own machines into one workspace.
+Start a task on your Mac, let a Linux workstation do the work, and check the
+result from your phone. Every card and standalone chat keeps its own durable
+conversation.
 
-Dieter runs your local coding agents across every machine you own (the Mac mini
-in your office, a server at home, your laptop) and puts them behind one macOS and
-Android app. Each agent runs on the machine that holds the code, close to its Git
-working tree, credentials, and tools. You keep control from anywhere.
+Dieter is open source under the MIT license. The name is pronounced **DEE-ter**.
 
-{{< callout type="note" title="The idea" >}}
-**Every machine.** Enroll them all and work from one project list.
-**Every agent.** Codex, Claude Code, Pi, and Oh My Pi, each from its own config.
-**From anywhere.** Drive it from macOS or Android; the code never leaves home.
-{{< /callout >}}
+## Start here
 
-## What Dieter is
-
-Dieter is a control plane for **local** coding agents. Codex, Claude Code, Pi,
-and Oh My Pi run through pinned [Vercel AI SDK Harnesses](https://ai-sdk.dev/docs/ai-sdk-harnesses/overview)
-without a sandbox, each on the machine that holds the repository. Every dieter
-card and standalone chat is exactly one durable conversation in a real Git
-working tree.
-
-There is **no web UI and no cloud agent runtime.** The public gateway is a
-machine-to-machine control and relay service; Dieter data and harness
-credentials never leave their daemon host.
-
-## The three parts
-
-| Component | Responsibility |
+| You want to… | Go to |
 | --- | --- |
-| `dieter daemon` | Owns projects, durable conversations, persistent PTY terminals, schedules, files, and local harness workers. |
-| `dieter-gateway` | Authenticates allowlisted GitHub accounts and connects each account to its enrolled daemons. |
-| Native clients | macOS and Android apps that aggregate every daemon and speak the same `dieter.v1.DieterService` API. |
+| See what the apps can do | [Product tour](/docs/tour/) |
+| Install a daemon and a client | [Installation](/docs/installation/) |
+| Run your first task | [Quick start](/docs/quickstart/) |
+| Organize projects, boards, and checkouts | [Projects & tasks](/docs/projects/) |
+| Review files, changes, and running commands | [Conversation workspace](/docs/workspace/) |
+| Connect more machines | [Machines & routes](/docs/machines/) |
+| Automate Dieter | [CLI guide](/docs/cli/) |
+| Operate your own gateway | [Self-hosting](/docs/gateway/) |
+| Build or contribute | [Development](/docs/development/) |
 
-The native clients build their own project directory by querying every online
-daemon through the authenticated relay. Each project is shown with its owning
-hostname, and opening its board, chats, terminals, files, or schedules
-automatically moves the active connection to that daemon. The gateway never sees
-or stores that directory.
+## The product in a minute
 
-{{< callout type="warn" title="Harnesses run with your permissions" >}}
-Harnesses have the permissions of the user running the daemon. Never expose the
-raw loopback data plane. Native clients use the gateway or an authenticated TLS
-route advertised by the daemon.
-{{< /callout >}}
+**Agents run on daemon hosts.** Install `dieter` on Apple Silicon macOS or Linux
+amd64/arm64. It starts agents beside your Git checkout using their normal local
+configuration. Codex, Claude Code, Pi, Oh My Pi, and DeepSeek Harness are supported.
 
-## Where to next
+**Native apps are your workspace.** macOS and Android provide boards, chats,
+files, terminals, schedules, and machine tools. The iPhone and iPad client is in
+beta; see the [platform guide](/docs/installation/#iphone-and-ipad-beta) for its
+current distribution and workflows.
 
-- **[Installation](/docs/installation/)** covers signed Linux services, Homebrew packages, source builds, and requirements.
-- **[Quick start](/docs/quickstart/)** goes from installation on macOS or Linux to your first running agent.
-- **[Architecture](/docs/architecture/)** explains how the daemon, gateway, and clients fit together.
-- **[Security model](/docs/security/)** covers enrollment, assertions, and what the gateway can and cannot see.
+**The gateway connects your devices.** It authenticates accounts and enrolled
+machines, advertises routes, and relays requests when needed. It stores control
+metadata and normalized quota snapshots, not your repositories or conversations.
+There is no browser-based Dieter application; this website is documentation.
+
+## What stays where
+
+Shared project metadata and portable settings replicate between your account's
+daemons. Checkouts, conversations, schedules, files, and execution stay with
+their owning machine. Closing a client does not cancel agent work.
+
+Agents have the permissions of the daemon user. Your chosen model provider may
+receive prompts, code, and tool output according to its own configuration.
+“Local execution” describes where the agent and tools run; it does not imply
+that model inference is local. Read the [security model](/docs/security/).

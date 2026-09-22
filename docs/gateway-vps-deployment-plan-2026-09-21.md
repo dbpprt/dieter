@@ -1,4 +1,14 @@
+> **Historical engineering record.** This dated investigation or implementation
+> report describes the state at the time it was written. For current behavior and
+> setup, use the [documentation index](README.md).
+
 # Dieter gateway and VPS deployment plan
+
+> **22 September domain amendment:** the accepted public gateway is now
+> `gateway.getdieter.com`, TURN uses `turn.getdieter.com`, and the GitHub Pages
+> website is `getdieter.com`. The old gateway name is retained as the immutable
+> issuer and a temporary transport alias. The hostname assumptions below are
+> historical; use the [domain migration](gateway-domain-migration-2026-09-22.md).
 
 **Status: implementation authorized and in progress.** Production uses the
 signed distribution and durable deployment controller. Public TURN TLS,

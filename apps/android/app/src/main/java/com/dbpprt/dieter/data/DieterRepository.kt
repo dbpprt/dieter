@@ -175,10 +175,18 @@ data class DieterEndpoint(
 ) {
     val address: String get() = "${if (secure) "https" else "http"}://$host:$port"
     val credentialId: String get() = address
+
+    // Keep tokens scoped to their original address; the moved origin signs in again.
+    val currentPublicGateway: DieterEndpoint
+        get() = if (secure && port == 443 && host.equals("board.dbpprt.com", ignoreCase = true)) {
+            copy(host = "gateway.getdieter.com")
+        } else {
+            this
+        }
 }
 
 val DIETER_ENDPOINTS = listOf(
-    DieterEndpoint("gateway", "Dieter Gateway", "board.dbpprt.com", 443, true),
+    DieterEndpoint("gateway", "Dieter Gateway", "gateway.getdieter.com", 443, true),
 )
 
 fun dieterEndpointFromAddress(id: String, label: String, address: String): DieterEndpoint {

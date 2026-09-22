@@ -1,3 +1,7 @@
+> **Historical engineering record.** This dated investigation or implementation
+> report describes the state at the time it was written. For current behavior and
+> setup, use the [documentation index](README.md).
+
 # Mac Changes implementation and validation
 
 7 September 2026. Implements the project-navigation, Changes, and asynchronous-state work identified in [the assessment](mac-app-assessment-2026-09-07.md).

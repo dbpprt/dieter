@@ -1,3 +1,7 @@
+> **Historical engineering record.** This dated investigation or implementation
+> report describes the state at the time it was written. For current behavior and
+> setup, use the [documentation index](README.md).
+
 # Native conversation workspace: implementation and validation
 
 12 September 2026. Opens linked objects in a tabbed, resizable workspace beside the conversation. Files, Browser, Terminal, Review, and Processes are available from the empty launcher and the add-tab menu. There is no side chat.

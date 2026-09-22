@@ -661,7 +661,7 @@ Enroll this machine with the GitHub account configured by the Dieter gateway.
 Gateway URLs require HTTPS; HTTP is allowed only on literal loopback addresses.
 `
 	set := flags("daemon enroll")
-	gatewayURL := set.String("gateway", "https://board.dbpprt.com", "gateway origin")
+	gatewayURL := set.String("gateway", "https://gateway.getdieter.com", "gateway origin")
 	hostname, _ := os.Hostname()
 	name := set.String("name", hostname, "machine display name")
 	noOpen := set.Bool("no-open", false, "do not open the verification URL")

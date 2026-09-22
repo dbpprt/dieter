@@ -2,14 +2,14 @@
 title: "Run a gateway"
 linkTitle: "Run a gateway"
 description: "Host the machine-to-machine control and relay service behind an HTTPS reverse proxy, or terminate TLS directly."
-group: "Guides"
-weight: 12
+group: "Operate"
+weight: 31
 slug: "gateway"
 ---
 
 The gateway authenticates allowlisted GitHub accounts and relays each account
 only to its own enrolled daemons. It never stores code, transcripts, files, or
-harness credentials; only sessions, identities, presence, and routes.
+harness credentials; only control metadata and normalized, credential-free provider quota snapshots.
 
 ## Register a GitHub OAuth App
 
@@ -107,7 +107,7 @@ signing and daemon-CA keys. A container image is available via
 
 Enrolled daemons advertise `controlWebrtc` in route discovery when their
 WebRTC-to-authenticated-TLS bridge is available. Current clients prefer direct
-TLS, then attempt WebRTC, retaining the gateway relay for older peers or failed
+TLS, then attempt WebRTC, retaining the gateway relay for unavailable routes or failed
 ICE negotiation. Machine connection details distinguish WebRTC Direct from
 WebRTC TURN using the selected candidate pair. TURN traffic is still relayed;
 the daemon's TLS certificate and per-RPC access token remain verified.
@@ -120,3 +120,27 @@ and infrastructure dependencies. It provides strict configuration rendering,
 durable deployment operations, encrypted off-host backup hooks, and tested
 UDP/TCP/TLS TURN transport configuration. See the
 [gateway deployment guide](https://github.com/dbpprt/dieter/tree/main/deploy/gateway).
+
+## Moving a gateway endpoint
+
+A gateway's public HTTPS endpoint can change without changing its enrolled
+identity. Set `DIETER_PUBLIC_URL` to the new origin and preserve the original
+origin in `DIETER_GATEWAY_ISSUER`. The issuer is a durable authentication and
+peer-store namespace; it is not a network destination. Keep the signing keys,
+daemon CA, sessions, allowlist and state volume intact.
+
+On startup an enrolled daemon checks the account-bound endpoint assertion signed
+by its pinned gateway key, authenticates the destination, and atomically updates
+its network address under the central store lock. Local data, peer database,
+actor identity, owner signatures and daemon enrollment remain unchanged. If
+discovery or destination verification fails, startup retains the current address.
+Keep the previous hostname serving the same gateway while offline machines and
+older installations update. Native clients authenticate separately at the new
+origin; saved credentials are not copied between origins.
+
+See [the production domain migration plan](https://github.com/dbpprt/dieter/blob/main/docs/gateway-domain-migration-2026-09-22.md)
+for DNS, OAuth, certificate, rollout and acceptance ordering.
+
+The standard gateway is now `https://gateway.getdieter.com`, with STUN/TURN at
+`turn.getdieter.com`. App updates move saved standard gateway addresses and ask
+for a fresh sign-in at the new origin; custom gateway addresses are preserved.

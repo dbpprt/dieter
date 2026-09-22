@@ -1,106 +1,84 @@
-# getdieter.com
+# Dieter website and documentation
 
-The marketing site and documentation for **Dieter** — coding agents across all
-your machines, behind one interface. Built with [Hugo](https://gohugo.io)
-(extended) and a fully custom, light theme.
+The Hugo site at [getdieter.com](https://getdieter.com/) is the public product
+introduction and maintained user documentation. It is separate from the
+machine-only gateway and is not a browser client for Dieter.
 
-The GitHub Pages workflow is named **Deploy getdieter.com**. Its custom-domain
-configuration uses `https://getdieter.com/` as the canonical website, with
-`www.getdieter.com` redirecting to the apex through GitHub Pages.
+## Preview and check
 
-## Develop
+Requires Hugo extended 0.164+ and Python 3. From the repository root:
 
 ```sh
-just site serve        # http://localhost:1313
+just site serve
+just site check
 ```
 
-Requires Hugo **extended** ≥ 0.164.
+The default preview is `http://127.0.0.1:1313`. In a Dieter conversation, register
+long-running preview/build processes with `start_background_process` or
+`dieter remote exec --card CARD_ID --detach -- just site serve`.
 
-## Build
+`just site build` generates `landingpage/public`. `just site check` builds, then
+checks rendered local links, fragments, assets, search entries, image alt text,
+and maintained repository documentation links. Dated engineering records retain
+their historical evidence paths and are excluded from that last check. Also check the page in a real browser at
+both desktop and phone widths, including keyboard navigation and search.
+
+## Source layout
+
+| Location | Contents |
+| --- | --- |
+| `content/docs` | Canonical user guides, one Markdown file per topic |
+| `layouts/index.html` | Product landing page |
+| `layouts/partials/docs-*.html` | Sidebar, content shell, table of contents, next/previous |
+| `layouts/partials/search.html` | Build-time JSON index and native search dialog |
+| `layouts/shortcodes/screenshot.html` | Captioned, full-size-linked product captures |
+| `assets/css/main.css` | Responsive site and documentation styles |
+| `assets/js/main.js` | Navigation, copy buttons, local search, keyboard controls |
+| `data/landing.yaml` | Supported harness names; models stay in the host catalog |
+| `static/images/screenshots` | Curated native screenshots shared by site and GitHub README |
+| `static/fonts` | Self-hosted Sora font; body and code use system fonts |
+
+Do not edit or commit generated `public/` or `resources/` output. The site needs
+no client framework, external search service, analytics, or external font request.
+Core content and navigation work without JavaScript. The bundled Sora font is
+redistributed with its [SIL Open Font License](static/fonts/OFL-Sora.txt).
+
+## Write documentation
+
+Keep the README concise and put detailed user workflows here. Use the front matter
+`group` and `weight` to place a guide in the sidebar. Groups are Overview, Start
+here, Workflows, Operate, Reference, and Contribute. Weight order also controls
+next/previous navigation.
+
+Use `/docs/slug/` for internal page links and relative repository links only in
+repository Markdown. Hugo render hooks make root-relative links and image URLs
+work when the site is mounted under a GitHub Pages subpath. Search indexes titles,
+descriptions, and rendered guide text locally at build time.
+
+Use the screenshot shortcode with meaningful alt text and a caption. See
+[screenshot provenance](../docs/screenshots/README.md) for the capture environment
+and privacy rules. Use real native captures; do not fabricate product UI.
+
+Dated `docs/` investigations are historical evidence. Keep their original paths
+and link current user guidance from [the technical index](../docs/README.md).
+
+## Sharing image
+
+`static/images/og-image.png` uses the same typography, colors, and real app captures
+as the site. Regenerate it on macOS with:
 
 ```sh
-just site build        # outputs to ./landingpage/public
+swift landingpage/tools/render_social.swift
 ```
 
-## Structure
+Inspect the resulting 1200 × 630 PNG before committing it.
 
-```
-landingpage/
-├── hugo.toml                 # config, params (brew commands, GitHub, OG)
-├── content/
-│   ├── _index.md             # home metadata
-│   └── docs/                 # documentation (Overview · Guides · Reference)
-├── layouts/
-│   ├── index.html            # landing page (all sections)
-│   ├── 404.html
-│   ├── robots.txt
-│   ├── _default/             # baseof · single · list · _markup/render-link
-│   ├── partials/             # head · nav · footer · icon · codeblock · docs-*
-│   └── shortcodes/           # callout
-├── assets/
-│   ├── css/main.css          # the design system (light, flat)
-│   ├── css/_chroma.css       # syntax highlighting (github, light)
-│   └── js/main.js            # nav, copy, reveal, TOC spy, install terminal
-├── data/landing.yaml         # harness cards
-└── static/
-    ├── brand/                # logos + favicon (copied from assets/brand)
-    ├── fonts/                # Sora variable
-    └── images/               # og-image, app icon
-```
+## Publication
 
-## Design system
+`.github/workflows/pages.yml` builds site changes on `main` and deploys the
+resulting artifact to GitHub Pages. It also supports manual dispatch. The workflow
+uses the Pages-configured base URL; the canonical custom domain is getdieter.com.
+`SITE_BASE_URL` overrides the production base for local subpath checks.
 
-Light, flat, and professional — no gradients. Monochrome ink on white:
-
-- **Palette** — white `#FFFFFF` / `#F7F7F8` surfaces, near-black `#17171A` ink,
-  gray `#5F5F67` secondary, hairline `#E7E7EA` borders. The one dark element is
-  the hero terminal. Semantic `amber`/`coral` appear only in status dots.
-- **Syntax** — light (`github`) chroma theme.
-- **Type** — Sora (display), Inter (body), JetBrains Mono (mono).
-- **Signature element** — the animated install terminal in the hero replays the
-  real `brew install` → `dieter setup` flow (`assets/js/main.js`).
-
-Every URL is baseURL-relative (`relURL` / a link render hook), so the site runs
-unchanged at a subpath or a domain root.
-
-## Deploy — GitHub Pages
-
-Deployment is automatic. [`.github/workflows/pages.yml`](../.github/workflows/pages.yml)
-builds this directory and publishes it on every push to `main` that touches
-`landingpage/**`, the site recipes, or the deployment workflow. It can also be
-started manually. The base URL comes from the Pages configuration. Deployment
-uses the Node 24 Pages action with OIDC permissions on the deploy job and one
-bounded retry for transient GitHub failures; a second failure fails the run.
-
-Repository settings use **Settings → Pages → Source: GitHub Actions**, custom
-domain **getdieter.com**, and **Enforce HTTPS** after certificate provisioning.
-The workflow reads the Pages base URL automatically; publish a fresh build after
-changing the domain so asset paths and canonical URLs use the domain root.
-Workflow-based Pages deployments do not need a `CNAME` file.
-
-Namecheap's DNS zone uses these website records:
-
-| Type | Host | Value |
-| --- | --- | --- |
-| A | `@` | `185.199.108.153` |
-| A | `@` | `185.199.109.153` |
-| A | `@` | `185.199.110.153` |
-| A | `@` | `185.199.111.153` |
-| AAAA | `@` | `2606:50c0:8000::153` |
-| AAAA | `@` | `2606:50c0:8001::153` |
-| AAAA | `@` | `2606:50c0:8002::153` |
-| AAAA | `@` | `2606:50c0:8003::153` |
-| CNAME | `www` | `dbpprt.github.io` |
-| TXT | `_github-pages-challenge-dbpprt` | Account-specific value from GitHub Settings → Pages |
-
-Keep the verification TXT record after GitHub verifies domain ownership. Replace
-Namecheap's apex parking redirect and `www` parking CNAME; preserve unrelated
-records. TTL can remain Automatic. The TURN subdomain has its own VPS record,
-owned by the private deployment repository; it must not point at GitHub Pages.
-
-Verify the apex HTTPS page, `www` redirect, old project-URL redirect, canonical
-and sitemap URLs, documentation pages, and CSS/JavaScript/image loads. GitHub's
-[custom-domain guide](https://docs.github.com/en/pages/configuring-a-custom-domain-for-your-github-pages-site/managing-a-custom-domain-for-your-github-pages-site)
-documents DNS and certificate provisioning; its
-[domain-verification guide](https://docs.github.com/en/pages/configuring-a-custom-domain-for-your-github-pages-site/verifying-your-custom-domain-for-github-pages)
-documents the account-level TXT record.
+A local build or preview does not publish the site. The GitHub README likewise
+changes publicly only after the reviewed repository changes are published.

@@ -1,3 +1,7 @@
+> **Historical engineering record.** This dated investigation or implementation
+> report describes the state at the time it was written. For current behavior and
+> setup, use the [documentation index](README.md).
+
 **Mac app refactoring implementation — 9 September 2026**
 
 The refactor implements the ownership, durability, reuse, and module boundaries from the [review proposal](mac-code-quality-refactoring-proposal-2026-09-08.md). The application still uses SwiftUI Observation, Swift actors, and the existing protobuf contracts. No framework or dependency-version migration was required.

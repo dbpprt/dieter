@@ -2,14 +2,15 @@ baseURL = "https://getdieter.com/"
 defaultContentLanguage = "en"
 title = "Dieter · coding agents across all your machines"
 
+enableRobotsTXT = true
+enableInlineShortcodes = true
+disableKinds = ["taxonomy", "term", "rss"]
+
 [languages]
   [languages.en]
     label = "English"
     locale = "en-US"
     weight = 1
-enableRobotsTXT = true
-enableInlineShortcodes = true
-disableKinds = ["taxonomy", "term", "rss"]
 
 [outputs]
   home = ["html", "robots"]
@@ -21,12 +22,12 @@ disableKinds = ["taxonomy", "term", "rss"]
   docs = "/docs/:slug/"
 
 [params]
-  description = "Run Codex, Claude Code, Pi, and Oh My Pi across every machine you own, from one open-source app. Chats, boards, and schedules for coding agents at scale."
+  description = "A native workspace for coding agents on your machines. Boards, chats, files, terminals, and remote screens on macOS and Android, with iOS in beta."
   tagline = "Many agents, many machines, one interface."
   subtitle = "Coding agents across all your machines."
   author = "Dieter contributors"
   github = "https://github.com/dbpprt/dieter"
-  ogImage = "/images/og-image.png"
+  ogImage = "images/og-image.png"
   brewFormula = "brew install dbpprt/tap/dieter"
   brewCask = "brew install --cask dbpprt/tap/dieter-app"
   pronunciation = "DEE-ter"

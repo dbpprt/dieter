@@ -1,3 +1,7 @@
+> **Historical engineering record.** This dated investigation or implementation
+> report describes the state at the time it was written. For current behavior and
+> setup, use the [documentation index](README.md).
+
 # Screen-sharing performance investigation — 18 September 2026
 
 Dieter has a credible native streaming foundation. Reaching Parsec/Moonlight-class responsiveness now depends primarily on presentation, loss recovery, device-specific decoding, and measured bandwidth policy. A transport rewrite is not the first investment justified by the evidence.

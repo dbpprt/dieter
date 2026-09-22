@@ -2,14 +2,55 @@
 title: "Screens (remote desktop)"
 linkTitle: "Screens"
 description: "View and control an enrolled macOS or Linux machine over peer-to-peer WebRTC. Media never touches the gateway."
-group: "Guides"
-weight: 14
+group: "Workflows"
+weight: 23
 slug: "screens"
 ---
 
 Screens gives you a view-and-control experience of an enrolled machine's
-display. Media and remote input travel **directly** between your client and the
-daemon; the gateway only brokers bounded signaling.
+display. Media and remote input travel between your client and the daemon, directly or
+through TURN. The gateway only brokers bounded signaling.
+
+## Open a screen
+
+Choose **Screens**, select an enrolled machine, and choose a display and quality.
+The first control-capable viewer receives control. Use **Take Control** to request
+handoff from another viewer, or **Release Control** to keep watching without input.
+Up to four viewers can connect; only one controls the machine at a time.
+
+On Mac, the expand action moves the same session into a separate native window.
+**Control–Command–F** toggles full screen. Closing that window returns the share
+to Dieter; closing the Screens tab disconnects it. **Command–Shift–Escape**
+releases held input and pauses pointer forwarding until you focus the viewer again.
+Inactivity disconnect is optional and disabled by default.
+
+On Android, one finger moves the remote cursor relatively; tap to click,
+double-tap to double-click, and hold then move to drag. Two fingers zoom/pan the
+local canvas; three fingers scroll the remote screen. The toolbar provides text
+input, modifiers, special keys, right-click, and Fit screen. Leaving Screens or
+backgrounding the app closes that session.
+
+## Share clipboard
+
+Enable **Share clipboard** in the Mac screen options or Android bottom bar. Only
+the focused controlling viewer can read or write it. Connecting or taking control
+does not immediately overwrite either clipboard. Supported changes then synchronize.
+
+Text supports up to 1 MiB. Supported images and up to 64 regular files have an
+8 MiB combined limit. Folders, symlinks, duplicate filenames, and rich-text
+formatting are not transferred. Binary support is negotiated with the host;
+check capabilities rather than assuming every platform provides it.
+
+Clipboard contents do not enter conversation history or logs. A reconnect or
+uncertain result never automatically replays a paste. CLI operations require an
+existing controlling session:
+
+```sh
+dieter screen clipboard enable SESSION_ID
+dieter screen clipboard read SESSION_ID
+dieter screen clipboard paste SESSION_ID --file clipboard.txt
+dieter screen clipboard disable SESSION_ID
+```
 
 ## Capture on macOS
 
@@ -105,3 +146,6 @@ Mac presentation and Android EGL submission are different measurements; neither
 is an optical input-to-photon measurement. RTP traffic counters exclude
 transport/control overhead. Quality settings and bitrate are adaptive ceilings.
 No matched Parsec or Moonlight performance claim is implied by codec support.
+
+For protocol fields, recovery/FEC details, clipboard commands, and qualification
+workloads, see the [screen engineering reference](https://github.com/dbpprt/dieter/blob/main/docs/screen-sharing.md).

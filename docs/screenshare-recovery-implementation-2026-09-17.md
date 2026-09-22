@@ -1,3 +1,7 @@
+> **Historical engineering record.** This dated investigation or implementation
+> report describes the state at the time it was written. For current behavior and
+> setup, use the [documentation index](README.md).
+
 # Screen reference recovery and adaptive FEC — 2026-09-17
 
 Implemented options 4 and 5 through the native capture helper, Go media path,

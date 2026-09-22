@@ -2150,7 +2150,7 @@ class DieterConnectionManager(
                     )
                 }
             }.also { require(it.isNotEmpty()) }
-            val origins = loaded.mapIndexed { index, endpoint ->
+            val origins = loaded.map { it.currentPublicGateway }.mapIndexed { index, endpoint ->
                 if (endpoint.daemonId == null) {
                     endpoint
                 } else {

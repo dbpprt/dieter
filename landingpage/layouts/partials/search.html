@@ -1,0 +1,14 @@
+{{- $entries := slice -}}
+{{- range (where site.RegularPages "Section" "docs").ByWeight -}}
+  {{- $entries = $entries | append (dict "title" .Title "url" .RelPermalink "description" .Description "content" .Plain) -}}
+{{- end -}}
+{{- $index := resources.FromString "search.json" ($entries | jsonify) | fingerprint -}}
+<dialog class="search-dialog" data-search-dialog data-search-url="{{ $index.RelPermalink }}" aria-label="Search documentation">
+  <div class="search-header">
+    <label for="docs-search">Search documentation</label>
+    <input id="docs-search" type="search" autocomplete="off" placeholder="Try worktrees, clipboard, Linux…" aria-describedby="search-status">
+    <button class="search-close" data-search-close aria-label="Close search">Esc</button>
+  </div>
+  <p class="search-status" id="search-status" role="status" aria-live="polite">Type to find a guide.</p>
+  <ul class="search-results" data-search-results></ul>
+</dialog>

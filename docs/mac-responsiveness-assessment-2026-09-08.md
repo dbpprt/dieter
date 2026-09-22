@@ -1,3 +1,7 @@
+> **Historical engineering record.** This dated investigation or implementation
+> report describes the state at the time it was written. For current behavior and
+> setup, use the [documentation index](README.md).
+
 **Dieter Mac responsiveness assessment — 8 September 2026**
 
 Dieter was upgraded through Homebrew from **0.4.78 to 0.4.101 (101)** before the final live assessment. The latest app connects successfully to API 3. The earlier API mismatch is resolved and is not counted as an outstanding finding below.

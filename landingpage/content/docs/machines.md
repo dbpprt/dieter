@@ -1,45 +1,68 @@
 ---
-title: "Machines & direct routes"
+title: "Machines & routes"
 linkTitle: "Machines & routes"
-description: "Enroll additional daemons, advertise direct TLS routes over a tailnet or LAN, and unenroll cleanly."
-group: "Guides"
-weight: 13
+description: "Enroll hosts, attach checkouts, and inspect the route used for each operation."
+group: "Operate"
+weight: 30
 slug: "machines"
 ---
 
-Dieter aggregates every enrolled machine into one project list. This guide
-covers enrolling additional daemons and exposing optional direct routes.
+## Enroll another host
 
-## Enroll a machine
-
-```sh
-dieter daemon enroll \
-  --gateway https://dieter.example.com \
-  --name "Studio Mac"
-```
-
-The command opens GitHub, displays a verification code, stores the resulting
-device identity under `DIETER_HOME/daemon`, and **never stores a GitHub token.**
-On the next `dieter daemon start`, the daemon maintains its outbound tunnel and
-reconnects with exponential backoff after network or gateway restarts.
-
-## Register projects
+On the new machine, install the daemon and run:
 
 ```sh
-dieter project open ~/Development/my-project
-dieter daemon start
+dieter setup --gateway https://dieter.example.com
 ```
 
-The raw local data plane listens on `127.0.0.1:4242`. An enrolled daemon also
-creates a separate authenticated TLS listener on an ephemeral loopback port;
-native clients discover it automatically through the gateway. `dieter serve`
-remains an alias for `dieter daemon start`.
+Use your gateway origin. After GitHub sign-in, approve the machine name and
+verification code. Setup starts the managed service. For manual service setups,
+`dieter daemon enroll --gateway URL --name "Workstation"` handles enrollment and
+`dieter daemon start` runs the daemon in the foreground.
 
-## Advertise a direct route
+## Attach an existing project
 
-No flags are needed for same-device access. To advertise an additional direct
-route, expose a dedicated TLS port only on a trusted LAN or tailnet and name the
-address clients can actually reach:
+Each machine's checkout is a real local Git working tree. To attach one to an
+existing shared project on the newly enrolled machine:
+
+```sh
+dieter project list --format jsonl
+dieter project attach PROJECT_ID ~/Development/my-project
+dieter project checkouts PROJECT_ID
+```
+
+`project open PATH` registers a project; `project attach PROJECT_ID PATH` deliberately
+adds a checkout to an existing shared identity. Neither command clones a repository.
+
+For task creation, global `--machine` selects the execution host. `--checkout`
+disambiguates multiple checkouts on that host; it does not redirect work to another
+machine.
+
+## Inspect connectivity
+
+```sh
+dieter machine list --format jsonl
+dieter machine show MACHINE_ID
+dieter machine route MACHINE_ID
+dieter --machine MACHINE_ID status
+dieter --machine MACHINE_ID machine info
+dieter peer status
+```
+
+Clients prefer verified direct TLS, then WebRTC when available, then the gateway
+relay. Route details distinguish **WebRTC · Direct** from **WebRTC · TURN**.
+TURN still relays traffic. Read the [architecture](/docs/architecture/) for the
+transport and ownership boundaries.
+
+`machine info` reports live CPU, memory, processes, and optional GPU/sensor data.
+An absent sensor is unknown, not a measurement of zero. Release version and
+application contract version are separate fields; clients require an exact
+contract match.
+
+## Optional direct TLS route
+
+Same-device clients discover the authenticated loopback route automatically.
+For a deliberately configured LAN or tailnet listener, a foreground invocation is:
 
 ```sh
 dieter daemon start \
@@ -48,31 +71,29 @@ dieter daemon start \
   --direct-network tailscale
 ```
 
-The direct listener does not accept the gateway session itself. It requires a
-short-lived token targeted to this daemon and serves the enrolled daemon
-certificate.
+Use an address clients can actually reach. This is an example for starting a
+configured daemon, not a command to run beside an already-running service.
+Keep raw port **4242 loopback-only**. Direct access verifies the enrolled daemon
+certificate and a short-lived token targeted to that daemon.
 
-{{< callout type="warn" title="Keep 4242 loopback-only" >}}
-Do not advertise raw port `4242`; that port stays loopback-only. Only the
-authenticated TLS route (a dedicated port on a trusted network) should be
-reachable off-device.
-{{< /callout >}}
+## Updates and power controls
+
+Machines expose only supported, authorized actions. Each requires an explicit
+confirmation:
+
+```sh
+dieter --machine MACHINE_ID machine update --confirm UPDATE
+dieter --machine MACHINE_ID machine restart --confirm RESTART
+dieter --machine MACHINE_ID machine shutdown --confirm "SHUT DOWN"
+```
+
+macOS uses normal system authorization. Linux uses non-interactive
+systemd-logind/PolicyKit; Dieter never accepts a sudo password. A service update
+may disconnect the transport while work recovers. Inspect the machine afterward
+instead of replaying the update.
 
 ## Unenroll
 
-Unenroll a machine from that machine itself:
-
-```sh
-dieter daemon unenroll
-```
-
-The command signs the request with the enrolled machine identity, revokes the
-gateway record, closes its relay, and removes the local gateway credential. It
-does **not** remove projects, conversations, schedules, or harness settings.
-
-## How routing works
-
-The client prefers a reachable direct route and otherwise uses the relay. Both
-paths expose the same `dieter.v1.DieterService` API. Opening a project's board,
-chats, terminals, files, or schedules moves the active connection to that
-project's owning daemon automatically. There is no machine picker to manage.
+On the machine being removed, run `dieter daemon unenroll`. It revokes the machine
+identity and removes the local gateway credential while retaining project data,
+conversations, schedules, and harness settings.

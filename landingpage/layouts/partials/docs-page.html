@@ -17,6 +17,7 @@
         {{ .Content }}
       </div>
       {{ partial "docs-prevnext" . }}
+      {{ with .File }}<a class="doc-edit" href="{{ site.Params.github }}/edit/main/landingpage/content/{{ .Path }}">Improve this page on GitHub ↗</a>{{ end }}
     </article>
 
     <aside class="doctoc" aria-label="On this page">

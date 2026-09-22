@@ -1,7 +1,7 @@
 # Move Dieter to getdieter.com
 
-The website is already live on GitHub Pages at `https://getdieter.com`, with
-`www` redirecting to the apex. The intended service layout is:
+The website is live on GitHub Pages at `https://getdieter.com`, with
+`www` redirecting to the apex. The service layout is:
 
 | Service | Public endpoint | DNS |
 | --- | --- | --- |
@@ -11,6 +11,35 @@ The website is already live on GitHub Pages at `https://getdieter.com`, with
 
 Do not add TURN AAAA records while the relay has no IPv6 listener. Keep GitHub
 Pages apex/www records, domain-verification TXT and unrelated mail records intact.
+
+## Accepted transport migration
+
+Operation `rollout-20260922-k` accepted signed gateway `v0.4.269` (`8886035e`)
+on 22 September at 12:33:19 UTC. Both gateway hosts passed trusted TLS; the new
+origin passed TLS 1.3/h2, intentional root 404, unauthenticated RPC rejection,
+fresh native-style OAuth/PKCE and authenticated relay to all four online daemons.
+All STUN and UDP/TCP TURN advertisements and the coturn realm use the new TURN
+host. Bidirectional UDP/TCP payloads passed without raising production quotas.
+
+Garuda, mbp-office, mini-home and mini-office run `v0.4.270`, preserving enrolled
+IDs, peer actors, shared account, 311 peer records and three project identities
+at comparison. mbp-home remains offline on `v0.4.230`; keep its old transport
+route and OAuth callback until it returns and updates. New and saved public
+native defaults use the new gateway and require fresh sign-in; custom gateways
+are unchanged and bearer credentials stay isolated by origin.
+
+The post-transition encrypted snapshot cold-restored offline in 43.18 seconds,
+retaining matching host policy, the original issuer/CA, schema and trusted
+gateway-alias/TURN certificates. Exact release, snapshot and operational evidence
+is recorded in the private VPS repository's `docs/gateway-rollout-status.md`.
+
+The broader native acceptance is still incomplete: local Mac smoke failed to
+open the new-chat composer, Android frame/screen-fixture checks failed, and
+iPad CI timed out changing simulator orientation. Go, Mac and Android unit
+checks, deployment/container tests, signed release and macOS CI passed. Fresh
+production sign-in and complete journeys in both native clients are not yet
+claimed. Public TURN TLS 443, native capacity, observation and legacy retirement
+remain gated separately.
 
 ## Identity is not a DNS address
 

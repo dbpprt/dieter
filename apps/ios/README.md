@@ -37,9 +37,8 @@ gh workflow run ios-testflight.yml --repo dbpprt/dieter --ref BRANCH \
   -f version=0.1.0 -f upload=false
 ```
 
-GitHub enables manual dispatch after the workflow exists on the default branch;
-this becomes available when this PR is merged. Retry the latest workflow run or
-dispatch a fresh run. Rerunning an older run can produce a build number below a
+The workflow is manually dispatched from the default branch. Retry the latest
+workflow run or dispatch a fresh run. Rerunning an older run can produce a build number below a
 newer uploaded build, which Apple may reject.
 
 The release helper limits build components to four digits for the run number and

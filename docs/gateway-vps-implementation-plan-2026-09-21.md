@@ -1,6 +1,17 @@
+> **Historical engineering record.** This dated investigation or implementation
+> report describes the state at the time it was written. For current behavior and
+> setup, use the [documentation index](README.md).
+
 **Dieter gateway · production implementation plan**
 
 *21 September 2026 · Proposed implementation · No deployment performed*
+
+> **22 September domain amendment:** production now uses `gateway.getdieter.com`
+> and `turn.getdieter.com`; `getdieter.com` is the GitHub Pages website. Original
+> issuer identity and the old gateway alias are retained. The hostname choices
+> in this dated plan are superseded by the
+> [domain migration](gateway-domain-migration-2026-09-22.md); its native acceptance
+> and retirement gates remain in force.
 
 Deliver a reproducible, signed gateway distribution in `dbpprt/dieter`, deploy
 it through a small, reliable `dbpprt/vps` repository, and complete the transition

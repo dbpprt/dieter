@@ -1,3 +1,7 @@
+> **Historical engineering record.** This dated investigation or implementation
+> report describes the state at the time it was written. For current behavior and
+> setup, use the [documentation index](README.md).
+
 **100-card board opening — diagnosis and fix, 8 September 2026**
 
 The dominant measured cost was constructing and laying out offscreen card views on the main thread. Board selection also made a redundant full-project request even when the live synchronization stream already supplied that project. The previous rendering test accepted up to five seconds of layout work, which guarded against hangs but could not establish that opening a board felt responsive.
