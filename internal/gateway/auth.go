@@ -209,7 +209,7 @@ func (a *Auth) AuthenticateBearer(raw string) (Principal, bool) {
 		if !ok {
 			return Principal{}, false
 		}
-		if _, err = linkauth.VerifyPeer(public, raw, a.config.PublicURL.String(), record.Generation, time.Now()); err != nil {
+		if _, err = linkauth.VerifyPeer(public, raw, a.config.IdentityOrigin(), record.Generation, time.Now()); err != nil {
 			return Principal{}, false
 		}
 		return Principal{GitHubID: record.GitHubID, Login: record.Login}, true
@@ -251,6 +251,14 @@ func (a *Auth) health(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (a *Auth) start(w http.ResponseWriter, r *http.Request) {
+	// Set the state cookie on the canonical origin before starting OAuth. A
+	// retained transport alias cannot receive the new origin's callback cookie.
+	if r.Host != a.config.PublicURL.Host {
+		target := *a.config.PublicURL
+		target.Path, target.RawQuery = r.URL.Path, r.URL.RawQuery
+		http.Redirect(w, r, target.String(), http.StatusTemporaryRedirect)
+		return
+	}
 	w.Header().Set("Cache-Control", "no-store")
 	if !a.allow(r) {
 		http.Error(w, "too many authentication attempts", http.StatusTooManyRequests)

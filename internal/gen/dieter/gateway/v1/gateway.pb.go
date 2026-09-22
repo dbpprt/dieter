@@ -444,11 +444,13 @@ func (DaemonLinkFrameKind) EnumDescriptor() ([]byte, []int) {
 }
 
 type Account struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	GithubId      int64                  `protobuf:"varint,1,opt,name=github_id,json=githubId,proto3" json:"github_id,omitempty"`
-	Login         string                 `protobuf:"bytes,2,opt,name=login,proto3" json:"login,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	GithubId int64                  `protobuf:"varint,1,opt,name=github_id,json=githubId,proto3" json:"github_id,omitempty"`
+	Login    string                 `protobuf:"bytes,2,opt,name=login,proto3" json:"login,omitempty"`
+	// Signed, account-bound current endpoint. Identity survives a DNS move.
+	SignedGatewayEndpoint string `protobuf:"bytes,3,opt,name=signed_gateway_endpoint,json=signedGatewayEndpoint,proto3" json:"signed_gateway_endpoint,omitempty"`
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
 }
 
 func (x *Account) Reset() {
@@ -491,6 +493,13 @@ func (x *Account) GetGithubId() int64 {
 func (x *Account) GetLogin() string {
 	if x != nil {
 		return x.Login
+	}
+	return ""
+}
+
+func (x *Account) GetSignedGatewayEndpoint() string {
+	if x != nil {
+		return x.SignedGatewayEndpoint
 	}
 	return ""
 }
@@ -1200,8 +1209,10 @@ type DaemonCredential struct {
 	GatewaySigningPublicKey []byte                 `protobuf:"bytes,5,opt,name=gateway_signing_public_key,json=gatewaySigningPublicKey,proto3" json:"gateway_signing_public_key,omitempty"`
 	ExpiresAt               string                 `protobuf:"bytes,6,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
 	Generation              uint64                 `protobuf:"varint,7,opt,name=generation,proto3" json:"generation,omitempty"`
-	unknownFields           protoimpl.UnknownFields
-	sizeCache               protoimpl.SizeCache
+	// Durable issuer/account namespace; independent of the public network URL.
+	GatewayIssuer string `protobuf:"bytes,8,opt,name=gateway_issuer,json=gatewayIssuer,proto3" json:"gateway_issuer,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *DaemonCredential) Reset() {
@@ -1281,6 +1292,13 @@ func (x *DaemonCredential) GetGeneration() uint64 {
 		return x.Generation
 	}
 	return 0
+}
+
+func (x *DaemonCredential) GetGatewayIssuer() string {
+	if x != nil {
+		return x.GatewayIssuer
+	}
+	return ""
 }
 
 type RenameDaemonRequest struct {
@@ -3814,10 +3832,11 @@ var File_dieter_gateway_v1_gateway_proto protoreflect.FileDescriptor
 
 const file_dieter_gateway_v1_gateway_proto_rawDesc = "" +
 	"\n" +
-	"\x1fdieter/gateway/v1/gateway.proto\x12\x11dieter.gateway.v1\x1a\x1bgoogle/protobuf/empty.proto\"<\n" +
+	"\x1fdieter/gateway/v1/gateway.proto\x12\x11dieter.gateway.v1\x1a\x1bgoogle/protobuf/empty.proto\"t\n" +
 	"\aAccount\x12\x1b\n" +
 	"\tgithub_id\x18\x01 \x01(\x03R\bgithubId\x12\x14\n" +
-	"\x05login\x18\x02 \x01(\tR\x05login\"(\n" +
+	"\x05login\x18\x02 \x01(\tR\x05login\x126\n" +
+	"\x17signed_gateway_endpoint\x18\x03 \x01(\tR\x15signedGatewayEndpoint\"(\n" +
 	"\tDaemonRef\x12\x1b\n" +
 	"\tdaemon_id\x18\x01 \x01(\tR\bdaemonId\"\xe3\x02\n" +
 	"\x06Daemon\x12\x0e\n" +
@@ -3872,7 +3891,7 @@ const file_dieter_gateway_v1_gateway_proto_rawDesc = "" +
 	"\x15UnenrollDaemonRequest\x12\x1b\n" +
 	"\tdaemon_id\x18\x01 \x01(\tR\bdaemonId\x12\x14\n" +
 	"\x05nonce\x18\x02 \x01(\fR\x05nonce\x12\x1c\n" +
-	"\tsignature\x18\x03 \x01(\fR\tsignature\"\x99\x02\n" +
+	"\tsignature\x18\x03 \x01(\fR\tsignature\"\xc0\x02\n" +
 	"\x10DaemonCredential\x12\x1b\n" +
 	"\tdaemon_id\x18\x01 \x01(\tR\bdaemonId\x12\x1f\n" +
 	"\vdaemon_name\x18\x02 \x01(\tR\n" +
@@ -3884,7 +3903,8 @@ const file_dieter_gateway_v1_gateway_proto_rawDesc = "" +
 	"expires_at\x18\x06 \x01(\tR\texpiresAt\x12\x1e\n" +
 	"\n" +
 	"generation\x18\a \x01(\x04R\n" +
-	"generation\"F\n" +
+	"generation\x12%\n" +
+	"\x0egateway_issuer\x18\b \x01(\tR\rgatewayIssuer\"F\n" +
 	"\x13RenameDaemonRequest\x12\x1b\n" +
 	"\tdaemon_id\x18\x01 \x01(\tR\bdaemonId\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\"m\n" +

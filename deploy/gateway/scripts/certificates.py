@@ -41,6 +41,9 @@ def reload(host, s, kind):
 def activate(host, s, kind, chain, key, reload_service=True):
     hostname = s["gatewayHost"] if kind == "gateway" else s["turnHost"]
     validate(chain, key, hostname)
+    if kind == "gateway":
+        for alias in s.get("gatewayAliases", []):
+            validate(chain, key, alias)
     identity = digest(chain)[:32]
     root = host.etc / "certificates" / kind
     root.mkdir(parents=True, mode=0o750, exist_ok=True)
@@ -97,6 +100,9 @@ def renew(host, s, dry_run=False, prepare=False):
                    "--tmpfs", "/var/log/letsencrypt:size=16m", "--tmpfs", "/var/lib/letsencrypt:size=32m",
                    deps["certbot"], "certonly", "--non-interactive", "--agree-tos", "--email", s["acmeEmail"],
                    "--webroot", "--webroot-path", "/webroot", "--cert-name", hostname, "-d", hostname, "--keep-until-expiring"]
+        if kind == "gateway":
+            for alias in s.get("gatewayAliases", []):
+                command += ["-d", alias]
         if dry_run:
             command.append("--staging")
         run(command, timeout=300)

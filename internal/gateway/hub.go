@@ -150,7 +150,7 @@ func (h *Hub) handshake(stream grpc.BidiStreamingServer[gatewayv1.DaemonLinkFram
 	if err != nil || proof.GetKind() != gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_PONG || proof.GetDaemonId() != identity || proof.GetRequestId() != challengeID {
 		return daemonHandshake{err: status.Error(codes.Unauthenticated, "daemon challenge response is invalid")}
 	}
-	if err := linkauth.VerifyCertificate(record.Certificate, h.config.PublicURL.String(), identity, challenge, proof.GetPayload()); err != nil {
+	if err := linkauth.VerifyCertificate(record.Certificate, h.config.IdentityOrigin(), identity, challenge, proof.GetPayload()); err != nil {
 		return daemonHandshake{err: status.Error(codes.Unauthenticated, "daemon challenge response is invalid")}
 	}
 	if hello.GetApiVersion() != GatewayAPIVersion {

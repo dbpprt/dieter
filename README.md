@@ -1448,3 +1448,23 @@ includes this performance run after the debug functional suite.
 See [the investigation](docs/performance-investigation-2026-09-21.md) and
 [implementation report](docs/performance-implementation-2026-09-21.md)
 for measured workloads, profiling commands and validation limits.
+
+### Moving a gateway endpoint
+
+A gateway's public HTTPS endpoint can change without changing its enrolled
+identity. Set `DIETER_PUBLIC_URL` to the new origin and preserve the original
+origin in `DIETER_GATEWAY_ISSUER`. The issuer is a durable authentication and
+peer-store namespace; it is not a network destination. Keep the signing keys,
+daemon CA, sessions, allowlist and state volume intact.
+
+On startup an enrolled daemon checks the account-bound endpoint assertion signed
+by its pinned gateway key, authenticates the destination, and atomically updates
+its network address under the central store lock. Local data, peer database,
+actor identity, owner signatures and daemon enrollment remain unchanged. If
+discovery or destination verification fails, startup retains the current address.
+Keep the previous hostname serving the same gateway while offline machines and
+older installations update. Native clients authenticate separately at the new
+origin; saved credentials are not copied between origins.
+
+See [the production domain migration plan](docs/gateway-domain-migration-2026-09-22.md)
+for DNS, OAuth, certificate, rollout and acceptance ordering.

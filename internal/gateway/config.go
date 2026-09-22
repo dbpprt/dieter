@@ -16,6 +16,7 @@ type Config struct {
 	Root            string
 	Address         string
 	PublicURL       *url.URL
+	IssuerURL       *url.URL
 	GitHubClientID  string
 	GitHubSecret    string
 	AllowedUserIDs  map[int64]struct{}
@@ -46,6 +47,13 @@ func ConfigFromEnv(root string) (Config, error) {
 		return config, errors.New("DIETER_PUBLIC_URL must be an HTTPS origin without a path, query, or fragment")
 	}
 	config.PublicURL = publicURL
+	if raw := strings.TrimSpace(os.Getenv("DIETER_GATEWAY_ISSUER")); raw != "" {
+		issuer, e := url.Parse(raw)
+		if e != nil || issuer.Host == "" || issuer.User != nil || issuer.Path != "" || issuer.RawQuery != "" || issuer.Fragment != "" || issuer.Scheme != "https" {
+			return config, errors.New("DIETER_GATEWAY_ISSUER must be an HTTPS origin")
+		}
+		config.IssuerURL = issuer
+	}
 	for name, value := range map[string]string{"DIETER_GITHUB_BASE_URL": config.GitHubBaseURL, "DIETER_GITHUB_API_URL": config.GitHubAPIURL} {
 		parsed, parseErr := url.Parse(value)
 		if parseErr != nil || parsed.Host == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" || parsed.Scheme != "https" && !(config.DevInsecure && parsed.Scheme == "http" && isLoopbackHost(parsed.Hostname())) {
@@ -175,4 +183,12 @@ func envOr(key, fallback string) string {
 		return value
 	}
 	return fallback
+}
+
+// IdentityOrigin is the immutable trust/account namespace, never a dial target.
+func (c Config) IdentityOrigin() string {
+	if c.IssuerURL != nil {
+		return c.IssuerURL.String()
+	}
+	return c.PublicURL.String()
 }

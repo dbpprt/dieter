@@ -33,6 +33,8 @@ def inspect_snapshot(snapshot):
     settings = read_json(snapshot / 'release/public/settings.json')
     from render import settings as validate_settings
     validate_settings(settings)
+    require(policy.get('gatewayIdentityHost', policy['gatewayHost']) == settings.get('gatewayIdentityHost', settings['gatewayHost']), 'snapshot gateway identity mismatch')
+    require(policy.get('gatewayAliases', []) == settings.get('gatewayAliases', []), 'snapshot gateway aliases mismatch')
     for field in ('installRoot', 'configRoot', 'runtimeRoot', 'project', 'stateVolume', 'gatewayHost', 'allowedUserIDs',
                   'caddyData', 'caddyConfig', 'publicIPv4', 'turnIPv4', 'turnHost', 'legacyHosts'):
         require(policy[field] == settings[field], 'recovery settings differ from host policy')

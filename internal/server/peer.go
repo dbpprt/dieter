@@ -21,7 +21,7 @@ func (api *grpcAPI) peerIdentity(ctx context.Context, account string) (store.Pee
 		return identity, status.Error(codes.FailedPrecondition, "peer store awaits enrolled account discovery")
 	}
 	enrolled, err := daemon.LoadIdentity(api.server.store.Root)
-	if err != nil || !enrolled.Enrolled() || enrolled.ID != identity.DaemonID || enrolled.GatewayURL != identity.Gateway {
+	if err != nil || !enrolled.Enrolled() || enrolled.ID != identity.DaemonID || enrolled.Issuer() != identity.Gateway {
 		return identity, status.Error(codes.FailedPrecondition, "peer enrollment changed")
 	}
 	if account != "" && account != identity.Account {

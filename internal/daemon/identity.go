@@ -19,6 +19,7 @@ type Identity struct {
 	ID                      string `json:"id"`
 	Name                    string `json:"name"`
 	GatewayURL              string `json:"gatewayUrl"`
+	GatewayIssuer           string `json:"gatewayIssuer,omitempty"`
 	CertificatePEM          []byte `json:"certificatePem"`
 	DaemonCAPEM             []byte `json:"daemonCaPem"`
 	GatewaySigningPublicKey []byte `json:"gatewaySigningPublicKey"`
@@ -102,6 +103,12 @@ func LoadOrCreateEnrollmentIdentity(boardHome, name, gatewayURL string) (*Identi
 func (i *Identity) PublicKeyDER() ([]byte, error) { return x509.MarshalPKIXPublicKey(i.PublicKey) }
 
 func (i *Identity) SaveCredential(id, name string, certificate, daemonCA, signingPublic []byte, expiresAt string, generation uint64) error {
+	if i.GatewayIssuer != "" {
+		issuer, err := trust.GatewayOrigin(i.GatewayIssuer)
+		if err != nil || issuer != i.GatewayIssuer {
+			return errors.New("invalid enrolled gateway issuer")
+		}
+	}
 	i.ID, i.Name, i.CertificatePEM, i.DaemonCAPEM, i.GatewaySigningPublicKey, i.CertificateExpiresAt, i.Generation = id, name, certificate, daemonCA, signingPublic, expiresAt, generation
 	return i.save()
 }
@@ -113,6 +120,7 @@ func (i *Identity) ClearCredential() error {
 	i.GatewaySigningPublicKey = nil
 	i.CertificateExpiresAt = ""
 	i.Generation = 0
+	i.GatewayIssuer = ""
 	return i.save()
 }
 
@@ -159,4 +167,14 @@ func atomicWrite(path string, raw []byte, mode os.FileMode) error {
 func (i *Identity) CertificateExpired(now time.Time) bool {
 	value, err := time.Parse(time.RFC3339Nano, i.CertificateExpiresAt)
 	return err != nil || !value.After(now.UTC())
+}
+
+// Issuer is the durable authentication and peer-store namespace. GatewayURL is
+// only the current HTTPS endpoint. Existing enrollments already use their URL
+// as the namespace and retain it across an authenticated endpoint relocation.
+func (i *Identity) Issuer() string {
+	if i.GatewayIssuer != "" {
+		return i.GatewayIssuer
+	}
+	return i.GatewayURL
 }

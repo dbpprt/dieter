@@ -369,7 +369,8 @@ func testDaemonRoutes(t *testing.T, withRTC bool) {
 	}
 	defer gatewayListener.Close()
 	publicURL, _ := url.Parse("http://" + gatewayListener.Addr().String())
-	configuration := gateway.Config{Root: t.TempDir(), Address: gatewayListener.Addr().String(), PublicURL: publicURL, GitHubClientID: "test", GitHubSecret: "test", AllowedUserIDs: map[int64]struct{}{42: {}}, AuthSecret: []byte("0123456789abcdef0123456789abcdef"), SessionTTL: time.Hour, NativeRedirects: map[string]struct{}{}, GitHubBaseURL: "https://github.invalid", GitHubAPIURL: "https://api.github.invalid", DevInsecure: true}
+	issuerURL, _ := url.Parse("https://durable-gateway.example.test")
+	configuration := gateway.Config{IssuerURL: issuerURL, Root: t.TempDir(), Address: gatewayListener.Addr().String(), PublicURL: publicURL, GitHubClientID: "test", GitHubSecret: "test", AllowedUserIDs: map[int64]struct{}{42: {}}, AuthSecret: []byte("0123456789abcdef0123456789abcdef"), SessionTTL: time.Hour, NativeRedirects: map[string]struct{}{}, GitHubBaseURL: "https://github.invalid", GitHubAPIURL: "https://api.github.invalid", DevInsecure: true}
 	gatewayStore, err := gateway.OpenStore(configuration.Root)
 	if err != nil {
 		t.Fatal(err)
@@ -397,6 +398,7 @@ func testDaemonRoutes(t *testing.T, withRTC bool) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	identity.GatewayIssuer = credential.GetGatewayIssuer()
 	if err := identity.SaveCredential(credential.GetDaemonId(), credential.GetDaemonName(), credential.GetCertificatePem(), credential.GetDaemonCaPem(), credential.GetGatewaySigningPublicKey(), credential.GetExpiresAt(), credential.GetGeneration()); err != nil {
 		t.Fatal(err)
 	}
@@ -416,7 +418,7 @@ func testDaemonRoutes(t *testing.T, withRTC bool) {
 	}
 	powerActions := make(chan machine.Operation, 2)
 	screenManager := remotedesktop.New(remotedesktop.Options{
-		Identity: remotedesktop.Identity{DaemonID: identity.ID, GatewayURL: identity.GatewayURL, Generation: identity.Generation, PrivateKey: identity.PrivateKey, GatewaySigningPublicKey: identity.GatewaySigningPublicKey},
+		Identity: remotedesktop.Identity{DaemonID: identity.ID, GatewayURL: identity.Issuer(), Generation: identity.Generation, PrivateKey: identity.PrivateKey, GatewaySigningPublicKey: identity.GatewaySigningPublicKey},
 		Source:   remotedesktop.SourceOptions{Kind: "synthetic"},
 		SourceFactory: func(remotedesktop.SourceOptions) (remotedesktop.FrameSource, error) {
 			return &configurableScreenFixture{}, nil
@@ -431,7 +433,7 @@ func testDaemonRoutes(t *testing.T, withRTC bool) {
 		}
 		go func() { _ = transport.server.Serve(transport.listener) }()
 		defer transport.server.Stop()
-		control = controlrtc.New(controlrtc.Identity{DaemonID: identity.ID, GatewayURL: identity.GatewayURL, Generation: identity.Generation, GatewaySigningPublicKey: identity.GatewaySigningPublicKey}, transport.listener.Addr().String())
+		control = controlrtc.New(controlrtc.Identity{DaemonID: identity.ID, GatewayURL: identity.Issuer(), Generation: identity.Generation, GatewaySigningPublicKey: identity.GatewaySigningPublicKey}, transport.listener.Addr().String())
 		defer control.Close()
 	}
 	remoteServer := server.NewWithOptions(remoteStore, logger, server.Options{

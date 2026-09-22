@@ -388,6 +388,9 @@ daemon automatically advertises an authenticated loopback route; direct flags
 add an optional LAN, Tailscale, or public route.
 A package manager may supply --runtime with a fixed executable directory.
 Service startup activates a staged verified release there before workers begin.
+An enrolled daemon also verifies any gateway-signed endpoint relocation at startup,
+preserving its enrolled identity and shared account. Discovery failure retains
+its current address. Status reports the selected network endpoint.
 `
 	set := flags("daemon start")
 	addr := set.String("addr", "127.0.0.1:4242", "listen address")
@@ -454,6 +457,23 @@ Service startup activates a staged verified release there before workers begin.
 	defer cancel()
 	identity, identityErr := dieterdaemon.LoadIdentity(c.Store.Root)
 	enrolled := identityErr == nil && identity.Enrolled()
+	if enrolled {
+		discovery, done := context.WithTimeout(ctx, 10*time.Second)
+		endpoint, resolveErr := dieterdaemon.ResolveGatewayEndpoint(discovery, identity)
+		done()
+		if resolveErr != nil {
+			logger.Warn("gateway endpoint discovery unavailable; retaining enrolled endpoint", "error", resolveErr)
+		} else if endpoint != identity.GatewayURL {
+			if err := c.Store.RelocateDaemonGateway(identity.ID, identity.GatewayURL, identity.Issuer(), endpoint, identity.GatewaySigningPublicKey); err != nil {
+				return fmt.Errorf("persist verified gateway endpoint: %w", err)
+			}
+			identity, identityErr = dieterdaemon.LoadIdentity(c.Store.Root)
+			if identityErr != nil {
+				return identityErr
+			}
+			logger.Info("gateway endpoint relocated with enrollment preserved", "gateway", endpoint)
+		}
+	}
 	remoteDesktopOptions := remotedesktop.Options{Logger: logger, Source: remoteDesktopSourceOptions(logger)}
 	remoteDesktopOptions.Source.ClipboardDirectory = filepath.Join(c.Store.Root, "clipboard")
 	if runtime.GOOS == "linux" {
@@ -461,7 +481,7 @@ Service startup activates a staged verified release there before workers begin.
 	}
 	if enrolled {
 		remoteDesktopOptions.Identity = remotedesktop.Identity{
-			DaemonID: identity.ID, GatewayURL: identity.GatewayURL, Generation: identity.Generation,
+			DaemonID: identity.ID, GatewayURL: identity.Issuer(), Generation: identity.Generation,
 			PrivateKey: identity.PrivateKey, GatewaySigningPublicKey: identity.GatewaySigningPublicKey,
 		}
 	}
@@ -514,7 +534,7 @@ Service startup activates a staged verified release there before workers begin.
 			logger.Warn("automatic local route is unavailable; clients will use the gateway relay", "error", loopbackErr)
 		} else {
 			routes = append(routes, loopback.candidate)
-			controlRTC = controlrtc.New(controlrtc.Identity{DaemonID: identity.ID, GatewayURL: identity.GatewayURL, Generation: identity.Generation, GatewaySigningPublicKey: identity.GatewaySigningPublicKey}, loopback.listener.Addr().String())
+			controlRTC = controlrtc.New(controlrtc.Identity{DaemonID: identity.ID, GatewayURL: identity.Issuer(), Generation: identity.Generation, GatewaySigningPublicKey: identity.GatewaySigningPublicKey}, loopback.listener.Addr().String())
 			serveDaemonDirectRoute(ctx, cancel, logger, loopback)
 			logger.Info("automatic authenticated local route enabled", "address", loopback.listener.Addr().String())
 		}
@@ -675,6 +695,7 @@ Gateway URLs require HTTPS; HTTP is allowed only on literal loopback addresses.
 	for {
 		credential, completeErr := dieterdaemon.CompleteEnrollment(ctx, identity, enrollment.GetEnrollmentId(), enrollment.GetEnrollmentSecret())
 		if completeErr == nil {
+			identity.GatewayIssuer = credential.GetGatewayIssuer()
 			if err := identity.SaveCredential(credential.GetDaemonId(), credential.GetDaemonName(), credential.GetCertificatePem(), credential.GetDaemonCaPem(), credential.GetGatewaySigningPublicKey(), credential.GetExpiresAt(), credential.GetGeneration()); err != nil {
 				return err
 			}

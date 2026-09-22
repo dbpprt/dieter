@@ -60,7 +60,7 @@ func (credential daemonGatewayCredential) GetRequestMetadata(context.Context, ..
 	if identity == nil || !identity.Enrolled() {
 		return nil, errors.New("the local Dieter daemon is not enrolled; run `dieter setup`")
 	}
-	proof := linkauth.SignPeer(identity.PrivateKey, identity.ID, identity.GatewayURL, identity.Generation, time.Now())
+	proof := linkauth.SignPeer(identity.PrivateKey, identity.ID, identity.Issuer(), identity.Generation, time.Now())
 	return map[string]string{"authorization": "Bearer " + proof}, nil
 }
 

@@ -237,7 +237,7 @@ func (c *GatewayClient) runOnce(ctx context.Context) (time.Duration, error) {
 	if challenge.GetKind() != gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_PING || challenge.GetDaemonId() != c.Identity.ID || len(challenge.GetPayload()) != 32 {
 		return 0, errors.New("gateway did not provide a valid daemon challenge")
 	}
-	proof := linkauth.Sign(c.Identity.PrivateKey, c.Identity.GatewayURL, c.Identity.ID, challenge.GetPayload())
+	proof := linkauth.Sign(c.Identity.PrivateKey, c.Identity.Issuer(), c.Identity.ID, challenge.GetPayload())
 	if err := stream.Send(&gatewayv1.DaemonLinkFrame{Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_PONG, DaemonId: c.Identity.ID, RequestId: challenge.GetRequestId(), Payload: proof}); err != nil {
 		return 0, handshakeFailure(err)
 	}
@@ -655,7 +655,7 @@ func (c *GatewayClient) relayLocal(ctx context.Context, local *grpc.ClientConn, 
 	var operatorSubject string
 	var claims trust.DelegationClaims
 	if err == nil {
-		claims, err = trust.ParseAndVerifyDelegation(public, frame.GetDelegationAssertion(), c.Identity.GatewayURL, c.Identity.ID, frame.GetRequestId(), frame.GetMethod(), frame.GetPayload(), c.Identity.Generation, time.Now().UTC())
+		claims, err = trust.ParseAndVerifyDelegation(public, frame.GetDelegationAssertion(), c.Identity.Issuer(), c.Identity.ID, frame.GetRequestId(), frame.GetMethod(), frame.GetPayload(), c.Identity.Generation, time.Now().UTC())
 		operatorSubject = claims.Subject
 	}
 	if err != nil {
@@ -833,7 +833,7 @@ func Unenroll(ctx context.Context, identity *Identity) error {
 	_, err = gatewayv1.NewGatewayServiceClient(connection).UnenrollDaemon(ctx, &gatewayv1.UnenrollDaemonRequest{
 		DaemonId:  identity.ID,
 		Nonce:     nonce,
-		Signature: linkauth.SignUnenrollment(identity.PrivateKey, identity.GatewayURL, identity.ID, nonce),
+		Signature: linkauth.SignUnenrollment(identity.PrivateKey, identity.Issuer(), identity.ID, nonce),
 	})
 	return err
 }

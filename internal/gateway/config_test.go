@@ -48,6 +48,7 @@ func TestPlaintextModesRequireLoopbackEvenWithTLSFiles(t *testing.T) {
 
 func setMinimumGatewayEnvironment(t *testing.T) {
 	t.Helper()
+	t.Setenv("DIETER_GATEWAY_ISSUER", "")
 	t.Setenv("DIETER_GITHUB_CLIENT_ID", "client")
 	t.Setenv("DIETER_GITHUB_CLIENT_SECRET", "secret")
 	t.Setenv("DIETER_GITHUB_ALLOWED_USER_IDS", "42")
@@ -162,5 +163,22 @@ func TestRTCConfigurationRequiresBoundedTURNSettings(t *testing.T) {
 	t.Setenv("DIETER_RTC_TTL", "30m")
 	if _, err := ConfigFromEnv(t.TempDir()); err == nil {
 		t.Fatal("oversized RTC TTL was accepted")
+	}
+}
+
+func TestGatewayIssuerRemainsIndependentOfPublicEndpoint(t *testing.T) {
+	setMinimumGatewayEnvironment(t)
+	t.Setenv("DIETER_GATEWAY_PROXY_MODE", "1")
+	t.Setenv("DIETER_PUBLIC_URL", "https://gateway.new.example")
+	t.Setenv("DIETER_GATEWAY_ISSUER", "https://gateway.old.example")
+	config, err := ConfigFromEnv(t.TempDir())
+	if err != nil || config.IdentityOrigin() != "https://gateway.old.example" || config.PublicURL.Host != "gateway.new.example" {
+		t.Fatalf("issuer/endpoint config: %v", err)
+	}
+	for _, bad := range []string{"http://remote.example", "https://user@old.example", "https://old.example/path", "https://old.example?x=y"} {
+		t.Setenv("DIETER_GATEWAY_ISSUER", bad)
+		if _, err := ConfigFromEnv(t.TempDir()); err == nil {
+			t.Fatal("invalid identity origin accepted")
+		}
 	}
 }
