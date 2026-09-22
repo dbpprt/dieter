@@ -37,7 +37,7 @@ type peerGatewayConn struct {
 func (c peerGatewayConn) auth(ctx context.Context) context.Context {
 	values, _ := metadata.FromOutgoingContext(ctx)
 	values = values.Copy()
-	values.Set("authorization", "Bearer "+linkauth.SignPeer(c.identity.PrivateKey, c.identity.ID, c.identity.GatewayURL, c.identity.Generation, time.Now()))
+	values.Set("authorization", "Bearer "+linkauth.SignPeer(c.identity.PrivateKey, c.identity.ID, c.identity.Issuer(), c.identity.Generation, time.Now()))
 	if c.target != "" {
 		values.Set("x-dieter-daemon-id", c.target)
 	}
@@ -319,8 +319,8 @@ func (p *PeerSync) Round(ctx context.Context) error {
 		return fmt.Errorf("invalid peer account")
 	}
 	subject := fmt.Sprintf("github:%d", account.GetGithubId())
-	scope := peerstore.Revision([]string{p.Identity.GatewayURL, subject})
-	binding, err := p.Store.BindPeerAccount(scope, subject, p.Identity.ID, p.Identity.GatewayURL)
+	scope := peerstore.Revision([]string{p.Identity.Issuer(), subject})
+	binding, err := p.Store.BindPeerAccount(scope, subject, p.Identity.ID, p.Identity.Issuer())
 	if err != nil {
 		return err
 	}

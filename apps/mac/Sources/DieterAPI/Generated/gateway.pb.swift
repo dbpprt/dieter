@@ -404,6 +404,9 @@ public nonisolated struct Dieter_Gateway_V1_Account: Sendable {
 
   public var login: String = String()
 
+  /// Signed, account-bound current endpoint. Identity survives a DNS move.
+  public var signedGatewayEndpoint: String = String()
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
@@ -642,6 +645,9 @@ public nonisolated struct Dieter_Gateway_V1_DaemonCredential: Sendable {
   public var expiresAt: String = String()
 
   public var generation: UInt64 = 0
+
+  /// Durable issuer/account namespace; independent of the public network URL.
+  public var gatewayIssuer: String = String()
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -1638,7 +1644,7 @@ nonisolated extension Dieter_Gateway_V1_DaemonLinkFrameKind: SwiftProtobuf._Prot
 
 nonisolated extension Dieter_Gateway_V1_Account: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".Account"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}github_id\0\u{1}login\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}github_id\0\u{1}login\0\u{3}signed_gateway_endpoint\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -1648,6 +1654,7 @@ nonisolated extension Dieter_Gateway_V1_Account: SwiftProtobuf.Message, SwiftPro
       switch fieldNumber {
       case 1: try { try decoder.decodeSingularInt64Field(value: &self.githubID) }()
       case 2: try { try decoder.decodeSingularStringField(value: &self.login) }()
+      case 3: try { try decoder.decodeSingularStringField(value: &self.signedGatewayEndpoint) }()
       default: break
       }
     }
@@ -1660,12 +1667,16 @@ nonisolated extension Dieter_Gateway_V1_Account: SwiftProtobuf.Message, SwiftPro
     if !self.login.isEmpty {
       try visitor.visitSingularStringField(value: self.login, fieldNumber: 2)
     }
+    if !self.signedGatewayEndpoint.isEmpty {
+      try visitor.visitSingularStringField(value: self.signedGatewayEndpoint, fieldNumber: 3)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
   public static func ==(lhs: Dieter_Gateway_V1_Account, rhs: Dieter_Gateway_V1_Account) -> Bool {
     if lhs.githubID != rhs.githubID {return false}
     if lhs.login != rhs.login {return false}
+    if lhs.signedGatewayEndpoint != rhs.signedGatewayEndpoint {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -2145,7 +2156,7 @@ nonisolated extension Dieter_Gateway_V1_UnenrollDaemonRequest: SwiftProtobuf.Mes
 
 nonisolated extension Dieter_Gateway_V1_DaemonCredential: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".DaemonCredential"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}daemon_id\0\u{3}daemon_name\0\u{3}certificate_pem\0\u{3}daemon_ca_pem\0\u{3}gateway_signing_public_key\0\u{3}expires_at\0\u{1}generation\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}daemon_id\0\u{3}daemon_name\0\u{3}certificate_pem\0\u{3}daemon_ca_pem\0\u{3}gateway_signing_public_key\0\u{3}expires_at\0\u{1}generation\0\u{3}gateway_issuer\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -2160,6 +2171,7 @@ nonisolated extension Dieter_Gateway_V1_DaemonCredential: SwiftProtobuf.Message,
       case 5: try { try decoder.decodeSingularBytesField(value: &self.gatewaySigningPublicKey) }()
       case 6: try { try decoder.decodeSingularStringField(value: &self.expiresAt) }()
       case 7: try { try decoder.decodeSingularUInt64Field(value: &self.generation) }()
+      case 8: try { try decoder.decodeSingularStringField(value: &self.gatewayIssuer) }()
       default: break
       }
     }
@@ -2187,6 +2199,9 @@ nonisolated extension Dieter_Gateway_V1_DaemonCredential: SwiftProtobuf.Message,
     if self.generation != 0 {
       try visitor.visitSingularUInt64Field(value: self.generation, fieldNumber: 7)
     }
+    if !self.gatewayIssuer.isEmpty {
+      try visitor.visitSingularStringField(value: self.gatewayIssuer, fieldNumber: 8)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -2198,6 +2213,7 @@ nonisolated extension Dieter_Gateway_V1_DaemonCredential: SwiftProtobuf.Message,
     if lhs.gatewaySigningPublicKey != rhs.gatewaySigningPublicKey {return false}
     if lhs.expiresAt != rhs.expiresAt {return false}
     if lhs.generation != rhs.generation {return false}
+    if lhs.gatewayIssuer != rhs.gatewayIssuer {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

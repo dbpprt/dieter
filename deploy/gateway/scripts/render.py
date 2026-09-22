@@ -20,13 +20,21 @@ def hostname(value):
 
 
 def settings(value):
-    keys(value, FIELDS, "settings")
+    value = dict(value)
+    value.setdefault("gatewayIdentityHost", value.get("gatewayHost"))
+    value.setdefault("gatewayAliases", [])
+    keys(value, [*FIELDS, "gatewayIdentityHost", "gatewayAliases"], "settings")
     require(type(value["interfaceVersion"]) is int and value["interfaceVersion"] == 1, "unsupported bundle interface")
     for field in ("project", "stateVolume"):
         require(isinstance(value[field], str) and NAME.fullmatch(value[field]), f"invalid {field}")
-    for field in ("gatewayHost", "turnHost"):
+    for field in ("gatewayHost", "gatewayIdentityHost", "turnHost"):
         hostname(value[field])
     require(value["gatewayHost"] != value["turnHost"], "gateway and TURN hosts must differ")
+    aliases = value["gatewayAliases"]
+    require(isinstance(aliases, list) and len(aliases) <= 4 and len(aliases) == len(set(aliases)), "invalid gateway aliases")
+    for alias in aliases:
+        hostname(alias)
+        require(alias not in (value["gatewayHost"], value["turnHost"], *value["legacyHosts"]), "duplicate gateway alias")
     for field in ("publicIPv4", "turnIPv4"):
         ip = ipaddress.ip_address(value[field])
         require(ip.version == 4 and not ip.is_loopback and not ip.is_multicast and not ip.is_unspecified,
@@ -93,7 +101,8 @@ def render(config, private, image, release, output, legacy=None):
     certs = s["configRoot"] + "/certificates"
     managed = s["tls"] == "managed"
     multiplex = managed and s["topology"] == "single-ip"
-    hosts = [s["gatewayHost"], *s["legacyHosts"]]
+    gateway_hosts = [s["gatewayHost"], *s.get("gatewayAliases", [])]
+    hosts = [*gateway_hosts, *s["legacyHosts"]]
     if s["legacyHosts"]:
         require(legacy is not None, "legacy hosts require a reviewed Caddy fragment")
     elif legacy:
@@ -101,13 +110,14 @@ def render(config, private, image, release, output, legacy=None):
     env = {
         "DIETER_GATEWAY_ADDR": "127.0.0.1:4243", "DIETER_GATEWAY_PROXY_MODE": "1",
         "DIETER_PUBLIC_URL": "https://" + s["gatewayHost"],
+        "DIETER_GATEWAY_ISSUER": "https://" + s.get("gatewayIdentityHost", s["gatewayHost"]),
         "DIETER_GITHUB_CLIENT_ID": private["githubClientID"], "DIETER_GITHUB_CLIENT_SECRET": private["githubClientSecret"],
         "DIETER_AUTH_SECRET": private["authSecret"],
         "DIETER_GITHUB_ALLOWED_USER_IDS": ",".join(map(str, s["allowedUserIDs"])),
         "DIETER_NATIVE_REDIRECT_URIS": "dieter-mac://oauth/callback,dieter-android://oauth/callback",
         "DIETER_NATIVE_SESSION_TTL": "720h", "DIETER_RTC_TTL": "5m",
-        "DIETER_RTC_STUN_URLS": f"stun:{s['gatewayHost']}:3478",
-        "DIETER_RTC_TURN_URLS": ",".join([f"turn:{s['gatewayHost']}:3478?transport=udp", f"turn:{s['gatewayHost']}:3478?transport=tcp"] +
+        "DIETER_RTC_STUN_URLS": f"stun:{s['turnHost']}:3478",
+        "DIETER_RTC_TURN_URLS": ",".join([f"turn:{s['turnHost']}:3478?transport=udp", f"turn:{s['turnHost']}:3478?transport=tcp"] +
                                       ([f"turns:{s['turnHost']}:443?transport=tcp"] if managed else [])),
         "DIETER_RTC_TURN_SECRET": private["turnSharedSecret"].encode().hex(),
     }
@@ -116,7 +126,7 @@ def render(config, private, image, release, output, legacy=None):
     turn = ["listening-port=3478", f"listening-ip={s['turnIPv4']}", "listening-ip=127.0.0.1",
             f"relay-ip={s['turnIPv4']}", f"external-ip={s['turnIPv4']}", "relay-threads=1",
             f"min-port={t['minPort']}", f"max-port={t['maxPort']}", "fingerprint", "use-auth-secret",
-            "static-auth-secret=" + private["turnSharedSecret"], f"realm={s['gatewayHost']}", f"server-name={s['turnHost']}",
+            "static-auth-secret=" + private["turnSharedSecret"], f"realm={s['turnHost']}", f"server-name={s['turnHost']}",
             f"user-quota={t['userQuota']}", f"total-quota={t['totalQuota']}", f"max-bps={t['maxBps']}", f"bps-capacity={t['bpsCapacity']}",
             "no-cli", "no-dtls", "no-tcp-relay", "no-multicast-peers", "no-software-attribute", "log-file=stdout", "simple-log"]
     # Public relay-to-relay pairs remain allowed. No IPv6 listener is created.
@@ -137,7 +147,7 @@ def render(config, private, image, release, output, legacy=None):
         caddy += [f"  default_bind {s['publicIPv4']}"]
     caddy += ["}", f"http://{', http://'.join([*hosts, s['turnHost']])} {{", f"  bind {s['publicIPv4']}",
               "  handle /.well-known/acme-challenge/* {", "    root * /acme", "    file_server", "  }",
-              "  handle {", "    redir https://{host}{uri} 308", "  }", "}", s["gatewayHost"] + " {"]
+              "  handle {", "    redir https://{host}{uri} 308", "  }", "}", ", ".join(gateway_hosts) + " {"]
     if managed:
         caddy += ["  tls /certificates/gateway/current/fullchain.pem /certificates/gateway/current/privkey.pem {", "    protocols tls1.3", "  }"]
     else:

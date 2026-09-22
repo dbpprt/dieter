@@ -133,6 +133,8 @@ class HostTests(unittest.TestCase):
             Path(selection[key]).mkdir()
         self.host.config.update(selection, controllerLink="/usr/local/lib/dieter-deploy")
         self.host.config["turnHost"] = "next-turn.example.com"
+        self.host.config["gatewayHost"] = "next-gateway.example.com"
+        self.host.config["gatewayAliases"] = [selection["gatewayHost"]]
         self.host.config["legacyHosts"] = ["retired.example.com"]
         atomic(self.policy, canonical(self.host.config))
         original_policy = self.policy.read_bytes()
@@ -161,6 +163,9 @@ class HostTests(unittest.TestCase):
             # snapshot, including SQLite integrity and archived image mapping.
             _, _, policy, active, _, _ = inspect_snapshot(argv[-1])
             self.assertEqual(policy["turnHost"], selection["turnHost"])
+            self.assertEqual(policy["gatewayHost"], selection["gatewayHost"])
+            self.assertEqual(policy["gatewayIdentityHost"], selection["gatewayHost"])
+            self.assertEqual(policy["gatewayAliases"], [])
             self.assertEqual(policy["legacyHosts"], active["legacyHosts"])
             archived.append(policy)
             return canonical({"snapshotID": "fixture", "offHost": True})

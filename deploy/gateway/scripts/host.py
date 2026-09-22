@@ -134,6 +134,8 @@ class Host:
         for name in ("installRoot", "configRoot", "runtimeRoot", "project", "gatewayHost", "allowedUserIDs",
                      "stateVolume", "caddyData", "caddyConfig", "publicIPv4", "turnIPv4", "turnHost"):
             require(selection[name] == self.config[name], "settings do not match installed host policy")
+        require(selection.get("gatewayIdentityHost", selection["gatewayHost"]) == self.config.get("gatewayIdentityHost", self.config["gatewayHost"]), "gateway identity namespace differs from host policy")
+        require(selection.get("gatewayAliases", []) == self.config.get("gatewayAliases", []), "gateway aliases differ from host policy")
         require(selection["legacyHosts"] in (self.config.get("legacyHosts", []), []), "unexpected legacy hostname selection")
         if self.config.get("legacyHosts") and not selection["legacyHosts"]:
             from qualification import require_retirement_ready
@@ -171,8 +173,10 @@ class Host:
                 # Recovery must pin the routes actually archived with this
                 # snapshot, not the next selection authorized on the host.
                 active = read_json(current / "public/settings.json")
-                for name in ("turnHost", "legacyHosts"):
+                for name in ("gatewayHost", "turnHost", "legacyHosts"):
                     recovery_policy[name] = active[name]
+                recovery_policy["gatewayIdentityHost"] = active.get("gatewayIdentityHost", active["gatewayHost"])
+                recovery_policy["gatewayAliases"] = active.get("gatewayAliases", [])
             atomic(stage / "host-policy.json", canonical(recovery_policy))
             # Save runnable image bytes as well as manifests: a digest alone is
             # not a recovery archive when registry tags are later removed.

@@ -138,7 +138,7 @@ func TestOAuthEnrollmentRequiresBrowserBoundExplicitConfirmation(t *testing.T) {
 		t.Fatal(err)
 	}
 	start := httptest.NewRecorder()
-	auth.start(start, httptest.NewRequest(http.MethodGet, "/auth/github/start?enrollment_id=enroll-test&user_code=ABCD", nil))
+	auth.start(start, httptest.NewRequest(http.MethodGet, auth.config.PublicURL.String()+"/auth/github/start?enrollment_id=enroll-test&user_code=ABCD", nil))
 	if start.Code != http.StatusFound {
 		t.Fatalf("OAuth start failed: %d %s", start.Code, start.Body.String())
 	}
@@ -328,7 +328,7 @@ func TestAuthenticationStateAndRatePeersAreBounded(t *testing.T) {
 	}
 	recorder := httptest.NewRecorder()
 	digest := sha256.Sum256([]byte("verifier"))
-	auth.start(recorder, httptest.NewRequest(http.MethodGet, "/auth/github/start?"+url.Values{"native_redirect_uri": {"dieter://auth/callback"}, "native_code_challenge": {base64.RawURLEncoding.EncodeToString(digest[:])}}.Encode(), nil))
+	auth.start(recorder, httptest.NewRequest(http.MethodGet, auth.config.PublicURL.String()+"/auth/github/start?"+url.Values{"native_redirect_uri": {"dieter://auth/callback"}, "native_code_challenge": {base64.RawURLEncoding.EncodeToString(digest[:])}}.Encode(), nil))
 	if recorder.Code != http.StatusInternalServerError {
 		t.Fatalf("OAuth pending cap not enforced: %d", recorder.Code)
 	}
@@ -411,5 +411,15 @@ func TestOAuthExchangeDoesNotForwardSecretsToRedirects(t *testing.T) {
 	case <-redirected:
 		t.Fatal("OAuth client credentials were sent to a redirect target")
 	default:
+	}
+}
+
+func TestOAuthAliasRedirectsBeforeCreatingCookie(t *testing.T) {
+	auth := newSecurityTestAuth(t)
+	request := httptest.NewRequest(http.MethodGet, "https://retained.example/auth/github/start?native_redirect_uri=dieter%3A%2F%2Fauth%2Fcallback&native_code_challenge=example", nil)
+	response := httptest.NewRecorder()
+	auth.start(response, request)
+	if response.Code != http.StatusTemporaryRedirect || response.Header().Get("Location") != auth.config.PublicURL.String()+request.URL.RequestURI() || len(response.Result().Cookies()) != 0 {
+		t.Fatalf("alias must move OAuth to canonical cookie origin: %d %s", response.Code, response.Header().Get("Location"))
 	}
 }

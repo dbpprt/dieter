@@ -45,6 +45,8 @@ service DaemonLinkService {
 message Account {
   int64 github_id = 1;
   string login = 2;
+  // Signed, account-bound current endpoint. Identity survives a DNS move.
+  string signed_gateway_endpoint = 3;
 }
 
 message DaemonRef {
@@ -129,6 +131,8 @@ message DaemonCredential {
   bytes gateway_signing_public_key = 5;
   string expires_at = 6;
   uint64 generation = 7;
+  // Durable issuer/account namespace; independent of the public network URL.
+  string gateway_issuer = 8;
 }
 
 message RenameDaemonRequest {

@@ -38,6 +38,19 @@ class RenderTests(unittest.TestCase):
         self.assertEqual((out / "private").stat().st_mode & 0o777, 0o700)
         self.assertEqual((out / "private/gateway.env").stat().st_mode & 0o777, 0o600)
 
+    def test_gateway_move_preserves_identity_and_moves_all_turn_urls(self):
+        self.settings.update(gatewayHost="gateway.new.example", gatewayIdentityHost="gateway.old.example",
+                             gatewayAliases=["gateway.old.example"], turnHost="turn.new.example")
+        out = self.rendered()
+        env = dict(line.split("=", 1) for line in (out / "private/gateway.env").read_text().splitlines())
+        self.assertEqual(env["DIETER_PUBLIC_URL"], "https://gateway.new.example")
+        self.assertEqual(env["DIETER_GATEWAY_ISSUER"], "https://gateway.old.example")
+        self.assertEqual(env["DIETER_RTC_STUN_URLS"], "stun:turn.new.example:3478")
+        self.assertEqual(env["DIETER_RTC_TURN_URLS"].split(","), ["turn:turn.new.example:3478?transport=udp", "turn:turn.new.example:3478?transport=tcp", "turns:turn.new.example:443?transport=tcp"])
+        self.assertIn("realm=turn.new.example\n", (out / "private/turnserver.conf").read_text())
+        self.assertIn("gateway.new.example, gateway.old.example {", (out / "public/Caddyfile").read_text())
+        self.assertIn("gateway.new.example gateway.old.example", (out / "public/haproxy.cfg").read_text())
+
     def test_environment_contract(self):
         out = self.rendered()
         env = (out / "private/gateway.env").read_text()

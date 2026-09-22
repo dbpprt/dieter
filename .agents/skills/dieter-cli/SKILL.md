@@ -893,3 +893,15 @@ Acknowledgement means local durability, not a quorum or globally linearizable
 CAS. Read every causal sibling before resolving meaningful conflicts. Gateway
 storage and execution ownership are unaffected. Never write central storage
 files directly or restart the operator daemon to test synchronization.
+
+## Gateway endpoint relocation
+
+`dieter serve` / `dieter daemon start` checks the authenticated gateway's signed
+endpoint assertion before starting workers. The proposed HTTPS endpoint must be
+signed by the enrolled gateway key and authenticate the same account. A verified
+move atomically updates only the network endpoint, preserving the durable issuer,
+enrollment, keys and peer account. Discovery failures retain the enrolled route.
+`dieter daemon status` reports the network endpoint; explicit global `--gateway`
+continues to require that endpoint. Never edit daemon identity or peer storage
+manually, and never unenroll/re-enroll as a hostname migration shortcut.
+Production rollout updates/restarts are operator work, never a testing method.

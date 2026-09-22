@@ -73,7 +73,7 @@ func (s *DirectServer) handle(_ any, stream grpc.ServerStream) error {
 	if err != nil {
 		return status.Error(codes.Internal, "daemon trust configuration is invalid")
 	}
-	claims, err := trust.ParseAndVerifyDaemonToken(public, token, s.identity.GatewayURL, s.identity.ID, s.identity.Generation, time.Now().UTC())
+	claims, err := trust.ParseAndVerifyDaemonToken(public, token, s.identity.Issuer(), s.identity.ID, s.identity.Generation, time.Now().UTC())
 	if err != nil {
 		return status.Error(codes.Unauthenticated, "daemon access token is invalid")
 	}

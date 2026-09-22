@@ -20,6 +20,7 @@ import (
 	"github.com/dbpprt/dieter/internal/buildinfo"
 	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
 	"github.com/dbpprt/dieter/internal/linkauth"
+	"github.com/dbpprt/dieter/internal/trust"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/peer"
@@ -53,7 +54,15 @@ func (s *Service) GetAccount(ctx context.Context, _ *emptypb.Empty) (*gatewayv1.
 	if !ok {
 		return nil, status.Error(codes.Unauthenticated, "authentication required")
 	}
-	return &gatewayv1.Account{GithubId: principal.GitHubID, Login: principal.Login}, nil
+	now := time.Now()
+	endpoint, err := trust.SignCompact(s.keys.SigningPrivate, trust.GatewayEndpointClaims{
+		Issuer: s.config.IdentityOrigin(), Audience: "dieter-gateway-endpoint", Subject: fmt.Sprintf("github:%d", principal.GitHubID),
+		Endpoint: s.config.PublicURL.String(), Contract: GatewayAPIVersion, IssuedAt: now.Unix(), ExpiresAt: now.Add(5 * time.Minute).Unix(),
+	})
+	if err != nil {
+		return nil, status.Error(codes.Internal, "sign gateway endpoint")
+	}
+	return &gatewayv1.Account{GithubId: principal.GitHubID, Login: principal.Login, SignedGatewayEndpoint: endpoint}, nil
 }
 
 func (s *Service) ListDaemons(ctx context.Context, _ *emptypb.Empty) (*gatewayv1.ListDaemonsResponse, error) {
@@ -342,7 +351,7 @@ func (s *Service) UnenrollDaemon(_ context.Context, request *gatewayv1.UnenrollD
 		return nil, status.Error(codes.Unauthenticated, "daemon unenrollment proof is invalid")
 	}
 	record, err := s.store.Daemon(request.GetDaemonId())
-	if err != nil || linkauth.VerifyUnenrollment(record.Certificate, s.config.PublicURL.String(), record.ID, request.GetNonce(), request.GetSignature()) != nil {
+	if err != nil || linkauth.VerifyUnenrollment(record.Certificate, s.config.IdentityOrigin(), record.ID, request.GetNonce(), request.GetSignature()) != nil {
 		return nil, status.Error(codes.Unauthenticated, "daemon unenrollment proof is invalid")
 	}
 	if !record.Revoked {
@@ -385,7 +394,7 @@ func (s *Service) ExchangeDaemonToken(ctx context.Context, request *gatewayv1.Ex
 	if err != nil {
 		return nil, err
 	}
-	token, expires, err := s.keys.SignDaemonToken(s.config.PublicURL.String(), record.ID, principal.GitHubID, record.Generation, request.GetClientKeyThumbprint(), 5*time.Minute)
+	token, expires, err := s.keys.SignDaemonToken(s.config.IdentityOrigin(), record.ID, principal.GitHubID, record.Generation, request.GetClientKeyThumbprint(), 5*time.Minute)
 	if err != nil {
 		return nil, status.Error(codes.Internal, "issue daemon access token")
 	}
@@ -432,7 +441,7 @@ func (s *Service) GetRTCConfiguration(ctx context.Context, request *gatewayv1.Da
 	if err != nil {
 		return nil, status.Error(codes.Internal, "encode RTC configuration")
 	}
-	envelope, err := s.keys.SignRTCConfiguration(s.config.PublicURL.String(), RTCConfigurationClaims{
+	envelope, err := s.keys.SignRTCConfiguration(s.config.IdentityOrigin(), RTCConfigurationClaims{
 		Audience: "board-daemon:" + record.ID, Subject: subject, ID: configuration.ConfigurationId,
 		ConfigurationHash: base64.RawURLEncoding.EncodeToString(digest), DaemonGeneration: record.Generation,
 		IssuedAt: now.Unix(), ExpiresAt: expires.Unix(),
@@ -479,7 +488,7 @@ func (s *Service) credential(record DaemonRecord) *gatewayv1.DaemonCredential {
 			expires = certificate.NotAfter.UTC().Format(time.RFC3339Nano)
 		}
 	}
-	return &gatewayv1.DaemonCredential{DaemonId: record.ID, DaemonName: record.Name, CertificatePem: record.Certificate, DaemonCaPem: s.keys.DaemonCAPEM, GatewaySigningPublicKey: public, ExpiresAt: expires, Generation: record.Generation}
+	return &gatewayv1.DaemonCredential{DaemonId: record.ID, DaemonName: record.Name, CertificatePem: record.Certificate, DaemonCaPem: s.keys.DaemonCAPEM, GatewaySigningPublicKey: public, ExpiresAt: expires, Generation: record.Generation, GatewayIssuer: s.config.IdentityOrigin()}
 }
 
 func hmacEqual(left, right string) bool {

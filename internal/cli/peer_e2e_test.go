@@ -52,7 +52,8 @@ func testPeerMachines(t *testing.T, wantRoute string) {
 	}
 	defer listener.Close()
 	origin, _ := url.Parse("http://" + listener.Addr().String())
-	config := gateway.Config{Root: t.TempDir(), Address: listener.Addr().String(), PublicURL: origin, GitHubClientID: "test", GitHubSecret: "test", AllowedUserIDs: map[int64]struct{}{42: {}, 43: {}}, AuthSecret: []byte("0123456789abcdef0123456789abcdef"), SessionTTL: time.Hour, NativeRedirects: map[string]struct{}{}, GitHubBaseURL: "https://github.invalid", GitHubAPIURL: "https://api.github.invalid", DevInsecure: true, RTCTTL: 5 * time.Minute}
+	issuerURL, _ := url.Parse("https://durable-gateway.example.test")
+	config := gateway.Config{IssuerURL: issuerURL, Root: t.TempDir(), Address: listener.Addr().String(), PublicURL: origin, GitHubClientID: "test", GitHubSecret: "test", AllowedUserIDs: map[int64]struct{}{42: {}, 43: {}}, AuthSecret: []byte("0123456789abcdef0123456789abcdef"), SessionTTL: time.Hour, NativeRedirects: map[string]struct{}{}, GitHubBaseURL: "https://github.invalid", GitHubAPIURL: "https://api.github.invalid", DevInsecure: true, RTCTTL: 5 * time.Minute}
 	if wantRoute == "webrtc-turn" {
 		socket, e := net.ListenPacket("udp4", "127.0.0.1:0")
 		if e != nil {
@@ -100,19 +101,20 @@ func testPeerMachines(t *testing.T, wantRoute string) {
 		if e != nil {
 			t.Fatal(e)
 		}
+		identity.GatewayIssuer = credential.GetGatewayIssuer()
 		if e = identity.SaveCredential(credential.GetDaemonId(), credential.GetDaemonName(), credential.GetCertificatePem(), credential.GetDaemonCaPem(), credential.GetGatewaySigningPublicKey(), credential.GetExpiresAt(), credential.GetGeneration()); e != nil {
 			t.Fatal(e)
 		}
 		return identity
 	}
 	a, b, other := enroll("A", 42), enroll("B", 42), enroll("Other", 43)
-	scope := peerstore.Revision([]string{origin.String(), "github:42"})
+	scope := peerstore.Revision([]string{issuerURL.String(), "github:42"})
 	sa, sb := store.New(a.Root), store.New(b.Root)
-	ba, err := sa.BindPeerAccount(scope, "github:42", a.ID, a.GatewayURL)
+	ba, err := sa.BindPeerAccount(scope, "github:42", a.ID, a.Issuer())
 	if err != nil {
 		t.Fatal(err)
 	}
-	bb, err := sb.BindPeerAccount(scope, "github:42", b.ID, b.GatewayURL)
+	bb, err := sb.BindPeerAccount(scope, "github:42", b.ID, b.Issuer())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -130,7 +132,7 @@ func testPeerMachines(t *testing.T, wantRoute string) {
 	var control *controlrtc.Manager
 	rtc := wantRoute == "webrtc-direct" || wantRoute == "webrtc-turn"
 	if rtc {
-		control = controlrtc.New(controlrtc.Identity{DaemonID: b.ID, GatewayURL: b.GatewayURL, Generation: b.Generation, GatewaySigningPublicKey: b.GatewaySigningPublicKey}, direct.listener.Addr().String())
+		control = controlrtc.New(controlrtc.Identity{DaemonID: b.ID, GatewayURL: b.Issuer(), Generation: b.Generation, GatewaySigningPublicKey: b.GatewaySigningPublicKey}, direct.listener.Addr().String())
 		defer control.Close()
 	}
 	application := server.NewWithOptions(sb, logger, server.Options{ControlRTC: control, Runner: &fakeRunner{}})
@@ -394,7 +396,7 @@ func testPeerMachines(t *testing.T, wantRoute string) {
 	defer gatewayConn.Close()
 	gw := gatewayv1.NewGatewayServiceClient(gatewayConn)
 	auth := func(i *daemon.Identity) context.Context {
-		return metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+linkauth.SignPeer(i.PrivateKey, i.ID, i.GatewayURL, i.Generation, time.Now()))
+		return metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+linkauth.SignPeer(i.PrivateKey, i.ID, i.Issuer(), i.Generation, time.Now()))
 	}
 	if _, err = gw.ResolveDaemonRoute(auth(other), &gatewayv1.DaemonRef{DaemonId: b.ID}); status.Code(err) != codes.NotFound {
 		t.Fatalf("cross-account route: %v", err)
