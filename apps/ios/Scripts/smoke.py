@@ -5,6 +5,7 @@ Only the simulator and gateway created by this run are stopped. Operator apps,
 daemons, credentials, and existing simulators are never modified.
 """
 import argparse
+import base64
 from datetime import datetime, timezone
 import json
 import os
@@ -145,7 +146,8 @@ def stop_gateway(gateway):
                 raise
 
 
-def cleanup_resources(gateway, fixture_log, simulator, evidence):
+def cleanup_resources(gateway, fixture_log, simulator, evidence, screen_fixture=None, screen_log=None,
+                      screen_binaries=()):
     errors = []
 
     def attempt(name, operation):
@@ -155,6 +157,12 @@ def cleanup_resources(gateway, fixture_log, simulator, evidence):
             # Do not print command arguments or fixture credentials on error.
             errors.append(f'{name}: {type(error).__name__}')
 
+    if screen_fixture is not None:
+        attempt('stop native screen fixture', lambda: stop_gateway(screen_fixture))
+    if screen_log is not None:
+        attempt('close native screen fixture log', screen_log.close)
+    for binary in screen_binaries:
+        attempt('remove native screen fixture binary', lambda binary=binary: binary.unlink(missing_ok=True))
     if gateway is not None:
         attempt('stop isolated gateway', lambda: stop_gateway(gateway))
     if fixture_log is not None:
@@ -183,6 +191,17 @@ def wait_for_gateway(gateway, private_log, timeout=60):
             return dict(line.split('=', 1) for line in text.splitlines() if line.startswith('DIETER_ISOLATED_'))
         time.sleep(0.2)
     raise RuntimeError(f'Isolated gateway did not become ready within {timeout} seconds; inspect gateway.log')
+
+
+def wait_for_ready_file(process, ready, timeout=30):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if process.poll() is not None:
+            raise RuntimeError(f'Native screen fixture exited {process.returncode}; inspect screen-fixture.log')
+        if ready.is_file() and ready.stat().st_size > 0:
+            return
+        time.sleep(0.1)
+    raise RuntimeError(f'Native screen fixture did not become ready within {timeout} seconds')
 
 
 def main():
@@ -219,6 +238,9 @@ def main():
     simulator = None
     gateway = None
     fixture_log = None
+    screen_fixture = None
+    screen_log = None
+    screen_binaries = []
     try:
         stage('Creating owned simulator')
         simulator = subprocess.check_output(['xcrun', 'simctl', 'create', 'Dieter smoke ' + stamp, device_type, runtime], text=True).strip()
@@ -240,6 +262,21 @@ def main():
         gateway = subprocess.Popen([str(fixture), '--addr', '127.0.0.1:0', '--home', str(evidence / 'fixture'), '--offline-trigger', str(evidence / 'offline')], cwd=ROOT, stdout=fixture_log, stderr=subprocess.STDOUT, start_new_session=True,
                                    env=gateway_environment)
         values = wait_for_gateway(gateway, private_gateway_log)
+        stage('Starting native screen fixture')
+        capture_helper = evidence / '.dieter-capture'
+        screen_fixture_binary = evidence / '.screens-fixture'
+        screen_ready = evidence / '.screen-ready.json'
+        screen_binaries = [capture_helper, screen_fixture_binary, screen_ready]
+        run('bash', 'native/macos-capture/build.sh', str(capture_helper))
+        run('go', 'build', '-o', str(screen_fixture_binary), './scripts/screens-fixture')
+        screen_log = (evidence / 'screen-fixture.log').open('w')
+        screen_fixture = subprocess.Popen([
+            str(screen_fixture_binary), '--helper', str(capture_helper), '--source', 'native-synthetic',
+            '--authenticate', '--ready', str(screen_ready),
+        ], cwd=ROOT, stdout=screen_log, stderr=subprocess.STDOUT, start_new_session=True)
+        wait_for_ready_file(screen_fixture, screen_ready)
+        screen_fixture_payload = base64.b64encode(screen_ready.read_bytes()).decode('ascii')
+        screen_ready.unlink(missing_ok=True)
         stage('Isolated gateway ready; booting owned simulator')
         # Finish first boot before XCTest installs its runner or queries AX.
         with (evidence / 'boot.log').open('w') as log:
@@ -262,6 +299,7 @@ def main():
                'DIETER_IOS_TEST_PROJECT': values['DIETER_ISOLATED_PROJECT'],
                'DIETER_IOS_TEST_BOARD': values['DIETER_ISOLATED_BOARD'],
                'DIETER_IOS_TEST_OFFLINE_TRIGGER': str(evidence / 'offline'),
+               'DIETER_IOS_TEST_SCREEN_FIXTURE': screen_fixture_payload,
                'DIETER_IOS_TEST_LANDSCAPE': '1' if args.device.startswith('iPad') else '0'}
         if args.https_gateway:
             if not args.https_gateway.startswith('https://'):
@@ -300,7 +338,9 @@ def main():
         print(f'iOS remote-node smoke passed: {evidence}')
     finally:
         already_failed = sys.exc_info()[0] is not None
-        errors = cleanup_resources(gateway, fixture_log, simulator, evidence)
+        errors = cleanup_resources(
+            gateway, fixture_log, simulator, evidence,
+            screen_fixture=screen_fixture, screen_log=screen_log, screen_binaries=screen_binaries)
         print(f'Evidence: {evidence}')
         if errors:
             print('Cleanup diagnostics: ' + '; '.join(errors))

@@ -310,7 +310,8 @@ def signing_environment(material, runner_temp, *, home=None):
 
 def archive_command(root, archive, version, build, bundle_id):
     return [
-        "xcodebuild", "-project", root / "apps/ios/DieterIOS.xcodeproj", "-scheme", "DieterIOS",
+        "xcodebuild", "-skipPackagePluginValidation",
+        "-project", root / "apps/ios/DieterIOS.xcodeproj", "-scheme", "DieterIOS",
         "-configuration", "Release", "-destination", "generic/platform=iOS",
         "-derivedDataPath", root / "apps/ios/.build/DerivedData", "-archivePath", archive,
         "archive", f"MARKETING_VERSION={version}", f"CURRENT_PROJECT_VERSION={build}",

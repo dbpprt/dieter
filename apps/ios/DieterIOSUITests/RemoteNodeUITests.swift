@@ -245,23 +245,27 @@ final class RemoteNodeUITests: XCTestCase {
         return String(attributed.characters)
     }
 
-    private func captureConnectingState(_ app: XCUIApplication, triggerPath: String) throws {
+    private func verifyConnectionRecovery(_ app: XCUIApplication, triggerPath: String) throws {
         let trigger = URL(fileURLWithPath: triggerPath)
         try? FileManager.default.removeItem(at: trigger)
         try Data().write(to: trigger, options: .atomic)
         defer { try? FileManager.default.removeItem(at: trigger) }
 
-        let connecting = app.staticTexts["Connecting…"]
+        let banner = element(app, "ios.connection.banner")
         XCTAssertTrue(
-            connecting.waitForExistence(timeout: 20),
-            "Losing the isolated daemon must show the automatic connecting state.\n\(app.debugDescription)")
-        screenshot(app, "05-connecting-activity")
+            banner.waitForExistence(timeout: 45),
+            "Taking the isolated daemon offline must present the connection state.\n\(app.debugDescription)")
 
-        try FileManager.default.removeItem(at: trigger)
-        Thread.sleep(forTimeInterval: 1)
+        let disconnected = app.staticTexts["Disconnected"]
+        XCTAssertTrue(
+            disconnected.waitForExistence(timeout: 20),
+            "An unavailable isolated daemon must settle into a retryable state.\n\(app.debugDescription)")
         let requestAlert = app.alerts["Couldn’t complete the request"]
         if requestAlert.exists { requestAlert.buttons["OK"].tap() }
-        let banner = element(app, "ios.connection.banner")
+
+        try FileManager.default.removeItem(at: trigger)
+        let retry = app.buttons["Retry"]
+        if retry.waitForExistence(timeout: 5), retry.isHittable { retry.tap() }
         let recovered = XCTNSPredicateExpectation(
             predicate: NSPredicate(format: "exists == false"), object: banner)
         XCTAssertEqual(
@@ -314,6 +318,89 @@ final class RemoteNodeUITests: XCTestCase {
         screenshot(app, "00-verified-https-auth-rejection")
         app.alerts.buttons["OK"].tap()
         XCTAssertTrue(element(app, "ios.auth.sign-in").isHittable)
+    }
+
+    func testConnectingActivityPresentation() {
+        if ProcessInfo.processInfo.environment["DIETER_IOS_TEST_LANDSCAPE"] == "1" {
+            XCUIDevice.shared.orientation = .landscapeLeft
+        }
+        let app = XCUIApplication()
+        app.launchEnvironment["DIETER_IOS_CONNECTION_PREVIEW"] = "1"
+        app.launch()
+        XCTAssertTrue(app.wait(for: .runningForeground, timeout: 20))
+        XCTAssertTrue(
+            app.staticTexts["Connecting…"].waitForExistence(timeout: 10),
+            "The connection preview must render the active connection state.\n\(app.debugDescription)")
+        XCTAssertTrue(element(app, "ios.connection.banner").exists)
+        screenshot(app, "05-connecting-activity")
+    }
+
+    func testRemoteScreenFixtureStreamsVideo() throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard let fixture = environment["DIETER_IOS_TEST_SCREEN_FIXTURE"] else {
+            throw XCTSkip("The disposable native screen fixture is unavailable")
+        }
+        let app = XCUIApplication()
+        app.launchEnvironment["DIETER_IOS_SCREEN_FIXTURE"] = fixture
+        app.launch()
+        XCTAssertTrue(app.wait(for: .runningForeground, timeout: 20))
+        let live = app.staticTexts.matching(identifier: "ios.screens.fixture.phase")
+            .matching(NSPredicate(format: "label == 'Live'"))
+            .firstMatch
+        XCTAssertTrue(
+            live.waitForExistence(timeout: 35),
+            "The real WebRTC fixture must decode and present native video.\n\(app.debugDescription)")
+        XCTAssertTrue(element(app, "ios.screens.fixture").exists)
+        screenshot(app, "06-remote-screen-streaming")
+        app.terminate()
+    }
+
+    func testRemoteTerminalJourney() throws {
+        let environment = ProcessInfo.processInfo.environment
+        let gateway = try XCTUnwrap(environment["DIETER_IOS_TEST_GATEWAY"])
+        let token = try XCTUnwrap(environment["DIETER_IOS_TEST_TOKEN"])
+        let project = try XCTUnwrap(environment["DIETER_IOS_TEST_PROJECT"])
+        let board = try XCTUnwrap(environment["DIETER_IOS_TEST_BOARD"])
+        let daemon = try XCTUnwrap(environment["DIETER_IOS_TEST_DAEMON"])
+        if environment["DIETER_IOS_TEST_LANDSCAPE"] == "1" {
+            XCUIDevice.shared.orientation = .landscapeLeft
+        }
+        let app = XCUIApplication()
+        app.launchEnvironment["DIETER_IOS_TEST_GATEWAY"] = gateway
+        app.launchEnvironment["DIETER_IOS_TEST_TOKEN"] = token
+        app.launch()
+        XCTAssertTrue(app.wait(for: .runningForeground, timeout: 20))
+        waitForBoard(app, project: project, board: board)
+        tap(app, "ios.terminals.open")
+        XCTAssertTrue(element(app, "ios.terminals.machine-picker-view").waitForExistence(timeout: 10))
+        tap(app, "ios.terminals.machine-choice.\(daemon)")
+        XCTAssertTrue(element(app, "ios.terminals.view").waitForExistence(timeout: 15))
+        let emptyNew = element(app, "ios.terminals.empty-new")
+        if emptyNew.waitForExistence(timeout: 5) {
+            emptyNew.tap()
+        } else {
+            tap(app, "ios.terminals.new")
+        }
+        XCTAssertTrue(element(app, "ios.terminals.create-confirm").waitForExistence(timeout: 10))
+        tap(app, "ios.terminals.create-confirm")
+
+        let surface = element(app, "ios.terminals.surface")
+        XCTAssertTrue(
+            surface.waitForExistence(timeout: 20),
+            "Creating a machine-home terminal must open its native terminal surface.\n\(app.debugDescription)")
+        XCTAssertTrue(element(app, "ios.terminals.key.arrows").exists)
+        surface.tap()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 10))
+        dismissKeyboardIntroduction(app)
+        app.typeText("printf 'ios-terminal-marker\\n'\n")
+        let marker = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "value CONTAINS %@", "ios-terminal-marker"),
+            object: surface)
+        XCTAssertEqual(
+            XCTWaiter.wait(for: [marker], timeout: 20), .completed,
+            "Typed terminal input must reach the daemon and stream its output back.\n\(app.debugDescription)")
+        screenshot(app, "07-remote-terminal")
+        app.terminate()
     }
 
     func testRemoteNodeJourney() throws {
@@ -372,7 +459,7 @@ final class RemoteNodeUITests: XCTestCase {
         assistantTextExists(app, "Mock harness received: \(markdownPrompt)")
         screenshot(app, "05-markdown-rendering")
 
-        try captureConnectingState(
+        try verifyConnectionRecovery(
             app,
             triggerPath: try XCTUnwrap(environment["DIETER_IOS_TEST_OFFLINE_TRIGGER"]))
 
@@ -411,6 +498,13 @@ final class RemoteNodeUITests: XCTestCase {
             "Tapping the file editor should activate text input.\n\(app.debugDescription)")
         app.typeText("\niOS remote edit verified\n")
         let editedContents = try XCTUnwrap(editor.value as? String)
+        let keyboardDone = app.buttons.matching(identifier: "ios.files.keyboard-done").firstMatch
+        if keyboardDone.waitForExistence(timeout: 3) {
+            keyboardDone.tap()
+            XCTAssertFalse(
+                app.keyboards.firstMatch.waitForExistence(timeout: 3),
+                "The file editor keyboard should dismiss before saving.\n\(app.debugDescription)")
+        }
         tap(app, "ios.files.save")
         let saved = NSPredicate(format: "enabled == false")
         expectation(for: saved, evaluatedWith: element(app, "ios.files.save"))

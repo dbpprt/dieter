@@ -32,6 +32,7 @@ let package = Package(
                 "DieterCore", "DieterClient", "DieterAPI",
                 .product(name: "GRPCCore", package: "grpc-swift-2"),
                 .product(name: "SwiftProtobuf", package: "swift-protobuf"),
+                .product(name: "SwiftTerm", package: "SwiftTerm"),
                 .product(name: "Textual", package: "textual"),
                 "WebRTC",
             ]

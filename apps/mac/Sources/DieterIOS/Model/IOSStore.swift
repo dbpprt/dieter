@@ -999,6 +999,20 @@
                 directCandidateScope: candidateScope)
         }
 
+        func utilityTerminalConnection() async throws -> DataPlaneConnection {
+            guard foreground, phase.isConnected, let target = utilityMachine else {
+                throw NSError(
+                    domain: "DieterTerminals", code: 1,
+                    userInfo: [NSLocalizedDescriptionKey: "Choose a connected Dieter machine."])
+            }
+            guard target.online else {
+                throw NSError(
+                    domain: "DieterTerminals", code: 2,
+                    userInfo: [NSLocalizedDescriptionKey: "\(target.name) is offline."])
+            }
+            return try await dataPlaneConnection(to: target, refreshDirectToken: true)
+        }
+
         func suspend() {
             foreground = false
             // Keep an in-progress web sign-in alive for authenticator/2FA app

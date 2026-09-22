@@ -11,6 +11,7 @@
         @State private var destination: IOSWorkspaceDestination?
         @State private var selectedTaskID: String?
         @State private var selectedScreenMachineID: String?
+        @State private var selectedTerminalMachineID: String?
         @State private var preferredColumn: NavigationSplitViewColumn = .sidebar
         @State private var settingsPresented = false
         @State private var machineStatePresented = false
@@ -27,6 +28,14 @@
             private var quotaPreviewMode: String? {
                 ProcessInfo.processInfo.environment["DIETER_IOS_QUOTA_PREVIEW"]
             }
+
+            private var connectionPreviewEnabled: Bool {
+                ProcessInfo.processInfo.environment["DIETER_IOS_CONNECTION_PREVIEW"] == "1"
+            }
+
+            private var screenFixture: String? {
+                ProcessInfo.processInfo.environment["DIETER_IOS_SCREEN_FIXTURE"]
+            }
         #endif
 
         @ViewBuilder
@@ -34,6 +43,24 @@
             #if DEBUG
                 if let quotaPreviewMode {
                     IOSProviderQuotaPreviewScreen(showDetails: quotaPreviewMode == "details")
+                } else if let screenFixture {
+                    IOSRemoteDesktopFixtureView(encodedFixture: screenFixture)
+                } else if connectionPreviewEnabled {
+                    NavigationStack {
+                        IOSWorkspaceBackdrop()
+                            .overlay(alignment: .bottom) {
+                                IOSConnectionBanner(
+                                    title: "Connecting…",
+                                    detail: "Your draft will stay here.",
+                                    isConnecting: true,
+                                    retry: {}
+                                )
+                                .padding(12)
+                            }
+                            .navigationTitle("Conversation")
+                            .navigationBarTitleDisplayMode(.inline)
+                    }
+                    .tint(.blue)
                 } else {
                     connectedContent
                 }
@@ -92,6 +119,13 @@
                         preferredColumn = .detail
                     }
                     .navigationSplitViewColumnWidth(min: 280, ideal: 350, max: 480)
+                } else if destination == .terminals {
+                    IOSTerminalsMachinePickerView(store: store) { machineID in
+                        store.selectUtilityMachine(id: machineID)
+                        selectedTerminalMachineID = machineID
+                        preferredColumn = .detail
+                    }
+                    .navigationSplitViewColumnWidth(min: 280, ideal: 350, max: 480)
                 } else {
                     IOSTaskListView(
                         store: store, destination: destination ?? .allTasks, selectedTaskID: $selectedTaskID,
@@ -109,6 +143,16 @@
                         .id(selectedScreenMachineID ?? "")
                     } else {
                         IOSScreensPlaceholderView { preferredColumn = .content }
+                    }
+                } else if destination == .terminals {
+                    if selectedTerminalMachineID != nil {
+                        IOSTerminalsView(store: store) {
+                            selectedTerminalMachineID = nil
+                            preferredColumn = .content
+                        }
+                        .id(selectedTerminalMachineID ?? "")
+                    } else {
+                        IOSTerminalsPlaceholderView { preferredColumn = .content }
                     }
                 } else if let id = selectedTaskID {
                     IOSConversationView(
@@ -169,6 +213,9 @@
                 if newValue == .screens, oldValue != .screens {
                     selectedScreenMachineID = nil
                     preferredColumn = .content
+                } else if newValue == .terminals, oldValue != .terminals {
+                    selectedTerminalMachineID = nil
+                    preferredColumn = .content
                 } else if newValue != nil {
                     preferredColumn = .content
                 }
@@ -199,6 +246,10 @@
                         sidebarDestinationRow(
                             .chats, title: "Chats", systemImage: "bubble.left.and.bubble.right",
                             identifier: "ios.chats")
+                        sidebarDivider()
+                        sidebarDestinationRow(
+                            .terminals, title: "Terminals", systemImage: "terminal",
+                            identifier: "ios.terminals.open")
                         sidebarDivider()
                         sidebarDestinationRow(
                             .screens, title: "Screens", systemImage: "display",
@@ -426,7 +477,7 @@
                 return store.cards.contains { $0.id == selectedTaskID }
             case .chats:
                 return store.chats.contains { $0.id == selectedTaskID }
-            case .screens:
+            case .screens, .terminals:
                 return false
             case let .project(id):
                 return store.cards.contains { $0.id == selectedTaskID && $0.projectID == id }
@@ -529,6 +580,7 @@
             switch destination {
             case .allTasks: "All tasks"
             case .chats: "Chats"
+            case .terminals: "Terminals"
             case .screens: "Screens"
             case let .project(id): store.projects.first { $0.id == id }?.name ?? "Project"
             case let .board(id): store.boards.first { $0.id == id }?.name ?? "Board"
@@ -542,7 +594,7 @@
                 switch destination {
                 case let .project(id): if card.projectID != id { return false }
                 case let .board(id): if card.boardID != id { return false }
-                case .screens: return false
+                case .screens, .terminals: return false
                 default: break
                 }
                 return (lane.isEmpty || destination == .chats || card.lane == lane)

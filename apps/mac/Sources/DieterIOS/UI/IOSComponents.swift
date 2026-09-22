@@ -208,6 +208,7 @@
     enum IOSWorkspaceDestination: Hashable {
         case allTasks
         case chats
+        case terminals
         case screens
         case project(String)
         case board(String)

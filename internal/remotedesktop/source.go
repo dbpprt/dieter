@@ -188,7 +188,8 @@ func CaptureExecutable(options SourceOptions) (path, label string, err error) {
 // ProbeControl verifies the event-posting permission of the exact helper used
 // by a production screen session. It never clicks, types, or moves the cursor.
 func ProbeControl(ctx context.Context, options SourceOptions, request bool) error {
-	if strings.TrimSpace(options.Kind) == "synthetic" {
+	kind := strings.TrimSpace(options.Kind)
+	if kind == "synthetic" || kind == "native-synthetic" {
 		return nil
 	}
 	if runtime.GOOS != "darwin" && runtime.GOOS != "linux" {
