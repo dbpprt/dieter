@@ -931,8 +931,34 @@ func (api *grpcAPI) watchConversation(ctx context.Context, request *dieterv1.Wat
 		if err != nil {
 			return err
 		}
+		if pending {
+			// Filesystem notifications can arrive while the writer is still
+			// publishing its commit. Cross that boundary before deciding which
+			// selected data changed; this also recovers interrupted publications.
+			if err := api.server.store.WaitForWriter(ctx); err != nil {
+				return err
+			}
+			nextRevision, pending, err = api.conversationWatchRevision(request.GetCardId())
+			if err != nil {
+				return err
+			}
+		}
 		if previousSnapshot != nil && nextRevision == revision && !pending {
 			return nil
+		}
+		if previousSnapshot != nil && nextRevision.transcript == revision.transcript && !pending {
+			// The metadata cursor is shared by the workspace. A comment or
+			// status change on another card must not clone and re-encode this
+			// conversation's tool-heavy history. Still read all selected-card
+			// detail so project, board, workspace and comment changes propagate.
+			detail, err := api.server.store.CardDetail(request.GetCardId())
+			if err != nil {
+				return err
+			}
+			if proto.Equal(protoCardDetail(detail), previousSnapshot.GetDetail()) {
+				revision = nextRevision
+				return nil
+			}
 		}
 		builds++
 		snapshot, err := api.conversationSnapshot(request.GetCardId(), int(request.GetLimit()), nil)

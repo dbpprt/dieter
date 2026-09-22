@@ -56,15 +56,18 @@ import Testing
     let store = DieterStore(environment: environment, restoreSync: false)
 
     var pins = store.pinnedProjectNavigation
-    #expect(pins.setPinned("p_one", pinned: true))
-    #expect(pins.setPinned("p_two", pinned: true))
+    let pinnedOne = pins.setPinned("p_one", pinned: true)
+    let pinnedTwo = pins.setPinned("p_two", pinned: true)
+    #expect(pinnedOne)
+    #expect(pinnedTwo)
     store.pinnedProjectNavigation = pins
 
     let restored = DieterStore(environment: environment, restoreSync: false)
     #expect(restored.pinnedProjectNavigation.projectOrder == ["p_one", "p_two"])
 
     pins = restored.pinnedProjectNavigation
-    #expect(pins.setPinned("p_one", pinned: false))
+    let unpinnedOne = pins.setPinned("p_one", pinned: false)
+    #expect(unpinnedOne)
     restored.pinnedProjectNavigation = pins
     #expect(
         DieterStore(environment: environment, restoreSync: false).pinnedProjectNavigation.projectOrder == ["p_two"])

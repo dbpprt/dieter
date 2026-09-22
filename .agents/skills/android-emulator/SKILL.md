@@ -176,6 +176,10 @@ samples and drop counts under `DieterPerformance`. The existing
 `dieterPerformanceControl=true` argument substitutes native buttons to measure
 system overhead; it does not qualify the Dieter app. Keep clean timing runs
 separate from tracing and retain the unchanged frame limits.
+System traces can use the test's `DieterNavigation:warmup:*` and
+`DieterNavigation:measured:*` slices to exclude setup and attribute work to each
+real-input journey. Frame total duration includes renderer/buffer waits and
+does not, by itself, measure main-thread application CPU.
 
 Inspect instrumentation before running it because it uses the configured real
 gateway. Use a class filter while iterating and the complete connected suite

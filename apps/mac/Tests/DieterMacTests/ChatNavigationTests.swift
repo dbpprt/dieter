@@ -57,11 +57,22 @@ struct ChatNavigationTests {
         #expect(opened)
         assertChatBrowser(browser, matches: originalFrame, in: host)
 
+        // Exercise both detail configurations before measuring a warm switch,
+        // keeping their first native layout outside the measured interval.
+        await store.openConversation(cardID: chats[1].id, chat: true)
+        #expect(await settleChatNavigation(host) { !content.isPresented(for: chats[1].id) })
+        await store.openConversation(cardID: chats[0].id, chat: true)
+        #expect(await settleChatNavigation(host) { content.isPresented(for: chats[0].id) })
+
+        BoardRenderingDiagnostics.start()
         await store.openConversation(cardID: chats[1].id, chat: true)
         let switched = await settleChatNavigation(host) {
             store.selectedChatID == chats[1].id && !content.isPresented(for: chats[1].id)
         }
         #expect(switched)
+        let changed = BoardRenderingDiagnostics.stop()
+        #expect(changed["chatListBody"] == 0)
+        #expect(changed["chatRowBody"] == 0)
         assertChatBrowser(browser, matches: originalFrame, in: host)
 
         // Returning to A restores its workspace panel, without hiding the list
@@ -76,6 +87,28 @@ struct ChatNavigationTests {
             !chatNavigationViews(host).contains { ($0 as? NSSplitView)?.arrangedSubviews.count == 2 }
         }
         assertChatBrowser(browser, matches: originalFrame, in: host)
+    }
+
+    @Test func retainedDirectoryKeepsItsNativeScrollViewAndHidesInputWhileAway() async throws {
+        let state = ChatNavigationLayoutState()
+        state.presented = true
+        let host = NSHostingView(rootView: RetainedChatDirectoryFixture(state: state))
+        let window = chatNavigationWindow(host: host, width: 900)
+        defer { window.contentView = nil; window.close() }
+        #expect(await settleChatNavigation(host) { navigationButton(in: host) != nil })
+        let button = try #require(navigationButton(in: host))
+        let scroll = try #require(chatNavigationViews(host).compactMap { $0 as? NSScrollView }.first)
+        scroll.contentView.scroll(to: CGPoint(x: 0, y: 200))
+        let origin = scroll.contentView.bounds.origin
+        for _ in 0..<3 {
+            state.presented = false
+            #expect(await settleChatNavigation(host) { button.isHiddenOrHasHiddenAncestor })
+            state.presented = true
+            #expect(await settleChatNavigation(host) { !button.isHiddenOrHasHiddenAncestor })
+            #expect(navigationButton(in: host) === button)
+            #expect(chatNavigationViews(host).contains { $0 === scroll })
+            #expect(scroll.contentView.bounds.origin == origin)
+        }
     }
 
     @Test(arguments: [CGFloat(760), 1_000, 1_400])
@@ -127,6 +160,20 @@ struct ChatNavigationTests {
     var presented = false
     var oversized = false
     var switches = 0
+}
+
+private struct RetainedChatDirectoryFixture: View {
+    let state: ChatNavigationLayoutState
+    var body: some View {
+        RetainedWorkspacePane(active: state.presented) {
+            ScrollView {
+                VStack {
+                    ChatNavigationButton { state.switches += 1 }.frame(width: 160, height: 32)
+                    ForEach(0..<100) { Text("Chat \($0)").frame(height: 30) }
+                }
+            }
+        }
+    }
 }
 
 private struct ChatNavigationLayoutFixture: View {

@@ -147,8 +147,49 @@ import Testing
     store.state.boards[0].labels[0].name = "Renamed label with more words"
     await settleBoardLane(root)
     let renamed = BoardRenderingDiagnostics.stop()
-    #expect(renamed["reloadedRows"] == cards.count)
+    #expect(renamed["updatedRows"] == cards.count)
     let table = try #require(boardLaneNativeTable(in: root))
+    try assertBoardLaneRowsFitContent(table: table, root: root, cards: cards, store: store)
+}
+
+@Test @MainActor func boardLaneLiveInsertionAndRemovalRetainUnchangedVisibleCells() async throws {
+    let store = boardLaneFixtureStore()
+    var cards = boardLaneFixtureCards(count: 3)
+    store.state.cards = cards
+    let root = NSHostingView(rootView: AnyView(boardLaneFixtureView(cards: cards, store: store)))
+    root.sizingOptions = []
+    let window = boardLaneFixtureWindow(root: root, width: 340, height: 1000)
+    defer { window.close() }
+    await settleBoardLane(root)
+    let table = try #require(boardLaneNativeTable(in: root))
+    let cells = try cards.indices.map { try #require(table.view(atColumn: 0, row: $0, makeIfNecessary: false)) }
+    store.selectedCardID = cards[1].id
+    BoardRenderingDiagnostics.start()
+    var inserted = cards[0]
+    inserted.id = "live-insert"
+    inserted.title = "Another card arrived while opening the inspector"
+    cards.insert(inserted, at: 0)
+    store.state.cards = cards
+    root.rootView = AnyView(boardLaneFixtureView(cards: cards, store: store))
+    await settleBoardLane(root)
+    #expect(table.numberOfRows == 4)
+    for index in cells.indices {
+        #expect(table.view(atColumn: 0, row: index + 1, makeIfNecessary: false) === cells[index])
+    }
+    cards[2].summary = "A live status update on the selected card"
+    cards.removeFirst()
+    store.state.cards = cards
+    root.rootView = AnyView(boardLaneFixtureView(cards: cards, store: store))
+    await settleBoardLane(root)
+    #expect(table.numberOfRows == 3)
+    for index in cells.indices {
+        #expect(table.view(atColumn: 0, row: index, makeIfNecessary: false) === cells[index])
+    }
+    let counts = BoardRenderingDiagnostics.stop()
+    #expect(counts["fullReload"] == 0)
+    #expect(counts["reloadedRows"] == 0)
+    #expect(counts["rowStructureChange"] == 2)
+    #expect(store.selectedCardID == cards[1].id)
     try assertBoardLaneRowsFitContent(table: table, root: root, cards: cards, store: store)
 }
 
@@ -253,7 +294,7 @@ import Testing
     #expect(!table.isHiddenOrHasHiddenAncestor)
     #expect(returned["tableCreated"] == 0)
     #expect(returned["fullReload"] == 0)
-    #expect(returned["reloadedRows"] == 1)
+    #expect(returned["updatedRows"] == 1)
     #expect(table.rows(in: table.visibleRect).location == anchorRow)
     #expect(abs(table.visibleRect.minY - table.rect(ofRow: anchorRow).minY - anchorOffset) < 1)
     // A separate unchanged row also retains its native identity across trips.
@@ -277,9 +318,11 @@ import Testing
 @Test @MainActor func boardNavigationReleasesNativeRowsWhenItsWindowContentIsRemoved() async throws {
     let store = boardLaneFixtureStore()
     store.state.cards = boardLaneFixtureCards(count: 10)
-    var root: NSHostingView<AnyView>? = NSHostingView(rootView: AnyView(BoardConversationOverlay(
-        board: AnyView(BoardLaneNavigationFixture().environment(store)),
-        conversation: AnyView(EmptyView()), presented: false, maximized: false)))
+    var root: NSHostingView<AnyView>? = NSHostingView(
+        rootView: AnyView(
+            BoardConversationOverlay(
+                board: AnyView(BoardLaneNavigationFixture().environment(store)),
+                conversation: AnyView(EmptyView()), presented: false, maximized: false)))
     let window = boardLaneFixtureWindow(root: root!, width: 440, height: 600)
     defer { window.close() }
     await settleBoardLane(root!)

@@ -224,6 +224,68 @@ func TestConversationWatchRefreshesMetadataAndCrossProcessTranscript(t *testing.
 	}
 }
 
+func TestConversationWatchSkipsTranscriptBuildForOtherCardMetadata(t *testing.T) {
+	var logs bytes.Buffer
+	api, card := performanceConversation(t, slog.New(slog.NewJSONHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	other := store.New(api.server.store.Root)
+	defer other.Close()
+	unrelated, err := other.CreateChat(store.CreateCardInput{Project: card.ProjectID, Title: "Other card"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	ready := make(chan struct{})
+	done := make(chan error, 1)
+	frames := 0
+	go func() {
+		done <- api.watchConversation(ctx, &dieterv1.WatchConversationRequest{CardId: card.ID, IntervalMs: 100}, func(update *dieterv1.ConversationUpdate) error {
+			frames++
+			if frames == 1 {
+				close(ready)
+			} else {
+				if len(update.GetDetail().GetComments()) != 1 {
+					return fmt.Errorf("selected comment was lost")
+				}
+				cancel()
+			}
+			return nil
+		})
+	}()
+	select {
+	case <-ready:
+	case <-ctx.Done():
+		t.Fatal("watch did not start")
+	}
+	for range 2 {
+		if _, err := other.AddComment(unrelated.ID, "Unrelated metadata", model.Author{Kind: "human"}); err != nil {
+			cancel()
+			<-done
+			t.Fatal(err)
+		}
+		// Give the real notification/debounce path a separate delivery window.
+		time.Sleep(350 * time.Millisecond)
+	}
+	if _, err := other.AddComment(card.ID, "Selected metadata", model.Author{Kind: "human"}); err != nil {
+		cancel()
+		<-done
+		t.Fatal(err)
+	}
+	if err := <-done; err != context.Canceled || frames != 2 {
+		t.Fatalf("frames=%d error=%v", frames, err)
+	}
+	var metrics struct {
+		Polls          int `json:"polls"`
+		SnapshotBuilds int `json:"snapshotBuilds"`
+	}
+	if err := json.Unmarshal(bytes.TrimSpace(logs.Bytes()), &metrics); err != nil {
+		t.Fatal(err)
+	}
+	if metrics.Polls < 3 || metrics.SnapshotBuilds != 2 {
+		t.Fatalf("unrelated metadata rebuilt the selected transcript: %+v", metrics)
+	}
+}
+
 func TestConversationWatchRevisionIgnoresUnrelatedTokens(t *testing.T) {
 	api, card := performanceConversation(t, nil)
 	other, err := api.server.store.CreateChat(store.CreateCardInput{Project: card.ProjectID, Title: "other stream"})
@@ -312,20 +374,7 @@ func BenchmarkConversationIdleRead(b *testing.B) {
 func BenchmarkToolHeavyConversationSnapshot(b *testing.B) {
 	for _, count := range []int{30, 300} {
 		b.Run(fmt.Sprint(count), func(b *testing.B) {
-			api, card := performanceConversation(b, slog.New(slog.NewTextHandler(io.Discard, nil)))
-			messages := make([]model.UIMessage, count)
-			for i := range messages {
-				output, _ := json.Marshal(map[string]any{"index": i, "content": strings.Repeat("output ", 2048)})
-				messages[i] = model.UIMessage{ID: fmt.Sprint(i), Role: "assistant", Parts: []model.UIMessagePart{
-					{Type: "tool", ToolCallID: fmt.Sprint(i), ToolName: "exec", State: "output-available", Output: output},
-				}}
-			}
-			if _, err := api.server.store.InitializeForkConversation(card.ID, messages); err != nil {
-				b.Fatal(err)
-			}
-			if _, err := api.conversationSnapshot(card.ID, 30, nil); err != nil {
-				b.Fatal(err)
-			}
+			api, card := performanceToolConversation(b, count)
 			b.ReportAllocs()
 			b.ResetTimer()
 			for b.Loop() {
@@ -338,5 +387,45 @@ func BenchmarkToolHeavyConversationSnapshot(b *testing.B) {
 				}
 			}
 		})
+	}
+}
+
+func performanceToolConversation(tb testing.TB, count int) (*grpcAPI, model.Card) {
+	tb.Helper()
+	api, card := performanceConversation(tb, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	messages := make([]model.UIMessage, count)
+	for i := range messages {
+		output, _ := json.Marshal(map[string]any{"index": i, "content": strings.Repeat("output ", 2048)})
+		messages[i] = model.UIMessage{ID: fmt.Sprint(i), Role: "assistant", Parts: []model.UIMessagePart{
+			{Type: "tool", ToolCallID: fmt.Sprint(i), ToolName: "exec", State: "output-available", Output: output},
+		}}
+	}
+	if _, err := api.server.store.InitializeForkConversation(card.ID, messages); err != nil {
+		tb.Fatal(err)
+	}
+	if _, err := api.conversationSnapshot(card.ID, 30, nil); err != nil {
+		tb.Fatal(err)
+	}
+	return api, card
+}
+
+// Same selected detail comparison used when another card changes the shared
+// metadata cursor. Compare with BenchmarkToolHeavyConversationSnapshot/300;
+// both exclude the common revision lookup and fixture setup.
+func BenchmarkToolHeavyConversationMetadata(b *testing.B) {
+	api, card := performanceToolConversation(b, 300)
+	snapshot, err := api.conversationSnapshot(card.ID, 30, nil)
+	if err != nil {
+		b.Fatal(err)
+	}
+	b.ReportAllocs()
+	for b.Loop() {
+		detail, err := api.server.store.CardDetail(card.ID)
+		if err != nil {
+			b.Fatal(err)
+		}
+		if !proto.Equal(protoCardDetail(detail), snapshot.Detail) {
+			b.Fatal("changed detail")
+		}
 	}
 }

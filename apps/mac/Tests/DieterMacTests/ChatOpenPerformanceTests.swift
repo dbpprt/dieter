@@ -23,6 +23,22 @@ import Testing
     #expect(!store.hasLiveChatDirectory)
 }
 
+@Test @MainActor func reselectingAllChatsKeepsTheOpenConversationAndItsGeneration() async {
+    let store = DieterStore(restoreSync: false)
+    store.section = .chats
+    store.selectedChatID = "selected-chat"
+    var snapshot = Dieter_V1_ConversationSnapshot()
+    snapshot.detail.card.id = "selected-chat"
+    snapshot.conversation.cardID = "selected-chat"
+    snapshot.conversation.lastSeq = 42
+    store.conversation = snapshot
+    let generation = store.conversationSelectionGeneration
+    await store.openChats()
+    #expect(store.selectedChatID == "selected-chat")
+    #expect(store.conversation == snapshot)
+    #expect(store.conversationSelectionGeneration == generation)
+}
+
 private actor StreamFirstFixture: ConversationRPC {
     let delivers: Bool
     var reads = 0

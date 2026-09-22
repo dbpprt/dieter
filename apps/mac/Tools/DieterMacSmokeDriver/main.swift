@@ -30,7 +30,9 @@ private enum SmokeSuite: String, CaseIterable {
         // then deliberately allows up to 55 seconds for create, start, and
         // generated-title convergence. Leave enough outer budget for those
         // bounded assertions and slower hosted runners to finish their report.
-        case .board: 240
+        // Extended performance mode adds 30 chat clicks, 24 extra route
+        // returns and three passive CPU windows. Preserve the normal deadline.
+        case .board: ProcessInfo.processInfo.environment["DIETER_PERFORMANCE_SWEEP"] == "1" ? 420 : 240
         case .workspace: 180
         case .conversation: ProcessInfo.processInfo.environment["DIETER_CONTENT_CAPTURE"] == "1" ? 400 : 300
         // This suite performs two app phases around a daemon reconstruction;

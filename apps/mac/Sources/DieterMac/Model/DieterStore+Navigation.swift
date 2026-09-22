@@ -105,6 +105,8 @@ extension DieterStore {
     }
 
     func openChats() async {
+        // Reselecting the current destination must not tear down its transcript.
+        guard section != .chats else { return }
         stopTerminalWatch()
         closeConversation()
         section = .chats
