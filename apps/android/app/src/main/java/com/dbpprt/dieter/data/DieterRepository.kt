@@ -138,6 +138,8 @@ import io.grpc.okhttp.OkHttpChannelBuilder
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.flow
@@ -380,8 +382,8 @@ class GrpcDieterRepository(context: Context) : DieterRepository {
     private val webRTCRetryCooldown = WebRTCRetryCooldown()
     private var configuredEndpoints = DIETER_ENDPOINTS
     private var selectedEndpoint = DIETER_ENDPOINTS.first()
-    // AndroidKeyStore.load() may touch disk. Do it on first authenticated RPC, which all run
-    // on the connection manager's IO dispatcher, instead of during Activity construction.
+    // Credential/channel setup belongs to IO even when a ViewModel collects a
+    // quota watch or invokes a unary RPC from Main. Do not rely on caller context.
     private val credentials by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         DieterCredentialStore(appContext)
     }
@@ -466,24 +468,27 @@ class GrpcDieterRepository(context: Context) : DieterRepository {
         daemonId?.let { put(Metadata.Key.of("x-dieter-daemon-id", Metadata.ASCII_STRING_MARSHALLER), it) }
     }
 
-    private fun authenticated(stub: DieterServiceGrpcKt.DieterServiceCoroutineStub): DieterServiceGrpcKt.DieterServiceCoroutineStub {
-        val direct = synchronized(lock) { directAccessToken }
-        val token = direct ?: credentials.get(activeEndpoint.credentialId) ?: return stub
-        val daemonId = if (direct == null) activeEndpoint.daemonId else null
-        return stub.withInterceptors(MetadataUtils.newAttachHeadersInterceptor(metadata(token, daemonId)))
+    private fun authenticated(): DieterServiceGrpcKt.DieterServiceCoroutineStub {
+        // Capture route and identity together: endpoint selection may change
+        // while the IO dispatcher is preparing this RPC.
+        val (transport, endpoint, direct) = synchronized(lock) { Triple(channel(), selectedEndpoint, directAccessToken) }
+        val stub = DieterServiceGrpcKt.DieterServiceCoroutineStub(transport)
+        val token = direct ?: credentials.get(endpoint.credentialId) ?: return stub
+        return stub.withInterceptors(MetadataUtils.newAttachHeadersInterceptor(metadata(token, if (direct == null) endpoint.daemonId else null)))
     }
 
-    private fun gatewayStub(): GatewayServiceGrpcKt.GatewayServiceCoroutineStub {
-        val stub = GatewayServiceGrpcKt.GatewayServiceCoroutineStub(gatewayChannel()).withDeadlineAfter(15, TimeUnit.SECONDS)
-        val token = credentials.get(activeEndpoint.credentialId) ?: return stub
-        return stub.withInterceptors(MetadataUtils.newAttachHeadersInterceptor(metadata(token)))
+    private suspend fun gatewayStub(): GatewayServiceGrpcKt.GatewayServiceCoroutineStub =
+        gatewayStreamingStub().withDeadlineAfter(15, TimeUnit.SECONDS)
+
+    private suspend fun gatewayStreamingStub(): GatewayServiceGrpcKt.GatewayServiceCoroutineStub = withContext(Dispatchers.IO) {
+        val (transport, endpoint) = synchronized(lock) { gatewayChannel() to selectedEndpoint }
+        val stub = GatewayServiceGrpcKt.GatewayServiceCoroutineStub(transport)
+        val token = credentials.get(endpoint.credentialId) ?: return@withContext stub
+        stub.withInterceptors(MetadataUtils.newAttachHeadersInterceptor(metadata(token)))
     }
 
-    private fun gatewayStreamingStub(): GatewayServiceGrpcKt.GatewayServiceCoroutineStub {
-        val stub = GatewayServiceGrpcKt.GatewayServiceCoroutineStub(gatewayChannel())
-        val token = credentials.get(activeEndpoint.credentialId) ?: return stub
-        return stub.withInterceptors(MetadataUtils.newAttachHeadersInterceptor(metadata(token)))
-    }
+    private suspend fun credential(endpoint: DieterEndpoint): String? =
+        withContext(Dispatchers.IO) { credentials.get(endpoint.credentialId) }
 
     override suspend fun daemons(): ListDaemonsResponse {
         val response = gatewayStub().listDaemons(Empty.getDefaultInstance())
@@ -643,7 +648,7 @@ class GrpcDieterRepository(context: Context) : DieterRepository {
             }
             var relayStub = DieterServiceGrpcKt.DieterServiceCoroutineStub(gateway)
                 .withDeadlineAfter(deadlineSeconds, TimeUnit.SECONDS)
-            credentials.get(endpoint.credentialId)?.let { token ->
+            credential(endpoint)?.let { token ->
                 relayStub = relayStub.withInterceptors(
                     MetadataUtils.newAttachHeadersInterceptor(metadata(token, daemonId)),
                 )
@@ -671,7 +676,7 @@ class GrpcDieterRepository(context: Context) : DieterRepository {
         var owned: ManagedChannel? = null
         try {
             val bootstrap = DieterServiceGrpcKt.DieterServiceCoroutineStub(gateway)
-                .withInterceptors(MetadataUtils.newAttachHeadersInterceptor(metadata(requireNotNull(credentials.get(endpoint.credentialId)), daemonId)))
+                .withInterceptors(MetadataUtils.newAttachHeadersInterceptor(metadata(requireNotNull(credential(endpoint)), daemonId)))
                 .withDeadlineAfter(15, TimeUnit.SECONDS)
             stage = "ice-gathering"
             val offer = bridge.offer()
@@ -750,15 +755,15 @@ class GrpcDieterRepository(context: Context) : DieterRepository {
         return builder.build()
     }
 
-    private fun authenticatedGatewayStub(
+    private suspend fun authenticatedGatewayStub(
         channel: ManagedChannel,
         endpoint: DieterEndpoint,
-    ): GatewayServiceGrpcKt.GatewayServiceCoroutineStub {
+    ): GatewayServiceGrpcKt.GatewayServiceCoroutineStub = withContext(Dispatchers.IO) {
         var stub = GatewayServiceGrpcKt.GatewayServiceCoroutineStub(channel).withDeadlineAfter(15, TimeUnit.SECONDS)
         credentials.get(endpoint.credentialId)?.let { token ->
             stub = stub.withInterceptors(MetadataUtils.newAttachHeadersInterceptor(metadata(token)))
         }
-        return stub
+        stub
     }
 
     override suspend fun openScreenConnection(endpointId: String): com.dbpprt.dieter.screens.ScreenConnection {
@@ -885,11 +890,13 @@ class GrpcDieterRepository(context: Context) : DieterRepository {
             .build()
     }
 
-    private fun unary(deadlineSeconds: Long = 15): DieterServiceGrpcKt.DieterServiceCoroutineStub =
-        authenticated(DieterServiceGrpcKt.DieterServiceCoroutineStub(channel())).withDeadlineAfter(deadlineSeconds, TimeUnit.SECONDS)
+    private suspend fun unary(deadlineSeconds: Long = 15): DieterServiceGrpcKt.DieterServiceCoroutineStub = withContext(Dispatchers.IO) {
+        authenticated().withDeadlineAfter(deadlineSeconds, TimeUnit.SECONDS)
+    }
 
-    private fun streaming(): DieterServiceGrpcKt.DieterServiceCoroutineStub =
-        authenticated(DieterServiceGrpcKt.DieterServiceCoroutineStub(channel()))
+    private suspend fun streaming(): DieterServiceGrpcKt.DieterServiceCoroutineStub = withContext(Dispatchers.IO) {
+        authenticated()
+    }
 
     override suspend fun health(timeoutSeconds: Long): HealthResponse = unary(timeoutSeconds).health(Empty.getDefaultInstance())
 
@@ -898,7 +905,9 @@ class GrpcDieterRepository(context: Context) : DieterRepository {
     override suspend fun putKV(request: com.dbpprt.dieter.v1.KVPutRequest) = unary().putKV(request)
     override suspend fun deleteKV(request: com.dbpprt.dieter.v1.KVDeleteRequest) = unary().deleteKV(request)
     override suspend fun moveKV(request: com.dbpprt.dieter.v1.KVMoveRequest) = unary().moveKV(request)
-    override fun watchKV(request: com.dbpprt.dieter.v1.KVWatchRequest) = streaming().watchKV(request)
+    override fun watchKV(request: com.dbpprt.dieter.v1.KVWatchRequest) = flow {
+        streaming().watchKV(request).collect(::emit)
+    }
 
     override suspend fun runtimeStatus(): RuntimeStatus = unary().getRuntimeStatus(Empty.getDefaultInstance())
 

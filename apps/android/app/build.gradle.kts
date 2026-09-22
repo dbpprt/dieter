@@ -58,11 +58,18 @@ android {
                 signingConfig = signingConfigs.getByName("release")
             }
         }
+        create("performance") {
+            initWith(getByName("release"))
+            isDebuggable = false
+            signingConfig = signingConfigs.getByName("debug")
+            matchingFallbacks += listOf("release")
+        }
     }
 
     // Physical screen tests install a distinct application. Production/debug
     // credentials and the operator's installed Dieter app are never replaced.
-    testBuildType = providers.gradleProperty("dieter.screenTestBuildType").orElse("debug").get().also {
+    testBuildType = if (providers.gradleProperty("dieter.performanceTest").orNull == "true") "performance" else
+        providers.gradleProperty("dieter.screenTestBuildType").orElse("debug").get().also {
         require(it == "debug" || it == "screenFixture") { "Unsupported screen test build type" }
     }
 
@@ -166,6 +173,7 @@ dependencies {
     androidTestImplementation(libs.compose.ui.test.junit4)
     debugImplementation(libs.compose.ui.test.manifest)
     add("screenFixtureImplementation", libs.compose.ui.test.manifest)
+    add("performanceImplementation", libs.compose.ui.test.manifest)
 }
 
 // The adapter uses a package-private injection seam. Pin the exact AAR, so an

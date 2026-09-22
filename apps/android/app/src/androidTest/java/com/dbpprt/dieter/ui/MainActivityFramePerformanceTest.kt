@@ -1,13 +1,27 @@
 package com.dbpprt.dieter.ui
 
 import android.Manifest
+import android.graphics.Rect
+import android.view.MotionEvent
+import android.view.InputDevice
+import android.view.accessibility.AccessibilityNodeInfo
+import androidx.test.ext.junit.rules.ActivityScenarioRule
+import android.os.Looper
+import android.os.Handler
+import android.os.Process
+import android.os.SystemClock
+import android.util.Log
+import android.view.FrameMetrics
+import android.view.Window
+import androidx.test.platform.app.InstrumentationRegistry
+import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.concurrent.thread
 import androidx.core.app.FrameMetricsAggregator
-import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
-import androidx.compose.ui.test.onNodeWithTag
-import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.rule.GrantPermissionRule
 import com.dbpprt.dieter.MainActivity
+import com.dbpprt.dieter.BuildConfig
+import org.junit.Assume.assumeFalse
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -19,29 +33,86 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class MainActivityFramePerformanceTest {
     private val permissionRule = GrantPermissionRule.grant(Manifest.permission.POST_NOTIFICATIONS)
-    private val composeRule = createAndroidComposeRule<MainActivity>()
+    private val activityRule = ActivityScenarioRule(MainActivity::class.java)
+    private val instrumentation get() = InstrumentationRegistry.getInstrumentation()
+    private lateinit var activity: MainActivity
+    private var measuring = false
 
     @get:Rule
-    val rules: RuleChain = RuleChain.outerRule(permissionRule).around(composeRule)
+    val rules: RuleChain = RuleChain.outerRule(permissionRule).around(activityRule)
 
     @Test
     fun repeatedPrimaryNavigationHasNoSevereMainThreadStall() {
-        composeRule.waitForIdle()
-        // Warm each route once. Macrobenchmarks and real user sessions both execute optimized
-        // code after this first composition; the adjacent pages are also precomposed in-app.
+        assumeFalse("Frame budgets require the production-mode app: just android performance-test", BuildConfig.DEBUG)
+        val controlOnly = InstrumentationRegistry.getArguments().getString("dieterPerformanceControl") == "true"
+        activityRule.scenario.onActivity {
+            activity = it
+            if (controlOnly) installNativeControl()
+        }
+        Log.i("DieterPerformance", "measurementMode=${if (controlOnly) "native-control" else "dieter-navigation"}")
+        instrumentation.waitForIdleSync()
+        // A disconnected saved gateway opens the connection sheet on launch.
+        // Native input must dismiss that visible scrim before measuring routes.
+        val startup = awaitNode { findClickable(it, "Close sheet") ?: findClickable(it, "Chats") }
+        if (startup.contentDescription?.toString() == "Close sheet") {
+            clickVisibleLabel("Close sheet")
+            SystemClock.sleep(700)
+        }
+        // Use the real Choreographer clock and native input. Compose's test
+        // clock drives entire animations synchronously inside waitForIdle,
+        // producing artificial FrameMetrics UNKNOWN_DELAY stalls.
+        // Warm each route once before recording the same repeated journey.
         listOf("nav-chats", "nav-board", "nav-terminals", "nav-board").forEach { tag ->
             navigate(tag)
         }
         val aggregator = FrameMetricsAggregator(FrameMetricsAggregator.TOTAL_DURATION)
-        aggregator.add(composeRule.activity)
+        measuring = true
+        aggregator.add(activity)
+        val sampleMain = InstrumentationRegistry.getArguments().getString("dieterPerformanceSample") == "true"
+        val sampling = AtomicBoolean(sampleMain)
+        val samples = mutableMapOf<String, Int>()
+        val sampler = if (sampleMain) thread(name = "performance-main-sampler") {
+            while (sampling.get()) {
+                val stack = Looper.getMainLooper().thread.stackTrace.take(24).joinToString("\n")
+                samples[stack] = (samples[stack] ?: 0) + 1
+                Thread.sleep(20)
+            }
+        } else null
+        val slowFrames = Window.OnFrameMetricsAvailableListener { _, frame, _ ->
+            if (frame.getMetric(FrameMetrics.TOTAL_DURATION) >= 120_000_000) {
+                fun ms(metric: Int) = frame.getMetric(metric) / 1_000_000
+                Log.i("DieterPerformance", "slowFrame total=${ms(FrameMetrics.TOTAL_DURATION)} " +
+                    "input=${ms(FrameMetrics.INPUT_HANDLING_DURATION)} animation=${ms(FrameMetrics.ANIMATION_DURATION)} " +
+                    "layout=${ms(FrameMetrics.LAYOUT_MEASURE_DURATION)} draw=${ms(FrameMetrics.DRAW_DURATION)} " +
+                    "sync=${ms(FrameMetrics.SYNC_DURATION)} command=${ms(FrameMetrics.COMMAND_ISSUE_DURATION)} " +
+                    "swap=${ms(FrameMetrics.SWAP_BUFFERS_DURATION)} delay=${ms(FrameMetrics.UNKNOWN_DELAY_DURATION)} " +
+                    "gpu=${if (android.os.Build.VERSION.SDK_INT >= 31) ms(FrameMetrics.GPU_DURATION) else -1}")
+            }
+        }
+        if (sampleMain) activity.window.addOnFrameMetricsAvailableListener(slowFrames, Handler(Looper.getMainLooper()))
+        val cpuStarted = Process.getElapsedCpuTime()
+        val wallStarted = SystemClock.elapsedRealtime()
 
-        repeat(4) {
-            navigate("nav-chats")
-            navigate("nav-board")
-            navigate("nav-terminals")
+        try {
+            repeat(4) {
+                navigate("nav-chats")
+                navigate("nav-board")
+                navigate("nav-terminals")
+            }
+        } finally {
+            sampling.set(false)
+            sampler?.join(2_000)
+            if (sampleMain) {
+                activity.window.removeOnFrameMetricsAvailableListener(slowFrames)
+                samples.entries.sortedByDescending { it.value }.take(20).forEach { (stack, count) ->
+                    Log.i("DieterPerformance", "mainSamples count=$count\n$stack")
+                }
+            }
         }
 
-        val metrics = requireNotNull(aggregator.remove(composeRule.activity))
+        val navigationCpuMs = Process.getElapsedCpuTime() - cpuStarted
+        val navigationWallMs = SystemClock.elapsedRealtime() - wallStarted
+        val metrics = requireNotNull(aggregator.remove(activity))
         val histogram = requireNotNull(metrics[FrameMetricsAggregator.TOTAL_INDEX])
         var totalFrames = 0
         var severeFrames = 0
@@ -55,24 +126,175 @@ class MainActivityFramePerformanceTest {
         }
 
         assertTrue("FrameMetrics recorded no frames", totalFrames > 0)
+        val sorted = orderedDurations.sorted()
+        fun percentile(fraction: Double) = sorted[(sorted.size * fraction).toInt().coerceAtMost(sorted.lastIndex)]
+        val p95 = percentile(0.95)
+        Log.i(
+            "DieterPerformance",
+            "navigation frames=$totalFrames p50Ms=${percentile(0.50)} p95Ms=$p95 p99Ms=${percentile(0.99)} maxMs=${sorted.last()} " +
+                "over16Ms=${sorted.count { it > 16 }} over33Ms=${sorted.count { it > 33 }} " +
+                "cpuMs=$navigationCpuMs wallMs=$navigationWallMs",
+        )
         assertEquals("Detected a >=${SEVERE_FRAME_MS}ms UI-thread stall", 0, severeFrames)
-        val p95 = orderedDurations.sorted()[(orderedDurations.size * 0.95).toInt().coerceAtMost(orderedDurations.lastIndex)]
         assertTrue("Navigation p95 was ${p95}ms", p95 < P95_FRAME_MS)
+
+        // Separate passive-window CPU from navigation. These are process
+        // counters (including the test runner), not a physical battery estimate.
+        instrumentation.waitForIdleSync()
+        val idleCpuStarted = Process.getElapsedCpuTime()
+        val idleWallStarted = SystemClock.elapsedRealtime()
+        SystemClock.sleep(5_000)
+        Log.i(
+            "DieterPerformance",
+            "idle cpuMs=${Process.getElapsedCpuTime() - idleCpuStarted} " +
+                "wallMs=${SystemClock.elapsedRealtime() - idleWallStarted}",
+        )
+    }
+
+    // Optional diagnostic control: the same window, renderer and input driver
+    // with ordinary Android buttons. Never count this as Dieter qualification;
+    // it isolates emulator/compositor cost from the Compose application tree.
+    private fun installNativeControl() {
+        val root = android.widget.LinearLayout(activity).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            gravity = android.view.Gravity.BOTTOM
+        }
+        val controls = mutableMapOf<String, android.widget.Button>()
+        lateinit var terminal: android.widget.Button
+        fun select(label: String) {
+            controls.forEach { (name, button) -> button.isSelected = name == label }
+            terminal.visibility = android.view.View.GONE
+        }
+        terminal = android.widget.Button(activity).apply {
+            text = "Terminal"
+            isAllCaps = false
+            visibility = android.view.View.GONE
+            setOnClickListener { select("Tools") }
+        }
+        root.addView(terminal)
+        val bar = android.widget.LinearLayout(activity)
+        for (label in listOf("Activity", "Boards", "Chats", "Tools")) {
+            val button = android.widget.Button(activity).apply {
+                text = label
+                isAllCaps = false
+                setOnClickListener {
+                    if (label == "Tools") terminal.visibility = android.view.View.VISIBLE
+                    else select(label)
+                }
+            }
+            controls[label] = button
+            bar.addView(button, android.widget.LinearLayout.LayoutParams(0, 160, 1f))
+        }
+        root.addView(bar)
+        select("Boards")
+        activity.setContentView(root)
     }
 
     private fun navigate(tag: String) {
-        if (tag == "nav-terminals") {
-            composeRule.onNodeWithTag("nav-tools").performClick()
-            composeRule.waitForIdle()
-            composeRule.onNodeWithTag("tool-terminals").performClick()
-        } else {
-            composeRule.onNodeWithTag(tag).performClick()
+        val label = when (tag) {
+            "nav-chats" -> "Chats"
+            "nav-board" -> "Boards"
+            "nav-terminals" -> "Terminal"
+            else -> error("Unknown route $tag")
         }
-        composeRule.waitForIdle()
+        if (tag == "nav-terminals") {
+            clickVisibleLabel("Tools")
+            SystemClock.sleep(700)
+        }
+        clickVisibleLabel(label)
+        val selected = if (tag == "nav-terminals") "Tools" else label
+        awaitNode("$selected selected after $label") { root -> findClickable(root, selected)?.takeIf { it.isSelected } }
+        // Let the actual display clock finish the pager/sheet transition.
+        // This sleep is on the instrumentation thread, never Main.
+        SystemClock.sleep(700)
+        instrumentation.waitForIdleSync()
+    }
+
+    private fun clickVisibleLabel(label: String) {
+        val node = awaitNode("$label tap target") { findClickable(it, label) }
+        tap(node, label)
+    }
+
+    private fun tap(node: AccessibilityNodeInfo, label: String) {
+        val bounds = Rect().also(node::getBoundsInScreen)
+        Log.i("DieterPerformance", "nativeTap label=$label bounds=$bounds")
+        val downTime = SystemClock.uptimeMillis()
+        for (action in listOf(MotionEvent.ACTION_DOWN, MotionEvent.ACTION_UP)) {
+            val event = MotionEvent.obtain(downTime, SystemClock.uptimeMillis(), action,
+                bounds.exactCenterX(), bounds.exactCenterY(), 0).apply { source = InputDevice.SOURCE_TOUCHSCREEN }
+            try { assertTrue("Native tap on $label", instrumentation.uiAutomation.injectInputEvent(event, true)) }
+            finally { event.recycle() }
+            if (action == MotionEvent.ACTION_DOWN) SystemClock.sleep(30)
+        }
+    }
+
+    private fun awaitNode(description: String = "selected navigation control", find: (AccessibilityNodeInfo) -> AccessibilityNodeInfo?): AccessibilityNodeInfo {
+        val deadline = SystemClock.uptimeMillis() + 5_000
+        while (SystemClock.uptimeMillis() < deadline) {
+            // API 37 can retain the underlying window's old selection after
+            // dismissing a modal window. Query current semantics, not that cache.
+            if (android.os.Build.VERSION.SDK_INT >= 33) instrumentation.uiAutomation.clearCache()
+            instrumentation.uiAutomation.rootInActiveWindow?.let { root ->
+                if (android.os.Build.VERSION.SDK_INT < 33) root.refresh()
+                val target = find(root)
+                // Release-mode startup checks may display an update prompt.
+                // Dismiss it through its visible control during setup only;
+                // never download an update or silently alter a measured run.
+                if (target == null && !measuring) {
+                    findClickable(root, "Later")?.let { tap(it, "Later") }
+                }
+                target
+            }?.let { return it }
+            SystemClock.sleep(50)
+        }
+        val screenshot = instrumentation.uiAutomation.takeScreenshot()
+        val file = java.io.File(activity.getExternalFilesDir(null), "navigation-failure.png")
+        file.outputStream().use { screenshot?.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
+        screenshot?.recycle()
+        instrumentation.uiAutomation.rootInActiveWindow?.let { root ->
+            for (label in listOf("Chats", "Boards", "Tools", "Terminal", "Close sheet")) {
+                val node = findClickable(root, label)
+                Log.i("DieterPerformance", "failedTarget label=$label selected=${node?.isSelected} " +
+                    "bounds=${node?.let { Rect().also(it::getBoundsInScreen) }}")
+            }
+        }
+        error("Expected $description did not appear; screenshot=$file")
+    }
+
+    private fun findClickable(root: AccessibilityNodeInfo, label: String): AccessibilityNodeInfo? {
+        var visited = 0
+        // The bottom navigation is last in the window's traversal order.
+        // Stop at its matching control instead of synchronously scanning every
+        // row above it. Compose's virtual provider does not implement Android's
+        // native text-search query, so retain observed-node traversal.
+        fun visit(node: AccessibilityNodeInfo): AccessibilityNodeInfo? {
+            if (++visited > 1_024) return null
+            if (node.packageName?.toString() == activity.packageName && node.isVisibleToUser &&
+                (node.text?.toString() == label || node.contentDescription?.toString() == label)) {
+                var clickable: AccessibilityNodeInfo? = node
+                while (clickable != null) {
+                    if ((clickable.isClickable || clickable.isSelected) && clickable.isEnabled) {
+                        return clickable
+                    }
+                    clickable = clickable.parent
+                }
+            }
+            for (index in node.childCount - 1 downTo 0) {
+                node.getChild(index)?.let { visit(it) }?.let { return it }
+            }
+            return null
+        }
+        // Selected tabs intentionally remove their click action in Compose's
+        // accessibility tree; accept selected nodes when verifying the result.
+        // Route names also occur in page headings and widget previews. The
+        // observed bottom navigation control is the lowest matching target.
+        return visit(root)
     }
 
     private companion object {
-        const val SEVERE_FRAME_MS = 750
-        const val P95_FRAME_MS = 500
+        // Production-mode emulator regression budgets; physical 60/120 Hz
+        // qualification remains a separate measurement.
+        const val SEVERE_FRAME_MS = 500
+        const val P95_FRAME_MS = 120
     }
 }

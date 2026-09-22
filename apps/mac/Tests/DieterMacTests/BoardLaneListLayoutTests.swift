@@ -17,6 +17,11 @@ import Testing
     root.sizingOptions = []
     let window = boardLaneFixtureWindow(root: root, width: 264, height: 1000)
     defer { window.close() }
+    // Check the first layout before yielding to deferred height corrections.
+    // A fast first draw is not useful if cards are initially clipped or gapped.
+    root.layoutSubtreeIfNeeded()
+    let initialTable = try #require(boardLaneNativeTable(in: root))
+    try assertBoardLaneRowsFitContent(table: initialTable, root: root, cards: cards, store: store)
 
     for width in [CGFloat(264), 440, 264] {
         window.setContentSize(NSSize(width: width, height: 1000))
@@ -110,7 +115,10 @@ import Testing
                 .frame(width: max(1, cell.bounds.width)))
         content.layoutSubtreeIfNeeded()
         #expect(
-            rowFrame.height >= content.fittingSize.height - 1,
+            abs(cell.bounds.height - rowFrame.height) < 1,
+            "Mounted cell geometry must match the measured row before first draw")
+        #expect(
+            cell.bounds.height >= content.fittingSize.height - 1,
             "Native row \(card.id) must include its entire SwiftUI content")
         if index > 0 {
             #expect(rowFrame.minY >= table.rect(ofRow: index - 1).maxY)

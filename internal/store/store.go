@@ -38,6 +38,7 @@ type Store struct {
 	statuses      conversationStatusCache
 	checkpoints   conversationCheckpoints
 	syncJournal   syncJournalCache
+	notifications changeNotifications
 
 	usageMu    sync.Mutex
 	usageCache map[string]cardUsageCacheEntry
@@ -76,6 +77,7 @@ func New(root string) *Store {
 // Close releases database handles owned by the store. Callers must stop
 // background work before closing the store.
 func (s *Store) Close() error {
+	s.closeNotifications()
 	s.peerDBMu.Lock()
 	peerDBs := s.peerDBs
 	s.peerDBs = nil
@@ -217,6 +219,7 @@ func (s *Store) beginWriteKind(kind string) (func(), error) {
 			slog.Error("sync commit deferred to recovery", "error", err)
 		}
 		release()
+		s.notifyChanges()
 		s.flushConversationCheckpoints()
 	}, nil
 }

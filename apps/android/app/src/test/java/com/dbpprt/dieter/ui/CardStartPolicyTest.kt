@@ -99,6 +99,70 @@ class CardStartPolicyTest {
     }
 
     @Test
+    fun optimisticMoveUsesTheTargetLaneUntilSyncConfirmsIt() {
+        val stale = card(id = "card-1", lane = "todo").toBuilder().setPosition(1_024).build()
+        val move = OptimisticCardMove(
+            operationId = "move-1",
+            lane = "review",
+            position = 2_048,
+            confirmsPosition = true,
+        )
+
+        val projected = projectCardsDuringOperations(
+            remoteCards = listOf(stale),
+            localCards = listOf(move.applyingTo(stale)),
+            operations = mapOf(stale.id to CardOperation.MOVING),
+            pendingMoves = mapOf(stale.id to move),
+        )
+
+        assertEquals("review", projected.cards.single().lane)
+        assertEquals(2_048L, projected.cards.single().position)
+        assertEquals(mapOf(stale.id to move), projected.pendingMoves)
+    }
+
+    @Test
+    fun synchronizedMoveClearsThePendingProjection() {
+        val moved = card(id = "card-1", lane = "review").toBuilder().setPosition(2_048).build()
+        val move = OptimisticCardMove(
+            operationId = "move-1",
+            lane = "review",
+            position = 2_048,
+            confirmsPosition = true,
+        )
+
+        val projected = projectCardsDuringOperations(
+            remoteCards = listOf(moved),
+            localCards = listOf(moved),
+            operations = mapOf(moved.id to CardOperation.MOVING),
+            pendingMoves = mapOf(moved.id to move),
+        )
+
+        assertEquals(listOf(moved), projected.cards)
+        assertTrue(projected.pendingMoves.isEmpty())
+    }
+
+    @Test
+    fun crossLaneMoveDoesNotWaitForItsEstimatedPosition() {
+        val moved = card(id = "card-1", lane = "review").toBuilder().setPosition(3_072).build()
+        val move = OptimisticCardMove(
+            operationId = "move-1",
+            lane = "review",
+            position = 2_048,
+            confirmsPosition = false,
+        )
+
+        val projected = projectCardsDuringOperations(
+            remoteCards = listOf(moved),
+            localCards = listOf(move.applyingTo(moved)),
+            operations = mapOf(moved.id to CardOperation.MOVING),
+            pendingMoves = mapOf(moved.id to move),
+        )
+
+        assertEquals(listOf(moved), projected.cards)
+        assertTrue(projected.pendingMoves.isEmpty())
+    }
+
+    @Test
     fun operationAndConversationStatusOverrideAStaleCardRuntime() {
         assertEquals("starting", resolvedCardRuntime("idle", "idle", CardOperation.STARTING))
         assertEquals("running", resolvedCardRuntime("idle", "running"))

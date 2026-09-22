@@ -11,6 +11,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.Recomposer
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asAndroidBitmap
@@ -26,6 +27,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.dbpprt.dieter.ui.theme.DieterTheme
 import com.dbpprt.dieter.v1.Card
 import java.io.File
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -68,6 +70,10 @@ class ChatRuntimeStatusIndicatorTest {
         composeRule.onNodeWithTag("chat-project-running").assertIsDisplayed().assertTextEquals("Dieter")
         composeRule.onNodeWithTag("chat-project-inactive").assertIsDisplayed().assertTextEquals("Dieter")
 
+        // Let the infinite transition initialize before measuring steady work.
+        composeRule.mainClock.advanceTimeBy(100)
+        composeRule.waitForIdle()
+        val compositionsBefore = Recomposer.runningRecomposers.value.associateWith { it.changeCount }
         val activeBefore = composeRule.onNodeWithTag("chat-runtime-running").captureToImage().asAndroidBitmap()
         val inactiveBefore = composeRule.onNodeWithTag("chat-runtime-inactive").captureToImage().asAndroidBitmap()
         capture("chat-runtime-status-before.png")
@@ -79,6 +85,8 @@ class ChatRuntimeStatusIndicatorTest {
         val inactiveAfter = composeRule.onNodeWithTag("chat-runtime-inactive").captureToImage().asAndroidBitmap()
         capture("chat-runtime-status-after.png")
 
+        assertEquals("Badge animation must draw without recomposing text and layout",
+            compositionsBefore, Recomposer.runningRecomposers.value.associateWith { it.changeCount })
         assertFalse("The active status should visibly animate", activeBefore.sameAs(activeAfter))
         assertTrue("The inactive status should remain visually still", inactiveBefore.sameAs(inactiveAfter))
     }

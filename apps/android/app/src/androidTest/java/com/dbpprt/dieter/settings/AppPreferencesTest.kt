@@ -1,6 +1,11 @@
 package com.dbpprt.dieter.settings
 
 import androidx.test.platform.app.InstrumentationRegistry
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.flow.first
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -30,7 +35,7 @@ class AppPreferencesTest {
     }
 
     @Test
-    fun navigationUsesIsolatedAccountCacheAndDurableOfflineQueue() {
+    fun navigationUsesIsolatedAccountCacheAndDurableOfflineQueue() = runBlocking {
         val base = InstrumentationRegistry.getInstrumentation().targetContext
         val prefix = "kv-test-${java.util.UUID.randomUUID()}-"
         val context = object : android.content.ContextWrapper(base) {
@@ -39,24 +44,40 @@ class AppPreferencesTest {
                 base.getSharedPreferences(prefix + name, mode)
         }
         context.getSharedPreferences("dieter_shared_kv", 0).edit().putString("activeAccount", "fixture-account").commit()
-        InstrumentationRegistry.getInstrumentation().runOnMainSync {
-            val preferences = AppPreferences(context)
-            preferences.setProjectOrder(listOf("c", "a", "b"))
-            preferences.setPinnedChatOrder(listOf("two", "one"))
-            preferences.setChatProjectCollapsed("p", true)
-            preferences.setChatProjectExpanded("p", true)
-            val restored = AppPreferences(context)
-            assertEquals(listOf("c", "a", "b"), restored.projectOrder.value)
-            assertEquals(listOf("two", "one"), restored.pinnedChatOrder.value)
-            assertTrue("p" in restored.collapsedChatProjectIds.value)
-            assertTrue("p" in restored.expandedChatProjectIds.value)
-            assertEquals(7, restored.sharedNavigation.status.value.pending)
-            restored.sharedNavigation.clearAccount()
-            val signedOut = AppPreferences(context)
-            assertTrue(signedOut.projectOrder.value.isEmpty())
-            assertEquals(0, signedOut.sharedNavigation.status.value.pending)
+        val preferences = withContext(Dispatchers.Main) { AppPreferences(context) }
+        var restored: AppPreferences? = null
+        var signedOut: AppPreferences? = null
+        try {
+            withContext(Dispatchers.Main) {
+                preferences.setProjectOrder(listOf("c", "a", "b"))
+                preferences.setPinnedChatOrder(listOf("two", "one"))
+                preferences.setChatProjectCollapsed("p", true)
+                preferences.setChatProjectExpanded("p", true)
+            }
+            preferences.sharedNavigation.awaitPendingWrites()
+            val reloaded = withContext(Dispatchers.Main) { AppPreferences(context) }
+            restored = reloaded
+            withTimeout(5_000) {
+                reloaded.sharedNavigation.status.first { it.pending == 7 }
+                reloaded.projectOrder.first { it == listOf("c", "a", "b") }
+                reloaded.pinnedChatOrder.first { it == listOf("two", "one") }
+                reloaded.collapsedChatProjectIds.first { "p" in it }
+                reloaded.expandedChatProjectIds.first { "p" in it }
+            }
+            reloaded.sharedNavigation.clearAccount()
+            reloaded.sharedNavigation.awaitPendingWrites()
+            val cleared = withContext(Dispatchers.Main) { AppPreferences(context) }
+            signedOut = cleared
+            cleared.sharedNavigation.awaitPendingWrites()
+            assertTrue(cleared.projectOrder.value.isEmpty())
+            assertEquals(0, cleared.sharedNavigation.status.value.pending)
+        } finally {
+            preferences.sharedNavigation.close()
+            restored?.sharedNavigation?.close()
+            signedOut?.sharedNavigation?.close()
         }
         base.deleteSharedPreferences(prefix + "dieter_shared_kv")
+        Unit
     }
 
     @Test

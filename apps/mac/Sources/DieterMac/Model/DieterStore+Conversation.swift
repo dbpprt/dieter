@@ -28,7 +28,7 @@ extension DieterStore {
                 projectDirectory[project.id] = project
                 projectReplicaEndpointIDs[project.id] = endpoint.id
             }
-            let combined = chats.filter { !previousProjectIDs.contains($0.projectID) } + refreshedChats
+            let combined = chats.filter { !previousProjectIDs.contains($0.projectID) || (!includeArchived && $0.archived) } + refreshedChats
             let nextChats = Array(
                 combined.reduce(into: [String: Dieter_V1_Card]()) { $0[$1.id] = $1 }.values
             ).sorted {
@@ -187,7 +187,7 @@ extension DieterStore {
     {
         bindConversation()
         await conversationModel.fetchConversation(
-            cardID: cardID, chat: chat, rpc: rpc, recoveryAttempts: recoveryAttempts)
+            cardID: cardID, chat: chat, rpc: rpc, recoveryAttempts: recoveryAttempts, preferStream: true)
     }
     func acceptConversation(
         _ snapshot: Dieter_V1_ConversationSnapshot, chat: Bool, refreshedAt: Date? = Date(),
@@ -654,12 +654,7 @@ extension DieterStore {
     }
 
     func move(_ card: Dieter_V1_Card, lane: String, position: Int64? = nil) async {
-        if lane == "running" && card.initialPromptSentAt.isEmpty {
-            guard await ensureConversationConnection(card) else { return }
-        } else {
-            guard await ensureReplicaConnection(card.projectID) else { return }
-        }
-        guard selectedProjectIsLive, let rpc else { return }
+        guard pendingCardMoves[card.id] == nil else { return }
         let original = state.cards.first(where: { $0.id == card.id }) ?? card
         let optimisticPosition =
             position
@@ -679,6 +674,23 @@ extension DieterStore {
         optimistic.position = optimisticPosition
         acceptWorkspaceCard(optimistic)
         movingCardIDs.insert(card.id)
+
+        let connected: Bool
+        if lane == "running" && card.initialPromptSentAt.isEmpty {
+            connected = await ensureConversationConnection(card)
+        } else {
+            connected = await ensureReplicaConnection(card.projectID)
+        }
+        guard connected, selectedProjectIsLive, let rpc,
+            pendingCardMoves[card.id]?.operationID == operationID
+        else {
+            if pendingCardMoves[card.id]?.operationID == operationID {
+                pendingCardMoves.removeValue(forKey: card.id)
+                movingCardIDs.remove(card.id)
+                acceptWorkspaceCard(original)
+            }
+            return
+        }
 
         var request = Dieter_V1_MoveCardRequest()
         request.cardID = card.id

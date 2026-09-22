@@ -16,35 +16,54 @@ private let macPackageRoot = URL(fileURLWithPath: #filePath)
 @Suite(.serialized)
 struct DieterThemePerformanceTests {
     @Test(.enabled(if: ProcessInfo.processInfo.environment["DIETER_BOARD_PROFILE"] == "1"))
-    @MainActor func boardOpeningStageDiagnostic() throws {
+    @MainActor func boardOpeningStageDiagnostic() async throws {
         for counts in [[10, 0, 0, 0], [100, 0, 0, 0], [25, 25, 25, 25]] {
             for sample in 1...3 {
                 let start = Date()
                 let fixture = makeProductionBoardFixture(laneCounts: counts)
                 let projected = Date()
                 let view = NSHostingView(rootView: productionBoard(store: fixture.store, board: fixture.board))
+                view.sizingOptions = []
                 let hosted = Date()
-                view.frame = NSRect(x: 0, y: 0, width: 1_140, height: 710)
+                let window = NSWindow(
+                    contentRect: NSRect(x: 0, y: 0, width: 1_140, height: 710),
+                    styleMask: [.borderless], backing: .buffered, defer: false)
+                window.isReleasedWhenClosed = false
+                window.contentView = view
+                defer { window.close() }
                 view.layoutSubtreeIfNeeded()
                 let laidOut = Date()
+                func mountedRowCount() -> Int {
+                    var pending: [NSView] = [view]
+                    var count = 0
+                    while let next = pending.popLast() {
+                        pending.append(contentsOf: next.subviews)
+                        if let table = next as? NSTableView {
+                            table.enumerateAvailableRowViews { _, _ in count += 1 }
+                        }
+                    }
+                    return count
+                }
+                // Native List needs a window and a deferred layout pass. A
+                // windowless host measures empty chrome and reports zero rows.
+                let deadline = ContinuousClock.now.advanced(by: .seconds(5))
+                while mountedRowCount() == 0, ContinuousClock.now < deadline {
+                    try await Task.sleep(for: .milliseconds(10))
+                    view.layoutSubtreeIfNeeded()
+                }
+                let ready = Date()
+                let mountedRows = mountedRowCount()
+                try #require(mountedRows > 0, "Performance evidence requires actual card rows")
                 let bitmap = try #require(view.bitmapImageRepForCachingDisplay(in: view.bounds))
                 view.cacheDisplay(in: view.bounds, to: bitmap)
                 let drawn = Date()
                 print(
-                    "BOARD_PROFILE counts=\(counts) sample=\(sample) projection_ms=\(projected.timeIntervalSince(start)*1000) host_ms=\(hosted.timeIntervalSince(projected)*1000) layout_ms=\(laidOut.timeIntervalSince(hosted)*1000) draw_ms=\(drawn.timeIntervalSince(laidOut)*1000)"
+                    "BOARD_PROFILE counts=\(counts) sample=\(sample) projection_ms=\(projected.timeIntervalSince(start)*1000) host_ms=\(hosted.timeIntervalSince(projected)*1000) initial_layout_ms=\(laidOut.timeIntervalSince(hosted)*1000) rows_ready_ms=\(ready.timeIntervalSince(hosted)*1000) draw_ms=\(drawn.timeIntervalSince(ready)*1000)"
                 )
-                var pending: [NSView] = [view]
-                var mountedRows = 0
-                while let next = pending.popLast() {
-                    pending.append(contentsOf: next.subviews)
-                    if let table = next as? NSTableView {
-                        table.enumerateAvailableRowViews { _, _ in mountedRows += 1 }
-                    }
-                }
                 print("BOARD_PROFILE mounted_rows=\(mountedRows)")
                 if sample == 3, counts == [25, 25, 25, 25] {
                     try bitmap.representation(using: .png, properties: [:])?.write(
-                        to: URL(fileURLWithPath: "/tmp/dieter-board-profile.png"))
+                        to: macPackageRoot.appendingPathComponent(".build/board-profile.png"))
                 }
             }
         }
@@ -336,6 +355,37 @@ struct DieterThemePerformanceTests {
         #expect(NSLocationInRange(99, table.rows(in: table.visibleRect)))
         #expect(table.rowView(atRow: 99, makeIfNecessary: false) != nil)
         #expect(table.visibleRect.maxY >= table.rect(ofRow: 99).maxY - 1)
+    }
+
+    @Test @MainActor func fourPopulatedBoardLanesKeepOffscreenCardGraphsUnmounted() async throws {
+        // The original regression mounted all 100 cards across four short
+        // lanes, even though a single long lane still appeared virtualized.
+        let fixture = makeProductionBoardFixture(laneCounts: [25, 25, 25, 25])
+        let view = NSHostingView(rootView: productionBoard(store: fixture.store, board: fixture.board))
+        view.sizingOptions = []
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 1_140, height: 710),
+            styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = view
+        defer { window.close() }
+        view.layoutSubtreeIfNeeded()
+        try await DieterTaskSleep.milliseconds(160)
+        view.layoutSubtreeIfNeeded()
+        var pending: [NSView] = [view]
+        var tables: [NSTableView] = []
+        while let next = pending.popLast() {
+            pending.append(contentsOf: next.subviews)
+            if let table = next as? NSTableView, table.numberOfRows == 25 { tables.append(table) }
+        }
+        try #require(tables.count == 4)
+        var mounted = 0
+        for table in tables {
+            try #require(table.rows(in: table.visibleRect).length > 0)
+            table.enumerateAvailableRowViews { _, _ in mounted += 1 }
+            #expect(table.rowView(atRow: 24, makeIfNecessary: false) == nil)
+        }
+        #expect(mounted > 0 && mounted < 50)
     }
 
     @Test func productionProjectSidebarRetainsTheEagerStackWorkaround() throws {

@@ -1,0 +1,306 @@
+package server
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"io"
+	"log/slog"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
+	"github.com/dbpprt/dieter/internal/model"
+	"github.com/dbpprt/dieter/internal/peerstore"
+	"github.com/dbpprt/dieter/internal/protocol"
+	"github.com/dbpprt/dieter/internal/store"
+	"github.com/shirou/gopsutil/v4/process"
+	"google.golang.org/protobuf/proto"
+)
+
+// Opt-in steady-state process counters: fixture setup and cold projections are
+// outside the sample. This covers eight real projection subscriptions, not the
+// network stack or an operator daemon with unknown concurrent work.
+func TestIdleSubscriptionProcessCost(t *testing.T) {
+	setting := os.Getenv("DIETER_IDLE_SYNC")
+	if setting == "" {
+		t.Skip("set DIETER_IDLE_SYNC=30s for idle CPU/RSS evidence")
+	}
+	duration, err := time.ParseDuration(setting)
+	if err != nil || duration < time.Second {
+		t.Fatal("DIETER_IDLE_SYNC must be at least one second")
+	}
+	api, card := performanceConversation(t, nil)
+	ctx, cancel := context.WithCancel(t.Context())
+	var group sync.WaitGroup
+	var initial atomic.Int64
+	var active atomic.Int64
+	for range 4 {
+		group.Add(2)
+		go func() {
+			defer group.Done()
+			active.Add(1)
+			defer active.Add(-1)
+			_ = api.watchConversation(ctx, &dieterv1.WatchConversationRequest{CardId: card.ID}, func(*dieterv1.ConversationUpdate) error { initial.Add(1); return nil })
+		}()
+		go func() {
+			defer group.Done()
+			active.Add(1)
+			defer active.Add(-1)
+			_ = api.watchSync(ctx, &dieterv1.SyncRequest{ProtocolVersion: protocol.Number}, func(frame *dieterv1.SyncFrame) error {
+				if frame.GetSnapshot() != nil {
+					initial.Add(1)
+				}
+				return nil
+			})
+		}()
+	}
+	defer func() { cancel(); group.Wait() }()
+	deadline := time.Now().Add(5 * time.Second)
+	for initial.Load() < 8 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if initial.Load() != 8 || active.Load() != 8 {
+		t.Fatal("subscriptions did not become ready")
+	}
+	p, err := process.NewProcess(int32(os.Getpid()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	before, err := p.Times()
+	if err != nil {
+		t.Fatal(err)
+	}
+	resident, err := p.MemoryInfo()
+	if err != nil {
+		t.Fatal(err)
+	}
+	started := time.Now()
+	time.Sleep(duration)
+	if active.Load() != 8 {
+		t.Fatal("a subscription exited during the idle measurement")
+	}
+	after, err := p.Times()
+	if err != nil {
+		t.Fatal(err)
+	}
+	end, err := p.MemoryInfo()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cpu := after.User + after.System - before.User - before.System
+	t.Logf("idle subscriptions=8 wall=%s cpuSeconds=%.6f oneCorePercent=%.3f rssStartMiB=%.2f rssEndMiB=%.2f", time.Since(started), cpu, 100*cpu/time.Since(started).Seconds(), float64(resident.RSS)/(1<<20), float64(end.RSS)/(1<<20))
+	if initial.Load() != 8 {
+		t.Fatal("idle subscriptions rebuilt visible content")
+	}
+}
+
+func TestSyncHydratesOnlyOwnerBeforeApplyingRecentBudget(t *testing.T) {
+	var logs bytes.Buffer
+	api, localCard := performanceConversation(t, slog.New(slog.NewTextHandler(&logs, nil)))
+	local := api.server.store
+	identity, err := local.BindPeerAccount("performance", "subject", "local", "https://gateway.test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	remoteAPI, remoteCard := performanceConversation(t, nil)
+	remote := remoteAPI.server.store
+	if _, err := remote.BindPeerAccount("performance", "subject", "remote", "https://gateway.test"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := remote.UpdateCardCache(remoteCard.ID, store.CardCacheInput{Runtime: "running"}); err != nil {
+		t.Fatal(err)
+	}
+	data, err := remote.PeerData(identity.Account)
+	if err != nil {
+		t.Fatal(err)
+	}
+	records := data.Sorted()
+	for len(records) > 0 {
+		n := min(peerstore.PageSize, len(records))
+		if err := local.MergePeerRecords(identity, records[:n]); err != nil {
+			t.Fatal(err)
+		}
+		records = records[n:]
+	}
+	projection, err := api.globalSnapshot(30, 1, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(projection.snapshot.State.Chats) != 2 || len(projection.snapshot.Conversations) != 1 || projection.snapshot.Conversations[0].Detail.Card.Id != localCard.ID {
+		t.Fatalf("remote metadata must remain visible without consuming local hydration budget: %v", projection.snapshot)
+	}
+	if logs.Len() != 0 {
+		t.Fatalf("normal remote ownership produced warnings: %s", &logs)
+	}
+}
+
+func performanceConversation(tb testing.TB, logger *slog.Logger) (*grpcAPI, model.Card) {
+	tb.Helper()
+	repo := tb.TempDir()
+	if err := os.Mkdir(filepath.Join(repo, ".git"), 0700); err != nil {
+		tb.Fatal(err)
+	}
+	data := store.New(tb.TempDir())
+	tb.Cleanup(func() { _ = data.Close() })
+	project, err := data.CreateProject(store.CreateProjectInput{Name: "Performance", Path: repo})
+	if err != nil {
+		tb.Fatal(err)
+	}
+	card, err := data.CreateChat(store.CreateCardInput{Project: project.ID, Title: "Bounded transcript"})
+	if err != nil {
+		tb.Fatal(err)
+	}
+	messages := make([]model.UIMessage, 30)
+	for i := range messages {
+		messages[i] = model.UIMessage{ID: string(rune('a' + i)), Role: "assistant", Parts: []model.UIMessagePart{{Type: "text", Text: strings.Repeat("text ", 1600)}}}
+	}
+	if _, err := data.InitializeForkConversation(card.ID, messages); err != nil {
+		tb.Fatal(err)
+	}
+	return &grpcAPI{server: NewWithRunner(data, logger, &fakeRunner{})}, card
+}
+
+func TestIdleConversationWatchBuildsOnlyOnce(t *testing.T) {
+	var logs bytes.Buffer
+	api, card := performanceConversation(t, slog.New(slog.NewJSONHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	ctx, cancel := context.WithTimeout(context.Background(), 550*time.Millisecond)
+	defer cancel()
+	frames := 0
+	err := api.watchConversation(ctx, &dieterv1.WatchConversationRequest{CardId: card.ID, IntervalMs: 100}, func(*dieterv1.ConversationUpdate) error {
+		frames++
+		return nil
+	})
+	if err != context.DeadlineExceeded || frames != 1 {
+		t.Fatalf("idle watch: frames=%d err=%v", frames, err)
+	}
+	var metrics struct {
+		Polls          int `json:"polls"`
+		SnapshotBuilds int `json:"snapshotBuilds"`
+	}
+	if err := json.Unmarshal(bytes.TrimSpace(logs.Bytes()), &metrics); err != nil {
+		t.Fatal(err)
+	}
+	if metrics.Polls != 1 || metrics.SnapshotBuilds != 1 {
+		t.Fatalf("idle work was not eliminated: %+v", metrics)
+	}
+}
+
+func TestConversationWatchRefreshesMetadataAndCrossProcessTranscript(t *testing.T) {
+	api, card := performanceConversation(t, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	other := store.New(api.server.store.Root)
+	defer other.Close()
+	frames := 0
+	err := api.watchConversation(ctx, &dieterv1.WatchConversationRequest{CardId: card.ID, IntervalMs: 100}, func(update *dieterv1.ConversationUpdate) error {
+		frames++
+		switch frames {
+		case 1:
+			_, err := other.AddComment(card.ID, "Metadata changes without transcript sequence", model.Author{Kind: "human"})
+			return err
+		case 2:
+			if len(update.GetDetail().GetComments()) != 1 {
+				t.Fatal("comment-only update was skipped")
+			}
+			_, err := other.StartConversationTurn(card.ID, "turn", "new-message", "A new message")
+			return err
+		case 3:
+			if len(update.ChangedMessages) != 1 || update.ChangedMessages[0].Id != "new-message" {
+				t.Fatal("cross-process message was skipped")
+			}
+			cancel()
+		}
+		return nil
+	})
+	if err != context.Canceled || frames != 3 {
+		t.Fatalf("watch: frames=%d err=%v", frames, err)
+	}
+}
+
+func TestConversationWatchRevisionIgnoresUnrelatedTokens(t *testing.T) {
+	api, card := performanceConversation(t, nil)
+	other, err := api.server.store.CreateChat(store.CreateCardInput{Project: card.ProjectID, Title: "other stream"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	before, _, err := api.conversationWatchRevision(card.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range 5 {
+		if _, _, err := api.server.store.AppendUIChunk(other.ID, "turn", json.RawMessage(`{"type":"text-delta","delta":"token"}`)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	after, pending, err := api.conversationWatchRevision(card.ID)
+	if err != nil || pending || after != before {
+		t.Fatalf("unrelated tokens invalidated selected transcript: %+v %+v %v", before, after, err)
+	}
+	if _, err := api.server.store.AddComment(card.ID, "comment", model.Author{Kind: "human"}); err != nil {
+		t.Fatal(err)
+	}
+	after, _, err = api.conversationWatchRevision(card.ID)
+	if err != nil || after == before {
+		t.Fatal("metadata no longer invalidates selected transcript")
+	}
+}
+
+func TestConversationCommitDeliveryDoesNotWaitForRecoveryPoll(t *testing.T) {
+	api, card := performanceConversation(t, nil)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	frames := 0
+	var committed time.Time
+	err := api.watchConversation(ctx, &dieterv1.WatchConversationRequest{CardId: card.ID}, func(update *dieterv1.ConversationUpdate) error {
+		frames++
+		if frames == 1 {
+			_, err := api.server.store.AddComment(card.ID, "wake", model.Author{Kind: "human"})
+			committed = time.Now()
+			return err
+		}
+		t.Logf("commit-to-frame=%s", time.Since(committed))
+		if len(update.GetDetail().GetComments()) != 1 {
+			t.Fatal("commit notification delivered stale metadata")
+		}
+		cancel()
+		return nil
+	})
+	if err != context.Canceled || frames != 2 {
+		t.Fatalf("commit notification was lost: frames=%d error=%v", frames, err)
+	}
+}
+
+// Matched warm workloads, with setup outside the timer. snapshot is the former
+// idle poll (including serialization); revision is the unchanged fast path.
+func BenchmarkConversationIdleRead(b *testing.B) {
+	api, card := performanceConversation(b, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if _, err := api.conversationSnapshot(card.ID, 30, nil); err != nil {
+		b.Fatal(err)
+	}
+	b.Run("snapshot", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			snapshot, err := api.conversationSnapshot(card.ID, 30, nil)
+			if err != nil {
+				b.Fatal(err)
+			}
+			if _, err := (proto.MarshalOptions{Deterministic: true}).Marshal(snapshot); err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+	b.Run("revision", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			if _, _, err := api.conversationWatchRevision(card.ID); err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+}

@@ -7,6 +7,7 @@ import com.dbpprt.dieter.v1.*
 import com.google.protobuf.ByteString
 import io.grpc.Status
 import kotlinx.coroutines.*
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import org.json.JSONArray
@@ -15,13 +16,17 @@ import java.util.UUID
 
 /** Account cache and durable, daemon-bound outbox for portable navigation. */
 class SharedKV(private val preferences: SharedPreferences, private val namespace: String = "navigation") {
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    // State, protobuf/JSON projection and durable commits share one IO lane.
+    // Network suspensions may interleave; each non-suspending mutation stays
+    // atomic, as it did on Main, without blocking UI input or rendering.
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO.limitedParallelism(1))
+    private val commands = Channel<() -> Unit>(1024)
     private var repository: DieterRepository? = null
     private var watch: Job? = null
     private var delivery: Job? = null
     private var generation = 0
-    private var account = preferences.getString("activeAccount", "").orEmpty()
-    private var daemon = preferences.getString("activeDaemon", "").orEmpty()
+    private var account = ""
+    private var daemon = ""
     private var entries = mutableMapOf<String, KVEntry>()
     private var pending = mutableListOf<JSONObject>()
     private val _values = MutableStateFlow<Map<String, String>>(emptyMap())
@@ -41,9 +46,44 @@ class SharedKV(private val preferences: SharedPreferences, private val namespace
         pending = (0 until queue.length()).map { queue.getJSONObject(it) }.toMutableList()
         publish()
     }
-    init { if (account.isNotEmpty()) restore() }
+    init {
+        scope.launch {
+            account = preferences.getString("activeAccount", "").orEmpty()
+            daemon = preferences.getString("activeDaemon", "").orEmpty()
+            if (account.isNotEmpty()) restore()
+            for (command in commands) {
+                try { command() }
+                catch (error: Exception) { _status.value = _status.value.copy(error = error.message) }
+            }
+        }
+    }
 
-    fun bind(connection: DieterRepository?) {
+    private fun submit(command: () -> Unit) {
+        if (commands.trySend(command).isFailure) {
+            _status.value = _status.value.copy(error = "Navigation is busy. Try again after pending edits finish.")
+        }
+    }
+
+    /** Completes after earlier commands and their durable writes, without waiting for network delivery. */
+    internal suspend fun awaitPendingWrites() {
+        val completed = CompletableDeferred<Unit>()
+        commands.send { completed.complete(Unit) }
+        completed.await()
+    }
+
+    suspend fun close() { commands.cancel(); scope.coroutineContext.job.cancelAndJoin() }
+
+    // Read-modify-write projections must read after earlier queued edits.
+    // Calculating their diff on Main would lose rapid successive reorderings.
+    fun edit(transform: Editor.(Map<String, String>) -> Unit) = submit { Editor().transform(_values.value) }
+    inner class Editor internal constructor() {
+        fun put(key: String, value: Any, requiresExisting: Boolean = false) = putNow(key, value, requiresExisting)
+        fun delete(key: String) = enqueue(JSONObject().put("key", key).put("deleted", true))
+        fun move(key: String, parent: String = "", after: String = "", before: String = "") = enqueue(JSONObject()
+            .put("key", key).put("parent", parent).put("after", after).put("before", before))
+    }
+    fun bind(connection: DieterRepository?) = submit { bindNow(connection) }
+    private fun bindNow(connection: DieterRepository?) {
         generation++; val token = generation
         watch?.cancel(); delivery?.cancel(); delivery = null; repository = connection
         if (connection == null) return
@@ -56,7 +96,7 @@ class SharedKV(private val preferences: SharedPreferences, private val namespace
                         account = info.account; daemon = info.daemonId; restore()
                         // A transport can survive an enrollment/account change.
                         // Invalidate old admissions before consuming another cache.
-                        bind(connection); return@launch
+                        bindNow(connection); return@launch
                     }
                     daemon = info.daemonId
                     val replacement = mutableMapOf<String, KVEntry>()
@@ -81,19 +121,25 @@ class SharedKV(private val preferences: SharedPreferences, private val namespace
         }
         watch?.start()
     }
-    fun clearAccount() {
-        bind(null); account = ""; entries.clear(); pending.clear(); preferences.edit().remove("activeAccount").remove("activeDaemon").commit(); publish()
+    fun clearAccount() = submit {
+        bindNow(null)
+        if (account.isNotEmpty()) {
+            account = ""; daemon = ""; entries.clear(); pending.clear()
+            preferences.edit().remove("activeAccount").remove("activeDaemon").commit()
+        }
+        publish()
     }
-    fun put(key: String, value: Any, requiresExisting: Boolean = false) {
+    fun put(key: String, value: Any, requiresExisting: Boolean = false) = submit { putNow(key, value, requiresExisting) }
+    private fun putNow(key: String, value: Any, requiresExisting: Boolean) {
         val encoded = JSONArray().put(value).toString().let { it.substring(1, it.length - 1) }
         if (encoded.toByteArray(Charsets.UTF_8).size > 32 * 1024) {
             _status.value = SharedKVStatus(pending.size, "Shared values must be at most 32 KiB."); return
         }
         enqueue(JSONObject().put("key", key).put("value", encoded).put("requiresExisting", requiresExisting))
     }
-    fun delete(key: String) = enqueue(JSONObject().put("key", key).put("deleted", true))
-    fun move(key: String, parent: String = "", after: String = "", before: String = "") = enqueue(JSONObject()
-        .put("key", key).put("parent", parent).put("after", after).put("before", before))
+    fun delete(key: String) = submit { enqueue(JSONObject().put("key", key).put("deleted", true)) }
+    fun move(key: String, parent: String = "", after: String = "", before: String = "") = submit { enqueue(JSONObject()
+        .put("key", key).put("parent", parent).put("after", after).put("before", before)) }
     private fun enqueue(intent: JSONObject) {
         if (account.isEmpty()) { _status.value = SharedKVStatus(pending.size, "Connect to an account before organizing navigation."); return }
         if (pending.size >= 1024) { _status.value = SharedKVStatus(pending.size, "Reconnect to deliver pending navigation edits."); return }

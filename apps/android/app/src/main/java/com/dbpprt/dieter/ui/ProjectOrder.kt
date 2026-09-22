@@ -23,3 +23,20 @@ internal fun moveProjectToTarget(projectIds: List<String>, projectId: String, ta
         add(targetIndex, projectId)
     }
 }
+
+/** Input protobuf lists are immutable; reuse their ordered projection until an
+ * actual directory or user-order change arrives. */
+internal class ProjectOrderProjection {
+    private var source: List<Project>? = null
+    private var order: List<String>? = null
+    private var result: List<Project> = emptyList()
+
+    fun apply(projects: List<Project>, projectOrder: List<String>): List<Project> {
+        if (source !== projects || order != projectOrder) {
+            result = orderedProjects(projects, projectOrder)
+            source = projects
+            order = projectOrder
+        }
+        return result
+    }
+}

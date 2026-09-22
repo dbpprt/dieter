@@ -29,7 +29,9 @@ extension Notification.Name {
 /// ``Notification/Name/markdownEngineHighlighterDidChangeAppearance`` so
 /// the engine can re-render code blocks.
 public final class HighlighterSwiftBridge: SyntaxHighlighter, @unchecked Sendable {
-    private let highlighter: Highlighter?
+    private let highlightLock = NSLock()
+    private lazy var highlighter: Highlighter? = Self.makeHighlighter()
+    private var appearanceObserver: NSObjectProtocol?
     private let lightTheme: String
     private let darkTheme: String
     private let autoSwitchAppearance: Bool
@@ -62,7 +64,6 @@ public final class HighlighterSwiftBridge: SyntaxHighlighter, @unchecked Sendabl
         darkBackground: NSColor? = NSColor(calibratedWhite: 0.13, alpha: 1.0),
         preferredFontNames: [String] = ["SF Mono", "Menlo"]
     ) {
-        self.highlighter = Self.makeHighlighter()
         self.lightTheme = lightTheme
         self.darkTheme = darkTheme
         self.autoSwitchAppearance = autoSwitchAppearance
@@ -73,22 +74,28 @@ public final class HighlighterSwiftBridge: SyntaxHighlighter, @unchecked Sendabl
         highlightCache.totalCostLimit = 2_000_000
         failedCache.countLimit = 256
         failedCache.totalCostLimit = 2_000_000
-        applyAppearanceTheme()
-
+        // Plain Markdown needs fonts/backgrounds, not a JavaScript runtime.
+        // Build that runtime only when a real code fence requests highlighting.
         if autoSwitchAppearance {
-            DistributedNotificationCenter.default.addObserver(
+            appearanceObserver = DistributedNotificationCenter.default.addObserver(
                 forName: NSNotification.Name("AppleInterfaceThemeChangedNotification"),
                 object: nil,
                 queue: .main
             ) { [weak self] _ in
                 guard let self else { return }
-                self.applyAppearanceTheme()
+                // Invalidate rendered fences without constructing an unused
+                // JavaScript runtime in every open plain Markdown editor.
+                self.clearCache()
                 NotificationCenter.default.post(
                     name: .markdownEngineHighlighterDidChangeAppearance,
                     object: nil
                 )
             }
         }
+    }
+
+    deinit {
+        if let appearanceObserver { DistributedNotificationCenter.default.removeObserver(appearanceObserver) }
     }
 
     private static func makeHighlighter() -> Highlighter? {
@@ -104,6 +111,8 @@ public final class HighlighterSwiftBridge: SyntaxHighlighter, @unchecked Sendabl
 
     /// Drops the internal highlight cache. Call after manual theme changes the bridge can't observe.
     public func clearCache() {
+        highlightLock.lock()
+        defer { highlightLock.unlock() }
         highlightCache.removeAllObjects()
         failedCache.removeAllObjects()
     }
@@ -145,6 +154,10 @@ public final class HighlighterSwiftBridge: SyntaxHighlighter, @unchecked Sendabl
     }
 
     public func highlight(code: String, language: String?) -> NSAttributedString? {
+        // SyntaxHighlighter is Sendable; lazy initialization and JavaScript
+        // access must be serialized even when renderers request work together.
+        highlightLock.lock()
+        defer { highlightLock.unlock() }
         applyAppearanceTheme()
         guard let highlighter else { return nil }
 

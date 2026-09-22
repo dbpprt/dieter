@@ -1434,3 +1434,17 @@ conflicts, retry receipts, bounds, and the clean pre-release preference cutover.
 Gateway operators can use the [signed deployment bundle](deploy/gateway/README.md)
 for pinned images, strict configuration rendering, durable activation and rollback,
 and verified TURN TLS on port 443.
+
+### Performance verification
+
+For chat performance verification, `just android sync-test` runs isolated live
+and background synchronization checks on the selected emulator. Daemon state,
+conversation and KV watches use commit notifications with a two-second recovery
+check; `dieter watch state --interval` limits update frequency during bursts.
+`just android performance-test` measures real native navigation with the
+non-debuggable, release-equivalent app on that emulator, then restores the
+debug APK without clearing data. The complete `just android connected-test`
+includes this performance run after the debug functional suite.
+See [the investigation](docs/performance-investigation-2026-09-21.md) and
+[implementation report](docs/performance-implementation-2026-09-21.md)
+for measured workloads, profiling commands and validation limits.

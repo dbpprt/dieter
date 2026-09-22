@@ -143,7 +143,26 @@ authorization.
 ```sh
 just android connected-test
 just android connected-test com.dbpprt.dieter.SomeTest
+just android sync-test
+just android performance-test
 ```
+
+`sync-test` builds a disposable enrolled gateway, maps its random port only to
+the selected emulator, runs live/background transcript, queue and offline
+admission checks, then removes the reverse and reaps its fixture. Evidence is
+retained under `tmp/performance-sync`. It needs a healthy running emulator.
+
+The full, unfiltered `connected-test` also runs `performance-test`. Frame
+budgets execute against a non-debuggable build inheriting release settings;
+debug instrumentation explicitly skips that performance-only case. The
+performance recipe is emulator-only, uses the debug signing key with the same
+application ID to preserve fixture data, and restores the normal debug APK on
+exit without uninstalling either APK. It retains its results under
+`app/build/outputs/androidTest-results/connected/performance`. A class-filtered
+`connected-test` runs debug instrumentation only; use `performance-test` for
+the real-input frame and idle-CPU measurement. Keep debug timings as diagnostic
+evidence, not release frame qualification. Physical-device energy and display
+qualification remain separate.
 
 Inspect instrumentation before running it because it uses the configured real
 gateway. Use a class filter while iterating and the complete connected suite

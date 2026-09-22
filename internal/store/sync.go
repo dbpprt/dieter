@@ -44,6 +44,27 @@ func (s *Store) syncPendingPath() string   { return filepath.Join(s.syncDir(), "
 func (s *Store) syncHighwaterPath() string { return filepath.Join(s.syncDir(), "highwater") }
 func (s *Store) syncMetadataPath() string  { return filepath.Join(s.syncDir(), "metadata-highwater") }
 
+// MetadataCursor excludes token-only invalidations. A selected transcript has
+// its own file revision; unrelated text must not rebuild its card/comments.
+func (s *Store) MetadataCursor() (SyncCursor, error) {
+	epoch, err := os.ReadFile(s.syncEpochPath())
+	if errors.Is(err, os.ErrNotExist) {
+		return SyncCursor{}, nil
+	}
+	if err != nil {
+		return SyncCursor{}, err
+	}
+	raw, err := os.ReadFile(s.syncMetadataPath())
+	if errors.Is(err, os.ErrNotExist) {
+		return SyncCursor{Epoch: strings.TrimSpace(string(epoch))}, nil
+	}
+	if err != nil {
+		return SyncCursor{}, err
+	}
+	sequence, err := strconv.ParseUint(strings.TrimSpace(string(raw)), 10, 64)
+	return SyncCursor{Epoch: strings.TrimSpace(string(epoch)), Sequence: sequence}, err
+}
+
 func (s *Store) ensureSyncEpoch() (string, error) {
 	if err := os.MkdirAll(s.syncDir(), 0o700); err != nil {
 		return "", err

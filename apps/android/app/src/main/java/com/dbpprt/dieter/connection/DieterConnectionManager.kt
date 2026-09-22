@@ -54,6 +54,8 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withTimeout
@@ -185,6 +187,8 @@ class DieterConnectionManager(
     private var preferredEndpointId: String? = null
     private var activeProjectionKey = preferredEndpointId.orEmpty()
     private var globalSnapshot: GlobalSnapshot? = null
+    private val directoryRefreshMutex = Mutex()
+    private val directoryCursors = mutableMapOf<String, com.dbpprt.dieter.v1.SyncCursor>()
     private var syncCursor: SyncCursor? = null
     private var pendingSyncSnapshot: GlobalSnapshot? = null
     private var activeProjectionRefreshedAtMillis = activeProjectionKey.takeIf(String::isNotBlank)
@@ -547,6 +551,7 @@ class DieterConnectionManager(
             }
             preferences.edit().remove(KEY_PREFERRED_ENDPOINT).apply()
             globalSnapshot = null
+            synchronized(lock) { directoryCursors.clear() }
             syncCursor = null
             activeProjectionRefreshedAtMillis = null
             lastProjectionPersistedAtMillis = null
@@ -651,6 +656,7 @@ class DieterConnectionManager(
         if (gatewayChanged) {
             activeProjectionKey = ""
             globalSnapshot = null
+            synchronized(lock) { directoryCursors.clear() }
             syncCursor = null
             activeProjectionRefreshedAtMillis = null
             lastProjectionPersistedAtMillis = null
@@ -699,6 +705,7 @@ class DieterConnectionManager(
             .apply()
         activeProjectionKey = ""
         globalSnapshot = null
+        synchronized(lock) { directoryCursors.clear() }
         syncCursor = null
         activeProjectionRefreshedAtMillis = null
         lastProjectionPersistedAtMillis = null
@@ -1145,8 +1152,11 @@ class DieterConnectionManager(
             }
             if (projectionChanged || refreshedConversationIds.isNotEmpty()) {
                 globalSnapshot?.let {
-                    reconcileOutbox(it)
-                    applyGlobalSnapshot(it, refreshedConversationIds, receivedAtMillis)
+                    val outboxChanged = reconcileOutbox(it)
+                    applyGlobalSnapshot(
+                        it, refreshedConversationIds, receivedAtMillis,
+                        workspaceChanged = !frame.hasDelta() || frame.delta.changesWorkspace() || outboxChanged,
+                    )
                 }
             }
             _state.update {
@@ -1267,13 +1277,14 @@ class DieterConnectionManager(
         }
     }
 
-    suspend fun refreshMachineDirectory(includeArchivedChats: Boolean = false) {
+    suspend fun refreshMachineDirectory(includeArchivedChats: Boolean = false) = directoryRefreshMutex.withLock {
+        val directoryGeneration = synchronized(lock) { generation }
         val activeEndpointId = repository.activeEndpoint.id
         val machines = discoveredEndpoints.filter { machine ->
             machine.online && machine.apiVersion == DIETER_API_VERSION &&
                 (includeArchivedChats || machine.id != activeEndpointId)
         }
-        if (machines.isEmpty()) return
+        if (machines.isEmpty()) return@withLock
         // Relay calls use independent channels, so fetch machines and their
         // complete catalogs concurrently. Keep one shared bound across the
         // batch to avoid exhausting the gateway's logical-stream allowance.
@@ -1283,8 +1294,11 @@ class DieterConnectionManager(
                 async {
                     runCatching {
                         val root = permits.withPermit {
-                            repository.relayState(machine, GetStateRequest.newBuilder().setAllProjects(true).build())
+                            val request = GetStateRequest.newBuilder().setAllProjects(true)
+                            if (!includeArchivedChats) synchronized(lock) { directoryCursors[machine.id] }?.let { request.setIfNotModified(it) }
+                            repository.relayState(machine, request.build())
                         }
+                        if (root.notModified) return@runCatching null
                         val chats = if (includeArchivedChats) permits.withPermit {
                             repository.relayChats(machine, includeArchived = true).chatsList
                         } else root.chatsList
@@ -1295,12 +1309,13 @@ class DieterConnectionManager(
                             root.cardsList,
                             chats.filter { includeArchivedChats || !it.archived },
                             root.archives,
+                            root.cursor,
                         )
                     }.getOrNull()
                 }
             }.awaitAll().filterNotNull()
         }
-        if (snapshots.isEmpty()) return
+        if (snapshots.isEmpty() || directoryGeneration != synchronized(lock) { generation }) return@withLock
         snapshots.forEach { snapshot ->
             ownerCards.replace(snapshot.endpoint.daemonId.orEmpty(), snapshot.cards + snapshot.chats)
         }
@@ -1339,6 +1354,7 @@ class DieterConnectionManager(
             )
             combined.copy(selectedState = selectedState(combined))
         }
+        synchronized(lock) { snapshots.forEach { directoryCursors[it.endpoint.id] = it.cursor } }
         persistMachineDirectory()
     }
 
@@ -1358,44 +1374,20 @@ class DieterConnectionManager(
         cachedDirectory = syncStore.loadMachineDirectory(activeGatewayId)
     }
 
-    private fun applyGlobalDelta(snapshot: GlobalSnapshot, delta: GlobalDelta): GlobalSnapshot {
-        fun <T> merge(current: List<T>, changed: List<T>, removed: Set<String>, id: (T) -> String): List<T> {
-            val changedByID = changed.associateBy(id)
-            return (current.filter { id(it) !in removed && id(it) !in changedByID } + changed)
-        }
-        val state = snapshot.state.toBuilder()
-            .clearProjects()
-            .addAllProjects(merge(snapshot.state.projectsList, delta.projectsList, delta.removedProjectIdsList.toSet(), Project::getId))
-            .clearBoards()
-            .addAllBoards(merge(snapshot.state.boardsList, delta.boardsList, delta.removedBoardIdsList.toSet(), Board::getId))
-            .clearCards()
-            .addAllCards(merge(snapshot.state.cardsList, delta.cardsList, delta.removedCardIdsList.toSet(), Card::getId))
-            .clearChats()
-            .addAllChats(merge(snapshot.state.chatsList, delta.chatsList, delta.removedChatIdsList.toSet(), Card::getId))
-            .also { if (delta.hasArchives()) it.archives = delta.archives }
-            .build()
-        return snapshot.toBuilder()
-            .setState(state)
-            .clearConversations()
-            .addAllConversations(
-                merge(snapshot.conversationsList, delta.conversationsList, delta.removedConversationIdsList.toSet()) { it.detail.card.id },
-            )
-            .also { if (delta.hasSettings()) it.settings = delta.settings }
-            .build()
-
-    }
-
     private fun applyGlobalSnapshot(
         snapshot: GlobalSnapshot,
         refreshedConversationIds: Set<String> = emptySet(),
         refreshedAtMillis: Long? = null,
+        workspaceChanged: Boolean = true,
     ) {
-        val snapshotItems = snapshot.state.cardsList + snapshot.state.chatsList
+        val snapshotItems by lazy { snapshot.state.cardsList + snapshot.state.chatsList }
         val activeOwnerDaemonId = _state.value.endpoint?.daemonId.orEmpty()
-        val ownerDetails = if (activeOwnerDaemonId.isBlank()) {
-            ownerCards.snapshot()
-        } else {
-            ownerCards.replace(activeOwnerDaemonId, snapshotItems)
+        val ownerDetails by lazy {
+            if (!workspaceChanged || activeOwnerDaemonId.isBlank()) {
+                ownerCards.snapshot()
+            } else {
+                ownerCards.replace(activeOwnerDaemonId, snapshotItems)
+            }
         }
         _state.update { current ->
             // Read the outbox inside StateFlow's CAS update. The lambda may be
@@ -1404,6 +1396,17 @@ class DieterConnectionManager(
             // presentation until another global frame arrives.
             val (entries, resolvedConversationIds) = synchronized(outbox) {
                 outbox.toList() to conversationIdResolutions.toMap()
+            }
+            // Reconcile optimistic state through the full path whenever it
+            // exists. The ordinary streaming path only touches bounded tails.
+            if (!workspaceChanged && entries.isEmpty() && current.pendingCardIds.isEmpty() &&
+                current.pendingMessageIds.isEmpty() && current.acceptedOutboxIds.isEmpty() &&
+                current.failedOutboxIds.isEmpty() && current.machineOutboxSummaries.isEmpty() &&
+                current.resolvedConversationIds == resolvedConversationIds
+            ) {
+                return@update current.applyingConversationSync(
+                    snapshot, refreshedConversationIds, refreshedAtMillis, MAX_ACTIVE_CONVERSATIONS,
+                )
             }
             val activeEndpoint = current.endpoint
             val activeEndpointId = activeEndpoint?.id ?: activeProjectionKey
@@ -1579,6 +1582,7 @@ class DieterConnectionManager(
     }
 
     private fun reconcileOutbox(snapshot: GlobalSnapshot): Boolean {
+        if (synchronized(outbox) { outbox.isEmpty() }) return false
         val cardIds = (snapshot.state.cardsList + snapshot.state.chatsList).mapTo(hashSetOf()) { it.id }
         val startedCardIds = snapshot.state.cardsList
             .filter { it.initialPromptSentAt.isNotBlank() }
@@ -2231,6 +2235,7 @@ private data class MachineSnapshot(
     val cards: List<Card>,
     val chats: List<Card>,
     val archives: com.dbpprt.dieter.v1.SharedArchives = com.dbpprt.dieter.v1.SharedArchives.getDefaultInstance(),
+    val cursor: com.dbpprt.dieter.v1.SyncCursor = com.dbpprt.dieter.v1.SyncCursor.getDefaultInstance(),
 )
 
 private class DirectCredentialRefresh : RuntimeException()

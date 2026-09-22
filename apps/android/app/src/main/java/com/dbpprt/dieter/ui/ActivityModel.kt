@@ -25,6 +25,24 @@ internal fun activityDetails(snapshots: Map<String, ConversationSnapshot>): Map<
         )
     }
 
+/** Retain unchanged projections across connection heartbeats and token updates
+ * in other conversations. Entries follow the bounded upstream cache exactly. */
+internal class ActivityDetailsProjection {
+    private var snapshots: Map<String, ConversationSnapshot> = emptyMap()
+    private var details: Map<String, ActivityDetail> = emptyMap()
+
+    fun apply(next: Map<String, ConversationSnapshot>): Map<String, ActivityDetail> {
+        if (next === snapshots) return details
+        val projected = next.mapValues { (id, snapshot) ->
+            details[id]?.takeIf { snapshots[id] === snapshot }
+                ?: requireNotNull(activityDetails(mapOf(id to snapshot))[id])
+        }
+        snapshots = next
+        if (projected != details) details = projected
+        return details
+    }
+}
+
 internal data class ActivityEntry(
     val card: Card,
     val kind: ActivityKind,

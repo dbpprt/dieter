@@ -68,71 +68,88 @@ class IsolatedGatewayIntegrationTest {
             // First cancels the watch. The next RPC must retain its transport.
             withTimeout(10_000) { repository.watchState().first() }
             assertTrue(repository.state().projectsCount > 0)
-            val info = repository.listKV(com.dbpprt.dieter.v1.KVListRequest.newBuilder().setNamespace("navigation").build())
-            val ref = com.dbpprt.dieter.v1.KVRef.newBuilder().setNamespace("navigation")
-                .setKey("projects-folder.native-android.name").setAccount(info.account).build()
-            val put = com.dbpprt.dieter.v1.KVPutRequest.newBuilder().setRef(ref)
-                .setValueJson(ByteString.copyFromUtf8("\"Android RTC folder\""))
-                .setDaemonId(info.daemonId).setOperationId(UUID.randomUUID().toString()).build()
-            val written = repository.putKV(put)
-            assertEquals(written.revision, repository.putKV(put).revision)
-            val frame = withTimeout(10_000) {
-                repository.watchKV(com.dbpprt.dieter.v1.KVWatchRequest.newBuilder().setNamespace("navigation").setAccount(info.account).build())
-                    .first { it.entriesList.any { entry -> entry.key == ref.key } }
-            }
-            assertEquals(written.revision, frame.entriesList.first { it.key == ref.key }.revision)
-            val context = InstrumentationRegistry.getInstrumentation().targetContext
-            val cacheA = "shared-kv-a-${UUID.randomUUID()}"
-            val cacheB = "shared-kv-b-${UUID.randomUUID()}"
-            val one = withContext(Dispatchers.Main) { SharedKV(context.getSharedPreferences(cacheA, 0)) }
-            val two = withContext(Dispatchers.Main) { SharedKV(context.getSharedPreferences(cacheB, 0)) }
-            var restored: SharedKV? = null
-            try {
-                withContext(Dispatchers.Main) { one.bind(repository); two.bind(repository) }
-                withTimeout(10_000) {
-                    one.values.first { it[ref.key] == "\"Android RTC folder\"" }
-                    two.values.first { it[ref.key] == "\"Android RTC folder\"" }
-                }
-                val expansionKey = "projects-folder.native-android.expanded"
-                withContext(Dispatchers.Main) { one.put(expansionKey, false) }
-                withTimeout(10_000) {
-                    two.values.first { it[expansionKey] == "false" }
-                    one.status.first { it.pending == 0 }
-                }
-                withContext(Dispatchers.Main) { one.bind(null); one.put(expansionKey, true) }
-                val restarted = withContext(Dispatchers.Main) { SharedKV(context.getSharedPreferences(cacheA, 0)) }
-                restored = restarted
-                assertEquals(1, restarted.status.value.pending)
-                assertEquals("true", restarted.values.value[expansionKey])
-                withContext(Dispatchers.Main) { restarted.bind(repository) }
-                withTimeout(10_000) {
-                    two.values.first { it[expansionKey] == "true" }
-                    restarted.status.first { it.pending == 0 }
-                }
-                if (argument("sharedNavigationCrossClient") == "1") {
-                    assertEquals("\"Native shared navigation\"", two.values.value["projects-folder.native-shared.name"])
-                    assertEquals("false", two.values.value["projects-folder.native-shared.expanded"])
-                }
-            } finally {
-                withContext(Dispatchers.Main) { one.bind(null); two.bind(null); restored?.bind(null) }
-                context.deleteSharedPreferences(cacheA)
-                context.deleteSharedPreferences(cacheB)
-            }
-            if (argument("sharedNavigationCrossClient") == "1") {
-                val sharedRef = ref.toBuilder().setKey("projects-folder.native-shared.name").build()
-                val shared = repository.getKV(sharedRef)
-                assertEquals("\"Native shared navigation\"", shared.valueJson.toStringUtf8())
-                val expandedRef = ref.toBuilder().setKey("projects-folder.native-shared.expanded").build()
-                val collapsed = repository.getKV(expandedRef)
-                assertEquals("false", collapsed.valueJson.toStringUtf8())
-                val updated = repository.putKV(com.dbpprt.dieter.v1.KVPutRequest.newBuilder().setRef(expandedRef)
-                    .setValueJson(ByteString.copyFromUtf8("true")).setExpectedRevision(collapsed.revision)
-                    .setDaemonId(info.daemonId).setOperationId(UUID.randomUUID().toString()).build())
-                assertEquals("true", updated.valueJson.toStringUtf8())
-            }
+            exerciseSharedNavigation(repository)
             assertEquals(expectedRoute, repository.prepareDaemon())
             assertTrue(repository.state().projectsCount > 0)
         } finally { repository.close() }
+    }
+
+    @Test
+    fun sharedNavigationCachesOfflineEditsAndDrainsThroughRealGateway() = runBlocking {
+        val token = argument("isolatedGatewayToken")
+        assumeTrue("Requires disposable gateway credentials", token.isNotBlank())
+        val repository = GrpcDieterRepository(InstrumentationRegistry.getInstrumentation().targetContext)
+        try {
+            connect(repository, isolatedOrigin(), token)
+            exerciseSharedNavigation(repository)
+        } finally { repository.close() }
+    }
+
+    private suspend fun exerciseSharedNavigation(repository: GrpcDieterRepository) {
+        val info = repository.listKV(com.dbpprt.dieter.v1.KVListRequest.newBuilder().setNamespace("navigation").build())
+        val ref = com.dbpprt.dieter.v1.KVRef.newBuilder().setNamespace("navigation")
+            .setKey("projects-folder.native-android.name").setAccount(info.account).build()
+        val put = com.dbpprt.dieter.v1.KVPutRequest.newBuilder().setRef(ref)
+            .setValueJson(ByteString.copyFromUtf8("\"Android RTC folder\""))
+            .setDaemonId(info.daemonId).setOperationId(UUID.randomUUID().toString()).build()
+        val written = repository.putKV(put)
+        assertEquals(written.revision, repository.putKV(put).revision)
+        val frame = withTimeout(10_000) {
+            repository.watchKV(com.dbpprt.dieter.v1.KVWatchRequest.newBuilder().setNamespace("navigation").setAccount(info.account).build())
+                .first { it.entriesList.any { entry -> entry.key == ref.key } }
+        }
+        assertEquals(written.revision, frame.entriesList.first { it.key == ref.key }.revision)
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val cacheA = "shared-kv-a-${UUID.randomUUID()}"
+        val cacheB = "shared-kv-b-${UUID.randomUUID()}"
+        val one = withContext(Dispatchers.Main) { SharedKV(context.getSharedPreferences(cacheA, 0)) }
+        val two = withContext(Dispatchers.Main) { SharedKV(context.getSharedPreferences(cacheB, 0)) }
+        var restored: SharedKV? = null
+        try {
+            withContext(Dispatchers.Main) { one.bind(repository); two.bind(repository) }
+            withTimeout(10_000) {
+                one.values.first { it[ref.key] == "\"Android RTC folder\"" }
+                two.values.first { it[ref.key] == "\"Android RTC folder\"" }
+            }
+            val expansionKey = "projects-folder.native-android.expanded"
+            withContext(Dispatchers.Main) { one.put(expansionKey, false) }
+            withTimeout(10_000) {
+                two.values.first { it[expansionKey] == "false" }
+                one.status.first { it.pending == 0 }
+            }
+            withContext(Dispatchers.Main) { one.bind(null); one.put(expansionKey, true) }
+            one.awaitPendingWrites()
+            val restarted = withContext(Dispatchers.Main) { SharedKV(context.getSharedPreferences(cacheA, 0)) }
+            restored = restarted
+            restarted.awaitPendingWrites()
+            assertEquals(1, restarted.status.value.pending)
+            assertEquals("true", restarted.values.value[expansionKey])
+            withContext(Dispatchers.Main) { restarted.bind(repository) }
+            withTimeout(10_000) {
+                two.values.first { it[expansionKey] == "true" }
+                restarted.status.first { it.pending == 0 }
+            }
+            if (argument("sharedNavigationCrossClient") == "1") {
+                assertEquals("\"Native shared navigation\"", two.values.value["projects-folder.native-shared.name"])
+                assertEquals("false", two.values.value["projects-folder.native-shared.expanded"])
+            }
+        } finally {
+            one.close(); two.close(); restored?.close()
+            context.deleteSharedPreferences(cacheA)
+            context.deleteSharedPreferences(cacheB)
+        }
+        if (argument("sharedNavigationCrossClient") == "1") {
+            val sharedRef = ref.toBuilder().setKey("projects-folder.native-shared.name").build()
+            val shared = repository.getKV(sharedRef)
+            assertEquals("\"Native shared navigation\"", shared.valueJson.toStringUtf8())
+            val expandedRef = ref.toBuilder().setKey("projects-folder.native-shared.expanded").build()
+            val collapsed = repository.getKV(expandedRef)
+            assertEquals("false", collapsed.valueJson.toStringUtf8())
+            val updated = repository.putKV(com.dbpprt.dieter.v1.KVPutRequest.newBuilder().setRef(expandedRef)
+                .setValueJson(ByteString.copyFromUtf8("true")).setExpectedRevision(collapsed.revision)
+                .setDaemonId(info.daemonId).setOperationId(UUID.randomUUID().toString()).build())
+            assertEquals("true", updated.valueJson.toStringUtf8())
+        }
     }
 
     @Test
@@ -393,6 +410,7 @@ class IsolatedGatewayIntegrationTest {
         val repository = GrpcDieterRepository(context)
         val application = context.applicationContext as DieterApplication
         val manager = application.container.connectionManager
+        val originalConnection = SavedConnectionConfiguration(manager)
         var cardId: String? = null
         try {
             connect(repository, origin, token)
@@ -456,6 +474,7 @@ class IsolatedGatewayIntegrationTest {
                 runCatching { repository.archiveCard(id, true) }
             }
             repository.close()
+            originalConnection.restore()
         }
     }
 

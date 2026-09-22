@@ -359,7 +359,11 @@ screens-test:
 machines-test:
     ANDROID_SERIAL="{{ serial }}" ANDROID_HOME="{{ sdk }}" JAVA_HOME="{{ java }}" python3 {{ app_root }}/scripts/test-machines.py
 
-# Run all connected tests, or one fully qualified test class.
+# Run isolated live/background chat synchronization on the selected emulator.
+sync-test:
+    ANDROID_SERIAL="{{ serial }}" ANDROID_HOME="{{ sdk }}" JAVA_HOME="{{ java }}" python3 scripts/test-android-sync.py
+
+# Run all functional and production-mode performance checks, or one debug test class.
 connected-test class="":
     #!/usr/bin/env bash
     set -euo pipefail
@@ -369,6 +373,31 @@ connected-test class="":
     fi
     ANDROID_SERIAL="{{ serial }}" ANDROID_HOME="{{ sdk }}" JAVA_HOME="{{ java }}" \
         "{{ app_root }}/gradlew" "${arguments[@]}"
+    if [[ -z "{{ class }}" ]]; then
+        just android performance-test
+    fi
+
+# Measure native navigation in the non-debuggable release-equivalent app on the owned emulator.
+performance-test:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    [[ "{{ serial }}" == emulator-* ]] || { echo "Performance instrumentation requires the selected emulator." >&2; exit 1; }
+    export ANDROID_SERIAL="{{ serial }}" ANDROID_HOME="{{ sdk }}" JAVA_HOME="{{ java }}"
+    # Same debug signing key and application ID retain the fixture data. Restore
+    # the ordinary debug APK even if a frame assertion fails; never uninstall.
+    restore_debug() {
+        local result=$?
+        trap - EXIT
+        if ! "{{ app_root }}/gradlew" --project-dir "{{ app_root }}" :app:installDebug; then
+            echo "Failed to restore the debug APK after performance instrumentation." >&2
+            if [[ "$result" -eq 0 ]]; then result=1; fi
+        fi
+        exit "$result"
+    }
+    trap restore_debug EXIT
+    "{{ app_root }}/gradlew" --project-dir "{{ app_root }}" connectedPerformanceAndroidTest \
+        -Pdieter.performanceTest=true \
+        -Pandroid.testInstrumentationRunnerArguments.class=com.dbpprt.dieter.ui.MainActivityFramePerformanceTest
 
 # Save the current Android UI hierarchy.
 ui-dump output="apps/android/build/evidence/ui.xml":

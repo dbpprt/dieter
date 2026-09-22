@@ -718,7 +718,7 @@
                 "attach": ["Attach"], "provider": ["Provider"], "model": ["Model"],
                 "reasoning": ["Reasoning"], "fast-mode": ["Fast mode"],
                 "additional-options": ["Provider options"], "stop": ["Stop"],
-                "send": ["Send", "Queue"], "project": ["Project"], "workspace": ["Workspace"],
+                "send": ["Send", "Queue"], "machine": ["Machine"], "project": ["Project"], "workspace": ["Workspace"],
             ]
             let views = quickComposerHelpViews(in: root)
             var failures: [String] = []

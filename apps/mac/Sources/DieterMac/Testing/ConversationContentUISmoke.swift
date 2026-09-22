@@ -228,7 +228,17 @@
             // Establish the production read/watch lifecycle as well as the
             // workspace RPC scope. Assigning a local snapshot alone leaves
             // agent-originated content presentations without a live consumer.
-            await store.fetchConversation(cardID: card.id, chat: false, rpc: rpc)
+            store.bindConversation()
+            let previousAccepted = store.conversationModel.onAccepted
+            var initialReadRefreshedAt: Date?
+            store.conversationModel.onAccepted = { snapshot, chat in
+                previousAccepted(snapshot, chat)
+                if snapshot.conversation.cardID == card.id {
+                    initialReadRefreshedAt = store.conversationLastRefreshedAt
+                }
+            }
+            defer { store.conversationModel.onAccepted = previousAccepted }
+            await store.conversationModel.fetchConversation(cardID: card.id, chat: false, rpc: rpc)
             guard store.conversation?.conversation.cardID == card.id,
                 store.conversationTask != nil
             else { throw CocoaError(.fileReadUnknown) }
@@ -236,14 +246,12 @@
                 // A zero-sequence watch starts with a replacement snapshot.
                 // Wait for it before installing synthetic renderer history,
                 // which the authoritative replacement correctly clears.
-                let previous = store.conversationModel.onSnapshot
-                var receivedInitialWatch = false
-                store.conversationModel.onSnapshot = { snapshot, endpointID, refreshedAt in
-                    await previous(snapshot, endpointID, refreshedAt)
-                    if snapshot.conversation.cardID == card.id { receivedInitialWatch = true }
+                // Watch liveness advances even when the initial frame equals
+                // the unary read and correctly skips another cache write.
+                let watching = await NativeUIAccessibility.wait(timeout: 8) {
+                    initialReadRefreshedAt != nil
+                        && store.conversationLastRefreshedAt != initialReadRefreshedAt
                 }
-                let watching = await NativeUIAccessibility.wait(timeout: 8) { receivedInitialWatch }
-                store.conversationModel.onSnapshot = previous
                 guard watching else { throw CocoaError(.fileReadUnknown) }
             }
             // Keep the daemon's live transcript authoritative. The local
