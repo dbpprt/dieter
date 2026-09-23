@@ -137,6 +137,30 @@ struct QuickHelpTests {
         #expect(window.childWindows?.isEmpty != false)
     }
 
+    @Test func quickHelpDismissesWhenRetainedAncestorIsHidden() throws {
+        let root = NSView(frame: NSRect(x: 0, y: 0, width: 420, height: 200))
+        let retainedPane = NSView(frame: root.bounds)
+        let help = QuickHelpView(frame: NSRect(x: 20, y: 30, width: 120, height: 28))
+        help.title = "Card metadata"
+        retainedPane.addSubview(help)
+        root.addSubview(retainedPane)
+        let window = makeQuickHelpTestWindow(root: root)
+        defer {
+            help.dismissHelp()
+            window.close()
+        }
+
+        help.mouseEntered(with: try quickHelpEvent(.mouseEntered, in: window))
+        let panel = try #require(help.helpWindow)
+        #expect(panel.isVisible && panel.parent === window)
+
+        retainedPane.isHidden = true
+        #expect(help.isHiddenOrHasHiddenAncestor)
+        #expect(help.helpWindow == nil)
+        #expect(!panel.isVisible && panel.parent == nil)
+        #expect(window.childWindows?.isEmpty != false)
+    }
+
     @Test func metadataHelpWrapsWithinItsMaximumWidthWithoutInterceptingInteraction() async throws {
         let details = "Codex · GPT-5.6-Sol · Xhigh reasoning · Fast mode · Worktree · 42,000 tokens used"
         let root = NSHostingView(

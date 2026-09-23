@@ -88,6 +88,14 @@ final class QuickHelpView: NSView {
             self, selector: #selector(dismissHelp), name: NSApplication.didResignActiveNotification, object: NSApp)
     }
 
+    override func viewDidHide() {
+        super.viewDidHide()
+        // Retained workspace panes stay mounted while another destination is
+        // active. Their help panel is a child window, so hiding the pane does
+        // not hide that panel automatically.
+        dismissHelp()
+    }
+
     override func mouseEntered(with event: NSEvent) {
         guard let window, window.isVisible, !isHiddenOrHasHiddenAncestor, !title.isEmpty else { return }
         Self.activeOwner?.dismissHelp()
