@@ -266,7 +266,12 @@ struct ConversationWorkspaceTabBar: View {
                         model.selectedTab?.kind != .review
                     {
                         proxy.scrollTo(selectedID, anchor: .trailing)
+                    } else if selectedID == nil, includesConversation, model.conversationTab == "Conversation" {
+                        proxy.scrollTo("conversation", anchor: .leading)
                     }
+                }
+                .onChange(of: selectedFixedTab) { _, tab in
+                    if let tab, showsFixedTabs { proxy.scrollTo(tab.id, anchor: .leading) }
                 }
             }
             if showsControls {

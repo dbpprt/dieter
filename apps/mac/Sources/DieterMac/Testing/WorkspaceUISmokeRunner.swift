@@ -263,14 +263,15 @@
                 ? "passed"
                 : "failed: expected local-only files, no commit history, and a dirty tree"
 
-            let changesClicked = await NativeUIAccessibility.pressWhenSettled("conversation-tab-changes", in: window)
+            let changesClicked = await NativeUIAccessibility.pressWhenSettled(
+                "conversation.content.fixed.changes", in: window)
             let changesReady = await NativeUIAccessibility.wait {
                 NativeUIAccessibility.find("changes.file.README.md", in: window) != nil
             }
             results["changes-tab-click"] =
                 changesClicked && changesReady
                 ? "passed"
-                : "failed: click=\(changesClicked), ready=\(changesReady), tab=\(store.conversationContext.content.conversationTab); \(NativeUIAccessibility.targetDiagnostics("conversation-tab-changes", in: window))"
+                : "failed: click=\(changesClicked), ready=\(changesReady), tab=\(store.conversationContext.content.conversationTab); \(NativeUIAccessibility.targetDiagnostics("conversation.content.fixed.changes", in: window))"
             _ = NativeUIAccessibility.click("changes.file.README.md", in: window)
             let inlineVisible = await NativeUIAccessibility.wait {
                 store.conversationDiff?.path == "README.md"

@@ -268,7 +268,12 @@
                     store: store, tab: sourceTab, window: window, results: &results)
             }
             let second = model.selectedTabID
-            let focused = NativeUIAccessibility.click("conversation.content.tab.\(tab.id.uuidString)", in: window)
+            let tabIdentifier = "conversation.content.tab.\(tab.id.uuidString)"
+            let revealed = await revealTab(tabIdentifier, in: window)
+            let tabReady = await NativeUIAccessibility.waitForInteractiveTarget(tabIdentifier, in: window)
+            let targetDiagnostic = NativeUIAccessibility.targetDiagnostics(tabIdentifier, in: window)
+            results["content-tab-scroll-to-reveal"] = revealed ? "passed" : "failed: native tab remained clipped"
+            let focused = revealed && tabReady && NativeUIAccessibility.click(tabIdentifier, in: window)
             let retained = await wait {
                 model.selectedTabID == tab.id && model.tabs.count >= 2 && tab.dirty
                     && tab.files.fileEditorSession.currentText().contains(addition)
@@ -276,7 +281,8 @@
             }
             results["content-tabs-preserve-dirty-editor"] =
                 focused && retained && second != tab.id
-                ? "passed" : "failed: focus=\(focused), dirty editor retained=\(retained), tabs=\(model.tabs.count)"
+                ? "passed"
+                : "failed: ready=\(tabReady), focus=\(focused), selected=\(model.selectedTabID == tab.id), dirty=\(tab.dirty), dirty editor retained=\(retained), tabs=\(model.tabs.count); \(targetDiagnostic)"
 
             let closeClicked = NativeUIAccessibility.click(
                 "conversation.content.tab.\(tab.id.uuidString).close", in: window)
@@ -419,6 +425,15 @@
                 guard await wait({ server.baseURL != nil }), let base = server.baseURL else {
                     throw CocoaError(.fileReadUnknown)
                 }
+                // File tabs occupy the single pane. Return to the retained
+                // conversation before exercising its inline address gesture.
+                let conversationRevealed = await revealTab("conversation-tab-conversation", in: window)
+                let conversationPressed = await NativeUIAccessibility.pressWhenSettled(
+                    "conversation-tab-conversation", in: window)
+                results["content-return-to-conversation-tab"] =
+                    conversationRevealed && conversationPressed
+                    ? "passed" : "failed: Conversation tab could not be revealed and pressed"
+                _ = await wait { model.selectedTabID == nil }
                 if let index = store.conversationModel.olderConversationMessages.firstIndex(where: {
                     $0.id == "message_linked_content_smoke"
                 }) {
@@ -616,6 +631,10 @@
             _ results: inout [String: String], _ output: URL
         ) async {
             let model = store.conversationContext.content
+            // Set up the explicitly split layout for the pane chrome checks.
+            // The preceding native journey covers the user's split controls.
+            store.kanbanPresentedAlongsideConversation = false
+            model.showEmpty(conversationID: cardID)
             _ = await model.openPanel(.review, conversationID: cardID)
             guard let tab = model.selectedTab, tab.kind == .review else {
                 results["content-review-scoped-diff"] = "failed: Review tab unavailable (\(model.error ?? "none"))";
@@ -634,18 +653,23 @@
                 guard let chat = paneFrame("conversation.pane.chat", in: window),
                     let workspace = paneFrame("conversation.pane.workspace", in: window),
                     let kanban = NativeUIAccessibility.find("conversation-tab-kanban", in: window)?.recordedFrame,
+                    let status = NativeUIAccessibility.find("conversation.status", in: window)?.recordedFrame,
                     let changes = NativeUIAccessibility.find("conversation.content.fixed.changes", in: window)?
                         .recordedFrame
                 else { return false }
-                return kanban.minX >= chat.minX + 6 && kanban.minX <= chat.minX + 35
+                return kanban.minX >= chat.minX && kanban.maxX <= chat.maxX
+                    && status.minX >= chat.minX && status.maxX <= chat.maxX
+                    && kanban.minY >= chat.maxY - 40 && kanban.maxY <= chat.maxY + 1
                     && changes.minX >= workspace.minX + 6 && changes.minX <= workspace.minX + 80
                     && changes.maxX < workspace.maxX
+                    && changes.minY >= workspace.maxY - 40 && changes.maxY <= workspace.maxY + 1
             }
             results["content-pane-titlebar-alignment"] =
                 titlebarAligned
                 ? "passed" : "failed: surface toggles or fixed tabs were clipped or detached from their pane edge"
             results["content-compact-sidebar-chrome"] =
-                NativeUIAccessibility.find("conversation-tab-conversation", in: window) != nil
+                paneFrame("conversation.pane.chat", in: window) != nil
+                    && NativeUIAccessibility.find("conversation.content.close", in: window) != nil
                     && NativeUIAccessibility.find("board.conversation-maximize", in: window) == nil
                     && NativeUIAccessibility.find("conversation.status", in: window) != nil
                 ? "passed" : "failed: sidebar mode lost conversation navigation, kept size controls, or lost status"
@@ -839,6 +863,28 @@
                 return stableSamples >= 3
             }
         }
+        /// The selected source tab scrolls the narrow workspace rail to its
+        /// trailing edge. Reveal the earlier Markdown tab with native wheel
+        /// input before clicking; its retained anchor also exists offscreen.
+        private static func revealTab(_ identifier: String, in window: NSWindow) async -> Bool {
+            for _ in 0..<12 {
+                guard let anchor = NativeUIAccessibility.find(identifier, in: window)?.object as? NSView,
+                    anchor.window === window
+                else { return false }
+                let center = NSPoint(x: anchor.bounds.midX, y: anchor.bounds.midY)
+                if anchor.visibleRect.contains(center) { return true }
+                guard let scroll = anchor.enclosingScrollView,
+                    let cgEvent = CGEvent(
+                        scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 2,
+                        wheel1: 0, wheel2: 100, wheel3: 0),
+                    let event = NSEvent(cgEvent: cgEvent)
+                else { return false }
+                scroll.scrollWheel(with: event)
+                try? await DieterTaskSleep.milliseconds(100)
+            }
+            return false
+        }
+
         private static func capture(_ window: NSWindow, _ destination: URL) {
             guard let view = window.contentView, let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds)
             else { return }

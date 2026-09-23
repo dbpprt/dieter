@@ -1,6 +1,6 @@
 # Mac board flicker follow-up — 23 September 2026
 
-Read-only checks at 10:39 and 12:09 UTC confirmed the installed app on
+Read-only checks at 10:39, 12:09 and 13:06 UTC confirmed the installed app on
 `mbp-office` is **0.4.281 (build 281)**, with one process (PID 85219) running
 `/Applications/Dieter.app/Contents/MacOS/DieterMac` since 09:05:55 local time.
 It started after that bundle was installed, so the reported flicker occurred
@@ -74,12 +74,17 @@ native titlebar after moving to Files. Native hit testing reached
 now uses a native primary-action toolbar item instead of a negatively offset
 content overlay. The Board and Chats pane controls are unchanged.
 
+The narrow-pane journey exposed one further selection bug: opening Review
+programmatically retained the workspace rail's old horizontal scroll position,
+leaving its selected Changes tab clipped. Fixed-tab selection now reveals that
+tab at the leading edge. Returning to Conversation also reveals its tab.
+
 ## Validation
 
-- Full Swift package suite: **790 Swift Testing cases plus 5 XCTest cases
+- Final full Swift package suite: **794 Swift Testing cases plus 5 XCTest cases
   passed**. This includes the owner/peer arrival-order, cached-owner restore,
   default-board selection, native row geometry, saved divider, and transcript
-  scroll regressions. The final complete Mac suite took 338 seconds.
+  scroll regressions.
 - The native alternating-replica test preserves row frames and cell identity,
   with **zero rich-card body evaluations, row configurations, and height
   transactions** across six owner/peer updates and card-selection changes.
@@ -109,15 +114,38 @@ content overlay. The Board and Chats pane controls are unchanged.
   divider. Fixed the isolated permission fixture shrinking to its one-line
   sentinel before permission revocation restored the full form. Popover smoke
   lookup now prefers the requested window and active presentation; editor focus
-  cannot reactivate an older form from another window.
+  cannot reactivate an older form from another window. Current pane journeys
+  use the native split divider, fixed Changes tab, explicit single/split modes
+  and Conversation tab selection. The working-indicator check measures its
+  full native geometry through a smoke anchor instead of an accessibility child.
+  In the 460-point pane, opening another file scrolls the previous tab out of
+  view. The tab journey now sends native horizontal wheel input to reveal it
+  before clicking. A pre-click capture and the native clip-view bounds confirmed
+  that the old test clicked an offscreen anchor, accidentally toggling Kanban.
+  The dirty-editor, close-confirmation and save assertions remain intact.
 - Integrated upstream titlebar quota cleanup at `9e44f018`; the remaining
-  native toolbar click, layout and draft-restoration journeys pass. The other
-  packaged suites are still running.
+  native toolbar click, layout and draft-restoration journeys pass. Core, Board,
+  Machine, Sidebar (including app restart), Terminal, Island and Workspace
+  suites pass. Workspace verification covers native Changes selection, file
+  staging, commits, discard, external refresh and merge conflict resolution.
+  The final Conversation suite also passes, including narrow-tab scrolling,
+  retained dirty Markdown, close/cancel, save/reopen, inline address clicks,
+  selected Changes-tab visibility and pane alignment. All eight suites have
+  passing results, with the explicit skips below.
 - Swift formatting and `git diff --check` pass.
+
+Explicit Mac skips are external Accessibility verification for the board card
+action and system shortcut capture, final acceptance of the system Export HTML
+and PDF Save dialogs, and bounded-history assertions in the fresh-state renderer
+fixture. Native export menu, sheet and destination checks do run.
 
 No installed operator app or daemon was replaced by this work. An external
 daemon update to v0.4.284 interrupted one focused test run; that run was repeated
-with retained workspace logs and subsequently passed.
+with retained workspace logs and subsequently passed. The final complete Swift,
+app build and Conversation execution exited successfully. The smoke driver
+closed its owned app and isolated daemons; `just mac status` confirms zero
+remaining `DieterMac` processes on the test host. The office diagnostic terminal
+was also closed.
 
 ## Remaining qualification
 
@@ -127,3 +155,24 @@ workflow can verify these fixes. The broader performance card also retains its
 previous Android frame qualification blocker: app p95 173 ms and matched native
 control p95 170 ms exceed the unchanged 120 ms gate. This Mac follow-up does not
 claim to resolve that device/renderer measurement.
+
+## Local evidence
+
+The debug bundle is `apps/mac/build/Dieter.app`, built with the reused
+`apps/mac/.build/dieter-local` cache. Unit tests use the separate
+`apps/mac/.build/dieter-tests` cache. Logs are retained under `apps/mac/.build`:
+
+- `board-followup-final-checks.log`: full Swift suite and iOS build/runtime result.
+- `board-followup-native-sweep.log`: focused final board/store and iOS checks.
+- `board-followup-final-smoke.log`: packaged eight-suite pass/failure evidence.
+- `board-followup-adapted-smoke.log`: current pane checks and passing Sidebar rerun.
+- `board-followup-pane-smoke.log`: passing Workspace run and Conversation diagnostics.
+- `board-followup-conversation-final.log`: initial native workspace tab diagnostics.
+- `board-followup-tab-layout.log`: clipped-tab hierarchy and pre-click capture.
+- `board-followup-visible-tabs-final.log`: native scroll, tab and editor verification.
+- `board-followup-final-tab-checks.log`: complete Swift suite and packaged
+  Conversation rerun after the selected fixed-tab reveal fix.
+
+Smoke captures use AppKit offscreen rendering; transparent/material surfaces
+can appear black or incomplete in those PNGs. Native geometry, accessibility,
+actual control effects and daemon-side results are checked separately.

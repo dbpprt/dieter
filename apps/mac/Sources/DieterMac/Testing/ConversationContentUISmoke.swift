@@ -98,9 +98,12 @@
 
                 // Opening a file now selects a workspace tab in the current
                 // pane. Split and Kanban visibility are explicit user choices.
-                let splitClicked = NativeUIAccessibility.click("conversation.content.close", in: window)
+                let hideBoardClicked = await NativeUIAccessibility.pressWhenSettled(
+                    "conversation-tab-kanban", in: window)
+                _ = await NativeUIAccessibility.wait(timeout: 8) { board.boardItem.isCollapsed }
+                let splitClicked = await NativeUIAccessibility.pressWhenSettled(
+                    "conversation.content.close", in: window)
                 let splitReady = await NativeUIAccessibility.wait(timeout: 8) { model.splitMode }
-                let hideBoardClicked = NativeUIAccessibility.click("conversation-tab-kanban", in: window)
                 let expanded = await NativeUIAccessibility.wait(timeout: 8) {
                     board.boardItem.isCollapsed && model.splitMode
                 }
