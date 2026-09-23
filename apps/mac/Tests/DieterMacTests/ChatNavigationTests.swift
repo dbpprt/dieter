@@ -7,14 +7,18 @@ import Testing
 
 @MainActor @Suite(.serialized)
 struct ChatNavigationTests {
+    @Test func conversationToolbarUsesOneRailOrTwoSidebarRails() {
+        #expect(ConversationToolbarRailMode(workspacePresented: false) == .unified)
+        #expect(ConversationToolbarRailMode(workspacePresented: false).railCount == 1)
+        #expect(ConversationToolbarRailMode(workspacePresented: true) == .sidebar)
+        #expect(ConversationToolbarRailMode(workspacePresented: true).railCount == 2)
+    }
+
     @Test func allChatsKeepsItsBrowserWhenTheSelectedChatPresentsContent() async throws {
         let suite = "ChatNavigationTests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
         let store = DieterStore(themeDefaultsOverride: defaults, restoreSync: false)
-        let originalWorkspacePanelEnabled = store.conversationWorkspacePanelEnabled
-        store.conversationWorkspacePanelEnabled = true
-        defer { store.conversationWorkspacePanelEnabled = originalWorkspacePanelEnabled }
         var project = Dieter_V1_Project()
         project.id = "chat-navigation-\(UUID().uuidString)"
         project.name = "Navigation fixture"
@@ -52,7 +56,7 @@ struct ChatNavigationTests {
         content.showEmpty(conversationID: chats[0].id)
         let opened = await settleChatNavigation(host) {
             content.isPresented(for: chats[0].id)
-                && chatNavigationViews(host).contains { ($0 as? NSSplitView)?.arrangedSubviews.count == 2 }
+                && chatCompanionSplit(in: host)?.arrangedSubviews.count == 2
         }
         #expect(opened)
         assertChatBrowser(browser, matches: originalFrame, in: host)
@@ -84,7 +88,7 @@ struct ChatNavigationTests {
 
         content.hide()
         _ = await settleChatNavigation(host) {
-            !chatNavigationViews(host).contains { ($0 as? NSSplitView)?.arrangedSubviews.count == 2 }
+            chatCompanionSplit(in: host)?.arrangedSubviews.count == 1
         }
         assertChatBrowser(browser, matches: originalFrame, in: host)
     }
@@ -130,7 +134,7 @@ struct ChatNavigationTests {
             state.presented = presented
             state.oversized = oversized
             let settled = await settleChatNavigation(host) {
-                guard let split = chatNavigationViews(host).compactMap({ $0 as? NSSplitView }).first else {
+                guard let split = chatCompanionSplit(in: host) else {
                     return false
                 }
                 return split.arrangedSubviews.count == (presented ? 2 : 1)
@@ -153,6 +157,43 @@ struct ChatNavigationTests {
             button.performClick(nil)
             #expect(state.switches == count + 1)
         }
+    }
+
+    @Test func standaloneConversationAndWorkspaceNavigationRendersInsideTheNativeTitlebar() async throws {
+        let suite = "ChatNavigationTests.titlebar.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let host = NSHostingView(
+            rootView: ChatTitlebarLayoutFixture()
+                .toolbarVisibility(.visible, for: .windowToolbar)
+                .defaultAppStorage(defaults))
+        let window = chatNavigationWindow(host: host, width: 1_200, fullSizeTitlebar: true)
+        defer { window.contentView = nil; window.close() }
+
+        let mounted = await settleChatNavigation(host) {
+            chatTitlebarButton("chat-titlebar-conversation-button", in: window) != nil
+                && chatTitlebarButton("chat-titlebar-workspace-button", in: window) != nil
+        }
+        #expect(mounted)
+        let conversationButton = try #require(
+            chatTitlebarButton("chat-titlebar-conversation-button", in: window))
+        let workspaceButton = try #require(
+            chatTitlebarButton("chat-titlebar-workspace-button", in: window))
+        let topInset = host.safeAreaInsets.top
+        let conversationFrame = conversationButton.convert(conversationButton.bounds, to: host)
+        let workspaceFrame = workspaceButton.convert(workspaceButton.bounds, to: host)
+        #expect(topInset > 0)
+        #expect(
+            conversationFrame.minY >= 0 && conversationFrame.minY < topInset,
+            "Conversation action is clipped outside the titlebar: frame=\(conversationFrame), topInset=\(topInset)")
+        #expect(
+            workspaceFrame.minY >= 0 && workspaceFrame.minY < topInset,
+            "Workspace action is clipped outside the titlebar: frame=\(workspaceFrame), topInset=\(topInset)")
+        #expect(!conversationButton.isHiddenOrHasHiddenAncestor)
+        #expect(!workspaceButton.isHiddenOrHasHiddenAncestor)
+        #expect(window.standardWindowButton(.closeButton)?.isHidden == false)
+        #expect(window.standardWindowButton(.miniaturizeButton)?.isHidden == false)
+        #expect(window.standardWindowButton(.zoomButton)?.isHidden == false)
     }
 }
 
@@ -200,6 +241,32 @@ private struct ChatNavigationLayoutFixture: View {
     }
 }
 
+private struct ChatTitlebarLayoutFixture: View {
+    var body: some View {
+        Color.clear
+            .toolbar {
+                ToolbarItem(placement: .principal) {
+                    HStack(spacing: 8) {
+                        ChatTitlebarButton(identifier: "chat-titlebar-conversation-button")
+                            .frame(width: 160, height: 30)
+                        ChatTitlebarButton(identifier: "chat-titlebar-workspace-button")
+                            .frame(width: 160, height: 30)
+                    }
+                }
+            }
+    }
+}
+
+private struct ChatTitlebarDetailFixture: View {
+    var body: some View {
+        HStack(spacing: 0) {
+            Color.clear
+            Divider()
+            Color.clear
+        }
+    }
+}
+
 private struct ChatNavigationButton: NSViewRepresentable {
     let action: () -> Void
     func makeNSView(context: Context) -> ChatNavigationNativeButton {
@@ -217,12 +284,32 @@ private final class ChatNavigationNativeButton: NSButton {
     @objc func invoke() { handler?() }
 }
 
-@MainActor private func chatNavigationWindow<Content: View>(host: NSHostingView<Content>, width: CGFloat) -> NSWindow {
+private struct ChatTitlebarButton: NSViewRepresentable {
+    let identifier: String
+
+    func makeNSView(context: Context) -> NSButton {
+        let button = NSButton(title: "Conversation action", target: nil, action: nil)
+        button.identifier = NSUserInterfaceItemIdentifier(identifier)
+        return button
+    }
+    func updateNSView(_ button: NSButton, context: Context) {}
+}
+
+@MainActor private func chatNavigationWindow<Content: View>(
+    host: NSHostingView<Content>, width: CGFloat, fullSizeTitlebar: Bool = false
+) -> NSWindow {
     host.sizingOptions = []
     let window = NSWindow(
         contentRect: NSRect(x: -3_000, y: -3_000, width: width, height: 680),
-        styleMask: [.borderless], backing: .buffered, defer: false)
+        styleMask: fullSizeTitlebar ? [.titled, .resizable, .fullSizeContentView] : [.borderless],
+        backing: .buffered, defer: false)
     window.isReleasedWhenClosed = false
+    if fullSizeTitlebar {
+        window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
+        window.toolbar = NSToolbar(identifier: "ChatNavigationTests.titlebar")
+        window.toolbarStyle = .unified
+    }
     window.contentView = host
     return window
 }
@@ -233,6 +320,19 @@ private final class ChatNavigationNativeButton: NSButton {
 
 @MainActor private func navigationButton(in root: NSView) -> ChatNavigationNativeButton? {
     chatNavigationViews(root).compactMap { $0 as? ChatNavigationNativeButton }.first
+}
+
+@MainActor private func chatCompanionSplit(in root: NSView) -> NSSplitView? {
+    chatNavigationViews(root).compactMap { $0 as? NSSplitView }.first {
+        $0.accessibilityIdentifier() != "chats.resize-divider"
+    }
+}
+
+@MainActor private func chatTitlebarButton(_ identifier: String, in window: NSWindow) -> NSButton? {
+    guard let frameView = window.contentView?.superview else { return nil }
+    return chatNavigationViews(frameView).compactMap { $0 as? NSButton }.first {
+        $0.identifier?.rawValue == identifier
+    }
 }
 
 @MainActor private func chatBrowserScroll(in host: NSView) -> NSScrollView? {

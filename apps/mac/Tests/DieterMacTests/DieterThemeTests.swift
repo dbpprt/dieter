@@ -597,7 +597,6 @@ struct DieterThemePerformanceTests {
                 card.runtime = globalIndex.isMultiple(of: 7) ? "running" : "idle"
                 card.model = globalIndex.isMultiple(of: 4) ? "gpt-5" : ""
                 card.workspaceMode = globalIndex.isMultiple(of: 5) ? "worktree" : "project"
-                card.commentCount = globalIndex.isMultiple(of: 6) ? 2 : 0
                 if globalIndex.isMultiple(of: 3) {
                     card.labelIds = [board.labels[globalIndex % board.labels.count].id]
                 }

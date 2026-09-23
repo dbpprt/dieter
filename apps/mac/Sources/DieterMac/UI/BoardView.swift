@@ -185,13 +185,15 @@ struct BoardView: View {
     @Environment(DieterStore.self) private var store
     var usesTitlebarSpace = false
     var active = true
-    @State private var conversationMaximized = false
-
-    private var contentPresented: Bool {
-        store.conversationContext.content.isPresented(for: store.selectedCardID)
-    }
 
     var body: some View {
+        @Bindable var content = store.conversationContext.content
+        let selectedCardID = store.selectedCardID
+        // Observe the content model directly so closing the inner workspace
+        // restores Kanban in the same update of the outer native split.
+        let contentPresented =
+            content.splitMode && content.isOpen && content.conversationID == selectedCardID
+            && content.endpointID == (content.currentEndpointID(selectedCardID ?? "") ?? "")
         BoardConversationOverlay(
             board: AnyView(
                 BoardCanvas().environment(store)
@@ -200,40 +202,29 @@ struct BoardView: View {
             conversation: AnyView(
                 ConversationView(
                     compact: true,
-                    maximized: conversationMaximized || contentPresented,
-                    onToggleMaximize: {
-                        if contentPresented {
-                            Task {
-                                if await store.conversationContext.content.close() { conversationMaximized = false }
-                            }
-                        } else {
-                            conversationMaximized.toggle()
-                        }
-                    },
-                    surfaceStyle: .inherited
+                    surfaceStyle: .inherited,
+                    kanbanPresented: store.kanbanPresentedAlongsideConversation,
+                    toggleKanban: { store.kanbanPresentedAlongsideConversation.toggle() }
                 )
-                .ignoresSafeArea(.container, edges: usesTitlebarSpace ? .top : [])
                 .background(DieterTheme.surface)
                 .environment(store)
                 .environment(store.conversationContext)
                 .dieterThemeRoot(
                     palette: store.themeSelection.palette, appearance: store.themeSelection.appearance)),
             presented: store.selectedCardID != nil,
-            maximized: conversationMaximized || contentPresented,
-            active: active,
-            onRequestMaximize: { conversationMaximized = true }
+            companionPresented: contentPresented,
+            boardPresented: store.kanbanPresentedAlongsideConversation,
+            active: active
         )
         .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity)
-        // The board host still uses its native safe-area constraints. Only the
-        // conversation occupies the otherwise empty toolbar space beside the
-        // sidebar; a hidden sidebar keeps room for the window controls.
+        // Keep the native split itself in the titlebar region so its divider
+        // visually and interactively separates the toolbar navigation above
+        // each pane. The split items continue to publish their own safe areas,
+        // keeping board and conversation content below the window controls.
         .ignoresSafeArea(
-            .container, edges: usesTitlebarSpace && store.selectedCardID != nil ? .top : []
+            .container, edges: usesTitlebarSpace && selectedCardID != nil ? .top : []
         )
         .background(DieterTheme.surface)
-        .onChange(of: store.selectedCardID) { _, cardID in
-            if cardID == nil { conversationMaximized = false }
-        }
     }
 
 }
@@ -241,12 +232,15 @@ struct BoardView: View {
 /// Keep board observations separate from conversation presentation and tokens.
 private struct BoardCanvas: View {
     @Environment(DieterStore.self) private var store
+    var usesTitlebarSpace = false
+    var active = true
 
     var body: some View {
         content
             .safeAreaInset(edge: .top) { SharedConflictsButton(keys: store.selectedBoard?.conflictKeys ?? []) }
             .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity)
             .background(DieterTheme.surface)
+            .ignoresSafeArea(.container, edges: .top)
             .smokeTarget("board.canvas")
     }
 
@@ -300,7 +294,15 @@ private struct BoardCanvas: View {
 
 struct BoardHeader: View {
     @Environment(DieterStore.self) private var store
+    var usesTitlebarSpace = false
+    var active = true
     @State private var quickTaskPresented = false
+
+    private var workspacePresented: Bool {
+        guard let cardID = store.selectedCardID else { return false }
+        let content = store.conversationContext.content
+        return content.splitMode && content.isPresented(for: cardID)
+    }
 
     private var needsAttention: Int {
         store.boardCards.filter { ["waiting_for_user", "review"].contains($0.runtime) }.count
@@ -313,20 +315,23 @@ struct BoardHeader: View {
         return parts.joined(separator: " · ")
     }
 
-    private var machineFilterMenu: some View {
+    private func machineFilterMenu(iconOnly: Bool) -> some View {
         Menu {
-            Button("All machines") { store.machineFilter = "" }
-            ForEach(Array(Set(store.boardCards.map(\.ownerDaemonID))).filter { !$0.isEmpty }.sorted(), id: \.self) {
-                id in
-                Button(store.endpoints.first { $0.daemonID == id }?.name ?? id) { store.machineFilter = id }
-            }
+            machineFilterOptions
         } label: {
-            Text(
-                store.machineFilter.isEmpty
-                    ? "All machines"
-                    : (store.endpoints.first { $0.daemonID == store.machineFilter }?.name ?? store.machineFilter))
+            if iconOnly {
+                Label("Machine", systemImage: "desktopcomputer")
+                    .labelStyle(.iconOnly)
+            } else {
+                Text(
+                    store.machineFilter.isEmpty
+                        ? "All machines"
+                        : (store.endpoints.first { $0.daemonID == store.machineFilter }?.name
+                            ?? store.machineFilter))
+            }
         }
         .menuStyle(.button)
+        .tint(store.machineFilter.isEmpty ? nil : Color.accentColor)
         .accessibilityIdentifier("board.filter.machine")
         .help("Filter cards by their execution machine")
     }
@@ -347,79 +352,31 @@ struct BoardHeader: View {
                 }
                 .layoutPriority(1)
                 Spacer(minLength: 8)
+                if workspacePresented && store.kanbanPresentedAlongsideConversation {
+                    Button {
+                        store.kanbanPresentedAlongsideConversation = false
+                    } label: {
+                        ConversationWorkspaceSymbol(
+                            systemName: "rectangle.3.group",
+                            selected: true,
+                            frameSize: ConversationWorkspaceChromeMetrics.actionSize
+                        )
+                        .frame(width: 28, height: 28)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .help("Hide Kanban")
+                    .accessibilityLabel("Hide Kanban")
+                    .accessibilityIdentifier("board.kanban-toggle")
+                }
             }
         } secondary: {
-            HStack(spacing: 8) {
-                ViewThatFits(in: .horizontal) {
-                    HStack(spacing: 8) {
-                        if store.selectedBoard?.labels.isEmpty == false {
-                            allCardsButton(compact: false)
-                        }
-                        labelShelf
-                        Menu {
-                            stateFilterOptions
-                        } label: {
-                            Text(stateFilterTitle)
-                        }
-                        .menuStyle(.button)
-                        .tint(store.runtimeFilter.isEmpty ? nil : Color.accentColor)
-                        .fixedSize()
-                        .accessibilityIdentifier("board.filter.state")
-                        machineFilterMenu
-
-                        boardSettingsButton
-
-                        Button {
-                            store.labelsPresented = true
-                        } label: {
-                            Label("Labels", systemImage: "tag")
-                        }
-                        .help("Manage board labels")
-
-                        Button {
-                            store.createConversationPresented = true
-                        } label: {
-                            Label("New card", systemImage: "rectangle.badge.plus")
-                        }
-                        .accessibilityIdentifier("board.new-card")
-                    }
-
-                    HStack(spacing: 8) {
-                        if store.selectedBoard?.labels.isEmpty == false {
-                            allCardsButton(compact: true)
-                        }
-                        labelShelf
-                        Menu {
-                            stateFilterOptions
-                            Divider()
-                            Button("Manage labels…") { store.labelsPresented = true }
-                        } label: {
-                            Label(
-                                store.runtimeFilter.isEmpty ? "Filters" : stateFilterTitle,
-                                systemImage: "line.3.horizontal.decrease")
-                        }
-                        .menuStyle(.button)
-                        .tint(store.runtimeFilter.isEmpty ? nil : Color.accentColor)
-                        .fixedSize()
-                        .accessibilityIdentifier("board.filter.state")
-                        machineFilterMenu
-                        boardSettingsButton.labelStyle(.iconOnly)
-
-                        Menu {
-                            Button("New card…") { store.createConversationPresented = true }
-                        } label: {
-                            Label("New card", systemImage: "rectangle.badge.plus")
-                                .labelStyle(.iconOnly)
-                        }
-                        .menuStyle(.button)
-                        .fixedSize()
-                        .help("New card")
-                        .accessibilityIdentifier("board.new-card")
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .trailing)
-                quickTaskButton.fixedSize()
+            ViewThatFits(in: .horizontal) {
+                fullToolbar.fixedSize(horizontal: true, vertical: false)
+                compactToolbar.fixedSize(horizontal: true, vertical: false)
+                collapsedToolbar.fixedSize(horizontal: true, vertical: false)
             }
+            .frame(maxWidth: .infinity, alignment: .trailing)
             .font(.callout)
             .controlSize(.regular)
             .buttonStyle(.bordered)
@@ -429,6 +386,117 @@ struct BoardHeader: View {
                 store.labelFilter = ""
             }
         }
+    }
+
+    private var fullToolbar: some View {
+        HStack(spacing: 8) {
+            if store.selectedBoard?.labels.isEmpty == false {
+                allCardsButton(compact: false)
+            }
+            labelShelf
+            stateFilterMenu(iconOnly: false)
+            machineFilterMenu(iconOnly: false)
+            boardSettingsButton
+            Button {
+                store.labelsPresented = true
+            } label: {
+                Label("Labels", systemImage: "tag")
+            }
+            .help("Manage board labels")
+            newCardButton(iconOnly: false)
+            quickTaskButton
+        }
+    }
+
+    private var compactToolbar: some View {
+        HStack(spacing: 8) {
+            if store.selectedBoard?.labels.isEmpty == false {
+                allCardsButton(compact: true)
+                labelFilterMenu
+            }
+            stateFilterMenu(iconOnly: true)
+            machineFilterMenu(iconOnly: true)
+            boardSettingsButton.labelStyle(.iconOnly)
+            newCardButton(iconOnly: true)
+            quickTaskButton.labelStyle(.iconOnly)
+        }
+    }
+
+    private var collapsedToolbar: some View {
+        HStack(spacing: 8) {
+            Menu {
+                if store.selectedBoard?.labels.isEmpty == false {
+                    labelFilterOptions
+                    Divider()
+                }
+                stateFilterOptions
+                Divider()
+                machineFilterOptions
+                Divider()
+                Button("Manage labels…", systemImage: "tag") { store.labelsPresented = true }
+            } label: {
+                Label("Filters", systemImage: "line.3.horizontal.decrease")
+                    .labelStyle(.iconOnly)
+            }
+            .menuStyle(.button)
+            .tint(hasActiveFilters ? Color.accentColor : nil)
+            .help("Filter cards")
+            .accessibilityIdentifier("board.filters")
+            boardSettingsButton.labelStyle(.iconOnly)
+            newCardButton(iconOnly: true)
+            quickTaskButton.labelStyle(.iconOnly)
+        }
+    }
+
+    private var hasActiveFilters: Bool {
+        !store.labelFilter.isEmpty || !store.runtimeFilter.isEmpty || !store.machineFilter.isEmpty
+    }
+
+    private func stateFilterMenu(iconOnly: Bool) -> some View {
+        Menu {
+            stateFilterOptions
+        } label: {
+            if iconOnly {
+                Label("State", systemImage: "line.3.horizontal.decrease")
+                    .labelStyle(.iconOnly)
+            } else {
+                Text(stateFilterTitle)
+            }
+        }
+        .menuStyle(.button)
+        .tint(store.runtimeFilter.isEmpty ? nil : Color.accentColor)
+        .accessibilityIdentifier("board.filter.state")
+        .help("Filter cards by state")
+    }
+
+    private var labelFilterMenu: some View {
+        Menu {
+            labelFilterOptions
+            Divider()
+            Button("Manage labels…", systemImage: "tag") { store.labelsPresented = true }
+        } label: {
+            Label("Labels", systemImage: "tag")
+                .labelStyle(.iconOnly)
+        }
+        .menuStyle(.button)
+        .tint(store.labelFilter.isEmpty ? nil : Color.accentColor)
+        .help("Filter cards by label")
+        .accessibilityIdentifier("board.filter.labels")
+    }
+
+    private func newCardButton(iconOnly: Bool) -> some View {
+        Button {
+            store.createConversationPresented = true
+        } label: {
+            if iconOnly {
+                Label("New card", systemImage: "rectangle.badge.plus")
+                    .labelStyle(.iconOnly)
+            } else {
+                Label("New card", systemImage: "rectangle.badge.plus")
+            }
+        }
+        .help("New card")
+        .accessibilityIdentifier("board.new-card")
     }
 
     private var boardSettingsButton: some View {
@@ -487,6 +555,31 @@ struct BoardHeader: View {
             Text("All states").tag("")
             ForEach(["running", "review", "waiting", "completed", "failed"], id: \.self) { runtime in
                 Text(runtime.capitalized).tag(runtime)
+            }
+        }
+        .pickerStyle(.inline)
+    }
+
+    private var labelFilterOptions: some View {
+        Picker(
+            "Label", selection: Binding(get: { store.labelFilter }, set: { store.labelFilter = $0 })
+        ) {
+            Text("All cards").tag("")
+            ForEach(store.selectedBoard?.labels ?? [], id: \.id) { label in
+                Text(label.name).tag(label.id)
+            }
+        }
+        .pickerStyle(.inline)
+    }
+
+    private var machineFilterOptions: some View {
+        Picker(
+            "Machine", selection: Binding(get: { store.machineFilter }, set: { store.machineFilter = $0 })
+        ) {
+            Text("All machines").tag("")
+            ForEach(Array(Set(store.boardCards.map(\.ownerDaemonID))).filter { !$0.isEmpty }.sorted(), id: \.self) {
+                id in
+                Text(store.endpoints.first { $0.daemonID == id }?.name ?? id).tag(id)
             }
         }
         .pickerStyle(.inline)
@@ -646,6 +739,8 @@ final class QuickTaskFormState {
 
 struct QuickTaskPopover: View {
     @Environment(DieterStore.self) private var store
+    var usesTitlebarSpace = false
+    var active = true
     @Binding var isPresented: Bool
     @Binding private var story: String
     @Binding private var provider: String
@@ -1123,6 +1218,8 @@ private struct BoardLabelDragPreview: View {
 
 struct KanbanView: View {
     @Environment(DieterStore.self) private var store
+    var usesTitlebarSpace = false
+    var active = true
     let board: Dieter_V1_Board
 
     private var lanes: [Dieter_V1_Lane] {
@@ -1167,6 +1264,8 @@ struct KanbanView: View {
 
 struct LaneColumn: View {
     @Environment(DieterStore.self) private var store
+    var usesTitlebarSpace = false
+    var active = true
     let lane: Dieter_V1_Lane
     let cards: [Dieter_V1_Card]
     let sortDirection: BoardCardSortDirection
@@ -1234,10 +1333,10 @@ struct LaneColumn: View {
         .padding(10)
         .background(
             isDropTargeted ? DieterTheme.shellDeep.opacity(0.08) : DieterTheme.background.opacity(0.35),
-            in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+            in: RoundedRectangle(cornerRadius: 8, style: .continuous)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(
+            RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(
                 isDropTargeted ? DieterTheme.shell.opacity(0.32) : DieterTheme.border)
         )
         .animation(.easeOut(duration: 0.14), value: isDropTargeted)
@@ -1259,6 +1358,8 @@ struct LaneInsertionTarget: View {
     static let beforeCardHeight: CGFloat = 9
 
     @Environment(DieterStore.self) private var store
+    var usesTitlebarSpace = false
+    var active = true
     let laneID: String
     let beforeCardID: String?
     @State private var targeted = false
@@ -1386,6 +1487,8 @@ private struct BoardCardClickStyle: PrimitiveButtonStyle {
 /// Selection changes only redraw decoration, not every visible card's rich content.
 private struct BoardCardBackground: View {
     @Environment(DieterStore.self) private var store
+    var usesTitlebarSpace = false
+    var active = true
     let cardID: String
     let hovering: Bool
     var body: some View {
@@ -1399,6 +1502,8 @@ private struct BoardCardBackground: View {
 
 private struct BoardCardBorder: View {
     @Environment(DieterStore.self) private var store
+    var usesTitlebarSpace = false
+    var active = true
     let cardID: String
     let labelDropTargeted: Bool
     var body: some View {
@@ -1415,6 +1520,8 @@ private struct BoardCardBorder: View {
 /// entire rich card. These small subviews own the corresponding observations.
 private struct BoardCardMachineBadge: View {
     @Environment(DieterStore.self) private var store
+    var usesTitlebarSpace = false
+    var active = true
     let card: Dieter_V1_Card
 
     var body: some View {
@@ -1429,6 +1536,8 @@ private struct BoardCardMachineBadge: View {
 
 private struct BoardCardAvailability: ViewModifier {
     @Environment(DieterStore.self) private var store
+    var usesTitlebarSpace = false
+    var active = true
     let projectID: String
 
     func body(content: Content) -> some View {
@@ -1438,6 +1547,8 @@ private struct BoardCardAvailability: ViewModifier {
 
 private struct BoardCardHelp: ViewModifier {
     @Environment(DieterStore.self) private var store
+    var usesTitlebarSpace = false
+    var active = true
     let card: Dieter_V1_Card
     let labels: [Dieter_V1_Label]
     let accessibility: Bool
@@ -1481,7 +1592,6 @@ private struct BoardCardHelp: ViewModifier {
         let age = BoardCardActivityText.compact(
             updatedAt: card.updatedAt, lastActivityAt: card.lastActivityAt, relativeTo: .now)
         if !age.isEmpty { details.append("Last activity \(age)") }
-        if card.commentCount > 0 { details.append("\(card.commentCount) comments") }
         if !card.activeSubagents.isEmpty { details.append("\(card.activeSubagents.count) active subagents") }
         return details.joined(separator: ". ")
     }
@@ -1490,6 +1600,8 @@ private struct BoardCardHelp: ViewModifier {
 
 struct BoardCardView: View {
     @Environment(DieterStore.self) private var store
+    var usesTitlebarSpace = false
+    var active = true
     let card: Dieter_V1_Card
     let board: Dieter_V1_Board?
     private var currentBoard: Dieter_V1_Board? { board ?? store.selectedBoard }
@@ -1598,10 +1710,6 @@ struct BoardCardView: View {
                                 .fixedSize()
                                 .foregroundStyle(DieterTheme.tertiary)
                                 .accessibilityLabel("Last activity \(age)")
-                        }
-                        if card.commentCount > 0 {
-                            Label("\(card.commentCount)", systemImage: "text.bubble").font(.system(size: 10))
-                                .foregroundStyle(DieterTheme.tertiary)
                         }
                         if !card.activeSubagents.isEmpty {
                             Label("\(card.activeSubagents.count)", systemImage: "person.2").font(

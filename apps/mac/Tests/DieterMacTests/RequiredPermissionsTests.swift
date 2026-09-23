@@ -35,3 +35,19 @@ import Testing
     #expect(permissions.settingsError?.contains("Privacy & Security") == true)
     #expect(!permissions.isReady)
 }
+
+@MainActor
+@Test func skippingSetupAllowsTheAppWithoutPretendingPermissionsWereGranted() {
+    let permissions = RequiredPermissions(check: { _ in false }, request: { _ in }, openSettings: { _ in true })
+
+    #expect(!permissions.isReady)
+    #expect(!permissions.canUseApp)
+
+    permissions.skipSetup()
+
+    #expect(permissions.canUseApp)
+    #expect(permissions.setupSkipped)
+    #expect(!permissions.isReady)
+    #expect(!permissions.accessibility)
+    #expect(!permissions.screenRecording)
+}

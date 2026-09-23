@@ -54,6 +54,7 @@ final class ConversationContentTab: Identifiable {
     var selection: ConversationContentLink?
     var presentationTitle: String?
     var sourceURL: URL?
+    var terminalID: String?
     var rootPath = ""
     var navigationID = UUID()
     var loading = false
@@ -71,7 +72,12 @@ final class ConversationContentTab: Identifiable {
         return switch selection {
         case .file(let path, _): (path as NSString).lastPathComponent
         case .web(let url): browser.currentURL?.host ?? url.host ?? "Browser"
-        case nil: kind.title
+        case nil:
+            if kind == .terminal, let terminal = terminals.selectedTerminal, !terminal.name.isEmpty {
+                terminal.name
+            } else {
+                kind.title
+            }
         }
     }
     var dirty: Bool { files.fileEditorSession.isDirty }
@@ -85,12 +91,18 @@ final class ConversationContentTab: Identifiable {
 
 @MainActor @Observable
 final class ConversationContentModel {
+    private enum OpenActivation: Equatable { case interactive, automatic }
+
     static let maximumTabs = 12
     private(set) var tabs: [ConversationContentTab] = []
     private(set) var selectedTabID: UUID?
+    var conversationTab = "Conversation"
     private(set) var conversationID = ""
     private(set) var endpointID = ""
     private(set) var isOpen = false
+    /// Pane composition is independent of the selected tab. Opening a link
+    /// selects that tab in the single pane; only this flag creates a split.
+    private(set) var splitMode = false
     private(set) var loading = false
     private(set) var error: String?
     private(set) var confirming = false
@@ -139,12 +151,31 @@ final class ConversationContentModel {
     enum UnsavedChoice { case save, discard, cancel }
 
     var selectedTab: ConversationContentTab? { tabs.first { $0.id == selectedTabID } }
+    var workspaceTabs: [ConversationContentTab] { tabs.filter { $0.kind != .review } }
+    func workspaceTabs(for conversationID: String?) -> [ConversationContentTab] {
+        guard let conversationID, !conversationID.isEmpty else { return [] }
+        return workspaceTabs.filter { $0.conversationID == conversationID }
+    }
     var files: FilesModel { selectedTab?.files ?? emptyFiles }
     var selection: ConversationContentLink? { selectedTab?.selection }
     var sourceURL: URL? { selectedTab?.sourceURL }
     var rootPath: String { selectedTab?.rootPath ?? "" }
     var navigationID: UUID { selectedTab?.navigationID ?? selectedTabID ?? UUID() }
     var browserAllowsLoopback: Bool { selectedTab?.browser.allowsLoopback ?? false }
+    var addablePanelKinds: [ConversationPanelKind] {
+        addablePanelKinds(for: conversationID)
+    }
+    func addablePanelKinds(for conversationID: String?) -> [ConversationPanelKind] {
+        let visibleTabs = tabs.filter { $0.conversationID == conversationID }
+        return ConversationPanelKind.allCases.filter { kind in
+            switch kind {
+            case .browser, .terminal: true
+            case .review: false
+            case .processes: !visibleTabs.contains { $0.kind == kind }
+            case .files: !visibleTabs.contains { $0.kind == .files && $0.selection == nil }
+            }
+        }
+    }
     func isPresented(for id: String?) -> Bool {
         isOpen && id == conversationID && endpointID == (currentEndpointID(conversationID) ?? "")
     }
@@ -159,6 +190,16 @@ final class ConversationContentModel {
         }
     }
 
+    func requestPresentation(
+        _ url: URL, conversationID id: String, presentationTitle: String? = nil
+    ) {
+        guard !confirming else { return }
+        cancelPending()
+        openTask = Task {
+            _ = await present(url, conversationID: id, presentationTitle: presentationTitle)
+        }
+    }
+
     func requestPanel(_ kind: ConversationPanelKind, conversationID id: String) {
         guard !confirming else { return }
         cancelPending()
@@ -167,25 +208,64 @@ final class ConversationContentModel {
 
     func showEmpty(conversationID id: String) {
         guard !confirming, !id.isEmpty else { return }
-        if conversationID == id, endpointID == (currentEndpointID(id) ?? "") { isOpen = true; resume(); return }
+        splitMode = true
+        if conversationID == id, endpointID == (currentEndpointID(id) ?? "") {
+            isOpen = true
+            resume()
+            return
+        }
         cancelPending()
         openTask = Task {
-            if await enterConversation(id) { isOpen = true; updateActivity() }
+            if await enterConversation(id) {
+                isOpen = true
+                updateActivity()
+            }
         }
     }
 
-    func hide() {
+    func hide(userInitiated _: Bool = true) {
         cancelPending()
         isOpen = false
+        splitMode = false
         loading = false
         updateActivity()
     }
 
+    func showSinglePane() { splitMode = false }
+
+    func applyDefaultMode(_ mode: ConversationDefaultMode, conversationID id: String) {
+        switch mode {
+        case .tabs:
+            showSinglePane()
+            showConversationTab()
+        case .workspace:
+            showEmpty(conversationID: id)
+        }
+    }
+
+    func showConversationTab() {
+        conversationTab = "Conversation"
+        selectedTabID = nil
+        updateActivity()
+    }
+
     func selectTab(_ id: UUID) {
-        guard tabs.contains(where: { $0.id == id }), !confirming else { return }
+        selectTab(id, reveal: true)
+    }
+
+    func deselectTab() {
+        selectedTabID = nil
+        updateActivity()
+    }
+
+    private func selectTab(_ id: UUID, reveal: Bool) {
+        guard let tab = tabs.first(where: { $0.id == id }), !confirming else { return }
         selectedTabID = id
-        suspended = false
-        isOpen = true
+        if reveal {
+            suspended = false
+            isOpen = true
+            if tab.kind != .review { conversationTab = "Conversation" }
+        }
         error = nil
         updateActivity()
     }
@@ -194,26 +274,62 @@ final class ConversationContentModel {
     func open(
         _ url: URL, conversationID id: String, relativeTo documentPath: String? = nil, presentationTitle: String? = nil
     ) async -> Bool {
+        await open(
+            url, conversationID: id, relativeTo: documentPath, presentationTitle: presentationTitle,
+            activation: .interactive)
+    }
+
+    /// Agent-originated presentations may populate or focus a workspace tab,
+    /// but they respect a user's explicit dismissal of the pane. A direct link
+    /// click or the workspace button clears that dismissal.
+    @discardableResult
+    func present(_ url: URL, conversationID id: String, presentationTitle: String? = nil) async -> Bool {
+        await open(
+            url, conversationID: id, relativeTo: nil, presentationTitle: presentationTitle,
+            activation: .automatic)
+    }
+
+    private func open(
+        _ url: URL, conversationID id: String, relativeTo documentPath: String?, presentationTitle: String?,
+        activation: OpenActivation
+    ) async -> Bool {
+        let wasPresented = isPresented(for: id)
+        if activation == .automatic,
+            (conversationID != id || endpointID != (currentEndpointID(id) ?? "")),
+            tabs.contains(where: \.dirty)
+        {
+            // A background presentation must never interrupt the user with an
+            // unsaved-changes prompt from another conversation.
+            return false
+        }
         guard !confirming, await enterConversation(id), !Task.isCancelled else { return false }
+        // Background presentations may update an already visible workspace,
+        // but only a direct user action is allowed to reveal a closed one.
+        let reveal = activation == .interactive || wasPresented
         generation &+= 1
         let request = generation
-        loading = true; error = nil; isOpen = true
+        loading = true; error = nil
+        if reveal { isOpen = true }
         defer { if request == generation { loading = false; pendingTab = nil } }
         do {
             if ["http", "https"].contains(url.scheme?.lowercased() ?? "") {
                 try validateWebURL(url, id)
+                if ExternalBrowserRules.matches(url, entries: ExternalBrowserRules.entries()) {
+                    NSWorkspace.shared.open(url)
+                    return true
+                }
                 let link = try ConversationContentLink.resolve(url, workspaceRoot: "")
                 if let existing = tabs.first(where: { $0.selection == link }) {
                     existing.browser.reveal(url)
                     applyTitle(presentationTitle, to: existing)
-                    selectTab(existing.id); return true
+                    selectTab(existing.id, reveal: reveal); return true
                 }
                 guard hasCapacity else { return false }
                 let tab = ConversationContentTab(kind: .browser, conversationID: id)
                 tab.browser.allowsLoopback = (try? validateWebURL(URL(string: "http://localhost")!, id)) != nil
                 tab.selection = link; tab.sourceURL = url
                 applyTitle(presentationTitle, to: tab)
-                append(tab)
+                append(tab, reveal: reveal)
                 return true
             }
             let scope = try await prepareScope(id)
@@ -229,7 +345,7 @@ final class ConversationContentModel {
             }) {
                 existing.selection = link; existing.sourceURL = url; existing.navigationID = UUID()
                 applyTitle(presentationTitle, to: existing)
-                selectTab(existing.id)
+                selectTab(existing.id, reveal: reveal)
                 if existing.files.fileDocument != nil, existing.files.fileError == nil { return true }
                 existing.files.cancelContentRead()
                 pendingTab = existing
@@ -241,7 +357,7 @@ final class ConversationContentModel {
             bind(tab, scope: scope)
             tab.selection = link; tab.sourceURL = url
             applyTitle(presentationTitle, to: tab)
-            append(tab); pendingTab = tab
+            append(tab, reveal: reveal); pendingTab = tab
             await tab.files.openFile(path: path)
             return owns(request, id)
         } catch {
@@ -281,11 +397,24 @@ final class ConversationContentModel {
                     throw ConversationPanelUnavailable(kind: kind)
                 }
             }
-            append(tab)
             if kind == .terminal {
                 await tab.terminals.loadTerminals()
                 guard owns(request, id) else { return false }
+                let claimed = Set(tabs.lazy.filter { $0.kind == .terminal }.compactMap(\.terminalID))
+                if let existing = tab.terminals.terminals.first(where: {
+                    $0.status == "running" && !claimed.contains($0.id)
+                }) {
+                    tab.terminalID = existing.id
+                    tab.terminals.selectTerminal(existing.id)
+                } else if tab.terminals.terminalError == nil {
+                    await tab.terminals.createTerminal(
+                        projectID: tab.terminals.target.projectID, name: "Terminal", shell: "",
+                        workingDirectory: ".")
+                    guard owns(request, id) else { return false }
+                    tab.terminalID = tab.terminals.selectedTerminalID
+                }
             }
+            append(tab)
             return true
         } catch {
             guard owns(request, id) else { return false }
@@ -331,7 +460,7 @@ final class ConversationContentModel {
         guard await allowClosing(tabs), generation == request else { return false }
         cancelPending()
         removeTabs()
-        isOpen = false; loading = false; error = nil
+        isOpen = false; splitMode = false; loading = false; error = nil
         return true
     }
 
@@ -390,7 +519,7 @@ final class ConversationContentModel {
             self.error = nil
             updateActivity()
             if let tab = selectedTab, tab.kind == .terminal, tab.terminals.active {
-                await tab.terminals.loadTerminals()
+                await tab.terminals.loadTerminals(selecting: tab.terminalID)
             }
         } catch {
             guard token == bindingGeneration, !Task.isCancelled else { return }
@@ -485,11 +614,14 @@ final class ConversationContentModel {
         tab.presentationTitle = value
     }
 
-    private func append(_ tab: ConversationContentTab) {
+    private func append(_ tab: ConversationContentTab, reveal: Bool = true) {
         tabs.append(tab)
-        suspended = false
         selectedTabID = tab.id
-        isOpen = true
+        if reveal {
+            suspended = false
+            isOpen = true
+            if tab.kind != .review { conversationTab = "Conversation" }
+        }
         updateActivity()
     }
 

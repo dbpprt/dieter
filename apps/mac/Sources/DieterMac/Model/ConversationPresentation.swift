@@ -133,12 +133,17 @@ enum ConversationRenderWindow {
     // layout until it fills the viewport; scrollback retains the larger budget.
     static let initialMessages = 8
     static let maximumMessages = 60
-    static let maximumTextBytes = 16_000
-    static let maximumParts = 160
+    static let maximumTextBytes = 32_000
+    static let maximumParts = 240
+    static let latestPages = 3
+    /// Crossing an edge reveals a useful overlapping stretch. A single
+    /// budget page can be visually tiny when collapsed command groups carry
+    /// many hidden parts, so scrollback advances by two pages at a time.
+    static let scrollbackPages = 2
     /// A detached reader keeps several pages mounted. Scrolling back therefore
     /// grows the transcript like an ordinary document; rows are released only
     /// far outside the viewport, never underneath the text being read.
-    static let retainedPages = 4
+    static let retainedPages = 6
 
     /// Windows are keyed by message identity. History pages and retention
     /// trimming shift array indices underneath a reader; identities do not.
@@ -151,7 +156,7 @@ enum ConversationRenderWindow {
     }
 
     static func range(
-        messages: [Dieter_V1_UiMessage], position: Position, latestMessageLimit: Int = maximumMessages
+        messages: [Dieter_V1_UiMessage], position: Position, latestMessageLimit: Int? = nil
     ) -> Range<Int> {
         guard !messages.isEmpty else { return 0..<0 }
         switch position {
@@ -166,7 +171,11 @@ enum ConversationRenderWindow {
                 return backwardRange(messages: messages, end: last + 1, pages: retainedPages)
             }
         }
-        return backwardRange(messages: messages, end: messages.count, pages: 1, messageLimit: latestMessageLimit)
+        if let latestMessageLimit {
+            return backwardRange(
+                messages: messages, end: messages.count, pages: 1, messageLimit: latestMessageLimit)
+        }
+        return backwardRange(messages: messages, end: messages.count, pages: latestPages)
     }
 
     /// Freezes the rendered start when the reader leaves the live tail, so
@@ -180,20 +189,24 @@ enum ConversationRenderWindow {
         return .from(messageID: messages[renderedRange.lowerBound].id)
     }
 
-    /// One more page of older messages above the rendered range, or nil when
+    /// Another overlapping batch of older messages above the rendered range, or nil when
     /// the loaded transcript has none.
     static func extendingEarlier(messages: [Dieter_V1_UiMessage], renderedRange: Range<Int>) -> Position? {
         guard renderedRange.lowerBound > 0, renderedRange.lowerBound <= messages.count else { return nil }
-        let start = backwardRange(messages: messages, end: renderedRange.lowerBound, pages: 1).lowerBound
+        let start = backwardRange(
+            messages: messages, end: renderedRange.lowerBound, pages: scrollbackPages
+        ).lowerBound
         guard !messages[start].id.isEmpty else { return nil }
         return .from(messageID: messages[start].id)
     }
 
-    /// One more page of newer messages below the rendered range, or nil when
+    /// Another overlapping batch of newer messages below the rendered range, or nil when
     /// the range already reaches the newest loaded message.
     static func extendingLater(messages: [Dieter_V1_UiMessage], renderedRange: Range<Int>) -> Position? {
         guard renderedRange.upperBound < messages.count else { return nil }
-        let end = forwardRange(messages: messages, start: renderedRange.upperBound, pages: 1).upperBound
+        let end = forwardRange(
+            messages: messages, start: renderedRange.upperBound, pages: scrollbackPages
+        ).upperBound
         guard !messages[end - 1].id.isEmpty else { return .latest }
         return .through(messageID: messages[end - 1].id)
     }

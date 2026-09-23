@@ -156,12 +156,10 @@ final class AppSession {
             ReasoningTracePreferences.save(showReasoning, to: environment.defaults)
         }
     }
-    var conversationWorkspacePanelEnabled: Bool {
+    var defaultConversationMode: ConversationDefaultMode {
         didSet {
-            guard conversationWorkspacePanelEnabled != oldValue else { return }
-            ConversationWorkspacePanelPreferences.setEnabled(
-                conversationWorkspacePanelEnabled, in: environment.defaults)
-            if !conversationWorkspacePanelEnabled { conversationContext.content.hide() }
+            guard defaultConversationMode != oldValue else { return }
+            defaultConversationMode.save(to: environment.defaults)
         }
     }
     var themeSelection: DieterThemeSelection {
@@ -351,8 +349,7 @@ final class AppSession {
             defaults: environment.defaults, credentials: environment.credentials, clock: environment.clock)
         syncClientID = DieterSyncPersistence.installationID(defaults: environment.defaults)
         showReasoning = ReasoningTracePreferences.load(from: environment.defaults)
-        conversationWorkspacePanelEnabled = ConversationWorkspacePanelPreferences.isEnabled(
-            in: environment.defaults)
+        defaultConversationMode = ConversationDefaultMode.load(from: environment.defaults)
         let persistence = syncPersistenceOverride ?? DieterSyncPersistence(root: environment.storageRoot)
         syncPersistence = persistence
         outbox =

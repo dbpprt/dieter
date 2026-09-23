@@ -27,249 +27,246 @@ struct ProjectDirectoryChangesRedirect: View {
 
 struct ConversationChrome: View {
     @Environment(ConversationContext.self) private var context
+    @Environment(\.conversationWorkspaceTabsInTitlebar) private var tabsInTitlebar
     let compact: Bool
     let standalone: Bool
     @Binding var tab: String
-    var maximized = false
-    var onToggleMaximize: (() -> Void)? = nil
-    @State private var editCardPresented = false
-    @State private var workspaceSettingsPresented = false
 
     private var card: Dieter_V1_Card? { context.selectedCard ?? context.selectedDetail?.card }
     private var status: String { context.conversation?.conversation.status ?? card?.runtime ?? "idle" }
     private var subagentCount: Int { context.conversation?.conversation.subagents.count ?? 0 }
+    private var workspacePresented: Bool {
+        context.content.splitMode
+            && context.content.isPresented(for: context.selectedCardID ?? context.selectedChatID)
+    }
+    private var showsWorkspaceMetadata: Bool {
+        context.selectedDetail != nil || card?.workspaceMode.isEmpty == false || context.conversationSyncing
+    }
 
     var body: some View {
-        FluidPaneChrome(background: .clear, spacing: 8) {
-            if compact {
-                VStack(alignment: .leading, spacing: 12) {
-                    HStack(alignment: .top, spacing: 12) {
-                        VStack(alignment: .leading, spacing: 5) {
-                            Text(card?.title.isEmpty == false ? card!.title : "Conversation")
-                                .font(.system(size: 15, weight: .semibold))
-                                .lineLimit(3)
-                                .fixedSize(horizontal: false, vertical: true)
-                            if let detail = context.selectedDetail {
-                                Text("\(detail.project.name) · \(standalone ? "Standalone chat" : detail.board.name)")
-                                    .font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                            }
+        if tabsInTitlebar && workspacePresented {
+            EmptyView()
+        } else {
+            FluidPaneChrome(
+                background: .clear, spacing: 8,
+                showsSecondary: !tabsInTitlebar
+                    && ConversationChromeLayout.showsConversationTabs(workspacePresented: workspacePresented)
+            ) {
+                if compact {
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(spacing: 8) {
+                            ConversationTitleStatusMenu(standalone: standalone)
+                            if !tabsInTitlebar { ConversationCloseButton() }
                         }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        sidebarActions
-                    }
-                    HStack(spacing: 10) {
-                        StatusPill(text: status, color: runtimeColor(status))
-                        if let card, !card.workspaceMode.isEmpty {
-                            Button {
-                                tab = "Changes"
-                            } label: {
-                                WorkspaceSummaryBadge(card: card)
-                            }
-                            .buttonStyle(.plain).accessibilityLabel("Open workspace changes")
-                        }
-                        Spacer(minLength: 0)
-                        if context.conversationSyncing {
-                            ProgressView().controlSize(.mini).accessibilityLabel("Refreshing conversation")
-                        }
-                    }
-                }
-            } else {
-                HStack(spacing: 10) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(card?.title.isEmpty == false ? card!.title : "Conversation")
-                            .font(DieterFont.paneTitle).lineLimit(1)
-                        HStack(spacing: 4) {
-                            if let detail = context.selectedDetail {
-                                Text(detail.project.name).lineLimit(1)
-                                Text(standalone ? "· Standalone chat" : "/ \(detail.board.name)").lineLimit(1)
-                            }
-                            if let id = card?.id, !id.isEmpty {
-                                Text("· \(id.prefix(8))").font(.system(size: 10).monospaced()).lineLimit(1)
-                            }
-                            if card != nil {
-                                Text("·")
-                                Text(
-                                    ConversationRefreshText.label(
-                                        lastRefreshedAt: context.conversationLastRefreshedAt,
-                                        syncing: context.conversationSyncing,
-                                        now: .now
+                        if showsWorkspaceMetadata && !tabsInTitlebar {
+                            HStack(spacing: 8) {
+                                if let detail = context.selectedDetail {
+                                    Text(
+                                        "\(detail.project.name) · \(standalone ? "Standalone chat" : detail.board.name)"
                                     )
-                                )
-                                .lineLimit(1)
-                                .accessibilityIdentifier("conversation-last-refreshed")
+                                    .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                                }
+                                if let card, !card.workspaceMode.isEmpty {
+                                    Button {
+                                        showChanges(for: card)
+                                    } label: {
+                                        WorkspaceSummaryBadge(card: card)
+                                    }
+                                    .buttonStyle(.plain).accessibilityLabel("Open workspace changes")
+                                }
+                                Spacer(minLength: 0)
                                 if context.conversationSyncing {
-                                    ProgressView().controlSize(.mini)
-                                        .accessibilityLabel("Refreshing conversation")
+                                    ProgressView().controlSize(.mini).accessibilityLabel("Refreshing conversation")
                                 }
                             }
                         }
-                        .font(DieterFont.subtitle).foregroundStyle(DieterTheme.tertiary)
                     }
-                    Spacer(minLength: 10)
-                    if let card, !card.workspaceMode.isEmpty {
-                        Button {
-                            tab = "Changes"
-                        } label: {
-                            WorkspaceSummaryBadge(card: card)
+                } else {
+                    HStack(spacing: 10) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(card?.title.isEmpty == false ? card!.title : "Conversation")
+                                .font(DieterFont.paneTitle).lineLimit(1)
+                            HStack(spacing: 4) {
+                                if let detail = context.selectedDetail {
+                                    Text(detail.project.name).lineLimit(1)
+                                    Text(standalone ? "· Standalone chat" : "/ \(detail.board.name)").lineLimit(1)
+                                }
+                                if let id = card?.id, !id.isEmpty {
+                                    Text("· \(id.prefix(8))").font(.system(size: 10).monospaced()).lineLimit(1)
+                                }
+                                if card != nil {
+                                    Text("·")
+                                    Text(
+                                        ConversationRefreshText.label(
+                                            lastRefreshedAt: context.conversationLastRefreshedAt,
+                                            syncing: context.conversationSyncing,
+                                            now: .now
+                                        )
+                                    )
+                                    .lineLimit(1)
+                                    .accessibilityIdentifier("conversation-last-refreshed")
+                                    if context.conversationSyncing {
+                                        ProgressView().controlSize(.mini)
+                                            .accessibilityLabel("Refreshing conversation")
+                                    }
+                                }
+                            }
+                            .font(DieterFont.subtitle).foregroundStyle(DieterTheme.tertiary)
                         }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("Open workspace changes")
+                        Spacer(minLength: 10)
+                        if let card, !card.workspaceMode.isEmpty {
+                            Button {
+                                showChanges(for: card)
+                            } label: {
+                                WorkspaceSummaryBadge(card: card)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("Open workspace changes")
+                        }
+                        StatusPill(text: status, color: runtimeColor(status))
+                            .accessibilityIdentifier("conversation.status")
+                            .smokeTarget("conversation.status")
+                        if !tabsInTitlebar { ConversationActionsMenu(standalone: standalone) }
                     }
-                    StatusPill(text: status, color: runtimeColor(status))
-                    conversationMenu
-                    contentPaneToggle
                 }
-            }
-        } secondary: {
-            ConversationTabBar(
-                items: standalone
-                    ? [
-                        ("Conversation", 0), ("Changes", Int(card?.workspace.changedFiles ?? 0)),
-                        ("Subagents", subagentCount),
-                    ]
-                    : [
-                        ("Conversation", 0),
-                        ("Changes", Int(card?.workspace.changedFiles ?? 0)),
-                        ("Comments", Int(context.selectedDetail?.card.commentCount ?? 0)),
-                        ("Subagents", subagentCount),
-                    ],
-                selection: $tab
-            )
-        }
-        .sheet(isPresented: $editCardPresented) {
-            if let card {
-                EditCardSheet(card: card).environment(context)
-            }
-        }
-        .sheet(isPresented: $workspaceSettingsPresented) {
-            if let card { ConversationWorkspaceSettingsSheet(model: context.worktreeChanges, card: card) }
-        }
-    }
-    private var sidebarActions: some View {
-        HStack(spacing: 3) {
-            if onToggleMaximize != nil {
-                GlobalQuickTaskButton()
-                    .labelStyle(.iconOnly)
-                    .frame(width: 24, height: 24)
-            }
-            conversationMenu
-            contentPaneToggle
-            if let onToggleMaximize {
-                Button(action: onToggleMaximize) {
-                    Image(
-                        systemName: maximized
-                            ? "arrow.down.right.and.arrow.up.left"
-                            : "arrow.up.left.and.arrow.down.right"
-                    )
-                    .font(.system(size: 11, weight: .semibold))
-                    .frame(width: 24, height: 24)
-                }
-                .accessibilityLabel(
-                    maximized ? "Restore conversation size" : "Expand conversation over board"
+            } secondary: {
+                ConversationTabBar(
+                    items: conversationTabs,
+                    selection: $tab
                 )
-                .accessibilityValue(maximized ? "Expanded" : "Side panel")
-                .quickHelp(maximized ? "Restore size" : "Maximize")
-                .accessibilityIdentifier("board.conversation-maximize")
-                .smokeTarget("board.conversation-maximize")
             }
-            Button {
-                context.closeConversation()
-            } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 11, weight: .semibold))
-                    .frame(width: 24, height: 24)
-            }
-            .accessibilityLabel("Close conversation")
-            .quickHelp("Close")
-            .accessibilityIdentifier("board.conversation-close")
-            .smokeTarget("board.conversation-close")
         }
-        .buttonStyle(.borderless)
-        .controlSize(.small)
-        .foregroundStyle(.secondary)
-        .fixedSize()
     }
 
-    @ViewBuilder private var conversationMenu: some View {
+    private var conversationTabs: [(String, Int)] {
+        if standalone {
+            return [
+                ("Conversation", 0), ("Changes", Int(card?.workspace.changedFiles ?? 0)),
+                ("Subagents", subagentCount),
+            ]
+        }
+        return [
+            ("Conversation", 0),
+            ("Changes", Int(card?.workspace.changedFiles ?? 0)),
+            ("Subagents", subagentCount),
+        ]
+    }
+
+    private func showChanges(for card: Dieter_V1_Card) {
+        tab = "Changes"
+        context.content.showEmpty(conversationID: card.id)
+    }
+
+}
+
+struct ConversationTitleStatusMenu: View {
+    @Environment(ConversationContext.self) private var context
+    let standalone: Bool
+    var actionHeight: CGFloat = 24
+
+    private var card: Dieter_V1_Card? { context.selectedCard ?? context.selectedDetail?.card }
+    private var status: String { context.conversation?.conversation.status ?? card?.runtime ?? "idle" }
+
+    var body: some View {
+        HStack(spacing: 7) {
+            Text(card?.title.isEmpty == false ? card!.title : "Conversation")
+                .font(.system(size: 15, weight: .semibold))
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .layoutPriority(1)
+            StatusPill(text: status, color: runtimeColor(status))
+                .accessibilityIdentifier("conversation.status")
+                .smokeTarget("conversation.status")
+            ConversationActionsMenu(standalone: standalone, height: actionHeight)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+struct ConversationCloseButton: View {
+    @Environment(ConversationContext.self) private var context
+    var height: CGFloat = 24
+
+    var body: some View {
+        Button {
+            context.closeConversation()
+        } label: {
+            ConversationWorkspaceSymbol(
+                systemName: "xmark", frameSize: ConversationWorkspaceChromeMetrics.actionSize
+            )
+            .frame(width: 28, height: height)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.borderless)
+        .accessibilityLabel("Close conversation")
+        .quickHelp("Close")
+        .accessibilityIdentifier("board.conversation-close")
+        .smokeTarget("board.conversation-close")
+    }
+}
+
+struct ConversationActionsMenu: View {
+    @Environment(ConversationContext.self) private var context
+    let standalone: Bool
+    var height: CGFloat = 24
+    private var card: Dieter_V1_Card? { context.selectedCard ?? context.selectedDetail?.card }
+    private var status: String { context.conversation?.conversation.status ?? card?.runtime ?? "idle" }
+
+    var body: some View {
+        menu
+    }
+
+    @ViewBuilder private var menu: some View {
         if let card {
             Menu {
-                if context.isFailedOutboxItem(card.id) {
-                    Button("Retry queued creation") { Task { await context.retryOutboxItem(card.id) } }
-                    Button("Discard queued creation", role: .destructive) {
-                        Task { await context.discardOutboxItem(card.id) }
-                    }
-                    Divider()
-                }
-                if standalone {
-                    Button(card.pinned ? "Unpin chat" : "Pin chat") {
-                        Task { await context.pin(card, pinned: !card.pinned) }
-                    }
-                }
                 Button("Fork as new chat", systemImage: "arrow.triangle.branch") {
                     Task { await context.fork(card) }
                 }
-                if !standalone, BoardCardEditingPolicy.canEditDraft(card) {
-                    Button("Edit card…") { editCardPresented = true }
-                }
-                if card.initialPromptSentAt.isEmpty && card.workspace.revision.isEmpty {
-                    Button("Workspace settings…", systemImage: "slider.horizontal.3") {
-                        workspaceSettingsPresented = true
-                    }
-                }
-                if context.conversationWorkspacePanelEnabled {
-                    Button("Open workspace in Files", systemImage: "folder") {
-                        context.content.requestPanel(.files, conversationID: card.id)
-                    }
-                    Button("New terminal in workspace", systemImage: "terminal") {
-                        context.content.requestPanel(.terminal, conversationID: card.id)
-                    }
-                } else {
-                    Button("Open workspace in Files", systemImage: "folder") {
-                        Task { await context.openWorkspaceFiles(card: card) }
-                    }
-                    Button("New terminal in workspace", systemImage: "terminal") {
-                        Task { await context.openWorkspaceTerminal(card: card) }
-                    }
-                }
                 if ["running", "starting", "waiting_for_user"].contains(status) {
-                    Button("Interrupt agent", role: .destructive) { Task { await context.cancel(card) } }
+                    Button("Halt agent", role: .destructive) { Task { await context.cancel(card) } }
                 }
                 Divider()
                 Button("Archive \(standalone ? "chat" : "card")", role: .destructive) {
                     Task { await context.archive(card, archived: true) }
                 }
             } label: {
-                Image(systemName: "ellipsis")
-                    .frame(width: 24, height: 24)
+                ConversationWorkspaceSymbol(
+                    systemName: "ellipsis", frameSize: ConversationWorkspaceChromeMetrics.actionSize
+                )
+                .frame(width: 28, height: height)
+                .contentShape(Rectangle())
             }
             .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
             .accessibilityLabel("Conversation actions")
             .quickHelp("More")
         }
     }
+}
 
-    @ViewBuilder private var contentPaneToggle: some View {
-        if context.conversationWorkspacePanelEnabled {
-            let id = context.selectedCardID ?? context.selectedChatID ?? ""
-            let presented = context.content.isPresented(for: id)
-            Button {
-                if presented { context.content.hide() } else { context.content.showEmpty(conversationID: id) }
-            } label: {
-                Image(systemName: "sidebar.right")
-                    .font(.system(size: 12, weight: .medium))
-                    .frame(width: 24, height: 24)
-            }
-            .buttonStyle(.borderless)
-            .foregroundStyle(presented ? DieterTheme.text : DieterTheme.subtle)
-            .accessibilityLabel(presented ? "Hide workspace panel" : "Show workspace panel")
-            .accessibilityValue(presented ? "Expanded" : "Collapsed")
-            .help(presented ? "Hide workspace panel" : "Show workspace panel")
-            .accessibilityIdentifier("conversation.content.toggle")
-            .smokeTarget("conversation.content.toggle")
-            .disabled(id.isEmpty)
-        }
+enum ConversationChromeLayout {
+    static func showsConversationTabs(workspacePresented: Bool) -> Bool { true }
+}
+
+enum ConversationWorkspaceChromeMetrics {
+    static let symbolSize: CGFloat = 12
+    static let actionSize: CGFloat = 24
+    static let titlebarHeight: CGFloat = 40
+    static let tabHeight: CGFloat = 36
+}
+
+struct ConversationWorkspaceSymbol: View {
+    let systemName: String
+    var selected = false
+    var frameSize: CGFloat = 16
+
+    var body: some View {
+        Image(systemName: systemName)
+            .symbolVariant(selected ? .fill : .none)
+            .symbolRenderingMode(.monochrome)
+            .font(.system(size: ConversationWorkspaceChromeMetrics.symbolSize, weight: .medium))
+            .foregroundStyle(selected ? DieterTheme.text : DieterTheme.subtle)
+            .frame(width: frameSize, height: frameSize)
     }
-
 }
 
 struct ConversationTabBar: View {
@@ -301,6 +298,49 @@ struct ConversationTabBar: View {
             }
             Spacer()
         }
+    }
+}
+
+struct ConversationTitlebarHeader: View {
+    let workspacePresented: Bool
+    let workspaceEnabled: Bool
+    let toggleWorkspace: () -> Void
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Text("Conversation")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(DieterTheme.text)
+                .lineLimit(1)
+                .padding(.leading, 9)
+                .accessibilityIdentifier("conversation.titlebar-header")
+            Divider()
+                .frame(height: 16)
+            Button(action: toggleWorkspace) {
+                ConversationWorkspaceSymbol(
+                    systemName: "sidebar.right", selected: workspacePresented,
+                    frameSize: ConversationWorkspaceChromeMetrics.actionSize)
+            }
+            .buttonStyle(.plain)
+            .frame(width: 28, height: 28)
+            .background(
+                workspacePresented ? DieterTheme.elevated : .clear,
+                in: RoundedRectangle(cornerRadius: 7, style: .continuous)
+            )
+            .accessibilityLabel(workspacePresented ? "Hide workspace" : "Open workspace")
+            .accessibilityValue(workspacePresented ? "Expanded" : "Collapsed")
+            .help(workspacePresented ? "Hide workspace" : "Open workspace")
+            .accessibilityIdentifier("conversation.content.toggle")
+            .smokeTarget("conversation.content.toggle")
+            .disabled(!workspaceEnabled)
+            Spacer(minLength: 0)
+        }
+        .frame(
+            maxWidth: .infinity, minHeight: ConversationWorkspaceChromeMetrics.titlebarHeight,
+            maxHeight: ConversationWorkspaceChromeMetrics.titlebarHeight, alignment: .leading
+        )
+        .background(DieterTheme.surface)
+        .overlay(alignment: .bottom) { Divider() }
     }
 }
 

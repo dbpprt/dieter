@@ -33,10 +33,9 @@ enum ConversationSurfaceStyle: Equatable {
 struct ConversationView: View {
     @Environment(ConversationContext.self) private var context
     var compact = false
-    var maximized = false
-    var onToggleMaximize: (() -> Void)? = nil
     var surfaceStyle: ConversationSurfaceStyle = .canvas
-    @State private var tab = "Conversation"
+    var kanbanPresented = false
+    var toggleKanban: (() -> Void)?
     @State private var fileImportRequest: ConversationFileImportRequest?
 
     private var conversationID: String { context.selectedCardID ?? context.selectedChatID ?? "" }
@@ -56,15 +55,52 @@ struct ConversationView: View {
         )
     }
 
-    var body: some View {
+    @ViewBuilder var body: some View {
+        @Bindable var content = context.content
         let id = conversationID
-        let endpointID = context.content.currentEndpointID(id)
-        ConversationContentSplit(
-            presented: context.content.isPresented(for: conversationID)
-        ) {
-            conversationBody
-        } content: {
-            ConversationContentPane(model: context.content)
+        let endpointID = content.currentEndpointID(id)
+        // Read presentation fields directly in this observation scope. The
+        // representable must update in the same transaction that changes
+        // `isOpen`, otherwise its native workspace item remains visible.
+        let workspacePresented =
+            content.splitMode && content.isOpen && content.conversationID == id
+            && content.endpointID == (endpointID ?? "")
+        let singleWorkspace =
+            !content.splitMode && content.isOpen && content.conversationID == id
+            && content.endpointID == (endpointID ?? "")
+            && content.conversationTab == "Conversation" && content.selectedTabID != nil
+        Group {
+            if compact || standalone {
+                ConversationPaneOwnedSplit(presented: workspacePresented, singleWorkspace: singleWorkspace) {
+                    ConversationPaneSurfaceBar(
+                        model: context.content,
+                        workspacePresented: workspacePresented,
+                        kanbanPresented: kanbanPresented,
+                        toggleKanban: toggleKanban ?? {},
+                        showsKanban: toggleKanban != nil && (!workspacePresented || !kanbanPresented)
+                    )
+                    .environment(context)
+                } chat: {
+                    conversationBody(workspacePresented: workspacePresented)
+                } workspaceBar: {
+                    ConversationPaneWorkspaceBar(
+                        model: context.content, kanbanPresented: kanbanPresented,
+                        toggleKanban: toggleKanban ?? {},
+                        showsKanban: toggleKanban != nil
+                    )
+                    .environment(context)
+                } content: {
+                    ConversationContentPane(model: context.content)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .ignoresSafeArea(.container, edges: .top)
+            } else {
+                ConversationContentSplit(presented: workspacePresented, singleWorkspace: singleWorkspace) {
+                    conversationBody(workspacePresented: workspacePresented)
+                } content: {
+                    ConversationContentPane(model: context.content)
+                }
+            }
         }
         .environment(
             \.conversationLinkExternalResolver,
@@ -93,19 +129,17 @@ struct ConversationView: View {
     {
         return { url in
             guard !id.isEmpty, context.content.currentEndpointID(id) == endpointID else { return false }
-            guard context.conversationWorkspacePanelEnabled || RemoteWorkspaceImage.isWorkspaceImageURL(url) else {
-                return false
-            }
             context.content.requestOpen(url, conversationID: id)
             return true
         }
     }
 
-    private var conversationBody: some View {
-        VStack(spacing: 0) {
+    private func conversationBody(workspacePresented: Bool) -> some View {
+        @Bindable var content = context.content
+        let tab = content.conversationTab
+        return VStack(spacing: 0) {
             ConversationChrome(
-                compact: compact, standalone: standalone, tab: $tab,
-                maximized: maximized, onToggleMaximize: onToggleMaximize)
+                compact: compact, standalone: standalone, tab: $content.conversationTab)
 
             Group {
                 if context.conversationLoading {
@@ -117,11 +151,9 @@ struct ConversationView: View {
                             guard let id = context.selectedCardID ?? context.selectedChatID else { return }
                             Task { await context.openConversation(cardID: id, chat: standalone) }
                         })
-                } else if tab == "Subagents" {
+                } else if !workspacePresented, tab == "Subagents" {
                     SubagentsView(background: .clear)
-                } else if tab == "Comments" {
-                    CommentsView(composerBackground: .clear)
-                } else if tab == "Changes" {
+                } else if !workspacePresented, tab == "Changes" {
                     let card = context.selectedCard ?? context.selectedDetail?.card
                     if ConversationWorkspaceMode.projectMode(
                         card?.workspaceMode.isEmpty == false
@@ -138,7 +170,7 @@ struct ConversationView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .safeAreaInset(edge: .bottom, spacing: 0) {
-                if tab == "Conversation" {
+                if workspacePresented || tab == "Conversation" {
                     // Let the transcript scroll behind the glass while its
                     // bottom anchor stays above the composer's measured height.
                     VStack(spacing: 0) {
@@ -163,8 +195,11 @@ struct ConversationView: View {
             }
         }
         .animation(.spring(duration: 0.3), value: context.workspaceToast)
-        .onChange(of: context.selectedCardID) { _, _ in tab = "Conversation" }
-        .onChange(of: context.selectedChatID) { _, _ in tab = "Conversation" }
+        .onChange(of: context.selectedCardID) { _, _ in content.conversationTab = "Conversation" }
+        .onChange(of: context.selectedChatID) { _, _ in content.conversationTab = "Conversation" }
+        .onChange(of: workspacePresented) { wasPresented, presented in
+            if wasPresented, !presented { content.conversationTab = "Conversation" }
+        }
         .onChange(of: conversationID) { _, _ in fileImportRequest = nil }
         .onChange(of: tab) { _, _ in fileImportRequest = nil }
         .onDisappear { fileImportRequest = nil }
@@ -173,7 +208,7 @@ struct ConversationView: View {
                 NotificationCenter.default.publisher(for: WorkspaceUISmokeRunner.selectTabNotification)
             ) {
                 note in
-                if let name = note.object as? String { tab = name }
+                if let name = note.object as? String { content.conversationTab = name }
             }
         #endif
         .background {

@@ -88,3 +88,31 @@ import Testing
     #expect(longHeight > shortHeight)
     #expect(longHeight < 240)
 }
+
+@Test func conversationSidebarChromeKeepsNavigationInTheNativeTitlebar() {
+    #expect(ConversationChromeLayout.showsConversationTabs(workspacePresented: false))
+    #expect(ConversationChromeLayout.showsConversationTabs(workspacePresented: true))
+}
+
+@Test @MainActor func conversationWorkingIndicatorUsesTheFullIOSStyleRow() {
+    defer { DieterTheme.install(palette: .monochrome, colorScheme: .light) }
+
+    for scheme in [ColorScheme.light, .dark] {
+        DieterTheme.install(palette: .monochrome, colorScheme: scheme)
+        let indicator = ConversationAgentWorkingIndicator(
+            label: "Thinking…",
+            startedAt: Date(timeIntervalSinceReferenceDate: 1_000)
+        )
+        .environment(\.colorScheme, scheme)
+        .frame(width: 420)
+
+        let host = NSHostingView(rootView: indicator)
+        let size = host.fittingSize
+        #expect(abs(size.width - 420) < 1)
+        #expect(abs(size.height - 38) < 1)
+
+        let renderer = ImageRenderer(content: indicator)
+        renderer.proposedSize = ProposedViewSize(width: 420, height: 38)
+        #expect(renderer.nsImage?.size == NSSize(width: 420, height: 38))
+    }
+}
