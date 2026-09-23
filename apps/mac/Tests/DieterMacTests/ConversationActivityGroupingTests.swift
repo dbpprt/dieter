@@ -26,8 +26,9 @@ struct ConversationActivityGroupingTests {
         #expect(replacementStart == 8)
         #expect(ConversationActivityPartGroup.visibleStart(in: [], from: boundary) == 0)
         #expect(ConversationActivityPartGroup.visibleStart(in: Array(groups.prefix(4)), from: boundary) == 0)
-        #expect(ConversationActivityPartGroup.visibleStart(
-            in: shortened + [appended.last!], from: shortened[replacementStart].id) == replacementStart)
+        #expect(
+            ConversationActivityPartGroup.visibleStart(
+                in: shortened + [appended.last!], from: shortened[replacementStart].id) == replacementStart)
         while start > 0 {
             let earlier = groups[max(0, start - ConversationActivityPartGroup.initialVisibleCount)].id
             start = ConversationActivityPartGroup.visibleStart(in: groups, from: earlier)
