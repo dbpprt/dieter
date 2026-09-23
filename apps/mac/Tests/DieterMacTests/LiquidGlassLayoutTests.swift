@@ -59,7 +59,7 @@ import Testing
     }
 }
 
-@Test @MainActor func conversationInspectorHeaderWrapsLongTitlesAtMinimumWidth() {
+@Test @MainActor func conversationInspectorHeaderKeepsStableHeightForLongTitlesAtMinimumWidth() {
     let store = DieterStore(restoreSync: false)
     var card = Dieter_V1_Card()
     card.id = "inspector-layout"
@@ -85,7 +85,9 @@ import Testing
         "A long conversation title that needs several lines while keeping workspace and status controls readable"
     store.state.cards = [card]
     let longHeight = height()
-    #expect(longHeight > shortHeight)
+    // The pane-native header uses a single truncated title beside status and
+    // actions. Long titles must not shift the transcript or composer.
+    #expect(abs(longHeight - shortHeight) < 1)
     #expect(longHeight < 240)
 }
 

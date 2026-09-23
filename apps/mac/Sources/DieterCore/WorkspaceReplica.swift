@@ -121,6 +121,17 @@ package final class WorkspaceReplica {
         accept(next)
     }
 
+    package func retainingOwnerDetails(_ cards: [Dieter_V1_Card], sourceDaemonID: String?) -> [Dieter_V1_Card] {
+        guard cards.contains(where: { !$0.ownerDaemonID.isEmpty && $0.ownerDaemonID != sourceDaemonID })
+        else { return cards }
+        let known = Dictionary(
+            (state.cards + state.chats + navigationCards.values.flatMap { $0 } + chats).map { ($0.id, $0) },
+            uniquingKeysWith: { _, latest in latest })
+        return cards.map {
+            MachineDirectoryReducer.retainingOwnerDetails($0, from: known[$0.id], sourceDaemonID: sourceDaemonID)
+        }
+    }
+
     package func upsert(_ card: Dieter_V1_Card) {
         guard !card.id.isEmpty else { return }
         if card.scope == "chat", card.boardID.isEmpty {

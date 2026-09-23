@@ -374,23 +374,37 @@
             let main = NativeUIAccessibility.find("sidebar.main-pane", in: window)
             let browser = NativeUIAccessibility.find("chats.browser-pane", in: window)
             let detail = NativeUIAccessibility.find("chats.detail-pane", in: window)
-            let divider = NativeUIAccessibility.find("chats.resize-divider", in: window)
+            func chatSplit(in view: NSView?) -> NSSplitView? {
+                guard let view else { return nil }
+                if let split = view as? NSSplitView,
+                    split.accessibilityIdentifier() == "chats.resize-divider"
+                {
+                    return split
+                }
+                return view.subviews.lazy.compactMap { chatSplit(in: $0) }.first
+            }
             guard
                 let mainFrame = main.map({ $0.recordedFrame ?? $0.frame }),
                 let browserFrame = browser.map({ $0.recordedFrame ?? $0.frame }),
                 let detailFrame = detail.map({ $0.recordedFrame ?? $0.frame }),
-                let dividerFrame = divider.map({ $0.recordedFrame ?? $0.frame })
+                let split = chatSplit(in: window.contentView), let browserItem = split.arrangedSubviews.first
             else {
                 results["navigation-boundaries"] = "failed: missing pane"
                 return
             }
+            // The divider is now owned by NSSplitView, not a SwiftUI overlay.
+            let dividerFrame = window.convertToScreen(
+                split.convert(
+                    NSRect(
+                        x: browserItem.frame.maxX, y: split.bounds.minY,
+                        width: split.dividerThickness, height: split.bounds.height), to: nil))
             let systemDivider = browserFrame.minX - mainFrame.maxX
             let chatDivider = detailFrame.minX - browserFrame.maxX
             let dividerTopGap = window.frame.maxY - dividerFrame.maxY
             let dividerBottomGap = dividerFrame.minY - window.frame.minY
             results["navigation-boundaries"] =
                 systemDivider >= 0 && systemDivider <= 1.5
-                    && abs(chatDivider) < 1
+                    && abs(chatDivider - split.dividerThickness) < 1
                     && dividerTopGap >= 0 && dividerTopGap <= 1.5
                     && dividerBottomGap >= 0 && dividerBottomGap <= 1.5
                 ? "passed"

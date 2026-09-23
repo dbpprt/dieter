@@ -211,6 +211,7 @@ extension DieterStore {
     }
 
     func acceptWorkspaceCard(_ card: Dieter_V1_Card) {
+        let card = replica.retainingOwnerDetails([card], sourceDaemonID: endpoint.daemonID)[0]
         replica.upsert(card)
         refreshReplicaPresentation()
         if var detail = selectedDetail, detail.card.id == card.id {

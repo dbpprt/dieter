@@ -105,7 +105,8 @@ package enum MachineDirectoryReducer {
                 next.boards[board.projectID] = values.sorted { $0.id < $1.id }
             }
             for item in snapshot.cards + snapshot.chats {
-                items[item.id] = item
+                items[item.id] = retainingOwnerDetails(
+                    item, from: items[item.id], sourceDaemonID: snapshot.endpoint.daemonID)
             }
         }
         for id in archivedProjects {
@@ -125,6 +126,51 @@ package enum MachineDirectoryReducer {
             return left == right ? $0.id < $1.id : left > right
         }
         return next
+    }
+
+    /// Only the execution owner serves the full card. A peer deliberately
+    /// omits its prompt, rendered summary, workspace and usage; those empty
+    /// fields must not erase an earlier owner observation. Shared fields still
+    /// follow the peer projection, whose conflicts are resolved by the daemon,
+    /// not by comparing wall clocks in the client.
+    package static func retainingOwnerDetails(
+        _ incoming: Dieter_V1_Card, from previous: Dieter_V1_Card?, sourceDaemonID: String?
+    ) -> Dieter_V1_Card {
+        guard let previous, previous.id == incoming.id,
+            !incoming.ownerDaemonID.isEmpty, previous.ownerDaemonID == incoming.ownerDaemonID,
+            sourceDaemonID != incoming.ownerDaemonID
+        else { return incoming }
+        // Start with the full card so future owner-local fields are retained.
+        // Overlay the peerstore.DomainFields["item"] contract and assignments.
+        var result = previous
+        result.id = incoming.id
+        result.projectID = incoming.projectID
+        result.ownerDaemonID = incoming.ownerDaemonID
+        result.checkoutID = incoming.checkoutID
+        result.scope = incoming.scope
+        result.createdAt = incoming.createdAt
+        result.title = incoming.title
+        result.boardID = incoming.boardID
+        result.lane = incoming.lane
+        result.position = incoming.position
+        result.orderKey = incoming.orderKey
+        result.phaseChangedAt = incoming.phaseChangedAt
+        result.archived = incoming.archived
+        result.pinned = incoming.pinned
+        result.doneArchiveExempt = incoming.doneArchiveExempt
+        result.runtime = incoming.runtime
+        result.runtimeUpdatedAt = incoming.runtimeUpdatedAt
+        result.lastActivityAt = incoming.lastActivityAt
+        result.provider = incoming.provider
+        result.model = incoming.model
+        result.effort = incoming.effort
+        result.initialPromptSentAt = incoming.initialPromptSentAt
+        result.commentCount = incoming.commentCount
+        result.mergedIntoCardID = incoming.mergedIntoCardID
+        result.placementRevision = incoming.placementRevision
+        result.conflictKeys = incoming.conflictKeys
+        result.labelIds = incoming.labelIds
+        return result
     }
 
     package static func mergeProject(_ previous: Dieter_V1_Project?, _ incoming: Dieter_V1_Project) -> Dieter_V1_Project

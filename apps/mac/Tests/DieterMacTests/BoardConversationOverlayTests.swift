@@ -80,6 +80,25 @@ import Testing
     try? await Task.sleep(for: .milliseconds(100))
     restoredWindow.contentView?.layoutSubtreeIfNeeded()
     #expect(abs(restored.inspector.conversationFrame.width - width) < 2)
+
+    // Window resizing may clamp the pane but must not replace the user's
+    // saved divider position with that temporary constraint.
+    let narrowWidth = min(CGFloat(700), size.width)
+    restoredWindow.setContentSize(NSSize(width: narrowWidth, height: size.height))
+    restoredWindow.contentView?.layoutSubtreeIfNeeded()
+    try? await Task.sleep(for: .milliseconds(100))
+    restoredWindow.contentView?.layoutSubtreeIfNeeded()
+    #expect(
+        abs(
+            restored.inspector.conversationFrame.width
+                - BoardConversationSizing.restoredWorkspaceWidth(
+                    width, availableWidth: narrowWidth, regularWidth: 460)) < 2)
+    restoredWindow.setContentSize(size)
+    restoredWindow.contentView?.layoutSubtreeIfNeeded()
+    try? await Task.sleep(for: .milliseconds(100))
+    restoredWindow.contentView?.layoutSubtreeIfNeeded()
+    #expect(abs(restored.inspector.conversationFrame.width - width) < 2)
+    #expect(abs(defaults.double(forKey: BoardConversationSizing.workspaceWidthPreference) - width) < 2)
 }
 
 @Test @MainActor func nativeBoardSplitAdaptsBetweenThreeColumnsAndFocusedWorkspace() async {

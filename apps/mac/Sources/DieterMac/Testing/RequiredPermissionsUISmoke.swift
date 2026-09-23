@@ -18,13 +18,18 @@
                 styleMask: [.titled, .closable], backing: .buffered, defer: false)
             window.isReleasedWhenClosed = false
             window.title = "Dieter Permission Setup Test"
-            window.contentView = NSHostingView(
+            let host = NSHostingView(
                 rootView:
                     RequiredPermissionsGate {
                         Text("Workspace available").accessibilityIdentifier("permissions.workspace")
                             .smokeTarget("permissions.workspace")
                     }
-                    .environment(permissions))
+                    .environment(permissions)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity))
+            // Switching to the one-line workspace sentinel must not shrink the
+            // fixture window before permission revocation restores onboarding.
+            host.sizingOptions = []
+            window.contentView = host
             window.center()
             window.makeKeyAndOrderFront(nil)
             defer { window.close() }
@@ -62,10 +67,14 @@
             guard !permissions.isReady,
                 NativeUIAccessibility.find("permissions.grant.accessibility", in: window) != nil
             else { return "failed: revoked permission did not restore setup" }
-            guard await NativeUIAccessibility.waitForInteractiveTarget("permissions.skip", in: window),
+            let skipReady = await NativeUIAccessibility.waitForInteractiveTarget("permissions.skip", in: window)
+            guard skipReady,
                 NativeUIAccessibility.click("permissions.skip", in: window)
             else {
-                return "failed: Skip for Now button missing"
+                snapshot(window, output.appending(path: "00-permissions-skip-failed.png"))
+                let target = NativeUIAccessibility.find("permissions.skip", in: window)
+                return
+                    "failed: Skip for Now unavailable (ready=\(skipReady), active=\(NSApp.isActive), key=\(window.isKeyWindow), targetWindow=\(target?.recordedWindow?.title ?? "none"), frame=\(String(describing: target?.recordedFrame)), window=\(window.frame))"
             }
             let skipped = await waitUntil { NativeUIAccessibility.find("permissions.workspace", in: window) != nil }
             guard skipped, permissions.canUseApp, !permissions.isReady else {

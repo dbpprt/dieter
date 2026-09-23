@@ -80,6 +80,7 @@ struct ConversationAgentWorkingIndicator: View {
         .fixedSize(horizontal: false, vertical: true)
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("conversation.agent-working")
+        .smokeTarget("conversation.agent-working")
         .onAppear {
             guard !reduceMotion else { return }
             withAnimation(.linear(duration: 2).repeatForever(autoreverses: false)) { shimmer = true }
@@ -438,6 +439,7 @@ final class ConversationScrollController: NSObject {
     private var isAdjusting = false
     private var initialPositioning = false
     private var verificationScheduled = false
+    private var wheelIntent: CGFloat = 0
     private var pendingReadingPosition: ReadingPosition?
     private var holdGeneration = 0
     private var holdSawLayout = false
@@ -511,6 +513,7 @@ final class ConversationScrollController: NSObject {
     /// Forgets the previous conversation and tracks the next one's tail.
     func reset() {
         pendingReadingPosition = nil
+        wheelIntent = 0
         initialPositioning = false
         isFollowing = true
         rendersLatest = true
@@ -537,6 +540,9 @@ final class ConversationScrollController: NSObject {
         initialPositioning = false
         setFollowing(false)
     }
+
+    func recordWheelIntent(_ delta: CGFloat) { wheelIntent = delta }
+    func endWheelIntent() { wheelIntent = 0 }
 
     /// Call immediately before replacing rows around the reader. The row the
     /// user is looking at keeps its pixel position through the replacement.
@@ -665,6 +671,13 @@ final class ConversationScrollController: NSObject {
         let delta = offset - lastOffset
         lastOffset = offset
         guard abs(delta) > 0.01 else { return }
+        // Row replacement and native anchoring can translate the clip in the
+        // opposite direction to the wheel. That is layout, not a reversal by
+        // the reader; don't replace the held anchor or rejoin the live tail.
+        if wheelIntent * delta > 0 {
+            applyLayoutPolicy()
+            return
+        }
         if pendingReadingPosition != nil { pendingReadingPosition = capture() }
         let atEnd = isAtEdge(earlier: false)
         if delta < 0, !atEnd {
@@ -899,8 +912,20 @@ struct ConversationScrollBridge: NSViewRepresentable {
             super.viewDidMoveToWindow()
             stopMonitoring()
             guard window != nil else { return }
-            eventMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
-                self?.handleScrollEvent(event, in: event.window)
+            eventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.scrollWheel, .leftMouseDown, .keyDown]) {
+                [weak self] event in
+                if let self, event.window === window,
+                    let scroll = controller?.scrollView,
+                    event.type == .keyDown
+                        || event.type == .leftMouseDown
+                            && scroll.convert(scroll.bounds, to: nil).contains(event.locationInWindow)
+                {
+                    // Scrollbar and keyboard input must work independently of
+                    // the direction of the previous wheel gesture.
+                    controller?.endWheelIntent()
+                } else {
+                    self?.handleScrollEvent(event, in: event.window)
+                }
                 return event
             }
         }
@@ -924,6 +949,7 @@ struct ConversationScrollBridge: NSViewRepresentable {
             {
                 guard ((hit as? NSScrollView) ?? hit.enclosingScrollView) === scroll else { return }
             }
+            controller?.recordWheelIntent(event.scrollingDeltaY)
             onScrollIntent(event.scrollingDeltaY)
         }
 

@@ -120,7 +120,6 @@ private struct NativeBoardLaneList: NSViewRepresentable {
                     table.endUpdates()
                 }
                 for index in changed {
-                    heights.removeValue(forKey: next.cards[index].id)
                     guard let cell = table.view(atColumn: 0, row: index, makeIfNecessary: false) as? BoardLaneCell
                     else { continue }
                     // Preserve the native cell and its SwiftUI identity during
@@ -129,7 +128,6 @@ private struct NativeBoardLaneList: NSViewRepresentable {
                 }
                 if !changed.isEmpty {
                     BoardRenderingDiagnostics.record(.updatedRows, count: changed.count)
-                    table.noteHeightOfRows(withIndexesChanged: changed)
                 }
             }
             restoreViewport(anchor)
@@ -138,16 +136,17 @@ private struct NativeBoardLaneList: NSViewRepresentable {
         func resize(to width: CGFloat) {
             guard let table else { return }
             let anchor = viewportAnchor()
-            // Preserve mounted rows, focus, hover and drag state when opening
-            // the inspector. Offscreen estimates are remeasured on reuse.
-            heights.removeAll(keepingCapacity: true)
+            // Keep the last measured geometry until a new measurement replaces
+            // it. Resetting offscreen rows to 140 on every update or resize
+            // changes the document height and makes the board jump back/forth.
+            // Recycled cells measure their current content and width on reuse.
             table.enumerateAvailableRowViews { rowView, _ in
                 guard let cell = rowView.view(atColumn: 0) as? BoardLaneCell else { return }
                 cell.sizing.width = max(1, width)
                 cell.measureContent()
                 cell.needsLayout = true
             }
-            table.noteHeightOfRows(withIndexesChanged: IndexSet(integersIn: 0..<table.numberOfRows))
+            _ = applyMeasuredHeights()
             restoreViewport(anchor)
         }
 
