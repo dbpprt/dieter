@@ -35,6 +35,7 @@ import {
 } from './claude-resilience.mjs';
 import {
   createOMPLaunchCandidates,
+  createOMPSessionWithBootstrapRetry,
   createOMPSessionWithCompatibility,
   prepareOMPConfig,
   prepareOMPHookPaths,
@@ -333,6 +334,9 @@ try {
   );
   const sessionOptions = { sessionId: request.sessionId, abortSignal: controller.signal };
   const incompleteACPSession = (adapter === 'omp-acp' || adapter === 'dsh-acp') && request.session && !request.session.data?.acpSessionId;
+  const logOMPBootstrapRetry = ({ attempt, maxAttempts, delayMs, packageVersion }) => {
+    console.error(`OMP ${packageVersion} bootstrap is not fully available from npm; retrying session creation (${attempt + 1}/${maxAttempts}) in ${delayMs}ms`);
+  };
   if (request.continue && request.session?.continueFrom) {
     sessionOptions.continueFrom = request.session.continueFrom;
   } else if (request.session && !incompleteACPSession) {
@@ -361,6 +365,7 @@ try {
         candidate.modelStrategy === 'launch-argument' ? undefined : request.model || undefined,
       ),
       sessionOptions,
+      onBootstrapRetry: logOMPBootstrapRetry,
     });
     if (
       resumed.candidate.packageVersion !== ompPackageVersion
@@ -372,7 +377,14 @@ try {
     agent = resumed.agent;
     session = resumed.session;
   } else {
-    session = await agent.createSession(sessionOptions);
+    session = adapter === 'omp-acp'
+      ? await createOMPSessionWithBootstrapRetry({
+        createSession: options => agent.createSession(options),
+        packageVersion: ompInitialCandidate.packageVersion,
+        sessionOptions,
+        onRetry: logOMPBootstrapRetry,
+      })
+      : await agent.createSession(sessionOptions);
   }
   const createdAt = new Date().toISOString();
   const contextWindowTokens = request.contextWindow || (adapter === 'codex' ? await codexContextWindow(request.model) : undefined);

@@ -7,12 +7,18 @@ import { VERSION as acpPackageVersion, createACP } from '@ai-sdk/harness-acp';
 import {
   acpImplementationIdentity,
   createOMPLaunchCandidates,
+  createOMPSessionWithBootstrapRetry,
   createOMPSessionWithCompatibility,
   isACPImplementationMismatch,
+  isOMPBootstrapVersionUnavailable,
   prepareOMPConfig,
   prepareOMPHookPaths,
   prioritizeOMPLaunchCandidates,
 } from './omp-resilience.mjs';
+
+const ompBootstrapError = (packageName = 'pi-coding-agent', version = '18.2.11') => new Error(
+  `Bootstrap command failed for harness 'omp' (exit 1): npm install\nnpm error code ETARGET\nnpm error notarget No matching version found for @oh-my-pi/${packageName}@${version}.`,
+);
 
 const ompSettings = (
   hookPath,
@@ -115,6 +121,123 @@ test('retries an ACP implementation mismatch with a legacy OMP hook path', async
   assert.deepEqual(result.candidate, candidates[1]);
   assert.deepEqual(attempts.map(attempt => attempt.candidate), candidates);
   assert.deepEqual(fallbacks, [candidates[1]]);
+});
+
+test('retries transient OMP root-package and dependency publication gaps', async () => {
+  for (const packageName of ['pi-coding-agent', 'omp-stats']) {
+    let attempts = 0;
+    const waits = [];
+    const retries = [];
+    const expectedSession = { id: packageName };
+    const session = await createOMPSessionWithBootstrapRetry({
+      createSession: async options => {
+        attempts += 1;
+        assert.equal(options.sessionId, 'card');
+        if (attempts < 3) throw ompBootstrapError(packageName);
+        return expectedSession;
+      },
+      packageVersion: '18.2.11',
+      sessionOptions: { sessionId: 'card' },
+      retryDelays: [5, 15, 30],
+      waitForRetry: async delayMs => waits.push(delayMs),
+      onRetry: retry => retries.push(retry),
+    });
+    assert.equal(session, expectedSession);
+    assert.equal(attempts, 3);
+    assert.deepEqual(waits, [5, 15]);
+    assert.deepEqual(retries.map(({ attempt, maxAttempts, delayMs, packageVersion }) => ({
+      attempt, maxAttempts, delayMs, packageVersion,
+    })), [
+      { attempt: 1, maxAttempts: 4, delayMs: 5, packageVersion: '18.2.11' },
+      { attempt: 2, maxAttempts: 4, delayMs: 15, packageVersion: '18.2.11' },
+    ]);
+  }
+});
+
+test('returns the final OMP bootstrap error after exhausting the bounded retry schedule', async () => {
+  const expectedError = ompBootstrapError();
+  let attempts = 0;
+  await assert.rejects(() => createOMPSessionWithBootstrapRetry({
+    createSession: async () => {
+      attempts += 1;
+      throw expectedError;
+    },
+    packageVersion: '18.2.11',
+    sessionOptions: {},
+    retryDelays: [1, 2],
+    waitForRetry: async () => {},
+  }), error => error === expectedError);
+  assert.equal(attempts, 3);
+});
+
+test('default OMP retry schedule spans the observed staggered publication window', async () => {
+  let attempts = 0;
+  const waits = [];
+  const session = await createOMPSessionWithBootstrapRetry({
+    createSession: async () => {
+      attempts += 1;
+      if (attempts <= 6) throw ompBootstrapError(attempts < 6 ? 'pi-coding-agent' : 'omp-stats');
+      return { id: 'ready' };
+    },
+    packageVersion: '18.2.11',
+    sessionOptions: {},
+    waitForRetry: async delayMs => waits.push(delayMs),
+  });
+  assert.equal(session.id, 'ready');
+  assert.equal(attempts, 7);
+  assert.deepEqual(waits, [5_000, 15_000, 30_000, 60_000, 120_000, 240_000]);
+});
+
+test('does not retry unrelated OMP bootstrap or session failures', async () => {
+  for (const error of [
+    ompBootstrapError('pi-coding-agent', '18.2.10'),
+    new Error("Bootstrap command failed for harness 'omp' (exit 1): npm install\nnpm error code E401"),
+    new Error("Bootstrap command failed for harness 'codex' (exit 1): npm install\nnpm error code ETARGET\n@oh-my-pi/pi-coding-agent@18.2.11"),
+    new Error('authentication failed'),
+  ]) {
+    let attempts = 0;
+    await assert.rejects(() => createOMPSessionWithBootstrapRetry({
+      createSession: async () => {
+        attempts += 1;
+        throw error;
+      },
+      packageVersion: '18.2.11',
+      sessionOptions: {},
+      retryDelays: [1],
+      waitForRetry: async () => assert.fail('unrelated failure waited for a retry'),
+    }), thrown => thrown === error);
+    assert.equal(attempts, 1);
+  }
+});
+
+test('retries an npm publication gap while resuming through OMP compatibility selection', async () => {
+  const candidate = {
+    packageVersion: '18.2.11', modelStrategy: 'launch-argument',
+    hookPath: '/stable/hook.mjs', configPath: '/runtime/omp.yml',
+  };
+  let attempts = 0;
+  const result = await createOMPSessionWithCompatibility({
+    candidates: [candidate],
+    createAgent: () => ({
+      async createSession() {
+        attempts += 1;
+        if (attempts === 1) throw ompBootstrapError('omp-stats');
+        return { id: 'resumed' };
+      },
+    }),
+    sessionOptions: { resumeFrom: { data: { acpSessionId: 'acp-session' } } },
+    bootstrapRetryDelays: [1],
+    waitForBootstrapRetry: async () => {},
+  });
+  assert.equal(attempts, 2);
+  assert.equal(result.candidate, candidate);
+  assert.equal(result.session.id, 'resumed');
+});
+
+test('recognizes an OMP dependency ETARGET through an error cause', () => {
+  const error = new Error('session creation failed', { cause: ompBootstrapError('omp-stats') });
+  assert.equal(isOMPBootstrapVersionUnavailable(error, '18.2.11'), true);
+  assert.equal(isOMPBootstrapVersionUnavailable(error, '18.2.10'), false);
 });
 
 test('preselects the legacy package and launch matching the persisted ACP implementation identity', async () => {
