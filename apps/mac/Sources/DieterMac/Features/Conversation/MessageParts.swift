@@ -183,9 +183,10 @@ struct ToolCallView: View {
                         ProgressView().controlSize(.mini)
                     } else {
                         Text(
-                            part.state.isEmpty
-                                ? (part.hasOutput_p ? "output available" : "tool")
-                                : part.state.replacingOccurrences(of: "_", with: " ")
+                            part.state == "output-error" ? "failed" :
+                                (part.state.isEmpty
+                                    ? (part.hasOutput_p ? "output available" : "tool")
+                                    : part.state.replacingOccurrences(of: "_", with: " "))
                         ).font(.caption2).foregroundStyle(DieterTheme.tertiary)
                     }
                 }
@@ -193,7 +194,7 @@ struct ToolCallView: View {
                 .contentShape(Rectangle())
             }.buttonStyle(.plain)
 
-            if needsAttention, !part.errorText.isEmpty {
+            if needsAttention, !ConversationActivityGrouping.isActivity(part), !part.errorText.isEmpty {
                 Text(part.errorText).font(.caption.monospaced()).foregroundStyle(DieterTheme.coral)
                     .padding(.horizontal, 10).padding(.bottom, 10)
             }
@@ -204,7 +205,7 @@ struct ToolCallView: View {
                     if !input.isEmpty { CodeBlock(title: "Input", value: input) }
                     if !result.isEmpty { CodeBlock(title: "Output", value: result) }
                     let error = output?.errorText ?? part.errorText
-                    if !error.isEmpty, !(needsAttention && error == part.errorText) {
+                    if !error.isEmpty, !(needsAttention && !ConversationActivityGrouping.isActivity(part) && error == part.errorText) {
                         Text(error).font(.caption.monospaced()).foregroundStyle(DieterTheme.coral)
                     }
                 }

@@ -62,6 +62,30 @@ class ConversationTimelineTest {
     }
 
     @Test
+    fun failedToolsStayInRoutineGroupButApprovalInterruptsIt() {
+        val failed = tool("failed").toBuilder()
+            .setState("output-error")
+            .setErrorText("{\"error\":\"command exited 1\"}")
+            .setOutputPreview("{\"error\":\"command exited 1\"}")
+            .build()
+        val approval = tool("approval").toBuilder().setState("approval-requested").build()
+        val timeline = buildConversationTimeline(
+            listOf(tool("before"), failed, tool("after"), approval, tool("later")),
+        )
+
+        assertEquals(listOf("tools", "part", "tools"), timeline.types())
+        assertEquals(
+            listOf(listOf("before", "failed", "after"), listOf("later")),
+            timeline.filterIsInstance<ConversationTimelineItem.Tools>().map { group ->
+                group.parts.map { it.toolCallId }
+            },
+        )
+        assertEquals(approval, (timeline[1] as ConversationTimelineItem.Part).part)
+        assertEquals(true, toolFailed(failed))
+        assertEquals("", toolPreview(failed))
+    }
+
+    @Test
     fun placesDelegatedAgentsInSequenceAndOmitsProjectedPlanTools() {
         val subagents = listOf(
             Subagent.newBuilder().setId("child").setParentToolCallId("delegate").build(),

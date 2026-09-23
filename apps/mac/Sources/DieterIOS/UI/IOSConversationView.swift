@@ -1311,16 +1311,13 @@
                         Text(name).font(.system(.caption, design: .monospaced).weight(.medium)).lineLimit(1)
                         Spacer(minLength: 8)
                         if !part.state.isEmpty {
-                            Text(part.state.replacingOccurrences(of: "_", with: " "))
+                            Text(part.state == "output-error" ? "failed" : part.state.replacingOccurrences(of: "_", with: " "))
                                 .font(.caption2).foregroundStyle(.tertiary)
                         }
                     }
                 }
                 .font(.subheadline)
                 .foregroundStyle(IOSConversationPresentation.needsAttention(part) ? Color.orange : Color.secondary)
-                if IOSConversationPresentation.needsAttention(part), !part.errorText.isEmpty, !expanded {
-                    Text(part.errorText).font(.caption.monospaced()).foregroundStyle(.red)
-                }
             }
             .accessibilityIdentifier(
                 "ios.conversation.tool.\(messageID).\(part.toolCallID.isEmpty ? name : part.toolCallID)")

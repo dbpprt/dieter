@@ -196,7 +196,13 @@ enum IOSConversationPresentation {
     }
 
     static func isRoutineActivity(_ part: Dieter_V1_MessagePart) -> Bool {
-        !needsAttention(part) && (isReasoning(part) || isToolCall(part))
+        if isToolCall(part) {
+            let state = part.state.lowercased()
+            return !["approval", "permission", "confirmation", "denied", "rejected"].contains {
+                state.contains($0) || part.type.lowercased().contains($0)
+            }
+        }
+        return isReasoning(part) && !needsAttention(part)
     }
 
     static func toolCategory(_ part: Dieter_V1_MessagePart) -> ToolCategory {

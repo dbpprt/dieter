@@ -83,7 +83,7 @@ struct ConversationActivityGroupingTests {
         #expect(build([source]).displayGroups.first?.isActivity == false)
     }
 
-    @Test func toolFailuresApprovalsAndUserMessagesBreakActivityGroups() {
+    @Test func toolFailuresStayInActivityWhileApprovalsAndUserMessagesBreakGroups() {
         var failed = part("tool-call", name: "Bash", state: "output-error")
         failed.errorText = "The command exited with status 1"
         let approval = part("tool-call", name: "Write", state: "approval-requested")
@@ -94,7 +94,7 @@ struct ConversationActivityGroupingTests {
             message("approval", parts: [approval]),
             message("human", role: "human", parts: [part("reasoning", text: "This is my text")]),
         ]
-        #expect(build(messages).displayGroups.map(\.isActivity) == [true, false, true, false, false])
+        #expect(build(messages).displayGroups.map(\.isActivity) == [true, false, false])
         #expect(ConversationActivityGrouping.needsAttention(failed))
         #expect(ConversationActivityGrouping.needsAttention(approval))
         let mixed = ConversationActivityPartGroup.group(
@@ -105,8 +105,8 @@ struct ConversationActivityGroupingTests {
                         parts: [part("tool-call", name: "Read"), failed, approval, part("tool-call", name: "Read")])
                 ],
                 showReasoning: true))
-        #expect(mixed.map(\.isActivity) == [true, false, false, true])
-        #expect(mixed[1].steps[0].part.errorText == failed.errorText)
+        #expect(mixed.map(\.isActivity) == [true, false, true])
+        #expect(mixed[0].steps[1].part.errorText == failed.errorText)
     }
 
     @Test func hiddenReasoningDoesNotCreateExtraRowsAndStructuredDetailsStayVisible() {

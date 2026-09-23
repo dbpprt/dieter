@@ -17,7 +17,14 @@ enum ConversationActivityGrouping {
     }
 
     static func isActivity(_ part: Dieter_V1_MessagePart) -> Bool {
-        !needsAttention(part) && (isReasoning(part) || ConversationMessagePartGroup.isToolCall(part))
+        if ConversationMessagePartGroup.isToolCall(part) {
+            let state = part.state.lowercased()
+            // A failed invocation is agent activity, not a request for a decision.
+            return !["approval", "permission", "confirmation", "denied", "rejected"].contains {
+                state.contains($0) || part.type.lowercased().contains($0)
+            }
+        }
+        return isReasoning(part) && !needsAttention(part)
     }
 
     static func isVisible(_ part: Dieter_V1_MessagePart, showReasoning: Bool) -> Bool {

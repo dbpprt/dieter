@@ -161,7 +161,7 @@ internal fun MessageParts(
                     ConversationPartPresentation.FALLBACK_TEXT -> MessageMarkdown(item.part.text, compact) {
                         previewPath = it
                     }
-                    ConversationPartPresentation.TOOL,
+                    ConversationPartPresentation.TOOL -> ToolItem(message.id, item.part, model, attention = true)
                     ConversationPartPresentation.HIDDEN -> Unit
                 }
             }
@@ -890,10 +890,16 @@ internal fun displayToolName(name: String): String = name
     .trim()
     .ifBlank { "Tool" }
 
+internal fun toolFailed(part: MessagePart): Boolean =
+    part.state.equals("output-error", ignoreCase = true) ||
+        part.state.equals("error", ignoreCase = true) ||
+        part.state.equals("failed", ignoreCase = true) ||
+        part.errorText.isNotBlank()
+
 internal fun toolPreview(part: MessagePart): String {
     val value = part.inputPreview.ifBlank {
         part.inputJson.toString(StandardCharsets.UTF_8).trim().replace(Regex("\\s+"), " ")
-    }.ifBlank { part.outputPreview }
+    }.ifBlank { if (toolFailed(part)) "" else part.outputPreview }
     return if (value.length > 140) value.take(137) + "…" else value
 }
 
@@ -937,7 +943,7 @@ internal fun ToolGroup(messageId: String, groupKey: String, parts: List<MessageP
 }
 
 @Composable
-internal fun ToolItem(messageId: String, part: MessagePart, model: DieterViewModel) {
+internal fun ToolItem(messageId: String, part: MessagePart, model: DieterViewModel, attention: Boolean = false) {
     var expanded by remember(part.toolCallId, part.payloadRevision) { mutableStateOf(false) }
     var payload by remember(part.toolCallId, part.payloadRevision) { mutableStateOf<ToolOutput?>(null) }
     var loading by remember(part.toolCallId, part.payloadRevision) { mutableStateOf(false) }
@@ -945,6 +951,9 @@ internal fun ToolItem(messageId: String, part: MessagePart, model: DieterViewMod
     val scope = rememberCoroutineScope()
     val input = (payload?.inputJson ?: part.inputJson).toString(StandardCharsets.UTF_8).trim()
     val output = (payload?.outputJson ?: part.outputJson).toString(StandardCharsets.UTF_8).trim()
+    val failed = toolFailed(part)
+    val attentionLabel = if (part.state.contains("denied", ignoreCase = true) ||
+        part.state.contains("rejected", ignoreCase = true)) "Tool denied" else "Approval requested"
     fun toggle() {
         expanded = !expanded
         if (expanded && payload == null && !loading && (part.hasInput || part.hasOutput)) {
@@ -957,13 +966,35 @@ internal fun ToolItem(messageId: String, part: MessagePart, model: DieterViewMod
             }
         }
     }
-    Column(Modifier.fillMaxWidth()) {
+    Column(
+        Modifier.fillMaxWidth().then(
+            if (attention) Modifier.border(1.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(6.dp))
+                .padding(vertical = 2.dp) else Modifier,
+        ),
+    ) {
         Row(
             Modifier.fillMaxWidth().clip(RoundedCornerShape(5.dp)).clickable { toggle() }
                 .padding(horizontal = 6.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Icon(Icons.Outlined.Terminal, null, tint = DieterMuted, modifier = Modifier.size(13.dp))
+            Icon(
+                when {
+                    attention -> Icons.Outlined.Schedule
+                    failed -> Icons.Outlined.Cancel
+                    else -> Icons.Outlined.Terminal
+                },
+                contentDescription = when {
+                    attention -> attentionLabel
+                    failed -> "Tool failed"
+                    else -> null
+                },
+                tint = when {
+                    attention -> MaterialTheme.colorScheme.primary
+                    failed -> MaterialTheme.colorScheme.error
+                    else -> DieterMuted
+                },
+                modifier = Modifier.size(13.dp),
+            )
             Spacer(Modifier.width(6.dp))
             Text(
                 displayToolName(part.toolName.ifBlank { part.type }),
@@ -971,6 +1002,10 @@ internal fun ToolItem(messageId: String, part: MessagePart, model: DieterViewMod
                 fontSize = 10.sp,
                 fontWeight = FontWeight.SemiBold,
             )
+            if (attention) {
+                Spacer(Modifier.width(7.dp))
+                Text(attentionLabel, color = MaterialTheme.colorScheme.primary, fontSize = 10.sp)
+            }
             val preview = toolPreview(part)
             if (preview.isNotBlank()) {
                 Spacer(Modifier.width(7.dp))

@@ -52,7 +52,15 @@ internal fun buildConversationTimeline(
 
     parts.forEach { part ->
         when (part.conversationPartPresentation(showReasoning)) {
+            // An approval needs the user's attention, not the routine activity fold.
             ConversationPartPresentation.TOOL -> {
+                if (listOf("approval", "permission", "confirmation", "denied", "rejected").any {
+                        part.state.contains(it, ignoreCase = true) || part.type.contains(it, ignoreCase = true)
+                    }) {
+                    flushTools()
+                    timeline += ConversationTimelineItem.Part(part)
+                    return@forEach
+                }
                 if (hasTaskPlan && part.normalizedToolName() in taskPlanToolNames) return@forEach
                 if (part.toolCallId in delegatedToolIds) {
                     flushTools()

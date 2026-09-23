@@ -458,7 +458,7 @@ struct IOSModelTests {
                 visibleMaxY: 1_117, contentHeight: 1_000, bottomInset: 120))
     }
 
-    @Test func mixedMessagesCollapseOnlyTheirRoutineActivityAndKeepFailuresVisible() {
+    @Test func mixedMessagesCollapseFailedToolsButKeepProseSeparate() {
         var failed = conversationPart("tool-call", tool: "exec_command")
         failed.state = "failed"
         failed.errorText = "Exited with status 1"
@@ -472,12 +472,12 @@ struct IOSModelTests {
             ])
 
         let groups = IOSConversationPresentation.partGroups(in: mixed)
-        #expect(groups.map(\.isActivity) == [false, true, false, false])
+        #expect(groups.map(\.isActivity) == [false, true, false, true])
         #expect(groups[1].steps.count == 2)
         let failedItems = IOSConversationPresentation.timelineItems([
             conversationMessage("failed", parts: [failed])
         ])
-        #expect(!failedItems[0].isActivity)
+        #expect(failedItems[0].isActivity)
     }
 
     @Test func queuedEditingRestoresTextAndAttachmentsAndLocalRemovalIsImmediate() {
