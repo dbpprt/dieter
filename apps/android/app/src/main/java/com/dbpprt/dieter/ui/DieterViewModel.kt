@@ -97,7 +97,6 @@ import java.util.concurrent.atomic.AtomicBoolean
 private const val CONVERSATION_PAGE_SIZE = 30
 private const val SCHEDULE_PAGE_SIZE = 50
 private const val HEDGE_FETCH_TIMEOUT_MS = 3_500L
-private const val FIRST_FRAME_DEADLINE_MS = 4_500L
 private const val POST_SEND_INITIAL_REFRESH_DELAY_MS = 750L
 private const val POST_SEND_REFRESH_INTERVAL_MS = 2_000L
 internal const val CONNECTION_DIALOG_GRACE_MS = 60_000L
@@ -1713,61 +1712,38 @@ class DieterViewModel internal constructor(
                 cachedLastSeq = initial?.conversation?.lastSeq,
                 coveredByHealthyLiveSync = connectionManager.liveSyncCoversConversation(cardId),
             )
-            var delivered = plan.cacheIsCurrent
             if (_state.value.selectedCardId == cardId) {
                 _state.update { it.copy(conversationSyncing = plan.needsFreshFrame) }
             }
             if (plan.cacheIsCurrent) {
                 Log.i(DieterConnectionManager.SYNC_LOG_TAG, "chatReady source=live-cache elapsedMs=${System.currentTimeMillis() - openedAt}")
             }
-            // Cold, Smart, and App-only opens give the stream a head start
-            // before hedging a stalled initial snapshot with a unary fetch. A Live-projected tail is already authoritative and
-            // must not be mistaken for a dead stream when its resume is quiet.
-            val hedge = if (plan.needsFreshFrame) {
-                launch {
-                    delay(500L)
-                    if (delivered) return@launch
-                    val snapshot = runCatching {
-                        withTimeout(HEDGE_FETCH_TIMEOUT_MS) { repository.conversation(cardId, limit = CONVERSATION_PAGE_SIZE) }
-                    }.getOrNull() ?: return@launch
-                    if (!delivered) {
-                        delivered = true
-                        Log.i(DieterConnectionManager.SYNC_LOG_TAG, "chatFirstFrame source=unary elapsedMs=${System.currentTimeMillis() - openedAt}")
-                        applyLiveConversation(cardId, snapshot)
-                    }
-                }
-            } else null
-            // Retry only this conversation subscription. A slow projection
-            // does not prove the workspace or gateway channel is broken.
-            val watchdog = if (plan.needsFreshFrame) {
-                launch {
-                    delay(FIRST_FRAME_DEADLINE_MS)
-                    if (!delivered && _state.value.selectedCardId == cardId) startConversationStream(cardId)
-                }
-            } else null
+            var firstFrame = true
             try {
-                repository.watchConversation(
-                    cardId,
-                    CONVERSATION_PAGE_SIZE,
-                    initial = initial,
-                    afterSeq = plan.afterSeq,
-                )
-                    .retryWhen { cause, attempt -> retryStream(cause, attempt, "Conversation") }
-                    .collectLatest { snapshot ->
-                        if (_state.value.selectedCardId != cardId) return@collectLatest
-                        if (!delivered) {
-                            delivered = true
-                            hedge?.cancel()
-                            watchdog?.cancel()
-                            Log.i(DieterConnectionManager.SYNC_LOG_TAG, "chatFirstFrame source=stream elapsedMs=${System.currentTimeMillis() - openedAt}")
+                collectConversationWithHedge(
+                    updates = repository.watchConversation(
+                        cardId, CONVERSATION_PAGE_SIZE, initial = initial, afterSeq = plan.afterSeq,
+                    ).retryWhen { cause, attempt -> retryStream(cause, attempt, "Conversation") },
+                    needsFreshFrame = plan.needsFreshFrame,
+                    fetch = { repository.conversation(cardId, limit = CONVERSATION_PAGE_SIZE) },
+                    accept = { snapshot ->
+                        if (_state.value.selectedCardId == cardId) {
+                            if (firstFrame) {
+                                firstFrame = false
+                                Log.i(DieterConnectionManager.SYNC_LOG_TAG, "chatFrame elapsedMs=${System.currentTimeMillis() - openedAt}")
+                            }
+                            applyLiveConversation(cardId, snapshot)
                         }
-                        applyLiveConversation(cardId, snapshot)
-                    }
+                    },
+                    onReadFailure = { error ->
+                        if (_state.value.selectedCardId == cardId) {
+                            _state.update { it.copy(conversationSyncing = false, error = "Could not refresh conversation: ${readableError(error)}") }
+                        }
+                    },
+                )
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Throwable) {
-                hedge?.cancel()
-                watchdog?.cancel()
                 if (_state.value.selectedCardId == cardId) {
                     _state.update { it.copy(conversationSyncing = false, error = readableError(error)) }
                 }

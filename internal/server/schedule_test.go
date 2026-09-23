@@ -14,9 +14,7 @@ import (
 )
 
 func TestScheduleAndSettingsConnectEndToEnd(t *testing.T) {
-	t.Setenv("DIETER_ENABLE_MOCK_HARNESS", "1")
-	// Settings options intentionally exercise live provider discovery. A cold
-	// OMP/Pi startup can use the discovery layer's 30-second bound.
+	useIsolatedMockCatalog(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()
 	data := store.New(t.TempDir())

@@ -26,6 +26,7 @@ var (
 	discoveryMu      sync.Mutex
 	discoveryUpdated time.Time
 	runDiscovery     = runDiscoveryCommand
+	runOMPDiscovery  = runOMPDiscoveryCommand
 	runDSHDiscovery  = runDSHDiscoveryCommand
 	discoverProvider = discoverModels
 	targetedMu       sync.Mutex
@@ -191,9 +192,9 @@ func discoverAdapter(ctx context.Context, providerID string) discoveryResult {
 	// Pi needs two native RPC rounds (models, then per-model levels), and
 	// provider CLIs can contend for startup I/O when refreshed together.
 	timeout := 30 * time.Second
-	// The first DSH discovery prepares the same pinned AI SDK ACP
-	// implementation a turn will use. Subsequent refreshes reuse it.
-	if providerID == "dsh" {
+	// The first ACP-backed discovery prepares the same pinned implementation a
+	// turn will use. Subsequent refreshes reuse its content-addressed install.
+	if providerID == "omp" || providerID == "dsh" {
 		timeout = 10 * time.Minute
 	}
 	commandCtx, cancel := context.WithTimeout(ctx, timeout)
@@ -505,7 +506,8 @@ func parseClaudeHelp(data []byte) ([]Model, error) {
 }
 
 type ompModelEnvelope struct {
-	Models []struct {
+	DefaultModel string `json:"defaultModel"`
+	Models       []struct {
 		Selector      string   `json:"selector"`
 		ID            string   `json:"id"`
 		Name          string   `json:"name"`
@@ -535,43 +537,73 @@ func parseOMPModels(data []byte) ([]Model, error) {
 		}
 		models = append(models, Model{ID: id, Name: name, ContextWindow: item.ContextWindow, Efforts: append([]string(nil), item.Thinking...)})
 	}
+	configured := strings.TrimSpace(envelope.DefaultModel)
+	for index := range models {
+		level := ""
+		if configured == models[index].ID {
+			level = ""
+		} else {
+			for _, supported := range models[index].Efforts {
+				if configured == models[index].ID+":"+supported {
+					level = supported
+					break
+				}
+			}
+			if level == "" {
+				continue
+			}
+		}
+		models[index].DefaultEffort = level
+		if index > 0 {
+			models[0], models[index] = models[index], models[0]
+		}
+		break
+	}
 	return models, nil
 }
 
 func discoverOMPModels(ctx context.Context) ([]Model, error) {
-	output, err := runDiscovery(ctx, "omp", "models", "--json", "--no-extensions")
+	output, err := runOMPDiscovery(ctx)
 	if err != nil {
 		return nil, err
 	}
-	models, err := parseOMPModels(output)
-	if err != nil {
-		return nil, err
-	}
-	rolesOutput, err := runDiscovery(ctx, "omp", "config", "get", "modelRoles")
-	if err != nil {
-		return models, nil
-	}
-	var roles map[string]string
-	if json.Unmarshal(rolesOutput, &roles) != nil {
-		return models, nil
-	}
-	configured := roles["default"]
-	for index := range models {
-		if configured == models[index].ID || strings.HasPrefix(configured, models[index].ID+":") {
-			level := strings.TrimPrefix(configured, models[index].ID)
-			level = strings.TrimPrefix(level, ":")
-			for _, supported := range models[index].Efforts {
-				if supported == level {
-					models[index].DefaultEffort = level
-				}
-			}
-			if index > 0 {
-				models[0], models[index] = models[index], models[0]
-			}
-			break
+	return parseOMPModels(output)
+}
+
+func runOMPDiscoveryCommand(ctx context.Context) ([]byte, error) {
+	dieterHome := strings.TrimSpace(os.Getenv("DIETER_HOME"))
+	if dieterHome == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return nil, err
 		}
+		dieterHome = filepath.Join(home, ".dieter")
 	}
-	return models, nil
+	runtimeDir, err := NewSubprocessRunner(dieterHome).ensure(ctx)
+	if err != nil {
+		return nil, err
+	}
+	bunBin, err := ensureManagedBun(ctx, dieterHome)
+	if err != nil {
+		return nil, fmt.Errorf("prepare managed Bun for pinned OMP discovery: %w", err)
+	}
+	discoveryRoot := filepath.Join(dieterHome, "runtime", "harness", "omp-discovery")
+	command := exec.CommandContext(ctx, discoveryExecutable("node"), filepath.Join(runtimeDir, "omp-discovery.mjs"), discoveryRoot)
+	prepareHarnessCommand(command)
+	command.WaitDelay = 9 * time.Second
+	command.Dir = runtimeDir
+	command.Env = ompHarnessEnvironment(bunBin)
+	var stderr bytes.Buffer
+	command.Stderr = &stderr
+	output, err := command.Output()
+	if err != nil {
+		message := strings.TrimSpace(stderr.String())
+		if message == "" {
+			message = err.Error()
+		}
+		return nil, fmt.Errorf("discover pinned OMP models: %s", message)
+	}
+	return output, nil
 }
 
 type piRPCResponse struct {

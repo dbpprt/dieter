@@ -53,9 +53,15 @@ struct ConversationActivityStep: Identifiable, Sendable {
 }
 
 struct ConversationActivityPartGroup: Identifiable, Sendable {
+    static let initialVisibleCount = 12
     var steps: [ConversationActivityStep]
     let isActivity: Bool
     var id: String { steps[0].id }
+
+    static func visibleStart(in groups: [Self], from id: String?) -> Int {
+        if let id, let index = groups.firstIndex(where: { $0.id == id }) { return index }
+        return max(0, groups.count - initialVisibleCount)
+    }
 
     static func group(_ steps: [ConversationActivityStep]) -> [Self] {
         var groups: [Self] = []

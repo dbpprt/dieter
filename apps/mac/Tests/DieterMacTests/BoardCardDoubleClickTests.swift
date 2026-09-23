@@ -40,3 +40,21 @@ import Testing
     #expect(tracker.filter(keyboardActivation) === keyboardActivation)
     #expect(edits == 1)
 }
+
+@Test @MainActor func boardDoubleClickUsesInputTimestampsWhenLayoutDelaysDelivery() async throws {
+    let tracker = BoardCardDoubleClickTracker()
+    defer { tracker.cancel() }
+    var edits = 0
+    let first = try #require(
+        NSEvent.mouseEvent(
+            with: .leftMouseUp, location: NSPoint(x: 100, y: 100), modifierFlags: [], timestamp: 10,
+            windowNumber: 42, context: nil, eventNumber: 0, clickCount: 1, pressure: 0))
+    let second = try #require(
+        NSEvent.mouseEvent(
+            with: .leftMouseDown, location: first.locationInWindow, modifierFlags: [], timestamp: 10.1,
+            windowNumber: 42, context: nil, eventNumber: 0, clickCount: 2, pressure: 1))
+    tracker.arm(after: first) { edits += 1 }
+    try await Task.sleep(for: .seconds(NSEvent.doubleClickInterval + 0.1))
+    #expect(tracker.filter(second) == nil)
+    #expect(edits == 1)
+}

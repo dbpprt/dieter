@@ -30,6 +30,10 @@
 Dieter is a native workspace for **Codex, Claude Code, Pi, Oh My Pi, and DeepSeek
 Harness**. A local daemon runs agents on the machine with your Git checkout,
 credentials, and tools. Native clients bring those machines together.
+Managed OMP discovery and turns use the same pinned build. Dieter selects the
+advertised model when launching OMP and keeps its catalog focused on GPT-6 Luna,
+Sol, Astra, and the Tailscale GLM route. Dieter installs OMP's pinned Bun runtime
+lazily, so hosts do not need a separate global OMP or Bun installation.
 
 Your laptop is the remote control. An agent on another host keeps running when
 you close the app, disconnect, or put your laptop to sleep. Keep that execution
@@ -98,7 +102,9 @@ and [platform dependencies](docs/linux-support.md).
 **Daemon → gateway → native client.** The daemon owns local execution and
 replicates shared project metadata with your other daemons. The gateway handles
 account identity, machine discovery, and bounded relay. Clients prefer verified
-direct TLS, then supported WebRTC, with gateway relay fallback.
+direct TLS, then supported WebRTC. Native clients start a parallel authenticated
+relay connection after one second if WebRTC is still connecting, use the first
+healthy route, and close the unused attempt. Application requests are sent once.
 
 The gateway stores control metadata and normalized quota snapshots, **not**
 repositories, transcripts, or provider credentials. Relay requests can pass

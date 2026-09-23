@@ -71,11 +71,11 @@ func TestTurnSelectionDefaultsAndUnsupportedChanges(t *testing.T) {
 	if _, _, _, err := resolveTurnSelection(card, "", "", "invalid-effort", nil); err == nil {
 		t.Fatal("accepted unsupported effort")
 	}
-	omp := model.Card{Provider: "omp", Model: "default", Effort: "high", InitialPromptSentAt: "sent"}
+	omp := model.Card{Provider: "omp", Model: "tailscale/glm-5.3-flash-exl3", Effort: "high", InitialPromptSentAt: "sent"}
 	if _, _, _, err := resolveTurnSelection(omp, "", "", "low", nil); err == nil || !strings.Contains(err.Error(), "effort is locked") {
 		t.Fatalf("OMP effort change=%v", err)
 	}
-	if _, _, _, err := resolveTurnSelection(omp, "", "box/qwen3_6_27b", "", nil); err != nil {
+	if _, _, _, err := resolveTurnSelection(omp, "", "openai-codex/gpt-6-sol", "", nil); err != nil {
 		t.Fatalf("OMP model change=%v", err)
 	}
 }

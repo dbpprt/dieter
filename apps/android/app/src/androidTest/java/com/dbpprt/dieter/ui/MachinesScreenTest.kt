@@ -5,6 +5,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.test.assertContentDescriptionEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
@@ -34,17 +35,39 @@ import org.junit.Test
 class MachinesScreenTest {
     @get:Rule val compose = createComposeRule()
 
+    @Test fun expandedFleetUsesSharedResizablePane() {
+        val machine = fixtureMachine()
+        compose.setContent {
+            DieterTheme {
+                MachinesContent(
+                    state = DieterUiState(
+                        connectionPhase = ConnectionPhase.CONNECTED,
+                        endpointConnections = listOf(machine),
+                        selectedMachineId = machine.id,
+                        machineInformation = mapOf(machine.id to fixtureInformation()),
+                    ),
+                    expanded = true,
+                    contentPadding = PaddingValues(),
+                    onSelect = {},
+                    onClose = {},
+                    onRefreshMachines = {},
+                    onRefreshSelected = {},
+                    onOperation = { _, _ -> },
+                    onOpenTerminals = {},
+                    onDismissOperationMessage = {},
+                )
+            }
+        }
+
+        compose.onNodeWithTag("machines-pane-divider")
+            .assertIsDisplayed()
+            .assertContentDescriptionEquals("Resize list and detail panes")
+        compose.onNodeWithTag("machines-list").assertIsDisplayed()
+        compose.onNodeWithTag("machine-detail").assertIsDisplayed()
+    }
+
     @Test fun fleetOpensTelemetryAndConfirmsOnlyAdvertisedActions() {
-        val machine = EndpointConnection(
-            id = "gateway#fixture",
-            label = "Fixture workstation",
-            address = "https://gateway.example",
-            detail = "Gateway relay · 12 ms",
-            latencyMs = 12,
-            online = true,
-            daemonId = "fixture",
-            apiVersion = "1",
-        )
+        val machine = fixtureMachine()
         val information = fixtureInformation()
         var operation: Pair<MachineOperationAction, String>? = null
         var terminalMachine: String? = null
@@ -92,6 +115,17 @@ class MachinesScreenTest {
         compose.onNodeWithTag("machine-open-terminals").assertIsDisplayed().performClick()
         compose.runOnIdle { assertEquals(machine.id, terminalMachine) }
     }
+
+    private fun fixtureMachine() = EndpointConnection(
+        id = "gateway#fixture",
+        label = "Fixture workstation",
+        address = "https://gateway.example",
+        detail = "Gateway relay · 12 ms",
+        latencyMs = 12,
+        online = true,
+        daemonId = "fixture",
+        apiVersion = "1",
+    )
 
     private fun fixtureInformation(): MachineInformation = MachineInformation.newBuilder()
         .setHostname("fixture")

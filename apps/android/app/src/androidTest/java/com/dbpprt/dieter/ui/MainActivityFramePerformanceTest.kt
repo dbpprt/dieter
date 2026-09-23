@@ -11,6 +11,7 @@ import android.os.Handler
 import android.os.HandlerThread
 import android.os.Process
 import android.os.SystemClock
+import android.os.Trace
 import android.util.Log
 import android.view.FrameMetrics
 import android.view.Window
@@ -197,7 +198,9 @@ class MainActivityFramePerformanceTest {
                 "wallMs=${SystemClock.elapsedRealtime() - idleWallStarted}",
         )
         // Retain idle evidence even when navigation fails its unchanged budget.
-        assertEquals("Detected a >=${SEVERE_FRAME_MS}ms UI-thread stall", 0, severeFrames)
+        // Total frame duration also includes renderer/buffer waits; a failure
+        // alone does not attribute the delay to main-thread application CPU.
+        assertEquals("Detected a >=${SEVERE_FRAME_MS}ms frame", 0, severeFrames)
         assertTrue("Navigation p95 was ${p95}ms", p95 < P95_FRAME_MS)
     }
 
@@ -223,7 +226,7 @@ class MainActivityFramePerformanceTest {
         }
         root.addView(terminal)
         val bar = android.widget.LinearLayout(activity)
-        for (label in listOf("Activity", "Boards", "Chats", "Tools")) {
+        for (label in listOf("Inbox", "Projects", "Chats", "Tools")) {
             val button = android.widget.Button(activity).apply {
                 text = label
                 isAllCaps = false
@@ -236,14 +239,23 @@ class MainActivityFramePerformanceTest {
             bar.addView(button, android.widget.LinearLayout.LayoutParams(0, 160, 1f))
         }
         root.addView(bar)
-        select("Boards")
+        select("Projects")
         activity.setContentView(root)
     }
 
     private fun navigate(tag: String) {
+        Trace.beginSection("DieterNavigation:${if (measuring) "measured" else "warmup"}:$tag")
+        try {
+            navigateVisibleRoute(tag)
+        } finally {
+            Trace.endSection()
+        }
+    }
+
+    private fun navigateVisibleRoute(tag: String) {
         val label = when (tag) {
             "nav-chats" -> "Chats"
-            "nav-board" -> "Boards"
+            "nav-board" -> "Projects"
             "nav-terminals" -> "Terminal"
             else -> error("Unknown route $tag")
         }
@@ -302,7 +314,7 @@ class MainActivityFramePerformanceTest {
         file.outputStream().use { screenshot?.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
         screenshot?.recycle()
         instrumentation.uiAutomation.rootInActiveWindow?.let { root ->
-            for (label in listOf("Chats", "Boards", "Tools", "Terminal", "Close sheet")) {
+            for (label in listOf("Chats", "Projects", "Tools", "Terminal", "Close sheet")) {
                 val node = findClickable(root, label)
                 Log.i("DieterPerformance", "failedTarget label=$label selected=${node?.isSelected} " +
                     "bounds=${node?.let { Rect().also(it::getBoundsInScreen) }}")

@@ -27,6 +27,10 @@ a reconnect affects relay transports only and does not stop a running agent.
 State, conversation and KV watches wake on commit notifications; a two-second
 recovery check covers missed filesystem notifications and interrupted writers.
 `watch state --interval` bounds the rate of updates during bursts.
+`card watch --after-seq N` (also `chat watch`) immediately acknowledges an
+up-to-date cursor with current metadata and no unchanged messages. This initial
+frame counts toward `--count`; retain the cached transcript when applying it.
+A stale cursor receives the existing snapshot/delta recovery.
 `dieter watch sync --count 3` emits metadata, deltas, and transport-only
 heartbeats. A heartbeat or `observedCursor` is reachability evidence, not applied
 workspace data. Persist a cursor only with its complete projection, never from a
@@ -71,6 +75,14 @@ Use `dieter machine gateway` for the running gateway build identity and
 `dieter --machine <machine-id> machine info` for live CPU, memory, process, and
 optional Apple/NVIDIA/AMD GPU telemetry. Optional GPU fields are omitted when a
 driver cannot provide them; zero remains a real measurement.
+
+`dieter harness list` returns the selected machine's catalog. OMP discovery uses
+the same Dieter-pinned OMP build as new turns, not a separately installed global
+`omp`, and exposes only GPT-6 Luna, Sol, Astra, and the Tailscale GLM route. The
+first OMP catalog refresh can install that pinned build and Dieter's pinned Bun;
+later refreshes reuse them. New turns pass the selected model at OMP launch rather
+than relying on OMP's narrower ACP cycling-model option; old durable sessions
+retain bounded resume compatibility.
 
 Provider quotas are scoped to the enrolled daemon's gateway account, not one
 daemon. Do not pass global `--machine`:

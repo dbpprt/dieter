@@ -18,7 +18,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -223,19 +222,24 @@ internal fun MachinesContent(
         modifier = modifier.fillMaxSize(),
     ) {
         if (expanded) {
-            Row(Modifier.fillMaxSize()) {
-                MachineList(
-                    machines = machines,
-                    state = state,
-                    selectedId = selected?.id,
-                    onSelect = onSelect,
-                    onRefresh = onRefreshMachines,
-                    contentPadding = contentPadding,
-                    modifier = Modifier.widthIn(min = 300.dp, max = 390.dp).fillMaxHeight(),
-                )
-                Box(Modifier.width(1.dp).fillMaxHeight().background(DieterDivider))
+            ResizableHorizontalSplitPane(
+                dividerTag = "machines-pane-divider",
+                modifier = Modifier.fillMaxSize(),
+                minimumLeadingWidth = 300.dp,
+                leading = { paneModifier ->
+                    MachineList(
+                        machines = machines,
+                        state = state,
+                        selectedId = selected?.id,
+                        onSelect = onSelect,
+                        onRefresh = onRefreshMachines,
+                        contentPadding = contentPadding,
+                        modifier = paneModifier,
+                    )
+                },
+            ) { paneModifier ->
                 if (selected == null) {
-                    MachineSelectionPrompt(Modifier.weight(1f).fillMaxHeight().padding(contentPadding))
+                    MachineSelectionPrompt(paneModifier.padding(contentPadding))
                 } else {
                     MachineDetail(
                         machine = selected,
@@ -247,7 +251,7 @@ internal fun MachinesContent(
                         onOpenTerminals = { onOpenTerminals(selected.id) },
                         onDismissOperationMessage = onDismissOperationMessage,
                         contentPadding = contentPadding,
-                        modifier = Modifier.weight(1f),
+                        modifier = paneModifier,
                     )
                 }
             }

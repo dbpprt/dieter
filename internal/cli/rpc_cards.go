@@ -490,7 +490,7 @@ func (c *CLI) rpcCardTranscript(args []string) error {
 }
 
 func (c *CLI) rpcCardWatch(args []string) error {
-	const usage = "Usage: dieter card watch [--last N] [--after-seq N] [--count N] CARD\n" + readRecoveryHelp
+	const usage = "Usage: dieter card watch [--last N] [--after-seq N] [--count N] CARD\n\nAn up-to-date --after-seq receives a current metadata acknowledgment without\nresending unchanged messages; this initial frame counts toward --count.\n" + readRecoveryHelp
 	set := flags("card watch")
 	last := set.Int("last", 30, "message count")
 	after := set.Int64("after-seq", 0, "resume sequence")

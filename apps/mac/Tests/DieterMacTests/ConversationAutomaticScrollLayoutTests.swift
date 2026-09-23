@@ -4,6 +4,60 @@ import SwiftUI
 import Testing
 @testable import DieterMac
 
+@Test(arguments: [false, true]) @MainActor
+func initialTranscriptMountsOnlyTheTailAndExpandsToFillShortRows(shortRows: Bool) async throws {
+    let store = DieterStore(restoreSync: false)
+    var snapshot = automaticScrollSnapshot(start: 0, end: 30)
+    for index in snapshot.conversation.messages.indices {
+        snapshot.conversation.messages[index].parts[0].text =
+            "Automatic scroll message \(index)."
+            + (shortRows ? "" : String(repeating: "\nA rich transcript line to lay out.", count: 8))
+    }
+    store.state.chats = [snapshot.detail.card]
+    store.chats = [snapshot.detail.card]
+    store.selectedChatID = snapshot.detail.card.id
+    store.conversation = snapshot
+    store.selectedDetail = snapshot.detail
+    let context = store.conversationContext
+    context.model.resetConversationHistory(from: snapshot)
+    var historyRequests = 0
+    context.onLoadEarlierMessages = {
+        historyRequests += 1; return false
+    }
+    var positioned = false
+    let root = NSHostingView(
+        rootView: ConversationTimeline(onViewportObservation: { positioned = $0.initialPositionComplete })
+            .environment(store).environment(context))
+    root.sizingOptions = []
+    let window = NSWindow(
+        contentRect: NSRect(x: 0, y: 0, width: 700, height: 600),
+        styleMask: [.borderless], backing: .buffered, defer: false)
+    window.isReleasedWhenClosed = false
+    window.contentView = root
+    defer { window.contentView = nil; window.close() }
+    for _ in 0..<100 {
+        await settleAutomaticScroll(root, milliseconds: 20)
+        if positioned { break }
+    }
+    #expect(positioned)
+    let scroll = try #require(automaticScrollViews(in: root).compactMap { $0 as? NSScrollView }.first)
+    let ids = automaticScrollRenderedMessageIDs(in: scroll)
+    #expect(ids.contains(29))
+    if shortRows {
+        #expect(
+            ids.count > ConversationRenderWindow.initialMessages,
+            "Short rows must expand automatically instead of leaving the viewport half empty")
+    } else {
+        #expect(
+            ids.count == ConversationRenderWindow.initialMessages,
+            "Opening must not eagerly create every loaded rich message")
+    }
+    #expect((scroll.documentView?.bounds.height ?? 0) >= scroll.contentView.bounds.height)
+    #expect(abs(scroll.documentVisibleRect.maxY - (scroll.documentView?.bounds.maxY ?? 0)) < 2)
+    #expect(historyRequests == 0)
+    #expect(context.conversationMessages.count == 30, "Rendering must preserve the loaded history")
+}
+
 @Test @MainActor func automaticHistoryScrollLoadsOnePageAndPreservesTheReaderThroughNetworkDelay() async throws {
     let rpc = AutomaticScrollLayoutRPC()
     let store = DieterStore(restoreSync: false)
@@ -36,7 +90,8 @@ import Testing
     await settleAutomaticScroll(root, milliseconds: 350)
     let scroll = try #require(
         automaticScrollViews(in: root).compactMap { $0 as? NSScrollView }.first {
-            ($0.documentView?.bounds.height ?? 0) > 1_000
+            ($0.documentView?.bounds.height ?? 0)
+                > $0.contentView.bounds.height - $0.contentInsets.top - $0.contentInsets.bottom
         })
     #expect(await rpc.requestCount == 0, "Opening at the live tail must not load older pages")
     #expect(
@@ -137,7 +192,8 @@ import Testing
     await settleAutomaticScroll(root, milliseconds: 350)
     let scroll = try #require(
         automaticScrollViews(in: root).compactMap { $0 as? NSScrollView }.first {
-            ($0.documentView?.bounds.height ?? 0) > 1_000
+            ($0.documentView?.bounds.height ?? 0)
+                > $0.contentView.bounds.height - $0.contentInsets.top - $0.contentInsets.bottom
         })
     let initialIDs = automaticScrollRenderedMessageIDs(in: scroll)
     try #require(initialIDs.contains(119))
@@ -209,7 +265,8 @@ import Testing
     await settleAutomaticScroll(root, milliseconds: 350)
     let scroll = try #require(
         automaticScrollViews(in: root).compactMap { $0 as? NSScrollView }.first {
-            ($0.documentView?.bounds.height ?? 0) > 1_000
+            ($0.documentView?.bounds.height ?? 0)
+                > $0.contentView.bounds.height - $0.contentInsets.top - $0.contentInsets.bottom
         })
     let initialVisible = try #require(automaticScrollVisibleMessageID(in: scroll))
     var windows: [ClosedRange<Int>] = []
@@ -496,7 +553,8 @@ private func automaticScrollSnapshot(start: Int, end: Int) -> Dieter_V1_Conversa
     func scroll() throws -> NSScrollView {
         try #require(
             automaticScrollViews(in: root).compactMap { $0 as? NSScrollView }.first {
-                ($0.documentView?.bounds.height ?? 0) > 1_000
+                ($0.documentView?.bounds.height ?? 0)
+                    > $0.contentView.bounds.height - $0.contentInsets.top - $0.contentInsets.bottom
             })
     }
 

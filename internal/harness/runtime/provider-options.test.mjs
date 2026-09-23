@@ -6,6 +6,9 @@ import {
   dshPackageVersion,
   ompACPArgs,
   ompACPModelMapping,
+  ompImplementations,
+  ompPackageVersion,
+  ompPackageVersions,
   ompRuntimeConfig,
   ompStreamTimeoutSeconds,
 } from './provider-options.mjs';
@@ -24,15 +27,34 @@ test('maps the mutable Codex Fast mode option to an explicit service tier', () =
   });
 });
 
-test('maps the selected Dieter model to the OMP ACP model option', () => {
+test('retains the OMP ACP model mapping for legacy session resumes', () => {
   assert.deepEqual(ompACPModelMapping, {
     type: 'session-config-option',
     path: 'model',
   });
 });
+test('pins OMP discovery and turns while retaining bounded session compatibility', () => {
+  assert.equal(ompPackageVersion, '18.2.11');
+  assert.deepEqual(ompPackageVersions, ['18.2.11', '18.2.9', '18.1.10']);
+  assert.deepEqual(ompImplementations, [
+    { packageVersion: '18.2.11', modelStrategy: 'launch-argument' },
+    { packageVersion: '18.2.9', modelStrategy: 'launch-argument' },
+    { packageVersion: '18.1.10', modelStrategy: 'session-config-option' },
+  ]);
+  assert.equal(Object.isFrozen(ompPackageVersions), true);
+  assert.equal(Object.isFrozen(ompImplementations), true);
+});
 test('adds the OMP advisor flag only when the provider option is enabled', () => {
   assert.deepEqual(ompACPArgs({ effort: 'high', options: { advisor: 'true' } }, '/hook.mjs', '/config.yml'), ['acp', '--config', '/config.yml', '--hook', '/hook.mjs', '--thinking=high', '--advisor']);
   assert.deepEqual(ompACPArgs({ options: { advisor: 'false' } }, '/hook.mjs'), ['acp', '--hook', '/hook.mjs']);
+});
+test('launches new OMP bridges with the selected model while legacy resumes keep ACP mapping', () => {
+  const request = { model: 'openrouter/openai/gpt-6-sol', effort: 'max' };
+  assert.deepEqual(ompACPArgs(request, '/hook.mjs', '/config.yml', 'launch-argument'), [
+    'acp', '--config', '/config.yml', '--hook', '/hook.mjs', '--thinking=max',
+    '--model=openrouter/openai/gpt-6-sol',
+  ]);
+  assert.equal(ompACPArgs(request, '/hook.mjs', '/config.yml').includes('--model=openrouter/openai/gpt-6-sol'), false);
 });
 
 test('gives Dieter OMP turns a thirty-minute first-event and idle watchdog', () => {

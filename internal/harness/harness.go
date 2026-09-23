@@ -566,7 +566,7 @@ type Suspender interface {
 	Suspend(sessionID, runtimeRoot string) error
 }
 
-//go:embed runtime/package.json runtime/package-lock.json runtime/runner.mjs runtime/content-presentation.mjs runtime/background-processes.mjs runtime/dsh-discovery.mjs runtime/dsh-models.mjs runtime/claude-resilience.mjs runtime/claude-runtime.mjs runtime/local-attachments.mjs runtime/local-sandbox.mjs runtime/codex-runtime.mjs runtime/capabilities.mjs runtime/stream-reconciliation.mjs runtime/omp-capabilities-hook.mjs runtime/omp-resilience.mjs runtime/provider-options.mjs runtime/usage-metadata.mjs runtime/quota-openai.mjs runtime/quota-claude.mjs
+//go:embed runtime/package.json runtime/package-lock.json runtime/runner.mjs runtime/content-presentation.mjs runtime/background-processes.mjs runtime/dsh-discovery.mjs runtime/dsh-models.mjs runtime/omp-discovery.mjs runtime/omp-models.mjs runtime/claude-resilience.mjs runtime/claude-runtime.mjs runtime/local-attachments.mjs runtime/local-sandbox.mjs runtime/codex-runtime.mjs runtime/capabilities.mjs runtime/stream-reconciliation.mjs runtime/omp-capabilities-hook.mjs runtime/omp-resilience.mjs runtime/provider-options.mjs runtime/harness-errors.mjs runtime/usage-metadata.mjs runtime/quota-openai.mjs runtime/quota-claude.mjs
 var runtimeAssets embed.FS
 
 type SubprocessRunner struct {
@@ -696,6 +696,14 @@ func (r *SubprocessRunner) Run(ctx context.Context, request Request, emit func(O
 		return err
 	}
 	dir := reference.Directory
+	var runtimePaths []string
+	if request.Adapter == "omp-acp" {
+		bunBin, bunErr := ensureManagedBun(ctx, filepath.Dir(filepath.Dir(r.root)))
+		if bunErr != nil {
+			return fmt.Errorf("prepare OMP runtime: %w", bunErr)
+		}
+		runtimePaths = append(runtimePaths, bunBin)
+	}
 	workerToken := newWorkerToken()
 	command := exec.CommandContext(ctx, "node", filepath.Join(dir, "runner.mjs"), "--board-worker-token="+workerToken)
 	prepareHarnessCommand(command)
@@ -707,7 +715,11 @@ func (r *SubprocessRunner) Run(ctx context.Context, request Request, emit func(O
 	// just beyond that window and below Service.CancelCard's timeout.
 	command.WaitDelay = 9 * time.Second
 	command.Dir = dir
-	command.Env = harnessEnvironment()
+	if request.Adapter == "omp-acp" {
+		command.Env = ompHarnessEnvironment(runtimePaths...)
+	} else {
+		command.Env = harnessEnvironment()
+	}
 	stdin, err := command.StdinPipe()
 	if err != nil {
 		return err
@@ -1010,7 +1022,7 @@ func (r *SubprocessRunner) Suspend(sessionID, runtimeRoot string) error {
 	return nil
 }
 
-func harnessEnvironment() []string {
+func harnessEnvironment(runtimePaths ...string) []string {
 	allowed := map[string]bool{
 		"PATH": true, "HOME": true, "USER": true, "LOGNAME": true, "TMPDIR": true, "SHELL": true, "LANG": true, "TERM": true,
 		"DIETER_HARNESS_ENV": true,
@@ -1033,7 +1045,7 @@ func harnessEnvironment() []string {
 		name, _, _ := strings.Cut(item, "=")
 		if allowed[name] {
 			if name == "PATH" {
-				item = "PATH=" + harnessPath(strings.TrimPrefix(item, "PATH="), home)
+				item = "PATH=" + harnessPath(strings.TrimPrefix(item, "PATH="), home, runtimePaths...)
 			}
 			result = append(result, item)
 		}
@@ -1054,9 +1066,9 @@ func supportedNodeVersion(raw string) bool {
 	return major > 22 || major == 22 && minor >= 19
 }
 
-func harnessPath(current, home string) string {
+func harnessPath(current, home string, runtimePaths ...string) string {
 	paths := filepath.SplitList(current)
-	seen := make(map[string]bool, len(paths)+2)
+	seen := make(map[string]bool, len(paths)+2+len(runtimePaths))
 	for _, path := range paths {
 		seen[path] = true
 	}
@@ -1068,6 +1080,14 @@ func harnessPath(current, home string) string {
 			paths = append([]string{path}, paths...)
 			seen[path] = true
 		}
+	}
+	for index := len(runtimePaths) - 1; index >= 0; index-- {
+		path := strings.TrimSpace(runtimePaths[index])
+		if path == "" || seen[path] {
+			continue
+		}
+		paths = append([]string{path}, paths...)
+		seen[path] = true
 	}
 	return strings.Join(paths, string(os.PathListSeparator))
 }

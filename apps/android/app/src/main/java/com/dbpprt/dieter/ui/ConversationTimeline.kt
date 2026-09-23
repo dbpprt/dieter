@@ -9,6 +9,12 @@ internal sealed interface ConversationTimelineItem {
     data object Subagents : ConversationTimelineItem
 }
 
+internal const val INITIAL_MESSAGE_ITEMS = 12
+
+internal fun conversationMessageStart(itemCount: Int, retainedStart: Int?): Int =
+    (retainedStart?.takeIf { it < itemCount } ?: (itemCount - INITIAL_MESSAGE_ITEMS))
+        .coerceIn(0, itemCount)
+
 private val taskPlanToolNames = setOf(
     "todowrite",
     "taskcreate",

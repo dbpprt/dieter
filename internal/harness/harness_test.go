@@ -217,10 +217,10 @@ func TestConfiguredEffortValidationIsProviderAndModelAware(t *testing.T) {
 
 func TestCatalogIncludesConfiguredOMPModels(t *testing.T) {
 	adapter, valid := ResolveAdapter("omp", false)
-	if !valid || adapter.Runtime != "omp-acp" || adapter.DefaultModel != "default" || len(adapter.Models) != 3 {
+	if !valid || adapter.Runtime != "omp-acp" || adapter.DefaultModel != "tailscale/glm-5.3-flash-exl3" || len(adapter.Models) != 4 {
 		t.Fatalf("omp catalog=%#v valid=%v", adapter, valid)
 	}
-	if adapter.Models[0].RuntimeID() != "" || adapter.Models[1].ContextWindow != 1048576 || adapter.Models[2].ID != "box/qwen3_6_27b" {
+	if adapter.Models[0].RuntimeID() != "tailscale/glm-5.3-flash-exl3" || adapter.Models[0].ContextWindow != 1000000 || adapter.Models[3].ID != "openai-codex/gpt-6-astra" {
 		t.Fatalf("omp models=%#v", adapter.Models)
 	}
 	if adapter.Effort == nil || len(adapter.Effort.Options) != 8 || len(adapter.Capabilities) != 3 || adapter.Capabilities[0] != (Capability{ID: "model-selection", Level: "between-turns"}) || adapter.Capabilities[1] != (Capability{ID: "subagents", Level: "progress"}) || adapter.Capabilities[2] != (Capability{ID: "task-plan", Level: "phases"}) {
@@ -238,8 +238,8 @@ func TestCatalogIncludesConfiguredOMPModels(t *testing.T) {
 	if _, err := ResolveOptions(adapter, map[string]string{"advisor": "sometimes"}); err == nil {
 		t.Fatal("invalid OMP advisor value was accepted")
 	}
-	if effort, err := ResolveEffort(adapter, adapter.Models[0], "auto"); err != nil || effort != "auto" {
-		t.Fatalf("omp auto effort=%q err=%v", effort, err)
+	if effort, err := ResolveEffort(adapter, adapter.Models[0], "max"); err != nil || effort != "max" {
+		t.Fatalf("omp max effort=%q err=%v", effort, err)
 	}
 }
 
@@ -384,6 +384,15 @@ func TestHarnessPathAddsUserRuntimeBins(t *testing.T) {
 	}
 	paths := filepath.SplitList(harnessPath("/usr/bin:/bin", home))
 	if len(paths) != 4 || paths[0] != filepath.Join(home, ".local", "bin") || paths[1] != filepath.Join(home, ".bun", "bin") {
+		t.Fatalf("paths=%#v", paths)
+	}
+}
+
+func TestHarnessPathPrefersManagedRuntimeBins(t *testing.T) {
+	home := t.TempDir()
+	managed := filepath.Join(t.TempDir(), "managed-bin")
+	paths := filepath.SplitList(harnessPath("/usr/bin:/bin", home, managed))
+	if len(paths) != 3 || paths[0] != managed {
 		t.Fatalf("paths=%#v", paths)
 	}
 }
@@ -637,6 +646,57 @@ func TestSubprocessRunnerMockIntegration(t *testing.T) {
 	capabilityStream := strings.Join(capabilities, "")
 	if err != nil || heartbeats == 0 || !strings.Contains(stream, "Mock harness received: hello") || !strings.Contains(stream, `"messageId":"assistant_1"`) || !strings.Contains(stream, `"type":"message-metadata"`) || !strings.Contains(stream, `"messageMetadata":{"createdAt":`) || !strings.Contains(stream, `"totalTokens":150`) || !strings.Contains(stream, `"contextWindowTokens":1000`) || !strings.Contains(capabilityStream, `"id":"task-plan"`) || !strings.Contains(capabilityStream, `"state":"completed"`) {
 		t.Fatalf("chunks=%q capabilities=%q heartbeats=%d err=%v", chunks, capabilities, heartbeats, err)
+	}
+}
+
+func TestSubprocessRunnerOMPLiveModels(t *testing.T) {
+	if os.Getenv("DIETER_TEST_OMP_E2E") != "1" {
+		t.Skip("set DIETER_TEST_OMP_E2E=1 to run the curated OMP models")
+	}
+	repo := filepath.Join(t.TempDir(), "repo")
+	if err := os.MkdirAll(repo, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	runner := NewSubprocessRunner(t.TempDir())
+	runtimeRoot := filepath.Join(t.TempDir(), "runtime")
+	models := []struct {
+		id       string
+		expected string
+	}{
+		{id: "tailscale/glm-5.3-flash-exl3", expected: "OMP_E2E_OK_GLM"},
+		{id: "openai-codex/gpt-6-luna", expected: "OMP_E2E_OK_LUNA"},
+		{id: "openai-codex/gpt-6-sol", expected: "OMP_E2E_OK_SOL"},
+		{id: "openai-codex/gpt-6-astra", expected: "OMP_E2E_OK_ASTRA"},
+	}
+	for index, model := range models {
+		t.Run(filepath.Base(model.id), func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+			defer cancel()
+			var chunks []string
+			var response strings.Builder
+			err := runner.Run(ctx, Request{
+				Harness: "omp", Adapter: "omp-acp", Model: model.id, ConfiguredModel: model.id, Effort: "low",
+				Prompt:    "Reply with exactly " + model.expected + " and nothing else. Do not use tools.",
+				SessionID: "omp-e2e-" + string(rune('a'+index)), ResponseMessageID: "assistant_omp_e2e",
+				ProjectPath: repo, RuntimeRoot: runtimeRoot,
+			}, func(output Output) error {
+				if output.Type == "chunk" {
+					chunks = append(chunks, string(output.Chunk))
+					var chunk struct {
+						Type  string `json:"type"`
+						Delta string `json:"delta"`
+					}
+					if json.Unmarshal(output.Chunk, &chunk) == nil && chunk.Type == "text-delta" {
+						response.WriteString(chunk.Delta)
+					}
+				}
+				return nil
+			})
+			stream := strings.Join(chunks, "")
+			if err != nil || !strings.Contains(response.String(), model.expected) {
+				t.Fatalf("model=%s response=%q stream=%q err=%v", model.id, response.String(), stream, err)
+			}
+		})
 	}
 }
 

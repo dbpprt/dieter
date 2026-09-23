@@ -110,14 +110,6 @@
             _ store: DieterStore, _ window: NSWindow, _ cardID: String, _ results: inout [String: String]
         ) async {
             let label = "Open the implementation plan"
-            let ready = await wait {
-                descendants(window.contentView, as: MessageTextView.self).contains { $0.string.contains(label) }
-            }
-            guard ready,
-                let text = descendants(window.contentView, as: MessageTextView.self).first(where: {
-                    $0.string.contains(label) && $0.window === window
-                })
-            else { results["content-link-context-menu"] = "failed: visible transcript link unavailable"; return }
             let pasteboard = NSPasteboard.general
             let savedPasteboard = (pasteboard.pasteboardItems ?? []).map { item in
                 item.types.reduce(into: [NSPasteboard.PasteboardType: Data]()) { values, type in
@@ -134,12 +126,49 @@
                 if !items.isEmpty { pasteboard.writeObjects(items) }
             }
             for action in ["Copy Link", "Open in Dieter"] {
+                // Text storage exists before the transcript's initial positioning
+                // and hit testing finish. Reacquire the visible view for each
+                // action and require stable native glyph geometry before input.
+                var previousPoint: NSPoint?
+                var previousView: MessageTextView?
+                var stableSamples = 0
+                var targetDiagnostic = "no matching text view"
+                let ready = await wait {
+                    guard let content = window.contentView else { return false }
+                    for text in descendants(content, as: MessageTextView.self) {
+                        guard text.window === window, !text.isHiddenOrHasHiddenAncestor else { continue }
+                        let range = (text.string as NSString).range(of: label)
+                        guard range.location != NSNotFound else { continue }
+                        let interior = NSRange(location: range.location + range.length / 2, length: 1)
+                        let rectangle = text.firstRect(forCharacterRange: interior, actualRange: nil)
+                        guard !rectangle.isEmpty else { continue }
+                        let point = window.convertPoint(fromScreen: NSPoint(x: rectangle.midX, y: rectangle.midY))
+                        let hit = content.hitTest(content.convert(point, from: nil))
+                        targetDiagnostic =
+                            "glyph=\(rectangle), local=\(text.convert(point, from: nil)), visible=\(text.visibleRect), hit=\(hit.map { String(reflecting: type(of: $0)) } ?? "none")"
+                        // SwiftUI may route a representable's events through
+                        // its owning PlatformGroupContainer instead of exposing
+                        // the NSTextView directly from the root hit test.
+                        guard text.visibleRect.contains(text.convert(point, from: nil)),
+                            let hit, hit === text || text.isDescendant(of: hit)
+                        else { continue }
+                        stableSamples = previousView === text && previousPoint == point ? stableSamples + 1 : 0
+                        previousView = text
+                        previousPoint = point
+                        return stableSamples >= 3
+                    }
+                    previousView = nil
+                    previousPoint = nil
+                    stableSamples = 0
+                    return false
+                }
+                guard ready, let point = previousPoint else {
+                    results["content-link-context-\(action)"] =
+                        "failed: stable, hittable transcript link unavailable: \(targetDiagnostic)"
+                    continue
+                }
                 let tracker = NativeContentMenuTracker()
                 defer { tracker.stop() }
-                let range = (text.string as NSString).range(of: label)
-                let interior = NSRange(location: range.location + range.length / 2, length: 1)
-                let rectangle = text.firstRect(forCharacterRange: interior, actualRange: nil)
-                let point = window.convertPoint(fromScreen: NSPoint(x: rectangle.midX, y: rectangle.midY))
                 for type in [NSEvent.EventType.rightMouseDown, .rightMouseUp] {
                     if let event = NSEvent.mouseEvent(
                         with: type, location: point, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,

@@ -291,6 +291,9 @@
                 await runNavigationResponsivenessChecks(
                     store: store, window: window, board: board, project: project, results: &results,
                     output: output)
+                if ProcessInfo.processInfo.environment["DIETER_PERFORMANCE_SWEEP"] == "1" {
+                    await runChatSwitchMeasurements(store: store, window: window, results: &results, output: output)
+                }
             }
             if ProcessInfo.processInfo.arguments.contains("--lane-sort-ui-smoke") {
                 // Navigation measurements finish on Screens. Restore the board
@@ -2400,7 +2403,11 @@
             ]
             for (section, control) in destinations {
                 var samples: [String] = []
-                for repetition in 0..<3 {
+                let extended =
+                    ProcessInfo.processInfo.environment["DIETER_PERFORMANCE_SWEEP"] == "1"
+                    && (section == .board || section == .chats)
+                let repetitions = extended ? 15 : 3
+                for repetition in 0..<repetitions {
                     if section == .screens { store.openSettings() } else { store.openScreens() }
                     // The source destination can remount a native split column.
                     // Establish a visible, stable sidebar before measuring the
@@ -2414,6 +2421,8 @@
                                 path: "navigation-missing-\(section.rawValue.lowercased())-\(repetition + 1).txt"))
                     }
                     let probe = NativeUINavigationProbe(window: window, section: section)
+                    let stateReads = store.stateRequestGeneration
+                    let chatReads = store.chatsRequestGeneration
                     probe.start()
                     let clicked = ready && NativeUIAccessibility.click(control, in: window)
                     // Do not force layout/display or traverse accessibility inside
@@ -2428,7 +2437,9 @@
                         samples.append(
                             String(
                                 format: "event %.1f / draw %.1f / max-gap %.1f ms",
-                                probe.mouseDownMS ?? -1, update, probe.maximumMainLoopGapMS))
+                                probe.mouseDownMS ?? -1, update, probe.maximumMainLoopGapMS)
+                                + " / project-generation \(store.stateRequestGeneration - stateReads) / chat-generation \(store.chatsRequestGeneration - chatReads)"
+                                + " / footprint-bytes \(performancePhysicalFootprint())")
                     } else {
                         samples.append(
                             "failed: ready \(ready), click \(clicked), section \(store.section.rawValue), draw \(probe.firstDrawMS != nil)"
@@ -2440,9 +2451,12 @@
                     }
                 }
                 results["navigation-\(section.rawValue.lowercased())"] = samples.joined(separator: "; ")
+                if extended {
+                    await measureQuietSurface(store: store, section: section, results: &results)
+                }
             }
             results["navigation-metric-definition"] =
-                "Native click invocation to first destination drawing callback; includes target lookup. Not compositor presentation or data-ready time. Event = mouse-down delivery; max-gap = largest main-run-loop timer interval (8 ms target). Three samples, debug fixture."
+                "Native click invocation to first destination drawing callback; includes target lookup. Not compositor presentation or data-ready time. Event = mouse-down delivery; max-gap = largest main-run-loop timer interval (8 ms target). Three samples per route, or 15 for Board/Chats with DIETER_PERFORMANCE_SWEEP=1, debug fixture. Generation deltas include invalidation as well as reads; zero proves neither occurred. Footprint is process-wide physical footprint after settling, not retained-object count."
         }
 
         private static func recordNavigationTargetFailure(

@@ -49,11 +49,14 @@ export function acpImplementationIdentity({ settings, acpPackageVersion }) {
   return createHash('sha256').update(JSON.stringify(sortIdentityValue(payload))).digest('hex');
 }
 
-export function createOMPLaunchCandidates({ hookPaths, configPath }) {
-  return [
-    ...hookPaths.map(hookPath => ({ hookPath, configPath })),
-    ...hookPaths.map(hookPath => ({ hookPath, configPath: undefined })),
-  ];
+export function createOMPLaunchCandidates({ hookPaths, configPath, implementations }) {
+  if (!Array.isArray(implementations) || implementations.length === 0) {
+    throw new Error('OMP implementations are missing');
+  }
+  return implementations.flatMap(implementation => [
+    ...hookPaths.map(hookPath => ({ ...implementation, hookPath, configPath })),
+    ...hookPaths.map(hookPath => ({ ...implementation, hookPath, configPath: undefined })),
+  ]);
 }
 
 export function prioritizeOMPLaunchCandidates({ candidates, lifecycleState, settingsForCandidate, acpPackageVersion }) {

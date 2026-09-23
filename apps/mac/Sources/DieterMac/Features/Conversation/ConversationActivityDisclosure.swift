@@ -97,10 +97,21 @@ private struct ConversationActivityDisclosureStyle: DisclosureGroupStyle {
 struct ConversationActivityPartsView: View {
     let steps: [ConversationActivityStep]
     var expandedActivity = false
+    @State private var firstVisibleID: String?
 
     var body: some View {
+        let groups = ConversationActivityPartGroup.group(steps)
+        let start = ConversationActivityPartGroup.visibleStart(in: groups, from: firstVisibleID)
         VStack(alignment: .leading, spacing: 10) {
-            ForEach(ConversationActivityPartGroup.group(steps)) { group in
+            if start > 0 {
+                Button("Show earlier in this message") {
+                    firstVisibleID = groups[max(0, start - ConversationActivityPartGroup.initialVisibleCount)].id
+                }
+                .buttonStyle(.borderless)
+                .font(.caption)
+                .accessibilityIdentifier("conversation.message.earlier.\(steps.first?.messageID ?? "")")
+            }
+            ForEach(groups.dropFirst(start)) { group in
                 if group.isActivity {
                     if expandedActivity {
                         ConversationActivityStepsView(steps: group.steps)
@@ -137,6 +148,11 @@ struct ConversationActivityPartsView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .onChange(of: groups.indices.contains(start) ? groups[start].id : nil, initial: true) { _, id in
+            // Pin the boundary after mounting. Incoming tokens must not remove
+            // prose the reader has already seen or reset disclosure state.
+            if firstVisibleID != id { firstVisibleID = id }
+        }
     }
 }
 

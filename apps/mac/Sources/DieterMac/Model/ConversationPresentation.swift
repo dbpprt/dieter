@@ -129,6 +129,9 @@ struct ConversationPresentationKey: Hashable {
 }
 
 enum ConversationRenderWindow {
+    // Start near the visible tail. Short rows expand this window after native
+    // layout until it fills the viewport; scrollback retains the larger budget.
+    static let initialMessages = 8
     static let maximumMessages = 60
     static let maximumTextBytes = 16_000
     static let maximumParts = 160
@@ -147,7 +150,9 @@ enum ConversationRenderWindow {
         case through(messageID: String)
     }
 
-    static func range(messages: [Dieter_V1_UiMessage], position: Position) -> Range<Int> {
+    static func range(
+        messages: [Dieter_V1_UiMessage], position: Position, latestMessageLimit: Int = maximumMessages
+    ) -> Range<Int> {
         guard !messages.isEmpty else { return 0..<0 }
         switch position {
         case .latest:
@@ -161,7 +166,7 @@ enum ConversationRenderWindow {
                 return backwardRange(messages: messages, end: last + 1, pages: retainedPages)
             }
         }
-        return backwardRange(messages: messages, end: messages.count, pages: 1)
+        return backwardRange(messages: messages, end: messages.count, pages: 1, messageLimit: latestMessageLimit)
     }
 
     /// Freezes the rendered start when the reader leaves the live tail, so
@@ -203,9 +208,12 @@ enum ConversationRenderWindow {
         }
     }
 
-    private static func backwardRange(messages: [Dieter_V1_UiMessage], end: Int, pages: Int) -> Range<Int> {
+    private static func backwardRange(
+        messages: [Dieter_V1_UiMessage], end: Int, pages: Int, messageLimit: Int = maximumMessages
+    ) -> Range<Int> {
         var lower = end, bytes = 0, parts = 0
-        for index in stride(from: end - 1, through: max(0, end - maximumMessages * pages), by: -1) {
+        let count = min(maximumMessages, max(1, messageLimit)) * pages
+        for index in stride(from: end - 1, through: max(0, end - count), by: -1) {
             let cost = messageTextCost(messages[index])
             let partCount = messages[index].parts.count
             if lower < end, bytes + cost > maximumTextBytes * pages || parts + partCount > maximumParts * pages {

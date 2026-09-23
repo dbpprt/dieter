@@ -13,11 +13,11 @@ func TestMergeQueuesBehindRunningTargetAndDeliversInitialRequest(t *testing.T) {
 	service, _, project, board := appSetup(t)
 	runner := &interruptQueueRunner{started: make(chan int, 2)}
 	service.Runner = runner
-	target, err := service.CreateCard(context.Background(), CardInput{Project: project.ID, Board: board.ID, Title: "Target", Prompt: "Keep working", Provider: "omp", Model: "box/qwen3_6_27b", DeferStart: true})
+	target, err := service.CreateCard(context.Background(), CardInput{Project: project.ID, Board: board.ID, Title: "Target", Prompt: "Keep working", Provider: "omp", Model: "tailscale/glm-5.3-flash-exl3", DeferStart: true})
 	if err != nil {
 		t.Fatal(err)
 	}
-	source, err := service.CreateCard(context.Background(), CardInput{Project: project.ID, Board: board.ID, Title: "Source", Prompt: "Add the missing feature", Provider: "omp", Model: "box/qwen3_6_27b", DeferStart: true})
+	source, err := service.CreateCard(context.Background(), CardInput{Project: project.ID, Board: board.ID, Title: "Source", Prompt: "Add the missing feature", Provider: "omp", Model: "tailscale/glm-5.3-flash-exl3", DeferStart: true})
 	if err != nil {
 		t.Fatal(err)
 	}

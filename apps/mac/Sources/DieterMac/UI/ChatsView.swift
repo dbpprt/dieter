@@ -4,6 +4,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct ChatsView: View {
+    var active = true
     @Environment(DieterStore.self) private var store
     @State private var search = ""
     @State private var showArchived = false
@@ -31,6 +32,7 @@ struct ChatsView: View {
     }
 
     var body: some View {
+        let _ = BoardRenderingDiagnostics.record(.chatListBody)
         let chatFolders = store.allChatsFolders
         let projection = store.replica.chatProjection(
             showArchived: showArchived,
@@ -207,29 +209,7 @@ struct ChatsView: View {
             .accessibilityIdentifier("chats.browser-pane")
             .smokeTarget("chats.browser-pane")
         } detail: {
-            if store.selectedChatID != nil {
-                ConversationView(
-                    compact: store.conversationWorkspacePanelEnabled
-                        && store.conversationContext.content.isPresented(for: store.selectedChatID),
-                    surfaceStyle: .inherited
-                )
-                .environment(store.conversationContext)
-            } else if showArchived {
-                VStack(spacing: 0) {
-                    FluidPaneChrome(background: .clear) {
-                        PaneTitleBlock(
-                            title: "Archived conversations", subtitle: "Select a chat to inspect or restore",
-                            symbol: "archivebox")
-                    }
-                    VStack(spacing: 10) {
-                        Image(systemName: "archivebox").font(.system(size: 34)).foregroundStyle(.secondary)
-                        Text("Archived chats").font(.title2.weight(.bold))
-                        Text("Select a conversation to restore or review it.").foregroundStyle(.secondary)
-                    }.frame(maxWidth: .infinity, maxHeight: .infinity)
-                }
-            } else {
-                StandaloneChatStartView()
-            }
+            if active { ChatDetailPane(showArchived: showArchived) }
         }
         .task(id: showArchived) { await store.ensureChatDirectory(includeArchived: showArchived) }
         .task(id: pinnedChatMembership) { initializePinnedChatOrderIfNeeded() }
@@ -295,6 +275,39 @@ struct ChatsView: View {
         var chatFolders = store.allChatsFolders
         guard chatFolders.deleteFolder(folderID) else { return }
         store.allChatsFolders = chatFolders
+    }
+}
+
+/// Selection and transcript-panel changes belong to the detail observation
+/// boundary. They must not rebuild the directory projection on every click.
+private struct ChatDetailPane: View {
+    @Environment(DieterStore.self) private var store
+    let showArchived: Bool
+
+    var body: some View {
+        if store.selectedChatID != nil {
+            ConversationView(
+                compact: store.conversationWorkspacePanelEnabled
+                    && store.conversationContext.content.isPresented(for: store.selectedChatID),
+                surfaceStyle: .inherited
+            )
+            .environment(store.conversationContext)
+        } else if showArchived {
+            VStack(spacing: 0) {
+                FluidPaneChrome(background: .clear) {
+                    PaneTitleBlock(
+                        title: "Archived conversations", subtitle: "Select a chat to inspect or restore",
+                        symbol: "archivebox")
+                }
+                VStack(spacing: 10) {
+                    Image(systemName: "archivebox").font(.system(size: 34)).foregroundStyle(.secondary)
+                    Text("Archived chats").font(.title2.weight(.bold))
+                    Text("Select a conversation to restore or review it.").foregroundStyle(.secondary)
+                }.frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        } else {
+            StandaloneChatStartView()
+        }
     }
 }
 
@@ -765,26 +778,31 @@ private struct ChatRowSeparator: View {
 struct ChatRow: View {
     @Environment(DieterStore.self) private var store
     let card: Dieter_V1_Card
+    var showsPinnedDragHandle = false
+
+    var body: some View {
+        ChatRowContent(card: card, showsPinnedDragHandle: showsPinnedDragHandle, unread: store.isChatUnread(card))
+            .equatable()
+    }
+}
+
+private struct ChatRowContent: View, Equatable {
+    @Environment(DieterStore.self) private var store
+    let card: Dieter_V1_Card
     let showsPinnedDragHandle: Bool
-    @State private var hovering = false
+    let unread: Bool
+
+    nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.card == rhs.card && lhs.showsPinnedDragHandle == rhs.showsPinnedDragHandle && lhs.unread == rhs.unread
+    }
+
     @State private var renamePresented = false
     @State private var renameText = ""
 
-    private var unread: Bool { store.isChatUnread(card) }
     private var running: Bool { ChatRuntimePresentation.isActive(card.runtime) }
-    private var pinnedMachine: DieterEndpoint? {
-        return store.machine(for: card)
-    }
-    private var pinnedMachineOnline: Bool {
-        pinnedMachine.map(store.machineIsAvailable) == true
-    }
-
-    init(card: Dieter_V1_Card, showsPinnedDragHandle: Bool = false) {
-        self.card = card
-        self.showsPinnedDragHandle = showsPinnedDragHandle
-    }
 
     var body: some View {
+        let _ = BoardRenderingDiagnostics.record(.chatRowBody)
         Button {
             Task {
                 if card.archived { await store.archive(card, archived: false) }
@@ -860,26 +878,12 @@ struct ChatRow: View {
                         }
                         .font(.system(size: 10, weight: unread ? .semibold : .medium))
                         .foregroundStyle(unread ? DieterTheme.primary : DieterTheme.tertiary)
-                        if let pinnedMachine {
-                            ProjectMachineBadge(
-                                machine: pinnedMachine,
-                                online: pinnedMachineOnline,
-                                compact: true
-                            )
-                            .frame(maxWidth: 72, alignment: .trailing)
-                            .accessibilityIdentifier("chat.\(card.id).machine")
-                            .smokeTarget(
-                                "chat.\(card.id).machine.\(pinnedMachineOnline ? "online" : "offline")")
-                        }
+                        ChatRowMachineBadge(card: card)
                     }
                 }
             }
             .padding(.horizontal, 8).padding(.vertical, 7)
-            .background(
-                store.selectedChatID == card.id
-                    ? DieterTheme.selection : (hovering ? DieterTheme.raised.opacity(0.75) : .clear),
-                in: RoundedRectangle(cornerRadius: 7, style: .continuous)
-            )
+            .background { ChatRowBackground(cardID: card.id) }
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
             .opacity(store.isPendingCard(card.id) ? 0.52 : 1)
@@ -897,7 +901,6 @@ struct ChatRow: View {
             }
         }
         .buttonStyle(.plain)
-        .onHover { hovering = $0 }
         .draggable(PinnedChatDragPayload(chatID: card.id).encoded) {
             PinnedChatDragPreview(card: card)
         }
@@ -979,6 +982,36 @@ struct ChatRow: View {
         var preferences = store.allChatsFolders
         guard preferences.moveItem(card.id, to: folderID) else { return }
         store.allChatsFolders = preferences
+    }
+}
+
+private struct ChatRowBackground: View {
+    @Environment(DieterStore.self) private var store
+    let cardID: String
+    @State private var hovering = false
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: 7, style: .continuous)
+            .fill(
+                store.selectedChatID == cardID
+                    ? DieterTheme.selection : (hovering ? DieterTheme.raised.opacity(0.75) : .clear)
+            )
+            .onHover { hovering = $0 }
+    }
+}
+
+private struct ChatRowMachineBadge: View {
+    @Environment(DieterStore.self) private var store
+    let card: Dieter_V1_Card
+
+    var body: some View {
+        if let machine = store.machine(for: card) {
+            let online = store.machineIsAvailable(machine)
+            ProjectMachineBadge(machine: machine, online: online, compact: true)
+                .frame(maxWidth: 72, alignment: .trailing)
+                .accessibilityIdentifier("chat.\(card.id).machine")
+                .smokeTarget("chat.\(card.id).machine.\(online ? "online" : "offline")")
+        }
     }
 }
 

@@ -238,6 +238,7 @@ final class ConversationScrollController: NSObject {
     private var lastLayout = Layout()
     private var lastOffset: CGFloat = 0
     private var isAdjusting = false
+    private var initialPositioning = false
     private var verificationScheduled = false
     private var pendingReadingPosition: ReadingPosition?
     private var holdGeneration = 0
@@ -260,6 +261,13 @@ final class ConversationScrollController: NSObject {
     var onTailCorrection: (() -> Void)?
 
     var scrollView: NSScrollView? { attachedScrollView }
+    func hasLaidOutMessage(_ id: String) -> Bool {
+        registrations.values.contains { registration in
+            guard registration.messageIDs.contains(id), let view = registration.view else { return false }
+            return view.window != nil && view.bounds.width > 0 && view.bounds.height > 0
+        }
+    }
+
     private var resolvedScrollView: NSScrollView? {
         attachedScrollView ?? registrations.values.lazy.compactMap { $0.view?.enclosingScrollView }.first
     }
@@ -305,9 +313,17 @@ final class ConversationScrollController: NSObject {
     /// Forgets the previous conversation and tracks the next one's tail.
     func reset() {
         pendingReadingPosition = nil
+        initialPositioning = false
         isFollowing = true
         rendersLatest = true
         applyLayoutPolicy()
+    }
+
+    func beginInitialPositioning() { initialPositioning = true }
+
+    func finishInitialPositioning() {
+        applyLayoutPolicy()
+        initialPositioning = false
     }
 
     /// Pins the viewport to the newest content and keeps it there.
@@ -320,6 +336,7 @@ final class ConversationScrollController: NSObject {
     /// The user asked for older content; stop tracking the tail right away so
     /// content streaming in during the same frame cannot undo their input.
     func detach() {
+        initialPositioning = false
         setFollowing(false)
     }
 
@@ -434,6 +451,10 @@ final class ConversationScrollController: NSObject {
 
     @objc private func clipBoundsDidChange(_ notification: Notification) {
         guard !isAdjusting, let scroll = attachedScrollView else { return }
+        // Initial row placement and viewport filling can move the native clip
+        // before the transcript is revealed. Those movements are not input.
+        // A real wheel gesture calls detach() first and ends this protection.
+        guard !initialPositioning else { applyLayoutPolicy(); return }
         let layout = currentLayout(scroll)
         let offset = scroll.contentView.bounds.minY
         guard layout == lastLayout, !(verificationScheduled && isFollowing) else {
@@ -453,7 +474,12 @@ final class ConversationScrollController: NSObject {
         } else if delta > 0, atEnd, rendersLatest {
             setFollowing(true)
         }
-        let reach = max(160, layout.viewportHeight)
+        // A small initial window needs some actual scrolling before it grows.
+        // A full viewport of preload reach can cover that entire window and
+        // turn the first one-pixel gesture into an immediate page replacement.
+        let scrollableHeight = max(
+            0, layout.documentHeight - layout.viewportHeight + layout.topInset + layout.bottomInset)
+        let reach = min(max(160, layout.viewportHeight), scrollableHeight / 2)
         let proximity = EdgeProximity(
             movedEarlier: delta < 0,
             nearStart: offset <= -layout.topInset + reach,

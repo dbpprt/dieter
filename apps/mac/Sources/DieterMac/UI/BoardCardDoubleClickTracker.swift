@@ -9,7 +9,6 @@ import AppKit
     private var firstClick: NSEvent?
     private var edit: (() -> Void)?
     private var monitor: Any?
-    private var expiry: DispatchWorkItem?
 
     func arm(after event: NSEvent?, edit: @escaping () -> Void) {
         cancel()
@@ -25,9 +24,16 @@ import AppKit
             return self.perform(#selector(BoardCardDoubleClickTracker.filter(_:)), with: event)?
                 .takeUnretainedValue() as? NSEvent
         }
-        let expiry = DispatchWorkItem { [weak self] in self?.cancel() }
-        self.expiry = expiry
-        DispatchQueue.main.asyncAfter(deadline: .now() + NSEvent.doubleClickInterval, execute: expiry)
+        // Input timestamps, not processing time, determine a double click.
+        // A layout stall can queue the second click behind a wall-clock timer;
+        // expiring here would discard a valid click before AppKit delivers it.
+        // Retain at most one action until the next input or window deactivation.
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(windowDeactivated(_:)),
+            name: NSWindow.didResignKeyNotification, object: nil)
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(windowDeactivated(_:)),
+            name: NSWindow.willCloseNotification, object: nil)
     }
 
     @objc func filter(_ event: NSEvent) -> NSEvent? {
@@ -47,9 +53,15 @@ import AppKit
         return nil
     }
 
+    @objc private func windowDeactivated(_ notification: Notification) {
+        guard let window = notification.object as? NSWindow,
+            window.windowNumber == firstClick?.windowNumber
+        else { return }
+        cancel()
+    }
+
     func cancel() {
-        expiry?.cancel()
-        expiry = nil
+        NotificationCenter.default.removeObserver(self)
         if let monitor { NSEvent.removeMonitor(monitor) }
         monitor = nil
         firstClick = nil

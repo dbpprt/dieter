@@ -261,10 +261,24 @@ private let connectionLogger = Logger(subsystem: "com.dbpprt.dieter.mac", catego
             webRTCRetries[daemonID]?.allowsAttempt(at: clock.now()) ?? true
         {
             do {
-                let connection = try await controlConnection(
-                    gateway: gateway, target: target, gatewayAccessToken: gatewayAccessToken, route: route,
-                    refreshDirectToken: refreshDirectToken, run: run)
-                webRTCRetries.removeValue(forKey: daemonID)
+                let connection = try await HedgedRoute.connect(
+                    preferred: {
+                        try await self.controlConnection(
+                            gateway: gateway, target: target, gatewayAccessToken: gatewayAccessToken, route: route,
+                            refreshDirectToken: refreshDirectToken, run: run)
+                    },
+                    fallback: {
+                        try await self.relayConnection(target: target, accessToken: gatewayAccessToken, run: run)
+                    },
+                    dispose: { $0.shutdown() })
+                if connection.connection.route == .gateway {
+                    var retry = webRTCRetries[daemonID] ?? WebRTCRouteRetryState()
+                    _ = retry.recordFailure(at: clock.now())
+                    webRTCRetries[daemonID] = retry
+                    connectionLogger.info("Relay became healthy before WebRTC for \(daemonID, privacy: .public)")
+                } else {
+                    webRTCRetries.removeValue(forKey: daemonID)
+                }
                 return connection
             } catch {
                 try Task.checkCancellation()
@@ -278,6 +292,7 @@ private let connectionLogger = Logger(subsystem: "com.dbpprt.dieter.mac", catego
                 connectionLogger.info(
                     "WebRTC control route unavailable for \(daemonID, privacy: .public); stage=\(stage, privacy: .public) reason=\(reason, privacy: .public) elapsed_ms=\(elapsedMilliseconds) retry_in_s=\(Int(delay))"
                 )
+                throw error
             }
         } else if let retryAt = webRTCRetries[daemonID]?.retryAt {
             connectionLogger.debug(
@@ -289,8 +304,16 @@ private let connectionLogger = Logger(subsystem: "com.dbpprt.dieter.mac", catego
                 domain: "DieterGateway", code: 3,
                 userInfo: [NSLocalizedDescriptionKey: "This Dieter daemon is offline."])
         }
+        return try await relayConnection(target: target, accessToken: gatewayAccessToken, run: run)
+    }
+
+    private func relayConnection(
+        target: DieterEndpoint, accessToken: String?,
+        run: @escaping @MainActor (DieterRPC) -> Task<Void, Never>
+    ) async throws -> DataPlaneConnection {
+        guard let daemonID = target.daemonID else { throw CancellationError() }
         let relay = try factory.client(
-            endpoint: target, accessToken: gatewayAccessToken, route: .relay(daemonID: daemonID))
+            endpoint: target, accessToken: accessToken, route: .relay(daemonID: daemonID))
         let relayTask = run(relay)
         do {
             let started = Date()

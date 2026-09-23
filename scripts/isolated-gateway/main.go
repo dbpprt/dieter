@@ -210,6 +210,11 @@ func run(address, home, offlineTrigger, daemonRestartTrigger string, boardStress
 			return err
 		}
 	}
+	if os.Getenv("DIETER_PERFORMANCE_SWEEP") == "1" {
+		if err := seedChatPerformanceFixture(data, project); err != nil {
+			return err
+		}
+	}
 
 	boardListener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -679,6 +684,49 @@ func isolatedMachineCapabilities(context.Context) []machine.OperationCapability 
 		{Operation: machine.OperationShutdown, Supported: true, Authorized: true},
 		{Operation: machine.OperationUpdate, Supported: true, Authorized: true},
 	}
+}
+
+// Opt-in client workload: a nonempty directory and two independently paged,
+// tool-heavy histories. All writes use the disposable fixture store.
+func seedChatPerformanceFixture(data *boardstore.Store, project model.Project) error {
+	for i := range 40 {
+		card, err := data.CreateChat(boardstore.CreateCardInput{
+			Project: project.ID, Title: fmt.Sprintf("Performance chat %02d", i),
+			Provider: "mock", Model: "mock", WorkspaceMode: model.WorkspaceModeProject,
+		})
+		if err != nil {
+			return err
+		}
+		if i >= 2 {
+			continue
+		}
+		if _, err := data.PinChat(card.ID, true); err != nil {
+			return err
+		}
+		messages := make([]model.UIMessage, 300)
+		for j := range messages {
+			payload, _ := json.Marshal(map[string]any{"command": "fixture measurement", "index": fmt.Sprintf("%d-%d", i, j), "output": strings.Repeat("bounded tool output ", 1024)})
+			messages[j] = model.UIMessage{ID: fmt.Sprintf("perf-%d-%d", i, j), Role: "assistant", Parts: []model.UIMessagePart{
+				{Type: "text", Text: fmt.Sprintf("### Finding %d\n\nA measured **chat performance** fixture with `inline code` and a short explanation.", j)},
+				{Type: "tool", ToolCallID: fmt.Sprint(j), ToolName: "exec", State: "output-available", Output: payload},
+			}}
+		}
+		if os.Getenv("DIETER_PERFORMANCE_LONG_TURN") == "1" {
+			// A message is a provider turn, not one visible paragraph. Real
+			// agent conversations can put hundreds of text/tool parts in it.
+			var parts []model.UIMessagePart
+			for j := range 340 {
+				parts = append(parts,
+					model.UIMessagePart{Type: "text", Text: fmt.Sprintf("### Step %d\n\nChecked **refresh behavior** with `native input`. The result remains available in the transcript.", j)},
+					model.UIMessagePart{Type: "dynamic-tool", ToolCallID: fmt.Sprintf("long-%d", j), ToolName: "exec", State: "output-available", Output: json.RawMessage(`{"output":"check completed"}`)})
+			}
+			messages[len(messages)-1].Parts = parts
+		}
+		if _, err := data.InitializeForkConversation(card.ID, messages); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func seedBoardStressFixture(data *boardstore.Store, project model.Project, board model.Board) (model.Board, error) {

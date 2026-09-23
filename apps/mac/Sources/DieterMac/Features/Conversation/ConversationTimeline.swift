@@ -82,6 +82,7 @@ struct ConversationTimeline: View {
     @State private var renderedHasEarlier = false
     @State private var renderedThroughLatest = true
     @State private var windowPosition = ConversationRenderWindow.Position.latest
+    @State private var latestMessageLimit = ConversationRenderWindow.initialMessages
     @State private var scroller = ConversationScrollController()
     @State private var jumpToLatestHovered = false
 
@@ -94,7 +95,8 @@ struct ConversationTimeline: View {
     }
     private var timelineGroups: [ConversationTimelineDisplayGroup] { projection.displayGroups }
     private var renderRange: Range<Int> {
-        ConversationRenderWindow.range(messages: messages, position: windowPosition)
+        ConversationRenderWindow.range(
+            messages: messages, position: windowPosition, latestMessageLimit: latestMessageLimit)
     }
     private var windowChangePending: Bool { renderedPosition != windowPosition }
     private var isAtLatest: Bool {
@@ -159,6 +161,13 @@ struct ConversationTimeline: View {
     }
 
     var body: some View {
+        // The parent split and composer inset ask for minimum and ideal sizes
+        // before allocating this viewport. The transcript must not answer those
+        // probes by laying out every rich row at each speculative size.
+        GeometryReader { _ in timeline }
+    }
+
+    private var timeline: some View {
         ScrollView {
             // The server delivers a bounded page, so eager layout is both
             // affordable and avoids the macOS LazyVStack/SelectionOverlay
@@ -299,6 +308,9 @@ struct ConversationTimeline: View {
                 ConversationUISmokeRunner.recordJumpToLatestVisibility(visible, conversationID: conversationID)
             #endif
         }
+        .onChange(of: timelineReadyForDisplay, initial: true) { _, ready in
+            BoardRenderingDiagnostics.recordConversationReady(conversationID, ready: ready)
+        }
         .onChange(of: viewportObservation, initial: true) { _, observation in
             onViewportObservation?(observation)
             #if DIETER_UI_SMOKE
@@ -314,6 +326,7 @@ struct ConversationTimeline: View {
             if log == nil { retryingFailureLog = nil }
         }
         .onChange(of: conversationID, initial: true) { _, selectedID in
+            latestMessageLimit = ConversationRenderWindow.initialMessages
             windowPosition = .latest
             renderedPosition = .latest
             renderedHasEarlier = false
@@ -325,6 +338,7 @@ struct ConversationTimeline: View {
             projectionConversationID = ""
             viewportMode = .awaitingInitial(conversationID: selectedID)
             scroller.reset()
+            scroller.beginInitialPositioning()
         }
         .task(id: projectionKey) {
             let key = projectionKey
@@ -339,7 +353,18 @@ struct ConversationTimeline: View {
             guard
                 let next = try? await BackgroundPreparation.run({
                     for message in source {
-                        for part in message.parts where !part.text.isEmpty {
+                        let parts: [Dieter_V1_MessagePart]
+                        if message.role == "user" {
+                            parts = message.parts
+                        } else {
+                            let groups = ConversationActivityPartGroup.group(
+                                ConversationActivityStep.steps(messages: [message], showReasoning: showReasoning))
+                            // Older parts and collapsed activity are prepared
+                            // when revealed, not on the first visible frame.
+                            parts = groups.suffix(ConversationActivityPartGroup.initialVisibleCount)
+                                .filter { !$0.isActivity }.flatMap { $0.steps.map(\.part) }
+                        }
+                        for part in parts where !part.text.isEmpty {
                             try Task.checkCancellation()
                             _ = try ConversationRenderCache.prepare(ConversationRenderCache.preview(part.text))
                         }
@@ -365,12 +390,39 @@ struct ConversationTimeline: View {
             renderedHasEarlier = range.lowerBound > 0
             renderedThroughLatest = throughLatest
             guard viewportMode == .awaitingInitial(conversationID: key.conversationID) else { return }
-            // Reveal the transcript once its first layout is pinned to the tail.
-            for _ in 0..<8 {
-                await Task.yield()
-                guard viewportMode == .awaitingInitial(conversationID: key.conversationID) else { return }
-                if scroller.scrollView != nil, scroller.isAtEdge(earlier: false) { break }
+            if source.isEmpty {
+                scroller.finishInitialPositioning()
+                viewportMode = .followingLatest
+                return
             }
+            // Reveal the transcript once its first layout is pinned to the tail.
+            for _ in 0..<20 {
+                // Yield an actual run-loop pass so AppKit can place the rows;
+                // a sequence of executor yields can all precede native layout.
+                try? await Task.sleep(for: .milliseconds(5))
+                guard !Task.isCancelled else { return }
+                guard viewportMode == .awaitingInitial(conversationID: key.conversationID) else { return }
+                if let lastID = source.last?.id, scroller.hasLaidOutMessage(lastID),
+                    scroller.isAtEdge(earlier: false)
+                {
+                    break
+                }
+            }
+            // Do not leave a short-message conversation with a half-empty
+            // viewport merely to meet a row budget. Grow only when the actual
+            // laid-out tail does not fill it, retaining the text/part limits.
+            if let lastID = source.last?.id, scroller.hasLaidOutMessage(lastID),
+                !scroller.contentCanScroll, range.lowerBound > 0, windowPosition == .latest
+            {
+                let limit = min(ConversationRenderWindow.maximumMessages, latestMessageLimit * 2)
+                let expanded = ConversationRenderWindow.range(
+                    messages: messages, position: .latest, latestMessageLimit: limit)
+                if expanded != range {
+                    latestMessageLimit = limit
+                    return
+                }
+            }
+            scroller.finishInitialPositioning()
             viewportMode = scroller.isFollowing ? .followingLatest : .detached
         }
         .sheet(

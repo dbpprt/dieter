@@ -45,6 +45,7 @@ struct DieterRootView: View {
     private var navigationWidth = Double(SidebarSizing.defaultWidth)
     @State private var sidebarVisibility: NavigationSplitViewVisibility = .all
     @State private var hasOpenedBoard = false
+    @State private var hasOpenedChats = false
 
     private var showsSynchronizedWorkspace: Bool {
         switch store.section {
@@ -103,15 +104,30 @@ struct DieterRootView: View {
                     if hasOpenedBoard || store.section == .board {
                         BoardView(
                             usesTitlebarSpace: sidebarVisibility != .detailOnly,
-                            active: store.section == .board)
-                            .opacity(store.section == .board ? 1 : 0)
-                            .allowsHitTesting(store.section == .board)
-                            .accessibilityHidden(store.section != .board)
+                            active: store.section == .board
+                        )
+                        .opacity(store.section == .board ? 1 : 0)
+                        .allowsHitTesting(store.section == .board)
+                        .accessibilityHidden(store.section != .board)
+                    }
+                    if hasOpenedChats || store.section == .chats {
+                        RetainedWorkspacePane(active: store.section == .chats) {
+                            ChatsView(active: store.section == .chats)
+                                .environment(store)
+                                .dieterThemeRoot(
+                                    palette: store.themeSelection.palette, appearance: store.themeSelection.appearance)
+                        }
+                        // Give the native host the full pane so its SwiftUI
+                        // backgrounds and divider can extend under the titlebar.
+                        // The hosted controls still respect the window safe area.
+                        .ignoresSafeArea(.container, edges: .top)
+                        .allowsHitTesting(store.section == .chats)
+                        .accessibilityHidden(store.section != .chats)
                     }
                     switch store.section {
                     case .board:
                         Color.clear.allowsHitTesting(false)
-                    case .chats: ChatsView()
+                    case .chats: Color.clear.allowsHitTesting(false)
                     case .terminals:
                         TerminalsView(model: store.terminalsModel, showAll: { await store.showAllTerminals() })
                     case .screens:
@@ -154,6 +170,7 @@ struct DieterRootView: View {
                 }
                 .onChange(of: store.section, initial: true) { _, section in
                     if section == .board { hasOpenedBoard = true }
+                    if section == .chats { hasOpenedChats = true }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
@@ -1028,8 +1045,9 @@ private struct ProjectContextMenuModifier: ViewModifier {
                     systemImage: store.pinnedProjectNavigation.isPinned(project.id) ? "pin.slash" : "pin"
                 ) {
                     var navigation = store.pinnedProjectNavigation
-                    guard navigation.setPinned(
-                        project.id, pinned: !navigation.isPinned(project.id))
+                    guard
+                        navigation.setPinned(
+                            project.id, pinned: !navigation.isPinned(project.id))
                     else { return }
                     store.pinnedProjectNavigation = navigation
                 }
