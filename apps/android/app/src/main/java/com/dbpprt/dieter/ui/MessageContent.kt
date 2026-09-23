@@ -47,8 +47,10 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.key
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
@@ -123,29 +125,45 @@ internal fun MessageParts(
             showReasoning = showReasoningTraces,
         )
     }
+    var retainedStart by remember(message.id, showReasoningTraces) { mutableStateOf<Int?>(null) }
+    val start = if (message.role == "user") 0 else conversationMessageStart(timeline.size, retainedStart)
+    LaunchedEffect(message.id, showReasoningTraces, start, timeline.isEmpty()) {
+        // New streamed parts append to the mounted window; they never evict
+        // already-visible prose or reset an expanded tool group.
+        if (timeline.isNotEmpty() && retainedStart != start) retainedStart = start
+    }
     if (plan != null) TaskPlanBlock(plan)
-    timeline.forEachIndexed { index, item ->
-        when (item) {
-            is ConversationTimelineItem.Tools -> ToolGroup(
-                messageId = message.id,
-                groupKey = item.parts.firstOrNull()?.toolCallId.orEmpty().ifBlank { index.toString() },
-                parts = item.parts,
-                model = model,
-            )
-            ConversationTimelineItem.Subagents -> SubagentBlock(subagents)
-            is ConversationTimelineItem.Part -> when (
-                item.part.conversationPartPresentation(showReasoningTraces)
-            ) {
-                ConversationPartPresentation.TEXT -> SelectionContainer {
-                    MessageMarkdown(item.part.text, compact) { previewPath = it }
+    if (start > 0) {
+        TextButton(
+            onClick = { retainedStart = (start - INITIAL_MESSAGE_ITEMS).coerceAtLeast(0) },
+            modifier = Modifier.testTag("message-earlier-${message.id}"),
+        ) { Text("Show earlier in this message") }
+    }
+    timeline.drop(start).forEachIndexed { offset, item ->
+        val index = start + offset
+        key(message.id, index) {
+            when (item) {
+                is ConversationTimelineItem.Tools -> ToolGroup(
+                    messageId = message.id,
+                    groupKey = item.parts.firstOrNull()?.toolCallId.orEmpty().ifBlank { index.toString() },
+                    parts = item.parts,
+                    model = model,
+                )
+                ConversationTimelineItem.Subagents -> SubagentBlock(subagents)
+                is ConversationTimelineItem.Part -> when (
+                    item.part.conversationPartPresentation(showReasoningTraces)
+                ) {
+                    ConversationPartPresentation.TEXT -> SelectionContainer {
+                        MessageMarkdown(item.part.text, compact) { previewPath = it }
+                    }
+                    ConversationPartPresentation.REASONING -> ReasoningPart(item.part.text)
+                    ConversationPartPresentation.FILE -> AttachmentPart(item.part)
+                    ConversationPartPresentation.FALLBACK_TEXT -> MessageMarkdown(item.part.text, compact) {
+                        previewPath = it
+                    }
+                    ConversationPartPresentation.TOOL,
+                    ConversationPartPresentation.HIDDEN -> Unit
                 }
-                ConversationPartPresentation.REASONING -> ReasoningPart(item.part.text)
-                ConversationPartPresentation.FILE -> AttachmentPart(item.part)
-                ConversationPartPresentation.FALLBACK_TEXT -> MessageMarkdown(item.part.text, compact) {
-                    previewPath = it
-                }
-                ConversationPartPresentation.TOOL,
-                ConversationPartPresentation.HIDDEN -> Unit
             }
         }
     }

@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"strconv"
 	"testing"
 
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
@@ -64,6 +65,20 @@ func assertContentPresentationCLI(t *testing.T, client *CLI, output *bytes.Buffe
 		}
 		if update.GetSnapshot().GetConversation().GetPresentedContent().GetId() != browser.GetId() {
 			t.Fatalf("poll lost presentation: %s", raw)
+		}
+		seq := update.GetSnapshot().GetConversation().GetLastSeq()
+		if seq <= 0 {
+			t.Fatal("presentation must establish a resumable cursor")
+		}
+		runDaemonCLI(t, client, output, scope, "comment", card.ID, "--message", "Fresh metadata on resume")
+		raw = runDaemonCLI(t, client, output, scope, "watch", "--after-seq", strconv.FormatInt(seq, 10), "--count", "1", card.ID)
+		var resumed dieterv1.ConversationUpdate
+		if err := protojson.Unmarshal([]byte(raw), &resumed); err != nil {
+			t.Fatal(err)
+		}
+		if resumed.GetSnapshot() != nil || len(resumed.GetChangedMessages()) != 0 || resumed.GetLastSeq() != seq ||
+			resumed.GetPresentedContent().GetId() != browser.GetId() || len(resumed.GetDetail().GetComments()) != 1 {
+			t.Fatalf("resume did not acknowledge fresh metadata without replay: %s", raw)
 		}
 		output.Reset()
 		if err := client.Run([]string{scope, "present", "--path", "../outside.md", card.ID}); err == nil {

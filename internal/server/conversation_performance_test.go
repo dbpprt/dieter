@@ -192,6 +192,34 @@ func TestIdleConversationWatchBuildsOnlyOnce(t *testing.T) {
 	}
 }
 
+func TestResumedConversationAcknowledgesFreshMetadataWithoutResendingMessages(t *testing.T) {
+	api, card := performanceConversation(t, nil)
+	initial, err := api.conversationSnapshot(card.ID, 30, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := api.server.store.AddComment(card.ID, "Updated while disconnected", model.Author{Kind: "human"}); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+	defer cancel()
+	frames := 0
+	err = api.watchConversation(ctx, &dieterv1.WatchConversationRequest{CardId: card.ID, Limit: 30, AfterSeq: initial.Conversation.LastSeq}, func(update *dieterv1.ConversationUpdate) error {
+		frames++
+		if update.Snapshot != nil || len(update.ChangedMessages) != 0 || len(update.RemovedMessageIds) != 0 {
+			t.Fatal("resumed acknowledgement retransmitted unchanged transcript")
+		}
+		if update.LastSeq != initial.Conversation.LastSeq || update.Status != initial.Conversation.Status || len(update.GetDetail().GetComments()) != 1 || !proto.Equal(update.Page, initial.Page) {
+			t.Fatalf("incomplete freshness acknowledgement: %v", update)
+		}
+		cancel()
+		return nil
+	})
+	if err != context.Canceled || frames != 1 {
+		t.Fatalf("resume waited for a future mutation: frames=%d err=%v", frames, err)
+	}
+}
+
 func TestConversationWatchRefreshesMetadataAndCrossProcessTranscript(t *testing.T) {
 	api, card := performanceConversation(t, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

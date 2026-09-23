@@ -91,9 +91,9 @@ final class ConversationModel {
         preferStream: Bool = false
     ) async {
         let selectionGeneration = conversationSelectionGeneration
+        let openedAt = Date()
         do {
             if preferStream {
-                let openedAt = Date()
                 startConversationWatch(
                     cardID: cardID, rpc: rpc, selectionGeneration: selectionGeneration,
                     initialSequence: 0, requireSnapshot: true)
@@ -125,6 +125,16 @@ final class ConversationModel {
                 )
             }
         } catch {
+            // The hedge may finish after the stream. Its late failure must
+            // not restart a healthy subscription or put fresh content back
+            // into an error/refreshing state.
+            if preferStream, self.rpc === rpc, selectionGeneration == conversationSelectionGeneration,
+                (selectedCardID ?? selectedChatID) == cardID,
+                let refreshed = conversationLastRefreshedAt, refreshed >= openedAt,
+                !conversationSyncing
+            {
+                return
+            }
             switch DieterConversationOpenFailurePolicy.disposition(
                 for: error,
                 selectionMatches: selectionGeneration == conversationSelectionGeneration && self.rpc === rpc
@@ -400,6 +410,7 @@ final class ConversationModel {
         let previous = conversation
         apply(update)
         if update.hasSnapshot, let conversation {
+            conversationRead.cancel()
             conversationLoading = false
             conversationError = nil
             onAccepted(conversation, selectedChatID == cardID)

@@ -6,6 +6,27 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class ConversationTimelineTest {
+    @Test fun shorterReplacementKeepsLatestSectionsVisible() {
+        val oldStart = conversationMessageStart(680, null)
+        assertEquals(0, conversationMessageStart(4, oldStart))
+        val replacementStart = conversationMessageStart(20, oldStart)
+        assertEquals(8, replacementStart)
+        assertEquals(replacementStart, conversationMessageStart(21, replacementStart))
+        assertEquals(0, conversationMessageStart(0, replacementStart))
+    }
+
+    @Test fun longTurnStartsAtTailAndKeepsItsBoundaryWhileStreaming() {
+        val timeline = buildConversationTimeline((0 until 340).flatMap { listOf(text("Step $it"), tool("$it")) })
+        assertEquals(680, timeline.size)
+        var start = conversationMessageStart(timeline.size, null)
+        assertEquals(INITIAL_MESSAGE_ITEMS, timeline.size - start)
+        assertEquals(start, conversationMessageStart(timeline.size + 1, start))
+        repeat((timeline.size + INITIAL_MESSAGE_ITEMS - 1) / INITIAL_MESSAGE_ITEMS) {
+            start = conversationMessageStart(timeline.size, start - INITIAL_MESSAGE_ITEMS)
+        }
+        assertEquals("Step 0", (timeline[start] as ConversationTimelineItem.Part).part.text)
+    }
+
     @Test
     fun splitsToolGroupsAroundVisibleModelText() {
         val timeline = buildConversationTimeline(

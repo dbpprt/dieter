@@ -130,6 +130,11 @@ Raw chat samples are in `chat-switch-samples.json` beside the smoke report.
 Five All Chats returns restoring the last conversation are recorded separately
 in `chat-return-samples.json`. Both capture prepared/positioned timeline readiness
 in addition to snapshot readiness; directory drawing alone can hide a slow chat.
+Add `DIETER_PERFORMANCE_LONG_TURN=1` to seed a 680-part final assistant turn
+and measure six alternating opens. Samples also record
+`fresh_and_positioned_ms`, the combined upper bound for positioned content and
+authoritative freshness, and require both before passing. Earlier sections
+remain available through “Show earlier in this message”.
 Run timing separately from compilation, tracing and other test suites. Drawing
 callbacks and snapshot readiness are distinct from compositor presentation;
 first selection can already have Live cache coverage.

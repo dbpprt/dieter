@@ -124,8 +124,29 @@ func waitForCanceledCard(t *testing.T, data *store.Store, cardID string) {
 	t.Fatalf("canceled turn did not finish cleanup: card=%#v conversation=%#v leased=%v errors=%v", card, conversation, leased, errors.Join(cardErr, conversationErr, leaseErr))
 }
 
-func TestConnectConversationEndToEnd(t *testing.T) {
+func useIsolatedMockCatalog(t *testing.T) {
+	t.Helper()
 	t.Setenv("DIETER_ENABLE_MOCK_HARNESS", "1")
+	// This verifies the settings/schedule contract with an isolated catalog.
+	// Live provider discovery has its own opt-in integration test: it may
+	// install pinned runtimes and must not use the operator's DIETER_HOME here.
+	t.Setenv("DIETER_HOME", t.TempDir())
+	catalog := filepath.Join(t.TempDir(), "harnesses.yaml")
+	if err := os.WriteFile(catalog, []byte("version: 1\nharnesses:\n  - id: fixture\n    name: Fixture\n    adapter: mock\n    defaultModel: mock\n    models:\n      - id: mock\n        name: Mock\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := harness.ConfigureCatalog(catalog); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := harness.ConfigureCatalog(""); err != nil {
+			t.Error(err)
+		}
+	})
+}
+
+func TestConnectConversationEndToEnd(t *testing.T) {
+	useIsolatedMockCatalog(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	data := store.New(t.TempDir())
@@ -151,7 +172,7 @@ func TestConnectConversationEndToEnd(t *testing.T) {
 		t.Fatalf("health=%#v err=%v", health, err)
 	}
 	harnesses, err := client.GetHarnesses(ctx, connect.NewRequest(&emptypb.Empty{}))
-	if err != nil || len(harnesses.Msg.GetHarnesses()) < 6 {
+	if err != nil || len(harnesses.Msg.GetHarnesses()) != 2 || harnesses.Msg.GetHarnesses()[0].GetId() != "fixture" || harnesses.Msg.GetHarnesses()[1].GetId() != "mock" {
 		t.Fatalf("harnesses=%#v err=%v", harnesses, err)
 	}
 

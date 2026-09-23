@@ -27,6 +27,10 @@ a reconnect affects relay transports only and does not stop a running agent.
 State, conversation and KV watches wake on commit notifications; a two-second
 recovery check covers missed filesystem notifications and interrupted writers.
 `watch state --interval` bounds the rate of updates during bursts.
+`card watch --after-seq N` (also `chat watch`) immediately acknowledges an
+up-to-date cursor with current metadata and no unchanged messages. This initial
+frame counts toward `--count`; retain the cached transcript when applying it.
+A stale cursor receives the existing snapshot/delta recovery.
 `dieter watch sync --count 3` emits metadata, deltas, and transport-only
 heartbeats. A heartbeat or `observedCursor` is reachability evidence, not applied
 workspace data. Persist a cursor only with its complete projection, never from a

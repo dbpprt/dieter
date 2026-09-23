@@ -101,3 +101,41 @@ private actor StreamFirstFixture: ConversationRPC {
     #expect(model.conversation?.detail.card.id == "chat")
     model.bind(client: nil, endpointID: "fixture")
 }
+
+private actor LateHedgeFixture: ConversationRPC {
+    var reads = 0
+    var watches = 0
+    var canceled = false
+    func conversation(cardID: String, limit: Int32, before: Int32?) async throws -> Dieter_V1_ConversationSnapshot {
+        reads += 1
+        do { try await Task.sleep(for: .seconds(15)) } catch { canceled = true; throw error }
+        throw CancellationError()
+    }
+    func watchConversation(
+        cardID: String, after: Int64,
+        receive: @escaping @Sendable (Dieter_V1_ConversationUpdate) async -> Void
+    ) async throws {
+        watches += 1
+        while reads == 0 { try await Task.sleep(for: .milliseconds(5)) }
+        var update = Dieter_V1_ConversationUpdate()
+        update.snapshot.detail.card.id = cardID
+        update.snapshot.conversation.cardID = cardID
+        update.snapshot.conversation.lastSeq = 42
+        await receive(update)
+        try await Task.sleep(for: .seconds(60))
+    }
+}
+
+@Test @MainActor func successfulStreamCancelsSlowHedgeWithoutRestartingOrFlashingAnError() async {
+    let model = ConversationModel(), rpc = LateHedgeFixture()
+    model.bind(client: rpc, endpointID: "fixture")
+    model.selectedChatID = "chat"
+    model.conversationSyncing = true
+    await model.fetchConversation(cardID: "chat", chat: true, rpc: rpc, preferStream: true)
+    #expect(model.conversation?.conversation.lastSeq == 42)
+    #expect(!model.conversationSyncing)
+    #expect(model.conversationError == nil)
+    #expect(await rpc.canceled)
+    #expect(await rpc.watches == 1)
+    model.bind(client: nil, endpointID: "fixture")
+}

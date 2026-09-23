@@ -101,7 +101,9 @@ and [platform dependencies](docs/linux-support.md).
 **Daemon → gateway → native client.** The daemon owns local execution and
 replicates shared project metadata with your other daemons. The gateway handles
 account identity, machine discovery, and bounded relay. Clients prefer verified
-direct TLS, then supported WebRTC, with gateway relay fallback.
+direct TLS, then supported WebRTC. Native clients start a parallel authenticated
+relay connection after one second if WebRTC is still connecting, use the first
+healthy route, and close the unused attempt. Application requests are sent once.
 
 The gateway stores control metadata and normalized quota snapshots, **not**
 repositories, transcripts, or provider credentials. Relay requests can pass

@@ -15,12 +15,14 @@
             }
             try? await DieterTaskSleep.milliseconds(500)
             var samples: [[String: Any]] = []
-            for index in 0..<30 {
+            let sampleCount = ProcessInfo.processInfo.environment["DIETER_PERFORMANCE_LONG_TURN"] == "1" ? 6 : 30
+            for index in 0..<sampleCount {
                 let card = cards[index % cards.count]
                 let stateReads = store.stateRequestGeneration
                 let chatReads = store.chatsRequestGeneration
                 BoardRenderingDiagnostics.start()
                 let start = ProcessInfo.processInfo.systemUptime
+                let openedAt = Date()
                 let clicked = NativeUIAccessibility.click("chat.\(card.id)", in: window)
                 let dispatchMS = (ProcessInfo.processInfo.systemUptime - start) * 1_000
                 let deadline = start + 10
@@ -41,6 +43,15 @@
                 }
                 let displayed = BoardRenderingDiagnostics.readyConversationID == card.id
                 let presentationMS = (ProcessInfo.processInfo.systemUptime - start) * 1_000
+                while (store.conversationSyncing || (store.conversationLastRefreshedAt ?? .distantPast) < openedAt),
+                    ProcessInfo.processInfo.systemUptime < deadline
+                {
+                    try? await DieterTaskSleep.milliseconds(5)
+                }
+                let refreshed =
+                    !store.conversationSyncing
+                    && (store.conversationLastRefreshedAt ?? .distantPast) >= openedAt
+                let freshAndPositionedMS = (ProcessInfo.processInfo.systemUptime - start) * 1_000
                 try? await DieterTaskSleep.milliseconds(200)
                 let counters = BoardRenderingDiagnostics.stop()
                 let ready =
@@ -50,13 +61,14 @@
                     "index": index, "first_selection": index < 2, "clicked": clicked, "ready": ready,
                     "dispatch_ms": dispatchMS, "selection_ms": selectionMS, "content_ms": contentMS,
                     "presentation_ms": presentationMS, "displayed": displayed,
+                    "fresh_and_positioned_ms": freshAndPositionedMS, "refreshed": refreshed,
                     "project_generation": store.stateRequestGeneration - stateReads,
                     "chat_generation": store.chatsRequestGeneration - chatReads,
                     "footprint_bytes": performancePhysicalFootprint(), "rendering": counters,
                 ])
-                if !clicked || !ready || !displayed {
+                if !clicked || !ready || !displayed || !refreshed {
                     results["chat-switch-workload"] =
-                        "failed: sample \(index) click=\(clicked) ready=\(ready) displayed=\(displayed)"
+                        "failed: sample \(index) click=\(clicked) ready=\(ready) displayed=\(displayed) refreshed=\(refreshed)"
                     break
                 }
             }
@@ -65,7 +77,7 @@
             }
             if results["chat-switch-workload"] == nil { results["chat-switch-workload"] = "passed" }
             results["chat-switch-metric-definition"] =
-                "30 alternating native row clicks across two 300-message tool-heavy chats. Dispatch, selection, bounded 30-message snapshot readiness and timeline-ready state sampled every 5 ms; none is compositor presentation. Rendering/physical footprint include 200 ms settling. First two samples are first selections, which may already have Live cache coverage; remaining 28 revisit the selected chats."
+                "\(sampleCount) alternating native row clicks across two 300-message tool-heavy chats. Dispatch, selection, bounded 30-message snapshot readiness, positioned timeline sampled every 5 ms and combined fresh/positioned completion; none is compositor presentation. Rendering/physical footprint include 200 ms settling. First two samples may already have Live cache coverage."
             capture(window, to: output.appending(path: "performance-chat.png"))
             await measureQuietSurface(store: store, section: .chats, name: "chat-conversation", results: &results)
             let lastChatID = store.selectedChatID

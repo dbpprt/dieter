@@ -969,6 +969,16 @@ func (api *grpcAPI) watchConversation(ctx context.Context, request *dieterv1.Wat
 		// another read, rather than pairing older data with a newer checkpoint.
 		revision = nextRevision
 		if previousSnapshot == nil && resumeSeq > 0 && resumeSeq == snapshot.GetConversation().GetLastSeq() {
+			// A resumed stream must acknowledge freshness even while the
+			// transcript is idle. Otherwise reconnecting clients cannot tell a
+			// healthy quiet stream from a stalled refresh. Include metadata:
+			// comments can change without advancing the transcript sequence.
+			update := conversationDelta(snapshot, snapshot)
+			update.Detail = snapshot.GetDetail()
+			if err := send(update); err != nil {
+				return err
+			}
+			frames++
 			previousSnapshot = snapshot
 			return nil
 		}

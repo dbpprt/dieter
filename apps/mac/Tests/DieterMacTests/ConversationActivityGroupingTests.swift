@@ -3,6 +3,39 @@ import Testing
 @testable import DieterMac
 
 struct ConversationActivityGroupingTests {
+    @Test func longTurnOpensAtTailAndRevealsEveryEarlierGroupWithStableIdentity() {
+        let parts = (0..<340).flatMap { index in
+            [part("text", text: "Step \(index)"), part("tool-call", name: "exec")]
+        }
+        let groups = ConversationActivityPartGroup.group(
+            ConversationActivityStep.steps(messages: [message("long", parts: parts)], showReasoning: false))
+        #expect(groups.count == 680)
+        var start = ConversationActivityPartGroup.visibleStart(in: groups, from: nil)
+        #expect(groups.count - start == 12)
+        let boundary = groups[start].id
+        let appended =
+            groups + [
+                ConversationActivityPartGroup(
+                    steps: [
+                        ConversationActivityStep(id: "new", messageID: "long", part: part("text", text: "Latest"))
+                    ], isActivity: false)
+            ]
+        #expect(ConversationActivityPartGroup.visibleStart(in: appended, from: boundary) == start)
+        let shortened = Array(groups.prefix(20))
+        let replacementStart = ConversationActivityPartGroup.visibleStart(in: shortened, from: boundary)
+        #expect(replacementStart == 8)
+        #expect(ConversationActivityPartGroup.visibleStart(in: [], from: boundary) == 0)
+        #expect(ConversationActivityPartGroup.visibleStart(in: Array(groups.prefix(4)), from: boundary) == 0)
+        #expect(ConversationActivityPartGroup.visibleStart(
+            in: shortened + [appended.last!], from: shortened[replacementStart].id) == replacementStart)
+        while start > 0 {
+            let earlier = groups[max(0, start - ConversationActivityPartGroup.initialVisibleCount)].id
+            start = ConversationActivityPartGroup.visibleStart(in: groups, from: earlier)
+        }
+        #expect(groups[start].steps.first?.part.text == "Step 0")
+        #expect(MessageFooterContent(messages: [message("long", parts: parts)]).markdown.contains("Step 0"))
+    }
+
     @Test func alternatingReasoningAndToolsBecomeOneStableSummaryBetweenMessages() throws {
         let messages = [
             message("user", role: "user", parts: [part("text", text: "Please investigate")]),

@@ -711,6 +711,17 @@ func seedChatPerformanceFixture(data *boardstore.Store, project model.Project) e
 				{Type: "tool", ToolCallID: fmt.Sprint(j), ToolName: "exec", State: "output-available", Output: payload},
 			}}
 		}
+		if os.Getenv("DIETER_PERFORMANCE_LONG_TURN") == "1" {
+			// A message is a provider turn, not one visible paragraph. Real
+			// agent conversations can put hundreds of text/tool parts in it.
+			var parts []model.UIMessagePart
+			for j := range 340 {
+				parts = append(parts,
+					model.UIMessagePart{Type: "text", Text: fmt.Sprintf("### Step %d\n\nChecked **refresh behavior** with `native input`. The result remains available in the transcript.", j)},
+					model.UIMessagePart{Type: "dynamic-tool", ToolCallID: fmt.Sprintf("long-%d", j), ToolName: "exec", State: "output-available", Output: json.RawMessage(`{"output":"check completed"}`)})
+			}
+			messages[len(messages)-1].Parts = parts
+		}
 		if _, err := data.InitializeForkConversation(card.ID, messages); err != nil {
 			return err
 		}

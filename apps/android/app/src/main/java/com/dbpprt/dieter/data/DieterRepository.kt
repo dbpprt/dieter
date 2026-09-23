@@ -638,14 +638,14 @@ class GrpcDieterRepository(context: Context) : DieterRepository {
             }
             if (route.controlWebrtc && route.relayAvailable && webRTCRetryCooldown.allowsAttempt(daemonId)) {
                 try {
-                    val rtc = openControlMachine(endpoint, gateway, route, deadlineSeconds)
-                    webRTCRetryCooldown.recordSuccess(daemonId)
+                    val rtc = openPreferredMachine(endpoint, route, deadlineSeconds)
                     gateway.shutdownNow()
                     return rtc
                 } catch (error: kotlinx.coroutines.CancellationException) { throw error }
                 catch (error: Exception) {
                     val retry = webRTCRetryCooldown.recordFailure(daemonId)
                     logControlFallback(error, retry)
+                    throw error
                 }
             } else if (route.controlWebrtc && route.relayAvailable) {
                 val remaining = webRTCRetryCooldown.snapshot(daemonId)?.remainingMillis ?: 0
@@ -666,6 +666,38 @@ class GrpcDieterRepository(context: Context) : DieterRepository {
             gateway.shutdownNow()
             throw error
         }
+    }
+
+    private suspend fun openPreferredMachine(
+        endpoint: DieterEndpoint, route: com.dbpprt.dieter.gateway.v1.DaemonRoute, deadlineSeconds: Long,
+    ): ScopedMachineConnection {
+        val daemonId = requireNotNull(endpoint.daemonId)
+        val result = hedgedRoute(
+            preferred = {
+                val gateway = newGatewayChannel(endpoint)
+                try { openControlMachine(endpoint, gateway, route, deadlineSeconds) }
+                finally { gateway.shutdownNow() }
+            },
+            fallback = {
+                val relay = newGatewayChannel(endpoint)
+                try {
+                    val stub = DieterServiceGrpcKt.DieterServiceCoroutineStub(relay)
+                        .withInterceptors(MetadataUtils.newAttachHeadersInterceptor(
+                            metadata(requireNotNull(credential(endpoint)), daemonId)))
+                        .withDeadlineAfter(deadlineSeconds, TimeUnit.SECONDS)
+                    check(stub.withDeadlineAfter(5, TimeUnit.SECONDS).health(Empty.getDefaultInstance()).status == "ok")
+                    ScopedMachineConnection(relay, stub, route.daemonCertificatePem.toByteArray(), "Relay")
+                } catch (error: Throwable) { relay.shutdownNow(); throw error }
+            },
+            dispose = { it.channel.shutdownNow() },
+        )
+        if (result.route == "Relay") {
+            val retry = webRTCRetryCooldown.recordFailure(daemonId)
+            android.util.Log.i("DieterControlRTC", "stage=hedge route=relay retryInMs=${retry.remainingMillis}")
+        } else {
+            webRTCRetryCooldown.recordSuccess(daemonId)
+        }
+        return result
     }
 
     private suspend fun openControlMachine(
@@ -838,24 +870,22 @@ class GrpcDieterRepository(context: Context) : DieterRepository {
             }
         }
         if (route.controlWebrtc && route.relayAvailable && webRTCRetryCooldown.allowsAttempt(daemonId)) {
-            val gateway = newGatewayChannel(endpoint)
             try {
-                val rtc = openControlMachine(endpoint, gateway, route, 15)
-                webRTCRetryCooldown.recordSuccess(daemonId)
+                val rtc = openPreferredMachine(endpoint, route, 15)
                 if (activeEndpoint.id != endpoint.id) { rtc.channel.shutdownNow(); throw kotlinx.coroutines.CancellationException() }
                 synchronized(lock) {
                     channel = rtc.channel
                     directAccessToken = rtc.accessToken
                     directRefreshAt = rtc.refreshAtMillis
-                    controlRoute = rtc.route
+                    controlRoute = rtc.route.takeUnless { it == "Relay" }
                 }
-                return rtc.route
+                return if (rtc.route == "Relay") "Gateway relay" else rtc.route
             } catch (error: kotlinx.coroutines.CancellationException) { throw error }
             catch (error: Exception) {
                 val retry = webRTCRetryCooldown.recordFailure(daemonId)
                 logControlFallback(error, retry)
+                throw error
             }
-            finally { gateway.shutdownNow() }
         } else if (route.controlWebrtc && route.relayAvailable) {
             val remaining = webRTCRetryCooldown.snapshot(daemonId)?.remainingMillis ?: 0
             android.util.Log.d("DieterControlRTC", "stage=cooldown route=relay retryInMs=$remaining")

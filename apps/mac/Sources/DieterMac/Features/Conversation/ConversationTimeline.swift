@@ -353,7 +353,18 @@ struct ConversationTimeline: View {
             guard
                 let next = try? await BackgroundPreparation.run({
                     for message in source {
-                        for part in message.parts where !part.text.isEmpty {
+                        let parts: [Dieter_V1_MessagePart]
+                        if message.role == "user" {
+                            parts = message.parts
+                        } else {
+                            let groups = ConversationActivityPartGroup.group(
+                                ConversationActivityStep.steps(messages: [message], showReasoning: showReasoning))
+                            // Older parts and collapsed activity are prepared
+                            // when revealed, not on the first visible frame.
+                            parts = groups.suffix(ConversationActivityPartGroup.initialVisibleCount)
+                                .filter { !$0.isActivity }.flatMap { $0.steps.map(\.part) }
+                        }
+                        for part in parts where !part.text.isEmpty {
                             try Task.checkCancellation()
                             _ = try ConversationRenderCache.prepare(ConversationRenderCache.preview(part.text))
                         }
