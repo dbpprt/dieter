@@ -3,6 +3,7 @@ import SwiftUI
 
 enum DieterSettingsSection: String, CaseIterable, Identifiable, Hashable {
     case general = "General"
+    case browser = "Browser"
     case connection = "Connection"
     case usage = "Usage"
     case prompts = "Prompts"
@@ -16,6 +17,7 @@ enum DieterSettingsSection: String, CaseIterable, Identifiable, Hashable {
     var symbol: String {
         switch self {
         case .general: "gearshape"
+        case .browser: "globe"
         case .connection: "network"
         case .usage: "chart.bar.xaxis"
         case .prompts: "text.quote"
@@ -29,6 +31,7 @@ enum DieterSettingsSection: String, CaseIterable, Identifiable, Hashable {
     var subtitle: String {
         switch self {
         case .general: "Server, client, and project preferences"
+        case .browser: "Choose which websites leave the workspace browser"
         case .connection: "Machines, gateways, and authentication"
         case .usage: "Provider accounts, limits, and reset windows"
         case .prompts: "Global and scoped agent instructions"
@@ -97,6 +100,7 @@ struct DieterSettingsView: View {
                 Group {
                     switch store.settingsSection {
                     case .general: GeneralSettings()
+                    case .browser: BrowserSettings()
                     case .connection: ConnectionSettings()
                     case .usage: UsageSettings()
                     case .prompts: PromptSettingsEditor()
@@ -125,6 +129,69 @@ private struct UsageSettings: View {
                 ProviderQuotaDetailsView()
             }
         }
+    }
+}
+
+private struct BrowserSettings: View {
+    @State private var externalURLs: [String] = []
+    @State private var newURL = ""
+    @State private var invalidURL = false
+
+    var body: some View {
+        SettingsPage {
+            SettingsPanel(
+                title: "Always open externally",
+                subtitle: "Matching links and sign-in redirects open in your default browser on this Mac."
+            ) {
+                Text(
+                    "Add a host (github.com), a host and its subdomains (*.amazonaws.com), or an HTTP(S) URL path. Full URLs match that path and its children; hosts match exactly unless prefixed with *. "
+                )
+                .font(.caption).foregroundStyle(DieterTheme.subtle)
+                .fixedSize(horizontal: false, vertical: true)
+                ForEach(externalURLs, id: \.self) { entry in
+                    HStack {
+                        Text(entry).font(.system(size: 12, design: .monospaced)).textSelection(.enabled)
+                        Spacer()
+                        Button("Remove", systemImage: "minus.circle") {
+                            externalURLs.removeAll { $0 == entry }
+                            save()
+                        }
+                        .labelStyle(.iconOnly)
+                        .accessibilityLabel("Remove \(entry)")
+                    }
+                    Divider().overlay(DieterTheme.border)
+                }
+                HStack {
+                    TextField("Host or URL", text: $newURL)
+                        .textFieldStyle(.roundedBorder)
+                        .onSubmit(addURL)
+                        .accessibilityIdentifier("settings.browser.externalURL")
+                    Button("Add", action: addURL)
+                        .disabled(newURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        .accessibilityIdentifier("settings.browser.addExternalURL")
+                }
+                if invalidURL {
+                    Text("Enter a valid host or HTTP(S) URL without a query or fragment.")
+                        .font(.caption).foregroundStyle(DieterTheme.coral)
+                }
+            }
+        }
+        .onAppear { externalURLs = ExternalBrowserRules.entries() }
+    }
+
+    private func addURL() {
+        guard let value = ExternalBrowserRules.normalized(newURL) else {
+            invalidURL = true
+            return
+        }
+        if !externalURLs.contains(value) { externalURLs.append(value) }
+        save()
+        newURL = ""
+        invalidURL = false
+    }
+
+    private func save() {
+        DieterAppearance.applicationDefaults().set(externalURLs, forKey: ExternalBrowserRules.storageKey)
     }
 }
 
@@ -539,6 +606,22 @@ struct GeneralSettings: View {
                     subtitle:
                         "Choose what appears in every conversation timeline. This preference is saved on this Mac."
                 ) {
+                    Picker(
+                        "Default layout",
+                        selection: Binding(
+                            get: { store.defaultConversationMode },
+                            set: { store.defaultConversationMode = $0 }
+                        )
+                    ) {
+                        Text("Tabs").tag(ConversationDefaultMode.tabs)
+                        Text("Workspace").tag(ConversationDefaultMode.workspace)
+                    }
+                    .pickerStyle(.segmented)
+                    .accessibilityIdentifier("settings.conversation.defaultMode")
+                    Text("Applies when you open a different card or chat. You can still switch layouts in its header.")
+                        .font(.caption)
+                        .foregroundStyle(DieterTheme.tertiary)
+                    Divider().overlay(DieterTheme.border)
                     Toggle(
                         "Show reasoning traces",
                         isOn: Binding(
@@ -1081,34 +1164,6 @@ struct ExperimentalSettings: View {
                         "Off by default. Temporarily changes the remote monitor for everyone using it, using the closest supported resolution and Retina scale. Restores on fullscreen exit or disconnect. Video quality limits still apply."
                     )
                     .font(.caption).foregroundStyle(DieterTheme.tertiary)
-                    .fixedSize(horizontal: false, vertical: true)
-                }
-                SettingsPanel(
-                    title: "Conversation workspace",
-                    subtitle: "Work with files, web pages, terminals, changes, and processes beside a conversation."
-                ) {
-                    HStack {
-                        Text("Show the workspace side panel")
-                            .font(.system(size: 12, weight: .semibold))
-                        Spacer()
-                        Toggle(
-                            "Show the workspace side panel",
-                            isOn: Binding(
-                                get: { store.conversationWorkspacePanelEnabled },
-                                set: { store.conversationWorkspacePanelEnabled = $0 }
-                            )
-                        )
-                        .labelsHidden()
-                        .toggleStyle(.switch)
-                        .accessibilityLabel("Show the workspace side panel")
-                        .accessibilityIdentifier("settings.experimental.conversationWorkspacePanel")
-                        .smokeTarget("settings.experimental.conversationWorkspacePanel")
-                    }
-                    Text(
-                        "This experimental panel is off by default. When enabled, workspace links and agent-presented files open alongside chats and card conversations."
-                    )
-                    .font(.caption)
-                    .foregroundStyle(DieterTheme.tertiary)
                     .fixedSize(horizontal: false, vertical: true)
                 }
             }

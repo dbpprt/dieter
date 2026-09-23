@@ -162,22 +162,27 @@ private actor DelayedScheduleRPC: DieterScheduleRPC {
     }
     let tail = ConversationRenderWindow.range(messages: messages, position: .latest)
     #expect(tail.upperBound == 180)
-    #expect(tail.count == 1)
-    // Four retained pages of 16 KB hold six 10 KB messages.
+    #expect(tail.count == 9)
+    // Six retained pages of 32 KB hold nineteen 10 KB messages.
     let earlier = ConversationRenderWindow.range(messages: messages, position: .from(messageID: "message-0"))
-    #expect(earlier == 0..<6)
+    #expect(earlier == 0..<19)
     let pagedEarlier = ConversationRenderWindow.extendingEarlier(messages: messages, renderedRange: 100..<101)
-    #expect(pagedEarlier == .from(messageID: "message-99"))
+    #expect(pagedEarlier == .from(messageID: "message-94"))
     let pagedLater = ConversationRenderWindow.extendingLater(messages: messages, renderedRange: 100..<101)
-    #expect(pagedLater == .through(messageID: "message-101"))
+    #expect(pagedLater == .through(messageID: "message-106"))
     #expect(
         ConversationRenderWindow.range(messages: messages, position: pagedLater ?? .latest)
-            == 96..<102)
+            == 88..<107)
 }
 
 @Test(arguments: ["text bytes", "message parts", "message count"])
 func detachedConversationRenderWindowRetainsReadMessagesWhenTheTailAdvances(budget: String) {
-    let originalCount = budget == "message count" ? ConversationRenderWindow.maximumMessages + 1 : 3
+    let originalCount: Int
+    switch budget {
+    case "text bytes": originalCount = 17
+    case "message parts": originalCount = 13
+    default: originalCount = ConversationRenderWindow.maximumMessages * ConversationRenderWindow.latestPages + 1
+    }
     let textLength = budget == "text bytes" ? 6_000 : 1
     let partCount = budget == "message parts" ? 60 : 1
     func message(_ index: Int) -> Dieter_V1_UiMessage {

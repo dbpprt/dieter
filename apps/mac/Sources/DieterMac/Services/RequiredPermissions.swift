@@ -27,7 +27,9 @@ final class RequiredPermissions {
     private(set) var accessibility = false
     private(set) var screenRecording = false
     private(set) var settingsError: String?
+    private(set) var setupSkipped = false
     var isReady: Bool { accessibility && screenRecording }
+    var canUseApp: Bool { isReady || setupSkipped }
     @ObservationIgnored private let check: (Permission) -> Bool
     @ObservationIgnored private let request: (Permission) -> Void
     @ObservationIgnored private let openSettings: (Permission) -> Bool
@@ -54,6 +56,10 @@ final class RequiredPermissions {
         settingsError =
             openSettings(permission) ? nil : "Open System Settings → Privacy & Security → \(permission.title)."
         refresh()
+    }
+
+    func skipSetup() {
+        setupSkipped = true
     }
 
     static func live() -> RequiredPermissions {

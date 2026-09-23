@@ -259,7 +259,7 @@ import Testing
             BoardConversationOverlay(
                 board: AnyView(BoardLaneNavigationFixture().environment(store)),
                 conversation: AnyView(Text("Conversation")),
-                presented: false, maximized: false, active: active))
+                presented: false, active: active))
     }
     let root = NSHostingView(rootView: board())
     root.sizingOptions = []
@@ -322,7 +322,7 @@ import Testing
         rootView: AnyView(
             BoardConversationOverlay(
                 board: AnyView(BoardLaneNavigationFixture().environment(store)),
-                conversation: AnyView(EmptyView()), presented: false, maximized: false)))
+                conversation: AnyView(EmptyView()), presented: false)))
     let window = boardLaneFixtureWindow(root: root!, width: 440, height: 600)
     defer { window.close() }
     await settleBoardLane(root!)

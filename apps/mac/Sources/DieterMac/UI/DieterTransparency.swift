@@ -39,15 +39,20 @@ final class DieterTransparencyAccessibility {
 struct DieterWindowBackdrop: NSViewRepresentable {
     let transparencyEnabled: Bool
     let solidColor: Color
+    var paneTitlebarEnabled = false
 
     func makeNSView(context: Context) -> DieterWindowBackdropView {
         let view = DieterWindowBackdropView()
-        view.configure(transparencyEnabled: transparencyEnabled, solidColor: solidColor)
+        view.configure(
+            transparencyEnabled: transparencyEnabled, solidColor: solidColor,
+            paneTitlebarEnabled: paneTitlebarEnabled)
         return view
     }
 
     func updateNSView(_ view: DieterWindowBackdropView, context: Context) {
-        view.configure(transparencyEnabled: transparencyEnabled, solidColor: solidColor)
+        view.configure(
+            transparencyEnabled: transparencyEnabled, solidColor: solidColor,
+            paneTitlebarEnabled: paneTitlebarEnabled)
     }
 
     static func dismantleNSView(_ view: DieterWindowBackdropView, coordinator: ()) {
@@ -60,11 +65,15 @@ struct DieterWindowBackdrop: NSViewRepresentable {
 @MainActor
 final class DieterWindowBackdropView: NSVisualEffectView {
     private var transparencyEnabled = false
+    private var paneTitlebarEnabled = false
     private var solidColor = NSColor.windowBackgroundColor
     private var configuredColor: Color?
     private var hasConfiguration = false
     private weak var configuredWindow: NSWindow?
-    private var originalWindowStyle: (opaque: Bool, background: NSColor?, transparentTitlebar: Bool)?
+    private var originalWindowStyle:
+        (
+            opaque: Bool, background: NSColor?, transparentTitlebar: Bool, titleVisibility: NSWindow.TitleVisibility
+        )?
     private(set) var resolvedColorCount = 0
     private(set) var appliedConfigurationCount = 0
     private(set) var windowStyleMutationCount = 0
@@ -79,29 +88,34 @@ final class DieterWindowBackdropView: NSVisualEffectView {
 
     required init?(coder: NSCoder) { nil }
 
-    func configure(transparencyEnabled: Bool, solidColor: Color) {
+    func configure(transparencyEnabled: Bool, solidColor: Color, paneTitlebarEnabled: Bool = false) {
         let colorChanged = configuredColor != solidColor
-        let modeChanged = !hasConfiguration || self.transparencyEnabled != transparencyEnabled
+        let modeChanged =
+            !hasConfiguration || self.transparencyEnabled != transparencyEnabled
+            || self.paneTitlebarEnabled != paneTitlebarEnabled
         guard colorChanged || modeChanged else { return }
         if colorChanged || !hasConfiguration {
             configuredColor = solidColor
             self.solidColor = NSColor(solidColor)
             resolvedColorCount += 1
         }
-        applyConfiguration(transparencyEnabled: transparencyEnabled)
+        applyConfiguration(transparencyEnabled: transparencyEnabled, paneTitlebarEnabled: paneTitlebarEnabled)
     }
 
-    func configure(transparencyEnabled: Bool, solidColor: NSColor) {
+    func configure(transparencyEnabled: Bool, solidColor: NSColor, paneTitlebarEnabled: Bool = false) {
         let colorChanged = self.solidColor != solidColor || configuredColor != nil
-        let modeChanged = !hasConfiguration || self.transparencyEnabled != transparencyEnabled
+        let modeChanged =
+            !hasConfiguration || self.transparencyEnabled != transparencyEnabled
+            || self.paneTitlebarEnabled != paneTitlebarEnabled
         guard colorChanged || modeChanged else { return }
         configuredColor = nil
         self.solidColor = solidColor
-        applyConfiguration(transparencyEnabled: transparencyEnabled)
+        applyConfiguration(transparencyEnabled: transparencyEnabled, paneTitlebarEnabled: paneTitlebarEnabled)
     }
 
-    private func applyConfiguration(transparencyEnabled: Bool) {
+    private func applyConfiguration(transparencyEnabled: Bool, paneTitlebarEnabled: Bool) {
         self.transparencyEnabled = transparencyEnabled
+        self.paneTitlebarEnabled = paneTitlebarEnabled
         let hidden = !transparencyEnabled
         if isHidden != hidden { isHidden = hidden }
         hasConfiguration = true
@@ -115,7 +129,9 @@ final class DieterWindowBackdropView: NSVisualEffectView {
             restoreWindow()
             if let window {
                 configuredWindow = window
-                originalWindowStyle = (window.isOpaque, window.backgroundColor, window.titlebarAppearsTransparent)
+                originalWindowStyle = (
+                    window.isOpaque, window.backgroundColor, window.titlebarAppearsTransparent, window.titleVisibility
+                )
             }
         }
         applyWindowStyle()
@@ -127,7 +143,13 @@ final class DieterWindowBackdropView: NSVisualEffectView {
         guard let window = configuredWindow else { return }
         let opaque = !transparencyEnabled
         let background: NSColor = transparencyEnabled ? .clear : solidColor
-        let transparentTitlebar = transparencyEnabled || (originalWindowStyle?.transparentTitlebar ?? false)
+        let transparentTitlebar =
+            paneTitlebarEnabled || transparencyEnabled
+            || (originalWindowStyle?.transparentTitlebar ?? false)
+        let titleVisibility =
+            paneTitlebarEnabled
+            ? NSWindow.TitleVisibility.hidden
+            : (originalWindowStyle?.titleVisibility ?? .visible)
         if window.isOpaque != opaque {
             window.isOpaque = opaque
             windowStyleMutationCount += 1
@@ -140,6 +162,10 @@ final class DieterWindowBackdropView: NSVisualEffectView {
             window.titlebarAppearsTransparent = transparentTitlebar
             windowStyleMutationCount += 1
         }
+        if window.titleVisibility != titleVisibility {
+            window.titleVisibility = titleVisibility
+            windowStyleMutationCount += 1
+        }
     }
 
     func restoreWindow() {
@@ -147,6 +173,7 @@ final class DieterWindowBackdropView: NSVisualEffectView {
             window.isOpaque = original.opaque
             window.backgroundColor = original.background
             window.titlebarAppearsTransparent = original.transparentTitlebar
+            window.titleVisibility = original.titleVisibility
         }
         configuredWindow = nil
         originalWindowStyle = nil

@@ -53,11 +53,8 @@
             let output = outputDirectory()
             try? FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
             let originalShowReasoning = store.showReasoning
-            let originalWorkspacePanelEnabled = store.conversationWorkspacePanelEnabled
-            store.conversationWorkspacePanelEnabled = true
             defer {
                 store.showReasoning = originalShowReasoning
-                store.conversationWorkspacePanelEnabled = originalWorkspacePanelEnabled
             }
 
             var results: [String: String] = [:]
@@ -96,6 +93,10 @@
             defer { windowTrace.stop() }
             window.setContentSize(NSSize(width: 1_380, height: 870))
             window.center()
+            // Ordering an offscreen smoke window does not make Dieter the
+            // active application. Native clicks and field-editor focus then
+            // fail together even though the fixture is fully rendered.
+            NSApp.activate(ignoringOtherApps: true)
             window.makeKeyAndOrderFront(nil)
 
             // Focused iteration still uses the driver's isolated daemon and
@@ -949,7 +950,7 @@
                 if let split = view as? NSSplitView, split.isVertical,
                     let column = split.arrangedSubviews.first(where: { anchor.isDescendant(of: $0) })
                 {
-                    // The content renderer adds an inner split. Width/maximize
+                    // The content renderer adds an inner split. Width checks
                     // checks belong to the outer board inspector, not that split.
                     if split is BoardConversationSplitView { return (split, column) }
                     if split.arrangedSubviews.count > 1, fallback == nil { fallback = (split, column) }
@@ -976,7 +977,7 @@
             let originalDraft = originalComposerDraft.text
             let selectedID = store.selectedCardID
             let host = controller.conversationHost
-            let draft = "Keep this draft while resizing and expanding the conversation"
+            let draft = "Keep this draft while resizing the conversation"
             defer {
                 window.makeFirstResponder(nil)
                 originalComposerDraft.text = originalDraft
@@ -1000,9 +1001,7 @@
                 ? "passed"
                 : "failed: focus=\(focused), editor ready=\(editorReady), typed draft=\(entered)"
             guard focused, editorReady, entered else { return }
-            let maximumRegularWidth = min(
-                BoardConversationSizing.maximumWidth,
-                split.bounds.width * BoardConversationSizing.maximizeFraction - 32)
+            let maximumRegularWidth = BoardConversationSizing.maximumWidth
             let targetWidth = max(
                 BoardConversationSizing.minimumWidth,
                 originalWidth + 80 <= maximumRegularWidth ? originalWidth + 80 : originalWidth - 80)
@@ -1021,34 +1020,15 @@
                 : "failed: drag width=\(column.frame.width), expected=\(targetWidth), board shrank=\(boardResized), board=\(resizedBoardFrame)"
             capture(window, to: output.appending(path: "07-card-conversation-resized.png"))
 
-            let settled = await waitForStableControl("board.conversation-maximize", in: window)
-            let expanded = settled && NativeUIAccessibility.click("board.conversation-maximize", in: window)
-            let maximized = await NativeUIAccessibility.wait(timeout: 5) {
-                controller.maximized && abs(controller.conversationFrame.width - split.bounds.width) < 2
-            }
-            results["board-conversation-maximize"] =
-                expanded && maximized && store.selectedCardID == selectedID && store.composerText == draft
-                    && controller.conversationHost === host
+            let noMaximizeControl = NativeUIAccessibility.find("board.conversation-maximize", in: window) == nil
+            results["board-conversation-no-maximize"] =
+                noMaximizeControl && !controller.boardItem.isCollapsed && store.selectedCardID == selectedID
+                    && store.composerText == draft && controller.conversationHost === host
                 ? "passed"
-                : "failed: expand=\(expanded), maximized=\(maximized), state=\(controller.maximized), collapsed=\(controller.splitViewItems.map(\.isCollapsed)), split=\(split.bounds), column=\(column.frame)"
-            capture(window, to: output.appending(path: "07-card-conversation-maximized.png"))
-
-            let restoreSettled = await waitForStableControl("board.conversation-maximize", in: window)
-            let restoredClick = restoreSettled && NativeUIAccessibility.click("board.conversation-maximize", in: window)
-            let restored = await NativeUIAccessibility.wait(timeout: 5) {
-                !controller.maximized && abs(controller.conversationFrame.width - targetWidth) < 2
-                    && host.window === window && host.isDescendant(of: split)
-            }
-            results["board-conversation-restore"] =
-                restoredClick && restored && store.selectedCardID == selectedID && store.composerText == draft
-                    && controller.conversationHost === host
-                ? "passed"
-                : "failed: restore=\(restoredClick), settled=\(restored), maximized=\(controller.maximized), restored width=\(controller.conversationFrame.width), expected=\(targetWidth), selection=\(store.selectedCardID == selectedID), draft=\(store.composerText == draft), host=\(controller.conversationHost === host)"
-            if !controller.maximized {
-                setColumnWidth(originalWidth, split: split, column: column)
-                _ = await waitForStableControl("conversation.composer-shell", in: window)
-                controller.rememberRegularWidth()
-            }
+                : "failed: control removed=\(noMaximizeControl), collapsed=\(controller.boardItem.isCollapsed), selection=\(store.selectedCardID == selectedID), draft=\(store.composerText == draft), host=\(controller.conversationHost === host)"
+            setColumnWidth(originalWidth, split: split, column: column)
+            _ = await waitForStableControl("conversation.composer-shell", in: window)
+            controller.rememberRegularWidth()
         }
 
         private static func postDividerDrag(split: NSSplitView, targetWidth: CGFloat, in window: NSWindow) {
@@ -1375,13 +1355,18 @@
             snapshot.detail.card.runtime = "running"
             store.conversation = snapshot
             store.selectedDetail = snapshot.detail
-            try? await DieterTaskSleep.seconds(1)
+            let indicatorReady = await NativeUIAccessibility.wait {
+                guard let frame = NativeUIAccessibility.find("conversation.agent-working", in: window)?.recordedFrame
+                else { return false }
+                return frame.width > 200 && abs(frame.height - 38) < 1
+            }
             capture(window, to: output.appending(path: "06-agent-thinking.png"))
             results["agent-activity-indicator"] =
                 ConversationActivityPresentation.isActive(
                     conversationStatus: snapshot.conversation.status,
                     cardRuntime: snapshot.detail.card.runtime
-                ) ? "passed" : "failed: active fixture was not presented as working"
+                ) && indicatorReady
+                ? "passed" : "failed: active fixture did not render the full-width 38pt working indicator"
         }
 
         /// Keeps a server-accepted follow-up visible while the active turn is

@@ -129,7 +129,7 @@ func initialTranscriptMountsOnlyTheTailAndExpandsToFillShortRows(shortRows: Bool
         await settleAutomaticScroll(root, milliseconds: 20)
         if !model.conversationHistoryLoading,
             automaticScrollTextPosition(reading.text, in: scroll) != nil,
-            model.olderConversationMessages.count == 30
+            model.olderConversationMessages.count == 60
         {
             break
         }
@@ -138,7 +138,7 @@ func initialTranscriptMountsOnlyTheTailAndExpandsToFillShortRows(shortRows: Bool
     let restoredOffset = try #require(automaticScrollTextPosition(reading.text, in: scroll))
     #expect(abs(restoredOffset - reading.offset) < 2, "Loading must preserve the current message's pixel offset")
     #expect(committed.stop() < 2, "No committed frame may show the transcript displaced by the loaded page")
-    #expect(model.olderConversationMessages.count == 30)
+    #expect(model.olderConversationMessages.count == 60)
     #expect(await rpc.requestCount == 1, "A restored viewport must not chain-load another page")
 
     // Scrolling down through the loaded conversation rejoins the live tail
@@ -165,7 +165,8 @@ func initialTranscriptMountsOnlyTheTailAndExpandsToFillShortRows(shortRows: Bool
     let context = store.conversationContext
     // Larger than the pages a detached reader retains, so scrolling back must
     // eventually release the live tail.
-    var snapshot = automaticScrollSnapshot(start: 40, end: 120)
+    let latestMessageID = 239
+    var snapshot = automaticScrollSnapshot(start: 40, end: latestMessageID + 1)
     for index in snapshot.conversation.messages.indices {
         snapshot.conversation.messages[index].parts[0].text =
             "Automatic scroll message \(index + 40).\n"
@@ -196,19 +197,20 @@ func initialTranscriptMountsOnlyTheTailAndExpandsToFillShortRows(shortRows: Bool
                 > $0.contentView.bounds.height - $0.contentInsets.top - $0.contentInsets.bottom
         })
     let initialIDs = automaticScrollRenderedMessageIDs(in: scroll)
-    try #require(initialIDs.contains(119))
+    try #require(initialIDs.contains(latestMessageID))
     try #require(initialIDs.count < snapshot.conversation.messages.count, "The fixture must exceed the render budget")
 
     for index in 0..<400 {
         try automaticScrollWheel(scroll, window: window, pixels: 160, phase: index == 0 ? 1 : 2)
         await settleAutomaticScroll(root, milliseconds: 20)
-        if !automaticScrollRenderedMessageIDs(in: scroll).contains(119) { break }
+        if !automaticScrollRenderedMessageIDs(in: scroll).contains(latestMessageID) { break }
     }
     try automaticScrollWheel(scroll, window: window, pixels: 0, phase: 4)
     await settleAutomaticScroll(root, milliseconds: 160)
     let earlierIDs = automaticScrollRenderedMessageIDs(in: scroll)
-    try #require(!earlierIDs.contains(119), "Earlier scrolling must replace the bounded live render window")
-    try #require((earlierIDs.min() ?? 120) < (initialIDs.min() ?? 0))
+    try #require(
+        !earlierIDs.contains(latestMessageID), "Earlier scrolling must replace the bounded live render window")
+    try #require((earlierIDs.min() ?? latestMessageID + 1) < (initialIDs.min() ?? 0))
 
     // Newer messages remain outside the retained window. Reaching its end,
     // by scrollbar or by wheel against the clamped edge, must keep mounting
@@ -225,17 +227,17 @@ func initialTranscriptMountsOnlyTheTailAndExpandsToFillShortRows(shortRows: Bool
         await settleAutomaticScroll(root, milliseconds: 40)
         try automaticScrollWheel(scroll, window: window, pixels: 0, phase: 4)
         await settleAutomaticScroll(root, milliseconds: 120)
-        if automaticScrollRenderedMessageIDs(in: scroll).contains(119) { break }
+        if automaticScrollRenderedMessageIDs(in: scroll).contains(latestMessageID) { break }
     }
     #expect(
-        automaticScrollRenderedMessageIDs(in: scroll).contains(119),
+        automaticScrollRenderedMessageIDs(in: scroll).contains(latestMessageID),
         "Downward wheel intent at a bounded page's bottom must make the true latest message reachable")
 }
 
 @Test @MainActor func automaticLongConversationScrollNeverReversesItsRenderWindow() async throws {
     let store = DieterStore(restoreSync: false)
     let context = store.conversationContext
-    var snapshot = automaticScrollSnapshot(start: 0, end: 120)
+    var snapshot = automaticScrollSnapshot(start: 0, end: 360)
     for index in snapshot.conversation.messages.indices {
         snapshot.conversation.messages[index].parts[0].text =
             "Automatic scroll message \(index).\n"
@@ -271,7 +273,11 @@ func initialTranscriptMountsOnlyTheTailAndExpandsToFillShortRows(shortRows: Bool
     let initialVisible = try #require(automaticScrollVisibleMessageID(in: scroll))
     var windows: [ClosedRange<Int>] = []
 
-    for index in 0..<140 {
+    // The live tail now mounts three bounded pages so a reader gets a useful
+    // initial stretch instead of one sparse screen of collapsed activity.
+    // Drive far enough to cross that larger document and exercise at least
+    // one overlapping scrollback-window replacement.
+    for index in 0..<400 {
         try automaticScrollWheel(scroll, window: window, pixels: 160, phase: index == 0 ? 1 : 2)
         await settleAutomaticScroll(root, milliseconds: 10)
         let ids = automaticScrollRenderedMessageIDs(in: scroll)
@@ -285,7 +291,7 @@ func initialTranscriptMountsOnlyTheTailAndExpandsToFillShortRows(shortRows: Bool
     await settleAutomaticScroll(root, milliseconds: 160)
     let finalVisible = try #require(automaticScrollVisibleMessageID(in: scroll))
 
-    try #require(windows.count >= 3, "The fixture must traverse multiple bounded render windows: \(windows)")
+    try #require(windows.count >= 2, "The fixture must traverse multiple bounded render windows: \(windows)")
     for (previous, current) in zip(windows, windows.dropFirst()) {
         #expect(
             current.lowerBound <= previous.lowerBound,
@@ -309,10 +315,12 @@ func initialTranscriptMountsOnlyTheTailAndExpandsToFillShortRows(shortRows: Bool
 private actor AutomaticScrollLayoutRPC: ConversationRPC {
     private var pending: CheckedContinuation<Dieter_V1_ConversationSnapshot, Never>?
     private var requestedBefore = 0
+    private var requestedLimit = 0
     private(set) var requestCount = 0
 
     func conversation(cardID: String, limit: Int32, before: Int32?) async throws -> Dieter_V1_ConversationSnapshot {
         requestedBefore = Int(before ?? 120)
+        requestedLimit = Int(limit)
         requestCount += 1
         return await withCheckedContinuation { pending = $0 }
     }
@@ -320,7 +328,9 @@ private actor AutomaticScrollLayoutRPC: ConversationRPC {
     func releasePage() {
         guard let pending else { return }
         self.pending = nil
-        pending.resume(returning: automaticScrollSnapshot(start: max(0, requestedBefore - 30), end: requestedBefore))
+        pending.resume(
+            returning: automaticScrollSnapshot(
+                start: max(0, requestedBefore - requestedLimit), end: requestedBefore))
     }
 
     func watchConversation(
@@ -375,7 +385,16 @@ private func automaticScrollSnapshot(start: Int, end: Int) -> Dieter_V1_Conversa
             monitor.handleScrollEvent(nativeEvent, in: window)
         }
     }
-    scroll.scrollWheel(with: nativeEvent)
+    // The fixture window is never ordered on screen. Sending the synthetic
+    // event to AppKit can move its clip view later (or not at all), after the
+    // observer has already reacted. Apply one native clip-view displacement
+    // directly so headless runs cannot double-scroll or reverse the gesture.
+    if pixels != 0 {
+        var bounds = scroll.contentView.bounds
+        bounds.origin.y -= CGFloat(pixels)
+        scroll.contentView.scroll(to: scroll.contentView.constrainBoundsRect(bounds).origin)
+        scroll.reflectScrolledClipView(scroll.contentView)
+    }
 }
 
 @MainActor private func automaticScrollReadingPosition(in scroll: NSScrollView) -> (text: String, offset: CGFloat)? {
@@ -455,7 +474,7 @@ private func automaticScrollSnapshot(start: Int, end: Int) -> Dieter_V1_Conversa
 @Test @MainActor func automaticTailWheelAndMomentumDoNotScheduleCorrections() async throws {
     let fixture = TailGestureFixture()
     defer { fixture.window.close() }
-    await settleAutomaticScroll(fixture.root, milliseconds: 350)
+    try #require(await fixture.waitUntilInitiallyPositioned())
     let scroll = try fixture.scroll()
     let initialCorrections = fixture.tailCorrections
     for index in 0..<20 {
@@ -482,7 +501,7 @@ private func automaticScrollSnapshot(start: Int, end: Int) -> Dieter_V1_Conversa
 @Test @MainActor func automaticUpwardIntentWinsOverStreamingAndMomentum() async throws {
     let fixture = TailGestureFixture()
     defer { fixture.window.close() }
-    await settleAutomaticScroll(fixture.root, milliseconds: 350)
+    try #require(await fixture.waitUntilInitiallyPositioned())
     let scroll = try fixture.scroll()
     let initialCorrections = fixture.tailCorrections
     // Queue content growth immediately before input, without allowing the tail
@@ -491,16 +510,18 @@ private func automaticScrollSnapshot(start: Int, end: Int) -> Dieter_V1_Conversa
     try automaticScrollWheel(scroll, window: fixture.window, pixels: 1, phase: 1)
     await settleAutomaticScroll(fixture.root, milliseconds: 20)
     #expect(fixture.jumpVisible, "Even a small upward gesture relinquishes tail following")
-    var previous = scroll.contentView.bounds.minY
+    // Prepending an overlapping history window increases the absolute clip
+    // offset even when the reader stays put. Compare visible message identity.
+    var previousVisibleID = try #require(automaticScrollVisibleMessageID(in: scroll))
     for index in 0..<12 {
         fixture.appendText()
         try automaticScrollWheel(
             scroll, window: fixture.window, pixels: 12, phase: index < 6 ? 2 : 0,
             momentum: index < 6 ? 0 : (index == 6 ? 1 : 2))
         await settleAutomaticScroll(fixture.root, milliseconds: 20)
-        let current = scroll.contentView.bounds.minY
-        #expect(current <= previous + 2, "Upward input must not snap toward newer content")
-        previous = current
+        let currentVisibleID = try #require(automaticScrollVisibleMessageID(in: scroll))
+        #expect(currentVisibleID <= previousVisibleID, "Upward input must not show a newer message")
+        previousVisibleID = currentVisibleID
     }
     try automaticScrollWheel(scroll, window: fixture.window, pixels: 0, phase: 4, momentum: 4)
     await settleAutomaticScroll(fixture.root, milliseconds: 120)
@@ -520,6 +541,7 @@ private func automaticScrollSnapshot(start: Int, end: Int) -> Dieter_V1_Conversa
     var tailCorrections = 0
     var jumpVisible = false
     var detachTransitions = 0
+    var initialPositionComplete = false
 
     init() {
         var snapshot = automaticScrollSnapshot(start: 0, end: 30)
@@ -540,6 +562,7 @@ private func automaticScrollSnapshot(start: Int, end: Int) -> Dieter_V1_Conversa
                     onTailScroll: { [weak self] in self?.tailCorrections += 1 },
                     onViewportObservation: { [weak self] observation in
                         guard let self else { return }
+                        initialPositionComplete = observation.initialPositionComplete
                         if !observation.followsLatest && !jumpVisible { detachTransitions += 1 }
                         jumpVisible = !observation.followsLatest
                     }
@@ -548,6 +571,14 @@ private func automaticScrollSnapshot(start: Int, end: Int) -> Dieter_V1_Conversa
                 .environment(store).environment(store.conversationContext))
         root.sizingOptions = []
         window.contentView = root
+    }
+
+    func waitUntilInitiallyPositioned() async -> Bool {
+        for _ in 0..<100 {
+            await settleAutomaticScroll(root, milliseconds: 20)
+            if initialPositionComplete { return true }
+        }
+        return false
     }
 
     func scroll() throws -> NSScrollView {
@@ -568,7 +599,7 @@ private func automaticScrollSnapshot(start: Int, end: Int) -> Dieter_V1_Conversa
 @Test @MainActor func automaticFollowingSurvivesContentGrowthAndViewportResize() async throws {
     let fixture = TailGestureFixture()
     defer { fixture.window.close() }
-    await settleAutomaticScroll(fixture.root, milliseconds: 350)
+    try #require(await fixture.waitUntilInitiallyPositioned())
     let scroll = try fixture.scroll()
     let committed = CommittedFrameSampler {
         abs(scroll.documentVisibleRect.maxY - scroll.contentInsets.bottom - (scroll.documentView?.bounds.maxY ?? 0))
@@ -594,7 +625,7 @@ private func automaticScrollSnapshot(start: Int, end: Int) -> Dieter_V1_Conversa
 @Test @MainActor func automaticPhaselessWheelDetachesAndCanRejoinLatest() async throws {
     let fixture = TailGestureFixture()
     defer { fixture.window.close() }
-    await settleAutomaticScroll(fixture.root, milliseconds: 350)
+    try #require(await fixture.waitUntilInitiallyPositioned())
     let scroll = try fixture.scroll()
     let bottom = scroll.contentView.bounds.minY
     try automaticScrollWheel(scroll, window: fixture.window, pixels: 100, phase: 0)

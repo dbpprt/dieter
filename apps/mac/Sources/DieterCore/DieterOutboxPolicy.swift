@@ -337,13 +337,29 @@ package enum DieterOutboxPolicy {
         guard !sends.isEmpty else { return snapshot }
 
         let optimisticIDs = Set(sends.map { $0.0.optimisticID })
-        let queuedIDs = Set(snapshot.conversation.queue.map(\.id))
+        var queue = snapshot.conversation.queue.filter { !optimisticIDs.contains($0.id) }
+        var queuedIDs = Set(queue.map(\.id))
         var messages = snapshot.conversation.messages.filter { !optimisticIDs.contains($0.id) }
 
         for (entry, request) in sends.sorted(by: {
             if $0.0.createdAt == $1.0.createdAt { return $0.0.commandID < $1.0.commandID }
             return $0.0.createdAt < $1.0.createdAt
-        }) where !queuedIDs.contains(entry.optimisticID) {
+        }) {
+            if entry.optimisticPlacement == .queue, entry.state != .failed,
+                queuedIDs.insert(entry.optimisticID).inserted
+            {
+                var message = Dieter_V1_QueuedMessage()
+                message.id = entry.optimisticID
+                message.parts = request.parts
+                message.createdAt = DieterTimestamp.string(from: entry.createdAt)
+                message.selection.provider = request.provider
+                message.selection.model = request.model
+                message.selection.effort = request.effort
+                message.selection.providerOptions = request.providerOptions
+                queue.append(message)
+                continue
+            }
+            guard !queuedIDs.contains(entry.optimisticID) else { continue }
             var message = Dieter_V1_UiMessage()
             message.id = entry.optimisticID
             message.role = "user"
@@ -357,9 +373,12 @@ package enum DieterOutboxPolicy {
             messages.insert(message, at: insertionIndex)
         }
 
-        guard messages != snapshot.conversation.messages else { return snapshot }
+        guard messages != snapshot.conversation.messages || queue != snapshot.conversation.queue else {
+            return snapshot
+        }
         var result = snapshot
         result.conversation.messages = messages
+        result.conversation.queue = queue
         return result
     }
 

@@ -549,11 +549,6 @@
                 results["content-terminal-input"] = "failed: Terminal tab unavailable (\(model.error ?? "no error"))";
                 return
             }
-            let identifier = "conversation.content.terminal.create"
-            let ready = await NativeUIAccessibility.waitForInteractiveTarget(
-                identifier, in: window, requiresEnabled: true)
-            let beforeClick = NativeUIAccessibility.targetDiagnostics(identifier, in: window)
-            let clicked = ready && NativeUIAccessibility.click(identifier, in: window)
             let mounted = await wait(timeout: 15) {
                 tab.terminals.selectedTerminalID != nil && tab.terminals.terminalStreamConnected
                     && tab.terminals.selectedTerminal?.status == "running"
@@ -568,8 +563,6 @@
             else {
                 let views = descendants(window.contentView, as: RemoteTerminalView.self)
                 let details: [String: Any] = [
-                    "controlReady": ready, "clickPosted": clicked, "beforeClick": beforeClick,
-                    "afterWait": NativeUIAccessibility.targetDiagnostics(identifier, in: window),
                     "active": tab.terminals.active, "live": tab.terminals.isLive,
                     "loading": tab.terminals.terminalLoading,
                     "selectedID": tab.terminals.selectedTerminalID ?? "none",
@@ -588,7 +581,7 @@
                     try? data.write(to: output.appending(path: "content-terminal-diagnostics.json"), options: .atomic)
                 }
                 results["content-terminal-input"] =
-                    "failed: ready=\(ready), click=\(clicked), selected=\(tab.terminals.selectedTerminalID ?? "none"), status=\(tab.terminals.selectedTerminal?.status ?? "none"), connected=\(tab.terminals.terminalStreamConnected), native terminal=\(mounted), terminalError=\(tab.terminals.terminalError ?? "none"), error=\(tab.terminals.errorMessage ?? "none")"
+                    "failed: automatic open selected=\(tab.terminals.selectedTerminalID ?? "none"), status=\(tab.terminals.selectedTerminal?.status ?? "none"), connected=\(tab.terminals.terminalStreamConnected), native terminal=\(mounted), terminalError=\(tab.terminals.terminalError ?? "none"), error=\(tab.terminals.errorMessage ?? "none")"
                 await captureStage(window, output, "terminal-failed", "08c-content-terminal-failed.png")
                 return
             }
@@ -603,7 +596,7 @@
                 .contains { $0.trimmingCharacters(in: .whitespaces) == marker }
             }
             results["content-terminal-input"] =
-                clicked && received ? "passed" : "failed: create click=\(clicked), native output=\(received)"
+                received ? "passed" : "failed: automatic terminal opened but native output=\(received)"
             await captureStage(window, output, "terminal", "08c-content-terminal.png")
             let closed = NativeUIAccessibility.click("conversation.content.tab.\(tab.id.uuidString).close", in: window)
             _ = await wait { !model.tabs.contains(where: { $0.id == tab.id }) }
@@ -628,6 +621,34 @@
                 results["content-review-scoped-diff"] = "failed: Review tab unavailable (\(model.error ?? "none"))";
                 return
             }
+            let fixedTabs = await wait {
+                NativeUIAccessibility.find("conversation.content.fixed.changes", in: window) != nil
+                    && NativeUIAccessibility.find("conversation.content.fixed.subagents", in: window) != nil
+            }
+            results["content-fixed-conversation-tabs"] =
+                fixedTabs
+                    && NativeUIAccessibility.find("conversation.content.fixed.changes.close", in: window) == nil
+                    && NativeUIAccessibility.find("conversation.content.fixed.subagents.close", in: window) == nil
+                ? "passed" : "failed: fixed Changes and Subagents tabs were missing or removable"
+            let titlebarAligned = await wait {
+                guard let chat = paneFrame("conversation.pane.chat", in: window),
+                    let workspace = paneFrame("conversation.pane.workspace", in: window),
+                    let kanban = NativeUIAccessibility.find("conversation-tab-kanban", in: window)?.recordedFrame,
+                    let changes = NativeUIAccessibility.find("conversation.content.fixed.changes", in: window)?
+                        .recordedFrame
+                else { return false }
+                return kanban.minX >= chat.minX + 6 && kanban.minX <= chat.minX + 35
+                    && changes.minX >= workspace.minX + 6 && changes.minX <= workspace.minX + 80
+                    && changes.maxX < workspace.maxX
+            }
+            results["content-pane-titlebar-alignment"] =
+                titlebarAligned
+                ? "passed" : "failed: surface toggles or fixed tabs were clipped or detached from their pane edge"
+            results["content-compact-sidebar-chrome"] =
+                NativeUIAccessibility.find("conversation-tab-conversation", in: window) != nil
+                    && NativeUIAccessibility.find("board.conversation-maximize", in: window) == nil
+                    && NativeUIAccessibility.find("conversation.status", in: window) != nil
+                ? "passed" : "failed: sidebar mode lost conversation navigation, kept size controls, or lost status"
             let row =
                 tab.usesProjectReview
                 ? "project-changes.unstaged.side-by-side-smoke.swift" : "changes.file.side-by-side-smoke.swift"
@@ -666,13 +687,18 @@
                 request.cardID = cardID; request.path = "side-by-side-smoke.swift"; request.line = 42
                 request.title = "Implementation"
                 let presented = try await rpc.presentConversationContent(request)
-                let opened = await wait(timeout: 15) {
-                    model.isOpen && model.selection == .file(path: "side-by-side-smoke.swift", line: 42)
+                let staged = await wait(timeout: 15) {
+                    !model.isOpen && model.selection == .file(path: "side-by-side-smoke.swift", line: 42)
                         && model.files.fileDocument?.name == "side-by-side-smoke.swift"
                 }
+                let reopened = staged && NativeUIAccessibility.click("conversation.content.close", in: window)
+                let opened = await wait {
+                    model.isOpen && model.selection == .file(path: "side-by-side-smoke.swift", line: 42)
+                }
                 results["content-agent-presentation"] =
-                    !presented.id.isEmpty && opened
-                    ? "passed" : "failed: presentation id=\(presented.id), opened from authoritative event=\(opened)"
+                    !presented.id.isEmpty && staged && reopened && opened
+                    ? "passed"
+                    : "failed: presentation id=\(presented.id), respected dismissal=\(staged), explicit reopen=\(reopened), opened=\(opened)"
                 capture(window, output.appending(path: "08e-content-agent-presentation.png"))
             } catch { results["content-agent-presentation"] = "failed: \(error)" }
         }
@@ -729,6 +755,21 @@
         private static func descendants<T: NSView>(_ root: NSView?, as type: T.Type) -> [T] {
             guard let root else { return [] }
             return (root as? T).map { [$0] } ?? root.subviews.flatMap { descendants($0, as: type) }
+        }
+
+        private static func paneFrame(_ identifier: String, in window: NSWindow) -> CGRect? {
+            guard let root = window.contentView else { return nil }
+            var pending = [root]
+            while let view = pending.popLast() {
+                if view.accessibilityIdentifier() == identifier,
+                    view.window === window, !view.isHiddenOrHasHiddenAncestor,
+                    view.bounds.width > 0, view.bounds.height > 0
+                {
+                    return window.convertToScreen(view.convert(view.bounds, to: nil))
+                }
+                pending.append(contentsOf: view.subviews)
+            }
+            return nil
         }
         private static func wait(timeout: TimeInterval = 8, _ condition: @escaping () -> Bool) async -> Bool {
             await NativeUIAccessibility.wait(timeout: timeout, until: condition)

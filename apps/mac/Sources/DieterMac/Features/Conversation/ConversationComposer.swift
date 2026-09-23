@@ -54,7 +54,9 @@ struct ConversationComposer: View {
                         }
                     }
                 )
-                .disabled(!context.composer.draft.pendingQueueMessageIDs.isEmpty || queueRecallID != nil)
+                .disabled(
+                    queue.contains { context.isPendingMessage($0.id) }
+                        || !context.composer.draft.pendingQueueMessageIDs.isEmpty || queueRecallID != nil)
             }
             ComposerSurface(focused: composerFocused, dropTargeted: attachmentDropTargeted) {
                 ComposerTextInput(

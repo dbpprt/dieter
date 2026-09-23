@@ -76,9 +76,13 @@ struct DieterRootView: View {
                 .background(
                     NativeSplitColumnBounds(
                         minimum: SidebarSizing.minimumWidth, maximum: SidebarSizing.maximumWidth,
-                        initialWidth: CGFloat(navigationWidth),
+                        initialWidth: SidebarSizing.clamped(CGFloat(navigationWidth)),
                         onWidthChange: { width in
-                            if abs(Double(width) - navigationWidth) > 0.5 { navigationWidth = Double(width) }
+                            guard sidebarVisibility != .detailOnly, width >= SidebarSizing.minimumWidth else {
+                                return
+                            }
+                            let clampedWidth = Double(SidebarSizing.clamped(width))
+                            if abs(clampedWidth - navigationWidth) > 0.5 { navigationWidth = clampedWidth }
                         })
                 )
                 .navigationSplitViewColumnWidth(
@@ -178,10 +182,16 @@ struct DieterRootView: View {
             .navigationSmokeDestination(store.section)
         }
         .navigationSplitViewStyle(.balanced)
+        .environment(
+            \.conversationWorkspaceTabsInTitlebar,
+            (store.section == .board && store.selectedCardID != nil)
+                || (store.section == .chats && store.selectedChatID != nil)
+        )
         .background {
             DieterWindowBackdrop(
                 transparencyEnabled: DieterTheme.usesTransparency,
-                solidColor: DieterTheme.opaqueSurface
+                solidColor: DieterTheme.opaqueSurface,
+                paneTitlebarEnabled: store.section == .board || store.section == .chats
             )
             .ignoresSafeArea()
             .allowsHitTesting(false)
@@ -189,13 +199,40 @@ struct DieterRootView: View {
         .overlay(alignment: .topTrailing) {
             HStack(spacing: 8) {
                 ProviderQuotaCompactView()
-                if store.section != .board || store.selectedCardID == nil {
+                if store.section != .board && store.section != .chats {
                     GlobalQuickTaskButton()
                 }
             }
             .padding(.top, 8)
             .padding(.trailing, 12)
             .offset(y: -48)
+        }
+        .toolbarVisibility(
+            store.section == .board || store.section == .chats ? .hidden : .visible,
+            for: .windowToolbar
+        )
+        .overlay(alignment: .bottomLeading) {
+            if sidebarVisibility == .detailOnly {
+                Button {
+                    navigationWidth = Double(SidebarSizing.clamped(CGFloat(navigationWidth)))
+                    sidebarVisibility = .all
+                } label: {
+                    Image(systemName: "sidebar.left")
+                        .font(.system(size: 15, weight: .medium))
+                        .frame(width: 38, height: 38)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .background(DieterTheme.raised, in: RoundedRectangle(cornerRadius: 8))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(DieterTheme.border, lineWidth: 1)
+                }
+                .help("Show sidebar")
+                .accessibilityLabel("Show sidebar")
+                .accessibilityIdentifier("workspace.sidebar.show")
+                .padding(12)
+            }
         }
         .animation(.easeOut(duration: 0.18), value: workspaceSurfaceTreatment)
         .background(WindowTitleBarDoubleClickHandler())
@@ -415,7 +452,13 @@ struct AppSidebar: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            sidebarHeader
+            if store.section == .board || store.section == .chats {
+                DieterWindowTrafficLights()
+                    .frame(width: 80, height: 36)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                sidebarHeader
+            }
             searchControl
             allChatsControl
 
@@ -427,6 +470,9 @@ struct AppSidebar: View {
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("sidebar.main-pane")
         .smokeTarget("sidebar.main-pane")
+        .ignoresSafeArea(
+            .container, edges: store.section == .board || store.section == .chats ? .top : []
+        )
         .sheet(item: $folderEditor) { editor in
             NavigationFolderNameSheet(
                 editor: editor,
@@ -638,6 +684,8 @@ struct AppSidebar: View {
                 DieterTheme.surface.opacity(0.72), in: RoundedRectangle(cornerRadius: 10, style: .continuous)
             )
             .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(DieterTheme.border))
+
+            ProviderQuotaSidebarBlock()
 
             SidebarDestination(title: "Settings", symbol: "gearshape", selected: store.section == .settings) {
                 store.openSettings()

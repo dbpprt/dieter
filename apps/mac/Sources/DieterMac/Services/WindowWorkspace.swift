@@ -5,6 +5,7 @@ import Observation
 @MainActor @Observable
 final class WindowWorkspace {
     var section: AppSection = .board
+    var kanbanPresentedAlongsideConversation = true
     var selectedProjectID = ""
     var selectedBoardID = ""
     var settingsSection: DieterSettingsSection = .general

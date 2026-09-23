@@ -196,4 +196,33 @@ struct DieterTransparencyTests {
         #expect(backdrop.appliedConfigurationCount == applications)
         #expect(backdrop.windowStyleMutationCount == mutations)
     }
+
+    @Test @MainActor func paneOwnedTitlebarStaysVisibleInOpaqueModeAndRestoresWindowChrome() {
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 900, height: 640),
+            styleMask: [.titled, .resizable, .fullSizeContentView], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.toolbar = NSToolbar(identifier: "DieterTransparencyTests.pane-titlebar")
+        window.toolbarStyle = .unified
+        defer { window.close() }
+        let originalTitlebar = window.titlebarAppearsTransparent
+        let originalVisibility = window.titleVisibility
+        let backdrop = DieterWindowBackdropView(frame: window.contentView?.bounds ?? .zero)
+        window.contentView?.addSubview(backdrop)
+        let solid = NSColor(srgbRed: 0.15, green: 0.17, blue: 0.19, alpha: 1)
+
+        backdrop.configure(transparencyEnabled: false, solidColor: solid, paneTitlebarEnabled: true)
+        #expect(window.isOpaque)
+        #expect(window.titlebarAppearsTransparent)
+        #expect(window.titleVisibility == .hidden)
+
+        backdrop.configure(transparencyEnabled: false, solidColor: solid, paneTitlebarEnabled: false)
+        #expect(window.titlebarAppearsTransparent == originalTitlebar)
+        #expect(window.titleVisibility == originalVisibility)
+
+        backdrop.configure(transparencyEnabled: false, solidColor: solid, paneTitlebarEnabled: true)
+        backdrop.removeFromSuperview()
+        #expect(window.titlebarAppearsTransparent == originalTitlebar)
+        #expect(window.titleVisibility == originalVisibility)
+    }
 }

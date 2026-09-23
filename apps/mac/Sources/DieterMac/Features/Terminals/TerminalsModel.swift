@@ -99,7 +99,7 @@ final class TerminalsModel {
         errorMessage = DieterRPCFailure.message(for: error)
     }
 
-    func loadTerminals() async {
+    func loadTerminals(selecting preferredID: String? = nil) async {
         guard let rpc else { return }
         terminalRequestGeneration &+= 1
         let generation = terminalRequestGeneration
@@ -122,7 +122,9 @@ final class TerminalsModel {
             terminalSequences = terminalSequences.filter { liveIDs.contains($0.key) }
             await terminalOutputAccumulator.retain(terminalIDs: liveIDs)
             guard self.rpc === rpc, generation == terminalRequestGeneration else { return }
-            if selectedTerminalID.flatMap({ id in values.first(where: { $0.id == id }) }) == nil {
+            if let preferredID {
+                selectedTerminalID = preferredID
+            } else if selectedTerminalID.flatMap({ id in values.first(where: { $0.id == id }) }) == nil {
                 selectedTerminalID = values.first?.id
             }
             rememberSelection()

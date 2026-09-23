@@ -455,8 +455,8 @@ enum DieterMetrics {
     static let sidebarExpandedWidth: CGFloat = 234
     static let sidebarCollapsedWidth: CGFloat = 60
     static let navigationRowHeight: CGFloat = 32
-    static let controlRadius: CGFloat = 8
-    static let cardRadius: CGFloat = 10
+    static let controlRadius: CGFloat = 5
+    static let cardRadius: CGFloat = 7
     /// Shared top inset for every pane header so titles land on one horizontal band.
     static let headerTopPadding: CGFloat = 14
 }
@@ -489,12 +489,13 @@ struct FluidPaneChrome<Primary: View, Secondary: View>: View {
     init(
         background: Color = DieterTheme.sidebar,
         spacing: CGFloat = 10,
+        showsSecondary: Bool = true,
         @ViewBuilder primary: () -> Primary,
         @ViewBuilder secondary: () -> Secondary
     ) {
         self.background = background
         self.spacing = spacing
-        hasSecondary = true
+        hasSecondary = showsSecondary
         self.primary = primary()
         self.secondary = secondary()
     }

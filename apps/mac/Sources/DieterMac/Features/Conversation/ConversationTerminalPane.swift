@@ -1,49 +1,23 @@
 import DieterAPI
 import SwiftUI
 
-/// The pane owns only the watch. Closing this view never closes a persistent
-/// terminal on the daemon; explicit shell termination stays in the terminals UI.
+/// Each workspace tab renders one dedicated daemon terminal. Closing the tab
+/// only detaches its watch; explicit shell termination stays in the terminals UI.
 struct ConversationTerminalPane: View {
     @Bindable var tab: ConversationContentTab
-    @State private var creating = false
     private var model: TerminalsModel { tab.terminals }
+    private var terminal: Dieter_V1_Terminal? {
+        guard let terminalID = tab.terminalID else { return nil }
+        return model.terminals.first { $0.id == terminalID }
+    }
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 8) {
-                if !model.terminals.isEmpty {
-                    Picker(
-                        "Terminal session",
-                        selection: Binding(
-                            get: { model.selectedTerminalID ?? "" },
-                            set: { model.selectTerminal($0) })
-                    ) {
-                        ForEach(model.terminals, id: \.id) { terminal in
-                            Text(terminal.name.isEmpty ? "Terminal" : terminal.name).tag(terminal.id)
-                        }
-                    }
-                    .labelsHidden().pickerStyle(.menu).frame(maxWidth: 220)
-                } else {
-                    Text("Terminal").font(.system(size: 12, weight: .medium))
-                }
-                Spacer(minLength: 6)
-                Button {
-                    Task { await create() }
-                } label: {
-                    Label(creating ? "Opening…" : "New terminal", systemImage: "plus")
-                }
-                .buttonStyle(.borderless).controlSize(.small)
-                .disabled(creating || !model.isLive)
-                .accessibilityIdentifier("conversation.content.terminal.create")
-                .smokeTarget("conversation.content.terminal.create")
-            }
-            .padding(.horizontal, 12).frame(height: 36)
-            Divider()
             if let error = model.terminalError ?? model.errorMessage {
                 Text(error).font(.caption).foregroundStyle(.secondary).padding(12)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
-            if let terminal = model.selectedTerminal {
+            if let terminal {
                 RemoteTerminalSurface(
                     terminalID: terminal.id,
                     initialColumns: Int(terminal.columns), initialRows: Int(terminal.rows),
@@ -74,26 +48,15 @@ struct ConversationTerminalPane: View {
                 LoadFeedback(title: "Loading terminals…")
             } else {
                 ContentUnavailableView {
-                    Label("Conversation terminal", systemImage: "terminal")
+                    Label("Terminal unavailable", systemImage: "terminal")
                 } description: {
-                    Text("Open a shell in this conversation’s workspace. It stays available when you close the tab.")
-                } actions: {
-                    Button("Open terminal") { Task { await create() } }
-                        .disabled(creating || !model.isLive)
+                    Text("Close this tab and open another Terminal tab to start a new session.")
                 }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .task(id: model.active) {
-            if model.active { await model.loadTerminals() }
+            if model.active { await model.loadTerminals(selecting: tab.terminalID) }
         }
-    }
-
-    private func create() async {
-        guard !creating else { return }
-        creating = true
-        defer { creating = false }
-        await model.createTerminal(
-            projectID: model.target.projectID, name: "Terminal", shell: "", workingDirectory: ".")
     }
 }

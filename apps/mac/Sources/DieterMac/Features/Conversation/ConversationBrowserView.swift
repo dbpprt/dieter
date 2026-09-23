@@ -93,9 +93,14 @@ struct ConversationBrowserView: View {
             } else {
                 ContentUnavailableView(
                     "Browser", systemImage: "globe",
-                    description: Text("Enter a web address above to browse alongside this conversation."))
+                    description: Text("Enter a web address above to browse alongside this conversation.")
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .accessibilityIdentifier("conversation.browser.empty")
+                .smokeTarget(scopedTarget("empty"))
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .onChange(of: initialURL, initial: true) { _, destination in
             browser.allowsLoopback = allowsLoopback
             if let destination { browser.open(destination) }
@@ -122,6 +127,13 @@ final class ConversationBrowserModel: NSObject, WKNavigationDelegate, WKUIDelega
     private(set) var failure: String?
     @ObservationIgnored private var requestedURL: URL?
     @ObservationIgnored private var observations: [NSKeyValueObservation] = []
+    @ObservationIgnored var openExternally: @MainActor (URL) -> Void = { NSWorkspace.shared.open($0) }
+
+    private func routeExternally(_ url: URL) -> Bool {
+        guard ExternalBrowserRules.matches(url, entries: ExternalBrowserRules.entries()) else { return false }
+        openExternally(url)
+        return true
+    }
 
     private func makeWebView() -> WKWebView {
         let configuration = WKWebViewConfiguration()
@@ -187,13 +199,14 @@ final class ConversationBrowserModel: NSObject, WKNavigationDelegate, WKUIDelega
 
     func open(_ url: URL) {
         guard requestedURL != url else { return }
-        requestedURL = url
         failure = nil
         guard accepts(url) else {
             failure =
                 "This address is unavailable. Remote localhost forwarding is not supported; use a reachable HTTP or HTTPS address."
             return
         }
+        if routeExternally(url) { return }
+        requestedURL = url
         currentURL = url
         webView.load(URLRequest(url: url))
     }
@@ -255,6 +268,10 @@ final class ConversationBrowserModel: NSObject, WKNavigationDelegate, WKUIDelega
             decisionHandler(.cancel)
             return
         }
+        if routeExternally(destination) {
+            decisionHandler(.cancel)
+            return
+        }
         if navigationAction.targetFrame == nil {
             webView.load(navigationAction.request)
             decisionHandler(.cancel)
@@ -267,7 +284,9 @@ final class ConversationBrowserModel: NSObject, WKNavigationDelegate, WKUIDelega
         _ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,
         for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures
     ) -> WKWebView? {
-        if let destination = navigationAction.request.url, accepts(destination) {
+        if let destination = navigationAction.request.url, accepts(destination),
+            !routeExternally(destination)
+        {
             webView.load(navigationAction.request)
         }
         return nil

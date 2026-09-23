@@ -49,16 +49,38 @@ private actor ConversationContentFilesFixture: FilesRPC {
 
 private actor ConversationContentTerminalFixture: TerminalsRPC {
     private(set) var listings: [(String, String)] = []
+    private(set) var createRequests: [Dieter_V1_CreateTerminalRequest] = []
     private(set) var closes = 0
+    private let includesExistingTerminal: Bool
+    private var createdTerminals: [Dieter_V1_Terminal] = []
+
+    init(includesExistingTerminal: Bool = true) {
+        self.includesExistingTerminal = includesExistingTerminal
+    }
+
     func terminals(projectID: String, cardID: String) async throws -> Dieter_V1_TerminalsResponse {
         listings.append((projectID, cardID))
-        var terminal = Dieter_V1_Terminal()
-        terminal.id = "workspace-shell"; terminal.name = "Shell"; terminal.status = "running"
-        terminal.columns = 100; terminal.rows = 30
-        var response = Dieter_V1_TerminalsResponse(); response.terminals = [terminal]
+        var values = createdTerminals
+        if includesExistingTerminal {
+            var terminal = Dieter_V1_Terminal()
+            terminal.id = "workspace-shell"; terminal.name = "Shell"; terminal.status = "running"
+            terminal.columns = 100; terminal.rows = 30
+            values.insert(terminal, at: 0)
+        }
+        var response = Dieter_V1_TerminalsResponse(); response.terminals = values
         return response
     }
-    func createTerminal(_ request: Dieter_V1_CreateTerminalRequest) async throws -> Dieter_V1_Terminal { .init() }
+    func createTerminal(_ request: Dieter_V1_CreateTerminalRequest) async throws -> Dieter_V1_Terminal {
+        createRequests.append(request)
+        var terminal = Dieter_V1_Terminal()
+        terminal.id =
+            createRequests.count == 1 ? "created-workspace-shell" : "created-workspace-shell-\(createRequests.count)"
+        terminal.name = request.name; terminal.status = "running"
+        terminal.shell = request.shell; terminal.workingDirectory = request.workingDirectory
+        terminal.columns = request.columns; terminal.rows = request.rows
+        createdTerminals.append(terminal)
+        return terminal
+    }
     func watchTerminal(id: String, after: UInt64, receive: @escaping @Sendable (Dieter_V1_TerminalFrame) async -> Void)
         async throws
     {
@@ -92,6 +114,43 @@ private actor ConversationContentProjectReviewFixture: ProjectChangesRPC {
 }
 
 @Suite @MainActor struct ConversationContentModelTests {
+    @Test func defaultConversationModePersistsAndRejectsUnknownValues() throws {
+        let suite = "ConversationDefaultModeTests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        #expect(ConversationDefaultMode.load(from: defaults) == .tabs)
+        ConversationDefaultMode.workspace.save(to: defaults)
+        #expect(ConversationDefaultMode.load(from: defaults) == .workspace)
+        defaults.set("unknown", forKey: ConversationDefaultMode.storageKey)
+        #expect(ConversationDefaultMode.load(from: defaults) == .tabs)
+    }
+
+    @Test func defaultLayoutSelectsWorkspaceOrConversationTabs() async throws {
+        let client = ConversationContentFilesFixture(), content = model(client)
+        #expect(await content.open(try url("plan.md"), conversationID: "card-A"))
+        content.applyDefaultMode(.workspace, conversationID: "card-A")
+        #expect(content.splitMode)
+        #expect(content.isPresented(for: "card-A"))
+        content.applyDefaultMode(.tabs, conversationID: "card-A")
+        #expect(!content.splitMode)
+        #expect(content.conversationTab == "Conversation")
+        #expect(content.selectedTabID == nil)
+    }
+
+    @Test func sidebarOwnsFixedConversationTabsAndReviewIsNotAddable() {
+        #expect(ConversationFixedSidebarTab.visible(standalone: false) == [.changes, .subagents])
+        #expect(ConversationFixedSidebarTab.visible(standalone: true) == [.changes, .subagents])
+        #expect(!ConversationContentModel().addablePanelKinds.contains(.review))
+    }
+
+    @Test func retainedWorkspaceTabsNeverLeakIntoAnotherCardsRail() async throws {
+        let client = ConversationContentFilesFixture(), content = model(client)
+        #expect(await content.open(try url("card-a.png"), conversationID: "card-A"))
+        #expect(content.workspaceTabs(for: "card-A").map(\.conversationID) == ["card-A"])
+        #expect(content.workspaceTabs(for: "card-B").isEmpty)
+        #expect(content.addablePanelKinds(for: "card-B").contains(.files))
+    }
+
     @Test func repeatedCodeLinkRevealsItsLineAgainWithoutAnotherRead() async throws {
         let client = ConversationContentFilesFixture(), content = model(client)
         let destination = try url("main.swift#L2")
@@ -395,6 +454,57 @@ private actor ConversationContentProjectReviewFixture: ProjectChangesRPC {
         #expect(first.dirty && second.dirty)
     }
 
+    @Test func automaticPresentationsOnlyRevealAnAlreadyOpenWorkspace() async throws {
+        let client = ConversationContentFilesFixture(), content = model(client)
+
+        #expect(await content.present(try url("first.md"), conversationID: "card-A"))
+        #expect(!content.isPresented(for: "card-A"))
+        #expect(content.selection == .file(path: "first.md", line: nil))
+
+        content.showEmpty(conversationID: "card-A")
+        #expect(content.isPresented(for: "card-A"))
+
+        #expect(await content.present(try url("second.md"), conversationID: "card-A"))
+        #expect(content.isPresented(for: "card-A"))
+        #expect(content.selection == .file(path: "second.md", line: nil))
+        #expect(content.files.fileDocument?.path == "second.md")
+
+        content.hide()
+        #expect(await content.present(try url("other.md"), conversationID: "card-B"))
+        #expect(!content.isPresented(for: "card-B"))
+        #expect(content.selection == .file(path: "other.md", line: nil))
+
+        content.showEmpty(conversationID: "card-B")
+        #expect(content.isPresented(for: "card-B"))
+        #expect(content.selection == .file(path: "other.md", line: nil))
+
+        content.hide()
+        #expect(await content.open(try url("third.md"), conversationID: "card-B"))
+        #expect(content.isPresented(for: "card-B"))
+        #expect(content.selection == .file(path: "third.md", line: nil))
+    }
+
+    @Test func automaticPresentationNeverPromptsToReplaceAnotherConversationsDirtyEditor() async throws {
+        let client = ConversationContentFilesFixture(), content = model(client)
+        #expect(await content.open(try url("draft.md"), conversationID: "card-A"))
+        edit(content, text: "Keep this draft")
+        content.hide()
+        var confirmations = 0
+        content.confirmUnsaved = { _ in
+            confirmations += 1
+            return .discard
+        }
+
+        #expect(!(await content.present(try url("other.md"), conversationID: "card-B")))
+
+        #expect(confirmations == 0)
+        #expect(content.conversationID == "card-A")
+        #expect(content.selection == .file(path: "draft.md", line: nil))
+        #expect(content.files.fileEditorSession.currentText() == "Keep this draft")
+        #expect(content.files.fileEditorSession.isDirty)
+        #expect(!content.isOpen)
+    }
+
     @Test func relativeLinksUseTheOpeningDocumentDirectory() async throws {
         let client = ConversationContentFilesFixture(), content = model(client)
         #expect(await content.open(try url("docs/plans/first.md"), conversationID: "card-A"))
@@ -464,6 +574,7 @@ private actor ConversationContentProjectReviewFixture: ProjectChangesRPC {
         #expect(await content.openPanel(.terminal, conversationID: "card-A"))
         let tab = try #require(content.selectedTab)
         #expect(tab.terminals.active)
+        #expect(tab.terminalID == "workspace-shell")
         #expect(tab.terminals.selectedTerminalID == "workspace-shell")
         let request = try #require(await terminalClient.listings.first)
         #expect(request.0 == "project-A" && request.1 == "card-A")
@@ -478,6 +589,56 @@ private actor ConversationContentProjectReviewFixture: ProjectChangesRPC {
         #expect(await content.closeTab(tab.id))
         #expect(!tab.terminals.active)
         #expect(await terminalClient.closes == 0)
+    }
+
+    @Test func openingTerminalPanelCreatesAScopedShellWhenNoneExists() async throws {
+        let client = ConversationContentFilesFixture()
+        let terminalClient = ConversationContentTerminalFixture(includesExistingTerminal: false)
+        let content = ConversationContentModel()
+        content.prepareScope = { id in
+            var value = self.scope(client, cardID: id)
+            value.terminalsClient = terminalClient
+            return value
+        }
+
+        #expect(await content.openPanel(.terminal, conversationID: "card-A"))
+
+        let tab = try #require(content.selectedTab)
+        let listing = try #require(await terminalClient.listings.first)
+        let request = try #require(await terminalClient.createRequests.first)
+        #expect(await terminalClient.listings.count == 1)
+        #expect(listing.0 == "project-A")
+        #expect(listing.1 == "card-A")
+        #expect(request.projectID == "project-A")
+        #expect(request.cardID == "card-A")
+        #expect(request.workingDirectory == ".")
+        #expect(tab.terminalID == "created-workspace-shell")
+        #expect(tab.terminals.selectedTerminalID == "created-workspace-shell")
+        #expect(tab.terminals.selectedTerminal?.status == "running")
+        #expect(tab.terminals.active)
+    }
+
+    @Test func everyTerminalTabOwnsADifferentSession() async throws {
+        let client = ConversationContentFilesFixture(), terminalClient = ConversationContentTerminalFixture()
+        let content = ConversationContentModel()
+        content.prepareScope = { id in
+            var value = self.scope(client, cardID: id)
+            value.terminalsClient = terminalClient
+            return value
+        }
+
+        #expect(await content.openPanel(.terminal, conversationID: "card-A"))
+        let first = try #require(content.selectedTab)
+        #expect(first.terminalID == "workspace-shell")
+
+        #expect(await content.openPanel(.terminal, conversationID: "card-A"))
+        let second = try #require(content.selectedTab)
+
+        #expect(first !== second)
+        #expect(first.terminalID == "workspace-shell")
+        #expect(second.terminalID == "created-workspace-shell")
+        #expect(first.terminalID != second.terminalID)
+        #expect(await terminalClient.createRequests.count == 1)
     }
 
     @Test func sameCardOnAnotherEndpointCannotReuseThePreviousDocument() async throws {
@@ -560,6 +721,9 @@ private actor ConversationContentProjectReviewFixture: ProjectChangesRPC {
         #expect(globalRoute.projectID == "unrelated-project")
         #expect(globalRoute.changes == nil)
         #expect(content.isPresented(for: "card-A"))
+        #expect(!content.addablePanelKinds.contains(.review))
+        #expect(content.addablePanelKinds.contains(.terminal))
+        #expect(content.addablePanelKinds.contains(.browser))
     }
 
     @Test func reconnectResumesScopedTerminalWatchUsingTheNewClient() async throws {
