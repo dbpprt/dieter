@@ -567,13 +567,17 @@ import CoreGraphics
         }
 
         private func modifier(_ title: String, bit: UInt32) -> some View {
-            Toggle(
+            let armed = session.keyboardModifiers & bit != 0
+            return Toggle(
                 title,
                 isOn: Binding(
                     get: { session.keyboardModifiers & bit != 0 },
                     set: { enabled in
                         if enabled { session.keyboardModifiers |= bit } else { session.keyboardModifiers &= ~bit }
-                    }))
+                    })
+            )
+            .accessibilityLabel(armed ? "\(title) modifier armed" : "\(title) modifier")
+            .accessibilityHint("Applies to the next keyboard key")
         }
 
         private var optionsMenu: some View {
@@ -1082,8 +1086,10 @@ import CoreGraphics
             var handled = false
             for press in presses {
                 guard let key = press.key else { continue }
-                session.keyboardModifiers = modifierBits(key.modifierFlags)
-                session.key(hid: UInt32(key.keyCode.rawValue), down: down)
+                session.hardwareKey(
+                    hid: UInt32(key.keyCode.rawValue),
+                    down: down,
+                    modifiers: modifierBits(key.modifierFlags))
                 handled = true
             }
             return handled
