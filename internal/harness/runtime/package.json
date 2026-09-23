@@ -11,7 +11,7 @@
   "dependencies": {
     "@ai-sdk/harness": "1.0.117",
     "@ai-sdk/harness-acp": "1.0.55",
-    "@ai-sdk/harness-claude-code": "1.0.121",
+    "@ai-sdk/harness-claude-code": "1.0.126",
     "@ai-sdk/harness-codex": "1.0.119",
     "@ai-sdk/harness-pi": "1.0.119",
     "@openai/codex-sdk": "0.155.0",

@@ -308,6 +308,7 @@ internal fun MessageComposer(
     harnesses: List<Harness> = emptyList(),
     card: BoardCard? = null,
     contextUsage: ComposerContextUsage? = null,
+    lastResponseModelId: String? = null,
     attachments: List<MessagePart> = emptyList(),
     selection: ConversationComposerSelection? = null,
     error: String? = null,
@@ -444,6 +445,14 @@ internal fun MessageComposer(
                 )
             }
         }
+        if (lastResponseModelId != null) {
+            Text(
+                "Last Claude response model: $lastResponseModelId",
+                color = DieterMuted,
+                fontSize = 11.sp,
+                modifier = Modifier.fillMaxWidth().testTag("last-claude-response-model"),
+            )
+        }
         Row(
             Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.Bottom,
@@ -517,6 +526,14 @@ internal fun ComposerSettingPill(label: String, enabled: Boolean, onClick: () ->
     ) {
         Text(label, color = DieterMuted, fontSize = 12.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
+}
+
+internal fun latestAssistantModelId(messages: List<UiMessage>): String? {
+    val message = messages.lastOrNull { it.role.equals("assistant", ignoreCase = true) } ?: return null
+    val raw = message.metadataJson.toString(StandardCharsets.UTF_8)
+    if (raw.isBlank()) return null
+    val metadata = runCatching { JSONObject(raw) }.getOrNull() ?: return null
+    return (metadata.opt("modelId") as? String)?.trim()?.takeIf(String::isNotBlank)
 }
 
 internal data class ComposerContextUsage(val used: Long, val percent: Int)

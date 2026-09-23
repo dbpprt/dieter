@@ -391,7 +391,9 @@ try {
   let claudeDelegationSeen = false;
   let claudeFinalTextSeen = false;
   async function streamResult(result, summary, diagnosticTurn) {
-    const messageMetadata = createMessageMetadataTracker({ createdAt, contextWindowTokens });
+    const messageMetadata = createMessageMetadataTracker({
+      createdAt, contextWindowTokens, reportModelId: adapter === 'claude-code',
+    });
     const stream = toUIMessageStream({
       stream: result.stream,
       onError: harnessErrorMessage,

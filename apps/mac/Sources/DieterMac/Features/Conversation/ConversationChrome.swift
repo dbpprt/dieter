@@ -112,6 +112,7 @@ struct ConversationChrome: View {
                                 }
                             }
                             .font(DieterFont.subtitle).foregroundStyle(DieterTheme.tertiary)
+                            ConversationModelIdentityLabel()
                         }
                         Spacer(minLength: 10)
                         if let card, !card.workspaceMode.isEmpty {
@@ -159,6 +160,47 @@ struct ConversationChrome: View {
 
 }
 
+struct ConversationModelIdentityLabel: View {
+    @Environment(ConversationContext.self) private var context
+
+    private var identity: String? {
+        let card = context.selectedCard ?? context.selectedDetail?.card
+        let provider = card?.provider.isEmpty == false ? card!.provider : context.composerProvider
+        if provider == "claude-code",
+            let assistant = context.conversation?.conversation.messages.last(where: { $0.role == "assistant" }),
+            let metadata = try? JSONSerialization.jsonObject(with: assistant.metadataJson) as? [String: Any],
+            let modelID = metadata["modelId"] as? String,
+            !modelID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        {
+            return "Last reply model · \(modelID)"
+        }
+
+        let selected = context.composerModel.isEmpty ? (card?.model ?? "") : context.composerModel
+        guard !selected.isEmpty else { return nil }
+        if provider == "claude-code" {
+            return selected == "opus" || selected == "sonnet" || selected == "haiku"
+                ? "Selected alias · \(selected)"
+                : "Selected model · \(selected)"
+        }
+        let name = context.harnessCatalog.harnesses.first(where: { $0.id == provider })?
+            .models.first(where: { $0.id == selected })?.name ?? selected
+        return "Selected model · \(name)"
+    }
+
+    var body: some View {
+        if let identity {
+            Text(identity)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .quickHelp(identity)
+                .accessibilityLabel(identity)
+                .accessibilityIdentifier("conversation.model-identity")
+        }
+    }
+}
+
 struct ConversationTitleStatusMenu: View {
     @Environment(ConversationContext.self) private var context
     let standalone: Bool
@@ -169,11 +211,14 @@ struct ConversationTitleStatusMenu: View {
 
     var body: some View {
         HStack(spacing: 7) {
-            Text(card?.title.isEmpty == false ? card!.title : "Conversation")
-                .font(.system(size: 15, weight: .semibold))
-                .lineLimit(1)
-                .truncationMode(.tail)
-                .layoutPriority(1)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(card?.title.isEmpty == false ? card!.title : "Conversation")
+                    .font(.system(size: 15, weight: .semibold))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                ConversationModelIdentityLabel()
+            }
+            .layoutPriority(1)
             StatusPill(text: status, color: runtimeColor(status))
                 .accessibilityIdentifier("conversation.status")
                 .smokeTarget("conversation.status")

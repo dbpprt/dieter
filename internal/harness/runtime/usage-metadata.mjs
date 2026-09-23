@@ -7,22 +7,36 @@ function validUsage(value) {
  * current context pressure while a multi-step turn is still running. The SDK's
  * final `totalUsage` is cumulative and remains available separately.
  */
-export function createMessageMetadataTracker({ createdAt, contextWindowTokens }) {
+export function createMessageMetadataTracker({ createdAt, contextWindowTokens, reportModelId = false }) {
   let currentUsage;
+  let modelId;
+
+  const metadata = () => ({
+    createdAt,
+    ...(currentUsage ? { usage: currentUsage } : {}),
+    ...(contextWindowTokens ? { contextWindowTokens } : {}),
+    ...(modelId ? { modelId } : {}),
+  });
 
   return ({ part }) => {
     if (part.type === 'start') return { createdAt };
     if (part.type === 'finish-step') {
       currentUsage = validUsage(part.usage) || currentUsage;
-      return currentUsage ? { createdAt, usage: currentUsage, contextWindowTokens } : undefined;
+      // Claude's bridge reports the selected model in its init event, which
+      // the harness carries through the finished step's response. An alias
+      // (opus/sonnet) is not evidence of a particular model version.
+      const reported = part.response?.modelId;
+      if (reportModelId && typeof reported === 'string') {
+        modelId = /^claude-[a-z0-9-]+-\d+(?:-\d+)+$/.test(reported) ? reported : undefined;
+      }
+      return currentUsage || modelId ? metadata() : undefined;
     }
     if (part.type === 'finish') {
       const totalUsage = validUsage(part.totalUsage);
       return {
-        createdAt,
+        ...metadata(),
         usage: currentUsage || totalUsage,
         ...(totalUsage ? { totalUsage } : {}),
-        contextWindowTokens,
       };
     }
     return undefined;

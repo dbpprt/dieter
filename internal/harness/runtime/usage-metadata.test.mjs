@@ -22,3 +22,15 @@ test('falls back to cumulative usage when a provider omits step usage', () => {
   const final = metadata({ part: { type: 'finish', totalUsage: { totalTokens: 80 } } });
   assert.equal(final.usage.totalTokens, 80);
 });
+
+test('reports only a versioned model observed from a Claude step', () => {
+  const metadata = createMessageMetadataTracker({ createdAt: 'now', reportModelId: true });
+  assert.equal(metadata({ part: { type: 'finish-step', response: { modelId: 'opus' } } }), undefined);
+  assert.equal(metadata({ part: { type: 'finish-step', response: { modelId: 'claude-opus-4-6' } } }).modelId, 'claude-opus-4-6');
+  const final = metadata({ part: { type: 'finish', totalUsage: { totalTokens: 12 } } });
+  assert.equal(final.modelId, 'claude-opus-4-6');
+  assert.equal(metadata({ part: { type: 'finish-step', response: { modelId: 'opus' } } }), undefined);
+  assert.equal(final.usage.totalTokens, 12);
+  const other = createMessageMetadataTracker({ createdAt: 'now' });
+  assert.equal(other({ part: { type: 'finish-step', response: { modelId: 'claude-opus-4-6' } } }), undefined);
+});

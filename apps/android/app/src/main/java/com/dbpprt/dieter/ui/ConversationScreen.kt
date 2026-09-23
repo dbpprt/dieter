@@ -175,6 +175,9 @@ internal fun ConversationBody(state: DieterUiState, model: DieterViewModel, modi
         messages.count { it.role.equals("assistant", true) || it.role.equals("agent", true) }
     }
     val contextUsage = remember(allMessages) { latestContextUsage(allMessages) }
+    val lastClaudeResponseModelId = remember(allMessages, card?.provider) {
+        if (card?.provider == "claude-code") latestAssistantModelId(allMessages) else null
+    }
     // Keep the live cue at the transcript tail for the whole turn. Partial
     // assistant text must not make the agent appear idle while it is still
     // generating more text or running tools.
@@ -543,6 +546,7 @@ internal fun ConversationBody(state: DieterUiState, model: DieterViewModel, modi
             harnesses = state.harnesses,
             card = state.selectedCard,
             contextUsage = contextUsage,
+            lastResponseModelId = lastClaudeResponseModelId,
             attachments = attachments,
             selection = composerSelection,
             error = composerError,
