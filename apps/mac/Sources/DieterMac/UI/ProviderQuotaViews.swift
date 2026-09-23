@@ -11,6 +11,8 @@ private struct ProviderQuotaCompactAccount: Identifiable {
 struct ProviderQuotaCompactView: View {
     @Environment(DieterStore.self) private var store
     @State private var presented = false
+    var embeddedInToolbar = false
+    var embeddedInSidebar = false
 
     private var groups: [Dieter_Gateway_V1_ProviderQuotaGroup] {
         store.providerQuotaGroups.filter { !$0.accounts.isEmpty }
@@ -30,35 +32,48 @@ struct ProviderQuotaCompactView: View {
             Button {
                 presented.toggle()
             } label: {
-                HStack(spacing: 6) {
+                Group {
                     if groups.isEmpty {
                         ProgressView()
                             .controlSize(.mini)
-                            .padding(.horizontal, 8)
-                            .frame(height: 24)
-                            .background(DieterTheme.raised, in: Capsule())
-                            .overlay(Capsule().stroke(DieterTheme.border))
+                            .providerQuotaCompactChrome(
+                                embeddedInToolbar: embeddedInToolbar,
+                                embeddedInSidebar: embeddedInSidebar)
                     } else if accounts.isEmpty {
                         Label("Quotas", systemImage: "gauge.with.dots.needle.0percent")
                             .font(.system(size: 10, weight: .semibold))
                             .foregroundStyle(DieterTheme.tertiary)
-                            .padding(.horizontal, 8)
-                            .frame(height: 24)
-                            .background(DieterTheme.raised, in: Capsule())
-                            .overlay(Capsule().stroke(DieterTheme.border))
+                            .providerQuotaCompactChrome(
+                                embeddedInToolbar: embeddedInToolbar,
+                                embeddedInSidebar: embeddedInSidebar)
+                    } else if embeddedInSidebar {
+                        VStack(alignment: .leading, spacing: 4) {
+                            ForEach(accounts) { item in
+                                ProviderQuotaAccountCompactLabel(
+                                    provider: item.provider,
+                                    account: item.account
+                                )
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     } else {
-                        ForEach(accounts) { item in
-                            ProviderQuotaAccountCompactLabel(
-                                provider: item.provider,
-                                account: item.account
-                            )
-                            .padding(.horizontal, 8)
-                            .frame(height: 24)
-                            .background(DieterTheme.raised, in: Capsule())
-                            .overlay(Capsule().stroke(DieterTheme.border))
+                        HStack(alignment: .center, spacing: embeddedInToolbar ? 10 : 6) {
+                            ForEach(accounts) { item in
+                                ProviderQuotaAccountCompactLabel(
+                                    provider: item.provider,
+                                    account: item.account
+                                )
+                                .providerQuotaCompactChrome(
+                                    embeddedInToolbar: embeddedInToolbar,
+                                    embeddedInSidebar: false)
+                            }
                         }
                     }
                 }
+                .frame(
+                    maxWidth: embeddedInSidebar ? .infinity : nil,
+                    minHeight: 30,
+                    alignment: embeddedInSidebar ? .leading : .center)
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Global provider quotas by account")
@@ -70,6 +85,70 @@ struct ProviderQuotaCompactView: View {
                     .padding(16)
             }
         }
+    }
+}
+
+struct ProviderQuotaSidebarBlock: View {
+    @Environment(DieterStore.self) private var store
+
+    private var visible: Bool {
+        store.providerQuotasLoading || store.providerQuotaGroups.contains { !$0.accounts.isEmpty }
+    }
+
+    var body: some View {
+        if visible {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("QUOTAS")
+                    .font(DieterFont.sectionLabel)
+                    .tracking(0.8)
+                    .foregroundStyle(DieterTheme.tertiary)
+                ProviderQuotaCompactView(embeddedInSidebar: true)
+            }
+            .padding(8)
+            .background(
+                DieterTheme.surface.opacity(0.72),
+                in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+            )
+            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(DieterTheme.border))
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("sidebar.provider-quotas")
+        }
+    }
+}
+
+private struct ProviderQuotaCompactChrome: ViewModifier {
+    let embeddedInToolbar: Bool
+    let embeddedInSidebar: Bool
+
+    func body(content: Content) -> some View {
+        content
+            .padding(.horizontal, embeddedInSidebar ? 0 : embeddedInToolbar ? 4 : 8)
+            .frame(
+                maxWidth: embeddedInSidebar ? .infinity : nil,
+                minHeight: 24,
+                alignment: embeddedInSidebar ? .leading : .center
+            )
+            .background {
+                if !embeddedInToolbar && !embeddedInSidebar {
+                    RoundedRectangle(cornerRadius: embeddedInSidebar ? 7 : 12, style: .continuous)
+                        .fill(DieterTheme.raised)
+                }
+            }
+            .overlay {
+                if !embeddedInToolbar && !embeddedInSidebar {
+                    RoundedRectangle(cornerRadius: embeddedInSidebar ? 7 : 12, style: .continuous)
+                        .stroke(DieterTheme.border)
+                }
+            }
+    }
+}
+
+private extension View {
+    func providerQuotaCompactChrome(embeddedInToolbar: Bool, embeddedInSidebar: Bool = false) -> some View {
+        modifier(
+            ProviderQuotaCompactChrome(
+                embeddedInToolbar: embeddedInToolbar,
+                embeddedInSidebar: embeddedInSidebar))
     }
 }
 
@@ -88,15 +167,17 @@ private struct ProviderQuotaAccountCompactLabel: View {
                 .font(.system(size: 9, weight: .medium))
                 .foregroundStyle(DieterTheme.subtle)
                 .lineLimit(1)
-                .frame(maxWidth: 58)
+                .frame(minWidth: 42, maxWidth: .infinity, alignment: .leading)
             if let remaining {
                 Text("\(remaining)%")
                     .font(.system(size: 10, weight: .semibold, design: .rounded))
                     .foregroundStyle(ProviderQuotaPresentation.tint(provider, remaining))
+                    .monospacedDigit()
                 ProgressView(value: Double(remaining), total: 100)
                     .progressViewStyle(.linear)
                     .tint(ProviderQuotaPresentation.tint(provider, remaining))
-                    .frame(width: 28)
+                    .frame(minWidth: 36, maxWidth: 84)
+                    .layoutPriority(1)
             } else {
                 Text("—").font(.caption2)
             }

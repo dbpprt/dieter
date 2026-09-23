@@ -71,31 +71,43 @@
                 let clicked = clickLink("Smoke Markdown", in: text, window: window)
                 let opened = await NativeUIAccessibility.wait(timeout: 8) {
                     model.files.fileDocument?.name == "side-by-side-smoke.md"
-                        && board.maximized && richEditor(in: window.contentView) != nil
+                        && board.boardItem.isCollapsed && richEditor(in: window.contentView) != nil
                 }
                 results["content-markdown-link"] =
                     clicked && opened
                     ? "passed"
-                    : "failed: native click=\(clicked), rich editor/maximize=\(opened), error=\(model.error ?? model.files.fileError ?? "none")"
+                    : "failed: native click=\(clicked), rich editor/adaptive layout=\(opened), error=\(model.error ?? model.files.fileError ?? "none")"
                 capture(window, output.appending(path: "07g-content-markdown.png"))
                 recordIdentity(
                     "markdown", hostMatches: board.conversationHost === host,
                     textMatches: messageView(in: window) === text, draftMatches: store.composerText == draft,
                     output: output)
-                guard opened else { _ = await model.close(); return }
+                // Keep the pane-layout and file-preview journey independent of
+                // an intermittent native link gesture. Preserve the failed
+                // link result above, but open the same fixture file directly so
+                // subsequent checks still produce useful evidence.
+                if !opened {
+                    _ = await model.open(URL(string: "side-by-side-smoke.md")!, conversationID: cardID)
+                    let recovered = await NativeUIAccessibility.wait(timeout: 8) {
+                        model.files.fileDocument?.name == "side-by-side-smoke.md"
+                            && board.boardItem.isCollapsed && richEditor(in: window.contentView) != nil
+                    }
+                    guard recovered else { _ = await model.close(); return }
+                }
 
                 if let pane = NativeUIAccessibility.find("conversation.content-pane", in: window)?.object as? NSView,
                     let split = enclosingContentSplit(pane), split.arrangedSubviews.count == 2
                 {
                     let chat = split.arrangedSubviews[0]
                     let content = split.arrangedSubviews[1]
+                    let expectedFraction = ConversationContentSizing.conversationFraction
                     _ = await NativeUIAccessibility.wait(timeout: 5) {
-                        abs(chat.frame.width - (split.bounds.width - split.dividerThickness) * 0.45) < 3
+                        abs(chat.frame.width - (split.bounds.width - split.dividerThickness) * expectedFraction) < 3
                     }
                     let fraction = chat.frame.width / max(1, split.bounds.width)
                     results["content-initial-layout"] =
                         chat.frame.width >= 280 && content.frame.width >= 300
-                            && abs(fraction - 0.45) < 0.01
+                            && abs(fraction - expectedFraction) < 0.01
                         ? "passed" : "failed: chat=\(chat.frame), content=\(content.frame), split=\(split.bounds)"
                     let target = min(split.bounds.width - 320, chat.frame.width + 65)
                     dragDivider(split, to: target, window: window)
@@ -141,7 +153,8 @@
 
                 let closeClicked = NativeUIAccessibility.click("conversation.content.close", in: window)
                 let restored = await NativeUIAccessibility.wait(timeout: 8) {
-                    !model.isOpen && !board.maximized && abs(board.conversationFrame.width - originalWidth) < 3
+                    !model.isOpen && !board.boardItem.isCollapsed
+                        && abs(board.conversationFrame.width - originalWidth) < 3
                         && store.selectedCardID == cardID && store.composerText == draft
                         && board.conversationHost === host && messageView(in: window) === text
                         && atTail(scroll)
@@ -149,7 +162,7 @@
                 results["content-close-restores-chat"] =
                     closeClicked && restored
                     ? "passed"
-                    : "failed: close=\(closeClicked), restored=\(restored), open=\(model.isOpen), maximized=\(board.maximized), selected=\(store.selectedCardID == cardID), draft=\(store.composerText == draft), host=\(board.conversationHost === host), text=\(messageView(in: window) === text), width=\(board.conversationFrame.width)/\(originalWidth), tail=\(atTail(scroll))"
+                    : "failed: close=\(closeClicked), restored=\(restored), open=\(model.isOpen), board collapsed=\(board.boardItem.isCollapsed), selected=\(store.selectedCardID == cardID), draft=\(store.composerText == draft), host=\(board.conversationHost === host), text=\(messageView(in: window) === text), width=\(board.conversationFrame.width)/\(originalWidth), tail=\(atTail(scroll))"
                 recordIdentity(
                     "closed", hostMatches: board.conversationHost === host,
                     textMatches: messageView(in: window) === text, draftMatches: store.composerText == draft,

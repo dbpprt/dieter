@@ -26,7 +26,6 @@ final class ConversationDraft {
     var model = ""
     var effort = ""
     var providerOptions: [String: String] = [:]
-    var comment = ""
     var sending = false
     private(set) var pendingQueueMessageIDs: Set<String> = []
     private(set) var revision: UInt64 = 0
@@ -210,7 +209,7 @@ final class ComposerModel {
     func select(_ target: WorkspaceTarget?) {
         guard self.target != target else { return }
         if let previous = self.target, draft.text.isEmpty, draft.attachments.isEmpty,
-            draft.comment.isEmpty, !draft.sending, draft.pendingQueueMessageIDs.isEmpty,
+            !draft.sending, draft.pendingQueueMessageIDs.isEmpty,
             !draft.hasPendingSettingsChanges
         {
             drafts.removeValue(forKey: previous)

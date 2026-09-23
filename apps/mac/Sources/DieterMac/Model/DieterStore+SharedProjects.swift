@@ -1,6 +1,11 @@
 import DieterAPI
 import Foundation
 
+struct ConversationWorkspaceRoute: Equatable {
+    let endpointID: String
+    let machineName: String
+}
+
 extension DieterStore {
     func machine(for card: Dieter_V1_Card) -> DieterEndpoint? {
         if card.ownerDaemonID.isEmpty { return endpoint }
@@ -15,6 +20,15 @@ extension DieterStore {
     func endpointID(for card: Dieter_V1_Card?) -> String {
         guard let card else { return endpoint.id }
         return machine(for: card)?.id ?? "unavailable:\(card.ownerDaemonID)"
+    }
+
+    /// Workspace RPCs belong to the conversation owner, not whichever daemon
+    /// most recently supplied the shared project projection. A project can be
+    /// visible through one replica while its chat and checkout live on another
+    /// machine.
+    func conversationWorkspaceRoute(for card: Dieter_V1_Card) -> ConversationWorkspaceRoute? {
+        guard let machine = machine(for: card) else { return nil }
+        return ConversationWorkspaceRoute(endpointID: machine.id, machineName: machine.name)
     }
 
     func ensureConversationConnection(_ card: Dieter_V1_Card, reportOffline: Bool = true) async -> Bool {

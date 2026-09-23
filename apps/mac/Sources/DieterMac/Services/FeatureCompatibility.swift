@@ -4,6 +4,11 @@ import Foundation
 // Navigation, legacy call sites, and smoke fixtures share these forwarding
 // adapters during UI migration. State and tasks have one feature owner.
 extension AppSession {
+    var kanbanPresentedAlongsideConversation: Bool {
+        get { window.kanbanPresentedAlongsideConversation }
+        set { window.kanbanPresentedAlongsideConversation = newValue }
+    }
+
     var settingsSection: DieterSettingsSection {
         get { window.settingsSection }
         set { window.settingsSection = newValue }
@@ -247,10 +252,6 @@ extension AppSession {
     var composerProviderOptions: [String: String] {
         get { composer.draft.providerOptions }
         set { composer.draft.providerOptions = newValue }
-    }
-    var commentText: String {
-        get { composer.draft.comment }
-        set { composer.draft.comment = newValue }
     }
     var filesLoading: Bool {
         get { filesModel.filesLoading }

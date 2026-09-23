@@ -10,9 +10,9 @@ struct ComposerSurface<Content: View>: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0, content: content)
-            .dieterGlass(.regular, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .dieterGlass(.regular, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
             .overlay {
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
                     .stroke(
                         dropTargeted
                             ? DieterTheme.shell

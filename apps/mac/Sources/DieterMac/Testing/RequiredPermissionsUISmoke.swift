@@ -60,8 +60,19 @@
             permissions.refresh()
             try? await DieterTaskSleep.milliseconds(200)
             guard !permissions.isReady,
-                NativeUIAccessibility.click("permissions.grant.accessibility", in: window)
+                NativeUIAccessibility.find("permissions.grant.accessibility", in: window) != nil
             else { return "failed: revoked permission did not restore setup" }
+            guard await NativeUIAccessibility.waitForInteractiveTarget("permissions.skip", in: window),
+                NativeUIAccessibility.click("permissions.skip", in: window)
+            else {
+                return "failed: Skip for Now button missing"
+            }
+            let skipped = await waitUntil { NativeUIAccessibility.find("permissions.workspace", in: window) != nil }
+            guard skipped, permissions.canUseApp, !permissions.isReady else {
+                return
+                    "failed: skip did not reveal workspace (visible=\(skipped), canUseApp=\(permissions.canUseApp), ready=\(permissions.isReady))"
+            }
+            snapshot(window, output.appending(path: "00-permissions-skipped.png"))
             return "passed"
         }
 

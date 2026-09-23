@@ -1824,20 +1824,6 @@ private func terminalKeyEvent(
         ])
 }
 
-@Test func conversationWorkspacePanelPreferenceDefaultsOffAndPersistsBothStates() throws {
-    let suite = "dieter-conversation-workspace-panel-tests-\(UUID().uuidString)"
-    let defaults = try #require(UserDefaults(suiteName: suite))
-    defer { defaults.removePersistentDomain(forName: suite) }
-
-    #expect(!ConversationWorkspacePanelPreferences.isEnabled(in: defaults))
-
-    ConversationWorkspacePanelPreferences.setEnabled(true, in: defaults)
-    #expect(ConversationWorkspacePanelPreferences.isEnabled(in: defaults))
-
-    ConversationWorkspacePanelPreferences.setEnabled(false, in: defaults)
-    #expect(!ConversationWorkspacePanelPreferences.isEnabled(in: defaults))
-}
-
 @Test func machineInformationUsesAPopupInsteadOfANavigationDestination() {
     #expect(!AppSection.allCases.map(\.rawValue).contains("Machines"))
 }
@@ -1962,6 +1948,30 @@ private func terminalKeyEvent(
             activeCatalog: localCatalog,
             catalogsByEndpoint: [:]
         ) == nil)
+}
+
+@Test @MainActor func conversationWorkspaceRouteUsesTheConversationOwnerNotTheProjectReplica() throws {
+    let store = DieterStore(restoreSync: false)
+    let projectReplica = DieterEndpoint(
+        name: "MBP", host: "mbp.invalid", port: 443, secure: true,
+        daemonID: "daemon-mbp", online: true)
+    let conversationOwner = DieterEndpoint(
+        name: "Mini", host: "mini.invalid", port: 443, secure: true,
+        daemonID: "daemon-mini", online: true)
+    store.endpoint = conversationOwner
+    store.endpoints = [projectReplica, conversationOwner]
+    store.projectReplicaEndpointIDs = ["project": projectReplica.id]
+    var chat = Dieter_V1_Card()
+    chat.id = "chat"
+    chat.scope = "chat"
+    chat.projectID = "project"
+    chat.ownerDaemonID = "daemon-mini"
+
+    let route = try #require(store.conversationWorkspaceRoute(for: chat))
+    #expect(route.endpointID == conversationOwner.id)
+    #expect(route.machineName == "Mini")
+    #expect(route.endpointID != store.projectReplicaEndpointIDs[chat.projectID])
+    #expect(route.endpointID == store.endpoint.id)
 }
 
 @Test func providerOptionsDropValuesUnsupportedByTheDestinationHarness() {
@@ -2678,6 +2688,67 @@ private func terminalKeyEvent(
     #expect(overlaid.conversation.messages.map(\.id) == ["msg_failed", "msg_running", "msg_answer"])
     #expect(overlaid.conversation.messages.first?.parts.first?.text == "Older failed command")
     #expect(!overlaid.conversation.messages.first!.metadataJson.isEmpty)
+}
+
+@Test func activeTurnSendRendersInTheQueueBeforeAdmissionCompletes() throws {
+    var request = Dieter_V1_SendMessageRequest()
+    request.cardID = "c_chat"
+    request.provider = "codex"
+    request.model = "gpt-5.6-sol"
+    var part = Dieter_V1_MessagePart()
+    part.type = "text"
+    part.text = "Please steer this turn"
+    request.parts = [part]
+    let entry = DieterOutboxEntry(
+        commandID: "queued-command",
+        clientID: "mac",
+        endpointID: "endpoint",
+        kind: .sendMessage,
+        request: try request.serializedData(),
+        optimisticID: "msg_queued",
+        attempts: 0,
+        optimisticPlacement: .queue,
+        createdAt: Date(timeIntervalSince1970: 10)
+    )
+    var snapshot = Dieter_V1_ConversationSnapshot()
+    snapshot.detail.card.id = request.cardID
+    snapshot.conversation.cardID = request.cardID
+
+    let overlaid = DieterOutboxPolicy.overlayOptimisticMessages(snapshot, entries: [entry])
+
+    #expect(overlaid.conversation.messages.isEmpty)
+    #expect(overlaid.conversation.queue.map(\.id) == [entry.optimisticID])
+    #expect(overlaid.conversation.queue.first?.parts.first?.text == part.text)
+    #expect(overlaid.conversation.queue.first?.selection.model == request.model)
+}
+
+@Test func failedSteerSendMovesToTheTranscriptFailureSurface() throws {
+    var request = Dieter_V1_SendMessageRequest()
+    request.cardID = "c_chat"
+    var part = Dieter_V1_MessagePart()
+    part.type = "text"
+    part.text = "Could not queue this"
+    request.parts = [part]
+    let entry = DieterOutboxEntry(
+        commandID: "failed-queued-command",
+        clientID: "mac",
+        endpointID: "endpoint",
+        kind: .sendMessage,
+        request: try request.serializedData(),
+        optimisticID: "msg_failed_queue",
+        attempts: 1,
+        state: .failed,
+        optimisticPlacement: .queue,
+        createdAt: Date(timeIntervalSince1970: 10)
+    )
+    var snapshot = Dieter_V1_ConversationSnapshot()
+    snapshot.detail.card.id = request.cardID
+    snapshot.conversation.cardID = request.cardID
+
+    let overlaid = DieterOutboxPolicy.overlayOptimisticMessages(snapshot, entries: [entry])
+
+    #expect(overlaid.conversation.queue.isEmpty)
+    #expect(overlaid.conversation.messages.map(\.id) == [entry.optimisticID])
 }
 
 @Test func createSuccessMergesAnOptimisticChatWithAnAlreadySynchronizedChat() {

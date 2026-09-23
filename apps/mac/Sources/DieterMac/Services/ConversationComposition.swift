@@ -12,13 +12,11 @@ extension DieterStore {
             card: { [weak self] in self?.selectedCard }, catalog: { [weak self] in self?.harnessCatalog ?? .init() },
             projectID: { [weak self] in self?.selectedProjectID ?? "" },
             reasoning: { [weak self] in self?.showReasoning ?? false },
-            workspacePanelEnabled: { [weak self] in self?.conversationWorkspacePanelEnabled ?? false },
             pendingMessage: { [weak self] in self?.isPendingMessage($0) ?? false },
             acceptedItem: { [weak self] in self?.isAcceptedOutboxItem($0) ?? false },
             failedItem: { [weak self] in self?.isFailedOutboxItem($0) ?? false },
             creationError: { [weak self] in self?.failedCreationError($0) })
         context.onAddAttachments = { [weak self] urls in self?.addAttachments(urls) }
-        context.onAddComment = { [weak self] in await self?.addComment() }
         context.onAddPastedAttachments = { [weak self] providers in self?.addPastedAttachments(providers) }
         context.onArchive = { [weak self] card, archived in await self?.archive(card, archived: archived) }
         context.onAttachPasteboard = { [weak self] pasteboard in self?.attachPasteboard(pasteboard) ?? false }
@@ -51,8 +49,11 @@ extension DieterStore {
             if self.rpc != nil { content.resume() }
         }
         context.content.currentEndpointID = { [weak self] id in
-            guard let self, (self.selectedCardID ?? self.selectedChatID) == id else { return nil }
-            return self.endpoint.id
+            guard let self, (self.selectedCardID ?? self.selectedChatID) == id,
+                let card = self.selectedCard ?? self.selectedDetail?.card,
+                card.id == id
+            else { return nil }
+            return self.conversationWorkspaceRoute(for: card)?.endpointID
         }
         context.content.resolveExternalLink = { [weak self] url, id in
             guard let self else { return .unavailable("This conversation is no longer available.") }
@@ -62,11 +63,13 @@ extension DieterStore {
             guard let self, (self.selectedCardID ?? self.selectedChatID) == id,
                 self.isConversationServerBacked(id),
                 let card = self.selectedCard ?? self.selectedDetail?.card,
-                card.id == id, let rpc = self.rpc,
-                (self.projectReplicaEndpointIDs[card.projectID] ?? self.endpoint.id) == self.endpoint.id
+                card.id == id,
+                let route = self.conversationWorkspaceRoute(for: card),
+                route.endpointID == self.endpoint.id,
+                let rpc = self.rpc
             else { throw ConversationContentUnavailable() }
             let target = WorkspaceTarget(
-                endpointID: self.endpoint.id, projectID: card.projectID, conversationID: id)
+                endpointID: route.endpointID, projectID: card.projectID, conversationID: id)
             // Ask the owning daemon for the actual root, including managed worktrees.
             // No paths are resolved against the Mac client's checkout.
             let workspace = try await rpc.workspace(cardID: id)
@@ -75,7 +78,7 @@ extension DieterStore {
             else { throw CancellationError() }
             return ConversationContentScope(
                 target: target, rootPath: workspace.path, client: rpc,
-                card: card, doneLaneID: self.doneLane(for: card), machineName: self.endpoint.name,
+                card: card, doneLaneID: self.doneLane(for: card), machineName: route.machineName,
                 terminalsClient: rpc, worktreeClient: rpc, projectChangesClient: rpc,
                 processesClient: rpc,
                 workspaceMode: workspace.mode,
@@ -100,7 +103,7 @@ extension DieterStore {
             guard ConversationBrowserModel.isLoopback(url) else { return }
             guard let self, (self.selectedCardID ?? self.selectedChatID) == id,
                 let card = self.selectedCard ?? self.selectedDetail?.card,
-                (self.projectReplicaEndpointIDs[card.projectID] ?? self.endpoint.id) == self.endpoint.id,
+                self.conversationWorkspaceRoute(for: card)?.endpointID == self.endpoint.id,
                 self.rpc?.isLoopbackDataPlane == true
             else { throw ConversationLoopbackUnavailable() }
         }

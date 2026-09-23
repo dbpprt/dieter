@@ -56,8 +56,10 @@ private actor EarlierHistoryFixture: ConversationRPC {
     func conversation(cardID: String, limit: Int32, before: Int32?) async throws -> Dieter_V1_ConversationSnapshot {
         var snapshot = Dieter_V1_ConversationSnapshot()
         var oldest = Dieter_V1_UiMessage(); oldest.id = "oldest"
+        snapshot.conversation.cardID = cardID
         snapshot.conversation.messages = [oldest]
-        snapshot.page.start = 0; snapshot.page.total = 2_002; snapshot.page.hasMore_p = false
+        snapshot.page.start = 0; snapshot.page.end = 1
+        snapshot.page.total = 2_002; snapshot.page.hasMore_p = false
         return snapshot
     }
     func watchConversation(

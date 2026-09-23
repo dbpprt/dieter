@@ -288,7 +288,6 @@ final class ConversationModel {
             let cardID = selectedCardID ?? selectedChatID,
             let rpc
         else { return false }
-        let before = conversationHistoryStart
         let requestID = UUID()
         conversationHistoryRequestID = requestID
         conversationHistoryLoading = true
@@ -299,25 +298,50 @@ final class ConversationModel {
             }
         }
         do {
-            let page = try await rpc.conversation(
-                cardID: cardID,
-                limit: conversationPageSize,
-                before: Int32(before)
-            )
-            guard self.rpc === rpc, conversationHistoryRequestID == requestID,
-                (selectedCardID ?? selectedChatID) == cardID
-            else { return false }
             let liveIDs = Set(conversation?.conversation.messages.map(\.id) ?? [])
-            var seen = liveIDs
-            let merged = (page.conversation.messages + olderConversationMessages).filter { message in
-                message.id.isEmpty || seen.insert(message.id).inserted
+            var seen = liveIDs.union(olderConversationMessages.lazy.map(\.id).filter { !$0.isEmpty })
+            var merged = olderConversationMessages
+            var cursor = conversationHistoryStart
+            var total = conversationHistoryTotal
+            var hasMore = conversationHistoryHasMore
+            var added = 0
+
+            // A byte-bounded server response can legally contain fewer than
+            // the requested messages. Keep reading contiguous pages until the
+            // user gets a useful window, or the real beginning is reached.
+            while hasMore, cursor > 0, added < Int(conversationPageSize) {
+                let page = try await rpc.conversation(
+                    cardID: cardID,
+                    limit: conversationPageSize,
+                    before: Int32(cursor)
+                )
+                guard self.rpc === rpc, conversationHistoryRequestID == requestID,
+                    (selectedCardID ?? selectedChatID) == cardID
+                else { return false }
+                let pageStart = Int(page.page.start)
+                let pageEnd = Int(page.page.end)
+                guard pageEnd == cursor, pageStart < cursor,
+                    page.conversation.cardID.isEmpty || page.conversation.cardID == cardID
+                else {
+                    conversationError = "Conversation history changed. Jump to latest to refresh it."
+                    return false
+                }
+                let novel = page.conversation.messages.filter { message in
+                    message.id.isEmpty || seen.insert(message.id).inserted
+                }
+                merged = novel + merged
+                added += novel.count
+                cursor = pageStart
+                total = max(total, Int(page.page.total))
+                hasMore = page.page.hasMore_p && cursor > 0
             }
+            guard added > 0 else { return false }
             let window = TranscriptRetention.window(merged, keepingEarlier: true)
             if window.removed > 0 { browsingEarlierHistory = true }
             olderConversationMessages = window.messages
-            conversationHistoryStart = Int(page.page.start)
-            conversationHistoryTotal = Int(page.page.total)
-            conversationHistoryHasMore = page.page.hasMore_p
+            conversationHistoryStart = cursor
+            conversationHistoryTotal = total
+            conversationHistoryHasMore = hasMore
             return true
         } catch {
             guard self.rpc === rpc, conversationHistoryRequestID == requestID,

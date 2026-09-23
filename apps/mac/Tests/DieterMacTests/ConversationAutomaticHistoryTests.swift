@@ -54,15 +54,15 @@ private actor AutomaticHistoryRPC: ConversationRPC {
     model.browsingEarlierHistory = true
 
     #expect(await model.loadLaterMessages())
-    #expect(model.conversationHistoryStart == 430)
-    #expect(model.conversationMessages.map(\.id) == (430..<2_430).map { "message-\($0)" })
+    #expect(model.conversationHistoryStart == 460)
+    #expect(model.conversationMessages.map(\.id) == (460..<2_460).map { "message-\($0)" })
     #expect(model.olderConversationMessages.count == 2_000)
     #expect(model.browsingEarlierHistory)
-    for _ in 0..<19 { #expect(await model.loadLaterMessages()) }
+    for _ in 0..<9 { #expect(await model.loadLaterMessages()) }
     #expect(!model.browsingEarlierHistory)
     #expect(model.conversationMessages.map(\.id) == (1_000..<3_030).map { "message-\($0)" })
     #expect(model.olderConversationMessages.count == 2_000)
-    #expect(await rpc.requests == stride(from: Int32(2_430), through: 3_000, by: 30).map { $0 })
+    #expect(await rpc.requests == stride(from: Int32(2_460), through: 3_000, by: 60).map { $0 })
 
     model.returnToLatest()
     #expect(model.olderConversationMessages.isEmpty)

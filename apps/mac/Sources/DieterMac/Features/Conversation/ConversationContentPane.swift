@@ -1,13 +1,65 @@
 import AppKit
 import SwiftUI
 
+private struct ConversationWorkspaceTabsInTitlebarKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
+extension EnvironmentValues {
+    var conversationWorkspaceTabsInTitlebar: Bool {
+        get { self[ConversationWorkspaceTabsInTitlebarKey.self] }
+        set { self[ConversationWorkspaceTabsInTitlebarKey.self] = newValue }
+    }
+}
+
+enum ConversationFixedSidebarTab: String, CaseIterable, Identifiable {
+    case changes = "Changes"
+    case subagents = "Subagents"
+
+    var id: String { rawValue }
+    var symbol: String {
+        switch self {
+        case .changes: "arrow.triangle.branch"
+        case .subagents: "person.2"
+        }
+    }
+
+    static func visible(standalone: Bool) -> [Self] {
+        [.changes, .subagents]
+    }
+}
+
 struct ConversationContentPane: View {
+    @Environment(ConversationContext.self) private var context
+    @Environment(\.conversationWorkspaceTabsInTitlebar) private var workspaceTabsInTitlebar
     @Bindable var model: ConversationContentModel
+
+    private var standalone: Bool {
+        (context.selectedCard ?? context.selectedDetail?.card)?.scope == "chat"
+    }
+    private var fixedTabs: [ConversationFixedSidebarTab] {
+        ConversationFixedSidebarTab.visible(standalone: standalone)
+    }
+    private var conversationID: String {
+        context.selectedCardID ?? context.selectedChatID ?? model.conversationID
+    }
+    private var workspaceTabs: [ConversationContentTab] {
+        model.workspaceTabs(for: conversationID)
+    }
+    private var selectedFixedTab: ConversationFixedSidebarTab? {
+        if let selected = ConversationFixedSidebarTab(rawValue: model.conversationTab), fixedTabs.contains(selected) {
+            return selected
+        }
+        return model.selectedTab?.conversationID == conversationID && model.selectedTab?.kind == .review
+            ? .changes : nil
+    }
 
     var body: some View {
         VStack(spacing: 0) {
-            tabBar
-            Divider()
+            if !workspaceTabsInTitlebar {
+                ConversationWorkspaceTabBar(model: model, includesConversation: !model.splitMode)
+                Divider()
+            }
             if let error = model.error {
                 HStack(alignment: .top, spacing: 8) {
                     Image(systemName: "exclamationmark.triangle")
@@ -17,11 +69,13 @@ struct ConversationContentPane: View {
                 .font(.caption).foregroundStyle(.secondary).padding(12)
                 .accessibilityIdentifier("conversation.content.error")
             }
-            if model.tabs.isEmpty {
+            if let selectedFixedTab {
+                fixedContent(selectedFixedTab)
+            } else if workspaceTabs.isEmpty {
                 if model.loading { LoadFeedback(title: "Opening…") } else { launcher }
             } else {
                 ZStack {
-                    ForEach(model.tabs) { tab in
+                    ForEach(workspaceTabs) { tab in
                         let active = model.selectedTabID == tab.id && model.isOpen
                         ConversationWorkspaceTabView(model: model, tab: tab, active: active)
                             .opacity(active ? 1 : 0)
@@ -38,53 +92,43 @@ struct ConversationContentPane: View {
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("conversation.content-pane")
         .smokeTarget("conversation.content-pane")
+        .task(id: "\(model.conversationID):\(selectedFixedTab?.rawValue ?? "workspace")") {
+            await synchronizeFixedSelection()
+        }
     }
 
-    private var tabBar: some View {
-        HStack(spacing: 0) {
-            ScrollViewReader { proxy in
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 2) {
-                        ForEach(model.tabs) { tab in
-                            ConversationWorkspaceTabLabel(
-                                tab: tab, selected: model.selectedTabID == tab.id,
-                                select: { model.selectTab(tab.id) },
-                                close: { Task { await model.closeTab(tab.id) } }
-                            )
-                            .id(tab.id)
-                        }
-                    }.padding(.horizontal, 6)
-                }
-                .onChange(of: model.selectedTabID, initial: true) { _, selectedID in
-                    if let selectedID { proxy.scrollTo(selectedID, anchor: .trailing) }
-                }
+    @ViewBuilder private func fixedContent(_ tab: ConversationFixedSidebarTab) -> some View {
+        switch tab {
+        case .changes:
+            if let review = model.tabs.first(where: {
+                $0.conversationID == conversationID && $0.kind == .review
+            }) {
+                ConversationWorkspaceTabView(model: model, tab: review, active: model.isOpen)
+            } else if model.loading {
+                LoadFeedback(title: "Opening changes…")
+            } else {
+                ContentUnavailableView(
+                    "Changes unavailable", systemImage: "arrow.triangle.branch",
+                    description: Text("Reconnect this conversation’s machine and try again."))
             }
-            Menu {
-                ForEach(ConversationPanelKind.allCases) { kind in
-                    Button(kind.title, systemImage: kind.symbol) {
-                        model.requestPanel(kind, conversationID: model.conversationID)
-                    }
-                    .accessibilityIdentifier("conversation.content.add.\(kind.rawValue)")
-                }
-            } label: {
-                Image(systemName: "plus").frame(width: 28, height: 30)
-            }
-            .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
-            .help("Open a workspace tab")
-            .accessibilityLabel("Open a workspace tab")
-            .accessibilityIdentifier("conversation.content.add").smokeTarget("conversation.content.add")
-            Button {
-                model.hide()
-            } label: {
-                Image(systemName: "sidebar.right").frame(width: 28, height: 30)
-            }
-            .buttonStyle(.borderless)
-            .help("Hide workspace pane").accessibilityLabel("Hide workspace pane")
-            .accessibilityIdentifier("conversation.content.close").smokeTarget("conversation.content.close")
-            .padding(.trailing, 6)
+        case .subagents:
+            SubagentsView(background: .clear)
         }
-        .frame(height: 40)
-        .background(DieterTheme.sidebar.opacity(0.4))
+    }
+
+    private func synchronizeFixedSelection() async {
+        guard let selectedFixedTab else { return }
+        if selectedFixedTab == .changes {
+            if let review = model.tabs.first(where: {
+                $0.conversationID == conversationID && $0.kind == .review
+            }) {
+                model.selectTab(review.id)
+            } else if !conversationID.isEmpty {
+                _ = await model.openPanel(.review, conversationID: conversationID)
+            }
+        } else {
+            model.deselectTab()
+        }
     }
 
     private var launcher: some View {
@@ -97,9 +141,9 @@ struct ConversationContentPane: View {
                     .font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)
             }
             VStack(spacing: 3) {
-                ForEach(ConversationPanelKind.allCases) { kind in
+                ForEach(model.addablePanelKinds(for: conversationID)) { kind in
                     Button {
-                        model.requestPanel(kind, conversationID: model.conversationID)
+                        model.requestPanel(kind, conversationID: conversationID)
                     } label: {
                         HStack(spacing: 12) {
                             Image(systemName: kind.symbol).frame(width: 22).foregroundStyle(.secondary)
@@ -121,9 +165,455 @@ struct ConversationContentPane: View {
     }
 }
 
+struct ConversationWorkspaceTabBar: View {
+    @Environment(ConversationContext.self) private var context
+    @Bindable var model: ConversationContentModel
+    var titlebar = false
+    var nativeToolbar = false
+    var includesConversation = false
+    var showsFixedTabs = true
+    var showsWorkspaceTabs = true
+    var showsControls = true
+
+    private var conversationID: String {
+        context.selectedCardID ?? context.selectedChatID ?? ""
+    }
+
+    private var workspacePresented: Bool {
+        model.isPresented(for: conversationID)
+    }
+
+    private var barHeight: CGFloat {
+        if nativeToolbar { return ConversationWorkspaceChromeMetrics.titlebarHeight }
+        return titlebar
+            ? ConversationWorkspaceChromeMetrics.titlebarHeight : ConversationWorkspaceChromeMetrics.tabHeight
+    }
+
+    private var barBackground: Color {
+        if nativeToolbar { return .clear }
+        return titlebar ? DieterTheme.surface : DieterTheme.sidebar.opacity(0.4)
+    }
+
+    private var fixedTabs: [ConversationFixedSidebarTab] {
+        ConversationFixedSidebarTab.visible(
+            standalone: (context.selectedCard ?? context.selectedDetail?.card)?.scope == "chat")
+    }
+
+    private var selectedFixedTab: ConversationFixedSidebarTab? {
+        if let selected = ConversationFixedSidebarTab(rawValue: model.conversationTab),
+            fixedTabs.contains(selected)
+        {
+            return selected
+        }
+        return model.selectedTab?.conversationID == conversationID && model.selectedTab?.kind == .review
+            ? .changes : nil
+    }
+
+    private var visibleWorkspaceTabs: [ConversationContentTab] {
+        model.workspaceTabs(for: conversationID)
+    }
+
+    var body: some View {
+        HStack(spacing: 0) {
+            ScrollViewReader { proxy in
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 2) {
+                        if includesConversation {
+                            ConversationRailTabLabel(
+                                title: "Conversation", systemName: "bubble.left",
+                                selected: model.conversationTab == "Conversation"
+                                    && (model.splitMode || model.selectedTabID == nil),
+                                height: nativeToolbar ? 40 : 30,
+                                select: {
+                                    if !model.splitMode { model.showConversationTab() }
+                                }
+                            )
+                            .id("conversation")
+                        }
+                        if showsFixedTabs {
+                            ForEach(fixedTabs) { tab in
+                                ConversationFixedSidebarTabLabel(
+                                    tab: tab,
+                                    count: count(for: tab),
+                                    selected: selectedFixedTab == tab,
+                                    height: nativeToolbar ? 40 : 30,
+                                    select: { select(tab) }
+                                )
+                                .id(tab.id)
+                            }
+                        }
+                        if showsWorkspaceTabs {
+                            ForEach(visibleWorkspaceTabs) { tab in
+                                ConversationWorkspaceTabLabel(
+                                    tab: tab,
+                                    selected: model.isOpen && model.selectedTabID == tab.id,
+                                    height: nativeToolbar ? 40 : 30,
+                                    select: {
+                                        model.conversationTab = "Conversation"
+                                        model.selectTab(tab.id)
+                                    },
+                                    close: { Task { await model.closeTab(tab.id) } }
+                                )
+                                .id(tab.id)
+                            }
+                        }
+                    }
+                    .padding(.horizontal, 6)
+                }
+                .frame(minWidth: 0, maxWidth: .infinity)
+                .onChange(of: model.selectedTabID) { _, selectedID in
+                    if let selectedID, model.selectedTab?.conversationID == conversationID,
+                        model.selectedTab?.kind != .review
+                    {
+                        proxy.scrollTo(selectedID, anchor: .trailing)
+                    }
+                }
+            }
+            if showsControls {
+                ConversationWorkspaceControls(model: model)
+            }
+        }
+        .frame(minWidth: 0, maxWidth: .infinity, minHeight: barHeight, maxHeight: barHeight, alignment: .leading)
+        .clipped()
+        .background(barBackground)
+        .overlay(alignment: .bottom) {
+            if titlebar && !nativeToolbar { Divider() }
+        }
+    }
+
+    private func count(for tab: ConversationFixedSidebarTab) -> Int {
+        switch tab {
+        case .changes:
+            Int((context.selectedCard ?? context.selectedDetail?.card)?.workspace.changedFiles ?? 0)
+        case .subagents:
+            context.conversation?.conversation.subagents.count ?? 0
+        }
+    }
+
+    private func select(_ tab: ConversationFixedSidebarTab) {
+        model.conversationTab = tab.rawValue
+        switch tab {
+        case .changes:
+            if workspacePresented {
+                if let review = model.tabs.first(where: {
+                    $0.conversationID == conversationID && $0.kind == .review
+                }) {
+                    model.selectTab(review.id)
+                } else {
+                    model.requestPanel(.review, conversationID: conversationID)
+                }
+            }
+        case .subagents:
+            break
+        }
+    }
+}
+
+enum ConversationToolbarRailMode: Equatable {
+    case unified
+    case sidebar
+
+    init(workspacePresented: Bool) {
+        self = workspacePresented ? .sidebar : .unified
+    }
+
+    var railCount: Int { self == .sidebar ? 2 : 1 }
+}
+
+struct ConversationToolbarSurfaceRail: View {
+    @Environment(ConversationContext.self) private var context
+    @Bindable var model: ConversationContentModel
+    let kanbanPresented: Bool
+    let toggleKanban: () -> Void
+
+    private var conversationID: String {
+        context.selectedCardID ?? context.selectedChatID ?? ""
+    }
+
+    private var workspacePresented: Bool {
+        model.isPresented(for: conversationID)
+    }
+
+    var body: some View {
+        ConversationToolbarRail(identifier: "conversation.toolbar.rail.surfaces") {
+            ConversationSurfaceToggles(
+                model: model,
+                workspacePresented: workspacePresented,
+                kanbanPresented: kanbanPresented,
+                toggleKanban: toggleKanban,
+                showsConversation: true
+            )
+        }
+    }
+}
+
+struct ConversationToolbarWorkspaceRail: View {
+    @Bindable var model: ConversationContentModel
+
+    var body: some View {
+        ConversationToolbarRail(identifier: "conversation.toolbar.rail.sidebar") {
+            ConversationWorkspaceTabBar(
+                model: model,
+                nativeToolbar: true,
+                includesConversation: false,
+                showsControls: false
+            )
+        }
+    }
+}
+
+struct ConversationToolbarUnifiedRail: View {
+    @Environment(ConversationContext.self) private var context
+    @Bindable var model: ConversationContentModel
+    let kanbanPresented: Bool
+    let toggleKanban: () -> Void
+
+    private var conversationID: String {
+        context.selectedCardID ?? context.selectedChatID ?? ""
+    }
+
+    private var workspacePresented: Bool {
+        model.isPresented(for: conversationID)
+    }
+
+    var body: some View {
+        ConversationToolbarRail(identifier: "conversation.toolbar.rail.unified") {
+            HStack(spacing: 3) {
+                ConversationSurfaceToggles(
+                    model: model,
+                    workspacePresented: workspacePresented,
+                    kanbanPresented: kanbanPresented,
+                    toggleKanban: toggleKanban,
+                    showsConversation: true
+                )
+                Divider()
+                    .frame(height: 18)
+                    .padding(.horizontal, 3)
+                ConversationWorkspaceTabBar(
+                    model: model,
+                    nativeToolbar: true,
+                    includesConversation: false,
+                    showsControls: false
+                )
+            }
+        }
+    }
+}
+
+struct ConversationSurfaceToggles: View {
+    @Bindable var model: ConversationContentModel
+    let workspacePresented: Bool
+    let kanbanPresented: Bool
+    let toggleKanban: () -> Void
+    let showsConversation: Bool
+    var showsKanban = true
+    var height: CGFloat = 26
+
+    var body: some View {
+        HStack(spacing: 2) {
+            if showsKanban {
+                ConversationSurfaceToggleLabel(
+                    title: "Kanban",
+                    systemName: "rectangle.3.group",
+                    selected: kanbanPresented,
+                    height: height,
+                    select: toggleKanban
+                )
+                .help(kanbanPresented ? "Hide Kanban" : "Show Kanban")
+            }
+            if showsConversation {
+                ConversationSurfaceToggleLabel(
+                    title: "Conversation",
+                    systemName: "bubble.left",
+                    selected: workspacePresented || model.conversationTab == "Conversation",
+                    height: height,
+                    select: { model.showConversationTab() }
+                )
+                .help("Show Conversation")
+            }
+        }
+        .fixedSize(horizontal: true, vertical: false)
+    }
+}
+
+private struct ConversationToolbarRail<Content: View>: View {
+    let identifier: String
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        content()
+            .id(identifier)
+            .background(DieterTheme.raised.opacity(0.72), in: RoundedRectangle(cornerRadius: 5, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 5, style: .continuous)
+                    .stroke(DieterTheme.border, lineWidth: 0.75)
+            }
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier(identifier)
+    }
+}
+
+struct ConversationWorkspaceControls: View {
+    @Environment(ConversationContext.self) private var context
+    @Bindable var model: ConversationContentModel
+    var height: CGFloat = 24
+
+    private var conversationID: String {
+        context.selectedCardID ?? context.selectedChatID ?? ""
+    }
+
+    private var workspacePresented: Bool {
+        model.splitMode && model.isPresented(for: conversationID)
+    }
+
+    var body: some View {
+        HStack(spacing: 2) {
+            Menu {
+                ForEach(model.addablePanelKinds(for: conversationID)) { kind in
+                    Button(kind.title, systemImage: kind.symbol) {
+                        model.requestPanel(kind, conversationID: conversationID)
+                    }
+                    .accessibilityIdentifier("conversation.content.add.\(kind.rawValue)")
+                }
+            } label: {
+                ConversationWorkspaceSymbol(
+                    systemName: "plus", frameSize: ConversationWorkspaceChromeMetrics.actionSize
+                )
+                .frame(width: 28, height: height)
+                .contentShape(Rectangle())
+            }
+            .menuStyle(.borderlessButton).menuIndicator(.hidden)
+            .help("Open a workspace tab")
+            .accessibilityLabel("Open a workspace tab")
+            .accessibilityIdentifier("conversation.content.add").smokeTarget("conversation.content.add")
+
+            Button {
+                if workspacePresented {
+                    model.showSinglePane()
+                } else {
+                    model.showEmpty(conversationID: conversationID)
+                }
+            } label: {
+                ConversationWorkspaceSymbol(
+                    systemName: workspacePresented ? "rectangle.split.1x2" : "sidebar.right",
+                    selected: workspacePresented, frameSize: ConversationWorkspaceChromeMetrics.actionSize
+                )
+                .frame(width: 28, height: height)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.borderless)
+            .help(workspacePresented ? "Single pane" : "Split conversation and workspace")
+            .accessibilityLabel(workspacePresented ? "Single pane" : "Split conversation and workspace")
+            .accessibilityIdentifier("conversation.content.close").smokeTarget("conversation.content.close")
+        }
+        .fixedSize()
+    }
+}
+
+private struct ConversationSurfaceToggleLabel: View {
+    let title: String
+    let systemName: String
+    let selected: Bool
+    let height: CGFloat
+    let select: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: select) {
+            HStack(spacing: 6) {
+                ConversationWorkspaceSymbol(systemName: systemName, selected: selected)
+                Text(title)
+                    .font(.system(size: 12, weight: .semibold))
+                    .lineLimit(1)
+            }
+            .padding(.horizontal, 9)
+            .frame(minHeight: height)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(selected ? DieterTheme.text : DieterTheme.subtle)
+        .background(hovering ? DieterTheme.raised.opacity(0.7) : .clear)
+        .overlay(alignment: .bottom) {
+            Capsule()
+                .fill(selected ? DieterTheme.primary : .clear)
+                .frame(height: 2)
+                .padding(.horizontal, 8)
+        }
+        .onHover { hovering = $0 }
+        .accessibilityLabel(title)
+        .accessibilityAddTraits(selected ? [.isSelected] : [])
+        .accessibilityIdentifier("conversation-tab-\(title.lowercased())")
+        .smokeTarget("conversation-tab-\(title.lowercased())")
+        .fixedSize(horizontal: true, vertical: false)
+    }
+}
+
+struct ConversationRailTabLabel: View {
+    let title: String
+    let systemName: String
+    let selected: Bool
+    let height: CGFloat
+    let select: () -> Void
+
+    var body: some View {
+        Button(action: select) {
+            HStack(spacing: 6) {
+                ConversationWorkspaceSymbol(systemName: systemName, selected: selected)
+                Text(title).font(.system(size: 12)).lineLimit(1)
+            }
+            .padding(.horizontal, 8)
+            .frame(minHeight: height)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(selected ? DieterTheme.text : DieterTheme.subtle)
+        .background(selected ? DieterTheme.elevated : .clear, in: RoundedRectangle(cornerRadius: 4))
+        .overlay(alignment: .bottom) {
+            if selected { Capsule().fill(.secondary.opacity(0.6)).frame(height: 2).padding(.horizontal, 8) }
+        }
+        .accessibilityLabel(title)
+        .accessibilityAddTraits(selected ? [.isSelected] : [])
+        .accessibilityIdentifier("conversation-tab-\(title.lowercased())")
+        .smokeTarget("conversation-tab-\(title.lowercased())")
+        .fixedSize(horizontal: true, vertical: false)
+    }
+}
+
+private struct ConversationFixedSidebarTabLabel: View {
+    let tab: ConversationFixedSidebarTab
+    let count: Int
+    let selected: Bool
+    let height: CGFloat
+    let select: () -> Void
+
+    var body: some View {
+        Button(action: select) {
+            HStack(spacing: 6) {
+                ConversationWorkspaceSymbol(systemName: tab.symbol, selected: selected)
+                Text(tab.rawValue).font(.system(size: 12)).lineLimit(1)
+                if count > 0 { ConversationTabCountBadge(count: count, selected: selected) }
+            }
+            .frame(minWidth: 36, maxWidth: 180, minHeight: height)
+            .padding(.horizontal, 9)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .background(selected ? DieterTheme.surface : .clear, in: RoundedRectangle(cornerRadius: 4))
+        .overlay(alignment: .bottom) {
+            if selected { Capsule().fill(.secondary.opacity(0.6)).frame(height: 2).padding(.horizontal, 8) }
+        }
+        .accessibilityLabel(tab.rawValue)
+        .accessibilityAddTraits(selected ? [.isSelected] : [])
+        .accessibilityIdentifier("conversation.content.fixed.\(tab.rawValue.lowercased())")
+        .smokeTarget("conversation.content.fixed.\(tab.rawValue.lowercased())")
+        .fixedSize(horizontal: true, vertical: false)
+    }
+}
+
 private struct ConversationWorkspaceTabLabel: View {
     @Bindable var tab: ConversationContentTab
     let selected: Bool
+    let height: CGFloat
     let select: () -> Void
     let close: () -> Void
     @State private var hovering = false
@@ -132,11 +622,11 @@ private struct ConversationWorkspaceTabLabel: View {
         HStack(spacing: 6) {
             Button(action: select) {
                 HStack(spacing: 6) {
-                    Image(systemName: tab.symbol).font(.system(size: 11)).foregroundStyle(.secondary)
+                    ConversationWorkspaceSymbol(systemName: tab.symbol, selected: selected)
                     Text(tab.title).font(.system(size: 12)).lineLimit(1).truncationMode(.middle)
                     if tab.dirty { Circle().fill(.secondary).frame(width: 5, height: 5) }
                 }
-                .frame(minWidth: 36, maxWidth: 180, minHeight: 30)
+                .frame(minWidth: 36, maxWidth: 180, minHeight: height)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -145,18 +635,19 @@ private struct ConversationWorkspaceTabLabel: View {
             .accessibilityIdentifier("conversation.content.tab.\(tab.id.uuidString)")
             .smokeTarget("conversation.content.tab.\(tab.id.uuidString)")
             Button(action: close) { Image(systemName: "xmark").font(.system(size: 9, weight: .medium)) }
-                .buttonStyle(.plain).frame(width: 18, height: 24)
+                .buttonStyle(.plain).frame(width: 18, height: height)
                 .opacity(selected || hovering ? 1 : 0)
                 .help("Close \(tab.title)").accessibilityLabel("Close \(tab.title)")
                 .accessibilityIdentifier("conversation.content.tab.\(tab.id.uuidString).close")
                 .smokeTarget("conversation.content.tab.\(tab.id.uuidString).close")
         }
         .padding(.leading, 9).padding(.trailing, 3)
-        .background(selected ? DieterTheme.surface : .clear, in: RoundedRectangle(cornerRadius: 7))
+        .background(selected ? DieterTheme.surface : .clear, in: RoundedRectangle(cornerRadius: 4))
         .overlay(alignment: .bottom) {
             if selected { Capsule().fill(.secondary.opacity(0.6)).frame(height: 2).padding(.horizontal, 8) }
         }
         .onHover { hovering = $0 }
+        .fixedSize(horizontal: true, vertical: false)
     }
 }
 
@@ -327,29 +818,51 @@ private struct ConversationWorkspaceTabView: View {
     }
 }
 
-/// Keeps the transcript subtree mounted as the secondary column appears. The
-/// native split divider supplies resizing, keyboard access and pointer feedback.
+enum ConversationContentSizing {
+    static let conversationFraction: CGFloat = 0.62
+
+    static func minimumConversationWidth(availableWidth: CGFloat) -> CGFloat {
+        min(360, availableWidth * 0.55)
+    }
+
+    static func minimumWorkspaceWidth(availableWidth: CGFloat) -> CGFloat {
+        min(320, availableWidth * 0.4)
+    }
+}
+
+/// Keeps the primary conversation mounted as its secondary workspace appears.
+/// The native split divider supplies resizing, keyboard access and pointer feedback.
 struct ConversationContentSplit<Chat: View, Content: View>: View {
     let presented: Bool
+    var singleWorkspace = false
     @ViewBuilder let chat: () -> Chat
     @ViewBuilder let content: () -> Content
 
     var body: some View {
         GeometryReader { geometry in
             HSplitView {
-                chat()
-                    .frame(
-                        minWidth: presented ? min(280, geometry.size.width * 0.4) : 0,
-                        idealWidth: presented ? geometry.size.width * 0.45 : geometry.size.width,
-                        maxWidth: .infinity, maxHeight: .infinity
-                    )
-                    .clipped()
-                    .background(ConversationSplitPositioner(presented: presented))
-                if presented {
+                if presented || !singleWorkspace {
+                    chat()
+                        .frame(
+                            minWidth: presented
+                                ? ConversationContentSizing.minimumConversationWidth(
+                                    availableWidth: geometry.size.width)
+                                : 0,
+                            idealWidth: presented
+                                ? geometry.size.width * ConversationContentSizing.conversationFraction
+                                : geometry.size.width,
+                            maxWidth: .infinity, maxHeight: .infinity
+                        )
+                        .clipped()
+                        .background(ConversationSplitPositioner(presented: presented))
+                }
+                if presented || singleWorkspace {
                     content()
                         .frame(
-                            minWidth: min(300, geometry.size.width * 0.45),
-                            idealWidth: geometry.size.width * 0.55,
+                            minWidth: ConversationContentSizing.minimumWorkspaceWidth(
+                                availableWidth: geometry.size.width),
+                            idealWidth: geometry.size.width
+                                * (1 - ConversationContentSizing.conversationFraction),
                             maxWidth: .infinity, maxHeight: .infinity
                         )
                         .clipped()
@@ -404,12 +917,15 @@ private final class ConversationSplitPositioningView: NSView {
                 guard let split = self.enclosingSplit(), split.arrangedSubviews.count == 2,
                     split.bounds.width > 0
                 else { stableSamples = 0; continue }
+                split.setAccessibilityIdentifier("conversation.workspace-split")
                 let width = split.bounds.width
                 stableSamples = previousWidth.map { abs($0 - width) < 1 } == true ? stableSamples + 1 : 0
                 previousWidth = width
                 guard stableSamples >= 3 else { continue }
                 let available = max(0, width - split.dividerThickness)
-                split.setPosition(available * 0.45, ofDividerAt: 0)
+                split.setPosition(
+                    available * ConversationContentSizing.conversationFraction,
+                    ofDividerAt: 0)
                 return
             }
         }

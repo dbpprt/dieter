@@ -4,6 +4,7 @@ import Foundation
 package struct DieterOutboxEntry: Codable, Equatable, Identifiable, Sendable {
     package enum Kind: String, Codable, Sendable { case createCard, createChat, sendMessage }
     package enum State: String, Codable, Sendable { case queued, retrying, failed }
+    package enum OptimisticPlacement: String, Codable, Sendable { case transcript, queue }
 
     package var id: String { commandID }
     package let commandID: String
@@ -17,6 +18,9 @@ package struct DieterOutboxEntry: Codable, Equatable, Identifiable, Sendable {
     package var lastError: String? = nil
     package var state: State = .queued
     package var nextAttemptAt: Date? = nil
+    /// The surface selected before optimistic rendering. A send made during
+    /// an active turn belongs in the steer queue from its first frame.
+    package var optimisticPlacement: OptimisticPlacement? = nil
     package let createdAt: Date
 
     package init(
@@ -31,6 +35,7 @@ package struct DieterOutboxEntry: Codable, Equatable, Identifiable, Sendable {
         lastError: String? = nil,
         state: State = .queued,
         nextAttemptAt: Date? = nil,
+        optimisticPlacement: OptimisticPlacement? = nil,
         createdAt: Date
     ) {
         self.commandID = commandID
@@ -44,6 +49,7 @@ package struct DieterOutboxEntry: Codable, Equatable, Identifiable, Sendable {
         self.lastError = lastError
         self.state = state
         self.nextAttemptAt = nextAttemptAt
+        self.optimisticPlacement = optimisticPlacement
         self.createdAt = createdAt
     }
 

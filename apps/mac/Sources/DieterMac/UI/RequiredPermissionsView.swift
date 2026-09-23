@@ -5,7 +5,7 @@ struct RequiredPermissionsGate<Content: View>: View {
     @Environment(RequiredPermissions.self) private var permissions
     @ViewBuilder var content: () -> Content
     var body: some View {
-        if permissions.isReady { content() } else { RequiredPermissionsView() }
+        if permissions.canUseApp { content() } else { RequiredPermissionsView() }
     }
 }
 
@@ -18,7 +18,7 @@ struct RequiredPermissionsView: View {
                 Image(systemName: "lock.shield").font(.system(size: 40)).foregroundStyle(.tint)
                 Text("Set up Dieter on this Mac").font(.largeTitle.bold())
                 Text(
-                    "Two macOS permissions are required for screen capture, browser context, and keyboard control. Grant access to Dieter in System Settings to continue."
+                    "These macOS permissions enable screen capture, browser context, and keyboard control. Grant access now, or skip and continue without those features."
                 )
                 .foregroundStyle(DieterTheme.subtle)
                 permissionRow(
@@ -42,6 +42,9 @@ struct RequiredPermissionsView: View {
                         .accessibilityIdentifier("permissions.check")
                         .smokeTarget("permissions.check")
                     Spacer()
+                    Button("Skip for Now") { permissions.skipSetup() }
+                        .accessibilityIdentifier("permissions.skip")
+                        .smokeTarget("permissions.skip")
                     Button("Quit Dieter") { NSApp.terminate(nil) }
                 }
                 Text(

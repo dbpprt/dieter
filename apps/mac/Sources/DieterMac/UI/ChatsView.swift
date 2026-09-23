@@ -287,8 +287,7 @@ private struct ChatDetailPane: View {
     var body: some View {
         if store.selectedChatID != nil {
             ConversationView(
-                compact: store.conversationWorkspacePanelEnabled
-                    && store.conversationContext.content.isPresented(for: store.selectedChatID),
+                compact: store.conversationContext.content.isPresented(for: store.selectedChatID),
                 surfaceStyle: .inherited
             )
             .environment(store.conversationContext)
@@ -328,55 +327,12 @@ enum ChatPaneSizing {
     }
 }
 
-private struct ChatPaneResizeDivider: View {
-    let width: CGFloat
-    let onChanged: (CGFloat) -> Void
-    let onEnded: () -> Void
-    let onAdjust: (AccessibilityAdjustmentDirection) -> Void
-    @State private var hovering = false
-
-    var body: some View {
-        ZStack {
-            Rectangle().fill(Color.clear)
-            Rectangle()
-                .fill(
-                    hovering
-                        ? DieterTheme.shell.opacity(0.62)
-                        : Color(nsColor: .separatorColor).opacity(0.55)
-                )
-                .frame(width: hovering ? 2 : ChatPaneSizing.dividerLineWidth)
-        }
-        .frame(width: ChatPaneSizing.dividerHitWidth)
-        .contentShape(Rectangle())
-        .gesture(
-            DragGesture(minimumDistance: 0)
-                .onChanged { onChanged($0.translation.width) }
-                .onEnded { _ in onEnded() }
-        )
-        .onHover { isHovering in
-            if isHovering, !hovering { NSCursor.resizeLeftRight.push() }
-            if !isHovering, hovering { NSCursor.pop() }
-            hovering = isHovering
-        }
-        .onDisappear {
-            if hovering { NSCursor.pop() }
-        }
-        .accessibilityLabel("Resize chat browser")
-        .accessibilityValue("\(Int(width)) points")
-        .accessibilityAdjustableAction { direction in onAdjust(direction) }
-        .accessibilityIdentifier("chats.resize-divider")
-        .smokeTarget("chats.resize-divider")
-    }
-}
-
-/// Unlike AppKit's HSplitView bridge, this split never renegotiates the
-/// browser width from the selected conversation's intrinsic content size.
-/// That keeps navigation stationary while chat Markdown is prepared or wraps.
+/// A native AppKit split keeps the chat browser mounted and width-controlled
+/// independently from the selected conversation's intrinsic content size.
 struct ChatPaneSplit<Browser: View, Detail: View>: View {
     let browser: Browser
     let detail: Detail
     @AppStorage("dieter.chatBrowserPaneWidth") private var storedWidth = Double(ChatPaneSizing.defaultWidth)
-    @State private var dragStartWidth: CGFloat?
 
     init(
         @ViewBuilder browser: () -> Browser,
@@ -387,73 +343,115 @@ struct ChatPaneSplit<Browser: View, Detail: View>: View {
     }
 
     var body: some View {
-        GeometryReader { geometry in
-            // The browser is the standalone chat switcher, even when the
-            // selected chat has a file, browser, or terminal panel open.
-            let width = ChatPaneSizing.resolvedWidth(CGFloat(storedWidth), workspaceWidth: geometry.size.width)
-            HStack(spacing: 0) {
+        NativeChatPaneSplit(
+            browser: AnyView(
                 browser
-                    .frame(width: width, height: geometry.size.height)
-                    .clipped()
-                    .background {
-                        DieterPaneBackground(role: .navigation, extendsUnderTitlebar: true)
-                    }
-
+                    .background { DieterPaneBackground(role: .navigation, extendsUnderTitlebar: true) }),
+            detail: AnyView(
                 detail
-                    // Bound the nested native split to its actual allocation;
-                    // an editor's intrinsic width must not push navigation out.
-                    .frame(width: max(0, geometry.size.width - width), height: geometry.size.height)
-                    .contentShape(Rectangle())
-                    .clipped()
-                    .background {
-                        DieterPaneBackground(role: .content, extendsUnderTitlebar: true)
-                    }
+                    .background { DieterPaneBackground(role: .content, extendsUnderTitlebar: true) }
                     .accessibilityElement(children: .contain)
                     .accessibilityIdentifier("chats.detail-pane")
-                    .smokeTarget("chats.detail-pane")
+                    .smokeTarget("chats.detail-pane")),
+            preferredWidth: CGFloat(storedWidth),
+            onWidthChange: { storedWidth = Double($0) }
+        )
+        // The real native divider also owns the titlebar continuation; each
+        // split item still respects its content safe area below the toolbar.
+        .ignoresSafeArea(.container, edges: .top)
+    }
+}
+
+private struct NativeChatPaneSplit: NSViewControllerRepresentable {
+    let browser: AnyView
+    let detail: AnyView
+    let preferredWidth: CGFloat
+    let onWidthChange: (CGFloat) -> Void
+
+    func makeNSViewController(context: Context) -> NativeChatPaneSplitController {
+        NativeChatPaneSplitController()
+    }
+
+    func updateNSViewController(_ controller: NativeChatPaneSplitController, context: Context) {
+        controller.browserHost.rootView = browser
+        controller.detailHost.rootView = detail
+        controller.configure(preferredWidth: preferredWidth, onWidthChange: onWidthChange)
+    }
+}
+
+@MainActor
+private final class NativeChatPaneSplitController: NSSplitViewController {
+    let browserHost = NSHostingView(rootView: AnyView(EmptyView()))
+    let detailHost = NSHostingView(rootView: AnyView(EmptyView()))
+    private var preferredWidth = ChatPaneSizing.defaultWidth
+    private var reportedWidth: CGFloat?
+    private var restoreWidth = true
+    private var reportScheduled = false
+    private var onWidthChange: (CGFloat) -> Void = { _ in }
+
+    init() {
+        super.init(nibName: nil, bundle: nil)
+        let split = NSSplitView()
+        split.isVertical = true
+        split.dividerStyle = .thin
+        split.setAccessibilityIdentifier("chats.resize-divider")
+        split.setAccessibilityLabel("Resize chat browser")
+        splitView = split
+
+        browserHost.sizingOptions = []
+        detailHost.sizingOptions = []
+        let browserController = NSViewController()
+        browserController.view = browserHost
+        let detailController = NSViewController()
+        detailController.view = detailHost
+        let browserItem = NSSplitViewItem(viewController: browserController)
+        browserItem.minimumThickness = ChatPaneSizing.minimumWidth
+        browserItem.maximumThickness = ChatPaneSizing.maximumWidth
+        browserItem.canCollapse = false
+        browserItem.canCollapseFromWindowResize = false
+        browserItem.holdingPriority = .init(490)
+        let detailItem = NSSplitViewItem(viewController: detailController)
+        detailItem.minimumThickness = ChatPaneSizing.minimumDetailWidth
+        detailItem.canCollapse = false
+        detailItem.canCollapseFromWindowResize = false
+        detailItem.holdingPriority = .init(240)
+        addSplitViewItem(browserItem)
+        addSplitViewItem(detailItem)
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
+
+    func configure(preferredWidth: CGFloat, onWidthChange: @escaping (CGFloat) -> Void) {
+        loadViewIfNeeded()
+        self.onWidthChange = onWidthChange
+        if abs(self.preferredWidth - preferredWidth) > 0.5 {
+            self.preferredWidth = preferredWidth
+            restoreWidth = true
+            view.needsLayout = true
+        }
+    }
+
+    override func viewDidLayout() {
+        super.viewDidLayout()
+        guard splitView.bounds.width > 0, splitView.arrangedSubviews.count == 2 else { return }
+        let target = ChatPaneSizing.resolvedWidth(preferredWidth, workspaceWidth: splitView.bounds.width)
+        if restoreWidth || reportedWidth == nil {
+            restoreWidth = false
+            if abs(splitView.arrangedSubviews[0].frame.width - target) > 0.5 {
+                splitView.setPosition(target, ofDividerAt: 0)
             }
-            .frame(width: geometry.size.width, height: geometry.size.height)
-            .overlay(alignment: .topLeading) {
-                if width > 0 {
-                    // The titlebar-spanning divider must not enlarge the panes.
-                    // Keep the generous drag target without inserting layout space.
-                    // The one-point separator is painted directly over the touching
-                    // pane edges, eliminating the exposed window-background seam.
-                    ChatPaneResizeDivider(
-                        width: width,
-                        onChanged: { translation in
-                            let startWidth = dragStartWidth ?? width
-                            if dragStartWidth == nil { dragStartWidth = startWidth }
-                            storedWidth = Double(
-                                ChatPaneSizing.resolvedWidth(
-                                    startWidth + translation,
-                                    workspaceWidth: geometry.size.width
-                                ))
-                        },
-                        onEnded: { dragStartWidth = nil },
-                        onAdjust: { direction in
-                            switch direction {
-                            case .increment:
-                                storedWidth = Double(
-                                    ChatPaneSizing.resolvedWidth(width + 20, workspaceWidth: geometry.size.width))
-                            case .decrement:
-                                storedWidth = Double(
-                                    ChatPaneSizing.resolvedWidth(width - 20, workspaceWidth: geometry.size.width))
-                            @unknown default:
-                                break
-                            }
-                        }
-                    )
-                    .frame(
-                        height: geometry.size.height
-                            + geometry.safeAreaInsets.top
-                            + geometry.safeAreaInsets.bottom
-                    )
-                    .ignoresSafeArea(.container, edges: .vertical)
-                    .offset(x: width - ChatPaneSizing.dividerHitWidth / 2)
-                    .zIndex(1)
-                }
-            }
+            reportedWidth = target
+            return
+        }
+        let width = splitView.arrangedSubviews[0].frame.width
+        guard abs(width - (reportedWidth ?? width)) > 0.5, !reportScheduled else { return }
+        reportedWidth = width
+        reportScheduled = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.reportScheduled = false
+            self.preferredWidth = width
+            self.onWidthChange(width)
         }
     }
 }

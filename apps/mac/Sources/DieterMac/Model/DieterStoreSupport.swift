@@ -8,7 +8,9 @@ import UniformTypeIdentifiers
 import UserNotifications
 
 let dieterExpectedAPIVersion = DieterContract.version
-let conversationPageSize: Int32 = 30
+// Match iOS: conversation reads are large enough that a scrollback boundary
+// reveals a useful stretch of context instead of one short turn.
+let conversationPageSize: Int32 = 60
 let schedulePageSize: Int32 = 50
 let syncConversationMessageLimit: Int32 = 30
 let syncRecentConversationLimit: Int32 = 8

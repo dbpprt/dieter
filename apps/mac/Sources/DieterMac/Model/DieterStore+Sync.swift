@@ -417,7 +417,7 @@ extension DieterStore {
         endpointID: String
     ) {
         guard let selectedID = selectedCardID ?? selectedChatID,
-            let projected = snapshot.conversations.first(where: { $0.detail.card.id == selectedID })
+            var projected = snapshot.conversations.first(where: { $0.detail.card.id == selectedID })
         else { return }
         let latest = TranscriptFreshness.merging(projected, with: conversation)
         if conversation != latest { conversation = latest }
@@ -673,12 +673,16 @@ extension DieterStore {
         startOutboxWorker()
     }
 
-    func enqueueMessage(_ request: Dieter_V1_SendMessageRequest, endpointID: String) async throws {
+    func enqueueMessage(
+        _ request: Dieter_V1_SendMessageRequest,
+        endpointID: String,
+        optimisticPlacement: DieterOutboxEntry.OptimisticPlacement = .transcript
+    ) async throws {
         try await enqueueOutbox(
             DieterOutboxEntry(
                 commandID: request.commandID, clientID: request.clientID, endpointID: endpointID,
                 kind: .sendMessage, request: try request.serializedData(), optimisticID: request.messageID,
-                attempts: 0, createdAt: Date()
+                attempts: 0, optimisticPlacement: optimisticPlacement, createdAt: Date()
             ))
     }
 

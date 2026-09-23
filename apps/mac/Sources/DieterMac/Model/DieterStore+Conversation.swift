@@ -51,6 +51,7 @@ extension DieterStore {
     }
 
     func openConversation(cardID: String, chat: Bool = false) async {
+        let previousConversationID = selectedCardID ?? selectedChatID
         conversationSelectionGeneration &+= 1
         let selectionGeneration = conversationSelectionGeneration
         conversationError = nil
@@ -77,6 +78,9 @@ extension DieterStore {
         }
         selectedCardID = opensChat ? nil : cardID
         selectedChatID = opensChat ? cardID : nil
+        if previousConversationID != cardID {
+            conversationContext.content.applyDefaultMode(defaultConversationMode, conversationID: cardID)
+        }
         if opensChat { lastUsedChatID = cardID }
         if opensChat { newChatProjectID = "" }
         resetConversationHistory()
@@ -176,10 +180,8 @@ extension DieterStore {
             self?.connectionStopped(error, client: rpc, source: "conversation-auth")
         }
         conversationModel.onContentPresentation = { [weak self] presentation, cardID in
-            guard let self, let url = ConversationPresentedContent.url(for: presentation),
-                self.conversationWorkspacePanelEnabled || RemoteWorkspaceImage.isWorkspaceImageURL(url)
-            else { return }
-            self.conversationContext.content.requestOpen(
+            guard let self, let url = ConversationPresentedContent.url(for: presentation) else { return }
+            self.conversationContext.content.requestPresentation(
                 url, conversationID: cardID, presentationTitle: presentation.title)
         }
     }
@@ -254,7 +256,6 @@ extension DieterStore {
         let text = composerText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty || !composerAttachments.isEmpty, let id = selectedCardID ?? selectedChatID
         else { return }
-        let projectID = (selectedCard ?? selectedDetail?.card)?.projectID ?? ""
         let targetEndpointID = endpointID(for: selectedCard ?? selectedDetail?.card)
         let draft = composer.draft
         guard !draft.sending else { return }
@@ -277,8 +278,17 @@ extension DieterStore {
         request.commandID = UUID().uuidString.lowercased()
         request.messageID =
             "msg_\(UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased())"
+        let queuesBehindActiveTurn =
+            ConversationActivityPresentation.isActive(
+                conversationStatus: conversation?.conversation.status ?? "",
+                cardRuntime: (selectedCard ?? selectedDetail?.card)?.runtime ?? ""
+            ) || !(conversation?.conversation.queue.isEmpty ?? true)
         do {
-            try await enqueueMessage(request, endpointID: targetEndpointID)
+            try await enqueueMessage(
+                request,
+                endpointID: targetEndpointID,
+                optimisticPlacement: queuesBehindActiveTurn ? .queue : .transcript
+            )
             draft.acceptSend(revision: draftRevision)
         } catch {
             show(error)
@@ -531,30 +541,6 @@ extension DieterStore {
             return value
         }
         return value + "." + suffix
-    }
-
-    func addComment() async {
-        let text = commentText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty, let id = selectedCardID ?? selectedChatID, let rpc else { return }
-        var request = Dieter_V1_AddCommentRequest()
-        request.cardID = id
-        request.message = text
-        request.name = NSFullUserName()
-        let draft = composer.draft
-        let generation = conversationSelectionGeneration
-        do {
-            _ = try await rpc.addComment(request)
-            if draft.comment.trimmingCharacters(in: .whitespacesAndNewlines) == text {
-                draft.comment = ""
-            }
-            let detail = try await rpc.card(id: id)
-            guard self.rpc === rpc, generation == conversationSelectionGeneration,
-                (selectedCardID ?? selectedChatID) == id
-            else { return }
-            selectedDetail = detail
-        } catch {
-            if self.rpc === rpc, generation == conversationSelectionGeneration { show(error) }
-        }
     }
 
     @discardableResult

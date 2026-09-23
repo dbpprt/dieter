@@ -317,12 +317,9 @@
             store: DieterStore, window: NSWindow, results: inout [String: String]
         ) async {
             let model = store.conversationContext.content
-            let originalWorkspacePanelEnabled = store.conversationWorkspacePanelEnabled
-            store.conversationWorkspacePanelEnabled = true
             defer {
                 model.hide()
                 store.closeConversation()
-                store.conversationWorkspacePanelEnabled = originalWorkspacePanelEnabled
             }
             let first = chatIDs[0]
             let second = chatIDs[2]
