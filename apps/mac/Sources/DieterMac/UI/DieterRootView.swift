@@ -196,16 +196,12 @@ struct DieterRootView: View {
             .ignoresSafeArea()
             .allowsHitTesting(false)
         }
-        .overlay(alignment: .topTrailing) {
-            HStack(spacing: 8) {
-                ProviderQuotaCompactView()
-                if store.section != .board && store.section != .chats {
+        .toolbar {
+            if store.section != .board && store.section != .chats {
+                ToolbarItem(placement: .primaryAction) {
                     GlobalQuickTaskButton()
                 }
             }
-            .padding(.top, 8)
-            .padding(.trailing, 12)
-            .offset(y: -48)
         }
         .toolbarVisibility(
             store.section == .board || store.section == .chats ? .hidden : .visible,

@@ -71,7 +71,8 @@
                 let clicked = clickLink("Smoke Markdown", in: text, window: window)
                 let opened = await NativeUIAccessibility.wait(timeout: 8) {
                     model.files.fileDocument?.name == "side-by-side-smoke.md"
-                        && board.boardItem.isCollapsed && richEditor(in: window.contentView) != nil
+                        && !model.splitMode && !board.boardItem.isCollapsed
+                        && richEditor(in: window.contentView) != nil
                 }
                 results["content-markdown-link"] =
                     clicked && opened
@@ -90,10 +91,25 @@
                     _ = await model.open(URL(string: "side-by-side-smoke.md")!, conversationID: cardID)
                     let recovered = await NativeUIAccessibility.wait(timeout: 8) {
                         model.files.fileDocument?.name == "side-by-side-smoke.md"
-                            && board.boardItem.isCollapsed && richEditor(in: window.contentView) != nil
+                            && richEditor(in: window.contentView) != nil
                     }
                     guard recovered else { _ = await model.close(); return }
                 }
+
+                // Opening a file now selects a workspace tab in the current
+                // pane. Split and Kanban visibility are explicit user choices.
+                let hideBoardClicked = await NativeUIAccessibility.pressWhenSettled(
+                    "conversation-tab-kanban", in: window)
+                _ = await NativeUIAccessibility.wait(timeout: 8) { board.boardItem.isCollapsed }
+                let splitClicked = await NativeUIAccessibility.pressWhenSettled(
+                    "conversation.content.close", in: window)
+                let splitReady = await NativeUIAccessibility.wait(timeout: 8) { model.splitMode }
+                let expanded = await NativeUIAccessibility.wait(timeout: 8) {
+                    board.boardItem.isCollapsed && model.splitMode
+                }
+                results["content-explicit-split-layout"] =
+                    splitClicked && splitReady && hideBoardClicked && expanded
+                    ? "passed" : "failed: split=\(splitReady), hidden board=\(expanded)"
 
                 if let pane = NativeUIAccessibility.find("conversation.content-pane", in: window)?.object as? NSView,
                     let split = enclosingContentSplit(pane), split.arrangedSubviews.count == 2
@@ -152,15 +168,19 @@
                     output: output)
 
                 let closeClicked = NativeUIAccessibility.click("conversation.content.close", in: window)
+                _ = await NativeUIAccessibility.wait(timeout: 5) { !model.splitMode }
+                let conversationClicked = NativeUIAccessibility.click("conversation-tab-conversation", in: window)
+                _ = await NativeUIAccessibility.wait(timeout: 5) { model.selectedTabID == nil }
+                let boardClicked = NativeUIAccessibility.click("conversation-tab-kanban", in: window)
                 let restored = await NativeUIAccessibility.wait(timeout: 8) {
-                    !model.isOpen && !board.boardItem.isCollapsed
+                    !model.splitMode && model.selectedTabID == nil && !board.boardItem.isCollapsed
                         && abs(board.conversationFrame.width - originalWidth) < 3
                         && store.selectedCardID == cardID && store.composerText == draft
                         && board.conversationHost === host && messageView(in: window) === text
                         && atTail(scroll)
                 }
                 results["content-close-restores-chat"] =
-                    closeClicked && restored
+                    closeClicked && conversationClicked && boardClicked && restored
                     ? "passed"
                     : "failed: close=\(closeClicked), restored=\(restored), open=\(model.isOpen), board collapsed=\(board.boardItem.isCollapsed), selected=\(store.selectedCardID == cardID), draft=\(store.composerText == draft), host=\(board.conversationHost === host), text=\(messageView(in: window) === text), width=\(board.conversationFrame.width)/\(originalWidth), tail=\(atTail(scroll))"
                 recordIdentity(

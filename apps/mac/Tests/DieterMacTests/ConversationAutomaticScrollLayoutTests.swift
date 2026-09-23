@@ -377,6 +377,9 @@ private func automaticScrollSnapshot(start: Int, end: Int) -> Dieter_V1_Conversa
     event.setIntegerValueField(.scrollWheelEventScrollPhase, value: phase)
     event.setIntegerValueField(.scrollWheelEventMomentumPhase, value: momentum)
     let nativeEvent = try #require(NSEvent(cgEvent: event))
+    try #require(
+        scroll.convert(scroll.bounds, to: nil).contains(nativeEvent.locationInWindow),
+        "Synthetic wheel location must land inside the hidden fixture's transcript: \(nativeEvent.locationInWindow)")
     if let content = window.contentView {
         for monitor in automaticScrollViews(in: content).compactMap({ $0 as? ConversationScrollBridge.MonitorView }
         ) {

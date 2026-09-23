@@ -397,6 +397,9 @@
                     projectContextClosed && projectContextDismissed
                     ? "passed" : "failed: project settings did not dismiss before Quick Task"
 
+                // Board/Chats now own their pane headers. Exercise the global
+                // titlebar action on a destination that still exposes it.
+                store.section = .files
                 let globalReady = await waitForBoardControl("sidebar.quick-task", in: window)
                 recordNavigationTargetFailure(
                     "sidebar.quick-task", section: store.section, window: window,
@@ -473,7 +476,7 @@
                     if let reopened,
                         await focusQuickTaskStory(in: reopened, expectedText: "Keep this draft after clicking outside")
                     {
-                        restoredEditorText = QuickTaskStoryTextView.smokeLiveInstance?.string
+                        restoredEditorText = nativeQuickTaskField(in: reopened.contentView)?.string
                     }
                     let retained =
                         restoredEditorText == "Keep this draft after clicking outside"
@@ -515,9 +518,9 @@
                             "\($0)=\(NativeUIAccessibility.find($0, in: window)?.recordedFrame?.debugDescription ?? "missing")"
                         }.joined(separator: "; ")
                 }
-                // Dismissing the global popover can also activate the underlying
-                // card. A board header control stays mounted behind the overlay;
-                // close the conversation before clicking the visible toolbar.
+                await store.openBoard(board.id, projectID: project.id)
+                // Close any retained conversation before clicking the board's
+                // own Quick Task control in its pane header.
                 let quickTaskToolbarUncovered = await closeBoardConversationForToolbar(store: store, window: window)
                 results["quick-task-toolbar-uncovered"] =
                     quickTaskToolbarUncovered
@@ -556,7 +559,7 @@
                         // the live NSTextView's real paste override directly;
                         // the assertions below still require model intake and a
                         // rendered attachment preview.
-                        QuickTaskStoryTextView.smokeLiveInstance?.paste(nil)
+                        nativeQuickTaskField(in: popover.contentView)?.paste(nil)
                     }
                     let attached = await waitUntil(timeout: 8, intervalMilliseconds: 50) {
                         popover.contentView?.layoutSubtreeIfNeeded()
@@ -726,14 +729,14 @@
             // sync and destabilizes the later RPC-backed steps. Its rows are identical
             // to the inline expansion captured above.
 
-            // Exercise the system NavigationSplitView toggle. Collapsing hides
-            // the entire sidebar; global compose stays in the window toolbar.
+            // Exercise the system NavigationSplitView toggle. The board's own
+            // compose action must remain available when its sidebar is hidden.
             let navigation = NativeUIAccessibility.navigationSplitController(in: window)
             navigation?.toggleSidebar(nil)
             let sidebarHidden = await NativeUIAccessibility.wait {
                 navigation?.splitViewItems.first?.isCollapsed == true
             }
-            let composeAvailable = NativeUIAccessibility.find("sidebar.quick-task", in: window) != nil
+            let composeAvailable = NativeUIAccessibility.find("board.quick-task", in: window) != nil
             await captureAppearances(window, named: "01b-navigation-collapsed.png", in: output)
             navigation?.toggleSidebar(nil)
             let sidebarShown = await NativeUIAccessibility.wait {
@@ -766,7 +769,8 @@
                     && browserFrame.width <= ChatPaneSizing.maximumWidth + 1
                 let detailWidthValid = detailFrame.width >= ChatPaneSizing.minimumDetailWidth - 1
                 let paneGap = detailFrame.minX - browserFrame.maxX
-                let panesAreAdjacent = abs(paneGap) < 1
+                // The pane-native browser now uses NSSplitView's thin divider.
+                let panesAreAdjacent = abs(paneGap) <= 1
                 results["02b-all-chats-surface-layout"] =
                     browserWidthValid && detailWidthValid && panesAreAdjacent
                     ? "passed"
@@ -1745,14 +1749,10 @@
                 expectedText == nil || $0.string == expectedText ? $0 : nil
             }
             let live = QuickTaskStoryTextView.smokeLiveInstance.flatMap {
-                expectedText == nil || $0.string == expectedText ? $0 : nil
+                $0.window === window && (expectedText == nil || $0.string == expectedText) ? $0 : nil
             }
             let native =
-                existing ?? live
-                ?? nativeQuickTaskField(in: window.contentView, expectedText: expectedText)
-                ?? NSApp.windows.lazy.compactMap {
-                    nativeQuickTaskField(in: $0.contentView, expectedText: expectedText)
-                }.first
+                existing ?? nativeQuickTaskField(in: window.contentView, expectedText: expectedText) ?? live
             guard anchored || native != nil else { return false }
             if let native {
                 let host = native.window ?? window
@@ -1804,10 +1804,9 @@
 
         private static func replaceQuickTaskStory(_ text: String, in window: NSWindow) -> Bool {
             let editor =
-                QuickTaskStoryTextView.smokeLiveInstance
-                ?? (window.firstResponder as? QuickTaskStoryTextView)
-                ?? NSApp.windows.lazy.compactMap { $0.firstResponder as? QuickTaskStoryTextView }.first
-            guard let editor, editor.isEditable, editor.window != nil else { return false }
+                (window.firstResponder as? QuickTaskStoryTextView)
+                ?? nativeQuickTaskField(in: window.contentView)
+            guard let editor, editor.isEditable, editor.window === window else { return false }
             editor.setSelectedRange(NSRange(location: 0, length: (editor.string as NSString).length))
             editor.insertText(text, replacementRange: editor.selectedRange())
             return editor.string == text

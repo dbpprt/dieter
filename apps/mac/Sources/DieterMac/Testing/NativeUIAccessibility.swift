@@ -141,11 +141,20 @@
             // Retained split panes and transcript measurement hosts can contain
             // another copy of the same control. A hidden pane still has a visible
             // window and nonzero bounds, so reject its entire hidden ancestry.
-            if let view = NativeUISmokeTargets.frames[identifier]?.compactMap(\.view).first(where: {
-                $0.window?.isVisible == true
-                    && !$0.isHiddenOrHasHiddenAncestor
-                    && $0.bounds.width > 0 && $0.bounds.height > 0
-            }), let targetWindow = view.window {
+            let anchors =
+                NativeUISmokeTargets.frames[identifier]?.compactMap(\.view).filter {
+                    $0.window?.isVisible == true
+                        && !$0.isHiddenOrHasHiddenAncestor
+                        && $0.bounds.width > 0 && $0.bounds.height > 0
+                } ?? []
+            // A dismissed popover can retain registered controls while another
+            // popover presents the same form. Honor the requested window first,
+            // then the active presentation instead of the oldest retained host.
+            if let view = anchors.first(where: { $0.window === window })
+                ?? anchors.first(where: { $0.window?.isKeyWindow == true })
+                ?? anchors.first,
+                let targetWindow = view.window
+            {
                 return Element(
                     object: view, recordedFrame: targetWindow.convertToScreen(view.convert(view.bounds, to: nil)),
                     recordedWindow: targetWindow)

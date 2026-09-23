@@ -193,6 +193,85 @@ import Testing
     try assertBoardLaneRowsFitContent(table: table, root: root, cards: cards, store: store)
 }
 
+@Test @MainActor func boardLaneMetadataRefreshKeepsMeasuredOffscreenHeights() async throws {
+    let store = boardLaneFixtureStore()
+    var cards = boardLaneFixtureCards(count: 20)
+    for index in cards.indices {
+        cards[index].summary = String(repeating: "A wrapped summary fills this row. ", count: 4)
+    }
+    store.state.cards = cards
+    let root = NSHostingView(rootView: AnyView(boardLaneFixtureView(cards: cards, store: store)))
+    root.sizingOptions = []
+    let window = boardLaneFixtureWindow(root: root, width: 300, height: 600)
+    defer { window.close() }
+    await settleBoardLane(root)
+    let table = try #require(boardLaneNativeTable(in: root))
+    let firstHeight = table.rect(ofRow: 0).height
+    table.scrollRowToVisible(12)
+    await settleBoardLane(root)
+    let anchorRow = table.rows(in: table.visibleRect).location
+    let anchorOffset = table.visibleRect.minY - table.rect(ofRow: anchorRow).minY
+    let cell = try #require(table.view(atColumn: 0, row: anchorRow, makeIfNecessary: false))
+    BoardRenderingDiagnostics.start()
+    for pass in 1...3 {
+        for index in cards.indices { cards[index].tokenUsage.totalTokens = Int64(pass * 100 + index) }
+        store.state.cards = cards
+        root.rootView = AnyView(boardLaneFixtureView(cards: cards, store: store))
+        await settleBoardLane(root)
+        #expect(
+            table.rect(ofRow: 0).height == firstHeight, "Metadata must not reset offscreen rows to estimated heights")
+        #expect(table.rows(in: table.visibleRect).location == anchorRow)
+        #expect(abs(table.visibleRect.minY - table.rect(ofRow: anchorRow).minY - anchorOffset) < 1)
+        #expect(table.view(atColumn: 0, row: anchorRow, makeIfNecessary: false) === cell)
+    }
+    let counts = BoardRenderingDiagnostics.stop()
+    #expect(counts["heightTransaction"] == 0, "Unchanged geometry must not relayout the lane on every update")
+}
+
+@Test @MainActor func boardLaneReplicaRefreshDoesNotChangeVisibleCardsOrGeometry() async throws {
+    let store = boardLaneFixtureStore()
+    let owner = DieterEndpoint(name: "Owner", host: "test", port: 443, daemonID: "owner")
+    let peer = DieterEndpoint(name: "Peer", host: "test", port: 443, daemonID: "peer")
+    store.endpoint = owner; store.endpoints = [owner, peer]
+    var cards = boardLaneFixtureCards(count: 3)
+    for index in cards.indices {
+        cards[index].ownerDaemonID = "owner"
+        cards[index].summary = String(
+            repeating: "This summary stays visible while another machine refreshes. ", count: 3)
+        cards[index].updatedAt = "2026-09-23T09:00:00Z"
+    }
+    var full = Dieter_V1_GlobalSnapshot(); full.state = store.state; full.state.cards = cards
+    store.applyGlobalSnapshot(full, endpointID: owner.id)
+    let root = NSHostingView(rootView: AnyView(BoardLaneNavigationFixture().environment(store)))
+    root.sizingOptions = []
+    let window = boardLaneFixtureWindow(root: root, width: 300, height: 1000)
+    defer { window.close() }
+    await settleBoardLane(root)
+    let table = try #require(boardLaneNativeTable(in: root))
+    let frames = cards.indices.map { table.rect(ofRow: $0) }
+    let cells = try cards.indices.map { try #require(table.view(atColumn: 0, row: $0, makeIfNecessary: false)) }
+    var replicated = full
+    replicated.state.cards = cards.map { card in
+        var card = card; card.summary = ""; card.updatedAt = ""; return card
+    }
+    BoardRenderingDiagnostics.start()
+    for index in 0..<6 {
+        let remote = index.isMultiple(of: 2)
+        store.applyGlobalSnapshot(remote ? replicated : full, endpointID: remote ? peer.id : owner.id)
+        store.selectedCardID = cards[index % cards.count].id
+        await settleBoardLane(root)
+        #expect(store.boardCards == cards)
+        #expect(cards.indices.map { table.rect(ofRow: $0) } == frames)
+        for row in cards.indices {
+            #expect(table.view(atColumn: 0, row: row, makeIfNecessary: false) === cells[row])
+        }
+    }
+    let counts = BoardRenderingDiagnostics.stop()
+    #expect(counts["cardBody"] == 0)
+    #expect(counts["rowConfigured"] == 0)
+    #expect(counts["heightTransaction"] == 0)
+}
+
 @Test @MainActor func boardLaneListRecyclesOffscreenRowsAndScrollsToTheLastCard() async throws {
     let store = boardLaneFixtureStore()
     let cards = boardLaneFixtureCards(count: 1000)

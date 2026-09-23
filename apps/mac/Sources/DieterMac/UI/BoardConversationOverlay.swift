@@ -161,6 +161,7 @@ final class BoardConversationSplitController: NSSplitViewController {
     private var restoreWidthOnLayout = true
     private var regularWidthRestoreScheduled = false
     private var dividerDragActive = false
+    private var lastLayoutWidth: CGFloat?
     private(set) var presented = false
     private(set) var companionPresented = false
     private(set) var boardPresented = true
@@ -239,6 +240,16 @@ final class BoardConversationSplitController: NSSplitViewController {
 
     override func viewDidLayout() {
         super.viewDidLayout()
+        let width = splitView.bounds.width
+        if let previous = lastLayoutWidth, abs(previous - width) > 0.5,
+            presented, !dividerDragActive
+        {
+            // AppKit preserves the current pane width on window resize. Reapply
+            // the adaptive target (or the user's saved divider width) once for
+            // the new available space, using the deferred restore below.
+            restoreWidthOnLayout = true
+        }
+        lastLayoutWidth = width
         // Keep the real content above the reflection surface so normal AppKit
         // hit testing reaches the Kanban controls, not the decorative replica.
         if boardBackground.subviews.last !== boardHost {

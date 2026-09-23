@@ -396,10 +396,14 @@ extension DieterStore {
         movingCardIDs = Set(pendingCardMoves.keys)
         labelUpdatingCardIDs = Set(pendingCardLabelUpdates.keys)
         notifyTransitions(global.cards + global.chats, endpointID: endpointID)
-        replica.replaceMetadata(
-            global,
-            endpoint: endpoints.first { $0.id == endpointID } ?? DieterEndpoint(name: endpointID, host: "", port: 0),
-            endpointID: endpointID)
+        // Cached projection keys retain their authenticated source daemon even
+        // before the live machine directory has been restored at startup.
+        let sourceEndpoint =
+            endpoints.first { $0.id == endpointID }
+            ?? DieterEndpoint(
+                name: endpointID, host: "", port: 0,
+                daemonID: endpointID.split(separator: "#", maxSplits: 1).dropFirst().first.map(String.init))
+        replica.replaceMetadata(global, endpoint: sourceEndpoint, endpointID: endpointID)
         updateSelectedState(base: global)
         if projectReplicaEndpointIDs[selectedProjectID] == endpointID {
             boardSettings = snapshot.settings
@@ -989,30 +993,29 @@ extension DieterStore {
 
     func acceptState(_ received: Dieter_V1_State) {
         var next = received
+        // A route switch reads the same board from another replica. Normalize
+        // its partial cards before publishing any selected-state projection.
+        next.cards = replica.retainingOwnerDetails(next.cards, sourceDaemonID: endpoint.daemonID)
+        next.chats = replica.retainingOwnerDetails(next.chats, sourceDaemonID: endpoint.daemonID)
         next = replica.reconcile(next)
         movingCardIDs = Set(pendingCardMoves.keys)
         labelUpdatingCardIDs = Set(pendingCardLabelUpdates.keys)
         notifyTransitions(next.cards + next.chats, endpointID: endpoint.id)
-        if state != next { state = next }
         for board in next.boards { replica.upsert(board, selectedProjectID: selectedProjectID) }
         for card in next.cards + next.chats { replica.upsert(card) }
         for project in next.projects {
             projectDirectory[project.id] = MachineDirectoryReducer.mergeProject(projectDirectory[project.id], project)
             projectReplicaEndpointIDs[project.id] = endpoint.id
         }
-        if !next.project.id.isEmpty {
-            state.cards = navigationCards[next.project.id] ?? next.cards
-            state.boards = navigationBoards[next.project.id] ?? next.boards
-        }
-        if selectedProjectID.isEmpty || !next.projects.contains(where: { $0.id == selectedProjectID }) {
+        if selectedProjectID.isEmpty || projectDirectory[selectedProjectID] == nil {
             selectedProjectID =
                 next.project.id.isEmpty ? (next.projects.first?.id ?? "") : next.project.id
         }
-        if selectedBoardID.isEmpty || !next.boards.contains(where: { $0.id == selectedBoardID }) {
-            selectedBoardID =
-                next.boards.first(where: { $0.projectID == selectedProjectID })?.id ?? next.boards.first?.id
-                ?? ""
-        }
+        // Initial GetState can describe the destination daemon's default
+        // project. Publish the user's selected project atomically from the
+        // merged directory; never briefly mount that unrelated board.
+        updateSelectedState(base: next)
+        refreshReplicaPresentation()
         rebuildOutboxOverlays()
     }
 

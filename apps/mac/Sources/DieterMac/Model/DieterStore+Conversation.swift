@@ -20,7 +20,8 @@ extension DieterStore {
                 try await rpc.chats(includeArchived: includeArchived)
             }
             guard self.rpc === rpc, generation == chatsRequestGeneration else { return }
-            let refreshedChats = reconcilePendingChatPins(response.chats)
+            let refreshedChats = reconcilePendingChatPins(
+                replica.retainingOwnerDetails(response.chats, sourceDaemonID: endpoint.daemonID))
             notifyTransitions(refreshedChats, endpointID: endpoint.id)
             let previousProjectIDs = Set(
                 projectReplicaEndpointIDs.compactMap { $0.value == endpoint.id ? $0.key : nil })
@@ -750,6 +751,7 @@ extension DieterStore {
     }
 
     func applyBoardCardMutation(_ updated: Dieter_V1_Card) {
+        let updated = replica.retainingOwnerDetails([updated], sourceDaemonID: endpoint.daemonID)[0]
         if let index = state.cards.firstIndex(where: { $0.id == updated.id }) {
             var next = state
             next.cards[index] = updated
@@ -875,6 +877,7 @@ extension DieterStore {
     }
 
     func applyChatMutation(_ updated: Dieter_V1_Card) {
+        let updated = replica.retainingOwnerDetails([updated], sourceDaemonID: endpoint.daemonID)[0]
         if let index = chats.firstIndex(where: { $0.id == updated.id }) {
             chats[index] = updated
         } else if updated.scope == "chat", updated.boardID.isEmpty {
