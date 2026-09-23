@@ -571,9 +571,6 @@ func discoverOMPModels(ctx context.Context) ([]Model, error) {
 }
 
 func runOMPDiscoveryCommand(ctx context.Context) ([]byte, error) {
-	if _, err := exec.LookPath(discoveryExecutable("bun")); err != nil {
-		return nil, errors.New("pinned OMP model discovery requires Bun on PATH")
-	}
 	dieterHome := strings.TrimSpace(os.Getenv("DIETER_HOME"))
 	if dieterHome == "" {
 		home, err := os.UserHomeDir()
@@ -586,12 +583,16 @@ func runOMPDiscoveryCommand(ctx context.Context) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	bunBin, err := ensureManagedBun(ctx, dieterHome)
+	if err != nil {
+		return nil, fmt.Errorf("prepare managed Bun for pinned OMP discovery: %w", err)
+	}
 	discoveryRoot := filepath.Join(dieterHome, "runtime", "harness", "omp-discovery")
 	command := exec.CommandContext(ctx, discoveryExecutable("node"), filepath.Join(runtimeDir, "omp-discovery.mjs"), discoveryRoot)
 	prepareHarnessCommand(command)
 	command.WaitDelay = 9 * time.Second
 	command.Dir = runtimeDir
-	command.Env = harnessEnvironment()
+	command.Env = ompHarnessEnvironment(bunBin)
 	var stderr bytes.Buffer
 	command.Stderr = &stderr
 	output, err := command.Output()

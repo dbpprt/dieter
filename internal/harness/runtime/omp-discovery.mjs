@@ -23,6 +23,7 @@ const harness = createACP({
   executable: 'omp',
   args: ['acp'],
   modelMapping: ompACPModelMapping,
+  forwardEnv: ['HOME', 'PI_CODING_AGENT_DIR', 'OMP_PROFILE', 'PI_NATIVE_VARIANT'],
 });
 const sandboxProvider = await createLocalSandboxProvider({
   root: runtimeRoot,

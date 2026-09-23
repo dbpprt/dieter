@@ -198,7 +198,7 @@ switch (adapter) {
       executable: 'omp',
       args: ompACPArgs(request, hookPath, configPath, modelStrategy),
       ...(modelStrategy === 'session-config-option' ? { modelMapping: ompACPModelMapping } : {}),
-      forwardEnv: ['HOME', 'PI_CODING_AGENT_DIR', 'OMP_PROFILE', 'DIETER_OMP_CAPABILITY_FILE', ...extraHarnessEnv],
+      forwardEnv: ['HOME', 'PI_CODING_AGENT_DIR', 'OMP_PROFILE', 'PI_NATIVE_VARIANT', 'DIETER_OMP_CAPABILITY_FILE', ...extraHarnessEnv],
     });
     ompHookPaths = await prepareOMPHookPaths({
       runtimeRoot: request.runtimeRoot,
@@ -318,7 +318,7 @@ try {
     ? { present_content: createContentPresentationTool(request, send) } : {};
   const processTools = processBridge ? createBackgroundProcessTools(request, processBridge.call) : {};
   const instructions = [request.instructions, taskPlanInstructions, request.contentPresentationEnabled ? contentPresentationInstructions : '', processBridge ? backgroundProcessInstructions : ''].filter(Boolean).join('\n\n');
-  const createAgent = (candidateHarness, model = request.model || undefined) => new HarnessAgent({
+  const createAgent = (candidateHarness, model) => new HarnessAgent({
     harness: observeHarnessCapabilities(candidateHarness, capabilityCollector),
     sandbox,
     model,

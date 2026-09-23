@@ -31,8 +31,9 @@ Dieter is a native workspace for **Codex, Claude Code, Pi, Oh My Pi, and DeepSee
 Harness**. A local daemon runs agents on the machine with your Git checkout,
 credentials, and tools. Native clients bring those machines together.
 Managed OMP discovery and turns use the same pinned build. Dieter selects the
-advertised model when launching OMP, so the full OMP catalog works even though
-OMP's ACP model picker exposes only the user's smaller cycling list.
+advertised model when launching OMP and keeps its catalog focused on GPT-6 Luna,
+Sol, Astra, and the Tailscale GLM route. Dieter installs OMP's pinned Bun runtime
+lazily, so hosts do not need a separate global OMP or Bun installation.
 
 Your laptop is the remote control. An agent on another host keeps running when
 you close the app, disconnect, or put your laptop to sleep. Keep that execution

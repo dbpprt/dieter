@@ -194,6 +194,22 @@ func TestLiveProviderDiscovery(t *testing.T) {
 					t.Fatal("integration exposed a synthetic default model")
 				}
 			}
+			if provider == "omp" {
+				want := []string{
+					"tailscale/glm-5.3-flash-exl3",
+					"openai-codex/gpt-6-luna",
+					"openai-codex/gpt-6-sol",
+					"openai-codex/gpt-6-astra",
+				}
+				if len(models) != len(want) {
+					t.Fatalf("OMP models=%#v, want %v", models, want)
+				}
+				for index := range want {
+					if models[index].ID != want[index] {
+						t.Fatalf("OMP model %d=%q, want %q", index, models[index].ID, want[index])
+					}
+				}
+			}
 		})
 	}
 }

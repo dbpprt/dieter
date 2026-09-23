@@ -9,6 +9,7 @@ export const ompACPModelMapping = Object.freeze({
 // remains executable. Retain the previous config-option implementation solely
 // to restore lifecycle state created before this change.
 export const ompImplementations = Object.freeze([
+  Object.freeze({ packageVersion: '18.2.11', modelStrategy: 'launch-argument' }),
   Object.freeze({ packageVersion: '18.2.9', modelStrategy: 'launch-argument' }),
   Object.freeze({ packageVersion: '18.1.10', modelStrategy: 'session-config-option' }),
 ]);

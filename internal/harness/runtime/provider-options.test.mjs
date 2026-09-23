@@ -34,9 +34,10 @@ test('retains the OMP ACP model mapping for legacy session resumes', () => {
   });
 });
 test('pins OMP discovery and turns while retaining bounded session compatibility', () => {
-  assert.equal(ompPackageVersion, '18.2.9');
-  assert.deepEqual(ompPackageVersions, ['18.2.9', '18.1.10']);
+  assert.equal(ompPackageVersion, '18.2.11');
+  assert.deepEqual(ompPackageVersions, ['18.2.11', '18.2.9', '18.1.10']);
   assert.deepEqual(ompImplementations, [
+    { packageVersion: '18.2.11', modelStrategy: 'launch-argument' },
     { packageVersion: '18.2.9', modelStrategy: 'launch-argument' },
     { packageVersion: '18.1.10', modelStrategy: 'session-config-option' },
   ]);

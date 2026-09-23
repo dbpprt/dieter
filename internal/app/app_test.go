@@ -1115,7 +1115,7 @@ func TestOMPSelectionUsesConfiguredACPAdapterAndContextWindow(t *testing.T) {
 	service, fake, project, board := appSetup(t)
 	card, err := service.CreateCard(context.Background(), CardInput{
 		Project: project.ID, Board: board.ID, Lane: model.LaneRunning,
-		Title: "OMP", Prompt: "Run it", Provider: "omp", Model: "box/qwen3_6_27b",
+		Title: "OMP", Prompt: "Run it", Provider: "omp", Model: "tailscale/glm-5.3-flash-exl3",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -1126,7 +1126,7 @@ func TestOMPSelectionUsesConfiguredACPAdapterAndContextWindow(t *testing.T) {
 		return fake.count() == 1 && stored.Runtime == "idle" && len(conversation.Session) > 0 && !hasActiveTurn(service, project.ID)
 	})
 	request := fake.request(0)
-	if card.Provider != "omp" || card.Model != "box/qwen3_6_27b" || request.Adapter != "omp-acp" || request.ContextWindow != 262144 {
+	if card.Provider != "omp" || card.Model != "tailscale/glm-5.3-flash-exl3" || request.Adapter != "omp-acp" || request.ContextWindow != 1000000 {
 		t.Fatalf("card=%#v request=%#v", card, request)
 	}
 }
@@ -1169,7 +1169,7 @@ func TestStreamProtocolErrorRemainsFailed(t *testing.T) {
 	service.Runner = streamErrorRunner{}
 	card, err := service.CreateCard(context.Background(), CardInput{
 		Project: project.ID, Board: board.ID, Lane: model.LaneRunning,
-		Title: "Failure", Prompt: "Run it", Provider: "omp", Model: "box/qwen3_6_27b",
+		Title: "Failure", Prompt: "Run it", Provider: "omp", Model: "tailscale/glm-5.3-flash-exl3",
 		DeferStart: true,
 	})
 	if err != nil {
@@ -1603,7 +1603,7 @@ func TestQueuedMessageStartsAfterInterruptWithoutRecordingFailure(t *testing.T) 
 	service, _, project, board := appSetup(t)
 	runner := &interruptQueueRunner{started: make(chan int, 2)}
 	service.Runner = runner
-	card, err := service.CreateCard(context.Background(), CardInput{Project: project.ID, Board: board.ID, Lane: model.LaneRunning, Title: "Queue", Prompt: "Keep working", Provider: "omp", Model: "box/qwen3_6_27b", DeferStart: true})
+	card, err := service.CreateCard(context.Background(), CardInput{Project: project.ID, Board: board.ID, Lane: model.LaneRunning, Title: "Queue", Prompt: "Keep working", Provider: "omp", Model: "tailscale/glm-5.3-flash-exl3", DeferStart: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1947,7 +1947,7 @@ func TestGracefulRestartContinuesActiveTurnForEveryProvider(t *testing.T) {
 		{provider: "codex", model: "gpt-5.6-sol", effort: "low"},
 		{provider: "claude-code", model: "sonnet", effort: "low"},
 		{provider: "pi", model: "default", effort: "minimal"},
-		{provider: "omp", model: "default", effort: "low", options: map[string]string{"advisor": "true"}},
+		{provider: "omp", model: "tailscale/glm-5.3-flash-exl3", effort: "low", options: map[string]string{"advisor": "true"}},
 		{provider: "dsh", model: "default"},
 	}
 	for _, provider := range providers {

@@ -173,7 +173,7 @@ harnesses:
         description: Ask OMP's advisor for an independent review during the turn.
         type: boolean
         default: "false"
-    defaultModel: default
+    defaultModel: tailscale/glm-5.3-flash-exl3
     effort:
       label: Thinking
       options:
@@ -194,16 +194,28 @@ harnesses:
         - id: auto
           name: Auto
     models:
-      - id: default
-        name: Configured default
-        runtimeModel: ""
-      # OMP owns provider routing and resolves these IDs from its own config.
-      - id: openrouter/deepseek/deepseek-v4-flash-0731
-        name: DeepSeek V4 Flash 0731 · OpenRouter
-        contextWindow: 1048576
-      - id: box/qwen3_6_27b
-        name: Qwen 3.6 27B · Box
-        contextWindow: 262144
+      # Keep OMP's UI intentionally small. OMP still owns credentials and
+      # provider routing for these exact selectors on each daemon host.
+      - id: tailscale/glm-5.3-flash-exl3
+        name: GLM-5.3 Flash EXL3 · Tailscale
+        contextWindow: 1000000
+        defaultEffort: max
+        efforts: [low, high, max]
+      - id: openai-codex/gpt-6-luna
+        name: GPT-6 Luna · Codex
+        contextWindow: 272000
+        defaultEffort: high
+        efforts: [low, medium, high, xhigh, max]
+      - id: openai-codex/gpt-6-sol
+        name: GPT-6 Sol · Codex
+        contextWindow: 272000
+        defaultEffort: high
+        efforts: [low, medium, high, xhigh, max]
+      - id: openai-codex/gpt-6-astra
+        name: GPT-6 Astra · Codex
+        contextWindow: 272000
+        defaultEffort: high
+        efforts: [low, medium, high, xhigh, max]
 
   - id: dsh
     name: DeepSeek Harness
