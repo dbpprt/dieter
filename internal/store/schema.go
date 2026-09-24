@@ -50,3 +50,13 @@ func (s *Store) establishStorageSchema() error {
 	}
 	return atomicWrite(path, []byte(`{"version":2}`))
 }
+
+// CheckUpdateCompatibility validates an existing store without creating,
+// migrating, repairing, or changing its permissions. Installers fail closed on
+// unversioned data, even though normal startup permits an empty new directory.
+func (s *Store) CheckUpdateCompatibility() error {
+	if _, err := os.Stat(filepath.Join(s.Root, "storage-schema.json")); err != nil {
+		return err
+	}
+	return s.checkStorageSchema()
+}

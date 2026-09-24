@@ -60,6 +60,14 @@ func New(data *store.Store) *CLI {
 func (c *CLI) service() *app.Service { return app.New(c.Store, c.Runner) }
 
 func Main(args []string) int {
+	if len(args) > 0 && args[0] == "__update-preflight" {
+		if err := updatePreflight(args[1:], os.Stdout); err != nil {
+			fmt.Fprintln(os.Stderr, "error:", err)
+			return 1
+		}
+		return 0
+	}
+
 	if len(args) > 0 && args[0] == "__service-stage" {
 		if err := stageServiceRuntime(args[1:], os.Stderr); err != nil {
 			fmt.Fprintln(os.Stderr, "error:", err)
@@ -405,14 +413,6 @@ its current address. Status reports the selected network endpoint.
 	if help || err != nil {
 		return err
 	}
-	if err := c.Store.Ensure(); err != nil {
-		return err
-	}
-	runtimeLock, err := dieterdaemon.AcquireRuntimeLock(c.Store.Root)
-	if err != nil {
-		return err
-	}
-	defer runtimeLock.Close()
 	var serviceRuntime *serviceruntime.Service
 	if *runtimePath != "" {
 		if !*serviceMode {
@@ -437,6 +437,16 @@ its current address. Status reports the selected network endpoint.
 			return serviceRuntime.Exec(os.Args)
 		}
 	}
+	// Recover a failed activation before opening the data store. Otherwise a
+	// candidate that rejects its schema can fail forever without rolling back.
+	if err := c.Store.Ensure(); err != nil {
+		return err
+	}
+	runtimeLock, err := dieterdaemon.AcquireRuntimeLock(c.Store.Root)
+	if err != nil {
+		return err
+	}
+	defer runtimeLock.Close()
 	if err := envfile.Load(c.Store.Root, *envFile); err != nil {
 		return err
 	}

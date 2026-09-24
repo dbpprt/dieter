@@ -140,3 +140,10 @@ just check-changed
 [iOS](apps/ios/README.md) · [Website](landingpage/README.md)
 
 Dieter is [MIT-licensed](LICENSE). Pronounced **DEE-ter**. Made in Berlin.
+
+### Opt-in automatic Mac updates
+
+The [safe macOS updater](docs/macos-auto-update.md) checks for matching signed
+app/daemon releases twice daily, retains backups, and defers incompatible or
+busy installations. Releases must include its read-only compatibility probe;
+older releases are never installed automatically by this mechanism.
