@@ -205,12 +205,43 @@ class Updater:
         args = self.service.get('ProgramArguments', [])
         if not all(os.access(path, os.W_OK) for path in (self.root, self.runtime, self.runtime.parent, self.app)):
             raise Deferred('Updater needs writable data, service runtime and app bundle')
-        if args[:1] != [str(self.runtime / 'bin/dieter')] or '--runtime' not in args:
-            raise Deferred('Only a fixed-runtime daemon LaunchAgent is supported')
-        offset = args.index('--runtime') + 1
-        if offset == len(args) or Path(args[offset]).resolve() != self.runtime:
-            raise Deferred('Daemon LaunchAgent uses a different service runtime')
+        if args[:3] != [str(self.runtime / 'bin/dieter'), 'daemon', 'start']:
+            raise Deferred('LaunchAgent must run the configured daemon directly')
+        self.fixed = '--runtime' in args
+        if self.fixed:
+            offset = args.index('--runtime') + 1
+            if offset == len(args) or Path(args[offset]).resolve() != self.runtime:
+                raise Deferred('Daemon LaunchAgent uses a different service runtime')
+        else:
+            for name in ('dieter', 'dieter-capture'):
+                binary = self.runtime / 'bin' / name
+                if binary.is_symlink() or not binary.is_file() or not os.access(binary, os.W_OK):
+                    raise Deferred('Manual installs require a writable, regular daemon/helper pair')
         self.target = f'gui/{os.getuid()}/{self.service["Label"]}'
+
+    def backup_runtime(self, destination):
+        if self.fixed:
+            shutil.copytree(self.runtime, destination, symlinks=True)
+        else:
+            # A manual prefix can contain unrelated tools. Never snapshot or
+            # replace the whole prefix when updating its Dieter pair.
+            (destination / 'bin').mkdir(parents=True)
+            for name in ('dieter', 'dieter-capture'):
+                shutil.copy2(self.runtime / 'bin' / name, destination / 'bin' / name)
+
+    def replace_manual_pair(self, source):
+        for name in ('dieter', 'dieter-capture'):
+            destination = self.runtime / 'bin' / name
+            with tempfile.NamedTemporaryFile(prefix='.dieter-update-', dir=destination.parent, delete=False) as output:
+                temporary = Path(output.name)
+            try:
+                shutil.copy2(source / name, temporary)
+                with temporary.open('rb') as content:
+                    os.fsync(content.fileno())
+                temporary.replace(destination)
+                sync_directory(destination.parent)
+            finally:
+                temporary.unlink(missing_ok=True)
 
     def status(self):
         return json.loads(run(self.runtime / 'bin/dieter', '--store', self.root,
@@ -274,9 +305,12 @@ class Updater:
                 raise Deferred('Quit Dieter to finish recovering the interrupted update')
             if (backup / 'runtime').exists():
                 # Store data is NEVER replaced: it may contain work after activation.
-                if self.runtime.exists():
-                    shutil.rmtree(self.runtime)
-                shutil.copytree(backup / 'runtime', self.runtime, symlinks=True)
+                if self.fixed:
+                    if self.runtime.exists():
+                        shutil.rmtree(self.runtime)
+                    shutil.copytree(backup / 'runtime', self.runtime, symlinks=True)
+                else:
+                    self.replace_manual_pair(backup / 'runtime/bin')
             if (backup / 'Contents').exists():
                 contents = self.app / 'Contents'
                 if contents.exists():
@@ -365,14 +399,17 @@ class Updater:
                 if app_running():
                     raise Deferred('Dieter was opened during the update check')
                 snapshot(self.root, backup / 'data')
-                shutil.copytree(self.runtime, backup / 'runtime', symlinks=True)
+                self.backup_runtime(backup / 'runtime')
                 shutil.copytree(self.app / 'Contents', backup / 'Contents', symlinks=True)
                 sync_tree(backup)
                 sync_directory(backup.parent)
                 # Backups must be complete before recovery is allowed to use them.
                 tx['backupsComplete'] = True
                 write_json(journal, tx)
-                run(daemon / 'dieter', '__service-stage', '--root', self.runtime)
+                if self.fixed:
+                    run(daemon / 'dieter', '__service-stage', '--root', self.runtime)
+                else:
+                    self.replace_manual_pair(daemon)
                 staged = self.app / 'UpdateContents'
                 if staged.exists():
                     raise Deferred('Application has an unfinished manual update')

@@ -17,6 +17,13 @@ registers `com.dbpprt.dieter.auto-update` in the user's LaunchAgents. The checko
 is no longer needed. Defaults target the arm64 Homebrew fixed service runtime,
 `/Applications/Dieter.app`, and `~/Library/LaunchAgents/sh.brew.dieter.plist`.
 Use `--root`, `--runtime`, `--app`, and `--service-plist` for other installations.
+For a manual installation at `~/.local/bin/dieter` with its capture helper,
+use `--runtime "$HOME/.local" --service-plist
+"$HOME/Library/LaunchAgents/com.dbpprt.dieter.daemon.plist"`. The LaunchAgent
+must run that binary directly with `daemon start`. In this mode only the two
+Dieter binaries are backed up/replaced; unrelated tools in the prefix are never
+removed. Symlinked manual binaries are rejected.
+
 The user must own the runtime and application bundle. No administrator prompt,
 password storage, or privileged helper is involved.
 

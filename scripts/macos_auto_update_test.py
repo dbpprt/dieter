@@ -54,6 +54,7 @@ class SafeUpdaterTests(unittest.TestCase):
         instance.app = Path(directory) / 'Dieter.app'
         (instance.app / 'Contents').mkdir(parents=True)
         (instance.app / 'Contents/version').write_text('old')
+        instance.fixed = True
         instance.target = 'test-service'
         instance.stop = Mock()
         instance.start = Mock()
@@ -135,6 +136,50 @@ class SafeUpdaterTests(unittest.TestCase):
             backups = list((instance.state / 'backups').iterdir())
             self.assertEqual(len(backups), 1)
             self.assertEqual((backups[0] / 'data/chat').read_text(), 'keep every message')
+            self.assertFalse((instance.state / 'transaction.json').exists())
+
+    def test_manual_prefix_preserves_unrelated_tools_during_backup_and_rollback(self):
+        with tempfile.TemporaryDirectory() as directory:
+            instance = self.make_updater(directory)
+            instance.fixed = False
+            (instance.runtime / 'bin').mkdir()
+            for name in ('dieter', 'dieter-capture'):
+                (instance.runtime / 'bin' / name).write_text('old ' + name)
+            unrelated = instance.runtime / 'bin/other-tool'
+            unrelated.write_text('do not touch')
+            backup = instance.state / 'manual-backup'
+            instance.backup_runtime(backup)
+            self.assertFalse((backup / 'bin/other-tool').exists())
+            (instance.runtime / 'bin/dieter').write_text('broken candidate')
+            instance.replace_manual_pair(backup / 'bin')
+            self.assertEqual((instance.runtime / 'bin/dieter').read_text(), 'old dieter')
+            self.assertEqual(unrelated.read_text(), 'do not touch')
+
+    def test_manual_activation_updates_only_dieter_and_app(self):
+        with tempfile.TemporaryDirectory() as directory:
+            instance = self.make_updater(directory)
+            instance.fixed = False
+            (instance.runtime / 'bin').mkdir()
+            candidate = Path(directory) / 'release'
+            candidate.mkdir()
+            for name in ('dieter', 'dieter-capture'):
+                (instance.runtime / 'bin' / name).write_text('old')
+                (candidate / name).write_text('new')
+            unrelated = instance.runtime / 'bin/other-tool'
+            unrelated.write_text('unchanged')
+            (instance.root / 'chat').write_text('saved conversation')
+            new_app = Path(directory) / 'new.app'
+            (new_app / 'Contents').mkdir(parents=True)
+            (new_app / 'Contents/version').write_text('new')
+            with patch.object(updater, 'signed'), \
+                 patch.object(updater, 'app_running', return_value=False), \
+                 patch.object(updater.shutil, 'disk_usage', return_value=Mock(free=10**12)):
+                instance.activate(candidate, new_app, '0.4.2', '0.4.1')
+            self.assertEqual((instance.runtime / 'bin/dieter').read_text(), 'new')
+            self.assertEqual((instance.app / 'Contents/version').read_text(), 'new')
+            self.assertEqual(unrelated.read_text(), 'unchanged')
+            self.assertEqual((instance.root / 'chat').read_text(), 'saved conversation')
+            instance.healthy.assert_called_once_with('0.4.2')
             self.assertFalse((instance.state / 'transaction.json').exists())
 
     def test_overlapping_runs_are_excluded(self):
