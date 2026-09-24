@@ -1667,7 +1667,7 @@
                 guard NSApp.isActive, window.isKeyWindow, window.attachedSheet == nil, !item.isCollapsed,
                     let target = NativeUIAccessibility.find(identifier, in: window),
                     target.recordedWindow === window, let frame = target.recordedFrame,
-                    frame.width > 0, frame.height > 0
+                    frame.width > 0, frame.height > 0, window.frame.contains(frame)
                 else {
                     stableSamples = 0
                     return false

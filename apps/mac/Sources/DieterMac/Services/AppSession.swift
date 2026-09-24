@@ -60,6 +60,7 @@ final class AppSession {
     var health = Dieter_V1_HealthResponse()
     var runtime = Dieter_V1_RuntimeStatus()
     let replica = WorkspaceReplica()
+    @ObservationIgnored let inboxActivityProjection = InboxActivityProjection()
     var harnessCatalog = Dieter_V1_HarnessCatalog()
     var harnessCatalogsByEndpoint: [String: Dieter_V1_HarnessCatalog] = [:]
     var boardSettings = Dieter_V1_Settings()

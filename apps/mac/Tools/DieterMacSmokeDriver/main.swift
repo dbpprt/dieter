@@ -21,6 +21,7 @@ private enum SmokeSuite: String, CaseIterable {
     case terminal
     case island
     case workspace
+    case inbox
 
     var timeout: TimeInterval {
         switch self {
@@ -41,6 +42,7 @@ private enum SmokeSuite: String, CaseIterable {
         case .terminal: 180
         case .machine: 60
         case .sidebar: 30
+        case .inbox: 150
         // The optional native screenshot checkpoint can itself wait 30 seconds.
         // Keep the normal Island deadline unchanged while allowing capture mode
         // to finish its remaining display and navigation assertions.
@@ -233,7 +235,7 @@ private final class SmokeRun {
                     "--island-ui-smoke-output", output.path,
                 ]
             )
-        case .core, .board, .conversation, .machine, .workspace:
+        case .core, .board, .conversation, .machine, .workspace, .inbox:
             var arguments =
                 try gatewayArguments(endpoint: endpoint, tokenFile: tokenFile)
                 + baseArguments(state: output.appendingPathComponent("state"))
@@ -256,6 +258,8 @@ private final class SmokeRun {
                 arguments += ["--machine-ui-smoke", "--machine-ui-smoke-output", output.path]
             case .workspace:
                 arguments += ["--workspace-ui-smoke", "--ui-smoke-output", output.path]
+            case .inbox:
+                arguments += ["--inbox-ui-smoke", "--ui-smoke-output", output.path]
             default: break
             }
             try runApp(
@@ -359,6 +363,9 @@ private final class SmokeRun {
         }
         if options.suite == .board {
             arguments.append("--board-stress-fixture")
+        }
+        if options.suite == .inbox {
+            arguments.append("--inbox-fixture")
         }
         if options.suite == .terminal {
             arguments += ["--daemon-restart-trigger", output.appendingPathComponent("daemon-restart").path]

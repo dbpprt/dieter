@@ -46,10 +46,11 @@ struct DieterRootView: View {
     @State private var sidebarVisibility: NavigationSplitViewVisibility = .all
     @State private var hasOpenedBoard = false
     @State private var hasOpenedChats = false
+    @State private var hasOpenedInbox = false
 
     private var showsSynchronizedWorkspace: Bool {
         switch store.section {
-        case .board, .chats, .files, .changes, .schedules, .archive: true
+        case .inbox, .board, .chats, .files, .changes, .schedules, .archive: true
         case .terminals, .screens, .settings: false
         }
     }
@@ -60,6 +61,10 @@ struct DieterRootView: View {
             hasCachedWorkspace: store.hasLoadedWorkspace,
             freshness: store.workspaceFreshness
         )
+    }
+
+    private var usesPaneTitlebar: Bool {
+        store.section == .inbox || store.section == .board || store.section == .chats
     }
 
     var body: some View {
@@ -128,7 +133,19 @@ struct DieterRootView: View {
                         .allowsHitTesting(store.section == .chats)
                         .accessibilityHidden(store.section != .chats)
                     }
+                    if hasOpenedInbox || store.section == .inbox {
+                        RetainedWorkspacePane(active: store.section == .inbox) {
+                            InboxView(active: store.section == .inbox)
+                                .environment(store)
+                                .dieterThemeRoot(
+                                    palette: store.themeSelection.palette, appearance: store.themeSelection.appearance)
+                        }
+                        .ignoresSafeArea(.container, edges: .top)
+                        .allowsHitTesting(store.section == .inbox)
+                        .accessibilityHidden(store.section != .inbox)
+                    }
                     switch store.section {
+                    case .inbox: Color.clear.allowsHitTesting(false)
                     case .board:
                         Color.clear.allowsHitTesting(false)
                     case .chats: Color.clear.allowsHitTesting(false)
@@ -175,6 +192,7 @@ struct DieterRootView: View {
                 .onChange(of: store.section, initial: true) { _, section in
                     if section == .board { hasOpenedBoard = true }
                     if section == .chats { hasOpenedChats = true }
+                    if section == .inbox { hasOpenedInbox = true }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
@@ -186,25 +204,26 @@ struct DieterRootView: View {
             \.conversationWorkspaceTabsInTitlebar,
             (store.section == .board && store.selectedCardID != nil)
                 || (store.section == .chats && store.selectedChatID != nil)
+                || (store.section == .inbox && (store.selectedCardID ?? store.selectedChatID) != nil)
         )
         .background {
             DieterWindowBackdrop(
                 transparencyEnabled: DieterTheme.usesTransparency,
                 solidColor: DieterTheme.opaqueSurface,
-                paneTitlebarEnabled: store.section == .board || store.section == .chats
+                paneTitlebarEnabled: usesPaneTitlebar
             )
             .ignoresSafeArea()
             .allowsHitTesting(false)
         }
         .toolbar {
-            if store.section != .board && store.section != .chats {
+            if !usesPaneTitlebar {
                 ToolbarItem(placement: .primaryAction) {
                     GlobalQuickTaskButton()
                 }
             }
         }
         .toolbarVisibility(
-            store.section == .board || store.section == .chats ? .hidden : .visible,
+            usesPaneTitlebar ? .hidden : .visible,
             for: .windowToolbar
         )
         .overlay(alignment: .bottomLeading) {
@@ -448,7 +467,7 @@ struct AppSidebar: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            if store.section == .board || store.section == .chats {
+            if store.section == .inbox || store.section == .board || store.section == .chats {
                 DieterWindowTrafficLights()
                     .frame(width: 80, height: 36)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -467,7 +486,7 @@ struct AppSidebar: View {
         .accessibilityIdentifier("sidebar.main-pane")
         .smokeTarget("sidebar.main-pane")
         .ignoresSafeArea(
-            .container, edges: store.section == .board || store.section == .chats ? .top : []
+            .container, edges: store.section == .inbox || store.section == .board || store.section == .chats ? .top : []
         )
         .sheet(item: $folderEditor) { editor in
             NavigationFolderNameSheet(
@@ -514,13 +533,23 @@ struct AppSidebar: View {
         let activeChats = store.chats.filter { !$0.archived }
 
         SidebarDestination(
+            title: "Inbox",
+            symbol: "tray",
+            selected: store.section == .inbox,
+            badge: store.inboxEntries.filter(\.needsYou).count,
+            prominentBadge: true
+        ) { Task { await store.openInbox() } }
+        .padding(.horizontal, 8).padding(.top, 9)
+        .accessibilityIdentifier("sidebar.inbox").smokeTarget("sidebar.inbox")
+
+        SidebarDestination(
             title: "All chats",
             symbol: "bubble.left.and.bubble.right",
             selected: store.section == .chats,
             badge: activeChats.count,
             prominentBadge: true
         ) { Task { await store.openChats() } }
-        .padding(.horizontal, 8).padding(.top, 9)
+        .padding(.horizontal, 8)
         .accessibilityIdentifier("sidebar.all-chats").smokeTarget("sidebar.all-chats")
 
         SidebarDestination(

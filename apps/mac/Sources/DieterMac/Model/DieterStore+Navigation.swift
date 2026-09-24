@@ -104,6 +104,15 @@ extension DieterStore {
         await openProject(projectID, section: .changes)
     }
 
+    func openInbox() async {
+        guard section != .inbox else { return }
+        boardSelectionGeneration &+= 1
+        stopTerminalWatch()
+        closeConversation()
+        section = .inbox
+        if !hasLiveChatDirectory { await refreshChats(includeArchived: false) }
+    }
+
     func openChats() async {
         // Reselecting the current destination must not tear down its transcript.
         guard section != .chats else { return }

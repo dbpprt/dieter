@@ -98,7 +98,7 @@ class CheckChangedTests(unittest.TestCase):
     def test_mac_change_runs_only_mac_unit_and_integration_tests(self):
         self.assertEqual(self.plan("apps/mac/Sources/DieterMac/Features/Conversation/ConversationView.swift"),
                          [["just", "mac", "test"],
-                          ["just", "mac", "smoke-suites", "core", "board", "conversation", "workspace"]])
+                          ["just", "mac", "smoke-suites", "core", "board", "conversation", "workspace", "inbox"]])
 
     def test_mac_components_select_related_smokes(self):
         for path, suites in {
@@ -111,6 +111,10 @@ class CheckChangedTests(unittest.TestCase):
             "Features/Terminals/TerminalInputForwarder.swift": ("terminal",),
             "Model/SidebarProjectNavigationPreferences.swift": ("core", "sidebar"),
             "UI/MachinesView.swift": ("core", "machine", "sidebar"),
+            "UI/InboxView.swift": ("inbox",),
+            "UI/InboxFeed.swift": ("inbox",),
+            "Model/InboxActivity.swift": ("inbox",),
+            "UI/ChatsView.swift": ("core", "conversation", "sidebar", "inbox"),
         }.items():
             with self.subTest(path=path):
                 self.assertEqual(affected_mac_smoke_suites(["apps/mac/Sources/DieterMac/" + path]), suites)
@@ -118,8 +122,7 @@ class CheckChangedTests(unittest.TestCase):
     def test_board_panel_hosts_cover_resize_maximize_and_workspace_tabs(self):
         # BoardView wires maximize state; both hosts own the panel used by the
         # conversation and workspace suites. Board smoke alone misses that flow.
-        for path in ["UI/BoardView.swift", "UI/BoardConversationOverlay.swift",
-                     "Features/Conversation/ConversationView.swift"]:
+        for path in ["UI/BoardView.swift", "UI/BoardConversationOverlay.swift"]:
             with self.subTest(path=path):
                 self.assertEqual(self.plan("apps/mac/Sources/DieterMac/" + path),
                                  [["just", "mac", "test"],
@@ -139,6 +142,7 @@ class CheckChangedTests(unittest.TestCase):
             "Terminal": ("terminal",),
             "Island": ("island",),
             "Workspace": ("workspace",),
+            "Inbox": ("inbox",),
         }.items():
             with self.subTest(runner=runner):
                 self.assertEqual(self.plan(f"apps/mac/Sources/DieterMac/Testing/{runner}UISmokeRunner.swift"),
@@ -171,7 +175,7 @@ class CheckChangedTests(unittest.TestCase):
             "README.md",
         ]
         expected = [["just", "mac", "test"],
-                    ["just", "mac", "smoke-suites", "core", "board", "conversation", "island", "workspace"]]
+                    ["just", "mac", "smoke-suites", "core", "board", "conversation", "island", "workspace", "inbox"]]
         self.assertEqual(self.plan(*paths), expected)
         self.assertEqual(self.plan(*reversed(paths), *paths), expected)
         self.assertEqual(self.plan(*paths, "apps/mac/Sources/DieterMac/UI/DieterRootView.swift"),
@@ -179,7 +183,7 @@ class CheckChangedTests(unittest.TestCase):
 
     def test_subset_for_each_suite_collapses_to_full_run(self):
         paths = [f"apps/mac/Sources/DieterMac/Testing/{name}UISmokeRunner.swift"
-                 for name in ["Native", "Conversation", "Machine", "SidebarNavigation", "Terminal", "Island", "Workspace"]]
+                 for name in ["Native", "Conversation", "Machine", "SidebarNavigation", "Terminal", "Island", "Workspace", "Inbox"]]
         self.assertEqual(self.plan(*paths), [["just", "mac", "test"], ["just", "mac", "smoke-all"]])
 
     def test_android_change_runs_only_android_unit_and_integration_tests(self):
@@ -274,7 +278,7 @@ class CheckChangedTests(unittest.TestCase):
             (root / deleted).unlink()
             self.assertEqual(plan_checks(root, changed_paths(root), packages=[]),
                              [["just", "mac", "test"],
-                              ["just", "mac", "smoke-suites", "core", "board", "conversation", "terminal", "island", "workspace"]])
+                              ["just", "mac", "smoke-suites", "core", "board", "conversation", "terminal", "island", "workspace", "inbox"]])
 
     def test_dry_run_does_not_execute_and_failures_stop_the_run(self):
         commands = [["just", "mac", "test"], ["just", "mac", "smoke-all"]]

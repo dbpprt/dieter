@@ -253,7 +253,7 @@ smoke-suites +suites:
     set -euo pipefail
     for suite in "$@"; do
         case "$suite" in
-            core|board|conversation|machine|sidebar|terminal|island|workspace) ;;
+            core|board|conversation|machine|sidebar|terminal|island|workspace|inbox) ;;
             *) echo "Unknown Mac smoke suite: $suite" >&2; exit 1 ;;
         esac
     done
@@ -266,7 +266,7 @@ smoke-suites +suites:
         [[ "$status" -eq 1 ]] || { echo "Could not check for running DieterMac processes." >&2; exit 1; }
     fi
     just mac build
-    for suite in core board conversation machine sidebar terminal island workspace; do
+    for suite in core board conversation machine sidebar terminal island workspace inbox; do
         for requested in "$@"; do
             if [[ "$requested" == "$suite" ]]; then
                 just mac _smoke "$suite"
@@ -279,7 +279,7 @@ smoke-suites +suites:
 smoke-all: build
     #!/usr/bin/env bash
     set -euo pipefail
-    for suite in core board conversation machine sidebar terminal island workspace; do
+    for suite in core board conversation machine sidebar terminal island workspace inbox; do
         just mac _smoke "$suite"
     done
 

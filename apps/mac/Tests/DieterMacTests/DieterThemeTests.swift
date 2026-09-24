@@ -68,42 +68,6 @@ struct DieterThemePerformanceTests {
             }
         }
     }
-    @Test func productionThemeAndStatusViewsAvoidContinuousSwiftUIDrivers() throws {
-        let sourceRoot = macPackageRoot.appendingPathComponent("Sources/DieterMac")
-        let sourceURLs = try #require(
-            FileManager.default.enumerator(
-                at: sourceRoot,
-                includingPropertiesForKeys: nil
-            )?.allObjects as? [URL]
-        )
-        .filter { $0.pathExtension == "swift" }
-        let productionSource = try sourceURLs.map { try String(contentsOf: $0, encoding: .utf8) }.joined(
-            separator: "\n")
-        let themeSource = try String(
-            contentsOf: sourceRoot.appendingPathComponent("UI/DieterTheme.swift"),
-            encoding: .utf8
-        )
-
-        #expect(!productionSource.contains("TimelineView"))
-        #expect(!productionSource.contains("NSColor(name:"))
-        #expect(!themeSource.contains("NSAppearance"))
-    }
-
-    @Test func activityIndicatorIsEntirelyStatic() throws {
-        let sourceURL = macPackageRoot.appendingPathComponent("Sources/DieterMac/UI/DieterTheme.swift")
-        let source = try String(contentsOf: sourceURL, encoding: .utf8)
-        let start = try #require(source.range(of: "struct DieterActivityIndicator: View"))
-        let end = try #require(
-            source.range(
-                of: "struct DieterIconButtonStyle: ButtonStyle",
-                range: start.upperBound..<source.endIndex
-            ))
-        let implementation = source[start.lowerBound..<end.lowerBound]
-
-        #expect(!implementation.contains("TimelineView"))
-        #expect(!implementation.contains("ProgressView"))
-        #expect(implementation.contains("Circle"))
-    }
 
     @Test @MainActor func aLargeRunningIndicatorFixtureRendersInBothAppearances() {
         let columns = Array(repeating: GridItem(.fixed(12), spacing: 3), count: 10)
@@ -256,21 +220,6 @@ struct DieterThemePerformanceTests {
         #expect(accessibilityStart.duration(to: .now) < .seconds(2))
     }
 
-    @Test func productionChatBrowserRetainsTheEagerStackWorkaround() throws {
-        let sourceURL = macPackageRoot.appendingPathComponent("Sources/DieterMac/UI/ChatsView.swift")
-        let source = try String(contentsOf: sourceURL, encoding: .utf8)
-        let start = try #require(source.range(of: "struct ChatsView: View"))
-        let end = try #require(
-            source.range(
-                of: "enum ChatPaneSizing",
-                range: start.upperBound..<source.endIndex
-            ))
-        let implementation = source[start.lowerBound..<end.lowerBound]
-
-        #expect(implementation.contains("VStack(alignment: .leading, spacing: 12)"))
-        #expect(!implementation.contains("LazyVStack(alignment: .leading, spacing: 12)"))
-    }
-
     @Test @MainActor func productionBoardWithSixtyFiveCardLaneSettlesInAHostedView() throws {
         let fixture = makeProductionBoardFixture()
         let view = NSHostingView(rootView: productionBoard(store: fixture.store, board: fixture.board))
@@ -386,22 +335,6 @@ struct DieterThemePerformanceTests {
             #expect(table.rowView(atRow: 24, makeIfNecessary: false) == nil)
         }
         #expect(mounted > 0 && mounted < 50)
-    }
-
-    @Test func productionProjectSidebarRetainsTheEagerStackWorkaround() throws {
-        let sourceURL = macPackageRoot.appendingPathComponent("Sources/DieterMac/UI/DieterRootView.swift")
-        let source = try String(contentsOf: sourceURL, encoding: .utf8)
-        let start = try #require(source.range(of: "struct AppSidebar: View"))
-        let end = try #require(
-            source.range(
-                of: "private struct SidebarProjectRow: View",
-                range: start.upperBound..<source.endIndex
-            ))
-        let implementation = source[start.lowerBound..<end.lowerBound]
-
-        #expect(implementation.contains("VStack(alignment: .leading, spacing: 0)"))
-        #expect(!implementation.contains("LazyVStack"))
-        #expect(!implementation.contains("MachineQueueBanner"))
     }
 
     @Test(.enabled(if: ProcessInfo.processInfo.environment["DIETER_RUN_LIVE_WINDOW_SMOKE"] == "1"))

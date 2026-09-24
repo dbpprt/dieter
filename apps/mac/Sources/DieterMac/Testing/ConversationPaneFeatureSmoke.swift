@@ -573,7 +573,7 @@
             }
             guard mounted, let terminalID = tab.terminals.selectedTerminalID,
                 let view = descendants(window.contentView, as: RemoteTerminalView.self).first(where: {
-                    $0.visibleRect.width > 0
+                    $0.window === window && !$0.isHiddenOrHasHiddenAncestor && $0.visibleRect.width > 0
                 })
             else {
                 let views = descendants(window.contentView, as: RemoteTerminalView.self)
@@ -601,17 +601,34 @@
                 return
             }
             click(view, window: window)
+            let focused = await wait { window.firstResponder === view }
             let marker = "CONTENT_TERMINAL_VERIFIED"
-            await NativeUIAccessibility.type("printf '\\n\(marker)\\n'", in: window)
-            pressReturn(window)
-            let received = await wait(timeout: 15) {
-                (0..<view.terminal.rows).compactMap {
-                    view.terminal.getLine(row: $0)?.translateToString(trimRight: true)
+            let command = "printf '\\n\(marker)\\n'"
+            var pasted = false
+            var received = false
+            if focused {
+                await NativeUIAccessibility.type(command, in: window)
+                // Native paste dispatch is asynchronous. Observe the command in
+                // the actual terminal before submitting it, not a fixed delay.
+                pasted = await wait(timeout: 15) {
+                    (0..<view.terminal.rows).compactMap {
+                        view.terminal.getLine(row: $0)?.translateToString(trimRight: true)
+                    }.joined().contains(command)
                 }
-                .contains { $0.trimmingCharacters(in: .whitespaces) == marker }
+                if pasted {
+                    pressReturn(window)
+                    received = await wait(timeout: 15) {
+                        (0..<view.terminal.rows).compactMap {
+                            view.terminal.getLine(row: $0)?.translateToString(trimRight: true)
+                        }
+                        .contains { $0.trimmingCharacters(in: .whitespaces) == marker }
+                    }
+                }
             }
             results["content-terminal-input"] =
-                received ? "passed" : "failed: automatic terminal opened but native output=\(received)"
+                received
+                ? "passed"
+                : "failed: terminal focus=\(focused), command echoed=\(pasted), native output=\(received)"
             await captureStage(window, output, "terminal", "08c-content-terminal.png")
             let closed = NativeUIAccessibility.click("conversation.content.tab.\(tab.id.uuidString).close", in: window)
             _ = await wait { !model.tabs.contains(where: { $0.id == tab.id }) }

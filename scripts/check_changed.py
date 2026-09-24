@@ -10,7 +10,7 @@ import subprocess
 import sys
 
 
-MAC_SMOKE_SUITES = ("core", "board", "conversation", "machine", "sidebar", "terminal", "island", "workspace")
+MAC_SMOKE_SUITES = ("core", "board", "conversation", "machine", "sidebar", "terminal", "island", "workspace", "inbox")
 MAC_SOURCE_ROOT = "apps/mac/Sources/DieterMac/"
 CI_COMPONENTS = ("core", "macos", "ios", "android")
 
@@ -18,7 +18,7 @@ CI_COMPONENTS = ("core", "macos", "ios", "android")
 # app/store/navigation/theme code and unclassified paths always run every suite.
 # Keep entries in sync with the surfaces exercised by the native smoke runners.
 MAC_SMOKE_COMPONENTS = {
-    "Features/Conversation/": ("core", "board", "conversation", "workspace"),
+    "Features/Conversation/": ("core", "board", "conversation", "workspace", "inbox"),
     "Features/Changes/": ("workspace",),
     "Features/Files/": ("core", "workspace"),
     "Features/Terminals/": ("terminal",),
@@ -33,11 +33,15 @@ MAC_SMOKE_FILES = {
     "Testing/TerminalUISmokeRunner.swift": ("terminal",),
     "Testing/IslandUISmokeRunner.swift": ("island",),
     "Testing/WorkspaceUISmokeRunner.swift": ("workspace",),
+    "Testing/InboxUISmokeRunner.swift": ("inbox",),
+    "UI/InboxView.swift": ("inbox",),
+    "UI/InboxFeed.swift": ("inbox",),
+    "Model/InboxActivity.swift": ("inbox",),
     "UI/BoardView.swift": ("core", "board", "conversation", "workspace"),
     "UI/BoardLaneList.swift": ("core", "board"),
     "UI/BoardCardMergeDrop.swift": ("board",),
     "UI/BoardConversationOverlay.swift": ("core", "board", "conversation", "workspace"),
-    "UI/ChatsView.swift": ("core", "conversation", "sidebar"),
+    "UI/ChatsView.swift": ("core", "conversation", "sidebar", "inbox"),
     "UI/ConversationMarkdownView.swift": ("core", "board", "conversation"),
     "UI/SelectableMessageText.swift": ("core", "board", "conversation"),
     "UI/Attachments.swift": ("core", "board", "conversation"),

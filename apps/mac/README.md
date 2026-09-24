@@ -54,6 +54,10 @@ not replace the saved selection. Production remote origins require HTTPS.
 
 ## Product surfaces
 
+- Inbox combines active cards and chats across projects in a compact, resizable
+  feed with larger cards, List/Timeline modes, search, and project filters.
+  Selection keeps the existing conversation, composer, and workspace detail
+  pane alongside the feed. Timelines show recorded activity, not progress estimates.
 - Boards and standalone chats, durable queues, labels, archives, model selection,
   plans, reasoning, and lazy full tool output.
 - Conversation files, rich Markdown, code, PDFs, images, browser previews,
@@ -82,10 +86,10 @@ just mac test
 just mac smoke core
 ```
 
-`just mac smoke SUITE` supports `core`, `board`, `conversation`, `machine`,
+`just mac smoke SUITE` supports `core`, `board`, `conversation`, `inbox`, `machine`,
 `sidebar`, `terminal`, `island`, and `workspace`. `just mac smoke-suites board
-conversation` builds once and runs the requested suites serially;
-`just mac smoke-all` runs all eight.
+inbox conversation` builds once and runs the requested suites serially;
+`just mac smoke-all` runs all nine.
 
 The driver refuses any running Dieter app and owns its exact app/gateway PIDs.
 It uses a random loopback port, disposable credentials, unique state/preferences,
