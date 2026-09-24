@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/pem"
 	"errors"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -13,6 +14,7 @@ import (
 const (
 	linkDomain     = "board-daemon-link-v1"
 	unenrollDomain = "dieter-daemon-unenroll-v1"
+	recoverDomain  = "dieter-daemon-recover-v1"
 )
 
 func Message(gatewayURL, daemonID string, challenge []byte) []byte {
@@ -27,6 +29,14 @@ func SignUnenrollment(private ed25519.PrivateKey, gatewayURL, daemonID string, n
 	return ed25519.Sign(private, actionMessage(unenrollDomain, gatewayURL, daemonID, nonce))
 }
 
+func SignRecovery(private ed25519.PrivateKey, gatewayURL, revokedID, replacementID string, revokedGeneration, replacementGeneration uint64, nonce []byte) []byte {
+	return ed25519.Sign(private, recoveryMessage(gatewayURL, revokedID, replacementID, revokedGeneration, replacementGeneration, nonce))
+}
+
+func VerifyRecovery(certificatePEM []byte, gatewayURL, revokedID, replacementID string, revokedGeneration, replacementGeneration uint64, nonce, signature []byte) error {
+	return verifyCertificate(certificatePEM, recoveryMessage(gatewayURL, revokedID, replacementID, revokedGeneration, replacementGeneration, nonce), signature, true)
+}
+
 func VerifyCertificate(certificatePEM []byte, gatewayURL, daemonID string, challenge, signature []byte) error {
 	return verifyCertificate(certificatePEM, Message(gatewayURL, daemonID, challenge), signature, true)
 }
@@ -39,6 +49,11 @@ func VerifyUnenrollment(certificatePEM []byte, gatewayURL, daemonID string, nonc
 
 func actionMessage(domain, gatewayURL, daemonID string, nonce []byte) []byte {
 	return []byte(domain + "\n" + strings.TrimRight(gatewayURL, "/") + "\n" + daemonID + "\n" + base64.RawURLEncoding.EncodeToString(nonce))
+}
+
+func recoveryMessage(gatewayURL, revokedID, replacementID string, revokedGeneration, replacementGeneration uint64, nonce []byte) []byte {
+	return []byte(recoverDomain + "\n" + strings.TrimRight(gatewayURL, "/") + "\n" + revokedID + "\n" + replacementID + "\n" +
+		strconv.FormatUint(revokedGeneration, 10) + "\n" + strconv.FormatUint(replacementGeneration, 10) + "\n" + base64.RawURLEncoding.EncodeToString(nonce))
 }
 
 func verifyCertificate(certificatePEM, message, signature []byte, requireCurrent bool) error {

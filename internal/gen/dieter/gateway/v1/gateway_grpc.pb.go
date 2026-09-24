@@ -28,6 +28,8 @@ const (
 	GatewayService_UnenrollDaemon_FullMethodName                   = "/dieter.gateway.v1.GatewayService/UnenrollDaemon"
 	GatewayService_RenameDaemon_FullMethodName                     = "/dieter.gateway.v1.GatewayService/RenameDaemon"
 	GatewayService_RevokeDaemon_FullMethodName                     = "/dieter.gateway.v1.GatewayService/RevokeDaemon"
+	GatewayService_InspectDaemonRecovery_FullMethodName            = "/dieter.gateway.v1.GatewayService/InspectDaemonRecovery"
+	GatewayService_RecoverDaemon_FullMethodName                    = "/dieter.gateway.v1.GatewayService/RecoverDaemon"
 	GatewayService_ExchangeDaemonToken_FullMethodName              = "/dieter.gateway.v1.GatewayService/ExchangeDaemonToken"
 	GatewayService_ResolveDaemonRoute_FullMethodName               = "/dieter.gateway.v1.GatewayService/ResolveDaemonRoute"
 	GatewayService_GetRTCConfiguration_FullMethodName              = "/dieter.gateway.v1.GatewayService/GetRTCConfiguration"
@@ -55,6 +57,12 @@ type GatewayServiceClient interface {
 	UnenrollDaemon(ctx context.Context, in *UnenrollDaemonRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	RenameDaemon(ctx context.Context, in *RenameDaemonRequest, opts ...grpc.CallOption) (*Daemon, error)
 	RevokeDaemon(ctx context.Context, in *DaemonRef, opts ...grpc.CallOption) (*emptypb.Empty, error)
+	// Restore a revoked machine using its still-active replacement's identical
+	// private key. The replacement remains enrolled until the owner verifies the
+	// restored machine and explicitly revokes it.
+	// Read the current revocation generation before signing a one-event proof.
+	InspectDaemonRecovery(ctx context.Context, in *DaemonRecoveryRef, opts ...grpc.CallOption) (*DaemonRecoveryState, error)
+	RecoverDaemon(ctx context.Context, in *RecoverDaemonRequest, opts ...grpc.CallOption) (*DaemonCredential, error)
 	ExchangeDaemonToken(ctx context.Context, in *ExchangeDaemonTokenRequest, opts ...grpc.CallOption) (*DaemonAccessToken, error)
 	ResolveDaemonRoute(ctx context.Context, in *DaemonRef, opts ...grpc.CallOption) (*DaemonRoute, error)
 	// GetRTCConfiguration returns daemon-bound, short-lived ICE configuration.
@@ -159,6 +167,26 @@ func (c *gatewayServiceClient) RevokeDaemon(ctx context.Context, in *DaemonRef, 
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(emptypb.Empty)
 	err := c.cc.Invoke(ctx, GatewayService_RevokeDaemon_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *gatewayServiceClient) InspectDaemonRecovery(ctx context.Context, in *DaemonRecoveryRef, opts ...grpc.CallOption) (*DaemonRecoveryState, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DaemonRecoveryState)
+	err := c.cc.Invoke(ctx, GatewayService_InspectDaemonRecovery_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *gatewayServiceClient) RecoverDaemon(ctx context.Context, in *RecoverDaemonRequest, opts ...grpc.CallOption) (*DaemonCredential, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DaemonCredential)
+	err := c.cc.Invoke(ctx, GatewayService_RecoverDaemon_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -271,6 +299,12 @@ type GatewayServiceServer interface {
 	UnenrollDaemon(context.Context, *UnenrollDaemonRequest) (*emptypb.Empty, error)
 	RenameDaemon(context.Context, *RenameDaemonRequest) (*Daemon, error)
 	RevokeDaemon(context.Context, *DaemonRef) (*emptypb.Empty, error)
+	// Restore a revoked machine using its still-active replacement's identical
+	// private key. The replacement remains enrolled until the owner verifies the
+	// restored machine and explicitly revokes it.
+	// Read the current revocation generation before signing a one-event proof.
+	InspectDaemonRecovery(context.Context, *DaemonRecoveryRef) (*DaemonRecoveryState, error)
+	RecoverDaemon(context.Context, *RecoverDaemonRequest) (*DaemonCredential, error)
 	ExchangeDaemonToken(context.Context, *ExchangeDaemonTokenRequest) (*DaemonAccessToken, error)
 	ResolveDaemonRoute(context.Context, *DaemonRef) (*DaemonRoute, error)
 	// GetRTCConfiguration returns daemon-bound, short-lived ICE configuration.
@@ -315,6 +349,12 @@ func (UnimplementedGatewayServiceServer) RenameDaemon(context.Context, *RenameDa
 }
 func (UnimplementedGatewayServiceServer) RevokeDaemon(context.Context, *DaemonRef) (*emptypb.Empty, error) {
 	return nil, status.Error(codes.Unimplemented, "method RevokeDaemon not implemented")
+}
+func (UnimplementedGatewayServiceServer) InspectDaemonRecovery(context.Context, *DaemonRecoveryRef) (*DaemonRecoveryState, error) {
+	return nil, status.Error(codes.Unimplemented, "method InspectDaemonRecovery not implemented")
+}
+func (UnimplementedGatewayServiceServer) RecoverDaemon(context.Context, *RecoverDaemonRequest) (*DaemonCredential, error) {
+	return nil, status.Error(codes.Unimplemented, "method RecoverDaemon not implemented")
 }
 func (UnimplementedGatewayServiceServer) ExchangeDaemonToken(context.Context, *ExchangeDaemonTokenRequest) (*DaemonAccessToken, error) {
 	return nil, status.Error(codes.Unimplemented, "method ExchangeDaemonToken not implemented")
@@ -498,6 +538,42 @@ func _GatewayService_RevokeDaemon_Handler(srv interface{}, ctx context.Context, 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _GatewayService_InspectDaemonRecovery_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DaemonRecoveryRef)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(GatewayServiceServer).InspectDaemonRecovery(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: GatewayService_InspectDaemonRecovery_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(GatewayServiceServer).InspectDaemonRecovery(ctx, req.(*DaemonRecoveryRef))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _GatewayService_RecoverDaemon_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RecoverDaemonRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(GatewayServiceServer).RecoverDaemon(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: GatewayService_RecoverDaemon_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(GatewayServiceServer).RecoverDaemon(ctx, req.(*RecoverDaemonRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _GatewayService_ExchangeDaemonToken_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ExchangeDaemonTokenRequest)
 	if err := dec(in); err != nil {
@@ -669,6 +745,14 @@ var GatewayService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "RevokeDaemon",
 			Handler:    _GatewayService_RevokeDaemon_Handler,
+		},
+		{
+			MethodName: "InspectDaemonRecovery",
+			Handler:    _GatewayService_InspectDaemonRecovery_Handler,
+		},
+		{
+			MethodName: "RecoverDaemon",
+			Handler:    _GatewayService_RecoverDaemon_Handler,
 		},
 		{
 			MethodName: "ExchangeDaemonToken",

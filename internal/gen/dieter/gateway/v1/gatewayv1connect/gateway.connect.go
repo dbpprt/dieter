@@ -60,6 +60,12 @@ const (
 	// GatewayServiceRevokeDaemonProcedure is the fully-qualified name of the GatewayService's
 	// RevokeDaemon RPC.
 	GatewayServiceRevokeDaemonProcedure = "/dieter.gateway.v1.GatewayService/RevokeDaemon"
+	// GatewayServiceInspectDaemonRecoveryProcedure is the fully-qualified name of the GatewayService's
+	// InspectDaemonRecovery RPC.
+	GatewayServiceInspectDaemonRecoveryProcedure = "/dieter.gateway.v1.GatewayService/InspectDaemonRecovery"
+	// GatewayServiceRecoverDaemonProcedure is the fully-qualified name of the GatewayService's
+	// RecoverDaemon RPC.
+	GatewayServiceRecoverDaemonProcedure = "/dieter.gateway.v1.GatewayService/RecoverDaemon"
 	// GatewayServiceExchangeDaemonTokenProcedure is the fully-qualified name of the GatewayService's
 	// ExchangeDaemonToken RPC.
 	GatewayServiceExchangeDaemonTokenProcedure = "/dieter.gateway.v1.GatewayService/ExchangeDaemonToken"
@@ -99,6 +105,12 @@ type GatewayServiceClient interface {
 	UnenrollDaemon(context.Context, *connect.Request[v1.UnenrollDaemonRequest]) (*connect.Response[emptypb.Empty], error)
 	RenameDaemon(context.Context, *connect.Request[v1.RenameDaemonRequest]) (*connect.Response[v1.Daemon], error)
 	RevokeDaemon(context.Context, *connect.Request[v1.DaemonRef]) (*connect.Response[emptypb.Empty], error)
+	// Restore a revoked machine using its still-active replacement's identical
+	// private key. The replacement remains enrolled until the owner verifies the
+	// restored machine and explicitly revokes it.
+	// Read the current revocation generation before signing a one-event proof.
+	InspectDaemonRecovery(context.Context, *connect.Request[v1.DaemonRecoveryRef]) (*connect.Response[v1.DaemonRecoveryState], error)
+	RecoverDaemon(context.Context, *connect.Request[v1.RecoverDaemonRequest]) (*connect.Response[v1.DaemonCredential], error)
 	ExchangeDaemonToken(context.Context, *connect.Request[v1.ExchangeDaemonTokenRequest]) (*connect.Response[v1.DaemonAccessToken], error)
 	ResolveDaemonRoute(context.Context, *connect.Request[v1.DaemonRef]) (*connect.Response[v1.DaemonRoute], error)
 	// GetRTCConfiguration returns daemon-bound, short-lived ICE configuration.
@@ -171,6 +183,18 @@ func NewGatewayServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(gatewayServiceMethods.ByName("RevokeDaemon")),
 			connect.WithClientOptions(opts...),
 		),
+		inspectDaemonRecovery: connect.NewClient[v1.DaemonRecoveryRef, v1.DaemonRecoveryState](
+			httpClient,
+			baseURL+GatewayServiceInspectDaemonRecoveryProcedure,
+			connect.WithSchema(gatewayServiceMethods.ByName("InspectDaemonRecovery")),
+			connect.WithClientOptions(opts...),
+		),
+		recoverDaemon: connect.NewClient[v1.RecoverDaemonRequest, v1.DaemonCredential](
+			httpClient,
+			baseURL+GatewayServiceRecoverDaemonProcedure,
+			connect.WithSchema(gatewayServiceMethods.ByName("RecoverDaemon")),
+			connect.WithClientOptions(opts...),
+		),
 		exchangeDaemonToken: connect.NewClient[v1.ExchangeDaemonTokenRequest, v1.DaemonAccessToken](
 			httpClient,
 			baseURL+GatewayServiceExchangeDaemonTokenProcedure,
@@ -232,6 +256,8 @@ type gatewayServiceClient struct {
 	unenrollDaemon                   *connect.Client[v1.UnenrollDaemonRequest, emptypb.Empty]
 	renameDaemon                     *connect.Client[v1.RenameDaemonRequest, v1.Daemon]
 	revokeDaemon                     *connect.Client[v1.DaemonRef, emptypb.Empty]
+	inspectDaemonRecovery            *connect.Client[v1.DaemonRecoveryRef, v1.DaemonRecoveryState]
+	recoverDaemon                    *connect.Client[v1.RecoverDaemonRequest, v1.DaemonCredential]
 	exchangeDaemonToken              *connect.Client[v1.ExchangeDaemonTokenRequest, v1.DaemonAccessToken]
 	resolveDaemonRoute               *connect.Client[v1.DaemonRef, v1.DaemonRoute]
 	getRTCConfiguration              *connect.Client[v1.DaemonRef, v1.RTCConfiguration]
@@ -280,6 +306,16 @@ func (c *gatewayServiceClient) RenameDaemon(ctx context.Context, req *connect.Re
 // RevokeDaemon calls dieter.gateway.v1.GatewayService.RevokeDaemon.
 func (c *gatewayServiceClient) RevokeDaemon(ctx context.Context, req *connect.Request[v1.DaemonRef]) (*connect.Response[emptypb.Empty], error) {
 	return c.revokeDaemon.CallUnary(ctx, req)
+}
+
+// InspectDaemonRecovery calls dieter.gateway.v1.GatewayService.InspectDaemonRecovery.
+func (c *gatewayServiceClient) InspectDaemonRecovery(ctx context.Context, req *connect.Request[v1.DaemonRecoveryRef]) (*connect.Response[v1.DaemonRecoveryState], error) {
+	return c.inspectDaemonRecovery.CallUnary(ctx, req)
+}
+
+// RecoverDaemon calls dieter.gateway.v1.GatewayService.RecoverDaemon.
+func (c *gatewayServiceClient) RecoverDaemon(ctx context.Context, req *connect.Request[v1.RecoverDaemonRequest]) (*connect.Response[v1.DaemonCredential], error) {
+	return c.recoverDaemon.CallUnary(ctx, req)
 }
 
 // ExchangeDaemonToken calls dieter.gateway.v1.GatewayService.ExchangeDaemonToken.
@@ -333,6 +369,12 @@ type GatewayServiceHandler interface {
 	UnenrollDaemon(context.Context, *connect.Request[v1.UnenrollDaemonRequest]) (*connect.Response[emptypb.Empty], error)
 	RenameDaemon(context.Context, *connect.Request[v1.RenameDaemonRequest]) (*connect.Response[v1.Daemon], error)
 	RevokeDaemon(context.Context, *connect.Request[v1.DaemonRef]) (*connect.Response[emptypb.Empty], error)
+	// Restore a revoked machine using its still-active replacement's identical
+	// private key. The replacement remains enrolled until the owner verifies the
+	// restored machine and explicitly revokes it.
+	// Read the current revocation generation before signing a one-event proof.
+	InspectDaemonRecovery(context.Context, *connect.Request[v1.DaemonRecoveryRef]) (*connect.Response[v1.DaemonRecoveryState], error)
+	RecoverDaemon(context.Context, *connect.Request[v1.RecoverDaemonRequest]) (*connect.Response[v1.DaemonCredential], error)
 	ExchangeDaemonToken(context.Context, *connect.Request[v1.ExchangeDaemonTokenRequest]) (*connect.Response[v1.DaemonAccessToken], error)
 	ResolveDaemonRoute(context.Context, *connect.Request[v1.DaemonRef]) (*connect.Response[v1.DaemonRoute], error)
 	// GetRTCConfiguration returns daemon-bound, short-lived ICE configuration.
@@ -401,6 +443,18 @@ func NewGatewayServiceHandler(svc GatewayServiceHandler, opts ...connect.Handler
 		connect.WithSchema(gatewayServiceMethods.ByName("RevokeDaemon")),
 		connect.WithHandlerOptions(opts...),
 	)
+	gatewayServiceInspectDaemonRecoveryHandler := connect.NewUnaryHandler(
+		GatewayServiceInspectDaemonRecoveryProcedure,
+		svc.InspectDaemonRecovery,
+		connect.WithSchema(gatewayServiceMethods.ByName("InspectDaemonRecovery")),
+		connect.WithHandlerOptions(opts...),
+	)
+	gatewayServiceRecoverDaemonHandler := connect.NewUnaryHandler(
+		GatewayServiceRecoverDaemonProcedure,
+		svc.RecoverDaemon,
+		connect.WithSchema(gatewayServiceMethods.ByName("RecoverDaemon")),
+		connect.WithHandlerOptions(opts...),
+	)
 	gatewayServiceExchangeDaemonTokenHandler := connect.NewUnaryHandler(
 		GatewayServiceExchangeDaemonTokenProcedure,
 		svc.ExchangeDaemonToken,
@@ -467,6 +521,10 @@ func NewGatewayServiceHandler(svc GatewayServiceHandler, opts ...connect.Handler
 			gatewayServiceRenameDaemonHandler.ServeHTTP(w, r)
 		case GatewayServiceRevokeDaemonProcedure:
 			gatewayServiceRevokeDaemonHandler.ServeHTTP(w, r)
+		case GatewayServiceInspectDaemonRecoveryProcedure:
+			gatewayServiceInspectDaemonRecoveryHandler.ServeHTTP(w, r)
+		case GatewayServiceRecoverDaemonProcedure:
+			gatewayServiceRecoverDaemonHandler.ServeHTTP(w, r)
 		case GatewayServiceExchangeDaemonTokenProcedure:
 			gatewayServiceExchangeDaemonTokenHandler.ServeHTTP(w, r)
 		case GatewayServiceResolveDaemonRouteProcedure:
@@ -522,6 +580,14 @@ func (UnimplementedGatewayServiceHandler) RenameDaemon(context.Context, *connect
 
 func (UnimplementedGatewayServiceHandler) RevokeDaemon(context.Context, *connect.Request[v1.DaemonRef]) (*connect.Response[emptypb.Empty], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.gateway.v1.GatewayService.RevokeDaemon is not implemented"))
+}
+
+func (UnimplementedGatewayServiceHandler) InspectDaemonRecovery(context.Context, *connect.Request[v1.DaemonRecoveryRef]) (*connect.Response[v1.DaemonRecoveryState], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.gateway.v1.GatewayService.InspectDaemonRecovery is not implemented"))
+}
+
+func (UnimplementedGatewayServiceHandler) RecoverDaemon(context.Context, *connect.Request[v1.RecoverDaemonRequest]) (*connect.Response[v1.DaemonCredential], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.gateway.v1.GatewayService.RecoverDaemon is not implemented"))
 }
 
 func (UnimplementedGatewayServiceHandler) ExchangeDaemonToken(context.Context, *connect.Request[v1.ExchangeDaemonTokenRequest]) (*connect.Response[v1.DaemonAccessToken], error) {

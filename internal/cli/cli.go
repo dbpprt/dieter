@@ -1,8 +1,13 @@
 package cli
 
 import (
+	"bytes"
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
+	"crypto/x509"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"flag"
 	"fmt"
@@ -28,6 +33,7 @@ import (
 	"github.com/dbpprt/dieter/internal/envfile"
 	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
 	"github.com/dbpprt/dieter/internal/harness"
+	"github.com/dbpprt/dieter/internal/linkauth"
 	"github.com/dbpprt/dieter/internal/machine"
 	"github.com/dbpprt/dieter/internal/model"
 	"github.com/dbpprt/dieter/internal/providerquota"
@@ -202,7 +208,7 @@ Commands:
   storage      Print the target daemon's central storage path
   doctor       Check local Linux/macOS runtime and service prerequisites
   setup        Authorize, enroll, and install this local daemon service
-  daemon       Start, enroll, inspect, or manage this local daemon service
+  daemon       Start, enroll, recover, inspect, or manage this local daemon service
   serve        Alias for "dieter daemon start"
   version      Print the version
 
@@ -352,6 +358,7 @@ Actions:
   start        Run the local data plane and persistent gateway tunnel
   service      Install and manage the platform daemon service
   enroll       Enroll this machine with the Dieter gateway
+  recover      Restore a revoked local daemon ID with this replacement key
   unenroll     Revoke this machine and remove its local gateway credential
   status       Show service, local API, enrollment, and gateway health
   logs         Show or follow the daemon service log
@@ -366,6 +373,8 @@ Actions:
 		return c.daemonService(args[1:])
 	case "enroll":
 		return c.daemonEnroll(args[1:])
+	case "recover":
+		return c.daemonRecover(args[1:])
 	case "unenroll":
 		return c.daemonUnenroll(args[1:])
 	case "status":
@@ -711,6 +720,116 @@ Gateway URLs require HTTPS; HTTP is allowed only on literal loopback addresses.
 		case <-ticker.C:
 		}
 	}
+}
+
+func (c *CLI) daemonRecover(args []string) error {
+	const usage = `Usage: dieter daemon recover --old-id ID --confirm RECOVER
+
+Restore a revoked daemon ID using this enrolled replacement's matching key.
+This changes the saved local credential only after the gateway accepts and the
+returned certificate is verified. Restart the daemon service manually afterward;
+verify the restored daemon before revoking the replacement ID.
+`
+	set := flags("daemon recover")
+	oldID := set.String("old-id", "", "revoked daemon ID to restore")
+	confirm := set.String("confirm", "", "must be RECOVER")
+	help, err := parse(set, args, usage, c.Out)
+	if help || err != nil {
+		return err
+	}
+	if c.Machine != "" {
+		return errors.New("daemon recover is local-only; omit --machine")
+	}
+	if set.NArg() != 0 {
+		return fmt.Errorf("daemon recover does not accept positional arguments\n\n%s", usage)
+	}
+	if strings.TrimSpace(*oldID) == "" {
+		return errors.New("daemon recover requires --old-id ID")
+	}
+	if *confirm != "RECOVER" {
+		return errors.New("daemon recover requires --confirm RECOVER")
+	}
+	identity, _, err := c.gatewayIdentity()
+	if err != nil {
+		return err
+	}
+	replacementID := identity.ID
+	if *oldID == replacementID {
+		return errors.New("--old-id must differ from the current replacement daemon ID")
+	}
+	ctx, cancel := c.commandContext()
+	defer cancel()
+	gateway, err := c.dialGateway(ctx)
+	if err != nil {
+		return fmt.Errorf("connect to Dieter gateway for recovery: %w", err)
+	}
+	state, err := gateway.client.InspectDaemonRecovery(ctx, &gatewayv1.DaemonRecoveryRef{
+		RevokedDaemonId: *oldID, ReplacementDaemonId: replacementID,
+	})
+	if err != nil {
+		return fmt.Errorf("inspect daemon %s recovery at gateway: %w", *oldID, err)
+	}
+	if state.GetRevokedGeneration() < 2 || state.GetReplacementGeneration() != identity.Generation {
+		return errors.New("gateway recovery generations do not match this revoked ID and replacement credential")
+	}
+	nonce := make([]byte, 32)
+	if _, err := rand.Read(nonce); err != nil {
+		return fmt.Errorf("create daemon recovery nonce: %w", err)
+	}
+	credential, err := gateway.client.RecoverDaemon(ctx, &gatewayv1.RecoverDaemonRequest{
+		RevokedDaemonId: *oldID, ReplacementDaemonId: replacementID, Nonce: nonce,
+		RevokedGeneration: state.GetRevokedGeneration(), ReplacementGeneration: state.GetReplacementGeneration(),
+		Signature: linkauth.SignRecovery(identity.PrivateKey, identity.Issuer(), *oldID, replacementID, state.GetRevokedGeneration(), state.GetReplacementGeneration(), nonce),
+	})
+	if err != nil {
+		return fmt.Errorf("recover daemon %s at gateway (local credential unchanged; retry is safe): %w", *oldID, err)
+	}
+	if err := validateRecoveredCredential(identity, *oldID, state.GetRevokedGeneration(), credential); err != nil {
+		return fmt.Errorf("gateway returned invalid recovered credential (local credential unchanged): %w", err)
+	}
+	if err := identity.SaveCredential(credential.GetDaemonId(), credential.GetDaemonName(), credential.GetCertificatePem(), credential.GetDaemonCaPem(), credential.GetGatewaySigningPublicKey(), credential.GetExpiresAt(), credential.GetGeneration()); err != nil {
+		return fmt.Errorf("save recovered daemon credential: %w", err)
+	}
+	fmt.Fprintf(c.Out, "Recovered %s from replacement %s. Restart the daemon service manually, verify %s is connected and working, then use `dieter machine revoke %s` only after that verification. The replacement is still active until revoked.\n", *oldID, replacementID, *oldID, replacementID)
+	return nil
+}
+
+func validateRecoveredCredential(identity *dieterdaemon.Identity, oldID string, expectedGeneration uint64, credential *gatewayv1.DaemonCredential) error {
+	if credential == nil || credential.GetDaemonId() != oldID || expectedGeneration < 2 || credential.GetGeneration() != expectedGeneration {
+		return errors.New("daemon ID or generation does not match the revoked identity")
+	}
+	if credential.GetGatewayIssuer() != identity.Issuer() {
+		return errors.New("gateway issuer does not match this enrollment")
+	}
+	if !bytes.Equal(credential.GetDaemonCaPem(), identity.DaemonCAPEM) ||
+		!bytes.Equal(credential.GetGatewaySigningPublicKey(), identity.GatewaySigningPublicKey) {
+		return errors.New("gateway trust anchors do not match this enrollment")
+	}
+	block, rest := pem.Decode(credential.GetCertificatePem())
+	if block == nil || block.Type != "CERTIFICATE" || len(rest) != 0 {
+		return errors.New("recovered daemon certificate is invalid")
+	}
+	certificate, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		return fmt.Errorf("parse recovered daemon certificate: %w", err)
+	}
+	public, ok := certificate.PublicKey.(ed25519.PublicKey)
+	if !ok || !public.Equal(identity.PublicKey) || certificate.Subject.CommonName != oldID ||
+		len(certificate.URIs) != 1 || certificate.URIs[0].String() != "spiffe://board/daemon/"+oldID {
+		return errors.New("recovered daemon certificate does not match the old ID and local key")
+	}
+	roots := x509.NewCertPool()
+	if !roots.AppendCertsFromPEM(identity.DaemonCAPEM) {
+		return errors.New("saved gateway daemon CA is invalid")
+	}
+	if _, err := certificate.Verify(x509.VerifyOptions{Roots: roots, KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth}}); err != nil {
+		return fmt.Errorf("recovered daemon certificate is not valid under gateway CA: %w", err)
+	}
+	expires, err := time.Parse(time.RFC3339Nano, credential.GetExpiresAt())
+	if err != nil || !expires.Equal(certificate.NotAfter) || !expires.After(time.Now()) {
+		return errors.New("recovered daemon certificate expiry is invalid")
+	}
+	return nil
 }
 
 func (c *CLI) daemonUnenroll(args []string) error {

@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"bytes"
 	"context"
 	"crypto/ed25519"
 	"crypto/hmac"
@@ -376,6 +377,96 @@ func (s *Service) RenameDaemon(ctx context.Context, request *gatewayv1.RenameDae
 	record, _ := s.store.Daemon(request.GetDaemonId())
 	s.hub.signalChanged()
 	return s.protoDaemon(record), nil
+}
+
+// InspectDaemonRecovery returns the current event for an eligible original
+// identity and its active same-key replacement, including after a successful
+// recovery so a retry can reuse the same proof.
+func (s *Service) InspectDaemonRecovery(ctx context.Context, request *gatewayv1.DaemonRecoveryRef) (*gatewayv1.DaemonRecoveryState, error) {
+	old, replacement, err := s.recoveryDaemons(ctx, request.GetRevokedDaemonId(), request.GetReplacementDaemonId())
+	if err != nil {
+		return nil, err
+	}
+	return &gatewayv1.DaemonRecoveryState{RevokedGeneration: old.Generation, ReplacementGeneration: replacement.Generation}, nil
+}
+
+// RecoverDaemon restores an owner's revoked machine only when an active
+// replacement proves possession of the same enrolled Ed25519 key.
+func (s *Service) RecoverDaemon(ctx context.Context, request *gatewayv1.RecoverDaemonRequest) (*gatewayv1.DaemonCredential, error) {
+	old, replacement, err := s.recoveryDaemons(ctx, request.GetRevokedDaemonId(), request.GetReplacementDaemonId())
+	if err != nil {
+		return nil, err
+	}
+	if old.Generation != request.GetRevokedGeneration() || replacement.Generation != request.GetReplacementGeneration() {
+		return nil, status.Error(codes.FailedPrecondition, "daemon recovery generations changed")
+	}
+	if len(request.GetNonce()) != 32 || len(request.GetSignature()) != ed25519.SignatureSize {
+		return nil, status.Error(codes.Unauthenticated, "daemon recovery proof is invalid")
+	}
+	oldID, replacementID := old.ID, replacement.ID
+	if err := linkauth.VerifyRecovery(replacement.Certificate, s.config.IdentityOrigin(), oldID, replacementID, old.Generation, replacement.Generation, request.GetNonce(), request.GetSignature()); err != nil {
+		return nil, status.Error(codes.Unauthenticated, "daemon recovery proof is invalid")
+	}
+	principal, _ := PrincipalFromContext(ctx)
+	recovered, changed, err := s.store.RecoverDaemon(old, replacement, principal.GitHubID)
+	if err != nil {
+		return nil, status.Error(codes.Aborted, "daemon recovery conditions changed")
+	}
+	if changed {
+		s.hub.signalChanged()
+	}
+	s.auth.log.Info("daemon recovery", "revoked_daemon_id", oldID, "replacement_daemon_id", replacementID, "github_id", principal.GitHubID, "restored", changed)
+	return s.credential(recovered), nil
+}
+
+func (s *Service) recoveryDaemons(ctx context.Context, oldID, replacementID string) (DaemonRecord, DaemonRecord, error) {
+	var empty DaemonRecord
+	principal, ok := PrincipalFromContext(ctx)
+	if !ok || !s.config.AllowsGitHubUser(principal.GitHubID) {
+		return empty, empty, status.Error(codes.Unauthenticated, "authentication required")
+	}
+	if oldID == "" || replacementID == "" || oldID == replacementID {
+		return empty, empty, status.Error(codes.InvalidArgument, "two distinct daemon IDs are required")
+	}
+	old, err := s.store.Daemon(oldID)
+	if err != nil || old.GitHubID != principal.GitHubID {
+		return empty, empty, status.Error(codes.NotFound, "daemon not found")
+	}
+	replacement, err := s.store.Daemon(replacementID)
+	if err != nil || replacement.GitHubID != principal.GitHubID {
+		return empty, empty, status.Error(codes.NotFound, "daemon not found")
+	}
+	if old.Generation < 2 || replacement.Revoked || len(old.PublicKey) == 0 || !bytes.Equal(old.PublicKey, replacement.PublicKey) {
+		return empty, empty, status.Error(codes.FailedPrecondition, "daemon recovery conditions are not met")
+	}
+	if !s.validRecoveryCertificate(old) || !s.validRecoveryCertificate(replacement) {
+		return empty, empty, status.Error(codes.FailedPrecondition, "daemon recovery certificate is invalid")
+	}
+	return old, replacement, nil
+}
+
+func (s *Service) validRecoveryCertificate(record DaemonRecord) bool {
+	key, err := x509.ParsePKIXPublicKey(record.PublicKey)
+	if err != nil {
+		return false
+	}
+	public, ok := key.(ed25519.PublicKey)
+	if !ok {
+		return false
+	}
+	block, rest := pem.Decode(record.Certificate)
+	if block == nil || block.Type != "CERTIFICATE" || len(rest) != 0 {
+		return false
+	}
+	certificate, err := x509.ParseCertificate(block.Bytes)
+	if err != nil || !public.Equal(certificate.PublicKey) ||
+		len(certificate.URIs) != 1 || certificate.URIs[0].String() != "spiffe://board/daemon/"+record.ID {
+		return false
+	}
+	roots := x509.NewCertPool()
+	roots.AddCert(s.keys.DaemonCA)
+	_, err = certificate.Verify(x509.VerifyOptions{Roots: roots, KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth}})
+	return err == nil
 }
 
 func (s *Service) RevokeDaemon(ctx context.Context, request *gatewayv1.DaemonRef) (*emptypb.Empty, error) {

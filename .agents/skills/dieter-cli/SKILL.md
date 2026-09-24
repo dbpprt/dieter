@@ -76,6 +76,26 @@ Use `dieter machine gateway` for the running gateway build identity and
 optional Apple/NVIDIA/AMD GPU telemetry. Optional GPU fields are omitted when a
 driver cannot provide them; zero remains a real measurement.
 
+Accidental re-enrollment does not move conversation ownership. If a revoked
+original machine ID and its active replacement share the *same* Ed25519 key,
+the original account owner can recover it with an updated gateway and CLI.
+First preserve `DIETER_HOME`, confirm the original transcripts remain on the
+owner host, and check the two gateway records and key identity. Then run on
+the affected host (never with global `--machine`):
+
+```sh
+dieter daemon recover --old-id ORIGINAL_ID --confirm RECOVER
+dieter daemon service restart
+```
+
+Recovery authenticates the replacement, proves possession of its key, and
+restores the original ID without automatically revoking the replacement.
+Verify `dieter daemon status`, access an original chat, and only then use
+`dieter machine revoke REPLACEMENT_ID` from another enrolled machine. A lost
+response before the local credential is saved can be retried; do not guess
+whether the server committed or edit `identity.json` or gateway SQLite.
+Different keys or accounts require a separate audited recovery process.
+
 `dieter harness list` returns the selected machine's catalog. OMP discovery uses
 the same Dieter-pinned OMP build as new turns, not a separately installed global
 `omp`, and exposes only GPT-6 Luna, Sol, Astra, and the Tailscale GLM route. The

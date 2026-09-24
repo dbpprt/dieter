@@ -125,6 +125,32 @@ public enum Dieter_Gateway_V1_GatewayService: Sendable {
                 type: .unary
             )
         }
+        /// Namespace for "InspectDaemonRecovery" metadata.
+        public enum InspectDaemonRecovery: Sendable {
+            /// Request type for "InspectDaemonRecovery".
+            public typealias Input = Dieter_Gateway_V1_DaemonRecoveryRef
+            /// Response type for "InspectDaemonRecovery".
+            public typealias Output = Dieter_Gateway_V1_DaemonRecoveryState
+            /// Descriptor for "InspectDaemonRecovery".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.gateway.v1.GatewayService"),
+                method: "InspectDaemonRecovery",
+                type: .unary
+            )
+        }
+        /// Namespace for "RecoverDaemon" metadata.
+        public enum RecoverDaemon: Sendable {
+            /// Request type for "RecoverDaemon".
+            public typealias Input = Dieter_Gateway_V1_RecoverDaemonRequest
+            /// Response type for "RecoverDaemon".
+            public typealias Output = Dieter_Gateway_V1_DaemonCredential
+            /// Descriptor for "RecoverDaemon".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.gateway.v1.GatewayService"),
+                method: "RecoverDaemon",
+                type: .unary
+            )
+        }
         /// Namespace for "ExchangeDaemonToken" metadata.
         public enum ExchangeDaemonToken: Sendable {
             /// Request type for "ExchangeDaemonToken".
@@ -239,6 +265,8 @@ public enum Dieter_Gateway_V1_GatewayService: Sendable {
             UnenrollDaemon.descriptor,
             RenameDaemon.descriptor,
             RevokeDaemon.descriptor,
+            InspectDaemonRecovery.descriptor,
+            RecoverDaemon.descriptor,
             ExchangeDaemonToken.descriptor,
             ResolveDaemonRoute.descriptor,
             GetRTCConfiguration.descriptor,
@@ -423,6 +451,51 @@ extension Dieter_Gateway_V1_GatewayService {
             deserializer: some GRPCCore.MessageDeserializer<SwiftProtobuf.Google_Protobuf_Empty>,
             options: GRPCCore.CallOptions,
             onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<SwiftProtobuf.Google_Protobuf_Empty>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "InspectDaemonRecovery" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Restore a revoked machine using its still-active replacement's identical
+        /// > private key. The replacement remains enrolled until the owner verifies the
+        /// > restored machine and explicitly revokes it.
+        /// > Read the current revocation generation before signing a one-event proof.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_Gateway_V1_DaemonRecoveryRef` message.
+        ///   - serializer: A serializer for `Dieter_Gateway_V1_DaemonRecoveryRef` messages.
+        ///   - deserializer: A deserializer for `Dieter_Gateway_V1_DaemonRecoveryState` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func inspectDaemonRecovery<Result>(
+            request: GRPCCore.ClientRequest<Dieter_Gateway_V1_DaemonRecoveryRef>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_Gateway_V1_DaemonRecoveryRef>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_Gateway_V1_DaemonRecoveryState>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_Gateway_V1_DaemonRecoveryState>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "RecoverDaemon" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_Gateway_V1_RecoverDaemonRequest` message.
+        ///   - serializer: A serializer for `Dieter_Gateway_V1_RecoverDaemonRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_Gateway_V1_DaemonCredential` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func recoverDaemon<Result>(
+            request: GRPCCore.ClientRequest<Dieter_Gateway_V1_RecoverDaemonRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_Gateway_V1_RecoverDaemonRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_Gateway_V1_DaemonCredential>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_Gateway_V1_DaemonCredential>) async throws -> Result
         ) async throws -> Result where Result: Sendable
 
         /// Call the "ExchangeDaemonToken" method.
@@ -838,6 +911,73 @@ extension Dieter_Gateway_V1_GatewayService {
             try await self.client.unary(
                 request: request,
                 descriptor: Dieter_Gateway_V1_GatewayService.Method.RevokeDaemon.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "InspectDaemonRecovery" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Restore a revoked machine using its still-active replacement's identical
+        /// > private key. The replacement remains enrolled until the owner verifies the
+        /// > restored machine and explicitly revokes it.
+        /// > Read the current revocation generation before signing a one-event proof.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_Gateway_V1_DaemonRecoveryRef` message.
+        ///   - serializer: A serializer for `Dieter_Gateway_V1_DaemonRecoveryRef` messages.
+        ///   - deserializer: A deserializer for `Dieter_Gateway_V1_DaemonRecoveryState` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func inspectDaemonRecovery<Result>(
+            request: GRPCCore.ClientRequest<Dieter_Gateway_V1_DaemonRecoveryRef>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_Gateway_V1_DaemonRecoveryRef>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_Gateway_V1_DaemonRecoveryState>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_Gateway_V1_DaemonRecoveryState>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Dieter_Gateway_V1_GatewayService.Method.InspectDaemonRecovery.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "RecoverDaemon" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_Gateway_V1_RecoverDaemonRequest` message.
+        ///   - serializer: A serializer for `Dieter_Gateway_V1_RecoverDaemonRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_Gateway_V1_DaemonCredential` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func recoverDaemon<Result>(
+            request: GRPCCore.ClientRequest<Dieter_Gateway_V1_RecoverDaemonRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_Gateway_V1_RecoverDaemonRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_Gateway_V1_DaemonCredential>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_Gateway_V1_DaemonCredential>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Dieter_Gateway_V1_GatewayService.Method.RecoverDaemon.descriptor,
                 serializer: serializer,
                 deserializer: deserializer,
                 options: options,
@@ -1292,6 +1432,63 @@ extension Dieter_Gateway_V1_GatewayService.ClientProtocol {
         )
     }
 
+    /// Call the "InspectDaemonRecovery" method.
+    ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > Restore a revoked machine using its still-active replacement's identical
+    /// > private key. The replacement remains enrolled until the owner verifies the
+    /// > restored machine and explicitly revokes it.
+    /// > Read the current revocation generation before signing a one-event proof.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Dieter_Gateway_V1_DaemonRecoveryRef` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func inspectDaemonRecovery<Result>(
+        request: GRPCCore.ClientRequest<Dieter_Gateway_V1_DaemonRecoveryRef>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_Gateway_V1_DaemonRecoveryState>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.inspectDaemonRecovery(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_Gateway_V1_DaemonRecoveryRef>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_Gateway_V1_DaemonRecoveryState>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "RecoverDaemon" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Dieter_Gateway_V1_RecoverDaemonRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func recoverDaemon<Result>(
+        request: GRPCCore.ClientRequest<Dieter_Gateway_V1_RecoverDaemonRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_Gateway_V1_DaemonCredential>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.recoverDaemon(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_Gateway_V1_RecoverDaemonRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_Gateway_V1_DaemonCredential>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
     /// Call the "ExchangeDaemonToken" method.
     ///
     /// - Parameters:
@@ -1724,6 +1921,71 @@ extension Dieter_Gateway_V1_GatewayService.ClientProtocol {
             metadata: metadata
         )
         return try await self.revokeDaemon(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "InspectDaemonRecovery" method.
+    ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > Restore a revoked machine using its still-active replacement's identical
+    /// > private key. The replacement remains enrolled until the owner verifies the
+    /// > restored machine and explicitly revokes it.
+    /// > Read the current revocation generation before signing a one-event proof.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func inspectDaemonRecovery<Result>(
+        _ message: Dieter_Gateway_V1_DaemonRecoveryRef,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_Gateway_V1_DaemonRecoveryState>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Dieter_Gateway_V1_DaemonRecoveryRef>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.inspectDaemonRecovery(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "RecoverDaemon" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func recoverDaemon<Result>(
+        _ message: Dieter_Gateway_V1_RecoverDaemonRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_Gateway_V1_DaemonCredential>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Dieter_Gateway_V1_RecoverDaemonRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.recoverDaemon(
             request: request,
             options: options,
             onResponse: handleResponse

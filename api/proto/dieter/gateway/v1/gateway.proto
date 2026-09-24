@@ -22,6 +22,12 @@ service GatewayService {
   rpc UnenrollDaemon(UnenrollDaemonRequest) returns (google.protobuf.Empty);
   rpc RenameDaemon(RenameDaemonRequest) returns (Daemon);
   rpc RevokeDaemon(DaemonRef) returns (google.protobuf.Empty);
+  // Restore a revoked machine using its still-active replacement's identical
+  // private key. The replacement remains enrolled until the owner verifies the
+  // restored machine and explicitly revokes it.
+  // Read the current revocation generation before signing a one-event proof.
+  rpc InspectDaemonRecovery(DaemonRecoveryRef) returns (DaemonRecoveryState);
+  rpc RecoverDaemon(RecoverDaemonRequest) returns (DaemonCredential);
   rpc ExchangeDaemonToken(ExchangeDaemonTokenRequest) returns (DaemonAccessToken);
   rpc ResolveDaemonRoute(DaemonRef) returns (DaemonRoute);
   // GetRTCConfiguration returns daemon-bound, short-lived ICE configuration.
@@ -121,6 +127,25 @@ message UnenrollDaemonRequest {
   string daemon_id = 1;
   bytes nonce = 2;
   bytes signature = 3;
+}
+
+message DaemonRecoveryRef {
+  string revoked_daemon_id = 1;
+  string replacement_daemon_id = 2;
+}
+
+message DaemonRecoveryState {
+  uint64 revoked_generation = 1;
+  uint64 replacement_generation = 2;
+}
+
+message RecoverDaemonRequest {
+  string revoked_daemon_id = 1;
+  string replacement_daemon_id = 2;
+  bytes nonce = 3;
+  bytes signature = 4;
+  uint64 revoked_generation = 5;
+  uint64 replacement_generation = 6;
 }
 
 message DaemonCredential {

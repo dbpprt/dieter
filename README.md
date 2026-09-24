@@ -77,6 +77,15 @@ The standard gateway is `https://gateway.getdieter.com`, with STUN/TURN at
 retain their identity when the endpoint moves; see the
 [gateway migration guide](https://getdieter.com/docs/gateway/#moving-a-gateway-endpoint).
 
+If a machine was accidentally re-enrolled and its earlier conversations still
+belong to its revoked ID, keep the original `DIETER_HOME` and private key. On
+that machine, after updating the gateway and CLI, run
+`dieter daemon recover --old-id ORIGINAL_ID --confirm RECOVER`. Recovery requires
+the active replacement and revoked original to belong to the same account and
+share the original key. Restart the daemon service, verify the original chats,
+then explicitly revoke the replacement ID. Do not edit gateway storage or
+`identity.json` directly; see `dieter daemon recover --help`.
+
 On **Linux amd64/arm64**, install Node.js 22.19+, npm, Git, and
 [cosign](https://docs.sigstore.dev/cosign/system_config/installation/), then:
 

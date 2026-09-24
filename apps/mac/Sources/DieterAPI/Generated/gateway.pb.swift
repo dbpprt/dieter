@@ -627,6 +627,56 @@ public nonisolated struct Dieter_Gateway_V1_UnenrollDaemonRequest: Sendable {
   public init() {}
 }
 
+public nonisolated struct Dieter_Gateway_V1_DaemonRecoveryRef: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var revokedDaemonID: String = String()
+
+  public var replacementDaemonID: String = String()
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct Dieter_Gateway_V1_DaemonRecoveryState: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var revokedGeneration: UInt64 = 0
+
+  public var replacementGeneration: UInt64 = 0
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct Dieter_Gateway_V1_RecoverDaemonRequest: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var revokedDaemonID: String = String()
+
+  public var replacementDaemonID: String = String()
+
+  public var nonce: Data = Data()
+
+  public var signature: Data = Data()
+
+  public var revokedGeneration: UInt64 = 0
+
+  public var replacementGeneration: UInt64 = 0
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
 public nonisolated struct Dieter_Gateway_V1_DaemonCredential: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
@@ -2149,6 +2199,131 @@ nonisolated extension Dieter_Gateway_V1_UnenrollDaemonRequest: SwiftProtobuf.Mes
     if lhs.daemonID != rhs.daemonID {return false}
     if lhs.nonce != rhs.nonce {return false}
     if lhs.signature != rhs.signature {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Dieter_Gateway_V1_DaemonRecoveryRef: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".DaemonRecoveryRef"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}revoked_daemon_id\0\u{3}replacement_daemon_id\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.revokedDaemonID) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.replacementDaemonID) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.revokedDaemonID.isEmpty {
+      try visitor.visitSingularStringField(value: self.revokedDaemonID, fieldNumber: 1)
+    }
+    if !self.replacementDaemonID.isEmpty {
+      try visitor.visitSingularStringField(value: self.replacementDaemonID, fieldNumber: 2)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Dieter_Gateway_V1_DaemonRecoveryRef, rhs: Dieter_Gateway_V1_DaemonRecoveryRef) -> Bool {
+    if lhs.revokedDaemonID != rhs.revokedDaemonID {return false}
+    if lhs.replacementDaemonID != rhs.replacementDaemonID {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Dieter_Gateway_V1_DaemonRecoveryState: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".DaemonRecoveryState"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}revoked_generation\0\u{3}replacement_generation\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularUInt64Field(value: &self.revokedGeneration) }()
+      case 2: try { try decoder.decodeSingularUInt64Field(value: &self.replacementGeneration) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if self.revokedGeneration != 0 {
+      try visitor.visitSingularUInt64Field(value: self.revokedGeneration, fieldNumber: 1)
+    }
+    if self.replacementGeneration != 0 {
+      try visitor.visitSingularUInt64Field(value: self.replacementGeneration, fieldNumber: 2)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Dieter_Gateway_V1_DaemonRecoveryState, rhs: Dieter_Gateway_V1_DaemonRecoveryState) -> Bool {
+    if lhs.revokedGeneration != rhs.revokedGeneration {return false}
+    if lhs.replacementGeneration != rhs.replacementGeneration {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Dieter_Gateway_V1_RecoverDaemonRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".RecoverDaemonRequest"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}revoked_daemon_id\0\u{3}replacement_daemon_id\0\u{1}nonce\0\u{1}signature\0\u{3}revoked_generation\0\u{3}replacement_generation\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.revokedDaemonID) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.replacementDaemonID) }()
+      case 3: try { try decoder.decodeSingularBytesField(value: &self.nonce) }()
+      case 4: try { try decoder.decodeSingularBytesField(value: &self.signature) }()
+      case 5: try { try decoder.decodeSingularUInt64Field(value: &self.revokedGeneration) }()
+      case 6: try { try decoder.decodeSingularUInt64Field(value: &self.replacementGeneration) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.revokedDaemonID.isEmpty {
+      try visitor.visitSingularStringField(value: self.revokedDaemonID, fieldNumber: 1)
+    }
+    if !self.replacementDaemonID.isEmpty {
+      try visitor.visitSingularStringField(value: self.replacementDaemonID, fieldNumber: 2)
+    }
+    if !self.nonce.isEmpty {
+      try visitor.visitSingularBytesField(value: self.nonce, fieldNumber: 3)
+    }
+    if !self.signature.isEmpty {
+      try visitor.visitSingularBytesField(value: self.signature, fieldNumber: 4)
+    }
+    if self.revokedGeneration != 0 {
+      try visitor.visitSingularUInt64Field(value: self.revokedGeneration, fieldNumber: 5)
+    }
+    if self.replacementGeneration != 0 {
+      try visitor.visitSingularUInt64Field(value: self.replacementGeneration, fieldNumber: 6)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Dieter_Gateway_V1_RecoverDaemonRequest, rhs: Dieter_Gateway_V1_RecoverDaemonRequest) -> Bool {
+    if lhs.revokedDaemonID != rhs.revokedDaemonID {return false}
+    if lhs.replacementDaemonID != rhs.replacementDaemonID {return false}
+    if lhs.nonce != rhs.nonce {return false}
+    if lhs.signature != rhs.signature {return false}
+    if lhs.revokedGeneration != rhs.revokedGeneration {return false}
+    if lhs.replacementGeneration != rhs.replacementGeneration {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

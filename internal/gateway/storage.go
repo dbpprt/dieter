@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"bytes"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -481,6 +482,66 @@ func (s *Store) RevokeDaemon(id string, githubID int64) (uint64, error) {
 		return 0, err
 	}
 	return next, tx.Commit()
+}
+
+// RecoverDaemon restores only the verified snapshot of a revoked identity while
+// its same-key replacement remains active. The transaction also makes retries
+// safe without changing the original certificate or generation.
+func (s *Store) RecoverDaemon(old, replacement DaemonRecord, githubID int64) (DaemonRecord, bool, error) {
+	var empty DaemonRecord
+	if old.ID == "" || replacement.ID == "" || old.ID == replacement.ID || githubID <= 0 ||
+		old.Generation < 2 || len(old.PublicKey) == 0 || !bytes.Equal(old.PublicKey, replacement.PublicKey) ||
+		len(old.Certificate) == 0 || len(replacement.Certificate) == 0 {
+		return empty, false, errors.New("daemon recovery conditions changed")
+	}
+	tx, err := s.DB.Begin()
+	if err != nil {
+		return empty, false, err
+	}
+	defer tx.Rollback()
+	var currentOld, currentReplacement DaemonRecord
+	var oldGeneration, replacementGeneration int64
+	var oldRevoked, replacementRevoked int
+	if err := tx.QueryRow(`SELECT id, name, github_id, login, public_key, certificate, generation, revoked FROM daemons WHERE id=?`, old.ID).
+		Scan(&currentOld.ID, &currentOld.Name, &currentOld.GitHubID, &currentOld.Login, &currentOld.PublicKey, &currentOld.Certificate, &oldGeneration, &oldRevoked); err != nil {
+		return empty, false, errors.New("daemon recovery conditions changed")
+	}
+	if err := tx.QueryRow(`SELECT id, github_id, public_key, certificate, generation, revoked FROM daemons WHERE id=?`, replacement.ID).
+		Scan(&currentReplacement.ID, &currentReplacement.GitHubID, &currentReplacement.PublicKey, &currentReplacement.Certificate, &replacementGeneration, &replacementRevoked); err != nil {
+		return empty, false, errors.New("daemon recovery conditions changed")
+	}
+	if currentOld.GitHubID != githubID || currentReplacement.GitHubID != githubID ||
+		currentOld.ID != old.ID || currentReplacement.ID != replacement.ID ||
+		oldGeneration < 2 || uint64(oldGeneration) != old.Generation ||
+		uint64(replacementGeneration) != replacement.Generation ||
+		(oldRevoked != 0) != old.Revoked || replacementRevoked != 0 ||
+		!bytes.Equal(currentOld.PublicKey, old.PublicKey) ||
+		!bytes.Equal(currentReplacement.PublicKey, replacement.PublicKey) ||
+		!bytes.Equal(currentOld.Certificate, old.Certificate) ||
+		!bytes.Equal(currentReplacement.Certificate, replacement.Certificate) {
+		return empty, false, errors.New("daemon recovery conditions changed")
+	}
+	if oldRevoked != 0 {
+		result, err := tx.Exec(`UPDATE daemons SET revoked=0 WHERE id=? AND github_id=? AND revoked=1 AND generation=? AND public_key=? AND certificate=?
+			AND EXISTS (SELECT 1 FROM daemons WHERE id=? AND github_id=? AND revoked=0 AND generation=? AND public_key=? AND certificate=?)`,
+			old.ID, githubID, oldGeneration, old.PublicKey, old.Certificate,
+			replacement.ID, githubID, replacementGeneration, replacement.PublicKey, replacement.Certificate)
+		if err != nil {
+			return empty, false, err
+		}
+		affected, err := result.RowsAffected()
+		if err != nil {
+			return empty, false, err
+		}
+		if affected != 1 {
+			return empty, false, errors.New("daemon recovery conditions changed")
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return empty, false, err
+	}
+	old.Revoked = false
+	return old, oldRevoked != 0, nil
 }
 
 func (s *Store) MarkDaemonSeen(id, version, apiVersion string, routes, remoteDesktop []byte) error {

@@ -42,6 +42,38 @@ func TestChallengeBindsGatewayDaemonAndNonce(t *testing.T) {
 	}
 }
 
+func TestRecoveryProofBindsBothIdentitiesAndAction(t *testing.T) {
+	public, private, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	template := &x509.Certificate{SerialNumber: big.NewInt(1), Subject: pkix.Name{CommonName: "d_replacement"}, NotBefore: time.Now().Add(-time.Minute), NotAfter: time.Now().Add(time.Hour)}
+	raw, err := x509.CreateCertificate(rand.Reader, template, template, public, private)
+	if err != nil {
+		t.Fatal(err)
+	}
+	certificate := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: raw})
+	nonce := make([]byte, 32)
+	if _, err := rand.Read(nonce); err != nil {
+		t.Fatal(err)
+	}
+	signature := SignRecovery(private, "https://dieter.example", "d_original", "d_replacement", 2, 1, nonce)
+	if err := VerifyRecovery(certificate, "https://dieter.example", "d_original", "d_replacement", 2, 1, nonce, signature); err != nil {
+		t.Fatal(err)
+	}
+	if VerifyRecovery(certificate, "https://dieter.example", "d_other", "d_replacement", 2, 1, nonce, signature) == nil ||
+		VerifyRecovery(certificate, "https://dieter.example", "d_original", "d_other", 2, 1, nonce, signature) == nil ||
+		VerifyRecovery(certificate, "https://other.example", "d_original", "d_replacement", 2, 1, nonce, signature) == nil ||
+		VerifyRecovery(certificate, "https://dieter.example", "d_original", "d_replacement", 3, 1, nonce, signature) == nil ||
+		VerifyRecovery(certificate, "https://dieter.example", "d_original", "d_replacement", 2, 2, nonce, signature) == nil ||
+		VerifyRecovery(certificate, "https://dieter.example", "d_original", "d_replacement", 2, 1, make([]byte, 32), signature) == nil {
+		t.Fatal("recovery proof was accepted for a different identity, gateway, generation, or nonce")
+	}
+	if VerifyUnenrollment(certificate, "https://dieter.example", "d_replacement", nonce, signature) == nil {
+		t.Fatal("recovery proof was accepted as an unenrollment proof")
+	}
+}
+
 func TestTunnelProofRejectsCertificateOutsideValidityWindow(t *testing.T) {
 	public, private, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
