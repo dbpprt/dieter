@@ -1,0 +1,23 @@
+# Optional dedicated HTTPS endpoint when the gateway owns port 443.
+# Replace updates.example.com and certificate paths before nginx -t.
+server {
+    listen 8443 ssl;
+    server_name updates.example.com;
+    ssl_certificate /etc/letsencrypt/live/updates.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/updates.example.com/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    server_tokens off;
+    client_header_timeout 5s;
+    client_body_timeout 5s;
+    send_timeout 5s;
+    keepalive_timeout 5s;
+    access_log off;
+
+    location = /dieter-release.json {
+        limit_except GET { deny all; }
+        alias /var/lib/dieter-release-watch/release.json;
+        default_type application/json;
+        add_header Cache-Control no-store always;
+    }
+    location / { return 404; }
+}

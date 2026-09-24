@@ -90,3 +90,70 @@ All automated lifecycle tests use disposable directories and mocked service
 controls; they never restart or install over the operator's daemon. Manual
 signed-release qualification on a disposable Mac is still needed before a
 release containing this feature is promoted.
+
+## One central release watcher
+
+For a fleet, run `scripts/fleet_release_watch.py` on an always-on Linux host.
+The systemd units in `deploy/fleet/` check GitHub at 09:00 and 21:00 Europe/Berlin
+(with up to five minutes of jitter). The watcher atomically publishes only the
+selected official release's tag, asset URLs and check timestamp. It requires no
+machine credentials and never reads a Dieter store. A failed check keeps the
+previous selection; clients reject it after 36 hours. Downgrades are rejected.
+
+Install both Python scripts together under `/opt/dieter-release-watch/`, copy
+the two units into `/etc/systemd/system/`, then run:
+
+```sh
+useradd --system --no-create-home --shell /usr/sbin/nologin dieter-release-watch
+systemctl daemon-reload
+systemctl start dieter-release-watch.service
+systemctl enable --now dieter-release-watch.timer
+```
+
+Serve **only** `/var/lib/dieter-release-watch/release.json` through an existing
+HTTPS server, with `Cache-Control: no-store`. Do not serve its parent directory
+or any Dieter data directory. For Caddy, add this exact-path handler before the
+existing gateway handler, retaining the existing gateway configuration:
+
+```caddyfile
+handle /dieter-release.json {
+    root * /var/lib/dieter-release-watch
+    rewrite * /release.json
+    header Cache-Control no-store
+    file_server
+}
+```
+
+Validate the HTTPS response before enrolling clients:
+
+```sh
+python3 scripts/macos_auto_update.py install --release-feed https://YOUR-HOST/dieter-release.json
+```
+
+Keep any custom `--runtime`, `--service-plist`, `--root` and `--app` arguments
+from the original installation. Installation validates the feed before replacing
+the existing schedule. Managed Macs retry the central selection every 15 minutes
+and at login. They do not query GitHub for the latest release. Offline Macs
+catch up after reconnecting; busy Macs wait for a later retry. Each Mac still
+independently enforces signatures, compatibility, backups and rollback. The
+watcher selects releases; it does not collect per-machine completion telemetry.
+Use the installed updater's `status` command on each machine for actual results.
+
+This works across NAT without inbound access to the Macs. The public feed has
+no credentials, machine identifiers, chat data, remote commands, or configurable
+installer arguments. Tampered or stale selections cannot bypass local checks.
+The feed host is trusted to select among official signed releases; it cannot
+supply arbitrary binaries. Secure that host like other update infrastructure.
+
+The watcher covers macOS app/daemon pairs. Gateway software maintenance remains
+a separate operation: an API or gateway database format change needs explicit
+coordination and must never reset registrations as part of an automatic update.
+Do not disable existing gateway backup/maintenance timers during fleet setup.
+
+If the gateway owns port 443 directly, do not replace or move it for this feature.
+`deploy/fleet/nginx-release-feed.conf.example` shows an optional separate HTTPS
+listener on 8443. Configure the actual hostname/certificate, run `nginx -t`, and
+verify the exact feed path and 404 responses for other paths before opening the
+port/enrolling clients. Keep the TLS certificate renewal/reload hook working.
+Public network changes require an explicit operator decision. The watcher itself
+does not install a proxy or modify firewall rules.

@@ -24,6 +24,7 @@ import tarfile
 import tempfile
 import time
 import urllib.request
+import urllib.parse
 
 LABEL = 'com.dbpprt.dieter.auto-update'
 RELEASES = 'https://api.github.com/repos/dbpprt/dieter/releases/latest'
@@ -81,10 +82,41 @@ def version(value):
 def fetch(url, limit):
     request = urllib.request.Request(url, headers={'User-Agent': 'Dieter-safe-updater'})
     with urllib.request.urlopen(request, timeout=60) as response:
+        if urllib.parse.urlsplit(response.geturl()).scheme != 'https':
+            raise Deferred('Release transport must remain HTTPS')
         data = response.read(limit + 1)
     if len(data) > limit:
         raise Deferred('Release download exceeds safety limit')
     return data
+
+
+def selected_release(feed=None, now=None):
+    if not feed:
+        return json.loads(fetch(RELEASES, 2 * 1024 * 1024))
+    url = urllib.parse.urlsplit(feed)
+    if url.scheme != 'https' or not url.hostname or url.username or url.password or url.fragment:
+        raise Deferred('Central release feed must use HTTPS without credentials')
+    plan = json.loads(fetch(feed, 2 * 1024 * 1024))
+    now = now or datetime.datetime.now(datetime.timezone.utc)
+    try:
+        issued = datetime.datetime.fromisoformat(plan['checkedAt'])
+        age = (now - issued).total_seconds()
+        release = plan['release']
+        valid = (plan['protocol'] == 1 and 0 <= age <= 36 * 3600 and
+                 not release.get('draft') and not release.get('prerelease'))
+        version(release['tag_name'])
+    except (KeyError, TypeError, ValueError) as error:
+        raise Deferred('Invalid central release selection') from error
+    if not valid:
+        raise Deferred('Central release selection is expired, future-dated, or unsupported')
+    # The feed selects a release only. It cannot supply executable commands or
+    # replace the official asset host, signatures, or local safety decisions.
+    prefix = 'https://github.com/dbpprt/dieter/releases/download/' + release['tag_name'] + '/'
+    for name in ('SHA256SUMS', 'dieter-darwin-arm64.tar.gz', 'Dieter-macOS-arm64.zip'):
+        matches = [a for a in release['assets'] if a.get('name') == name]
+        if len(matches) != 1 or matches[0].get('browser_download_url') != prefix + name:
+            raise Deferred('Central selection contains missing or nonofficial assets')
+    return release
 
 
 def signed(path, identifier):
@@ -195,6 +227,7 @@ def payload(release, work):
 
 class Updater:
     def __init__(self, config):
+        self.release_feed = config.get('releaseFeed')
         self.root = Path(config['root'])
         self.state = self.root / 'auto-update'
         self.runtime = Path(config['runtime'])
@@ -345,7 +378,7 @@ class Updater:
 
     def check(self):
         self.recover()
-        release = json.loads(fetch(RELEASES, 2 * 1024 * 1024))
+        release = selected_release(getattr(self, 'release_feed', None))
         latest = release['tag_name']
         if release.get('draft') or release.get('prerelease'):
             raise Deferred('No stable release available')
@@ -430,12 +463,16 @@ class Updater:
             raise
 
 
-def launch_agent(script, config, python):
-    return {'Label': LABEL, 'ProgramArguments': [python, str(script), 'run', '--config', str(config)],
+def launch_agent(script, config, python, managed=False):
+    agent = {'Label': LABEL, 'ProgramArguments': [python, str(script), 'run', '--config', str(config)],
             'StartCalendarInterval': [{'Hour': 9, 'Minute': 0}, {'Hour': 21, 'Minute': 0}],
             'RunAtLoad': True, 'ProcessType': 'Background',
             'EnvironmentVariables': {'PATH': '/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin'}}
 
+    if managed:
+        del agent['StartCalendarInterval']
+        agent['StartInterval'] = 900
+    return agent
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
@@ -445,6 +482,7 @@ def main():
     parser.add_argument('--app', type=Path, default=Path('/Applications/Dieter.app'))
     parser.add_argument('--service-plist', type=Path, default=Path.home() / 'Library/LaunchAgents/sh.brew.dieter.plist')
     parser.add_argument('--config', type=Path)
+    parser.add_argument('--release-feed', help='HTTPS URL of the central release selection; retries every 15 minutes')
     args = parser.parse_args()
     os.umask(0o077)
     state = args.root.resolve() / 'auto-update'
@@ -467,15 +505,19 @@ def main():
         with exclusive(state / 'check.lock'):
             settings = {'root': str(args.root.resolve()), 'runtime': str(args.runtime.resolve()),
                         'app': str(args.app.resolve()), 'servicePlist': str(args.service_plist.resolve())}
+            if args.release_feed:
+                selected_release(args.release_feed)  # Verify the feed before replacing the schedule.
+                settings['releaseFeed'] = args.release_feed
             Updater(settings)  # Reject unsupported configurations before scheduling.
             write_json(config, settings)
             script = state / 'updater.py'
             shutil.copy2(__file__, script)
             agent.parent.mkdir(parents=True, exist_ok=True)
-            agent.write_bytes(plistlib.dumps(launch_agent(script, config, sys.executable)))
+            agent.write_bytes(plistlib.dumps(launch_agent(script, config, sys.executable, bool(args.release_feed))))
             subprocess.run(['/bin/launchctl', 'bootout', f'gui/{os.getuid()}/{LABEL}'], capture_output=True)
         run('/bin/launchctl', 'bootstrap', f'gui/{os.getuid()}', agent)
-        print('Installed: checks at 09:00 and 21:00 local time, and login. Backups are retained.')
+        print('Installed: central feed every 15 minutes.' if args.release_feed else
+              'Installed: checks at 09:00 and 21:00 local time, and login. Backups are retained.')
         return
     settings = json.loads(config.read_text())
     state = Path(settings['root']) / 'auto-update'

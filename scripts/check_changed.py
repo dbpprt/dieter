@@ -177,6 +177,8 @@ def plan_checks(root, paths, packages=None):
 
     if any(p.startswith("scripts/check_changed") or p in {"justfile", "just/mac.just", "just/ios.just"} for p in code):
         add("python3", "-m", "unittest", "discover", "-s", "scripts", "-p", "check_changed_test.py")
+    if any(p.startswith(("scripts/fleet_release_watch", "scripts/macos_auto_update", "deploy/fleet/")) for p in code):
+        add("python3", "-m", "unittest", "discover", "-s", "scripts", "-p", "fleet_release_watch_test.py")
     if any(p.startswith("scripts/macos_auto_update") for p in code):
         add("python3", "-m", "unittest", "discover", "-s", "scripts", "-p", "macos_auto_update_test.py")
     if any(p.startswith("scripts/qualify_screens") or p == "docs/screenshare-qualification-local.json" for p in code):

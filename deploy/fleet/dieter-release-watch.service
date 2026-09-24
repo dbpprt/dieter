@@ -1,0 +1,18 @@
+[Unit]
+Description=Select the official Dieter release for managed Macs
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=dieter-release-watch
+Group=dieter-release-watch
+StateDirectory=dieter-release-watch
+StateDirectoryMode=0755
+ExecStart=/usr/bin/python3 /opt/dieter-release-watch/fleet_release_watch.py --output /var/lib/dieter-release-watch/release.json
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+TimeoutStartSec=90
