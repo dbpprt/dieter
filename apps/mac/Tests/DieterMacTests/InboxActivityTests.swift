@@ -19,7 +19,7 @@ struct InboxActivityTests {
         return card
     }
 
-    @Test func attentionClassificationPrecedesLaneAndFailureWithoutIncludingDrafts() {
+    @Test func runningPrecedesAttentionWithoutIncludingDrafts() {
         var draft = card("draft", runtime: "idle")
         draft.initialPromptSentAt = ""
         let entries = InboxActivity.entries(cards: [
@@ -29,8 +29,8 @@ struct InboxActivityTests {
             card("chat", runtime: "completed", scope: "chat", lane: "review"),
             card("pending", runtime: "pending"), draft,
         ])
-        #expect(entries.map(\.id) == ["answer", "working", "review", "chat"])
-        #expect(entries.map(\.kind) == [.answer, .running, .review, .recent])
+        #expect(entries.map(\.id) == ["working", "answer", "review", "chat"])
+        #expect(entries.map(\.kind) == [.running, .answer, .review, .recent])
         #expect(entries.filter(\.needsYou).map(\.id) == ["answer", "review"])
         #expect(entries.filter(\.running).map(\.id) == ["working"])
     }

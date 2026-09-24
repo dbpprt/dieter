@@ -4,7 +4,6 @@ import SwiftUI
 struct InboxFeed: View {
     @Environment(DieterStore.self) private var store
     let onOpen: (Dieter_V1_Card) -> Void
-    @State private var mode: InboxFeedMode = .list
     @State private var query = ""
     @State private var projectID = ""
     @State private var hours = 1
@@ -26,33 +25,19 @@ struct InboxFeed: View {
                 let now = live ? clock.date : cachedNow
                 let intervals = InboxActivity.timeline(entries: filtered, now: now, hours: hours)
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 9) {
+                    LazyVStack(alignment: .leading, spacing: 7) {
                         timelineSummary(intervals: intervals, live: live)
-                        if mode == .list {
-                            if filtered.isEmpty {
-                                emptyState(filtered: !query.isEmpty || !selectedProject.isEmpty)
-                            } else {
-                                section("Needs you", id: "needs-you", entries: filtered.filter(\.needsYou), now: now)
-                                section("Running", id: "running", entries: filtered.filter(\.running), now: now)
-                                section(
-                                    "Recent", id: "recent", entries: filtered.filter { !$0.needsYou && !$0.running },
-                                    now: now)
-                            }
+                        if filtered.isEmpty {
+                            emptyState(filtered: !query.isEmpty || !selectedProject.isEmpty)
                         } else {
-                            Text("Latest activity per conversation. Dots mark events without a recorded duration.")
-                                .font(DieterFont.meta).foregroundStyle(DieterTheme.subtle)
-                                .fixedSize(horizontal: false, vertical: true).padding(.vertical, 4)
-                            if intervals.isEmpty {
-                                emptyTimeline
-                            } else {
-                                ForEach(intervals.prefix(visibleLimit)) { interval in
-                                    activityRow(interval.entry, now: now, interval: interval)
-                                }
-                                if intervals.count > visibleLimit { showMore }
-                            }
+                            section("Running", id: "running", entries: filtered.filter(\.running), now: now)
+                            section("Needs you", id: "needs-you", entries: filtered.filter(\.needsYou), now: now)
+                            section(
+                                "Recent", id: "recent", entries: filtered.filter { !$0.needsYou && !$0.running },
+                                now: now)
                         }
                     }
-                    .padding(14)
+                    .padding(12)
                 }
                 .accessibilityIdentifier("inbox.feed").smokeTarget("inbox.feed")
             }
@@ -84,22 +69,12 @@ struct InboxFeed: View {
         -> some View
     {
         VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 10) {
-                Text("Inbox").font(.system(size: 19, weight: .semibold))
-                Spacer(minLength: 0)
-                HStack(spacing: 2) {
-                    modeButton(.list)
-                    modeButton(.timeline)
-                }
-                .padding(3)
-                .background(DieterTheme.input, in: RoundedRectangle(cornerRadius: 7))
-                .fixedSize()
-            }
+            Text("Inbox").font(.system(size: 19, weight: .semibold))
             HStack(spacing: 5) {
+                Text("\(entries.filter(\.running).count) running").foregroundStyle(DieterTheme.subtle)
+                Text("·").foregroundStyle(DieterTheme.tertiary)
                 Text("\(entries.filter(\.needsYou).count) need you")
                     .foregroundStyle(entries.contains(where: \.needsYou) ? DieterTheme.amber : DieterTheme.subtle)
-                Text("·").foregroundStyle(DieterTheme.tertiary)
-                Text("\(entries.filter(\.running).count) running").foregroundStyle(DieterTheme.subtle)
             }
             .font(DieterFont.meta)
             HStack(spacing: 7) {
@@ -147,23 +122,6 @@ struct InboxFeed: View {
         .padding(.horizontal, 16).padding(.top, 16).padding(.bottom, 12)
     }
 
-    private func modeButton(_ value: InboxFeedMode) -> some View {
-        Button {
-            mode = value
-        } label: {
-            Text(value.rawValue)
-                .font(.system(size: 11, weight: mode == value ? .semibold : .medium))
-                .padding(.horizontal, 9).padding(.vertical, 6)
-                .foregroundStyle(mode == value ? DieterTheme.text : DieterTheme.subtle)
-                .background(mode == value ? DieterTheme.elevated : .clear, in: RoundedRectangle(cornerRadius: 5))
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityAddTraits(mode == value ? .isSelected : [])
-        .accessibilityIdentifier("inbox.mode.\(value.rawValue.lowercased())")
-        .smokeTarget("inbox.mode.\(value.rawValue.lowercased())")
-    }
-
     private func timelineSummary(intervals: [InboxActivityInterval], live: Bool) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 5) {
@@ -183,23 +141,15 @@ struct InboxFeed: View {
                 .accessibilityLabel("Timeline range")
                 .accessibilityIdentifier("inbox.range").smokeTarget("inbox.range")
             }
-            if mode == .list {
-                Button {
-                    mode = .timeline
-                } label: {
-                    if intervals.isEmpty {
-                        Text("No activity in the last \(hours)h")
-                            .font(DieterFont.meta).foregroundStyle(DieterTheme.subtle)
-                            .frame(maxWidth: .infinity, minHeight: 38, alignment: .leading)
-                    } else {
-                        InboxTimelineChart(
-                            intervals: Array(intervals.sorted { $0.entry.running && !$1.entry.running }.prefix(4))
-                        )
-                        .frame(height: 50)
-                    }
-                }
-                .buttonStyle(.plain).accessibilityLabel("Show timeline details")
-                .accessibilityIdentifier("inbox.timeline-summary").smokeTarget("inbox.timeline-summary")
+            if intervals.isEmpty {
+                Text("No activity in the last \(hours)h")
+                    .font(DieterFont.meta).foregroundStyle(DieterTheme.subtle)
+                    .frame(maxWidth: .infinity, minHeight: 38, alignment: .leading)
+            } else {
+                InboxTimelineChart(
+                    intervals: Array(intervals.sorted { $0.entry.kind.rawValue < $1.entry.kind.rawValue }.prefix(4))
+                )
+                .frame(height: 50)
             }
             HStack {
                 Text("−\(hours)h")
@@ -227,70 +177,11 @@ struct InboxFeed: View {
             .foregroundStyle(DieterTheme.subtle).padding(.top, 13).padding(.bottom, 2)
             .accessibilityElement(children: .combine)
             .accessibilityIdentifier("inbox.section.\(id)").smokeTarget("inbox.section.\(id)")
-            ForEach(entries.prefix(visibleLimit)) { entry in activityRow(entry, now: now) }
+            ForEach(entries.prefix(visibleLimit)) { entry in
+                InboxActivityRow(entry: entry, now: now, onOpen: onOpen)
+            }
             if entries.count > visibleLimit { showMore }
         }
-    }
-
-    private func activityRow(_ entry: InboxActivityEntry, now: Date, interval: InboxActivityInterval? = nil)
-        -> some View
-    {
-        let selected = (store.selectedCardID ?? store.selectedChatID) == entry.id
-        let accent = inboxAccent(entry.kind)
-        let identifier = "inbox.\(interval == nil ? "row" : "timeline").\(entry.id)"
-        return Button {
-            onOpen(entry.card)
-        } label: {
-            HStack(alignment: .top, spacing: 11) {
-                RoundedRectangle(cornerRadius: 2).fill(accent).frame(width: 3)
-                VStack(alignment: .leading, spacing: 7) {
-                    Text(
-                        entry.card.title.isEmpty
-                            ? "Untitled \(entry.card.scope == "chat" ? "chat" : "card")" : entry.card.title
-                    )
-                    .font(.system(size: 14, weight: .semibold)).lineSpacing(2).lineLimit(2)
-                    .foregroundStyle(DieterTheme.text).fixedSize(horizontal: false, vertical: true)
-                    Text(metadata(entry.card))
-                        .font(.system(size: 10)).foregroundStyle(DieterTheme.tertiary).lineLimit(1)
-                    Text(entry.detail)
-                        .font(.system(size: 11)).foregroundStyle(
-                            entry.kind == .failed ? DieterTheme.coral : DieterTheme.subtle
-                        )
-                        .lineLimit(2).fixedSize(horizontal: false, vertical: true)
-                    HStack(spacing: 5) {
-                        Image(systemName: statusSymbol(entry.kind)).font(.system(size: 9, weight: .semibold))
-                        Text(entry.kind.label).font(.system(size: 10, weight: .medium))
-                        Spacer(minLength: 4)
-                        Text(InboxActivity.age(entry.running ? entry.start : entry.at, now: now))
-                            .font(.system(size: 10, design: .monospaced)).foregroundStyle(DieterTheme.tertiary)
-                    }
-                    .foregroundStyle(accent).padding(.top, 1)
-                    if let interval {
-                        InboxTimelineChart(intervals: [interval]).frame(height: 18).padding(.top, 2)
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .padding(12)
-            .frame(maxWidth: .infinity, minHeight: 112, alignment: .leading)
-            .background(selected ? DieterTheme.selection : DieterTheme.surface, in: RoundedRectangle(cornerRadius: 10))
-            .overlay(
-                RoundedRectangle(cornerRadius: 10).stroke(
-                    selected ? accent.opacity(0.7) : DieterTheme.border, lineWidth: selected ? 1.5 : 1)
-            )
-            .contentShape(RoundedRectangle(cornerRadius: 10))
-        }
-        .buttonStyle(.plain)
-        .accessibilityElement(children: .combine)
-        .accessibilityAddTraits(selected ? .isSelected : [])
-        .accessibilityIdentifier(identifier).smokeTarget(identifier)
-    }
-
-    private func metadata(_ card: Dieter_V1_Card) -> String {
-        var parts = [store.projectDirectory[card.projectID]?.name ?? ""]
-        if card.scope != "chat" { parts.append(store.board(id: card.boardID)?.name ?? "") }
-        parts.append(card.scope == "chat" ? "Chat" : "Card")
-        return parts.filter { !$0.isEmpty }.joined(separator: " · ")
     }
 
     private var showMore: some View {
@@ -318,18 +209,108 @@ struct InboxFeed: View {
         .accessibilityIdentifier("inbox.empty").smokeTarget("inbox.empty")
     }
 
-    private var emptyTimeline: some View {
-        VStack(alignment: .leading, spacing: 7) {
-            Text("No activity in this window").font(DieterFont.title)
-            Text("Choose a wider time range or adjust your filters.")
-                .font(DieterFont.meta).foregroundStyle(DieterTheme.subtle)
-        }
-        .accessibilityElement(children: .combine)
-        .padding(.vertical, 20).accessibilityIdentifier("inbox.empty").smokeTarget("inbox.empty")
-    }
 }
 
-private enum InboxFeedMode: String { case list = "List", timeline = "Timeline" }
+private struct InboxActivityRow: View {
+    @Environment(DieterStore.self) private var store
+    let entry: InboxActivityEntry
+    let now: Date
+    let onOpen: (Dieter_V1_Card) -> Void
+    @State private var renamePresented = false
+    @State private var editPresented = false
+    @State private var renameText = ""
+
+    var body: some View {
+        if entry.card.scope == "chat" {
+            row.modifier(ChatContextMenu(card: entry.card))
+        } else {
+            row.modifier(
+                BoardCardContextMenu(
+                    card: entry.card, currentBoard: store.board(id: entry.card.boardID),
+                    open: { onOpen(entry.card) },
+                    renamePresented: $renamePresented, editPresented: $editPresented, renameText: $renameText
+                )
+            )
+        }
+    }
+
+    private var row: some View {
+        let selected = (store.selectedCardID ?? store.selectedChatID) == entry.id
+        let accent = inboxAccent(entry.kind)
+        return ZStack(alignment: .bottomTrailing) {
+            Button {
+                onOpen(entry.card)
+            } label: {
+                HStack(alignment: .top, spacing: 9) {
+                    RoundedRectangle(cornerRadius: 2).fill(accent).frame(width: 3)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(
+                            entry.card.title.isEmpty
+                                ? "Untitled \(entry.card.scope == "chat" ? "chat" : "card")" : entry.card.title
+                        )
+                        .font(.system(size: 13, weight: .semibold)).lineLimit(2)
+                        .foregroundStyle(DieterTheme.text)
+                        .multilineTextAlignment(.leading).fixedSize(horizontal: false, vertical: true)
+                        Text(metadata)
+                            .font(.system(size: 10)).foregroundStyle(DieterTheme.tertiary).lineLimit(1)
+                        if entry.running {
+                            Text(entry.detail).font(.system(size: 11))
+                                .foregroundStyle(DieterTheme.subtle).lineLimit(1)
+                        }
+                        HStack(spacing: 5) {
+                            Image(systemName: statusSymbol(entry.kind)).font(.system(size: 9, weight: .semibold))
+                            Text(entry.kind.label).font(.system(size: 10, weight: .medium))
+                            Spacer(minLength: 4)
+                            Text(InboxActivity.age(entry.running ? entry.start : entry.at, now: now))
+                                .font(.system(size: 9, design: .monospaced)).foregroundStyle(DieterTheme.tertiary)
+                            if entry.kind == .review { Color.clear.frame(width: 62, height: 20) }
+                        }
+                        .foregroundStyle(accent)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .padding(10)
+                .frame(maxWidth: .infinity, minHeight: 76, alignment: .leading)
+                .background(
+                    selected ? DieterTheme.selection : DieterTheme.surface, in: RoundedRectangle(cornerRadius: 8)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8).stroke(
+                        selected ? accent.opacity(0.7) : DieterTheme.border, lineWidth: selected ? 1.5 : 1)
+                )
+                .contentShape(RoundedRectangle(cornerRadius: 8))
+            }
+            .buttonStyle(.plain)
+            .accessibilityElement(children: .combine)
+            .accessibilityAddTraits(selected ? .isSelected : [])
+            .accessibilityIdentifier("inbox.row.\(entry.id)").smokeTarget("inbox.row.\(entry.id)")
+            if entry.kind == .review {
+                Button {
+                    Task { await store.move(entry.card, lane: "done") }
+                } label: {
+                    Label("Finish", systemImage: "checkmark")
+                        .font(.system(size: 10, weight: .semibold))
+                        .padding(.horizontal, 7).frame(height: 20)
+                        .foregroundStyle(DieterTheme.text)
+                        .background(DieterTheme.raised, in: RoundedRectangle(cornerRadius: 5))
+                }
+                .buttonStyle(.plain)
+                .disabled(store.movingCardIDs.contains(entry.id) || !store.projectIsAvailable(entry.card.projectID))
+                .accessibilityLabel("Finish \(entry.card.title)")
+                .accessibilityIdentifier("inbox.finish.\(entry.id)").smokeTarget("inbox.finish.\(entry.id)")
+                .padding(10)
+            }
+        }
+        .accessibilityElement(children: .contain)
+    }
+
+    private var metadata: String {
+        var parts = [store.projectDirectory[entry.card.projectID]?.name ?? ""]
+        if entry.card.scope != "chat" { parts.append(store.board(id: entry.card.boardID)?.name ?? "") }
+        parts.append(entry.card.scope == "chat" ? "Chat" : "Card")
+        return parts.filter { !$0.isEmpty }.joined(separator: " · ")
+    }
+}
 
 @MainActor
 private func inboxAccent(_ kind: InboxActivityKind) -> Color {

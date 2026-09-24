@@ -1830,85 +1830,17 @@ struct BoardCardView: View {
         .onHover { hovering = $0 }
         .modifier(BoardCardHelp(card: card, labels: labels, accessibility: false))
         .animation(.easeOut(duration: 0.12), value: hovering)
-        .contextMenu {
-            if store.isFailedOutboxItem(card.id) {
-                Button("Retry queued creation") { Task { await store.retryOutboxItem(card.id) } }
-                Button("Discard queued creation", role: .destructive) {
-                    Task { await store.discardOutboxItem(card.id) }
-                }
-                Divider()
-            }
-            Button("Open conversation") { Task { await store.openConversation(cardID: card.id) } }
-            if showsRunAction {
-                Button(starting ? "Starting task…" : "Run task", systemImage: "play.fill") {
-                    Task { await store.start(card) }
-                }
-                .disabled(starting)
-            }
-            Group {
-                if BoardCardEditingPolicy.canEditDraft(card) { Button("Edit card…") { editPresented = true } }
-                Button("Rename…") {
-                    renameText = card.title
-                    renamePresented = true
-                }
-                Menu("Move to") {
-                    ForEach(currentBoard?.lanes ?? [], id: \.id) { lane in
-                        Button(lane.name) { Task { await store.move(card, lane: lane.id) } }
-                    }
-                }
-                if let labels = currentBoard?.labels, !labels.isEmpty {
-                    Menu("Labels") {
-                        ForEach(labels, id: \.id) { label in
-                            Button {
-                                var ids = card.labelIds
-                                if let index = ids.firstIndex(of: label.id) {
-                                    ids.remove(at: index)
-                                } else {
-                                    ids.append(label.id)
-                                }
-                                Task { await store.setLabels(card, ids: ids) }
-                            } label: {
-                                Label(
-                                    label.name,
-                                    systemImage: card.labelIds.contains(label.id) ? "checkmark.circle.fill" : "circle"
-                                )
-                            }
-                        }
-                    }
-                }
-                if ["running", "waiting", "review"].contains(card.runtime) {
-                    Button("Cancel turn", role: .destructive) { Task { await store.cancel(card) } }
-                }
-                Divider()
-                Button("Archive", role: .destructive) { Task { await store.archive(card, archived: true) } }
-            }.modifier(BoardCardAvailability(projectID: card.projectID))
-        }
+        .modifier(
+            BoardCardContextMenu(
+                card: card, currentBoard: currentBoard,
+                open: { Task { await store.openConversation(cardID: card.id) } },
+                renamePresented: $renamePresented, editPresented: $editPresented, renameText: $renameText
+            )
+        )
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("card.\(card.id)")
         .accessibilityHint("Click to open chat. Double-click to edit.")
         .smokeTarget("card.\(card.id)")
-        .sheet(isPresented: $renamePresented) {
-            VStack(alignment: .leading, spacing: 14) {
-                Text("Rename card").font(.title2.weight(.bold))
-                TextField("Title", text: $renameText)
-                HStack {
-                    Spacer()
-                    Button("Cancel") { renamePresented = false }
-                        .smokeTarget("card-editor.cancel")
-                    Button("Rename") {
-                        Task {
-                            await store.rename(card, title: renameText)
-                            renamePresented = false
-                        }
-                    }.buttonStyle(.borderedProminent).disabled(
-                        renameText.trimmingCharacters(in: .whitespaces).isEmpty)
-                }
-            }.padding(22).frame(width: 440)
-                .smokeTarget("card-editor.\(card.id)")
-        }
-        .sheet(isPresented: $editPresented) {
-            EditCardSheet(card: card).environment(store)
-        }
     }
 
     private func openEditor() {
@@ -1918,6 +1850,102 @@ struct BoardCardView: View {
             renameText = card.title
             renamePresented = true
         }
+    }
+}
+
+struct BoardCardContextMenu: ViewModifier {
+    @Environment(DieterStore.self) private var store
+    let card: Dieter_V1_Card
+    let currentBoard: Dieter_V1_Board?
+    let open: () -> Void
+    @Binding var renamePresented: Bool
+    @Binding var editPresented: Bool
+    @Binding var renameText: String
+
+    private var starting: Bool { store.pendingCardStarts[card.id] != nil }
+    private var showsRunAction: Bool {
+        starting
+            || (store.isConversationServerBacked(card.id) && BoardCardStartPolicy.canStart(card, board: currentBoard))
+    }
+
+    func body(content: Content) -> some View {
+        content
+            .contextMenu {
+                if store.isFailedOutboxItem(card.id) {
+                    Button("Retry queued creation") { Task { await store.retryOutboxItem(card.id) } }
+                    Button("Discard queued creation", role: .destructive) {
+                        Task { await store.discardOutboxItem(card.id) }
+                    }
+                    Divider()
+                }
+                Button("Open conversation", action: open)
+                if showsRunAction {
+                    Button(starting ? "Starting task…" : "Run task", systemImage: "play.fill") {
+                        Task { await store.start(card) }
+                    }
+                    .disabled(starting)
+                }
+                Group {
+                    if BoardCardEditingPolicy.canEditDraft(card) { Button("Edit card…") { editPresented = true } }
+                    Button("Rename…") {
+                        renameText = card.title
+                        renamePresented = true
+                    }
+                    Menu("Move to") {
+                        ForEach(currentBoard?.lanes ?? [], id: \.id) { lane in
+                            Button(lane.name) { Task { await store.move(card, lane: lane.id) } }
+                        }
+                    }
+                    if let labels = currentBoard?.labels, !labels.isEmpty {
+                        Menu("Labels") {
+                            ForEach(labels, id: \.id) { label in
+                                Button {
+                                    var ids = card.labelIds
+                                    if let index = ids.firstIndex(of: label.id) {
+                                        ids.remove(at: index)
+                                    } else {
+                                        ids.append(label.id)
+                                    }
+                                    Task { await store.setLabels(card, ids: ids) }
+                                } label: {
+                                    Label(
+                                        label.name,
+                                        systemImage: card.labelIds.contains(label.id)
+                                            ? "checkmark.circle.fill" : "circle"
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    if ["running", "waiting", "review"].contains(card.runtime) {
+                        Button("Cancel turn", role: .destructive) { Task { await store.cancel(card) } }
+                    }
+                    Divider()
+                    Button("Archive", role: .destructive) { Task { await store.archive(card, archived: true) } }
+                }.modifier(BoardCardAvailability(projectID: card.projectID))
+            }
+            .sheet(isPresented: $renamePresented) {
+                VStack(alignment: .leading, spacing: 14) {
+                    Text("Rename card").font(.title2.weight(.bold))
+                    TextField("Title", text: $renameText)
+                    HStack {
+                        Spacer()
+                        Button("Cancel") { renamePresented = false }
+                            .smokeTarget("card-editor.cancel")
+                        Button("Rename") {
+                            Task {
+                                await store.rename(card, title: renameText)
+                                renamePresented = false
+                            }
+                        }.buttonStyle(.borderedProminent).disabled(
+                            renameText.trimmingCharacters(in: .whitespaces).isEmpty)
+                    }
+                }.padding(22).frame(width: 440)
+                    .smokeTarget("card-editor.\(card.id)")
+            }
+            .sheet(isPresented: $editPresented) {
+                EditCardSheet(card: card).environment(store)
+            }
     }
 }
 

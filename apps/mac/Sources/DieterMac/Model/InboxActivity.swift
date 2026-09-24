@@ -3,7 +3,7 @@ import Foundation
 
 /// Mirrors Android ActivityModel: one latest activity per conversation, not a run history.
 enum InboxActivityKind: Int, Equatable {
-    case answer, running, review, failed, recent
+    case running, answer, review, failed, recent
 
     var label: String {
         switch self {

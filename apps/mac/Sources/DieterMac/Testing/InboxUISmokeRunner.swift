@@ -68,6 +68,21 @@
             }
             record("activity-sections", seen.count == expectedIDs.count, &results)
             record("pending-excluded", !visible("inbox.row.\(pending.id)", window), &results)
+            let runningHeader = NativeUIAccessibility.find("inbox.section.running", in: window)?.recordedFrame ?? .zero
+            let attentionHeader =
+                NativeUIAccessibility.find("inbox.section.needs-you", in: window)?.recordedFrame ?? .zero
+            record(
+                "running-before-needs-you",
+                runningHeader.width > 0 && attentionHeader.width > 0 && runningHeader.minY > attentionHeader.maxY,
+                &results)
+            record(
+                "single-grouped-feed",
+                !visible("inbox.mode.list", window) && !visible("inbox.mode.timeline", window), &results)
+            record(
+                "finish-only-ready-review",
+                visible("inbox.finish.\(review.id)", window) && !visible("inbox.finish.\(running.id)", window)
+                    && !visible("inbox.finish.\(waiting.id)", window) && !visible("inbox.finish.\(chat.id)", window),
+                &results)
             do {
                 let archived = try await store.rpc?.archivedCards(boardID: waiting.boardID)
                 let fixture = archived?.cards.first { $0.title.hasPrefix("Inbox archived:") }
@@ -75,7 +90,7 @@
                     "archived-excluded", fixture != nil && !visible("inbox.row.\(fixture?.id ?? "")", window), &results)
             } catch { results["archived-excluded"] = "failed: \(error)" }
 
-            let selected = await select(waiting, mode: "row", store: store, window: window)
+            let selected = await select(waiting, store: store, window: window)
             record("card-conversation-retains-inbox", selected, &results)
             guard selected else { capture(window, "01-selection-failed.png", output); return }
             record(
@@ -88,7 +103,7 @@
             let editorReady = await NativeUIAccessibility.wait {
                 (window.firstResponder as? NSTextView)?.isEditable == true
             }
-            let draft = "Keep this Inbox draft while switching views."
+            let draft = "Keep this Inbox draft while changing the timeline range."
             if composerClicked && editorReady { await NativeUIAccessibility.type(draft, in: window) }
             record("real-composer", composerClicked && editorReady && store.composerText == draft, &results)
             window.makeFirstResponder(nil)
@@ -112,34 +127,22 @@
                 "workspace-return-conversation",
                 conversationClicked && transcriptRestored && store.composerText == draft, &results)
 
-            let timelineClicked = await click("inbox.mode.timeline", window)
-            let timelineReady = await NativeUIAccessibility.wait { visible("inbox.timeline.\(chat.id)", window) }
-            record(
-                "timeline-retains-selection",
-                timelineClicked && timelineReady && selectedID(store) == waiting.id
-                    && store.composerText == draft, &results)
-            let chatSelected = await select(chat, mode: "timeline", store: store, window: window)
-            record("timeline-standalone-chat", chatSelected && store.selectedChatID == chat.id, &results)
             for hours in [1, 6, 24] {
                 let changed = await chooseMenu("inbox.range", title: "Last \(hours)h", window: window)
                 let retained = await NativeUIAccessibility.wait {
-                    visible("inbox.timeline.\(chat.id)", window) && selectedID(store) == chat.id
-                        && store.section == .inbox
+                    visible("inbox.row.\(waiting.id)", window) && selectedID(store) == waiting.id
+                        && store.section == .inbox && store.composerText == draft
                         && visible("inbox.range.current.\(hours)", window)
                 }
-                record("timeline-range-\(hours)", changed && retained, &results)
+                record("timeline-range-\(hours)-retains-selection-and-draft", changed && retained, &results)
             }
             _ = await chooseMenu("inbox.range", title: "Last 1h", window: window)
+            let reviewSelected = await select(review, store: store, window: window)
+            record("review-card-selection", reviewSelected, &results)
+            let chatSelected = await select(chat, store: store, window: window)
+            record("standalone-chat-selection", chatSelected && store.selectedChatID == chat.id, &results)
             await captureAppearances(
-                store: store, window: window, name: "03-inbox-timeline-1380", output: output, results: &results)
-            let listClicked = await click("inbox.mode.list", window)
-            _ = await NativeUIAccessibility.wait { visible("inbox.row.\(chat.id)", window) }
-            record(
-                "list-retains-chat", listClicked && selectedID(store) == chat.id && store.section == .inbox, &results)
-            let listCardSelected = await select(review, mode: "row", store: store, window: window)
-            record("list-card-selection", listCardSelected, &results)
-            let listChatSelected = await select(chat, mode: "row", store: store, window: window)
-            record("list-standalone-chat", listChatSelected && store.selectedChatID == chat.id, &results)
+                store: store, window: window, name: "03-inbox-chat-1380", output: output, results: &results)
 
             await replaceSearch("Inbox running:", window: window)
             let queryMatched = await NativeUIAccessibility.wait {
@@ -166,7 +169,7 @@
             let projectReset = await NativeUIAccessibility.wait { visible("inbox.row.\(waiting.id)", window) }
             record("project-filter-reset", resetProject && projectReset, &results)
 
-            _ = await select(waiting, mode: "row", store: store, window: window)
+            _ = await select(waiting, store: store, window: window)
             for width: CGFloat in [1_100, 1_600, 1_380] {
                 window.setContentSize(NSSize(width: width, height: 900))
                 _ = await NativeUIAccessibility.waitForInteractiveTarget("inbox.resize-divider", in: window)
@@ -185,7 +188,7 @@
                 "close-retains-inbox",
                 closed && cleared && store.section == .inbox
                     && visible("inbox.row.\(waiting.id)", window), &results)
-            let reopened = await select(waiting, mode: "row", store: store, window: window)
+            let reopened = await select(waiting, store: store, window: window)
             record("reopen-after-close", reopened, &results)
 
             let chatsClicked = await click("sidebar.all-chats", window)
@@ -207,16 +210,68 @@
                 "return-to-inbox",
                 await NativeUIAccessibility.wait { store.section == .inbox && visible("inbox.browser-pane", window) },
                 &results)
+            _ = await select(waiting, store: store, window: window)
+            let retainedDraft = store.composerText
+            await replaceSearch(review.title, window: window)
+            let finishClicked = await click("inbox.finish.\(review.id)", window)
+            let finished = await NativeUIAccessibility.wait {
+                store.inboxEntries.contains { $0.id == review.id && $0.card.lane == "done" && !$0.needsYou }
+                    && store.pendingCardMoves[review.id] == nil
+                    && !visible("inbox.finish.\(review.id)", window)
+            }
+            record(
+                "finish-moves-review-to-done",
+                finishClicked && finished && selectedID(store) == waiting.id && store.composerText == retainedDraft,
+                &results)
+            capture(window, "07-inbox-finished-review.png", output)
+
+            _ = await select(review, store: store, window: window)
+            let archivedCard = await chooseContextMenu(
+                "inbox.row.\(review.id)", title: "Archive",
+                requiredTitles: ["Open conversation", "Rename…", "Move to"], window: window)
+            let cardRemoved = await NativeUIAccessibility.wait {
+                !store.inboxEntries.contains { $0.id == review.id } && selectedID(store) == nil
+                    && store.section == .inbox && visible("inbox.empty-detail", window)
+            }
+            record("card-context-archive-clears-selected-detail", archivedCard && cardRemoved, &results)
+            do {
+                let archived = try await store.rpc?.archivedCards(boardID: review.boardID)
+                record("card-archive-persisted", archived?.cards.contains { $0.id == review.id } == true, &results)
+            } catch { results["card-archive-persisted"] = "failed: \(error)" }
+
+            await replaceSearch("", window: window)
+            _ = await select(waiting, store: store, window: window)
+            let archiveDraft = store.composerText
+            await replaceSearch(chat.title, window: window)
+            let archivedChat = await chooseContextMenu(
+                "inbox.row.\(chat.id)", title: "Archive",
+                requiredTitles: [chat.pinned ? "Unpin" : "Pin", "Rename…"], window: window)
+            let chatRemoved = await NativeUIAccessibility.wait {
+                !store.inboxEntries.contains { $0.id == chat.id }
+                    && store.section == .inbox && visible("inbox.empty", window)
+            }
+            record(
+                "chat-context-archive-retains-other-detail",
+                archivedChat && chatRemoved && selectedID(store) == waiting.id && store.composerText == archiveDraft,
+                &results)
+            do {
+                let archived = try await store.rpc?.chats(includeArchived: true)
+                record(
+                    "chat-archive-persisted",
+                    archived?.chats.contains { $0.id == chat.id && $0.archived } == true, &results)
+            } catch { results["chat-archive-persisted"] = "failed: \(error)" }
+            await replaceSearch("", window: window)
+            capture(window, "08-inbox-after-archive.png", output)
             let inventory = NativeUIAccessibility.elements(in: window).map {
                 "\($0.identifier ?? "-") \($0.text) \($0.frame)"
             }.joined(separator: "\n")
             try? inventory.write(to: output.appending(path: "accessibility.txt"), atomically: true, encoding: .utf8)
         }
 
-        private static func select(_ card: Dieter_V1_Card, mode: String, store: DieterStore, window: NSWindow) async
+        private static func select(_ card: Dieter_V1_Card, store: DieterStore, window: NSWindow) async
             -> Bool
         {
-            let clicked = await click("inbox.\(mode).\(card.id)", window)
+            let clicked = await click("inbox.row.\(card.id)", window)
             let ready = await NativeUIAccessibility.wait {
                 selectedID(store) == card.id && store.conversation?.detail.card.id == card.id
                     && !store.conversationLoading && visible("conversation.composer", window)
@@ -279,6 +334,37 @@
             menu.performActionForItem(at: index)
             return true
         }
+        private static func chooseContextMenu(
+            _ id: String, title: String, requiredTitles: [String], window: NSWindow
+        ) async -> Bool {
+            guard await NativeUIAccessibility.waitForInteractiveTarget(id, in: window),
+                let frame = NativeUIAccessibility.find(id, in: window)?.recordedFrame
+            else { return false }
+            let point = window.convertPoint(fromScreen: NSPoint(x: frame.midX, y: frame.midY))
+            let tracker = NativeContentMenuTracker()
+            defer { tracker.menu?.cancelTrackingWithoutAnimation(); tracker.stop() }
+            for type in [NSEvent.EventType.rightMouseDown, .rightMouseUp] {
+                if let event = NSEvent.mouseEvent(
+                    with: type, location: point, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                    windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1,
+                    pressure: type == .rightMouseDown ? 1 : 0)
+                {
+                    NSApp.postEvent(event, atStart: false)
+                }
+            }
+            guard
+                await NativeUIAccessibility.wait(
+                    timeout: 5,
+                    until: {
+                        tracker.menu?.items.contains { $0.title == title && $0.isEnabled } == true
+                    }), let menu = tracker.menu,
+                requiredTitles.allSatisfy({ expected in menu.items.contains { $0.title == expected } }),
+                let index = menu.items.firstIndex(where: { $0.title == title && $0.isEnabled })
+            else { return false }
+            menu.cancelTrackingWithoutAnimation()
+            menu.performActionForItem(at: index)
+            return true
+        }
         private static func recordLayout(
             _ key: String, store: DieterStore, cardID: String, window: NSWindow, results: inout [String: String]
         ) {
@@ -287,7 +373,7 @@
             let card = NativeUIAccessibility.find("inbox.row.\(cardID)", in: window)?.recordedFrame ?? .zero
             let valid =
                 feed.width >= 299 && feed.width <= 421 && detail.width >= 350
-                && card.width >= 240 && card.width <= feed.width && card.height >= 110
+                && card.width >= 240 && card.width <= feed.width && card.height >= 60 && card.height <= 104
                 && (key != "default" || abs(feed.width - 340) < 3)
                 && feed.maxX <= detail.minX + 2 && selectedID(store) == cardID && store.section == .inbox
             results["layout-\(key)"] = valid ? "passed" : "failed: feed=\(feed) detail=\(detail) card=\(card)"

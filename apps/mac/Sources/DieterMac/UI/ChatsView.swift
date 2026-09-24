@@ -841,9 +841,6 @@ private struct ChatRowContent: View, Equatable {
         lhs.card == rhs.card && lhs.showsPinnedDragHandle == rhs.showsPinnedDragHandle && lhs.unread == rhs.unread
     }
 
-    @State private var renamePresented = false
-    @State private var renameText = ""
-
     private var running: Bool { ChatRuntimePresentation.isActive(card.runtime) }
 
     var body: some View {
@@ -949,73 +946,85 @@ private struct ChatRowContent: View, Equatable {
         .draggable(PinnedChatDragPayload(chatID: card.id).encoded) {
             PinnedChatDragPreview(card: card)
         }
-        .contextMenu {
-            if store.isFailedOutboxItem(card.id) {
-                Button("Retry queued creation") { Task { await store.retryOutboxItem(card.id) } }
-                Button("Discard queued creation", role: .destructive) {
-                    Task { await store.discardOutboxItem(card.id) }
+        .modifier(ChatContextMenu(card: card))
+        .accessibilityIdentifier("chat.\(card.id)")
+        .smokeTarget("chat.\(card.id)")
+    }
+
+}
+
+struct ChatContextMenu: ViewModifier {
+    @Environment(DieterStore.self) private var store
+    @State private var renamePresented = false
+    @State private var renameText = ""
+    let card: Dieter_V1_Card
+
+    func body(content: Content) -> some View {
+        content
+            .contextMenu {
+                if store.isFailedOutboxItem(card.id) {
+                    Button("Retry queued creation") { Task { await store.retryOutboxItem(card.id) } }
+                    Button("Discard queued creation", role: .destructive) {
+                        Task { await store.discardOutboxItem(card.id) }
+                    }
+                    Divider()
                 }
-                Divider()
-            }
-            if card.archived {
-                Button("Restore") { Task { await store.archive(card, archived: false) } }
-            } else {
-                Button(card.pinned ? "Unpin" : "Pin") {
-                    Task { await store.pin(card, pinned: !card.pinned) }
+                if card.archived {
+                    Button("Restore") { Task { await store.archive(card, archived: false) } }
+                } else {
+                    Button(card.pinned ? "Unpin" : "Pin") {
+                        Task { await store.pin(card, pinned: !card.pinned) }
+                    }
                 }
-            }
-            if !store.allChatsFolders.folders.isEmpty {
-                Menu("Move to folder", systemImage: "folder") {
-                    ForEach(store.allChatsFolders.folders) { folder in
-                        Button {
-                            moveChat(to: folder.id)
-                        } label: {
-                            if folder.itemIDs.contains(card.id) {
-                                Label(folder.name, systemImage: "checkmark")
-                            } else {
-                                Text(folder.name)
+                if !store.allChatsFolders.folders.isEmpty {
+                    Menu("Move to folder", systemImage: "folder") {
+                        ForEach(store.allChatsFolders.folders) { folder in
+                            Button {
+                                moveChat(to: folder.id)
+                            } label: {
+                                if folder.itemIDs.contains(card.id) {
+                                    Label(folder.name, systemImage: "checkmark")
+                                } else {
+                                    Text(folder.name)
+                                }
+                            }
+                        }
+                        if store.allChatsFolders.folder(containing: card.id) != nil {
+                            Divider()
+                            Button("No folder", systemImage: "arrow.up.backward") {
+                                moveChat(to: nil)
                             }
                         }
                     }
-                    if store.allChatsFolders.folder(containing: card.id) != nil {
-                        Divider()
-                        Button("No folder", systemImage: "arrow.up.backward") {
-                            moveChat(to: nil)
-                        }
+                }
+                Button("Rename…", systemImage: "pencil") {
+                    renameText = card.title
+                    renamePresented = true
+                }
+                if !card.archived {
+                    Divider()
+                    Button("Archive", role: .destructive) { Task { await store.archive(card, archived: true) } }
+                }
+            }
+            .sheet(isPresented: $renamePresented) {
+                VStack(alignment: .leading, spacing: 14) {
+                    Text("Rename chat").font(.title2.weight(.bold))
+                    TextField("Title", text: $renameText)
+                        .accessibilityIdentifier("chat.rename.title")
+                        .onSubmit { rename() }
+                    HStack {
+                        Spacer()
+                        Button("Cancel") { renamePresented = false }
+                        Button("Rename") { rename() }
+                            .buttonStyle(.borderedProminent)
+                            .disabled(renameText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                            .accessibilityIdentifier("chat.rename.confirm")
                     }
                 }
+                .padding(22)
+                .frame(width: 440)
             }
-            Button("Rename…", systemImage: "pencil") {
-                renameText = card.title
-                renamePresented = true
-            }
-            if !card.archived {
-                Divider()
-                Button("Archive", role: .destructive) { Task { await store.archive(card, archived: true) } }
-            }
-        }
-        .accessibilityIdentifier("chat.\(card.id)")
-        .smokeTarget("chat.\(card.id)")
-        .sheet(isPresented: $renamePresented) {
-            VStack(alignment: .leading, spacing: 14) {
-                Text("Rename chat").font(.title2.weight(.bold))
-                TextField("Title", text: $renameText)
-                    .accessibilityIdentifier("chat.rename.title")
-                    .onSubmit { rename() }
-                HStack {
-                    Spacer()
-                    Button("Cancel") { renamePresented = false }
-                    Button("Rename") { rename() }
-                        .buttonStyle(.borderedProminent)
-                        .disabled(renameText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                        .accessibilityIdentifier("chat.rename.confirm")
-                }
-            }
-            .padding(22)
-            .frame(width: 440)
-        }
     }
-
     private func rename() {
         let title = renameText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !title.isEmpty else { return }

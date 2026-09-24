@@ -55,7 +55,9 @@ not replace the saved selection. Production remote origins require HTTPS.
 ## Product surfaces
 
 - Inbox combines active cards and chats across projects in a compact, resizable
-  feed with larger cards, List/Timeline modes, search, and project filters.
+  feed with search, project filters, and a recorded-activity timeline summary.
+  Running appears before Needs you, followed by Recent. Review cards offer Finish
+  to move to Done; card and chat right-click menus include their usual archive actions.
   Selection keeps the existing conversation, composer, and workspace detail
   pane alongside the feed. Timelines show recorded activity, not progress estimates.
 - Boards and standalone chats, durable queues, labels, archives, model selection,
