@@ -75,6 +75,37 @@ class ActivityScreenTest {
         compose.runOnIdle { assertEquals("account-one", openedAccount) }
     }
 
+    @Test fun olderChatsRemainReachableBesideCardsInAllAndProjectFeeds() {
+        val recentCards = (1..25).map { index ->
+            card("newer-$index", "Newer card $index", "idle").toBuilder()
+                .setLane("done")
+                .setRuntimeUpdatedAt(now.minusSeconds(index.toLong()).toString())
+                .build()
+        }
+        val olderChat = card("older-chat", "Older project chat", "idle", chat = true)
+            .toBuilder().setRuntimeUpdatedAt(now.minusSeconds(3600).toString()).build()
+        val otherChat = card("other-chat", "Other project chat", "idle", "atlas", chat = true)
+            .toBuilder().setRuntimeUpdatedAt(now.minusSeconds(7200).toString()).build()
+        val mixed = state.copy(spaceCards = recentCards, chats = listOf(olderChat, otherChat))
+        var opened: Card? = null
+        compose.setContent {
+            DieterTheme { ActivityFeed(mixed, onOpen = { opened = it }, onConnections = {},
+                onAccount = {}, onRefreshAccounts = {}, clock = now) }
+        }
+        compose.onNodeWithTag("activity-feed").performScrollToNode(hasTestTag("activity-row-other-chat"))
+        compose.onNodeWithTag("activity-row-other-chat").performClick()
+        compose.runOnIdle { assertEquals(otherChat.id, opened?.id) }
+        compose.onNodeWithTag("activity-feed").performScrollToNode(hasTestTag("activity-project-dieter"))
+        compose.onNodeWithTag("activity-project-dieter").performClick()
+        compose.onNodeWithTag("activity-feed").performScrollToNode(hasTestTag("activity-row-older-chat"))
+        compose.onNodeWithTag("activity-row-older-chat").performClick()
+        compose.runOnIdle { assertEquals(olderChat.id, opened?.id) }
+        compose.onNodeWithTag("activity-feed").performScrollToNode(hasTestTag("activity-project-atlas"))
+        compose.onNodeWithTag("activity-project-atlas").performClick()
+        compose.onNodeWithTag("activity-feed").performScrollToNode(hasTestTag("activity-row-other-chat"))
+        compose.onNodeWithTag("activity-row-other-chat").assertIsDisplayed()
+    }
+
     @Test fun searchAndEmptyResultsKeepAccountsAvailable() {
         compose.setContent { DieterTheme { ActivityFeed(state, onOpen = {}, onConnections = {}, onAccount = {}, onRefreshAccounts = {}, clock = now) } }
         compose.onNodeWithContentDescription("Search activity").performClick()

@@ -106,7 +106,6 @@ internal fun ActivityFeed(
     var hours by rememberSaveable { mutableIntStateOf(1) }
     var expandedTimeline by rememberSaveable { mutableStateOf(false) }
     var expandedAccounts by rememberSaveable { mutableStateOf(false) }
-    var recentLimit by rememberSaveable { mutableIntStateOf(20) }
     val entries = remember(state.spaceCards, state.cards, state.chats, state.activityDetails) {
         buildActivityEntries(state.spaceCards + state.cards + state.chats, state.activityDetails)
     }
@@ -164,6 +163,7 @@ internal fun ActivityFeed(
             }
             activitySection("Needs you", attention, now, projectNames, boardNames, onOpen)
             activitySection("Running", running, timelineNow, projectNames, boardNames, onOpen)
+            activitySection("Recent", recent, now, projectNames, boardNames, onOpen)
             if (filtered.isEmpty()) item("empty") {
                 Column(Modifier.fillMaxWidth().padding(vertical = 24.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text(if (query.isNotBlank()) "No matching activity" else "All quiet here", fontWeight = FontWeight.SemiBold)
@@ -190,10 +190,6 @@ internal fun ActivityFeed(
                 TextButton(onClick = { expandedAccounts = !expandedAccounts }) {
                     Text(if (expandedAccounts) "Show fewer accounts" else "Show all ${accounts.size} accounts")
                 }
-            }
-            activitySection("Recent", recent.take(recentLimit), now, projectNames, boardNames, onOpen, recent.size)
-            if (recent.size > recentLimit) item("recent-more") {
-                TextButton(onClick = { recentLimit += 20 }) { Text("Show more activity") }
             }
         }
     }
@@ -300,10 +296,10 @@ private fun ActivityTimelinePanel(
 
 private fun LazyListScope.activitySection(
     title: String, entries: List<ActivityEntry>, now: Instant, projects: Map<String, String>, boards: Map<String, String>,
-    onOpen: (Card) -> Unit, total: Int = entries.size,
+    onOpen: (Card) -> Unit,
 ) {
     if (entries.isEmpty()) return
-    item("heading-$title") { ActivitySectionHeading("$title · $total") }
+    item("heading-$title") { ActivitySectionHeading("$title · ${entries.size}") }
     items(entries, key = { "$title-${it.card.id}" }) { entry ->
         ActivityRow(entry, projects[entry.card.projectId], boards[entry.card.boardId], now) { onOpen(entry.card) }
     }
