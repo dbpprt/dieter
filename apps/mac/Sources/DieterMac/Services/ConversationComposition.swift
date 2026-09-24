@@ -27,7 +27,8 @@ extension DieterStore {
         context.onFork = { [weak self] card in await self?.fork(card) }
         context.onLoadEarlierMessages = { [weak self] in await self?.loadEarlierMessages() ?? false }
         context.onOpenConversation = { [weak self] cardID, chat in
-            await self?.openConversation(cardID: cardID, chat: chat)
+            guard let self else { return }
+            await self.openConversation(cardID: cardID, chat: chat, fromInbox: self.section == .inbox)
         }
         context.onOpenProjectChanges = { [weak self] id in await self?.openProjectChanges(id) }
         context.onOpenWorkspaceFiles = { [weak self] card in await self?.openWorkspaceFiles(card: card) }

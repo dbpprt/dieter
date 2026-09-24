@@ -3507,6 +3507,24 @@ private func dragCard(_ id: String, position: Int64) -> Dieter_V1_Card {
     store.selectedProjectID = firstProject.id
     store.selectedBoardID = firstBoard.id
     store.section = .settings
+    await store.openInbox()
+    await store.openConversation(cardID: boardCard.id, fromInbox: true)
+    #expect(store.section == .inbox)
+    #expect(store.selectedCardID == boardCard.id)
+    #expect(store.selectedProjectID == targetProject.id)
+    #expect(store.selectedBoardID == targetBoard.id)
+    await store.openInbox()
+    #expect(store.selectedCardID == boardCard.id)
+
+    await store.openConversation(cardID: chat.id, fromInbox: true)
+    #expect(store.section == .inbox)
+    #expect(store.selectedCardID == nil)
+    #expect(store.selectedChatID == chat.id)
+    await store.conversationContext.openConversation(cardID: chat.id, chat: true)
+    #expect(store.section == .inbox)
+    store.closeConversation()
+    #expect(store.section == .inbox)
+    #expect(store.selectedChatID == nil)
 
     await store.openConversation(cardID: boardCard.id)
 

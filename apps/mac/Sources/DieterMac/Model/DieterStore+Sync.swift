@@ -947,7 +947,7 @@ extension DieterStore {
     func scheduleCreatedConversationOpen(cardID: String, chat: Bool) {
         Task { @MainActor [weak self] in
             guard let self, (self.selectedCardID ?? self.selectedChatID) == cardID else { return }
-            await self.openConversation(cardID: cardID, chat: chat)
+            await self.openConversation(cardID: cardID, chat: chat, fromInbox: self.section == .inbox)
         }
     }
 

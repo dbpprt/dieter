@@ -63,14 +63,15 @@ func main() {
 	offlineTrigger := flag.String("offline-trigger", "", "optional file whose creation disconnects the enrolled daemon while leaving the gateway online")
 	daemonRestartTrigger := flag.String("daemon-restart-trigger", "", "optional file whose creation restarts the isolated daemon API and gateway tunnel")
 	boardStressFixture := flag.Bool("board-stress-fixture", false, "seed a 100-card board with 85 variable-height cards in one lane")
+	inboxFixture := flag.Bool("inbox-fixture", false, "seed deterministic Inbox activity and real conversations")
 	flag.Parse()
-	if err := run(*address, *home, *offlineTrigger, *daemonRestartTrigger, *boardStressFixture); err != nil {
+	if err := run(*address, *home, *offlineTrigger, *daemonRestartTrigger, *boardStressFixture, *inboxFixture); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
 	}
 }
 
-func run(address, home, offlineTrigger, daemonRestartTrigger string, boardStressFixture bool) error {
+func run(address, home, offlineTrigger, daemonRestartTrigger string, boardStressFixture, inboxFixture bool) error {
 	// The mock harness answers every prompt deterministically, so end-to-end
 	// turns complete without real provider credentials.
 	if err := os.Setenv("DIETER_ENABLE_MOCK_HARNESS", "1"); err != nil {
@@ -207,6 +208,11 @@ func run(address, home, offlineTrigger, daemonRestartTrigger string, boardStress
 	if boardStressFixture {
 		board, err = seedBoardStressFixture(data, project, board)
 		if err != nil {
+			return err
+		}
+	}
+	if inboxFixture {
+		if err := seedInboxFixture(ctx, data, project, board); err != nil {
 			return err
 		}
 	}

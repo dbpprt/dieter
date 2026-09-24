@@ -51,7 +51,7 @@ extension DieterStore {
         }
     }
 
-    func openConversation(cardID: String, chat: Bool = false) async {
+    func openConversation(cardID: String, chat: Bool = false, fromInbox: Bool = false) async {
         let previousConversationID = selectedCardID ?? selectedChatID
         conversationSelectionGeneration &+= 1
         let selectionGeneration = conversationSelectionGeneration
@@ -69,7 +69,7 @@ extension DieterStore {
         let projectID = card?.projectID ?? ""
         let endpointID = endpointID(for: card)
         stopTerminalWatch()
-        section = opensChat ? .chats : .board
+        section = fromInbox ? .inbox : (opensChat ? .chats : .board)
         if !projectID.isEmpty {
             selectedProjectID = projectID
             if !opensChat, let boardID = card?.boardID, !boardID.isEmpty {

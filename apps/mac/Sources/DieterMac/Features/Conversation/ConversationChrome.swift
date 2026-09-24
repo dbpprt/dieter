@@ -19,7 +19,7 @@ struct ProjectDirectoryChangesRedirect: View {
                 Task { await context.openProjectChanges(projectID) }
             }
             .buttonStyle(DieterPrimaryButtonStyle())
-            .accessibilityIdentifier("changes.open-project")
+            .accessibilityIdentifier("changes.open-project").smokeTarget("changes.open-project")
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -182,7 +182,8 @@ struct ConversationModelIdentityLabel: View {
                 ? "Selected alias · \(selected)"
                 : "Selected model · \(selected)"
         }
-        let name = context.harnessCatalog.harnesses.first(where: { $0.id == provider })?
+        let name =
+            context.harnessCatalog.harnesses.first(where: { $0.id == provider })?
             .models.first(where: { $0.id == selected })?.name ?? selected
         return "Selected model · \(name)"
     }
