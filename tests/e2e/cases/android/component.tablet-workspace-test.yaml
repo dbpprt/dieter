@@ -20,3 +20,4 @@ native:
   - portraitWidthAndResizeKeepTheSelectedConversationReadable
   - activityKeepsContentBesideListTimelineAndEmptySelection
   - sidebarDragsPersistIndependentlyAcrossRecreation
+  - longPressActionsKeepTabletDetailVisibleInListAndTimeline

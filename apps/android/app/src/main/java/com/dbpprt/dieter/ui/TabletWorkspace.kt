@@ -433,6 +433,7 @@ internal fun TabletActivityTimeline(
     live: Boolean,
     onHours: (Int) -> Unit,
     onOpen: (com.dbpprt.dieter.v1.Card) -> Unit,
+    actions: (com.dbpprt.dieter.v1.Card) -> ActivityItemActions? = { null },
 ) {
     var visibleCount by rememberSaveable(hours) { mutableIntStateOf(40) }
     Column(Modifier.fillMaxWidth().testTag("tablet-activity-timeline"), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -452,7 +453,7 @@ internal fun TabletActivityTimeline(
                     Text(projectNames[projectId] ?: "Project unavailable", color = stableAccent(projectId), fontWeight = FontWeight.SemiBold)
                     activity.forEach { interval ->
                         val color = if (interval.entry.needsYou) DieterAmber else DieterShell
-                        Surface(onClick = { onOpen(interval.entry.card) }, color = DieterSurfaceHigh, shape = RoundedCornerShape(12.dp),
+                        ActivityItem(card = interval.entry.card, onOpen = onOpen, actions = actions(interval.entry.card), color = DieterSurfaceHigh, shape = RoundedCornerShape(12.dp),
                             modifier = Modifier.fillMaxWidth().testTag("tablet-activity-${interval.entry.card.id}")) {
                             Column(Modifier.padding(12.dp)) {
                                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {

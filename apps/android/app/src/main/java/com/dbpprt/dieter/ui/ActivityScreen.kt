@@ -44,6 +44,7 @@ import com.dbpprt.dieter.gateway.v1.ProviderQuotaProvider
 import com.dbpprt.dieter.gateway.v1.ProviderQuotaSnapshot
 import com.dbpprt.dieter.ui.theme.*
 import com.dbpprt.dieter.v1.Card
+import com.dbpprt.dieter.settings.NavigationFolderScope
 import kotlinx.coroutines.delay
 import java.time.Instant
 
@@ -51,6 +52,7 @@ import java.time.Instant
 internal fun ActivityScreen(state: DieterUiState, model: DieterViewModel, expanded: Boolean, contentPadding: PaddingValues) {
     var accountKey by rememberSaveable(state.activeGatewayId) { mutableStateOf<String?>(null) }
     val feedState = rememberSaveableStateHolder()
+    var folderChatId by rememberSaveable { mutableStateOf<String?>(null) }
     val tablet = LocalTabletWorkspace.current
     var timeline by rememberSaveable { mutableStateOf(false) }
     val content: @Composable (Modifier) -> Unit = { modifier ->
@@ -64,6 +66,14 @@ internal fun ActivityScreen(state: DieterUiState, model: DieterViewModel, expand
                 tablet = tablet,
                 timelineOnly = tablet && timeline,
                 onTimelineToggle = { timeline = it },
+                actions = ActivityItemActions(
+                    onRename = model::renameConversation,
+                    onArchive = model::archiveConversation,
+                    onTogglePin = model::togglePin,
+                    onMoveToFolder = { folderChatId = it.id },
+                    enabled = state.connected && !state.working,
+                ),
+                onClearError = model::clearError,
             )
         }
     }
@@ -94,6 +104,10 @@ internal fun ActivityScreen(state: DieterUiState, model: DieterViewModel, expand
     } else {
         content(Modifier.fillMaxSize().padding(contentPadding))
     }
+    folderChatId?.let { id ->
+        MoveToNavigationFolderDialog(id, NavigationFolderScope.CHATS, state.chatFolders,
+            model.navigationFolders, onDismiss = { folderChatId = null })
+    }
     val group = state.providerQuotaGroups.firstOrNull { group -> group.accountsList.any { it.accountKey == accountKey } }
     val account = group?.accountsList?.firstOrNull { it.accountKey == accountKey }
     if (account != null) {
@@ -120,7 +134,12 @@ internal fun ActivityFeed(
     tablet: Boolean = false,
     timelineOnly: Boolean = false,
     onTimelineToggle: (Boolean) -> Unit = {},
+    actions: ActivityItemActions? = null,
+    onClearError: () -> Unit = {},
 ) {
+    val itemActions: (Card) -> ActivityItemActions? = { card ->
+        actions?.copy(enabled = actions.enabled && card.id !in state.pendingCardIds)
+    }
     var tick by remember { mutableStateOf(Instant.now()) }
     LaunchedEffect(clock) {
         if (clock == null) while (true) { tick = Instant.now(); delay(15_000L) }
@@ -154,6 +173,7 @@ internal fun ActivityFeed(
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 16.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
+            if (state.error != null) item("error") { SurfaceErrorBanner(state.error, onClearError) }
             item("header") {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
@@ -207,7 +227,7 @@ internal fun ActivityFeed(
                 }
             }
             if (timelineOnly) item("wide-timeline") {
-                TabletActivityTimeline(intervals, projectNames, hours, state.connected, { hours = it }, onOpen)
+                TabletActivityTimeline(intervals, projectNames, hours, state.connected, { hours = it }, onOpen, itemActions)
             }
             if (!timelineOnly) {
                 item("timeline") {
@@ -220,11 +240,11 @@ internal fun ActivityFeed(
                             }
                         }
                     } else ActivityTimelinePanel(intervals, hours, state.connected, running.size, expandedTimeline,
-                        onHours = { hours = it }, onExpand = { expandedTimeline = !expandedTimeline }, onOpen = onOpen)
+                        onHours = { hours = it }, onExpand = { expandedTimeline = !expandedTimeline }, onOpen = onOpen, actions = itemActions)
                 }
-                activitySection("Needs attention", attention, now, projectNames, boardNames, onOpen, state.selectedCardId)
-                activitySection("Running", running, timelineNow, projectNames, boardNames, onOpen, state.selectedCardId)
-                activitySection("Recent", recent, now, projectNames, boardNames, onOpen, state.selectedCardId)
+                activitySection("Needs attention", attention, now, projectNames, boardNames, onOpen, state.selectedCardId, itemActions)
+                activitySection("Running", running, timelineNow, projectNames, boardNames, onOpen, state.selectedCardId, itemActions)
+                activitySection("Recent", recent, now, projectNames, boardNames, onOpen, state.selectedCardId, itemActions)
                 if (filtered.isEmpty()) item("empty") {
                     Column(Modifier.fillMaxWidth().padding(vertical = 24.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text(if (query.isNotBlank()) "No matching activity" else "All quiet here", fontWeight = FontWeight.SemiBold)
@@ -284,6 +304,7 @@ private fun ActivityProjectTile(id: String, name: String, isSelected: Boolean, c
 private fun ActivityTimelinePanel(
     intervals: List<ActivityInterval>, hours: Int, live: Boolean, runningCount: Int, expanded: Boolean,
     onHours: (Int) -> Unit, onExpand: () -> Unit, onOpen: (Card) -> Unit,
+    actions: (Card) -> ActivityItemActions?,
 ) {
     var rangeMenu by remember { mutableStateOf(false) }
     var detailLimit by rememberSaveable(hours) { mutableIntStateOf(20) }
@@ -341,7 +362,7 @@ private fun ActivityTimelinePanel(
             if (expanded) {
                 Text("Latest activity per conversation · dots mark events without a recorded duration.", color = DieterMuted, style = MaterialTheme.typography.labelSmall)
                 intervals.take(detailLimit).forEach { interval ->
-                    Surface(onClick = { onOpen(interval.entry.card) }, color = Color.Transparent,
+                    ActivityItem(card = interval.entry.card, onOpen = onOpen, actions = actions(interval.entry.card), color = Color.Transparent,
                         modifier = Modifier.fillMaxWidth().testTag("activity-bar-${interval.entry.card.id}")) {
                         Column(Modifier.padding(vertical = 12.dp)) {
                             Text(interval.entry.card.title, maxLines = 2, overflow = TextOverflow.Ellipsis,
@@ -363,11 +384,12 @@ private fun LazyListScope.activitySection(
     title: String, entries: List<ActivityEntry>, now: Instant, projects: Map<String, String>, boards: Map<String, String>,
     onOpen: (Card) -> Unit,
     selectedId: String? = null,
+    actions: (Card) -> ActivityItemActions? = { null },
 ) {
     if (entries.isEmpty()) return
     item("heading-$title") { ActivitySectionHeading("$title · ${entries.size}") }
     items(entries, key = { "$title-${it.card.id}" }) { entry ->
-        ActivityRow(entry, projects[entry.card.projectId], boards[entry.card.boardId], now, entry.card.id == selectedId) { onOpen(entry.card) }
+        ActivityRow(entry, projects[entry.card.projectId], boards[entry.card.boardId], now, entry.card.id == selectedId, actions(entry.card)) { onOpen(entry.card) }
     }
 }
 
@@ -378,8 +400,8 @@ private fun ActivitySectionHeading(title: String, modifier: Modifier = Modifier)
 }
 
 @Composable
-private fun ActivityRow(entry: ActivityEntry, project: String?, board: String?, now: Instant, isSelected: Boolean = false, onClick: () -> Unit) {
-    Surface(onClick = onClick, shape = RoundedCornerShape(16.dp), color = if (isSelected) DieterShellTint else DieterSurface,
+private fun ActivityRow(entry: ActivityEntry, project: String?, board: String?, now: Instant, isSelected: Boolean = false, actions: ActivityItemActions? = null, onClick: () -> Unit) {
+    ActivityItem(card = entry.card, onOpen = { onClick() }, actions = actions, color = if (isSelected) DieterShellTint else DieterSurface,
         modifier = Modifier.fillMaxWidth().testTag("activity-row-${entry.card.id}").semantics { selected = isSelected }) {
         Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Box(Modifier.width(4.dp).height(42.dp).background(stableAccent(entry.card.projectId), RoundedCornerShape(2.dp)))

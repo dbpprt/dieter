@@ -1,0 +1,14 @@
+# yaml-language-server: $schema=../../schema.json
+version: 1
+id: activity.actions
+platform: android
+suites:
+- functional
+components:
+- activity
+fixture: activity
+timeout: 150s
+native:
+  class: com.dbpprt.dieter.ui.ActivityActionsEndToEndTest
+  methods:
+  - activityMenuRenamesPinsAndArchivesBothConversationKinds

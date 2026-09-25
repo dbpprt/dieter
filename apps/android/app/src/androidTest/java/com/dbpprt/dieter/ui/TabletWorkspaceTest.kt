@@ -316,6 +316,41 @@ class TabletWorkspaceTest {
         capture("tablet-projects-resized")
     }
 
+    @Test fun longPressActionsKeepTabletDetailVisibleInListAndTimeline() {
+        var timeline by mutableStateOf(false)
+        var opened: String? = null
+        val archived = mutableListOf<String>()
+        val renamed = mutableListOf<Pair<String, String>>()
+        compose.setContent { TabletTestSurface {
+            DieterTheme(darkTheme = true) {
+                TabletListDetail(dividerTag = "activity-pane-divider", list = { modifier ->
+                    ActivityFeed(fixture, modifier, { opened = it.id }, {}, {}, {}, now,
+                        tablet = true, timelineOnly = timeline, onTimelineToggle = { timeline = it },
+                        actions = ActivityItemActions({ card, title -> renamed += card.id to title },
+                            { archived += it.id }, {}))
+                }, detail = { modifier ->
+                    CardDetailScreen(fixture.copy(selectedCardId = "review", conversation = snapshot("review")),
+                        model, modifier, showBack = false)
+                })
+            }
+        } }
+        val editor = visibleMessageEditor().fetchSemanticsNode().boundsInRoot
+        compose.onNodeWithTag("activity-feed").performScrollToNode(hasTestTag("activity-row-running"))
+        compose.onNodeWithTag("activity-row-running").performTouchInput { longClick() }
+        compose.onNodeWithTag("activity-rename-running").performClick()
+        compose.onNodeWithTag("activity-rename-title-running").performTextReplacement("Renamed from tablet")
+        compose.onNodeWithTag("activity-rename-confirm-running").performClick()
+        compose.runOnIdle { assertEquals(listOf("running" to "Renamed from tablet"), renamed); assertNull(opened) }
+        assertEquals(editor, visibleMessageEditor().fetchSemanticsNode().boundsInRoot)
+        compose.onNodeWithTag("activity-feed").performScrollToNode(hasTestTag("tablet-inbox-timeline"))
+        compose.onNodeWithTag("tablet-inbox-timeline").performClick()
+        compose.onNodeWithTag("tablet-activity-running").performScrollTo().performTouchInput { longClick() }
+        compose.onNodeWithTag("activity-archive-running").performClick()
+        compose.runOnIdle { assertEquals(listOf("running"), archived); assertNull(opened) }
+        visibleMessageEditor().assertIsDisplayed()
+        assertEquals(editor, visibleMessageEditor().fetchSemanticsNode().boundsInRoot)
+    }
+
     private fun visibleMessageEditor(): SemanticsNodeInteraction {
         // Pager precomposition can retain an offscreen editor. Assert that exactly
         // one editor is visible, then measure that editor through each resize.

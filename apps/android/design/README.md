@@ -55,8 +55,11 @@ replaces the board in the content pane; Back returns to its lanes while the
 project navigator stays visible. Drag the divider to resize the panes. Activity,
 Projects, and Chats save their own split locally on the device across app
 restarts; temporary window constraints do not overwrite the saved split. Existing
-conversation, subagent, changes, merge, comments, creation, schedule, terminal,
+conversation, subagent, changes, merge, creation, schedule, terminal,
 screen, machine, and provider-quota controls remain the source of behavior.
+Long-press a card or chat in Activity (including either timeline) for Open,
+Rename, and Archive. Chats also offer Pin/Unpin and Move to folder. These actions
+let you manage another item without changing the open conversation.
 Tablet colors follow the user's existing palette and system appearance.
 
 `TabletWorkspaceTest` captures the real native compositions, including a light

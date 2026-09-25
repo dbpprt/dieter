@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.*
@@ -149,6 +150,86 @@ class ActivityScreenTest {
         compose.onNodeWithText("0% remaining", substring = true).assertDoesNotExist()
         compose.onNodeWithTag("activity-feed").performScrollToNode(hasTestTag("activity-timeline"))
         compose.onNodeWithText("CACHED").assertIsDisplayed()
+    }
+
+    @Test fun longPressRenamesArchivesAndPinsWithoutOpeningTheConversation() {
+        var current by mutableStateOf(state)
+        val opened = mutableListOf<String>()
+        val renamed = mutableListOf<Pair<String, String>>()
+        val archived = mutableListOf<String>()
+        val pinned = mutableListOf<String>()
+        val moved = mutableListOf<String>()
+        compose.setContent { DieterTheme {
+            ActivityFeed(current, onOpen = { opened += it.id }, onConnections = {}, onAccount = {},
+                onRefreshAccounts = {}, clock = now, actions = ActivityItemActions(
+                    onRename = { card, title ->
+                        renamed += card.id to title
+                        current = current.copy(spaceCards = current.spaceCards.map {
+                            if (it.id == card.id) it.toBuilder().setTitle(title).build() else it
+                        })
+                    },
+                    onArchive = { archived += it.id }, onTogglePin = { pinned += it.id },
+                    onMoveToFolder = { moved += it.id },
+                ))
+        } }
+        fun longPress(id: String) {
+            compose.onNodeWithTag("activity-feed").performScrollToNode(hasTestTag("activity-row-$id"))
+            compose.onNodeWithTag("activity-row-$id").performTouchInput { longClick() }
+            compose.runOnIdle { assertTrue("Long press must not open the conversation", opened.isEmpty()) }
+        }
+        longPress("review")
+        compose.onNodeWithTag("activity-pin-review").assertDoesNotExist()
+        compose.onNodeWithTag("activity-folder-review").assertDoesNotExist()
+        compose.onNodeWithTag("activity-rename-review").performClick()
+        compose.onNodeWithTag("activity-rename-title-review").performTextReplacement("   ")
+        compose.onNodeWithTag("activity-rename-confirm-review").assertIsNotEnabled()
+        compose.onNodeWithText("Cancel").performClick()
+        compose.runOnIdle { assertTrue(renamed.isEmpty()) }
+        longPress("review")
+        compose.onNodeWithTag("activity-rename-review").performClick()
+        compose.onNodeWithTag("activity-rename-title-review").performTextReplacement("  New card title  ")
+        compose.onNodeWithTag("activity-rename-confirm-review").performClick()
+        compose.runOnIdle { assertEquals(listOf("review" to "New card title"), renamed) }
+        longPress("review")
+        compose.onNodeWithTag("activity-archive-review").performClick()
+        compose.runOnIdle { assertEquals(listOf("review"), archived) }
+        longPress("answer")
+        compose.onNodeWithTag("activity-pin-answer").performClick()
+        compose.runOnIdle {
+            assertEquals(listOf("answer"), pinned)
+            current = current.copy(chats = current.chats.map { if (it.id == "answer") it.toBuilder().setPinned(true).build() else it })
+        }
+        longPress("answer")
+        compose.onNodeWithText("Unpin").assertIsDisplayed()
+        compose.onNodeWithTag("activity-folder-answer").performClick()
+        compose.runOnIdle { assertEquals(listOf("answer"), moved) }
+        longPress("answer")
+        compose.onNodeWithTag("activity-archive-answer").performClick()
+        compose.runOnIdle { assertEquals(listOf("review", "answer"), archived) }
+        compose.onNodeWithTag("activity-row-answer").performClick()
+        compose.runOnIdle { assertEquals(listOf("answer"), opened) }
+    }
+
+    @Test fun timelineSupportsLongPressAndOfflineActionsStayDisabled() {
+        var online by mutableStateOf(true)
+        var opened: String? = null
+        compose.setContent { DieterTheme {
+            ActivityFeed(state, onOpen = { opened = it.id }, onConnections = {}, onAccount = {}, onRefreshAccounts = {},
+                clock = now, actions = ActivityItemActions({ _, _ -> fail("Unexpected rename") },
+                    { fail("Unexpected archive") }, { fail("Unexpected pin") }, enabled = online))
+        } }
+        compose.onNodeWithTag("activity-timeline-expand").performClick()
+        compose.onNodeWithTag("activity-bar-chat-running").performTouchInput { longClick() }
+        compose.onNodeWithTag("activity-rename-chat-running").assertIsEnabled()
+        compose.runOnIdle { online = false }
+        compose.onNodeWithTag("activity-rename-chat-running").assertIsNotEnabled()
+        compose.onNodeWithTag("activity-archive-chat-running").assertIsNotEnabled()
+        compose.onNodeWithTag("activity-pin-chat-running").assertIsNotEnabled()
+        compose.onNodeWithTag("activity-open-chat-running").performClick()
+        compose.runOnIdle { assertEquals("chat-running", opened) }
+        compose.onNodeWithTag("activity-feed").performScrollToNode(hasTestTag("activity-row-answer"))
+        compose.onNodeWithTag("activity-row-answer").performSemanticsAction(SemanticsActions.OnLongClick) { it() }
+        compose.onNodeWithTag("activity-archive-answer").assertIsNotEnabled()
     }
 
     private fun capture(name: String) {

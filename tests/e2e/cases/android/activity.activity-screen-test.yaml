@@ -16,3 +16,5 @@ native:
   - olderChatsRemainReachableBesideCardsInAllAndProjectFeeds
   - searchAndEmptyResultsKeepAccountsAvailable
   - referenceLayoutDarkLightLargeTextAndUnavailableUsage
+  - longPressRenamesArchivesAndPinsWithoutOpeningTheConversation
+  - timelineSupportsLongPressAndOfflineActionsStayDisabled

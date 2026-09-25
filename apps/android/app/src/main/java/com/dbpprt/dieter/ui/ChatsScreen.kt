@@ -443,7 +443,7 @@ internal fun ChatRow(
                     text = { Text("Archive") },
                     leadingIcon = { Icon(Icons.Outlined.Archive, null) },
                     modifier = Modifier.testTag("chat-archive-${chat.id}"),
-                    onClick = { actionsOpen = false; model.archiveChat(chat) },
+                    onClick = { actionsOpen = false; model.archiveConversation(chat) },
                 )
             }
         }
@@ -469,7 +469,7 @@ internal fun ChatRow(
                     enabled = renameText.isNotBlank(),
                     modifier = Modifier.testTag("chat-rename-confirm-${chat.id}"),
                     onClick = {
-                        model.renameChat(chat, renameText.trim())
+                        model.renameConversation(chat, renameText.trim())
                         renameOpen = false
                     },
                 ) { Text("Rename") }

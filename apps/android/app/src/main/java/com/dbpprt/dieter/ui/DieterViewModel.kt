@@ -2386,14 +2386,17 @@ class DieterViewModel internal constructor(
         refreshStateOnce()
     }
 
-    fun archiveChat(chat: Card) = action {
-        applyCardMutation(repository.archiveCard(chat.id, true))
-        if (_state.value.selectedCardId == chat.id) closeDetail()
+    fun archiveConversation(card: Card) = action(ensureReplicaRoute = false) {
+        connectionManager.ensureReplicaRoute(card.projectId)
+        applyCardMutation(repository.archiveCard(card.id, true))
+        if (_state.value.selectedCardId == card.id) closeDetail()
     }
 
-    fun renameChat(chat: Card, title: String) = action {
-        if (title.isBlank() || title == chat.title) return@action
-        applyCardMutation(repository.renameCard(chat.id, title))
+    fun renameConversation(card: Card, title: String) = action(ensureReplicaRoute = false) {
+        val normalized = title.trim()
+        if (normalized.isBlank() || normalized == card.title) return@action
+        connectionManager.ensureReplicaRoute(card.projectId)
+        applyCardMutation(repository.renameCard(card.id, normalized))
     }
 
     private fun startCard(card: Card, board: Board?) {
@@ -2415,7 +2418,8 @@ class DieterViewModel internal constructor(
         }
     }
 
-    fun togglePin(card: Card) = action {
+    fun togglePin(card: Card) = action(ensureReplicaRoute = false) {
+        connectionManager.ensureReplicaRoute(card.projectId)
         applyCardMutation(repository.pinChat(card.id, !card.pinned))
     }
 
@@ -3745,7 +3749,6 @@ class DieterViewModel internal constructor(
         baseRemote: String,
         baseBranch: String,
         validationCommands: List<ValidationCommand>,
-        remotePublishMode: String,
     ) = action(ensureReplicaRoute = false) {
         check(endpointId.isNotBlank()) { "Choose an online machine first." }
         check(baseBranch.isNotBlank()) { "Enter a workspace base branch." }
@@ -3760,7 +3763,6 @@ class DieterViewModel internal constructor(
                 .setBaseRemote(baseRemote.trim())
                 .setBaseBranch(baseBranch.trim())
                 .addAllValidationCommands(validationCommands)
-                .setRemotePublishMode(remotePublishMode)
                 .build()
         val operationId = pendingProjectCreation?.takeIf { it.first == payload }?.second ?: java.util.UUID.randomUUID().toString()
         pendingProjectCreation = payload to operationId
