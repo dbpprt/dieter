@@ -289,7 +289,6 @@ func TestAndroidNativeCoverageInventory(t *testing.T) {
 	exceptions := map[string]bool{
 		"runFlow": true,
 		"webRTCControlCarriesRPCAndReportsICEPath":                  true,
-		"archiveVisibleFixtureAndRestoreProductionGateway":          true,
 		"terminalSurvivesAndroidTransportLossThroughTheRealGateway": true,
 		"cardAttachmentDraftRoundTripsThroughTheRealGateway":        true,
 		"completeNativeGrpcPathReadsTheLocalWorkspace":              true,

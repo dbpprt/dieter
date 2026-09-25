@@ -107,8 +107,7 @@ just e2e run --platform mac --suite smoke
 
 Suites are `core`, `board`, `conversation`, `machine`, `sidebar`, `terminal`,
 `island`, `workspace`, and `inbox`, plus the YAML `mac.navigation` journey.
-Legacy `just mac smoke*` commands delegate to the shared runner. Run suites
-sequentially. The shared Go runner:
+Run cases sequentially through `just e2e run`. The shared Go runner:
 
 - refuses to run beside any existing `DieterMac` process;
 - owns the exact packaged-app and isolated-gateway PIDs;
@@ -119,11 +118,11 @@ sequentially. The shared Go runner:
 - verifies no app process remains.
 
 Read every report and inspect relevant PNGs; exit status alone is insufficient.
-The app-side smoke interface exists only in debug builds. The confirmed `just mac clean-smoke` recipe removes historical Swift-driver
-evidence only; retain current shared-runner evidence until reviewed.
+The app-side smoke interface exists only in debug builds. Retain the selected
+shared-runner evidence directory until reviewed.
 
 For a longer isolated performance sweep, run
-`DIETER_PERFORMANCE_SWEEP=1 just mac smoke board`. It seeds 40 chats with two
+`DIETER_PERFORMANCE_SWEEP=1 just e2e run --platform mac --case mac.board`. It seeds 40 chats with two
 300-message tool-heavy histories alongside the 100-card board, measures 15
 returns per Board/Chats route and 30 alternating chat clicks, and records quiet
 CPU, physical footprint, rendering counters and directory-generation deltas.
@@ -158,7 +157,7 @@ For a crash or launch failure:
 
 ```sh
 just mac verify
-ls -lt "$MAC_EVIDENCE" apps/mac/.build/smoke 2>/dev/null
+ls -lt "$MAC_EVIDENCE" tmp/e2e-* 2>/dev/null
 ```
 
 Inspect recent `DieterMac` reports under `~/Library/Logs/DiagnosticReports`

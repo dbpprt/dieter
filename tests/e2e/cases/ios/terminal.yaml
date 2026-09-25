@@ -4,11 +4,13 @@ id: ios.terminal
 platform: ios
 suites:
 - smoke
+- functional
 components:
 - ios
 fixture: gateway
-timeout: 300s
+timeout: 10m
 native:
+  target: DieterIOSUITests
   class: RemoteNodeUITests
   methods:
   - testRemoteTerminalJourney

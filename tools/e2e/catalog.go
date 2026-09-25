@@ -18,6 +18,7 @@ import (
 const protocolVersion = 1
 
 type Case struct {
+	Devices    []string          `yaml:"devices,omitempty" json:"devices,omitempty"`
 	Build      string            `yaml:"build,omitempty" json:"build,omitempty"`
 	Version    int               `yaml:"version" json:"version"`
 	ID         string            `yaml:"id" json:"id"`
@@ -32,6 +33,7 @@ type Case struct {
 	Source     string            `yaml:"-" json:"source"`
 }
 type Native struct {
+	Target  string   `yaml:"target,omitempty" json:"target,omitempty"`
 	Suite   string   `yaml:"suite,omitempty" json:"suite,omitempty"`
 	Checks  []string `yaml:"checks,omitempty" json:"checks,omitempty"`
 	Class   string   `yaml:"class,omitempty" json:"class,omitempty"`
@@ -153,6 +155,16 @@ func (c Case) validate() error {
 	if c.Platform != "android" && c.Platform != "ios" && c.Platform != "mac" {
 		return fmt.Errorf("unsupported platform %q", c.Platform)
 	}
+	seenDevices := map[string]bool{}
+	for _, device := range c.Devices {
+		if c.Platform != "ios" || (device != "iphone" && device != "ipad") || seenDevices[device] {
+			return fmt.Errorf("invalid/duplicate iOS device %q", device)
+		}
+		seenDevices[device] = true
+	}
+	if c.Platform == "ios" && (c.Native == nil || len(c.Arguments) != 0 || c.Fixture == "activity") {
+		return fmt.Errorf("iOS requires native methods and none/gateway/screen fixture, without instrumentation arguments")
+	}
 	if c.Build != "" && c.Build != "performance" {
 		return fmt.Errorf("unsupported build %q", c.Build)
 	}
@@ -194,6 +206,15 @@ func (c Case) validate() error {
 		}
 	} else if c.Native != nil && (c.Native.Suite != "" || len(c.Native.Checks) != 0) {
 		return fmt.Errorf("suite/checks are Mac-only")
+	}
+	if c.Native != nil {
+		if c.Platform == "ios" {
+			if !slices.Contains([]string{"DieterIOSUITests", "DieterIOSNativeTests"}, c.Native.Target) {
+				return fmt.Errorf("iOS native target is required")
+			}
+		} else if c.Native.Target != "" {
+			return fmt.Errorf("native target is iOS-only")
+		}
 	}
 	if c.Native != nil && c.Platform != "mac" {
 		if (c.Platform == "android" && !nativeClass.MatchString(c.Native.Class)) || (c.Platform == "ios" && !nativeMethod.MatchString(c.Native.Class)) || len(c.Native.Methods) == 0 {

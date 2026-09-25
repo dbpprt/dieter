@@ -234,8 +234,9 @@ def plan_checks(root, paths, packages=None):
         add("just", "android", "test")
     if ios:
         add("just", "ios", "build")
-        add("just", "ios", "smoke")
-        add("just", "ios", "smoke-ipad")
+    if ios or any(p.startswith(("tools/e2e/", "tests/e2e/cases/ios/")) or p in {"tests/e2e/schema.json", "just/e2e.just"} for p in code):
+        add("just", "e2e", "run", "--platform", "ios", "--device", "iphone", "--suite", "smoke")
+        add("just", "e2e", "run", "--platform", "ios", "--device", "ipad", "--suite", "smoke")
     if mac_suites == MAC_SMOKE_SUITES:
         add("just", "e2e", "run", "--platform", "mac", "--suite", "smoke")
     elif mac_suites:
@@ -274,7 +275,10 @@ def affected_ci_components(root, paths):
         elif command[:2] == ["just", "ios"]:
             selected["ios"] = True
         elif command[:2] == ["just", "e2e"]:
-            selected["macos" if "mac" in command else "android"] = True
+            if command[2] != "run":
+                selected["core"] = True
+            else:
+                selected["ios" if "ios" in command else "macos" if "mac" in command else "android"] = True
         elif command[:2] == ["just", "android"]:
             selected["android"] = True
         else:

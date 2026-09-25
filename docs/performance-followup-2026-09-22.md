@@ -273,13 +273,13 @@ restarting the operator daemon or by running simultaneous native smoke suites.
 ```sh
 just check-changed --dry-run
 just check-changed
-just mac smoke board
+just e2e run --platform mac --case mac.board
 DIETER_BOARD_PROFILE=1 just mac test boardOpeningStageDiagnostic
 DIETER_IDLE_SYNC=30s go test ./internal/server -run '^TestIdleSubscriptionProcessCost$' -count=1 -v
 go test ./internal/server -run '^$' -bench 'BenchmarkLarge|BenchmarkToolHeavyConversationSnapshot' -benchmem -count=3
 ```
 
-`just mac smoke board` records actual pointer selection/content timing, lane
+`just e2e run --platform mac --case mac.board` records actual pointer selection/content timing, lane
 reload and row/body/height counts, project-read counts, viewport/virtualization
 checks, and process CPU during a quiet interval. Rendering counters are opt-in
 and debug-only. They retain no views, cards, transcripts, or credentials.

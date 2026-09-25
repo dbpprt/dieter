@@ -129,19 +129,17 @@ jobs:
         run: just e2e run --platform mac --case mac.core
       - name: Native navigation gate
         if: github.event_name != 'schedule' && github.event_name != 'workflow_dispatch'
-        run: just mac smoke board
+        run: just e2e run --platform mac --case mac.board
       - name: Complete native qualification
         if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-        run: just mac smoke-all
+        run: just e2e run --platform mac --suite smoke
       - name: Retain native reports and screenshots
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: mac-native-evidence
           path: |
-            apps/mac/.build/smoke/**/*.json
-            apps/mac/.build/smoke/**/*.png
-            apps/mac/.build/smoke/**/*.log
+            tmp/e2e-*/
           if-no-files-found: ignore
           retention-days: 14
 
@@ -156,9 +154,7 @@ jobs:
       matrix:
         include:
           - platform: iphone
-            device: iPhone 17 Pro
           - platform: ipad
-            device: iPad Pro 11-inch (M5)
     steps:
       - uses: actions/checkout@v4
         with:
@@ -184,33 +180,22 @@ jobs:
           key: ${{ runner.os }}-${{ runner.arch }}-xcode-26.5-ios-ci-v1-${{ hashFiles('apps/mac/Package.swift', 'apps/ios/**/Package.resolved', 'apps/mac/Vendor/**/Package.swift') }}
       - name: Install isolated fixture runtime
         run: just harness install
-      - name: Build signed Simulator app
-        id: build_ios
-        run: just ios build
-      - name: Verify remote workflows
+      - name: Build and verify native iOS cases
+        id: test_ios
         env:
-          IOS_SMOKE_DEVICE: ${{ matrix.device }}
-        run: just ios smoke-built "$IOS_SMOKE_DEVICE"
+          E2E_DEVICE: ${{ matrix.platform }}
+        run: just e2e run --platform ios --device "$E2E_DEVICE" --suite smoke
       - name: Retain native results and screenshots
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: ios-${{ matrix.platform }}-evidence
           path: |
-            apps/ios/.build/smoke/**/test-summary.json
-            apps/ios/.build/smoke/**/passed.json
-            apps/ios/.build/smoke/**/stage.log
-            apps/ios/.build/smoke/**/cleanup.log
-            apps/ios/.build/smoke/**/boot.log
-            apps/ios/.build/smoke/**/gateway.log
-            apps/ios/.build/smoke/**/screen-fixture.log
-            apps/ios/.build/smoke/**/tests.log
-            apps/ios/.build/smoke/**/failure-console.log
-            apps/ios/.build/smoke/**/attachments/*
+            tmp/e2e-*/
           if-no-files-found: ignore
           retention-days: 14
       - name: Verify unsigned device archive
-        if: ${{ !cancelled() && steps.build_ios.conclusion == 'success' && matrix.platform == 'iphone' }}
+        if: ${{ !cancelled() && steps.test_ios.conclusion == 'success' && matrix.platform == 'iphone' }}
         run: just ios archive-unsigned 0.1.0 1
 
   ios:
@@ -227,8 +212,8 @@ jobs:
           just-version: "1.58.0"
       - name: Require both device journeys
         env:
-          IOS_DEVICE_RESULT: ${{ needs.changes.result == 'success' && (needs.changes.outputs.ios != 'true' || needs.ios-device.result == 'success') && 'success' || 'failure' }}
-        run: just ios ci-smoke-result
+          NATIVE_DEVICE_RESULT: ${{ needs.changes.result == 'success' && (needs.changes.outputs.ios != 'true' || needs.ios-device.result == 'success') && 'success' || 'failure' }}
+        run: just e2e ci-result
 
   android:
     name: Android client

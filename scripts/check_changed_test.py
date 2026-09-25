@@ -38,7 +38,9 @@ class CheckChangedTests(unittest.TestCase):
             self.assertIn(["just", "e2e", "check"], plan)
             self.assertIn(["just", "e2e", "run", "--suite", "functional", "--changed"], plan)
             self.assertFalse(any(command[:2] in (["just", "mac"], ["just", "ios"]) for command in plan))
-            self.assertEqual(self.components(path), {"core", "android"} if path.startswith("tests/e2e/cases/android/") else {"core", "android", "macos"})
+            for device in (() if path.startswith("tests/e2e/cases/android/") else ("iphone", "ipad")):
+                self.assertIn(["just", "e2e", "run", "--platform", "ios", "--device", device, "--suite", "smoke"], plan)
+            self.assertEqual(self.components(path), {"core", "android"} if path.startswith("tests/e2e/cases/android/") else {"core", "android", "macos", "ios"})
 
     def test_no_changes_or_docs_need_no_checks(self):
         self.assertEqual(self.plan(), [])
@@ -94,13 +96,13 @@ class CheckChangedTests(unittest.TestCase):
 
     def test_ios_changes_run_phone_and_tablet_without_mac_ui(self):
         for path in ["apps/ios/DieterIOSApp/DieterIOSApp.swift", "apps/mac/Sources/DieterIOS/UI/Root.swift"]:
-            self.assertEqual(self.plan(path), [["just", "ios", "build"], ["just", "ios", "smoke"], ["just", "ios", "smoke-ipad"]])
+            self.assertEqual(self.plan(path), [["just", "ios", "build"], ["just", "e2e", "run", "--platform", "ios", "--device", "iphone", "--suite", "smoke"], ["just", "e2e", "run", "--platform", "ios", "--device", "ipad", "--suite", "smoke"]])
 
     def test_shared_swift_client_also_validates_ios(self):
         plan = self.plan("apps/mac/Sources/DieterClient/DieterRPC.swift")
         self.assertIn(["just", "mac", "test"], plan)
-        self.assertIn(["just", "ios", "smoke"], plan)
-        self.assertIn(["just", "ios", "smoke-ipad"], plan)
+        self.assertIn(["just", "e2e", "run", "--platform", "ios", "--device", "iphone", "--suite", "smoke"], plan)
+        self.assertIn(["just", "e2e", "run", "--platform", "ios", "--device", "ipad", "--suite", "smoke"], plan)
 
     def test_mac_change_runs_only_mac_unit_and_integration_tests(self):
         self.assertEqual(self.plan("apps/mac/Sources/DieterMac/Features/Conversation/ConversationView.swift"),
@@ -361,45 +363,6 @@ class CheckChangedTests(unittest.TestCase):
                 run.return_value.stdout = "123\n456\n"
                 self.assertEqual(main(), 1)
                 run.assert_called_once_with(["pgrep", "-x", "DieterMac"], capture_output=True, text=True)
-
-
-@unittest.skipUnless(shutil.which("just"), "Just is needed to verify the smoke recipe")
-class SelectedSmokeRecipeTests(unittest.TestCase):
-    # Execute the actual recipe with stubbed Just/pgrep children. This checks
-    # ordering, failure handling, and guards without compiling or launching apps.
-    def invoke(self, *suites, running=1, fail=""):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            log = root / "commands"
-            (root / "just").write_text(
-                '#!/bin/bash\nprintf "%s\\n" "$*" >> "$SMOKE_TEST_COMMAND_LOG"\n'
-                '[[ "$*" != "$SMOKE_TEST_FAIL_COMMAND" ]]\n')
-            (root / "pgrep").write_text('#!/bin/bash\nexit "$SMOKE_TEST_PGREP_EXIT"\n')
-            for command in ["just", "pgrep"]:
-                (root / command).chmod(0o755)
-            environment = dict(os.environ, PATH=str(root) + os.pathsep + os.defpath,
-                               SMOKE_TEST_COMMAND_LOG=str(log), SMOKE_TEST_FAIL_COMMAND=fail,
-                               SMOKE_TEST_PGREP_EXIT=str(running))
-            result = subprocess.run(
-                [shutil.which("just"), "--justfile", str(Path(__file__).resolve().parents[1] / "just/mac.just"),
-                 "smoke-suites", *suites], env=environment, capture_output=True, text=True, timeout=10)
-            return result, log.read_text().splitlines() if log.exists() else []
-
-    def test_selected_suites_delegate_once_to_shared_runner(self):
-        result, commands = self.invoke("island", "board")
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(commands, ["e2e run --platform mac --case mac.island,mac.board"])
-
-    def test_shared_runner_failure_propagates(self):
-        command = "e2e run --platform mac --case mac.island"
-        result, commands = self.invoke("island", fail=command)
-        self.assertNotEqual(result.returncode, 0)
-        self.assertEqual(commands, [command])
-
-    def test_missing_suites_do_not_dispatch(self):
-        result, commands = self.invoke()
-        self.assertNotEqual(result.returncode, 0)
-        self.assertEqual(commands, [])
 
 
 if __name__ == "__main__":

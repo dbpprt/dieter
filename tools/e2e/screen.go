@@ -40,7 +40,16 @@ func waitFile(ctx context.Context, p *ownedProcess, path string) error {
 		}
 	}
 }
-func (a android) startScreen(ctx context.Context, dir string) (values map[string]string, port string, cleanup func() error, err error) {
+
+type screenDriver struct {
+	root       string
+	nativeOnly bool
+}
+
+func (a android) startScreen(ctx context.Context, dir string) (map[string]string, string, func() error, error) {
+	return (screenDriver{root: a.root}).start(ctx, dir)
+}
+func (a screenDriver) start(ctx context.Context, dir string) (values map[string]string, port string, cleanup func() error, err error) {
 	values = map[string]string{}
 	state, err := os.MkdirTemp("", "dieter-e2e-screen-")
 	if err != nil {
@@ -64,6 +73,9 @@ func (a android) startScreen(ctx context.Context, dir string) (values map[string
 		return os.RemoveAll(state)
 	}
 	source := env("DIETER_SCREEN_TEST_SOURCE", "native-synthetic")
+	if a.nativeOnly {
+		source = "native-synthetic"
+	}
 	if source != "native-synthetic" && source != "screen" {
 		return values, "", cleanup, fmt.Errorf("unknown screen source")
 	}
@@ -77,7 +89,11 @@ func (a android) startScreen(ctx context.Context, dir string) (values map[string
 	if err = os.WriteFile(filepath.Join(state, "InputTarget.app/Contents/Info.plist"), []byte(plist), 0600); err != nil {
 		return
 	}
-	for _, argv := range [][]string{{"bash", "native/macos-capture/build.sh", helper}, {"go", "build", "-o", binary, "./scripts/screens-fixture"}, {"xcrun", "swiftc", "-parse-as-library", "-O", "-framework", "AppKit", "native/macos-capture/tests/InputTarget.swift", "-o", target}, {"codesign", "--force", "--sign", "-", filepath.Join(state, "InputTarget.app")}} {
+	builds := [][]string{{"bash", "native/macos-capture/build.sh", helper}, {"go", "build", "-o", binary, "./scripts/screens-fixture"}}
+	if !a.nativeOnly {
+		builds = append(builds, []string{"xcrun", "swiftc", "-parse-as-library", "-O", "-framework", "AppKit", "native/macos-capture/tests/InputTarget.swift", "-o", target}, []string{"codesign", "--force", "--sign", "-", filepath.Join(state, "InputTarget.app")})
+	}
+	for _, argv := range builds {
 		var out string
 		out, err = command(ctx, a.root, nil, argv...)
 		if err != nil {
@@ -107,6 +123,14 @@ func (a android) startScreen(ctx context.Context, dir string) (values map[string
 	}
 	if token, ok := ready["token"].(string); ok {
 		values["screenToken"] = token
+	}
+	if a.nativeOnly {
+		if values["screenToken"] == "" {
+			err = fmt.Errorf("screen fixture missing token")
+			return
+		}
+		values["screenFixture"] = base64.StdEncoding.EncodeToString(data)
+		return values, "", cleanup, nil
 	}
 	clipboard, ok := ready["clipboardName"].(string)
 	if !ok {

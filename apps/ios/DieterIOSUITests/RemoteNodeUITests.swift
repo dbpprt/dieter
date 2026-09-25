@@ -340,7 +340,7 @@ final class RemoteNodeUITests: XCTestCase {
 
     func testHTTPSGatewayRejectsInvalidSession() throws {
         guard let gateway = ProcessInfo.processInfo.environment["DIETER_IOS_TEST_HTTPS_GATEWAY"] else {
-            throw XCTSkip("Pass --https-gateway to verify an HTTPS gateway without authenticating")
+            throw XCTSkip("Set DIETER_IOS_TEST_HTTPS_GATEWAY for the manual ios.https-auth case")
         }
         let app = XCUIApplication()
         app.launchEnvironment["DIETER_IOS_TEST_GATEWAY"] = gateway

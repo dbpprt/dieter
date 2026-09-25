@@ -88,11 +88,9 @@ just mac test
 just e2e run --platform mac --case mac.core
 ```
 
-`just mac smoke SUITE` supports `core`, `board`, `conversation`, `inbox`, `machine`,
-`sidebar`, `terminal`, `island`, and `workspace`. `just mac smoke-suites board
-inbox conversation` builds once and runs the requested suites serially;
-`just mac smoke-all` delegates to `just e2e run --platform mac --suite smoke`,
-which runs all nine native suites and the YAML navigation journey.
+Run selected cases with `just e2e run --platform mac --case mac.board,mac.inbox`.
+`just e2e run --platform mac --suite smoke` builds once and runs all nine native
+suites plus the YAML navigation journey. There are no separate Mac smoke aliases.
 
 The shared Go runner refuses any running Dieter app and owns its exact app/gateway PIDs.
 It uses a random loopback port, disposable credentials, unique state/preferences,

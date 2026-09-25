@@ -1,17 +1,15 @@
 # yaml-language-server: $schema=../../schema.json
 version: 1
-id: ios.screen
+id: ios.https-auth
 platform: ios
 suites:
-- smoke
-- functional
-- screens
+- manual
 components:
 - ios
-fixture: screen
+fixture: none
 timeout: 10m
 native:
   target: DieterIOSUITests
   class: RemoteNodeUITests
   methods:
-  - testRemoteScreenFixtureStreamsVideo
+  - testHTTPSGatewayRejectsInvalidSession

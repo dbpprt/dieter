@@ -2,13 +2,16 @@
 version: 1
 id: ios.share-extension
 platform: ios
+devices: [iphone]
 suites:
 - smoke
+- functional
 components:
 - ios
 fixture: gateway
-timeout: 300s
+timeout: 10m
 native:
+  target: DieterIOSUITests
   class: RemoteNodeUITests
   methods:
   - testAShareExtensionRoutesScreenshotToNewTask

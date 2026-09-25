@@ -7,9 +7,9 @@ on:
         description: Native client
         type: choice
         default: android
-        options: [android, mac]
+        options: [android, mac, ios]
       suite:
-        description: Suite (mac supports smoke and functional)
+        description: Suite (Mac/iOS support smoke and functional)
         type: choice
         default: functional
         options: [smoke, functional, sync, performance, sdk]
@@ -76,5 +76,42 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-# ios:
-#   Preparation only: just e2e prepare --platform ios --device iphone|ipad
+  ios:
+    if: inputs.platform == 'ios'
+    runs-on: macos-26
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        device: [iphone, ipad]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: extractions/setup-just@v3
+        with:
+          just-version: "1.58.0"
+      - name: Select Xcode
+        run: just release select-xcode
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install disposable fixture runtime
+        run: just harness install
+      - name: Execute selected iOS suite
+        env:
+          E2E_SUITE: ${{ inputs.suite }}
+          E2E_DEVICE: ${{ matrix.device }}
+          E2E_OUTPUT: tmp/native-e2e-${{ github.run_id }}-${{ github.run_attempt }}
+        run: just e2e run --platform ios --device "$E2E_DEVICE" --suite "$E2E_SUITE" --output "$E2E_OUTPUT"
+      - name: Retain results and screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-${{ matrix.device }}-e2e
+          path: tmp/native-e2e-${{ github.run_id }}-${{ github.run_attempt }}/
+          if-no-files-found: error
+          retention-days: 14

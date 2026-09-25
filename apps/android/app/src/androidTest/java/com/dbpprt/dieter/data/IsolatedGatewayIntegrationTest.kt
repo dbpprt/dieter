@@ -620,31 +620,6 @@ class IsolatedGatewayIntegrationTest {
         }
     }
 
-    @Test
-    fun archiveVisibleFixtureAndRestoreProductionGateway() = runBlocking {
-        val fixtureCardId = argument("fixtureCardId")
-        val token = argument("isolatedGatewayToken")
-        assumeTrue("Pass an explicit isolated fixture to clean up", fixtureCardId.isNotBlank() && token.isNotBlank())
-        if (fixtureCardId.isNotBlank() && token.isNotBlank()) {
-            val context = InstrumentationRegistry.getInstrumentation().targetContext
-            val repository = GrpcDieterRepository(context)
-            try {
-                connect(repository, isolatedOrigin(), token)
-                repository.prepareDaemon()
-                runCatching { repository.cancelCard(fixtureCardId) }
-                repository.archiveCard(fixtureCardId, true)
-            } finally {
-                repository.close()
-            }
-        }
-        val context = InstrumentationRegistry.getInstrumentation().targetContext
-        val application = context.applicationContext as DieterApplication
-        val manager = application.container.connectionManager
-        manager.updateEndpoints(DIETER_ENDPOINTS)
-        manager.connect()
-        delay(1_000)
-    }
-
     private suspend fun connect(
         repository: GrpcDieterRepository,
         origin: DieterEndpoint,

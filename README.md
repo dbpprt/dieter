@@ -146,7 +146,8 @@ just check-changed
 ```
 
 Run Android journeys with `just e2e run --suite smoke`, or macOS with
-`just e2e run --platform mac --suite smoke`. The
+`just e2e run --platform mac --suite smoke`, or iOS with
+`just e2e run --platform ios --device iphone --suite smoke` (also `--device ipad`). The
 [native test guide](tests/e2e/README.md) covers YAML cases, suite selection,
 shared lifecycle, failure evidence, and iOS preparation.
 

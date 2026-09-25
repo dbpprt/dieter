@@ -13,11 +13,11 @@ just ios doctor
 just ios build
 just ios build-device
 just ios signing-config
-just ios smoke
-just ios smoke-ipad
+just e2e run --platform ios --device iphone --suite smoke
+just e2e run --platform ios --device ipad --suite smoke
 ```
 
-`build-device` compiles the device architecture without signing; installation on a device still requires Xcode signing. Build products and simulator evidence stay under the ignored `apps/ios/.build/` directory.
+`build-device` compiles the device architecture without signing; installation on a device still requires Xcode signing. Build products stay under `apps/ios/.build/`; shared-runner reports and screenshots are in `tmp/e2e-<run>/`.
 
 The SwiftUI screens and iOS store live in `apps/mac/Sources/DieterIOS/` so they can compose the existing package-scoped DieterCore, DieterClient, and DieterAPI modules. The small Xcode app wraps the package's public root view and embeds its shared DieterIOS framework. The Mac executable is not linked into the iOS app.
 
@@ -94,14 +94,21 @@ The phone uses stacked navigation; iPad uses sidebar, task list, and conversatio
 
 See [implementation validation](VALIDATION.md) for observed results and current limits.
 
-The smoke command creates its own simulator, temporary gateway, enrolled daemon, mock harness, and Git repository. It exercises real native controls and real remote RPCs without production accounts or provider credentials. It stops only those owned resources and preserves test results and screenshots. Existing simulators and operator daemons are left untouched.
+The shared E2E runner creates its own simulator, temporary gateway, enrolled daemon, mock harness, and Git repository. It exercises real native controls and real remote RPCs without production accounts or provider credentials. It stops only those owned resources and preserves test results and screenshots. Existing simulators and operator daemons are left untouched.
 
 Fixtures include an incompatible node so exact application-contract filtering can be verified. Certificate tests cover exact enrolled daemon URI identity and reject the wrong daemon, wrong CA, and tampered certificates. Pure model tests cover sign-in request validation, ownership across backgrounding, stale-response isolation, and bounded transcript handling. Native application-hosted tests also exercise device-only Keychain persistence and certificate trust on iOS.
 
 An optional, read-only check verifies that an HTTPS gateway returns its explicit authentication error for an invalid session:
 
 ```sh
-python3 apps/ios/Scripts/smoke.py --https-gateway https://your-gateway.example
+DIETER_IOS_TEST_HTTPS_GATEWAY=https://your-gateway.example \
+  just e2e run --platform ios --case ios.https-auth
 ```
 
-This probe never signs in or changes gateway data. The default isolated run skips it because external network access and a reachable gateway are environment dependencies. Its results are reported separately from the isolated journey.
+This probe never signs in or changes gateway data. The default isolated suite excludes this manual case because external network access and a reachable gateway are environment dependencies. Its results are reported separately from the isolated journey.
+
+The [native test catalog](../../tests/e2e/README.md) includes every existing iOS
+XCTest method, including application-hosted Keychain assertions. iPhone and iPad
+plans select exact methods; the phone-only Photos share journey is declared in
+the catalog. Skipped or missing required tests fail qualification. An installed
+Simulator runtime is required; `just ios build` alone does not run these tests.

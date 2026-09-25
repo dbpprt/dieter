@@ -229,7 +229,3 @@ snapshot.
 Report the AVD and serial, build/install results, observed journey, evidence
 paths, mutations, diagnostics, and whether the app/emulator was reused, left
 healthy, or closed.
-
-After retaining any evidence needed for the report, the confirmed
-`just android clean-evidence` removes only disposable Android UI/emulator
-captures and the legacy jump-to-latest evidence directory.

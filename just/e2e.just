@@ -27,16 +27,16 @@ list *args:
 plan *args:
     go run ./tools/e2e plan "$@"
 
-# Prepare the versioned JSON contract, including future iOS cases.
+# Prepare the versioned JSON contract, for all native platforms.
 [positional-arguments]
 prepare *args:
     go run ./tools/e2e prepare "$@"
 
-# Execute Android or Mac cases; missing/skipped required tests fail qualification.
+# Execute Android, Mac or iOS cases; missing/skipped required tests fail qualification.
 [positional-arguments]
 run *args:
     go run ./tools/e2e run "$@"
 
-# Mac requires a logged-in desktop and no running operator app.
-mac:
-    just e2e run --platform mac --suite smoke
+# Require every matrix device job for the stable native CI gate.
+ci-result:
+    test "${NATIVE_DEVICE_RESULT:-missing}" = success

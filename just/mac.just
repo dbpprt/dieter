@@ -242,61 +242,6 @@ proto-check:
 proto-generate:
     DIETER_SWIFT_SCRATCH_PATH="$PWD/{{ app_scratch }}" {{ app_root }}/scripts/sync-proto.sh
 
-# Run a Mac native case through the shared test runner.
-smoke suite="core":
-    just e2e run --platform mac --case "mac.{{ suite }}"
-
-# Run selected native suites with one build and shared lifecycle/reporting.
-[positional-arguments]
-smoke-suites +suites:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    cases=""
-    for suite in "$@"; do cases="${cases:+$cases,}mac.$suite"; done
-    just e2e run --platform mac --case "$cases"
-
-# Run the shared Mac smoke catalog, including YAML journeys.
-smoke-all:
-    just e2e run --platform mac --suite smoke
-
-# Remove disposable harness runtimes from retained smoke evidence.
-[confirm]
-prune-smoke-runtimes:
-    find "{{ app_root }}/.build/smoke" -type d -path '*/fixture-home/dieter/runtime' -prune -exec rm -rf -- {} +
-
-# Remove only the pre-Just SwiftPM cache; preserve both canonical caches and smoke evidence.
-[confirm]
-clean-legacy-cache:
-    rm -rf \
-        "{{ app_root }}/.build/arm64-apple-macosx" \
-        "{{ app_root }}/.build/artifacts" \
-        "{{ app_root }}/.build/checkouts" \
-        "{{ app_root }}/.build/plugins" \
-        "{{ app_root }}/.build/repositories" \
-        "{{ app_root }}/.build/debug" \
-        "{{ app_root }}/.build/.lock" \
-        "{{ app_root }}/.build/build.db" \
-        "{{ app_root }}/.build/debug.yaml" \
-        "{{ app_root }}/.build/plugin-tools.yaml" \
-        "{{ app_root }}/.build/workspace-state.json"
-
-# Remove only smoke evidence and old smoke fixtures, never compilation caches.
-[confirm]
-clean-smoke:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    rm -rf \
-        "{{ app_root }}/.build/smoke" \
-        "{{ app_root }}/.build/smoke-tools" \
-        "{{ app_root }}/.build/accessibility-smoke" \
-        "{{ app_root }}/.build/conversation-ui-smoke" \
-        "{{ app_root }}/.build/island-ui-smoke" \
-        "{{ app_root }}/.build/machine-ui-smoke" \
-        "{{ app_root }}/.build/terminal-ui-smoke" \
-        "{{ app_root }}/.build/ui-smoke" \
-        "{{ app_root }}/.build/workspace-ui-smoke"
-    find "{{ app_root }}/.build" -maxdepth 1 -type d -name 'sidebar-ui-smoke.*' -exec rm -rf -- {} +
-
 # Exercise native hardware capture, input state and bounded backpressure.
 screens-native-test:
     native/macos-capture/test.sh

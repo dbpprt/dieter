@@ -12,7 +12,7 @@ import (
 // Native assertions remain compiled and executed by the platform test runner.
 func validateReferences(root string, cases []Case) error {
 	sources := map[string]string{}
-	for _, directory := range []string{"apps/android/app/src/androidTest", "apps/ios/DieterIOSUITests"} {
+	for _, directory := range []string{"apps/android/app/src/androidTest", "apps/ios/DieterIOSUITests", "apps/ios/DieterIOSNativeTests"} {
 		err := filepath.WalkDir(filepath.Join(root, directory), func(path string, entry os.DirEntry, err error) error {
 			if err != nil {
 				return err

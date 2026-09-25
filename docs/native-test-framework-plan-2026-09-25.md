@@ -1,5 +1,9 @@
 > Implementation: see [the native test guide](../tests/e2e/README.md). This
 
+> Implementation update: all three native platforms now use `just e2e run`.
+> See [the current native test guide](../tests/e2e/README.md). The inventory
+> below records the pre-migration state; its legacy launchers have been removed.
+
 > Historical record: Android launcher scripts and test aliases referenced below
 > have been retired. Use the [current native test guide](../tests/e2e/README.md)
 > for supported commands and selectors.

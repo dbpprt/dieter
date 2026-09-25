@@ -415,7 +415,7 @@ canonical Swift compiler caches survived the cleanup.
 
 ```sh
 # Safe, disposable packaged-app fixture; opt-in counters never publish state.
-DIETER_PERFORMANCE_SWEEP=1 just mac smoke board
+DIETER_PERFORMANCE_SWEEP=1 just e2e run --platform mac --case mac.board
 
 # Fixture setup is excluded from these measurements.
 DIETER_IDLE_SYNC=30s go test ./internal/server -run TestIdleSubscriptionProcessCost -count=1 -v

@@ -1,6 +1,6 @@
 # Native tests
 
-Run repository commands from the root. macOS and Android share case selection, deadlines, JSON/JUnit reporting and
+Run repository commands from the root. macOS, iOS and Android share case selection, deadlines, JSON/JUnit reporting and
 required-result qualification. Android uses a separate
 `com.dbpprt.dieter.e2e` app, disposable authenticated daemon/gateway fixtures,
 and the existing visible `Pixel_9_API_37_1` emulator. No live account or operator
@@ -18,7 +18,7 @@ app data is used.
 | Packaging/signing regressions | `just release test` |
 
 ```sh
-just e2e check  # catalog and both prepared iOS layouts; no devices
+just e2e check  # catalog and both iOS plans; no devices
 just e2e list
 just e2e plan --suite functional --changed --base main
 just e2e run --suite smoke
@@ -27,14 +27,31 @@ just e2e run --suite functional
 just e2e run --suite sync
 just e2e run --suite performance
 just e2e run --suite sdk --serial emulator-5554
-just e2e prepare --platform ios --device ipad
+just e2e run --platform ios --device iphone --suite smoke
+just e2e run --platform ios --device ipad --suite smoke
 just e2e run --platform mac --suite smoke
 just e2e run --platform mac --case mac.navigation,mac.sidebar
 ```
 
-Android is executable. iOS case discovery and versioned JSON preparation are
-ready, but execution intentionally fails until an XCTest adapter is qualified.
-The existing iOS XCTest suite remains the native implementation to integrate.
+iOS requires macOS, Xcode, and an installed iOS Simulator runtime. `--device
+iphone` selects iPhone 17 Pro; `--device ipad` selects iPad Pro 11-inch (M5).
+The runner builds once, leases the Xcode products, creates a fresh owned simulator
+and fixture per case, and deletes only those resources afterward. It selects
+exact XCTest methods and qualifies the structured xcresult test tree. Missing,
+skipped, duplicate, failed or interrupted methods fail the run. No simulator
+runtime is installed automatically. Missing prerequisites produce unavailable
+results and a nonzero exit.
+
+Both layouts cover the remote-node, terminal, screen, connection-state and native
+Keychain tests. `ios.share-extension` declares `devices: [iphone]` because its
+Photos share-sheet journey is phone-specific; it is excluded from iPad plans,
+not counted as a passing skip. Explicitly requesting it on iPad is an error.
+The `manual` case `ios.https-auth` requires `DIETER_IOS_TEST_HTTPS_GATEWAY` and
+performs only the existing invalid-session HTTPS probe. Credentials are injected
+through a private xctestrun file, never command arguments. Only sanitized test
+reports, console output and exported attachments are retained; private launch
+configuration and raw xcresult bundles are removed on cleanup.
+
 Mac execution requires a logged-in macOS desktop and refuses any existing
 DieterMac process before packaging. It uses the canonical SwiftPM app cache,
 isolated preferences/state, disposable gateways, and a desktop lease. Android screen journeys need a macOS capture host;
@@ -105,27 +122,37 @@ It is emulator-only and does not overwrite any operator package. The `sdk` suite
 runs codec/ownership/icon assertions without a macOS capture host. `manual`
 contains the screenshot widget seeder and is excluded from regression gates.
 
-Eight legacy Android launchers and the duplicate Activity/Machines native
-journeys were retired. Android's emulator lifecycle, SDK build, release, signing,
-and native fixture implementations remain because they serve distinct purposes.
-Mac/iOS legacy tooling remains until those adapters can be qualified. New Mac
-entry points and workflow examples stay commented out. The framework's iOS
-contract references existing XCTest methods and supports iPhone/iPad preparation.
+All native journey orchestration uses `just e2e run`. The separate iOS Python
+launcher, Mac Swift driver, old smoke aliases, and cleanup recipes for retired
+evidence paths are removed. Native assertions, app/emulator lifecycle commands,
+SDK builds, signing, releases and specialized capture/codec fixtures remain.
+Retain the selected run's evidence until reviewed; cleanup does not require a
+platform-specific script.
 
 `just check` validates the catalog and both iOS layouts through `just e2e check`,
 so CI and release use the same portable gate. `just android check` compiles the
 E2E and performance apps/test drivers as well as running unit tests, debug assembly, and lint.
-All device execution uses `just e2e run`; the five old Android test aliases are removed. The manual
+All device execution uses `just e2e run`; the five old Android test aliases are removed. The Android job in the manual
 `Native E2E` workflow requires a runner labeled `self-hosted`, `Linux`,
 `dieter-android`, with Just/Go/Node/JDK21/Android SDK and the healthy visible
 `Pixel_9_API_37_1` AVD already available. It does not create, cold boot, or replace
-an emulator. No runner provisioning or GitHub execution is implied by the file.
+an emulator. The Mac job uses a provisioned desktop; the iOS job uses the hosted macOS iPhone/iPad matrix. No runner provisioning or GitHub execution is implied by the file.
 
 Coverage exceptions are explicit: `RealDieterIntegrationTest` requires an operator
 account and stays manual; `webRTCControlCarriesRPCAndReportsICEPath` needs a
 separately provisioned reachable ICE/TURN fixture (see the native TURN guide).
-The old `archiveVisibleFixtureAndRestoreProductionGateway` helper is not a test
-case in this framework: owned fixture teardown replaces its cleanup role.
+The obsolete production-gateway restoration test was removed; owned fixture
+teardown replaces its cleanup role.
 `FlowTest.runFlow` is invoked by each YAML journey, not as an independent case.
 All other existing native regression methods are cataloged, including admission,
 queue, offline replay, background sync, codec ownership, and frame budgets.
+
+## iOS adapter qualification
+
+The adapter's host-side lifecycle, configuration, redaction, catalog and result
+qualification tests run through `go test ./tools/e2e`. Build-only verification is
+`just ios build`. These checks do not establish simulator UI correctness. After
+pulling, colleagues should run both iOS smoke commands above and review each
+run's `results.json`, `junit.xml`, screenshots and failure console. The migration
+was prepared on a host without an installed iOS runtime; device execution remains
+to be qualified on those hosts.

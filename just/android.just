@@ -393,8 +393,3 @@ logs:
     pid="$("{{ adb }}" -s "{{ serial }}" shell pidof -s com.dbpprt.dieter | tr -d '\r')"
     [[ -n "$pid" ]] || { echo "Dieter is not running on {{ serial }}." >&2; exit 1; }
     "{{ adb }}" -s "{{ serial }}" logcat --pid="$pid" -d -v threadtime -t 500
-
-# Remove disposable Android UI and emulator evidence without touching Gradle caches.
-[confirm]
-clean-evidence:
-    rm -rf {{ app_root }}/.build/jump-to-latest-e2e {{ app_root }}/build/emulator {{ app_root }}/build/evidence

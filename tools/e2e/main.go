@@ -30,7 +30,7 @@ func execute(ctx context.Context, args []string) error {
 		return leasedCommand(ctx, args[1:])
 	}
 	if len(args) == 0 || args[0] == "--help" || args[0] == "help" {
-		fmt.Println("Usage: just e2e <list|lint|plan|prepare|run> [--platform android|mac|ios] [--suite smoke|functional|component|sync|screens|performance] [--case ID] [--serial SERIAL] [--changed] [--base REF]\nAndroid and Mac execute against isolated app/daemon state. iOS supports plan/prepare only. Required skipped/missing tests fail. --changed selects conservatively from Git; --base includes branch changes. prepare emits a versioned native-driver JSON plan without starting apps.")
+		fmt.Println("Usage: just e2e <list|lint|plan|prepare|run> [--platform android|mac|ios] [--suite smoke|functional|component|sync|screens|performance] [--case ID] [--serial SERIAL] [--changed] [--base REF]\nAndroid, Mac and iOS execute against isolated app/daemon state. Required skipped/missing tests fail. --changed selects conservatively from Git; --base includes branch changes. prepare emits a versioned native-driver JSON plan without starting apps.")
 		return nil
 	}
 	action := args[0]
@@ -38,11 +38,11 @@ func execute(ctx context.Context, args []string) error {
 		return fmt.Errorf("unknown command %q", action)
 	}
 	flags := flag.NewFlagSet(action, flag.ContinueOnError)
-	platform := flags.String("platform", "android", "Android and Mac execute; iOS is preparation-only")
+	platform := flags.String("platform", "android", "Native platform: android, mac or ios")
 	suite := flags.String("suite", "", "Suite (run defaults to smoke); performance is separate")
 	id := flags.String("case", "", "Exact case IDs, comma-separated")
 	serial := flags.String("serial", env("ANDROID_SERIAL", "emulator-5554"), "Exact Android device serial; never auto-select a device")
-	device := flags.String("device", "iphone", "Prepared iOS layout: iphone or ipad")
+	device := flags.String("device", "iphone", "iOS simulator layout: iphone or ipad")
 	changed := flags.Bool("changed", false, "Select cases affected by Git changes")
 	base := flags.String("base", "", "Include changes since merge base with this ref")
 	outputDir := flags.String("output", "", "Run artifact directory; must not already exist (default tmp/e2e-<run>)")
@@ -79,15 +79,12 @@ func execute(ctx context.Context, args []string) error {
 	if *platform != "android" && *platform != "ios" && *platform != "mac" {
 		return fmt.Errorf("unsupported platform %q", *platform)
 	}
-	if action == "run" && *platform == "ios" {
-		return fmt.Errorf("iOS execution is prepared, not enabled; use prepare --platform ios")
-	}
 	if *suite == "" && *id == "" && action == "run" {
 		*suite = "smoke"
 	}
 	selected := []Case{}
 	for _, c := range cases {
-		if c.Platform == *platform && (*suite == "" || slices.Contains(c.Suites, *suite)) && (*id == "" || slices.Contains(strings.Split(*id, ","), c.ID)) {
+		if c.Platform == *platform && (len(c.Devices) == 0 || slices.Contains(c.Devices, *device)) && (*suite == "" || slices.Contains(c.Suites, *suite)) && (*id == "" || slices.Contains(strings.Split(*id, ","), c.ID)) {
 			selected = append(selected, c)
 		}
 	}
@@ -133,7 +130,7 @@ func execute(ctx context.Context, args []string) error {
 			Execution string `json:"execution"`
 			Device    string `json:"device"`
 			Cases     []Case `json:"cases"`
-		}{1, *platform, map[string]string{"android": "enabled", "mac": "enabled", "ios": "prepared"}[*platform], *device, selected}, "", "  ")
+		}{1, *platform, map[string]string{"android": "enabled", "mac": "enabled", "ios": "enabled"}[*platform], *device, selected}, "", "  ")
 		if err != nil {
 			return err
 		}
@@ -146,6 +143,9 @@ func execute(ctx context.Context, args []string) error {
 	}
 	if *platform == "mac" {
 		return runMac(ctx, root, output, selected)
+	}
+	if *platform == "ios" {
+		return runIOS(ctx, root, output, *device, selected)
 	}
 	return runAndroid(ctx, root, output, *serial, selected)
 }
@@ -277,9 +277,17 @@ func affected(cases []Case, paths []string) []Case {
 	broad := false
 	macChanged := false
 	androidChanged := false
+	iosChanged := false
 	for _, p := range paths {
 		if p == "" || strings.HasSuffix(p, ".md") || strings.HasSuffix(p, ".txt") {
 			continue
+		}
+		if strings.HasPrefix(p, "apps/ios/") || strings.HasPrefix(p, "apps/mac/Sources/DieterIOS/") || strings.HasPrefix(p, "tests/e2e/cases/ios/") || p == "just/ios.just" {
+			iosChanged = true
+			continue
+		}
+		if strings.HasPrefix(p, "apps/mac/Sources/DieterCore/") || strings.HasPrefix(p, "apps/mac/Sources/DieterClient/") || strings.HasPrefix(p, "apps/mac/Sources/DieterAPI/") || p == "apps/mac/Package.swift" {
+			iosChanged = true
 		}
 		if strings.HasPrefix(p, "tests/e2e/cases/mac/") {
 			macChanged = true
@@ -323,7 +331,7 @@ func affected(cases []Case, paths []string) []Case {
 	}
 	result := []Case{}
 	for _, c := range cases {
-		match := broad || (c.Platform == "mac" && macChanged) || (c.Platform == "android" && androidChanged)
+		match := broad || (c.Platform == "ios" && iosChanged) || (c.Platform == "mac" && macChanged) || (c.Platform == "android" && androidChanged)
 		for _, component := range c.Components {
 			match = match || (c.Platform == "android" && components[component])
 		}
