@@ -1,0 +1,16 @@
+# yaml-language-server: $schema=../../schema.json
+version: 1
+id: machines.machines-screen-test
+platform: android
+suites:
+- component
+- functional
+components:
+- machines
+fixture: none
+timeout: 300s
+native:
+  class: com.dbpprt.dieter.ui.MachinesScreenTest
+  methods:
+  - expandedFleetUsesSharedResizablePane
+  - fleetOpensTelemetryAndConfirmsOnlyAdvertisedActions

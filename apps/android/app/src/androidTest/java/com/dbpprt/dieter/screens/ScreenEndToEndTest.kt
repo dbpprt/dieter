@@ -39,7 +39,7 @@ import java.io.File
 import java.util.Base64
 import java.util.concurrent.atomic.AtomicReference
 
-/** Runs only with scripts/test-android-screens.sh's disposable native service.
+/** Runs only with just e2e run --suite screens with its disposable native service.
  * No production credential or endpoint is read or replaced by this test.
  */
 class ScreenEndToEndTest {
@@ -59,7 +59,7 @@ class ScreenEndToEndTest {
     @Test fun nativeVideoCanvasGesturesKeyboardAndSessionLifecycle() {
         val arguments = InstrumentationRegistry.getArguments()
         val encoded = arguments.getString("screenFixture")
-        assumeTrue("Run scripts/test-android-screens.sh for native screen integration", encoded != null)
+        assumeTrue("Run just e2e run --suite screens for native screen integration", encoded != null)
         val fixture = JSONObject(String(Base64.getDecoder().decode(encoded)))
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         lateinit var controller: ScreenController

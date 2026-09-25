@@ -24,7 +24,7 @@ workflow-check:
         printf '%s\n' "$unexpected" >&2
         exit 1
     fi
-    if command -v actionlint >/dev/null; then actionlint; fi
+    go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
 
 # Derive the next release version and write GitHub job outputs.
 version:

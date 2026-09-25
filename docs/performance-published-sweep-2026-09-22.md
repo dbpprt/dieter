@@ -1,5 +1,9 @@
 # Performance sweep after publishing the Board fixes
 
+> Historical record: Android launcher scripts and test aliases referenced below
+> have been retired. Use the [current native test guide](../tests/e2e/README.md)
+> for supported commands and selectors.
+
 This sweep starts from `bc3cc0d9dd912285f70299feb4d365a51719b3cb`, which
 contains all 28 previously local files rebased unchanged over 17 newer main
 commits. That commit was pushed and verified on `origin/main`. This report

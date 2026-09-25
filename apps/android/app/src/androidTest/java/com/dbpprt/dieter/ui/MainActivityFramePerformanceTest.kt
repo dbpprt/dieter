@@ -45,7 +45,7 @@ class MainActivityFramePerformanceTest {
 
     @Test
     fun repeatedPrimaryNavigationHasNoSevereMainThreadStall() {
-        assumeFalse("Frame budgets require the production-mode app: just android performance-test", BuildConfig.DEBUG)
+        assumeFalse("Frame budgets require the production-mode app: just e2e run --suite performance", BuildConfig.DEBUG)
         val controlOnly = InstrumentationRegistry.getArguments().getString("dieterPerformanceControl") == "true"
         activityRule.scenario.onActivity {
             activity = it

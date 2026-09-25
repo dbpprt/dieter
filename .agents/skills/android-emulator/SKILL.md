@@ -95,22 +95,20 @@ and disables uninstalling incompatible APKs; do not override these safeguards. N
 `adb uninstall` as a build workaround. The app connects through the configured
 gateway and authenticated routes. Never expose or replace the operator's raw
 loopback service or edit `DIETER_HOME`. Isolated integration fixtures are allowed
-and preferred for input, transport, and lifecycle tests. `just android screens-test`
-installs the separate `com.dbpprt.dieter.screenfixture` application and uses
-disposable storage, an enrolled test identity, a random loopback port and a
-one-run bearer token. It refuses an already-running fixture package. The operator's
-normal application is not replaced or stopped. Its temporary ADB reverse maps only that fixture port and
-is removed on exit. It never changes saved Android credentials or the live service.
-Use `DIETER_SCREEN_TEST_SOURCE=screen just android screens-test` to additionally
-exercise real ScreenCaptureKit; the default exercises native synthetic video and
-hardware H.264 with dry-run input. The real-screen mode injects input only into
-the owned macOS input window. Set `DIETER_SCREEN_TEST_MULTI=1` to keep a native Mac
-viewer connected to the same fixture throughout the Android journey, including
-control handoff, quality changes, session expiry, and reconnects. This requires
-no operator Dieter Mac app or other Swift test runner to be active.
+and preferred for input, transport, and lifecycle tests. `just e2e run` uses the separate `com.dbpprt.dieter.e2e` application with
+fresh app data per case and disposable authenticated fixtures. It refuses an
+already-running fixture package and holds a shared serial lease. The operator's
+normal app is not replaced or stopped. Temporary ADB reverses expose only the
+fixture's random authenticated port and are removed on exit.
 
-The install and connected-test recipes pass `ANDROID_SERIAL=emulator-5554` to
-Gradle. Keep that pin on every Gradle task which can select a device; otherwise
+`just e2e run --suite screens` requires a macOS capture host. The default uses
+native synthetic video and hardware H.264 with dry-run input. Set
+`DIETER_SCREEN_TEST_SOURCE=screen` for real capture and input into the owned
+input target. Mac companion execution is disabled; iOS supports preparation
+only. Unavailable prerequisites fail required cases and are never green skips.
+
+The install recipe and E2E runner select `ANDROID_SERIAL=emulator-5554` by
+default. Keep an explicit serial on every Gradle task which can select a device; otherwise
 Gradle may silently choose an attached physical phone even when every separate
 ADB command is correctly pinned.
 
@@ -141,50 +139,35 @@ authorization.
 ## Run instrumentation deliberately
 
 ```sh
-just android connected-test
-just android connected-test com.dbpprt.dieter.SomeTest
-just android sync-test
-just android performance-test
+just e2e lint
+just e2e plan --suite functional --changed
+just e2e run --suite smoke
+just e2e run --case machines.telemetry
+just e2e run --suite functional
+just e2e run --suite sync
+just e2e run --suite performance
 ```
 
-`sync-test` builds a disposable enrolled gateway, maps its random port only to
-the selected emulator, runs live/background transcript, queue and offline
-admission checks, then removes the reverse and reaps its fixture. Evidence is
-retained under `tmp/performance-sync`. It needs a healthy running emulator.
+Read `tests/e2e/README.md` for the catalog and driver contract. All ordinary
+journeys are YAML; native component, codec, sync, and performance assertions
+remain native tests with exact methods listed in the catalog. Legacy Android
+Just test recipes only delegate here. Do not add another script launcher.
 
-The full, unfiltered `connected-test` also runs `performance-test`. Frame
-budgets execute against a non-debuggable build inheriting release settings;
-debug instrumentation explicitly skips that performance-only case. The
-performance recipe is emulator-only, uses the debug signing key with the same
-application ID to preserve fixture data, and restores the normal debug APK on
-exit without uninstalling either APK. It retains its results under
-`app/build/outputs/androidTest-results/connected/performance`. A class-filtered
-`connected-test` runs debug instrumentation only; use `performance-test` for
-the real-input frame and idle-CPU measurement. Keep debug timings as diagnostic
-evidence, not release frame qualification. Physical-device energy and display
-qualification remain separate.
+The runner builds/installs once per variant, verifies APK hashes for warm reuse,
+starts fresh fixture/app state per case, and writes JSON/JUnit plus screenshots
+and semantic step evidence under `tmp/e2e-<run>`. Missing, skipped, duplicate,
+interrupted, and failed native methods fail qualification, as does failed cleanup.
 
-For a separate diagnostic run:
+Sync retains the real live/background, queue, offline, and idle-sampling checks.
+Performance is explicit, emulator-only, and uses a separate non-debuggable
+`com.dbpprt.dieter.e2e.performance` app. Never substitute debug timings for frame
+qualification. Physical-device energy/display checks remain separate. Set
+`arguments: {dieterPerformanceFrames: "true"}` in the performance case for
+bounded frame diagnostics; keep tracing separate from clean measurements.
 
-```sh
-env 'ORG_GRADLE_PROJECT_android.testInstrumentationRunnerArguments.dieterPerformanceFrames=true' \
-  just android performance-test
-```
-
-The diagnostic logs bounded off-main frame phase
-samples and drop counts under `DieterPerformance`. The existing
-`dieterPerformanceControl=true` argument substitutes native buttons to measure
-system overhead; it does not qualify the Dieter app. Keep clean timing runs
-separate from tracing and retain the unchanged frame limits.
-System traces can use the test's `DieterNavigation:warmup:*` and
-`DieterNavigation:measured:*` slices to exclude setup and attribute work to each
-real-input journey. Frame total duration includes renderer/buffer waits and
-does not, by itself, measure main-thread application CPU.
-
-Inspect instrumentation before running it because it uses the configured real
-gateway. Use a class filter while iterating and the complete connected suite
-only when the requested confidence warrants it. Protect user data from test
-setup and cleanup.
+Inspect new catalog cases before running them. Fixtures and probes must remain
+isolated from the operator's account and daemon. Full functional runs no longer
+implicitly launch performance or Mac-host screen qualification.
 
 ## Diagnose boundedly
 

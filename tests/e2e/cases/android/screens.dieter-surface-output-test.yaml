@@ -1,0 +1,25 @@
+# yaml-language-server: $schema=../../schema.json
+version: 1
+id: screens.dieter-surface-output-test
+platform: android
+suites:
+- sdk
+- component
+- functional
+components:
+- screens
+fixture: none
+timeout: 300s
+native:
+  class: org.webrtc.DieterSurfaceOutputTest
+  methods:
+  - outputIsReleasedExactlyOnceDespiteNativeBufferRetention
+  - twoOutputBoundFencesIndexReuseAndLateOwners
+  - closeDrainsOutputsAndFencesDelayedPresentationCallbacks
+  - decoderCompletionAloneNeverCountsAsPresentation
+  - foreignClockAndPreReleaseTimesNeverCountAsPresentation
+  - holderInvalidationStopsItsCodecAndCannotBeReused
+  - opaqueSurfaceFormatDecodesAndFormatFailureCanReinitialize
+  - rejectedDirectConfigurationFallsBackOnceToARealTextureSurface
+  - busyTextureOutputStillReportsActualDecoderCompletion
+  - timedOutDirectWorkerRetainsItsTargetUntilCodecRetires

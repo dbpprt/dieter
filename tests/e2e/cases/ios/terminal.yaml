@@ -1,0 +1,14 @@
+# yaml-language-server: $schema=../../schema.json
+version: 1
+id: ios.terminal
+platform: ios
+suites:
+- smoke
+components:
+- ios
+fixture: gateway
+timeout: 300s
+native:
+  class: RemoteNodeUITests
+  methods:
+  - testRemoteTerminalJourney

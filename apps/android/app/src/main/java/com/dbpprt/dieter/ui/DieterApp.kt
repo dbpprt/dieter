@@ -6,6 +6,7 @@ import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.rememberScrollState
@@ -52,7 +53,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -63,6 +63,10 @@ import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.pageLeft
+import androidx.compose.ui.semantics.pageRight
+import androidx.compose.ui.semantics.scrollBy
+import androidx.compose.ui.semantics.scrollToIndex
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.FocusRequester
@@ -398,29 +402,61 @@ private fun PrimaryDestinationPager(
     contentPadding: PaddingValues,
     userScrollEnabled: Boolean,
 ) {
-    val destination by rememberUpdatedState(state.destination)
+    val selectedPage = primaryNavigationItems.indexOfFirst { it.destination == state.destination }.coerceAtLeast(0)
     val pagerState = rememberPagerState(
-        initialPage = primaryNavigationItems.indexOfFirst { it.destination == state.destination }.coerceAtLeast(0),
+        initialPage = selectedPage,
         pageCount = { primaryNavigationItems.size },
     )
-    LaunchedEffect(state.destination) {
-        val page = primaryNavigationItems.indexOfFirst { it.destination == state.destination }.coerceAtLeast(0)
+    val isDragged by pagerState.interactionSource.collectIsDraggedAsState()
+    val rightStep = if (LocalLayoutDirection.current == LayoutDirection.Rtl) -1 else 1
+    fun selectPage(page: Int): Boolean {
+        if (!userScrollEnabled || page !in primaryNavigationItems.indices || page == selectedPage) return false
+        model.navigate(primaryNavigationItems[page].destination)
+        return true
+    }
+    LaunchedEffect(selectedPage, userScrollEnabled, pagerState) {
         // A tab tap selects its destination immediately. Animating a full
         // pager here repeatedly lays out every intervening page and delays
         // input readiness; gesture-driven swipes retain the pager animation.
-        if (pagerState.currentPage != page) pagerState.scrollToPage(page)
-    }
-    LaunchedEffect(pagerState) {
-        snapshotFlow { pagerState.settledPage }
+        // Synchronize before observing, so programmatic route changes cannot
+        // race the observer and be mistaken for a completed user scroll.
+        if (pagerState.currentPage != selectedPage) pagerState.scrollToPage(selectedPage)
+        var observedDrag = false
+        snapshotFlow { Triple(pagerState.settledPage, pagerState.isScrollInProgress, isDragged) }
             .distinctUntilChanged()
-            .collect { page ->
-                val next = primaryNavigationItems[page].destination
-                if (next != destination) model.navigate(next)
+            .collect { (page, scrolling, dragging) ->
+                if (dragging) observedDrag = true
+                if (!scrolling && !dragging) {
+                    val completedDrag = observedDrag
+                    observedDrag = false
+                    // Detail/IME layout and focus requests can scroll the
+                    // pager too. Only a completed drag selects another route;
+                    // programmatic movement follows the selected destination.
+                    if (page != selectedPage) {
+                        if (completedDrag && userScrollEnabled) model.navigate(primaryNavigationItems[page].destination)
+                        else pagerState.scrollToPage(selectedPage)
+                    }
+                }
             }
     }
     HorizontalPager(
         state = pagerState,
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier.fillMaxSize().testTag("primary-navigation-pager").semantics {
+            // Accessibility scroll actions also express navigation intent;
+            // focus/bring-into-view scrolling does not.
+            if (userScrollEnabled) {
+                pageLeft { selectPage(selectedPage - rightStep) }
+                pageRight { selectPage(selectedPage + rightStep) }
+                scrollToIndex { selectPage(it) }
+                scrollBy { x, _ ->
+                    when {
+                        x > 0 -> selectPage(selectedPage + rightStep)
+                        x < 0 -> selectPage(selectedPage - rightStep)
+                        else -> false
+                    }
+                }
+            }
+        },
         userScrollEnabled = userScrollEnabled,
         beyondViewportPageCount = 1,
         key = { primaryNavigationItems[it].destination },

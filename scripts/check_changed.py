@@ -114,7 +114,14 @@ def changed_paths(root, base=None):
 
 
 def go_packages(root):
-    raw = output(root, "go", "list", "-json", "./...")
+    # Git-owned source roots exclude ignored run artifacts/scratch packages in
+    # tmp, which must not break discovery or accidentally enter test execution.
+    files = output(root, "git", "ls-files", "--cached", "--others", "--exclude-standard", "-z", "--", "*.go").split("\0")
+    patterns = sorted({"./" + path.split("/", 1)[0] + "/..." if "/" in path else "."
+                       for path in files if path and (root / path).is_file()})
+    if not patterns:
+        return []
+    raw = output(root, "go", "list", "-json", *patterns)
     decoder = json.JSONDecoder()
     packages = []
     while raw.strip():
@@ -173,12 +180,15 @@ def plan_checks(root, paths, packages=None):
     brand = any(p.startswith("assets/brand/") for p in code)
     mac = schema or fixture or brand or any((p.startswith("apps/mac/") and not p.startswith("apps/mac/Sources/DieterIOS/")) or p == "just/mac.just" for p in code)
     ios = schema or fixture or brand or any(p.startswith(("apps/ios/", "apps/mac/Sources/DieterIOS/", "apps/mac/Sources/DieterCore/", "apps/mac/Sources/DieterClient/", "apps/mac/Sources/DieterAPI/")) or p in {"apps/mac/Package.swift", "just/ios.just"} for p in code)
+    e2e = any(p.startswith(("tools/e2e/", "tests/e2e/")) or p == "just/e2e.just" for p in code)
     android = schema or fixture or brand or any(p.startswith(("apps/android/", "native/android-webrtc/")) or p == "just/android.just" for p in code)
     mac_suites = affected_mac_smoke_suites(code)
     android_integration = android and (schema or fixture or brand or any(
         (p.startswith("apps/android/") and not p.startswith("apps/android/app/src/test/"))
         or p.startswith("native/android-webrtc/") or p == "just/android.just" for p in code))
 
+    if e2e:
+        add("just", "e2e", "check")
     if any(p.startswith("scripts/check_changed") or p in {"justfile", "just/mac.just", "just/ios.just"} for p in code):
         add("python3", "-m", "unittest", "discover", "-s", "scripts", "-p", "check_changed_test.py")
     if any(p.startswith("scripts/qualify_screens") or p == "docs/screenshare-qualification-local.json" for p in code):
@@ -191,11 +201,11 @@ def plan_checks(root, paths, packages=None):
         add("just", "justfile-check")
     if any(p.startswith("native/linux-capture/") for p in code):
         add("just", "daemon", "linux-capture-test")
-    if any(p.startswith(".github/workflows/") or p == "just/release.just" for p in code):
+    if any(p.startswith(".github/workflows/") or p in {".github/actionlint.yaml", "just/release.just"} for p in code):
         add("just", "workflow-check")
     if any(p.startswith(("scripts/homebrew_", "scripts/macos_daemon_installer", "scripts/macos_notary_submit",
                          "scripts/configure_apple_signing", "scripts/release_signing", "scripts/ios_release"))
-           or p in {"just/release.just", "just/daemon.just", "just/ios.just", ".github/workflows/ios-testflight.yml"} for p in code):
+           or p in {"just/release.just", "just/daemon.just", "just/ios.just", "just/android.just", ".github/workflows/ios-testflight.yml", ".github/workflows/release.yml"} for p in code):
         add("just", "release", "test")
     if schema:
         add("just", "proto")
@@ -228,14 +238,13 @@ def plan_checks(root, paths, packages=None):
         add("just", "mac", "smoke-all")
     elif mac_suites:
         add("just", "mac", "smoke-suites", *mac_suites)
-    if android_integration:
-        add("just", "android", "connected-test")
-    if screens or any(p.startswith("scripts/test-android-screens") or
-                      p.startswith("native/android-webrtc/") or
+    if android_integration or e2e:
+        add("just", "e2e", "run", "--suite", "functional", "--changed")
+    if screens or any(p.startswith("native/android-webrtc/") or
                       p.startswith("apps/android/app/src/main/java/org/webrtc/") or
                       (p.startswith("apps/android/") and ("/screens/" in p or p.endswith("/ScreensScreen.kt")))
                       for p in code):
-        add("just", "android", "screens-test")
+        add("just", "e2e", "run", "--suite", "screens")
     if brand or any(p.startswith("landingpage/") or p == "just/site.just" for p in code):
         add("just", "site", "build")
     return commands
@@ -262,6 +271,8 @@ def affected_ci_components(root, paths):
                 selected["core"] = True
         elif command[:2] == ["just", "ios"]:
             selected["ios"] = True
+        elif command[:2] == ["just", "e2e"]:
+            selected["android"] = True
         elif command[:2] == ["just", "android"]:
             selected["android"] = True
         else:
@@ -312,6 +323,8 @@ def main():
 
     paths = changed_paths(root, args.base)
     commands = plan_checks(root, paths)
+    if args.base:
+        commands = [command + ["--base", args.base] if command[:3] == ["just", "e2e", "run"] and "--changed" in command else command for command in commands]
     print("Changed paths:", flush=True)
     for path in paths:
         print("  " + path, flush=True)

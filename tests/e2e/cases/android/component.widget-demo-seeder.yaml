@@ -1,0 +1,15 @@
+# yaml-language-server: $schema=../../schema.json
+version: 1
+id: component.widget-demo-seeder
+platform: android
+suites:
+- manual
+components:
+- component
+fixture: none
+timeout: 300s
+native:
+  class: com.dbpprt.dieter.widget.WidgetDemoSeeder
+  methods:
+  - seed
+  - requestPin

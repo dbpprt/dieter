@@ -1,0 +1,16 @@
+# yaml-language-server: $schema=../../schema.json
+version: 1
+id: workspace.project-picker-sheet-test
+platform: android
+suites:
+- component
+- functional
+components:
+- workspace
+fixture: none
+timeout: 300s
+native:
+  class: com.dbpprt.dieter.ui.ProjectPickerSheetTest
+  methods:
+  - filesTargetListsProjectsAndReportsSelection
+  - schedulesTargetUsesScheduleTitle

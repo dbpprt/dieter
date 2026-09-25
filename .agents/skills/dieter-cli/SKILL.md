@@ -807,7 +807,7 @@ For disposable-process A/B tests, `DIETER_SCREEN_LTR=0` disables reference recov
 and `DIETER_SCREEN_FEC=0` disables FEC negotiation. Do not restart an operator daemon
 for these comparisons. `DIETER_TEST_SCREEN_RECOVERY=1 just mac screens-test`
 runs the native H.264/HEVC recovery matrix. Android coverage uses
-`DIETER_SCREEN_TEST_CLASS=com.dbpprt.dieter.screens.ScreenRecoveryEndToEndTest just android screens-test`.
+`just e2e run --case screens.screen-recovery-end-to-end-test`.
 Both use authenticated disposable fixtures and targeted packet loss, without
 altering saved credentials or system network configuration.
 

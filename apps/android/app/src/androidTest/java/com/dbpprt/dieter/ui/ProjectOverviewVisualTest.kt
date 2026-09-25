@@ -53,7 +53,7 @@ class ProjectOverviewVisualTest {
     private lateinit var model: DieterViewModel
 
     @Before fun setup() {
-        assumeTrue("Use the isolated screen fixture app", context.packageName.endsWith(".screenfixture"))
+        assumeTrue("Use the isolated screen fixture app", (context.packageName.endsWith(".e2e")))
         context.getSharedPreferences("dieter_shared_kv", Context.MODE_PRIVATE).edit().clear()
             .putString("activeAccount", "project-overview-fixture").commit()
         var endpoints = DIETER_ENDPOINTS

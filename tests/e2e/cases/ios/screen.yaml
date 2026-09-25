@@ -1,0 +1,14 @@
+# yaml-language-server: $schema=../../schema.json
+version: 1
+id: ios.screen
+platform: ios
+suites:
+- smoke
+components:
+- ios
+fixture: screen
+timeout: 300s
+native:
+  class: RemoteNodeUITests
+  methods:
+  - testRemoteScreenFixtureStreamsVideo

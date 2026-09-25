@@ -1,4 +1,8 @@
 > **Historical engineering record.** This dated investigation or implementation
+
+> Historical record: Android launcher scripts and test aliases referenced below
+> have been retired. Use the [current native test guide](../tests/e2e/README.md)
+> for supported commands and selectors.
 > report describes the state at the time it was written. For current behavior and
 > setup, use the [documentation index](README.md).
 

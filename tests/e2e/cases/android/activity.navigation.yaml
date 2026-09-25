@@ -1,0 +1,69 @@
+# yaml-language-server: $schema=../../schema.json
+version: 1
+id: activity.navigation
+platform: android
+suites:
+- smoke
+- functional
+components:
+- activity
+fixture: activity
+timeout: 150s
+steps:
+- launch: connected
+- tap:
+    id: nav-activity
+- expect:
+    id: activity-feed
+    visible: true
+- tap:
+    description: Search activity
+- type:
+    id: activity-search
+    value: ${fixture.activityPrefix}
+- scroll:
+    within:
+      id: activity-feed
+    until:
+      id: activity-row-${fixture.cardId}
+- tap:
+    id: activity-row-${fixture.cardId}
+- expect:
+    id: message-input
+    visible: true
+- screenshot: conversation-cardid
+- press: back
+- expect:
+    id: nav-activity
+    selected: true
+- scroll:
+    within:
+      id: activity-feed
+    until:
+      id: activity-search
+- expect:
+    id: activity-search
+    value: ${fixture.activityPrefix}
+- scroll:
+    within:
+      id: activity-feed
+    until:
+      id: activity-row-${fixture.chatId}
+- tap:
+    id: activity-row-${fixture.chatId}
+- expect:
+    id: message-input
+    visible: true
+- screenshot: conversation-chatid
+- press: back
+- expect:
+    id: nav-activity
+    selected: true
+- scroll:
+    within:
+      id: activity-feed
+    until:
+      id: activity-search
+- expect:
+    id: activity-search
+    value: ${fixture.activityPrefix}

@@ -102,45 +102,40 @@ brand derivatives with `just android sync-brand`.
 just check-changed --dry-run
 just check-changed
 just android test
-just android lint
+just android check  # unit tests, lint, debug APK and both E2E/performance app/test APKs; no device
 ```
 
-For a healthy selected emulator:
+For a healthy selected emulator, use the shared YAML/native runner:
 
 ```sh
-just android connected-test
-just android machines-test
-just android sync-test
-just android screens-test
+just e2e lint
+just e2e run --suite smoke
+just e2e run --suite functional
+just e2e run --case machines.telemetry
+just e2e run --suite sync
+just e2e run --suite performance
+just e2e run --suite screens  # requires a macOS capture host
 ```
 
-The complete connected suite includes production-mode frame performance checks
-and restores the debug APK without clearing data. A class filter runs debug
-instrumentation only; `just android performance-test` runs the performance case.
+See [the test catalog guide](../../tests/e2e/README.md) for case authoring,
+change selection, artifacts, and iOS preparation. Android runs in the separate
+`com.dbpprt.dieter.e2e` package with disposable authenticated fixtures. Every
+case starts with clean test app data. APKs are built once and reused by hash;
+YAML-only edits need no recompilation. The old Android test aliases are removed;
+use `just e2e run --suite NAME` or `--case ID`. Class filters are replaced by
+explicit catalog case IDs.
 
-For a separate diagnostic run:
+Performance is a separate suite using the non-debuggable
+`com.dbpprt.dieter.e2e.performance` app. It retains native frame limits and idle-CPU
+measurements and never installs over the operator app. Add `dieterPerformanceFrames: "true"` under the performance case's `arguments` for diagnostic frame traces;
+keep those runs separate from clean measurements.
 
-```sh
-env 'ORG_GRADLE_PROJECT_android.testInstrumentationRunnerArguments.dieterPerformanceFrames=true' \
-  just android performance-test
-```
 
-The diagnostic records up to 4,096 frame phase
-samples on a dedicated callback thread and reports dropped samples, percentiles,
-and the slowest frames under the `DieterPerformance` logcat tag. The optional
-`dieterPerformanceControl=true` argument runs the same input journey against
-native buttons to identify system/rendering costs. Neither diagnostic replaces
-a clean Dieter timing run without extra tracing; the p95 and severe-frame limits stay active.
-
-Default integration uses disposable enrolled gateway/daemon fixtures and mock
-agents. Configured-account tests are skipped unless explicitly enabled with
-`-Pandroid.testInstrumentationRunnerArguments.configuredGatewayTests=1`; those can
-mutate the signed-in account. Inspect the test before enabling them.
-
-Machines and Activity journeys restore the prior connection configuration.
-Screens uses a separate `com.dbpprt.dieter.screenfixture` app, preserving the
-operator app, and removes only its temporary reverse mapping. Real-screen mode
-injects input into an owned host fixture window. See [WebRTC adapter details](webrtc-adapter.md).
+Diagnostic frame traces are bounded to 4,096 samples and retain the frame limits.
+The catalog excludes configured-account tests; they require a separately
+reviewed manual operation. All standard gates use disposable fixtures and mock
+agents. Real-screen input targets only the owned capture-host window.
+See [WebRTC adapter details](webrtc-adapter.md).
 
 Capture and inspect both semantic and visual evidence:
 

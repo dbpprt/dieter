@@ -109,7 +109,7 @@ repeatedly loading or overwriting broken graphics state.
 1. Reuse the enrolled running daemon for authorized manual product checks.
    For integration tests, use isolated real daemons with disposable identity and
    `DIETER_HOME`; never restart or replace the operator service. Screen tests use
-   `just android screens-test` and the owned native input target.
+   `just e2e run --suite screens` and the owned native input target.
 2. Confirm the emulator serial with `adb devices -l`. The usual serial is
    `emulator-5554`; pass `-s <serial>` to every command when multiple devices
    are attached.
@@ -171,15 +171,23 @@ just android test
 just android build
 ```
 
-When the change touches transport behavior, also run the real-process
-instrumentation check through the configured gateway while the enrolled daemon
-is active:
+When the change touches transport behavior, also run the isolated real-process
+instrumentation suite against disposable daemon/gateway fixtures:
 
 ```sh
-just android connected-test
+just e2e run --suite functional
 ```
 
 After reinstalling, repeat the original interaction in the visible emulator,
 inspect the final screenshot, and confirm the expected Dieter state through the
 app. Keep emulator screenshots and UI dumps outside the repository unless they
 are intentional design references.
+
+## Shared native test framework
+
+Use `just e2e` and `tests/e2e/cases/android/*.yaml` for device tests. Read
+`tests/e2e/README.md`. The runner owns only `.e2e`/`.e2e.performance` test packages,
+per-device leases, fixtures, reverse mappings, builds, and result collection.
+Do not add bespoke orchestration scripts. `functional`, `sync`, `screens`, and
+non-debuggable `performance` are separate suites. Missing/skipped tests fail.
+Mac execution is disabled in this framework; iOS is prepared but not executable.

@@ -40,7 +40,7 @@ class ConversationJumpToLatestEndToEndTest {
     private val composeRule = createAndroidComposeRule<MainActivity>()
 
     @get:Rule
-    val rules: RuleChain = RuleChain.outerRule(permissionRule).around(composeRule)
+    val rules: RuleChain = RuleChain.outerRule(permissionRule).around(composeRule).around(com.dbpprt.dieter.e2e.FailureEvidence())
 
     @Test
     fun conversationOffersAndUsesJumpToLatestOnTheVisibleEmulator() {

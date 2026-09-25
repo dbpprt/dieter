@@ -11,7 +11,7 @@ class DieterLauncherIconTest {
     fun preferenceHydrationResolvesAliasesInTheInstalledVariant() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         // Synchronous hydration applies the persisted palette to every real
-        // manifest alias. The screenFixture variant has an application ID
+        // manifest alias. The e2e variant has an application ID
         // different from those aliases' class namespace.
         AppPreferences(context)
         val launch = context.packageManager.getLaunchIntentForPackage(context.packageName)

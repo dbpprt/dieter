@@ -4,6 +4,7 @@ set shell := ["bash", "-euo", "pipefail", "-c"]
 mod mac 'just/mac.just'
 mod ios 'just/ios.just'
 mod android 'just/android.just'
+mod e2e 'just/e2e.just'
 mod daemon 'just/daemon.just'
 mod gateway 'just/gateway.just'
 mod harness 'just/harness.just'
@@ -54,6 +55,7 @@ vet:
 
 # Run the complete platform-neutral repository validation.
 check: justfile-check workflow-check proto-core test-race vet build
+    just e2e check
     just harness test
     just daemon linux-capture-test
 
@@ -73,6 +75,7 @@ justfile-check:
     just --justfile just/mac.just --fmt --check
     just --justfile just/ios.just --fmt --check
     just --justfile just/android.just --fmt --check
+    just --justfile just/e2e.just --fmt --check
     just --justfile just/daemon.just --fmt --check
     just --justfile just/gateway.just --fmt --check
     just --justfile just/harness.just --fmt --check

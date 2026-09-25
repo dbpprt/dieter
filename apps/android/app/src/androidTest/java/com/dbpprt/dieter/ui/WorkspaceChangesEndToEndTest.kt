@@ -3,6 +3,7 @@ package com.dbpprt.dieter.ui
 import android.Manifest
 import android.graphics.Bitmap
 import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
@@ -11,8 +12,13 @@ import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.click
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -50,7 +56,7 @@ class WorkspaceChangesEndToEndTest {
     private val composeRule = createAndroidComposeRule<MainActivity>()
 
     @get:Rule
-    val rules: RuleChain = RuleChain.outerRule(permissionRule).around(composeRule)
+    val rules: RuleChain = RuleChain.outerRule(permissionRule).around(composeRule).around(com.dbpprt.dieter.e2e.FailureEvidence())
 
     @Test
     fun worktreeChangesAreReviewedAndCommittedOnTheVisibleEmulator() {
@@ -128,17 +134,28 @@ class WorkspaceChangesEndToEndTest {
             runBlocking {
                 withTimeout(10_000) { manager.state.first { state -> state.cards.any { it.id == fixture.id } } }
             }
-            container.requestOpen(cardId = fixture.id)
+            composeRule.onNodeWithTag("nav-board").performClick()
+            composeRule.waitUntil(20_000) {
+                composeRule.onAllNodesWithTag("space-project-${project.id}").fetchSemanticsNodes().isNotEmpty()
+            }
+            composeRule.onNode(androidx.compose.ui.test.hasText(project.name) and androidx.compose.ui.test.hasClickAction()).performScrollTo().performClick()
+            composeRule.waitUntil(20_000) {
+                composeRule.onAllNodesWithText(fixture.title).fetchSemanticsNodes().isNotEmpty()
+            }
+            capture(requireNotNull(instrumentation.targetContext.getExternalFilesDir(null)), "workspace-before-card-click.png")
+            composeRule.onNodeWithTag("nav-board").assertIsSelected()
+            composeRule.onNodeWithTag("swipe-card-${fixture.id}").assertIsDisplayed().performTouchInput { click() }
             val screenshotDirectory = arguments.getString("additionalTestOutputDir")
                 ?.takeIf(String::isNotBlank)
                 ?.let(::File)
                 ?: requireNotNull(instrumentation.targetContext.getExternalFilesDir(null))
             screenshotDirectory.mkdirs()
+            capture(screenshotDirectory, "workspace-after-card-click.png")
 
             composeRule.waitUntil(20_000) {
                 composeRule.onAllNodesWithTag("card-detail-changes").fetchSemanticsNodes().isNotEmpty()
             }
-            composeRule.onAllNodesWithTag("card-detail-changes")[1].performClick()
+            composeRule.onAllNodesWithTag("card-detail-changes")[0].performClick()
             composeRule.waitForIdle()
             capture(screenshotDirectory, "workspace-tab-opened-e2e.png")
             composeRule.waitUntil(60_000) {
@@ -150,7 +167,7 @@ class WorkspaceChangesEndToEndTest {
             capture(screenshotDirectory, "workspace-changes-list-e2e.png")
 
             // Review the unified diff for the untracked file.
-            composeRule.onAllNodesWithText(worktreeNote)[1].performClick()
+            composeRule.onAllNodesWithText(worktreeNote)[0].performClick()
             composeRule.waitUntil(30_000) {
                 composeRule.onAllNodesWithTag("workspace-diff").fetchSemanticsNodes().isNotEmpty()
             }
@@ -160,13 +177,13 @@ class WorkspaceChangesEndToEndTest {
                     .fetchSemanticsNodes().isNotEmpty()
             }
             capture(screenshotDirectory, "workspace-diff-e2e.png")
-            composeRule.onAllNodesWithTag("workspace-diff-back")[1].performClick()
+            composeRule.onAllNodesWithTag("workspace-diff-back")[0].performClick()
             composeRule.waitUntil(10_000) {
                 composeRule.onAllNodesWithTag("workspace-changes-list").fetchSemanticsNodes().isNotEmpty()
             }
 
             // Commit through the durable Git operation flow.
-            composeRule.onAllNodesWithTag("workspace-commit")[1].performClick()
+            composeRule.onAllNodesWithTag("workspace-commit")[0].performClick()
             composeRule.waitUntil(10_000) {
                 composeRule.onAllNodesWithTag("commit-subject").fetchSemanticsNodes().isNotEmpty()
             }
@@ -176,7 +193,7 @@ class WorkspaceChangesEndToEndTest {
             composeRule.waitUntil(120_000) {
                 composeRule.onAllNodesWithText("No local changes.").fetchSemanticsNodes().isNotEmpty()
             }
-            composeRule.onAllNodesWithText("No local changes.")[1].assertIsDisplayed()
+            composeRule.onAllNodesWithText("No local changes.")[0].assertIsDisplayed()
             capture(screenshotDirectory, "workspace-committed-e2e.png")
 
             val changeset = runBlocking { repository.changeset(fixture.id) }
@@ -187,7 +204,7 @@ class WorkspaceChangesEndToEndTest {
 
             // Merge into the base branch through the orchestrated flow:
             // merge_local, cleanup, and the card moving to Done.
-            composeRule.onAllNodesWithTag("workspace-merge")[1].performClick()
+            composeRule.onAllNodesWithTag("workspace-merge")[0].performClick()
             composeRule.waitUntil(10_000) {
                 composeRule.onAllNodesWithTag("merge-confirm").fetchSemanticsNodes().isNotEmpty()
             }
@@ -211,9 +228,9 @@ class WorkspaceChangesEndToEndTest {
                     content = "# Android project Changes\n",
                 )
             }
-            composeRule.onAllNodesWithContentDescription("Back")[1].performClick()
-            composeRule.waitUntil(20_000) { composeRule.onAllNodesWithText("Files").fetchSemanticsNodes().isNotEmpty() }
-            composeRule.onAllNodesWithText("Files")[0].performClick()
+            composeRule.onAllNodesWithContentDescription("Back")[0].performClick()
+            composeRule.onNodeWithTag("nav-tools").performClick()
+            composeRule.onNodeWithTag("tool-files").performClick()
             composeRule.waitUntil(20_000) { composeRule.onAllNodesWithText("Browse").fetchSemanticsNodes().isNotEmpty() }
             composeRule.onNodeWithTag("project-files-changes").performClick()
             composeRule.waitUntil(30_000) { composeRule.onAllNodesWithText(projectNote).fetchSemanticsNodes().isNotEmpty() }
@@ -272,6 +289,9 @@ class WorkspaceChangesEndToEndTest {
                     }
                 }.filesCount == 0,
             )
+        } catch (error: Throwable) {
+            runCatching { capture(requireNotNull(instrumentation.targetContext.getExternalFilesDir(null)), "workspace-before-cleanup-failure.png") }
+            throw error
         } finally {
             runBlocking { runCatching { retryTransient { repository.archiveCard(fixture.id, true) } } }
         }
@@ -279,10 +299,10 @@ class WorkspaceChangesEndToEndTest {
 
     private fun capture(directory: File, name: String) {
         composeRule.waitForIdle()
+        val state = androidx.lifecycle.ViewModelProvider(composeRule.activity)[DieterViewModel::class.java].state.value
+        File(directory, name + ".txt").writeText("destination=${state.destination} selectedCard=${state.selectedCardId} error=${state.error}\n")
         File(directory, name).outputStream().use { output ->
-            composeRule.onRoot()
-                .captureToImage()
-                .asAndroidBitmap()
+            requireNotNull(InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot())
                 .compress(Bitmap.CompressFormat.PNG, 100, output)
         }
     }

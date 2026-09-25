@@ -1,0 +1,15 @@
+# yaml-language-server: $schema=../../schema.json
+version: 1
+id: workspace.project-overview-visual-test
+platform: android
+suites:
+- component
+- functional
+components:
+- workspace
+fixture: none
+timeout: 300s
+native:
+  class: com.dbpprt.dieter.ui.ProjectOverviewVisualTest
+  methods:
+  - projectHubMatchesTheReferenceHierarchy

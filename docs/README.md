@@ -17,6 +17,7 @@ This directory holds implementation references and historical evidence.
 
 ## Technical references
 
+- [Native test catalog and runner](../tests/e2e/README.md)
 - [Application contract and compatibility](api-contract.md)
 - [Shared project identity, causal records, and ownership](peer-store.md)
 - [Portable navigation settings and offline synchronization](client-navigation-folders.md)
@@ -40,6 +41,8 @@ These are dated engineering records, not the current installation manual or a
 list of promised features. Their observations, benchmarks, and validation limits
 are retained. Paths are stable so existing issue and PR links continue to work.
 
+- [Lean native test framework proposal](native-test-framework-plan-2026-09-25.md)
+- [Native test framework implementation](native-test-framework-implementation-2026-09-25.md) — Android runner, retired scripts, platform boundaries, and validation.
 - [Gateway domain migration and acceptance](gateway-domain-migration-2026-09-22.md)
 - [Gateway administration assessment](gateway-admin-assessment-2026-09-22.md), [design brief](gateway-admin-design-brief-2026-09-22.md), and [implementation plan](gateway-admin-implementation-plan-2026-09-22.md)
 - [Documentation refresh and validation](documentation-refresh-2026-09-22.md)

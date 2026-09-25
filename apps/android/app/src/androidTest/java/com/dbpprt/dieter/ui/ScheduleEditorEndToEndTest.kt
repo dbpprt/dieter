@@ -5,6 +5,8 @@ import android.widget.TimePicker
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.test.onLast
+import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -44,7 +46,7 @@ class ScheduleEditorEndToEndTest {
     private val composeRule = createAndroidComposeRule<MainActivity>()
 
     @get:Rule
-    val rules: RuleChain = RuleChain.outerRule(permissionRule).around(composeRule)
+    val rules: RuleChain = RuleChain.outerRule(permissionRule).around(composeRule).around(com.dbpprt.dieter.e2e.FailureEvidence())
 
     @Test
     fun createsRunningScheduleWithTemplatesThroughTheVisibleEditor() {
@@ -68,7 +70,7 @@ class ScheduleEditorEndToEndTest {
         val connected = runBlocking {
             kotlinx.coroutines.withTimeoutOrNull(30_000) {
                 manager.state.first { state ->
-                    state.phase == ConnectionPhase.CONNECTED && state.projects.isNotEmpty() && state.boards.isNotEmpty()
+                    state.phase == ConnectionPhase.CONNECTED && state.projects.isNotEmpty() && state.boards.isNotEmpty() && state.harnesses.isNotEmpty() && state.harnessesEndpointId == state.endpoint?.id
                 }
             }
         }
@@ -79,10 +81,11 @@ class ScheduleEditorEndToEndTest {
 
         composeRule.waitForIdle()
 
+        composeRule.onNodeWithTag("nav-tools").performClick()
         composeRule.waitUntil(20_000) {
-            composeRule.onAllNodesWithText("Schedules").fetchSemanticsNodes().isNotEmpty()
+            composeRule.onAllNodesWithTag("tool-schedules").fetchSemanticsNodes().isNotEmpty()
         }
-        composeRule.onAllNodesWithText("Schedules")[0].performClick()
+        composeRule.onNodeWithTag("tool-schedules").performClick()
         composeRule.waitUntil(10_000) {
             composeRule.onAllNodesWithTag("new-schedule").fetchSemanticsNodes().isNotEmpty()
         }
@@ -91,14 +94,18 @@ class ScheduleEditorEndToEndTest {
 
         val fixtureName = "Android schedule E2E ${UUID.randomUUID().toString().take(8)}"
         composeRule.onNodeWithTag("schedule-name").performTextInput(fixtureName)
-        pressBack()
+        androidx.test.espresso.Espresso.closeSoftKeyboard()
         composeRule.onNodeWithTag("schedule-time-picker").performScrollTo().performClick()
-        onView(isAssignableFrom(TimePicker::class.java)).check(matches(isDisplayed()))
+        onView(isAssignableFrom(TimePicker::class.java)).inRoot(androidx.test.espresso.matcher.RootMatchers.isDialog()).check(matches(isDisplayed()))
         pressBack()
         composeRule.onNodeWithTag("schedule-prompt").performScrollTo().performTextInput(
             "Review {{project}} / {{board}} for {{date}} at {{scheduled_at}} from {{schedule}}.",
         )
-        pressBack()
+        androidx.test.espresso.Espresso.closeSoftKeyboard()
+        // Choose the actual board; a display fallback is not a saved selection.
+        val boardName = connected.boards.first { it.projectId == project.id }.name
+        composeRule.onNodeWithText(boardName).performScrollTo().performClick()
+        composeRule.onAllNodesWithText(boardName).onLast().performClick()
         composeRule.onNodeWithTag("schedule-placement-running").performScrollTo().performClick()
         composeRule.onNodeWithText("The daemon creates the card and starts its agent turn when admission allows.")
             .performScrollTo().assertIsDisplayed()
@@ -121,8 +128,9 @@ class ScheduleEditorEndToEndTest {
             )
         }
 
-        composeRule.onNodeWithText("Save").performClick()
-        composeRule.waitUntil(15_000) { composeRule.onAllNodesWithText(fixtureName).fetchSemanticsNodes().isNotEmpty() }
+        composeRule.onNodeWithText("Save").assertIsEnabled().performClick()
+        composeRule.waitUntil(15_000) { composeRule.onAllNodesWithTag("schedule-name").fetchSemanticsNodes().isEmpty() }
+        composeRule.onNodeWithText(fixtureName).assertIsDisplayed()
 
         val persisted = runBlocking {
             withTimeout(10_000) {

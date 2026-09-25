@@ -1,0 +1,18 @@
+# yaml-language-server: $schema=../../schema.json
+version: 1
+id: activity.activity-screen-test
+platform: android
+suites:
+- component
+- functional
+components:
+- activity
+fixture: none
+timeout: 300s
+native:
+  class: com.dbpprt.dieter.ui.ActivityScreenTest
+  methods:
+  - mixedActivityFiltersAndOpensBothConversationTypesAndAccount
+  - olderChatsRemainReachableBesideCardsInAllAndProjectFeeds
+  - searchAndEmptyResultsKeepAccountsAvailable
+  - referenceLayoutDarkLightLargeTextAndUnavailableUsage

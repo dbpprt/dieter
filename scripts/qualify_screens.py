@@ -19,7 +19,7 @@ import tempfile
 import time
 
 ROOT = Path(__file__).resolve().parents[1]
-EVIDENCE = re.compile(r"(?:Native screen|HEVC transport|Codec integration|Screen integration|Recovery integration|Decoder SDK) evidence: (/.+)")
+EVIDENCE = re.compile(r"(?:Native screen|HEVC transport|Codec integration|Screen integration|Recovery integration|Decoder SDK|E2E) evidence: (/.+)")
 ALLOWED_ARTIFACT = re.compile(r"(?:latency|input-latency|render-trace|stats|mac-stats|decoder-H26[45]|decoder-sdk|recovery)\.json|(?:viewer|hevc|recovery-H26[45]|canvas-(?:fit|pan|pinch))\.png")
 SWITCHES = {"DIETER_SCREEN_CONTENT_ADAPTATION", "DIETER_SCREEN_OVERLAP", "DIETER_SCREEN_ENCODER_BURST_MS", "DIETER_SCREEN_FEC", "DIETER_SCREEN_LTR", "DIETER_SCREEN_FAST_BITRATE"}
 
@@ -46,12 +46,13 @@ def command(case, serial):
     elif runner in ("android-codec", "android-journey", "android-recovery", "android-sdk"):
         if not serial or serial.startswith("emulator-"):
             raise ValueError("Physical Android cases require an explicit physical --serial")
-        if runner == "android-sdk":
-            argv = ["bash", str(ROOT / "scripts/test-android-screens-sdk-device.sh"), serial]
-        else:
-            argv = [str(ROOT / "scripts/test-android-screens-device.sh"), serial]
-            test = {"android-codec": "ScreenCodecEndToEndTest", "android-journey": "ScreenEndToEndTest", "android-recovery": "ScreenRecoveryEndToEndTest"}[runner]
-            env["DIETER_SCREEN_TEST_CLASS"] = "com.dbpprt.dieter.screens." + test
+        selection = {
+            "android-sdk": ["--suite", "sdk"],
+            "android-codec": ["--case", "screens.screen-codec-end-to-end-test"],
+            "android-journey": ["--case", "screens.screen-end-to-end-test"],
+            "android-recovery": ["--case", "screens.screen-recovery-end-to-end-test"],
+        }[runner]
+        argv = ["just", "e2e", "run", "--serial", serial, *selection]
         env.update(
                    DIETER_SCREEN_TEST_LOW_LATENCY="1" if case.get("lowLatency", True) else "0",
                    DIETER_SCREEN_TEST_SURFACE="1" if case.get("surfaceView", False) else "0",
@@ -73,14 +74,18 @@ def collect(log, directory):
     artifacts = []
     for index, source in enumerate(dict.fromkeys(EVIDENCE.findall(log))):
         source = Path(source)
-        if not source.name.startswith("dieter-") or source.is_symlink() or not source.is_dir():
+        if not source.name.startswith(("dieter-", "e2e-")) or source.is_symlink() or not source.is_dir():
             continue
         # Capture only non-secret measurement files. ready/test JSON contain
         # disposable credentials and deliberately never enter the report.
-        for path in sorted(source.iterdir()):
+        paths = list(source.iterdir())
+        if source.name.startswith("e2e-"):
+            paths += [path for child in source.iterdir() if child.is_dir() and not child.is_symlink()
+                      for path in child.iterdir()]
+        for artifact_index, path in enumerate(sorted(paths)):
             if not ALLOWED_ARTIFACT.fullmatch(path.name) or path.is_symlink() or path.stat().st_size > 16 << 20:
                 continue
-            target = directory / f"{index}-{path.name}"
+            target = directory / f"{index}-{artifact_index}-{path.name}"
             shutil.copyfile(path, target)
             artifacts.append(target.name)
     return artifacts
@@ -239,7 +244,7 @@ def run_case(case, serial, output):
         result.update(status="failed", reason="Required eight-cell native recovery matrix/FEC proofs did not execute")
     elif case["runner"] == "native" and not re.search(r"^ok\s+github.com/dbpprt/dieter/internal/remotedesktop\s+\d", log, re.M):
         result.update(status="failed", reason="Native hardware package did not report an executed pass")
-    elif case["runner"].startswith("android-") and not re.search(r"Finished [1-9][0-9]* tests on", log):
+    elif case["runner"].startswith("android-") and not re.search(r"^[1-9][0-9]* requested, [1-9][0-9]* passed, 0 failed/unavailable;", log, re.M):
         result.update(status="failed", reason="Device tests did not report execution")
     elif case["runner"].startswith("mac-") and not re.search(r"✔ Test run with [1-9][0-9]* test", log):
         result.update(status="failed", reason="Native tests did not report an executed pass")

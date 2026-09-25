@@ -28,19 +28,17 @@ physical codec passes latency and lifecycle qualification; fixtures opt in expli
 H.264 platform fallback and HEVC hardware admission
 retain the existing behavior.
 
-Reproduce with `just android test`, then run the physical fixture using
-`scripts/test-android-screens-device.sh SERIAL`. For codec journeys set
-`DIETER_SCREEN_TEST_CLASS=com.dbpprt.dieter.screens.ScreenCodecEndToEndTest`.
-The app ID is `com.dbpprt.dieter.screenfixture`, separate from the operator app.
+Reproduce with `just android test`, then run the fixture using
+`just e2e run --suite screens --serial SERIAL`. For codec journeys select
+`--case screens.screen-codec-end-to-end-test`. The app ID is
+`com.dbpprt.dieter.e2e`, separate from the operator app. Screen journeys need a
+macOS capture host. Mac companion execution is disabled.
 Use `DIETER_SCREEN_TEST_LOW_LATENCY=0` for the baseline and
 `DIETER_SCREEN_TEST_SURFACE=1` for the SurfaceView/EGL experiment.
-The ordinary `just android screens-test` retains its emulator-only guard.
 
-Fake-codec instrumentation class `org.webrtc.DieterLowLatencyCodecTest` verifies
-configuration acceptance, one-time recreation, removal of the optional key and
-second-failure propagation. Run `connectedScreenFixtureAndroidTest` with
-`-Pdieter.screenTestBuildType=screenFixture`, the exact `ANDROID_SERIAL`, and the
-class instrumentation filter. No daemon fixture is needed for this class.
+`just e2e run --suite sdk --serial SERIAL` runs codec/ownership/icon checks
+without a daemon or capture-host fixture. The physical qualification command
+still requires an explicit physical serial and validates exact method results.
 
 `DIETER_SCREEN_TEST_DIRECT_SURFACE=1` selects the separate direct MediaCodec
 path. An SDK-private `MediaCodecSurfaceFrame` owns a real dequeued output index,

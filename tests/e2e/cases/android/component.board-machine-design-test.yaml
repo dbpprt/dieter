@@ -1,0 +1,17 @@
+# yaml-language-server: $schema=../../schema.json
+version: 1
+id: component.board-machine-design-test
+platform: android
+suites:
+- component
+- functional
+components:
+- component
+fixture: none
+timeout: 300s
+native:
+  class: com.dbpprt.dieter.ui.BoardMachineDesignTest
+  methods:
+  - quickTaskRequiresDestinationAndMatchingModels
+  - machineFilterDistinguishesUnassignedFromAllMachines
+  - compactCardsAndDestinationInDarkAndLightThemes

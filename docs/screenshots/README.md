@@ -94,8 +94,8 @@ the operator's daemon, client state, credentials, and attached physical devices.
    **Settings → Experimental → Show the workspace side panel**. Use the main
    Files, Terminals, and Screens surfaces. For screen capture, isolate the visual
    target and disclose any development-only source adaptation as above.
-4. For Android, use `just android machines-test` and the isolated
-   `ActivityEndToEndTest` fixture. Keep `ANDROID_SERIAL=emulator-5554` on connected
+4. For Android, use `just e2e run --case machines.telemetry` and the isolated
+   `activity.navigation` YAML case (`just e2e run --case activity.navigation`). Keep `ANDROID_SERIAL=emulator-5554` on connected
    tasks. Capture the observed Compose root at the relevant test checkpoints, or
    use `just android screenshot PATH` for a full-device capture.
 5. Navigate the real native UI. Capture the verified Mac window with

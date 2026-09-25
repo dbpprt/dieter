@@ -10,6 +10,8 @@ import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
@@ -43,7 +45,7 @@ class ConversationCreationPreferencesEndToEndTest {
     private val composeRule = createAndroidComposeRule<MainActivity>()
 
     @get:Rule
-    val rules: RuleChain = RuleChain.outerRule(permissionRule).around(composeRule)
+    val rules: RuleChain = RuleChain.outerRule(permissionRule).around(composeRule).around(com.dbpprt.dieter.e2e.FailureEvidence())
 
     @Test
     fun submittedCardSelectionIsPreselectedForTheNextChat() {
@@ -99,10 +101,11 @@ class ConversationCreationPreferencesEndToEndTest {
             manager.onAppForegrounded(project.id)
             composeRule.waitForIdle()
 
+            composeRule.onNodeWithTag("nav-board").performClick()
             composeRule.waitUntil(20_000) {
-                composeRule.onAllNodesWithText(board.name).fetchSemanticsNodes().isNotEmpty()
+                composeRule.onAllNodesWithTag("space-project-${project.id}").fetchSemanticsNodes().isNotEmpty()
             }
-            composeRule.onAllNodesWithText(board.name)[0].performClick()
+            composeRule.onNode(androidx.compose.ui.test.hasText(project.name) and androidx.compose.ui.test.hasClickAction()).performScrollTo().performClick()
             composeRule.waitUntil(10_000) {
                 composeRule.onAllNodesWithTag("new-card").fetchSemanticsNodes().isNotEmpty()
             }

@@ -7,6 +7,9 @@ import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onRoot
@@ -44,7 +47,7 @@ class ProjectWorkspaceAdministrationEndToEndTest {
     private val composeRule = createAndroidComposeRule<MainActivity>()
 
     @get:Rule
-    val rules: RuleChain = RuleChain.outerRule(permissionRule).around(composeRule)
+    val rules: RuleChain = RuleChain.outerRule(permissionRule).around(composeRule).around(com.dbpprt.dieter.e2e.FailureEvidence())
 
     @Test
     fun createsOnSelectedHostAndAdministersWorkspaceThroughTheVisibleApp() {
@@ -83,10 +86,11 @@ class ProjectWorkspaceAdministrationEndToEndTest {
         var projectId: String? = null
         var cardId: String? = null
         try {
+            composeRule.onNodeWithTag("nav-board").performClick()
             composeRule.waitUntil(20_000) {
-                composeRule.onAllNodesWithText(initialBoard.name).fetchSemanticsNodes().isNotEmpty()
+                composeRule.onAllNodesWithTag("space-project-${initialProject.id}").fetchSemanticsNodes().isNotEmpty()
             }
-            composeRule.onAllNodesWithText(initialBoard.name)[0].performClick()
+            composeRule.onNode(androidx.compose.ui.test.hasText(initialProject.name) and androidx.compose.ui.test.hasClickAction()).performScrollTo().performClick()
             composeRule.waitUntil(10_000) {
                 composeRule.onAllNodesWithContentDescription("Board actions").fetchSemanticsNodes().isNotEmpty()
             }
@@ -125,7 +129,7 @@ class ProjectWorkspaceAdministrationEndToEndTest {
                 }
             }
             val board = fixtureState.boards.first { it.projectId == initialProject.id }
-            val harness = createdState.harnesses.first()
+            val harness = runBlocking { repository.harnesses().harnessesList.first() }
             val card = runBlocking {
                 repository.createConversation(
                     CreateConversationRequest.newBuilder()
@@ -166,10 +170,10 @@ class ProjectWorkspaceAdministrationEndToEndTest {
             androidx.test.espresso.Espresso.pressBack()
             composeRule.onNodeWithTag("add-validation-command").performScrollTo().performClick()
             composeRule.onNodeWithTag("validation-executable-0").performScrollTo().performTextInput("git")
-            androidx.test.espresso.Espresso.pressBack()
+            androidx.test.espresso.Espresso.closeSoftKeyboard()
             composeRule.onNodeWithTag("project-base-branch").performScrollTo().performTextClearance()
             composeRule.onNodeWithTag("project-base-branch").performTextInput("trunk")
-            androidx.test.espresso.Espresso.pressBack()
+            androidx.test.espresso.Espresso.closeSoftKeyboard()
             composeRule.onNodeWithTag("save-project-settings").performScrollTo().performClick()
             val updatedState = runBlocking {
                 withTimeout(20_000) {

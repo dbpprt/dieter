@@ -145,6 +145,10 @@ just check-changed --dry-run
 just check-changed
 ```
 
+Run Android journeys with `just e2e run --suite smoke`. The
+[native test guide](tests/e2e/README.md) covers YAML cases, suite selection,
+failure evidence, and iOS preparation; Mac execution is disabled.
+
 [Mac](apps/mac/README.md) · [Android](apps/android/README.md) ·
 [iOS](apps/ios/README.md) · [Website](landingpage/README.md)
 

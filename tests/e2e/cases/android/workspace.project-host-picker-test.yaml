@@ -1,0 +1,15 @@
+# yaml-language-server: $schema=../../schema.json
+version: 1
+id: workspace.project-host-picker-test
+platform: android
+suites:
+- component
+- functional
+components:
+- workspace
+fixture: none
+timeout: 300s
+native:
+  class: com.dbpprt.dieter.ui.ProjectReplicaPickerTest
+  methods:
+  - pickerSelectsOnlyOnlineCompatibleDaemonHosts

@@ -1,0 +1,50 @@
+name: Native E2E
+
+on:
+  workflow_dispatch:
+    inputs:
+      suite:
+        description: Android suite (screens require a macOS capture host)
+        type: choice
+        default: functional
+        options: [smoke, functional, sync, performance, sdk]
+
+permissions:
+  contents: read
+
+# Explicit opt-in on a provisioned, visible host-GPU emulator. Hosted runners
+# lack this repository's qualified AVD; do not substitute software rendering.
+concurrency:
+  group: native-e2e-android
+  cancel-in-progress: false
+
+jobs:
+  android:
+    runs-on: [self-hosted, Linux, dieter-android]
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install disposable fixture runtime
+        run: just harness install
+      - name: Validate native test catalog
+        run: just e2e lint
+      - name: Execute selected Android suite
+        env:
+          E2E_SUITE: ${{ inputs.suite }}
+          E2E_OUTPUT: tmp/native-e2e-${{ github.run_id }}-${{ github.run_attempt }}
+        run: just e2e run --suite "$E2E_SUITE" --output "$E2E_OUTPUT"
+      - name: Retain results and screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-e2e
+          path: tmp/native-e2e-${{ github.run_id }}-${{ github.run_attempt }}/
+          if-no-files-found: error
+          retention-days: 14
+
+# mac:
+#   Disabled until a Mac adapter and execution host are available.
+# ios:
+#   Preparation only: just e2e prepare --platform ios --device iphone|ipad

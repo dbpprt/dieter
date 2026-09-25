@@ -77,7 +77,7 @@ production presentation default.
 ## Evidence and qualification
 
 The isolated physical runner accepts `DIETER_SCREEN_TEST_DIRECT_SURFACE=1`.
-Run `bash scripts/test-android-screens-sdk-device.sh SERIAL` for the bounded
+Run `just e2e run --suite sdk --serial SERIAL` for the bounded
 codec/ownership checks and launcher-namespace regression in the separate fixture
 application. It acquires the shared device lease, requires all selected tests
 to execute without skips, and emits `decoder-sdk.json` from fresh JUnit results.

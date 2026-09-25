@@ -420,7 +420,20 @@ class IsolatedGatewayIntegrationTest {
                 candidate.lanesList.any { it.id.equals("todo", ignoreCase = true) } &&
                     candidate.lanesList.any { lane -> lane.id.equals("running", true) || lane.name.equals("running", true) }
             }
-            val harness = repository.harnesses().harnessesList.first()
+            // Initial provider discovery can outlive one metadata RPC. Wait
+            // for the app's catalog hydration before arranging an offline turn.
+            manager.repository.setAccessToken(origin, token)
+            manager.updateEndpoints(listOf(origin))
+            manager.connect()
+            manager.onAppForegrounded(board.projectId)
+            val connected = withTimeout(30_000) {
+                manager.state.first { current ->
+                    current.phase == ConnectionPhase.CONNECTED &&
+                        current.harnessesEndpointId == current.endpoint?.id &&
+                        current.harnesses.any { it.id == "mock" }
+                }
+            }
+            val harness = connected.harnesses.first { it.id == "mock" }
             val card = repository.createConversation(
                 CreateConversationRequest.newBuilder()
                     .setProjectId(board.projectId)
@@ -439,10 +452,6 @@ class IsolatedGatewayIntegrationTest {
             )
             cardId = card.id
 
-            manager.repository.setAccessToken(origin, token)
-            manager.updateEndpoints(listOf(origin))
-            manager.connect()
-            manager.onAppForegrounded(card.projectId)
             withTimeout(30_000) {
                 manager.state.first { current ->
                     current.phase == ConnectionPhase.CONNECTED && current.cards.any { it.id == card.id }
@@ -513,8 +522,8 @@ class IsolatedGatewayIntegrationTest {
             val runningLane = board.lanesList.first {
                 it.id.equals("running", ignoreCase = true) || it.name.equals("running", ignoreCase = true)
             }.id
-            val harness = repository.harnesses().harnessesList.firstOrNull()
-                ?: error("The real daemon must expose at least one harness")
+            val harness = repository.harnesses().harnessesList.firstOrNull { it.id == "mock" }
+                ?: error("The isolated daemon must expose the deterministic mock harness")
             val nonce = UUID.randomUUID().toString().take(8)
             val transportCard = repository.createConversation(
                 CreateConversationRequest.newBuilder()

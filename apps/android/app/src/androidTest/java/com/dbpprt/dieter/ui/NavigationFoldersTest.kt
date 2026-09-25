@@ -53,7 +53,7 @@ class NavigationFoldersTest {
     )
 
     @Before fun setup() {
-        assumeTrue("Use -Pdieter.screenTestBuildType=screenFixture to preserve the signed-in app", context.packageName.endsWith(".screenfixture"))
+        assumeTrue("Use the isolated E2E app", context.packageName.endsWith(".e2e"))
         context.getSharedPreferences("dieter_shared_kv", Context.MODE_PRIVATE).edit().clear().putString("activeAccount", "navigation-fixture").commit()
         var endpoints = DIETER_ENDPOINTS
         val repository = Proxy.newProxyInstance(DieterRepository::class.java.classLoader, arrayOf(DieterRepository::class.java)) { _, method, args ->
@@ -107,9 +107,10 @@ class NavigationFoldersTest {
         compose.onNodeWithTag("folder-name").performTextReplacement("Reviews")
         compose.onNodeWithTag("save-folder").performClick()
         compose.onNodeWithText("Reviews").assertIsDisplayed()
+        val reloaded = AppPreferences(context)
+        compose.waitUntil(5_000) { reloaded.navigationFolders.layouts.value.getValue(NavigationFolderScope.CHATS).folders.singleOrNull()?.name == "Reviews" }
         compose.runOnIdle {
-            val restored = AppPreferences(context).navigationFolders
-                .layouts.value.getValue(NavigationFolderScope.CHATS).folders.single()
+            val restored = reloaded.navigationFolders.layouts.value.getValue(NavigationFolderScope.CHATS).folders.single()
             assertEquals(id, restored.id)
             assertEquals("Reviews", restored.name)
             assertEquals(listOf("c1"), restored.itemIDs)
@@ -170,9 +171,9 @@ class NavigationFoldersTest {
         compose.onNodeWithTag("project-pin-p1").performClick()
         compose.onNodeWithText("PINNED").assertIsDisplayed()
         compose.onNodeWithTag("project-pinned-p1").assertIsDisplayed()
-        compose.runOnIdle {
-            assertEquals(listOf("p1"), AppPreferences(context).pinnedProjectOrder.value)
-        }
+        val pinnedReload = AppPreferences(context)
+        compose.waitUntil(5_000) { pinnedReload.pinnedProjectOrder.value == listOf("p1") }
+        assertEquals(listOf("p1"), pinnedReload.pinnedProjectOrder.value)
 
         compose.onNodeWithTag("project-unpin-p1").performClick()
         compose.onNodeWithTag("project-pinned-p1").assertDoesNotExist()
@@ -218,7 +219,9 @@ class NavigationFoldersTest {
         val store = model.navigationFolders
         store.update(NavigationFolderScope.PROJECTS) { decoded }
         store.create(NavigationFolderScope.CHATS, "Research", "c1")
+        compose.waitUntil(5_000) { store.layouts.value.getValue(NavigationFolderScope.CHATS).folders.isNotEmpty() }
         val restored = AppPreferences(context).navigationFolders
+        compose.waitUntil(5_000) { restored.layouts.value.getValue(NavigationFolderScope.CHATS).folders.isNotEmpty() }
         assertEquals(decoded, restored.layouts.value.getValue(NavigationFolderScope.PROJECTS))
         assertEquals(listOf("c1"), restored.layouts.value.getValue(NavigationFolderScope.CHATS).folders.single().itemIDs)
     }
@@ -226,6 +229,7 @@ class NavigationFoldersTest {
     @Test fun folderPickerScrollsWithLargeTextAndManyFolders() {
         val store = model.navigationFolders
         repeat(18) { store.create(NavigationFolderScope.PROJECTS, "Project group ${it + 1}") }
+        compose.waitUntil(5_000) { store.layouts.value.getValue(NavigationFolderScope.PROJECTS).folders.size == 18 }
         val last = store.layouts.value.getValue(NavigationFolderScope.PROJECTS).folders.last().id
         var dismissed = false
         compose.setContent {
@@ -239,6 +243,7 @@ class NavigationFoldersTest {
             }
         }
         compose.onNodeWithTag("move-folder-$last").performScrollTo().assertIsDisplayed().performClick()
+        compose.waitUntil(5_000) { store.layouts.value.getValue(NavigationFolderScope.PROJECTS).folderContaining("p1")?.id == last }
         compose.runOnIdle {
             assertTrue(dismissed)
             assertEquals(last, store.layouts.value.getValue(NavigationFolderScope.PROJECTS).folderContaining("p1")?.id)

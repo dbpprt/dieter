@@ -279,9 +279,9 @@ emulator-stop:
     echo "{{ serial }} or its emulator process remained visible after graceful shutdown." >&2
     exit 1
 
-# Build the debug APK and run Android unit tests.
+# Build the debug APK. Use test for JVM tests or check for the complete build gate.
 build:
-    ANDROID_HOME="{{ sdk }}" JAVA_HOME="{{ java }}" {{ app_root }}/gradlew --project-dir "{{ app_root }}" :app:testDebugUnitTest :app:assembleDebug
+    ANDROID_HOME="{{ sdk }}" JAVA_HOME="{{ java }}" {{ app_root }}/gradlew --project-dir "{{ app_root }}" :app:assembleDebug
 
 # Run Android unit tests.
 test:
@@ -291,13 +291,20 @@ test:
 lint:
     ANDROID_HOME="{{ sdk }}" JAVA_HOME="{{ java }}" {{ app_root }}/gradlew --project-dir "{{ app_root }}" :app:lintDebug
 
-# Run tests, assemble the debug APK, and lint the application.
+# Run unit tests and lint; compile debug, E2E, and performance app/test APKs.
 check:
-    just android build
-    just android lint
+    ANDROID_HOME="{{ sdk }}" JAVA_HOME="{{ java }}" {{ app_root }}/gradlew --project-dir "{{ app_root }}" :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
+    ANDROID_HOME="{{ sdk }}" JAVA_HOME="{{ java }}" {{ app_root }}/gradlew --project-dir "{{ app_root }}" -Pdieter.testBuildType=e2e :app:assembleE2e :app:assembleE2eAndroidTest
+    ANDROID_HOME="{{ sdk }}" JAVA_HOME="{{ java }}" {{ app_root }}/gradlew --project-dir "{{ app_root }}" -Pdieter.testBuildType=performance :app:assemblePerformance :app:assemblePerformanceAndroidTest
 
 # Build the signed release APK using the release environment.
 build-release:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    : "${DIETER_ANDROID_KEYSTORE_PATH:?DIETER_ANDROID_KEYSTORE_PATH is required}"
+    : "${DIETER_ANDROID_KEYSTORE_PASSWORD:?DIETER_ANDROID_KEYSTORE_PASSWORD is required}"
+    : "${DIETER_ANDROID_KEY_ALIAS:?DIETER_ANDROID_KEY_ALIAS is required}"
+    : "${DIETER_ANDROID_KEY_PASSWORD:?DIETER_ANDROID_KEY_PASSWORD is required}"
     ANDROID_HOME="{{ sdk }}" JAVA_HOME="{{ java }}" {{ app_root }}/gradlew --project-dir "{{ app_root }}" --no-daemon :app:assembleRelease
 
 # Install the pinned Android SDK packages on the GitHub runner.
@@ -316,20 +323,36 @@ restore-release-keystore:
     chmod 600 "$RUNNER_TEMP/dieter-android-release.jks"
 
 # Copy the signed release APK into the shared release directory.
-package-release:
+[positional-arguments]
+package-release archive="dist/Dieter-Android.apk":
     #!/usr/bin/env bash
     set -euo pipefail
     source_apk="{{ app_root }}/app/build/outputs/apk/release/app-release.apk"
-    archive="dist/Dieter-Android.apk"
+    archive="$1"
     test -f "$source_apk"
     [[ ! -e "$archive" ]] || { echo "$archive already exists." >&2; exit 1; }
-    mkdir -p dist
+    mkdir -p "$(dirname "$archive")"
     cp "$source_apk" "$archive"
     echo "$archive"
 
-# Verify the packaged Android release signature.
-verify-release:
-    "{{ sdk }}/build-tools/37.0.0/apksigner" verify --verbose --print-certs dist/Dieter-Android.apk
+# Require a signed production package without debugging or test instrumentation.
+[positional-arguments]
+verify-release archive="dist/Dieter-Android.apk":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    archive="$1"
+    "{{ sdk }}/build-tools/37.0.0/apksigner" verify --verbose --print-certs "$archive"
+    badging="$("{{ sdk }}/build-tools/37.0.0/aapt2" dump badging "$archive")"
+    [[ "$badging" == "package: name='com.dbpprt.dieter' "* ]] || { echo "Release APK must use the production application ID." >&2; exit 1; }
+    if [[ "$badging" == *application-debuggable* ]]; then
+        echo "Release APK must not be debuggable." >&2
+        exit 1
+    fi
+    manifest="$("{{ sdk }}/build-tools/37.0.0/aapt2" dump xmltree "$archive" --file AndroidManifest.xml)"
+    if [[ "$manifest" == *"E: instrumentation"* || "$manifest" == *"com.dbpprt.dieter.e2e"* || "$manifest" == *"androidx.compose.ui.test"* ]]; then
+        echo "Release APK contains test instrumentation." >&2
+        exit 1
+    fi
 
 # Remove only the packaged Android release APK and temporary CI keystore.
 [confirm]
@@ -350,54 +373,6 @@ launch:
 app-stop:
     "{{ adb }}" -s "{{ serial }}" shell am force-stop com.dbpprt.dieter
     test -z "$("{{ adb }}" -s "{{ serial }}" shell pidof com.dbpprt.dieter | tr -d '\r')"
-
-# Exercise native H.264, GPU canvas gestures and host input using disposable credentials.
-screens-test:
-    ANDROID_SERIAL="{{ serial }}" ANDROID_HOME="{{ sdk }}" JAVA_HOME="{{ java }}" scripts/test-android-screens.sh
-
-# Exercise the Machines fleet, telemetry, and fixture-only operation journey.
-machines-test:
-    ANDROID_SERIAL="{{ serial }}" ANDROID_HOME="{{ sdk }}" JAVA_HOME="{{ java }}" python3 {{ app_root }}/scripts/test-machines.py
-
-# Run isolated live/background chat synchronization on the selected emulator.
-sync-test:
-    ANDROID_SERIAL="{{ serial }}" ANDROID_HOME="{{ sdk }}" JAVA_HOME="{{ java }}" python3 scripts/test-android-sync.py
-
-# Run all functional and production-mode performance checks, or one debug test class.
-connected-test class="":
-    #!/usr/bin/env bash
-    set -euo pipefail
-    arguments=(--project-dir "{{ app_root }}" connectedDebugAndroidTest)
-    if [[ -n "{{ class }}" ]]; then
-        arguments+=("-Pandroid.testInstrumentationRunnerArguments.class={{ class }}")
-    fi
-    ANDROID_SERIAL="{{ serial }}" ANDROID_HOME="{{ sdk }}" JAVA_HOME="{{ java }}" \
-        "{{ app_root }}/gradlew" "${arguments[@]}"
-    if [[ -z "{{ class }}" ]]; then
-        just android performance-test
-    fi
-
-# Measure native navigation in the non-debuggable release-equivalent app on the owned emulator.
-performance-test:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    [[ "{{ serial }}" == emulator-* ]] || { echo "Performance instrumentation requires the selected emulator." >&2; exit 1; }
-    export ANDROID_SERIAL="{{ serial }}" ANDROID_HOME="{{ sdk }}" JAVA_HOME="{{ java }}"
-    # Same debug signing key and application ID retain the fixture data. Restore
-    # the ordinary debug APK even if a frame assertion fails; never uninstall.
-    restore_debug() {
-        local result=$?
-        trap - EXIT
-        if ! "{{ app_root }}/gradlew" --project-dir "{{ app_root }}" :app:installDebug; then
-            echo "Failed to restore the debug APK after performance instrumentation." >&2
-            if [[ "$result" -eq 0 ]]; then result=1; fi
-        fi
-        exit "$result"
-    }
-    trap restore_debug EXIT
-    "{{ app_root }}/gradlew" --project-dir "{{ app_root }}" connectedPerformanceAndroidTest \
-        -Pdieter.performanceTest=true \
-        -Pandroid.testInstrumentationRunnerArguments.class=com.dbpprt.dieter.ui.MainActivityFramePerformanceTest
 
 # Save the current Android UI hierarchy.
 ui-dump output="apps/android/build/evidence/ui.xml":

@@ -1,0 +1,20 @@
+# yaml-language-server: $schema=../../schema.json
+version: 1
+id: screens.dieter-low-latency-codec-test
+platform: android
+suites:
+- sdk
+- component
+- functional
+components:
+- screens
+fixture: none
+timeout: 300s
+native:
+  class: org.webrtc.DieterLowLatencyCodecTest
+  methods:
+  - acceptedSettingPreservesTheOriginalFormat
+  - rejectedSettingRecreatesExactlyOnceWithoutTheKey
+  - ordinaryConfigurationFailureDoesNotLoop
+  - rejectedStartSharesTheSingleRecreationBudget
+  - failedReplacementCreationDoesNotReleaseTheRetiredCodecTwice

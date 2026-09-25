@@ -1,0 +1,20 @@
+# yaml-language-server: $schema=../../schema.json
+version: 1
+id: sync.isolated-gateway-integration-test
+platform: android
+suites:
+- sync
+components:
+- sync
+- conversation
+fixture: gateway
+timeout: 300s
+native:
+  class: com.dbpprt.dieter.data.IsolatedGatewayIntegrationTest
+  methods:
+  - sharedNavigationCachesOfflineEditsAndDrainsThroughRealGateway
+  - terminalEditingControlBytesRoundTripThroughTheIsolatedGateway
+  - machineScopedProjectCreationAndWorkspaceAdministrationRoundTrip
+  - queuedMessageRemovalReturnsAnEditableDraftEndToEnd
+  - disconnectedCardStartPersistsAndDrainsThroughTheRealGateway
+  - startAdmissionRoundTripsAndPreparesVisibleFixture

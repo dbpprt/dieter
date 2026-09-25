@@ -77,19 +77,21 @@ process afterward. A skipped opt-in test does not count as a pass.
 ## Android
 
 Use the visible emulator under the shared device lease. The screen recipe uses
-`com.dbpprt.dieter.screenfixture`; it refuses a running fixture and preserves the
+`com.dbpprt.dieter.e2e`; it refuses a running fixture and preserves the
 normal Dieter application:
 
 ```sh
 DIETER_TEST_TURN_CONFIG=/absolute/private/turn.json \
-DIETER_TEST_FORCE_TURN=1 just android screens-test
+DIETER_TEST_FORCE_TURN=1 just e2e run --suite screens
 ```
 
 When the TURN URL points at host loopback, create a separate, temporary ADB
 reverse mapping for that TCP port on the explicitly selected emulator and remove
 it afterward. The recipe owns only the screen service's reverse mapping.
 
-For API coverage, install only the `screenFixture` app/test APKs, select
+For API coverage, `just e2e run --suite sync` builds and installs the isolated
+app/test APKs and executes the ordinary sync regressions. External TURN coverage
+is a separate manual qualification: select
 `IsolatedGatewayIntegrationTest#webRTCControlCarriesRPCAndReportsICEPath`, and
 provide instrumentation arguments `isolatedControlWebRTC=1`, `forceTURN=1`,
 `isolatedGatewayHost`, `isolatedGatewayPort` and the disposable

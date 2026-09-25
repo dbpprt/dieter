@@ -20,8 +20,7 @@ class QualificationContract(unittest.TestCase):
         with self.assertRaises(ValueError):
             command({"runner": "android-sdk"}, "emulator-5554")
         argv, _ = command({"runner": "android-sdk"}, "explicit-phone")
-        self.assertEqual(argv[-1], "explicit-phone")
-        self.assertTrue(argv[-2].endswith("test-android-screens-sdk-device.sh"))
+        self.assertEqual(argv, ["just", "e2e", "run", "--serial", "explicit-phone", "--suite", "sdk"])
 
     def test_comparison_requires_matching_measurements_and_sample_count(self):
         value = {"hardware": {"model": "fixture"}, "cases": [{"id": "motion", "status": "passed", "scenario": {"runner": "mac-latency"},

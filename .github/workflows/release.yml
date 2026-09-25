@@ -73,6 +73,8 @@ jobs:
         run: just harness install
       - name: Run native Linux checks
         run: just check
+      - name: Test release signing and packaging
+        run: just release test
 
   go-binaries:
     name: ${{ matrix.asset }}
@@ -263,6 +265,8 @@ jobs:
           just-version: "1.58.0"
       - name: Install Android SDK packages
         run: just android install-sdk
+      - name: Check Android client and test APKs
+        run: just android check
       - name: Restore Android release keystore
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}

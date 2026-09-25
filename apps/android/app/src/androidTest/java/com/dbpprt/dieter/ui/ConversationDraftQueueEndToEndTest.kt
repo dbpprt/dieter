@@ -3,12 +3,19 @@ package com.dbpprt.dieter.ui
 import android.Manifest
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onRoot
+import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipeLeft
+import androidx.compose.ui.test.swipeRight
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.SemanticsMatcher
@@ -46,7 +53,7 @@ class ConversationDraftQueueEndToEndTest {
     private val composeRule = createAndroidComposeRule<MainActivity>()
 
     @get:Rule
-    val rules: RuleChain = RuleChain.outerRule(permissionRule).around(composeRule)
+    val rules: RuleChain = RuleChain.outerRule(permissionRule).around(composeRule).around(com.dbpprt.dieter.e2e.FailureEvidence())
 
     @Test
     fun draftsSurviveNavigationAndQueuedEditRestoresTheServerMessage() {
@@ -96,6 +103,19 @@ class ConversationDraftQueueEndToEndTest {
             }
             manager.onAppForegrounded(project.id)
 
+            // Real pager gestures still select routes; detail layout changes
+            // must not be interpreted as another swipe.
+            composeRule.onNodeWithTag("nav-activity").assertIsSelected()
+            composeRule.onRoot().performTouchInput { swipeLeft(durationMillis = 500) }
+            composeRule.onNodeWithTag("nav-board").assertIsSelected()
+            composeRule.onRoot().performTouchInput { swipeRight(durationMillis = 500) }
+            composeRule.onNodeWithTag("nav-activity").assertIsSelected()
+            composeRule.onNodeWithTag("primary-navigation-pager")
+                .performSemanticsAction(SemanticsActions.PageRight) { it() }
+            composeRule.onNodeWithTag("nav-board").assertIsSelected()
+            composeRule.onNodeWithTag("primary-navigation-pager")
+                .performSemanticsAction(SemanticsActions.ScrollBy) { it(-100f, 0f) }
+            composeRule.onNodeWithTag("nav-activity").assertIsSelected()
             container.requestOpen(cardId = first.id)
             composeRule.waitUntil(20_000) { composeRule.onAllNodesWithTag("message-input").fetchSemanticsNodes().isNotEmpty() }
             visibleNodeWithTag("message-input").performTextInput("draft for first")
@@ -103,7 +123,8 @@ class ConversationDraftQueueEndToEndTest {
             composeRule.waitUntil(10_000) {
                 composeRule.onAllNodesWithTag("chat-${second.id}").fetchSemanticsNodes().isNotEmpty()
             }
-            composeRule.onNodeWithTag("chat-${second.id}").performClick()
+            composeRule.onNodeWithTag("nav-chats").assertIsSelected()
+            composeRule.onNodeWithTag("chat-${second.id}").assertIsDisplayed().performClick()
             composeRule.waitUntil(10_000) {
                 runCatching {
                     visibleNodeWithTag("message-input").assert(
@@ -116,7 +137,8 @@ class ConversationDraftQueueEndToEndTest {
             composeRule.waitUntil(10_000) {
                 composeRule.onAllNodesWithTag("chat-${first.id}").fetchSemanticsNodes().isNotEmpty()
             }
-            composeRule.onNodeWithTag("chat-${first.id}").performClick()
+            composeRule.onNodeWithTag("nav-chats").assertIsSelected()
+            composeRule.onNodeWithTag("chat-${first.id}").assertIsDisplayed().performClick()
             composeRule.waitUntil(10_000) {
                 runCatching { visibleNodeWithTag("message-input").assertTextEquals("draft for first") }.isSuccess
             }
@@ -191,6 +213,9 @@ class ConversationDraftQueueEndToEndTest {
             visibleNodeWithTag("message-input").assertTextEquals("queued text to edit")
             assertTrue(runBlocking { repository.conversation(queueCard.id).conversation.queueCount == 0 })
             capture("queued-message-restored-to-composer-e2e.png")
+        } catch (error: Throwable) {
+            runCatching { capture("conversation-draft-queue-failure.png") }
+            throw error
         } finally {
             createdIds.asReversed().forEach { id ->
                 runBlocking {

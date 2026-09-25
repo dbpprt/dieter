@@ -1,0 +1,12 @@
+# yaml-language-server: $schema=../../schema.json
+version: 1
+id: performance.navigation
+platform: android
+suites: [performance]
+components: [navigation]
+fixture: none
+build: performance
+timeout: 180s
+native:
+  class: com.dbpprt.dieter.ui.MainActivityFramePerformanceTest
+  methods: [repeatedPrimaryNavigationHasNoSevereMainThreadStall]

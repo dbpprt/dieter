@@ -32,7 +32,7 @@ android {
         targetSdk = 37
         versionCode = releaseVersionCode.get()
         versionName = releaseVersionName.get()
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        testInstrumentationRunner = "com.dbpprt.dieter.e2e.DieterTestRunner"
         vectorDrawables.useSupportLibrary = true
     }
 
@@ -48,9 +48,9 @@ android {
     }
 
     buildTypes {
-        create("screenFixture") {
+        create("e2e") {
             initWith(getByName("debug"))
-            applicationIdSuffix = ".screenfixture"
+            applicationIdSuffix = ".e2e"
             matchingFallbacks += listOf("debug")
         }
         getByName("release") {
@@ -60,17 +60,16 @@ android {
         }
         create("performance") {
             initWith(getByName("release"))
+            applicationIdSuffix = ".e2e.performance"
             isDebuggable = false
             signingConfig = signingConfigs.getByName("debug")
             matchingFallbacks += listOf("release")
         }
     }
 
-    // Physical screen tests install a distinct application. Production/debug
-    // credentials and the operator's installed Dieter app are never replaced.
-    testBuildType = if (providers.gradleProperty("dieter.performanceTest").orNull == "true") "performance" else
-        providers.gradleProperty("dieter.screenTestBuildType").orElse("debug").get().also {
-        require(it == "debug" || it == "screenFixture") { "Unsupported screen test build type" }
+    // E2E and production-mode performance have separate test application IDs.
+    testBuildType = providers.gradleProperty("dieter.testBuildType").orElse("debug").get().also {
+        require(it in listOf("debug", "e2e", "performance")) { "Unsupported test build type" }
     }
 
     buildFeatures {
@@ -172,7 +171,7 @@ dependencies {
     androidTestImplementation(libs.espresso.core)
     androidTestImplementation(libs.compose.ui.test.junit4)
     debugImplementation(libs.compose.ui.test.manifest)
-    add("screenFixtureImplementation", libs.compose.ui.test.manifest)
+    add("e2eImplementation", libs.compose.ui.test.manifest)
     add("performanceImplementation", libs.compose.ui.test.manifest)
 }
 

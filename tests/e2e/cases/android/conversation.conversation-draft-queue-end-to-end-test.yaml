@@ -1,0 +1,14 @@
+# yaml-language-server: $schema=../../schema.json
+version: 1
+id: conversation.conversation-draft-queue-end-to-end-test
+platform: android
+suites:
+- functional
+components:
+- conversation
+fixture: gateway
+timeout: 300s
+native:
+  class: com.dbpprt.dieter.ui.ConversationDraftQueueEndToEndTest
+  methods:
+  - draftsSurviveNavigationAndQueuedEditRestoresTheServerMessage

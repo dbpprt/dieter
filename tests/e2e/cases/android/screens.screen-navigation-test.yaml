@@ -1,0 +1,23 @@
+# yaml-language-server: $schema=../../schema.json
+version: 1
+id: screens.screen-navigation-test
+platform: android
+suites:
+- component
+- functional
+components:
+- screens
+fixture: none
+timeout: 300s
+native:
+  class: com.dbpprt.dieter.ui.ScreenNavigationTest
+  methods:
+  - toolsTakeKeyboardFocusAndKeepTabTraversalInsideTheSheet
+  - toolsDismissWhenDraggedToTheZeroHeightPeek
+  - bottomBarIncludesInboxProjectsChatsAndTools
+  - navigationRailShowsEveryDestinationAndSettingsWithoutTools
+  - navigationRailDisablesProjectDestinationsWithoutAnAvailableProject
+  - toolsOfferExistingDestinationsAndSettings
+  - projectToolsAreDisabledWithoutAnAvailableProject
+  - sheetRetainsPrimaryNavigationAndCanBeClosed
+  - largeTextKeepsToolsReachableByScrolling

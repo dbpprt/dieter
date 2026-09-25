@@ -1,0 +1,59 @@
+# yaml-language-server: $schema=../../schema.json
+version: 1
+id: machines.telemetry
+platform: android
+suites:
+- smoke
+- functional
+components:
+- machines
+fixture: gateway
+timeout: 150s
+steps:
+- launch: connected
+- tap:
+    id: nav-tools
+- tap:
+    id: tool-machines
+- expect:
+    text: 1/2 reporting
+    visible: true
+- expect:
+    id: machine-row-${fixture.endpointId}
+    visible: true
+- screenshot: fleet
+- tap:
+    id: machine-row-${fixture.endpointId}
+- expect:
+    id: machine-cpu
+    visible: true
+- expect:
+    id: machine-memory
+    visible: true
+- screenshot: telemetry
+- scroll:
+    within:
+      id: machine-detail
+    until:
+      id: machine-processes
+- expect:
+    id: machine-processes
+    visible: true
+- probe: machine-telemetry
+- scroll:
+    within:
+      id: machine-detail
+    until:
+      id: machine-actions
+- tap:
+    id: machine-actions
+- tap:
+    id: machine-action-update
+- tap:
+    id: machine-operation-confirm
+- expect:
+    id: machine-operation-result
+    visible: true
+- screenshot: operation-accepted
+- tap:
+    id: machine-operation-result

@@ -1,0 +1,14 @@
+# yaml-language-server: $schema=../../schema.json
+version: 1
+id: workspace.project-workspace-administration-end-to-end-test
+platform: android
+suites:
+- functional
+components:
+- workspace
+fixture: gateway
+timeout: 300s
+native:
+  class: com.dbpprt.dieter.ui.ProjectWorkspaceAdministrationEndToEndTest
+  methods:
+  - createsOnSelectedHostAndAdministersWorkspaceThroughTheVisibleApp

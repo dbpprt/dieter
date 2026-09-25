@@ -224,7 +224,7 @@ just mac screens-native-test
 just mac screens-test
 DIETER_TEST_SCREEN_QUALITY_SOAK_SECONDS=180 just mac screens-test
 DIETER_TEST_SCREEN_CAPTURE_REAL=1 just mac screens-test
-DIETER_SCREEN_TEST_MULTI=1 DIETER_SCREEN_TEST_SOURCE=screen just android screens-test
+DIETER_SCREEN_TEST_SOURCE=screen just e2e run --suite screens
 ```
 
 The first three use generated pixels and dry-run input; the 180-second run includes
@@ -233,9 +233,11 @@ Recording and event-posting permission and send events only to an owned native
 fixture window. All use random loopback listeners and disposable daemon data;
 the installed daemon is untouched. Native Mac viewer integration refuses to start
 while an operator Dieter Mac app is running. Android screen tests install the
-separate `com.dbpprt.dieter.screenfixture` package on the selected emulator,
+separate `com.dbpprt.dieter.e2e` package on the selected emulator,
 preserve the normal Android app, and refuse an already-running fixture package.
-Evidence paths are printed by the test.
+Evidence paths are printed by the test. Android screen runs require a macOS
+capture host. Concurrent Mac companion execution in the new framework is disabled
+until the Mac adapter is qualified; the old multi-client environment flag was removed.
 
 Screen sharing supports up to four clients per machine. Matching display,
 codec profile, and stream settings share a hardware encoder when decoded-reference
@@ -323,7 +325,7 @@ For disposable-process A/B tests, `DIETER_SCREEN_LTR=0` disables reference recov
 and `DIETER_SCREEN_FEC=0` disables FEC negotiation. Do not restart an operator daemon
 for these comparisons. `DIETER_TEST_SCREEN_RECOVERY=1 just mac screens-test`
 runs the native H.264/HEVC recovery matrix. Android coverage uses
-`DIETER_SCREEN_TEST_CLASS=com.dbpprt.dieter.screens.ScreenRecoveryEndToEndTest just android screens-test`.
+`just e2e run --case screens.screen-recovery-end-to-end-test`.
 Both use authenticated disposable fixtures and targeted packet loss, without
 altering saved credentials or system network configuration.
 

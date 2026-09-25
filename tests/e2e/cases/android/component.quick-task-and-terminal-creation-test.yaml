@@ -1,0 +1,16 @@
+# yaml-language-server: $schema=../../schema.json
+version: 1
+id: component.quick-task-and-terminal-creation-test
+platform: android
+suites:
+- component
+- functional
+components:
+- component
+fixture: none
+timeout: 300s
+native:
+  class: com.dbpprt.dieter.ui.QuickTaskAndTerminalCreationTest
+  methods:
+  - quickTaskDraftSurvivesClosingAndReopeningSheet
+  - terminalPickerShowsMachineForDuplicateProjectNames

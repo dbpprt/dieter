@@ -48,7 +48,7 @@ class LongConversationMessageTest {
     private lateinit var model: DieterViewModel
 
     @Before fun setup() {
-        assumeTrue("Use the isolated screen fixture app", context.packageName.endsWith(".screenfixture"))
+        assumeTrue("Use the isolated screen fixture app", (context.packageName.endsWith(".e2e")))
         var endpoints = DIETER_ENDPOINTS
         val repository = Proxy.newProxyInstance(DieterRepository::class.java.classLoader, arrayOf(DieterRepository::class.java)) { _, method, args ->
             when (method.name) {

@@ -8,7 +8,7 @@ import unittest
 from unittest.mock import patch
 
 from check_changed import (MAC_SMOKE_SUITES, affected_ci_components, affected_go_packages,
-                           affected_mac_smoke_suites, changed_paths, main, plan_checks)
+                           affected_mac_smoke_suites, changed_paths, go_packages, main, plan_checks)
 
 
 class CheckChangedTests(unittest.TestCase):
@@ -23,15 +23,22 @@ class CheckChangedTests(unittest.TestCase):
     def test_android_screen_changes_run_native_emulator_integration(self):
         for path in ("apps/android/app/src/main/java/com/dbpprt/dieter/screens/ScreenController.kt",
                      "apps/android/app/src/main/java/com/dbpprt/dieter/ui/ScreensScreen.kt",
-                     "scripts/test-android-screens.sh", "scripts/screens-fixture/main.go",
-                     "scripts/test-android-screens-device.sh",
+                     "scripts/screens-fixture/main.go",
                      "native/android-webrtc/java/org/webrtc/AndroidVideoDecoder.java",
                      "apps/android/app/src/main/java/org/webrtc/DieterLowLatencyDecoderFactory.java"):
-            self.assertIn(["just", "android", "screens-test"], self.plan(path))
+            self.assertIn(["just", "e2e", "run", "--suite", "screens"], self.plan(path))
 
     def test_android_sdk_patch_runs_android_without_mac_or_go_checks(self):
         self.assertEqual(self.plan("native/android-webrtc/build_sdk.py"),
-                         [["just", "android", "test"], ["just", "android", "connected-test"], ["just", "android", "screens-test"]])
+                         [["just", "android", "test"], ["just", "e2e", "run", "--suite", "functional", "--changed"], ["just", "e2e", "run", "--suite", "screens"]])
+
+    def test_yaml_and_runner_changes_validate_catalog_and_android_without_apple_execution(self):
+        for path in ("tests/e2e/cases/android/machines.telemetry.yaml", "tools/e2e/android.go", "just/e2e.just"):
+            plan = self.plan(path)
+            self.assertIn(["just", "e2e", "check"], plan)
+            self.assertIn(["just", "e2e", "run", "--suite", "functional", "--changed"], plan)
+            self.assertFalse(any(command[:2] in (["just", "mac"], ["just", "ios"]) for command in plan))
+            self.assertEqual(self.components(path), {"core", "android"})
 
     def test_no_changes_or_docs_need_no_checks(self):
         self.assertEqual(self.plan(), [])
@@ -69,7 +76,7 @@ class CheckChangedTests(unittest.TestCase):
                      "scripts/release_signing_test.py", "scripts/ios_release.py", "scripts/ios_release_test.py"):
             with self.subTest(path=path):
                 self.assertEqual(self.plan(path), [["just", "release", "test"]])
-        for path in ("just/release.just", "just/daemon.just"):
+        for path in ("just/release.just", "just/daemon.just", "just/android.just", ".github/workflows/release.yml"):
             with self.subTest(path=path):
                 self.assertIn(["just", "release", "test"], self.plan(path))
 
@@ -188,7 +195,7 @@ class CheckChangedTests(unittest.TestCase):
 
     def test_android_change_runs_only_android_unit_and_integration_tests(self):
         self.assertEqual(self.plan("apps/android/app/src/main/java/Conversation.kt"),
-                         [["just", "android", "test"], ["just", "android", "connected-test"]])
+                         [["just", "android", "test"], ["just", "e2e", "run", "--suite", "functional", "--changed"]])
 
     def test_unit_tests_do_not_trigger_device_suites(self):
         self.assertEqual(self.plan("apps/mac/Tests/DieterMacTests/SelectionTests.swift"), [["just", "mac", "test"]])
@@ -198,18 +205,27 @@ class CheckChangedTests(unittest.TestCase):
         for path in ["apps/mac/Package.resolved", "apps/mac/Tools/DieterMacSmokeDriver/main.swift"]:
             self.assertIn(["just", "mac", "smoke-all"], self.plan(path))
         for path in ["apps/android/build.gradle.kts", "apps/android/app/src/androidTest/java/Example.kt"]:
-            self.assertIn(["just", "android", "connected-test"], self.plan(path))
+            self.assertIn(["just", "e2e", "run", "--suite", "functional", "--changed"], self.plan(path))
 
     def test_shared_schema_and_fixture_validate_both_clients(self):
         for path in ["api/proto/dieter/v1/dieter.proto", "scripts/generate-proto.sh",
                      "scripts/isolated-gateway/main.go", "assets/brand/icon.png"]:
             plan = self.plan(path)
             self.assertIn(["just", "mac", "smoke-all"], plan)
-            self.assertIn(["just", "android", "connected-test"], plan)
+            self.assertIn(["just", "e2e", "run", "--suite", "functional", "--changed"], plan)
         self.assertIn(["just", "proto"], self.plan("api/proto/dieter/v1/dieter.proto"))
 
     def test_harness_does_not_run_unrelated_native_tests(self):
         self.assertEqual(self.plan("internal/harness/runtime/runner.mjs"), [["just", "harness", "test"]])
+
+    def test_go_discovery_excludes_ignored_scratch_roots(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "tools/e2e").mkdir(parents=True)
+            (root / "tools/e2e/main.go").write_text("package main")
+            with patch("check_changed.output", side_effect=["tools/e2e/main.go\0", '{"ImportPath":"dieter/tools/e2e"}']) as read:
+                self.assertEqual(go_packages(root), [{"ImportPath": "dieter/tools/e2e"}])
+                self.assertEqual(read.call_args.args, (root, "go", "list", "-json", "./tools/..."))
 
     def test_graph_includes_reverse_and_test_only_dependencies(self):
         packages = [

@@ -14,6 +14,8 @@ APPLICATION = (
     "NOTARY_KEY_ID", "NOTARY_ISSUER_ID",
 )
 INSTALLER = ("INSTALLER_CERTIFICATE_BASE64", "INSTALLER_CERTIFICATE_PASSWORD")
+ANDROID = ("DIETER_ANDROID_KEYSTORE_PATH", "DIETER_ANDROID_KEYSTORE_PASSWORD",
+           "DIETER_ANDROID_KEY_ALIAS", "DIETER_ANDROID_KEY_PASSWORD")
 
 
 @unittest.skipUnless(shutil.which("just"), "Just is required")
@@ -67,6 +69,59 @@ class ReleaseSigningTests(unittest.TestCase):
                     )
                     self.assertNotEqual(code, 0)
                     self.assertEqual(output, "")
+
+
+@unittest.skipUnless(shutil.which("just"), "Just is required")
+class AndroidReleaseTests(unittest.TestCase):
+    def test_signed_build_requires_every_credential_before_gradle(self):
+        for missing in ANDROID:
+            with self.subTest(missing=missing):
+                env = {key: value for key, value in os.environ.items() if key not in ANDROID}
+                env.update({key: "fixture-secret" for key in ANDROID if key != missing})
+                result = subprocess.run(["just", "android", "build-release"],
+                                        cwd=ROOT, env=env, capture_output=True, text=True)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(missing + " is required", result.stderr)
+                self.assertNotIn("fixture-secret", result.stdout + result.stderr)
+                self.assertNotIn("Gradle", result.stdout + result.stderr)
+
+    def verify(self, package="com.dbpprt.dieter", debuggable=False,
+               manifest="E: manifest", signed=True):
+        with tempfile.TemporaryDirectory() as directory:
+            sdk = Path(directory)
+            build_tools = sdk / "build-tools/37.0.0"
+            build_tools.mkdir(parents=True)
+            signer = build_tools / "apksigner"
+            signer.write_text('#!/bin/sh\n[ "$SIGNATURE_VALID" = true ]\n')
+            signer.chmod(0o755)
+            aapt = build_tools / "aapt2"
+            aapt.write_text('#!/bin/sh\ncase "$2" in\n'
+                            'badging) printf "%s\\n" "$APK_BADGING" ;;\n'
+                            'xmltree) printf "%s\\n" "$APK_MANIFEST" ;;\n'
+                            '*) exit 1 ;;\nesac\n')
+            aapt.chmod(0o755)
+            env = dict(os.environ, ANDROID_HOME=str(sdk),
+                       SIGNATURE_VALID=str(signed).lower(),
+                       APK_BADGING=f"package: name='{package}' versionCode='1'\n"
+                       + ("application-debuggable\n" if debuggable else ""),
+                       APK_MANIFEST=manifest)
+            return subprocess.run(["just", "android", "verify-release", str(sdk / "app.apk")],
+                                  cwd=ROOT, env=env, capture_output=True, text=True)
+
+    def test_accepts_signed_production_package(self):
+        result = self.verify()
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_rejects_test_packages_debugging_and_unsigned_apks(self):
+        for arguments in ({"package": "com.dbpprt.dieter.e2e"},
+                          {"package": "com.dbpprt.dieter.e2e.performance"},
+                          {"debuggable": True}, {"signed": False},
+                          {"manifest": "E: instrumentation"},
+                          {"manifest": "com.dbpprt.dieter.e2e.DieterTestRunner"},
+                          {"manifest": "androidx.compose.ui.test.TestActivity"}):
+            with self.subTest(arguments=arguments):
+                result = self.verify(**arguments)
+                self.assertNotEqual(result.returncode, 0, result.stdout)
 
 
 if __name__ == "__main__":

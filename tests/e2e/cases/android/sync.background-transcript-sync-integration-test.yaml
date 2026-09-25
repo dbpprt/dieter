@@ -1,0 +1,19 @@
+# yaml-language-server: $schema=../../schema.json
+version: 1
+id: sync.background-transcript-sync-integration-test
+platform: android
+suites:
+- sync
+components:
+- sync
+- conversation
+fixture: gateway
+timeout: 300s
+native:
+  class: com.dbpprt.dieter.data.BackgroundTranscriptSyncIntegrationTest
+  methods:
+  - transcriptsArriveThroughGlobalSyncWithoutOpeningTheChat
+  - connectionManagerKeepsTranscriptsWarmInBackground
+arguments:
+  idleSampleMillis: '30000'
+  idleSampleWindows: '2'

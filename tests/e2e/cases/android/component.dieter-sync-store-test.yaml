@@ -1,0 +1,17 @@
+# yaml-language-server: $schema=../../schema.json
+version: 1
+id: component.dieter-sync-store-test
+platform: android
+suites:
+- component
+- functional
+components:
+- component
+fixture: none
+timeout: 300s
+native:
+  class: com.dbpprt.dieter.data.DieterSyncStoreTest
+  methods:
+  - storageRetrySurvivesRelaunchWithoutChangingCommandOrPayload
+  - cleanSyncClearsEveryProjectionAndPreservesOutbox
+  - cursorAndSnapshotRecoverAsOneAtomicProjection
