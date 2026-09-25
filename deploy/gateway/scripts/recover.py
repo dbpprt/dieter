@@ -165,7 +165,8 @@ def recover(snapshot, operation, expected_ca, acknowledge_loss_after, confirm_ho
         if activate:
             with host.lock():
                 host.activate(release)
-                host.wait_health(settings)
+                manifest_path = release / 'gateway-manifest.json'
+                host.wait_health(settings, read_json(manifest_path) if manifest_path.is_file() else None)
                 require(digest(volume/'signing/daemon-ca.pem') == expected_ca, 'recovery changed gateway identity')
             evidence['state'] = 'active-awaiting-external-verification'
         evidence['durationSeconds'] = round(time.monotonic()-started, 2)

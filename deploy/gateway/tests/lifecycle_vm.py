@@ -119,7 +119,7 @@ def main():
         host.activate(baseline)
         for attempt in range(60):
             try:
-                host.health(config, manifest['sourceRevision'])
+                host.health(config, manifest)
                 break
             except Exception:
                 time.sleep(1)

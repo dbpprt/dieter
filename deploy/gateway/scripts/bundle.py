@@ -36,6 +36,8 @@ def pack(output, revision, version, image, built_at, probes=None):
     require(re.fullmatch(r"[a-f0-9]{40}", revision), "source revision must be a full commit")
     require(NAME.fullmatch(version), "invalid release version")
     require(IMAGE.fullmatch(image), "image must be digest pinned")
+    contract = (ROOT.parents[1] / "api/contract-version").read_text().strip()
+    require(re.fullmatch(r"[1-9][0-9]*", contract), "invalid authoritative application contract")
     out = Path(output)
     out.mkdir(parents=True, exist_ok=True)
     archive = out / ARCHIVE
@@ -59,7 +61,7 @@ def pack(output, revision, version, image, built_at, probes=None):
                 tar.addfile(info, io.BytesIO(data))
     manifest = {"manifestVersion": 1, "bundleInterfaceVersion": 1, "releaseVersion": version,
                 "sourceRevision": revision, "builtAt": built_at, "image": image,
-                "platforms": ["linux/amd64", "linux/arm64"], "applicationContract": 1, "gatewayStoreSchema": 1,
+                "platforms": ["linux/amd64", "linux/arm64"], "applicationContract": int(contract), "gatewayStoreSchema": 1,
                 "bundle": {"name": ARCHIVE, "sha256": digest(archive)},
                 "dependencies": read_json(ROOT / "dependencies.lock.json")}
     atomic(out / MANIFEST, json.dumps(manifest, indent=2) + "\n", 0o644)
@@ -68,8 +70,11 @@ def pack(output, revision, version, image, built_at, probes=None):
 
 def validate_manifest(m):
     keys(m, "manifestVersion bundleInterfaceVersion releaseVersion sourceRevision builtAt image platforms applicationContract gatewayStoreSchema bundle dependencies".split(), "manifest")
-    require(all(type(m[key]) is int and m[key] == 1 for key in ("manifestVersion", "bundleInterfaceVersion", "applicationContract", "gatewayStoreSchema")),
-            "incompatible manifest, application contract or store schema")
+    require(all(type(m[key]) is int and m[key] == 1 for key in ("manifestVersion", "bundleInterfaceVersion", "gatewayStoreSchema")),
+            "incompatible manifest, bundle interface or store schema")
+    # Deployment metadata is independent of the application's wire contract.
+    # The exact signed contract is checked against the selected running release.
+    require(type(m["applicationContract"]) is int and m["applicationContract"] > 0, "invalid application contract")
     require(NAME.fullmatch(m["releaseVersion"]) and re.fullmatch(r"[a-f0-9]{40}", m["sourceRevision"]), "invalid release identity")
     require(IMAGE.fullmatch(m["image"]) and m["image"].startswith("ghcr.io/dbpprt/dieter-gateway@"), "invalid gateway image")
     require(m["platforms"] == ["linux/amd64", "linux/arm64"], "both supported platforms are required")

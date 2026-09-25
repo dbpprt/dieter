@@ -7,7 +7,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
-from common import atomic, canonical, digest, pointer, read_json
+from common import atomic, canonical, digest, pointer, read_json, validate_gateway_health
 from host import Host
 from bundle import ARCHIVE, MANIFEST, SIGNATURE
 
@@ -187,20 +187,35 @@ class HostTests(unittest.TestCase):
 
     def test_readiness_binds_to_operation_and_requires_authentication_and_payload(self):
         self.admit()
-        self.host.transition("first", "checking", sourceRevision="a"*40)
+        self.host.transition("first", "checking", sourceRevision="a"*40, applicationContract=2)
         report = self.root / "report.json"
         evidence = {"requestSHA256": self.host.status("first")["requestSHA256"], "sourceRevision": "a"*40,
                     "gatewayAuthenticated": True, "daemonAuthenticated": True, "unauthenticatedRejected": True,
-                    "turnPayloadTransports": ["udp", "tcp", "tls"]}
+                    "turnPayloadTransports": ["udp", "tcp", "tls"], "applicationContract": 2}
         for field, bad in (("sourceRevision", "b"*40), ("gatewayAuthenticated", False),
                            ("daemonAuthenticated", False), ("turnPayloadTransports", ["udp", "tcp"]),
-                           ("unauthenticatedRejected", False)):
+                           ("unauthenticatedRejected", False), ("applicationContract", 1),
+                           ("applicationContract", None), ("applicationContract", True)):
             atomic(report, canonical(dict(evidence, **{field: bad})))
             with self.assertRaises(ValueError):
                 self.host.accept("first", report)
             self.assertFalse((self.host.operation("first") / "readiness.json").exists())
         atomic(report, canonical(evidence))
         self.assertTrue(self.host.accept("first", report)["readinessReceived"])
+
+    def test_health_uses_selected_release_contract_including_rollback(self):
+        for contract in (1, 2, 17):
+            manifest = {'sourceRevision': 'a'*40, 'applicationContract': contract}
+            health = {'service': 'dieter-gateway', 'status': 'ok', 'apiVersion': str(contract), 'revision': 'a'*40}
+            validate_gateway_health(health, manifest)
+            with self.assertRaisesRegex(ValueError, 'contract differs'):
+                validate_gateway_health(dict(health, apiVersion=str(contract + 1)), manifest)
+            with self.assertRaisesRegex(ValueError, 'source revision'):
+                validate_gateway_health(dict(health, revision='b'*40), manifest)
+            with self.assertRaisesRegex(ValueError, 'not healthy'):
+                validate_gateway_health(dict(health, status='failed'), manifest)
+            with self.assertRaisesRegex(ValueError, 'missing or invalid'):
+                validate_gateway_health(dict(health, apiVersion=''), manifest)
 
 
 if __name__ == "__main__":

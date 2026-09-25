@@ -16,7 +16,7 @@ import tempfile
 import time
 import urllib.request
 import urllib.error
-from common import NAME, atomic, canonical, digest, pointer, read_json, require, run, sync_dir, set_operation_log, protected_log
+from common import NAME, atomic, canonical, digest, pointer, read_json, require, run, sync_dir, set_operation_log, protected_log, validate_gateway_health
 from bundle import ARCHIVE, MANIFEST, SIGNATURE, extract, verify
 from render import render, secrets, settings
 
@@ -221,25 +221,23 @@ class Host:
             if service in services:
                 self.compose(release, "up", "-d", "--no-deps", "--pull", "never", service)
 
-    def health(self, s, revision=None):
+    def health(self, s, manifest=None):
         # No redirects, proxy variables, or disabling TLS verification.
         opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
         with opener.open("https://" + s["gatewayHost"] + "/healthz", timeout=8) as response:
             health = json.load(response)
-        require(str(health.get("apiVersion")) == "1", "gateway contract mismatch")
-        if revision:
-            require(health.get("revision") == revision, "unexpected live source revision")
+        validate_gateway_health(health, manifest)
         try:
             opener.open("https://" + s["gatewayHost"] + "/", timeout=8)
             raise ValueError("gateway root must return 404")
         except urllib.error.HTTPError as e:
             require(e.code == 404, "unexpected gateway root response")
 
-    def wait_health(self, s, revision=None, timeout=60):
+    def wait_health(self, s, manifest=None, timeout=60):
         deadline = time.monotonic() + timeout
         while True:
             try:
-                self.health(s, revision)
+                self.health(s, manifest)
                 return
             except Exception:
                 if time.monotonic() >= deadline:
@@ -253,6 +251,8 @@ class Host:
         require(status["state"] == "checking", "operation is not awaiting readiness")
         value = read_json(report)
         require(value.get("requestSHA256") == status["requestSHA256"] and value.get("sourceRevision") == status["sourceRevision"], "readiness evidence belongs to different inputs")
+        require(type(value.get("applicationContract")) is int and value["applicationContract"] == status.get("applicationContract"),
+                "readiness application contract differs from signed release")
         require(value.get("gatewayAuthenticated") is True and value.get("daemonAuthenticated") is True,
                 "authenticated gateway and daemon checks are required")
         s = read_json(self.operation(operation) / "input" / "settings.json")
@@ -290,7 +290,7 @@ class Host:
                 source = self.volume(s)
                 secret_path = self.etc / "secrets.json"
                 private = secrets(secret_path)
-                self.transition(operation, "verified", sourceRevision=m["sourceRevision"], previousRelease=str(previous),
+                self.transition(operation, "verified", sourceRevision=m["sourceRevision"], applicationContract=m["applicationContract"], previousRelease=str(previous),
                                 secretSHA256=digest(secret_path), gatewayCAFingerprint=digest(source / "signing" / "daemon-ca.pem"),
                                 previousController=str(Path(self.config["controllerLink"]).resolve()) if self.config.get("controllerLink") else None)
                 release = self.install / "releases" / operation
@@ -331,11 +331,12 @@ class Host:
                 self.transition(operation, "activating")
                 activation_started = True
                 self.activate(release)
-                self.transition(operation, "checking", turnTransports=["udp", "tcp", "tls"] if s["tls"] == "managed" else ["udp", "tcp"])
+                self.transition(operation, "checking", turnTransports=["udp", "tcp", "tls"] if s["tls"] == "managed" else ["udp", "tcp"],
+                                readinessDeadlineAt=(datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(seconds=self.config["readinessTimeoutSeconds"])).isoformat())
                 deadline = time.monotonic() + self.config["readinessTimeoutSeconds"]
                 while time.monotonic() < deadline:
                     if (op / "readiness.json").is_file():
-                        self.wait_health(s, m["sourceRevision"])
+                        self.wait_health(s, m)
                         require(digest(source / "signing" / "daemon-ca.pem") == backup["gatewayCAFingerprint"], "gateway CA changed")
                         pointer(self.install / "previous", previous)
                         pointer(current, release)
@@ -361,7 +362,8 @@ class Host:
                     try:
                         self.activate(previous)
                         old_settings = read_json(previous / "public" / "settings.json")
-                        self.wait_health(old_settings)
+                        old_manifest = previous / MANIFEST
+                        self.wait_health(old_settings, read_json(old_manifest) if old_manifest.is_file() else None)
                         pointer(self.install / "current", previous)
                         if self.config.get("controllerLink") and self.status(operation).get("previousController"):
                             pointer(self.config["controllerLink"], self.status(operation)["previousController"])

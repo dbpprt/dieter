@@ -10,7 +10,7 @@ import shutil
 import sqlite3
 import tempfile
 import time
-from common import atomic, canonical, digest, read_json, require, run
+from common import atomic, canonical, digest, read_json, require, run, validate_gateway_health
 from host import Host
 
 
@@ -19,6 +19,8 @@ def test_restore(snapshot, policy):
     snapshot = Path(snapshot).resolve()
     require((snapshot / "gateway/gateway.db").is_file(), "restore snapshot is incomplete")
     metadata = read_json(snapshot / "metadata.json")
+    manifest_path = snapshot / "release/gateway-manifest.json"
+    manifest = read_json(manifest_path) if manifest_path.is_file() else None
     gateway_ca = snapshot / "gateway/signing/daemon-ca.pem"
     require(digest(gateway_ca) == metadata["gatewayCAFingerprint"], "restored gateway CA differs from snapshot metadata")
     for name in ("gateway-ed25519.pem", "daemon-ca-ed25519.pem"):
@@ -54,7 +56,7 @@ def test_restore(snapshot, policy):
             for attempt in range(30):
                 try:
                     health = json.loads(run(["docker", "exec", name, "wget", "-qO-", "http://127.0.0.1:4243/healthz"], timeout=5))
-                    require(str(health.get("apiVersion")) == "1", "restored gateway contract mismatch")
+                    validate_gateway_health(health, manifest)
                     break
                 except ValueError:
                     time.sleep(0.5)

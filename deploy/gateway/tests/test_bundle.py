@@ -16,7 +16,8 @@ class BundleTests(unittest.TestCase):
             dirs = [Path(temp) / "one", Path(temp) / "two"]
             image = "ghcr.io/dbpprt/dieter-gateway@sha256:" + "a" * 64
             for directory in dirs:
-                bundle.pack(directory, "b" * 40, "v1.0.0", image, "2026-09-21T00:00:00Z")
+                manifest = bundle.pack(directory, "b" * 40, "v1.0.0", image, "2026-09-21T00:00:00Z")
+                self.assertEqual(manifest['applicationContract'], int((bundle.ROOT.parents[1] / 'api/contract-version').read_text()))
             self.assertEqual(digest(dirs[0] / bundle.ARCHIVE), digest(dirs[1] / bundle.ARCHIVE))
             with patch.object(bundle, "verify_signature"):
                 bundle.verify(dirs[0], "b" * 40, image, image_signature=False)
@@ -24,6 +25,18 @@ class BundleTests(unittest.TestCase):
                     f.write(b"tampered")
                 with self.assertRaisesRegex(ValueError, "checksum"):
                     bundle.verify(dirs[0], image_signature=False)
+
+    def test_deployment_interface_is_independent_of_application_contract(self):
+        with tempfile.TemporaryDirectory() as temp:
+            manifest = bundle.pack(temp, "b" * 40, "fixture", "ghcr.io/dbpprt/dieter-gateway@sha256:" + "a" * 64, "fixture")
+            for version in (1, 2, 17):
+                bundle.validate_manifest(dict(manifest, applicationContract=version))
+            for invalid in (0, -1, True, "2", None):
+                with self.assertRaisesRegex(ValueError, "application contract"):
+                    bundle.validate_manifest(dict(manifest, applicationContract=invalid))
+            for field in ('manifestVersion', 'bundleInterfaceVersion', 'gatewayStoreSchema'):
+                with self.assertRaisesRegex(ValueError, "incompatible"):
+                    bundle.validate_manifest(dict(manifest, **{field: 2}))
 
     def test_untrusted_signature_never_reaches_extraction(self):
         with tempfile.TemporaryDirectory() as temp, patch.object(bundle, "run", side_effect=ValueError("untrusted")):

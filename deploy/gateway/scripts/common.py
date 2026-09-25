@@ -47,6 +47,17 @@ def read_json(path):
     return json.loads(Path(path).read_text(), object_pairs_hook=pairs)
 
 
+def validate_gateway_health(health, manifest=None):
+    require(health.get("service") == "dieter-gateway" and health.get("status") == "ok", "gateway is not healthy")
+    contract = health.get("apiVersion")
+    require(isinstance(contract, str) and re.fullmatch(r"[1-9][0-9]*", contract), "gateway contract is missing or invalid")
+    if manifest is not None:
+        require(type(manifest.get("applicationContract")) is int and manifest["applicationContract"] > 0,
+                "release application contract is missing or invalid")
+        require(contract == str(manifest["applicationContract"]), "gateway contract differs from signed release")
+        require(health.get("revision") == manifest["sourceRevision"], "unexpected live source revision")
+
+
 def keys(value, expected, label):
     require(isinstance(value, dict) and set(value) == set(expected), f"invalid {label} fields")
 

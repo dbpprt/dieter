@@ -14,7 +14,8 @@ import time
 
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / "deploy/gateway/scripts"))
-from common import atomic, read_json
+from common import atomic, read_json, validate_gateway_health
+from bundle import pack
 from render import render
 
 
@@ -126,6 +127,11 @@ def main():
                     time.sleep(1)
             else:
                 raise RuntimeError("gateway TLS/HTTP2 readiness failed")
+            health = json.loads(run("docker", "exec", gateway, "wget", "-qO-", "http://127.0.0.1:4243/healthz"))
+            validate_gateway_health(health)
+            manifest = pack(temp / "contract-bundle", "a" * 40, "fixture", "ghcr.io/dbpprt/dieter-gateway@sha256:" + "a" * 64, "fixture")
+            if str(manifest["applicationContract"]) != health["apiVersion"]:
+                raise RuntimeError("published manifest contract differs from the compiled gateway")
             for hostname in ("unknown.example.com", ""):
                 probe({"address":"198.18.0.2:443", "serverName":hostname, "transport":"reject-sni"})
             probe({"address":"198.18.0.2:443", "serverName":"gateway.example.com", "transport":"reject-tls12"})

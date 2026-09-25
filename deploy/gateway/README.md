@@ -136,6 +136,22 @@ Health is liveness only. Acceptance also requires authenticated gateway and
 selected-daemon access, unauthenticated rejection, and real TURN payloads for
 every enabled transport, bound to the operation's input hash and source commit.
 Failure or a missing report within the deadline restores the previous deployment.
+The signed manifest records `applicationContract` from `api/contract-version`;
+manifest format, controller interface and database schema are separate versions.
+Readiness and post-acceptance health must match that exact contract and source.
+The operation exposes its expected contract and `readinessDeadlineAt` while
+checking. A committed operation has no pending readiness rollback timer.
+
+Controllers published before this contract fix reject any manifest whose
+application contract is not 1. Before crossing that boundary, an administrator
+can verify the new signed distribution on the operator machine, transfer that
+exact distribution, and run its `scripts/upgrade_controller.py DISTRIBUTION`
+through independent administrative SSH. This verifies signatures again, refuses
+pending deployments, records the previous controller, and atomically installs
+only the deployment controls. It does not activate services, alter host policy,
+or replace gateway identity. Then admit the normal signed deployment and collect
+readiness. Never change signed manifests or bypass readiness to cross a contract.
+
 The deployment SSH identity has a fixed JSON entrypoint, without arbitrary shell
 or filesystem operations.
 
