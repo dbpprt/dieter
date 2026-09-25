@@ -1,0 +1,12 @@
+[Unit]
+Description=Check Dieter releases twice daily
+
+[Timer]
+OnCalendar=*-*-* 09:00:00 Europe/Berlin
+OnCalendar=*-*-* 21:00:00 Europe/Berlin
+Persistent=true
+RandomizedDelaySec=300
+Unit=dieter-release-watch.service
+
+[Install]
+WantedBy=timers.target

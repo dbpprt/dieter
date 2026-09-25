@@ -162,6 +162,17 @@ readiness rolls back on the next service start. User data remains under
 `DIETER_HOME`. Never
 invoke the internal `__service-stage` packaging command during normal operation.
 
+For opt-in twice-daily **app and daemon** updates on macOS arm64, use
+`python3 scripts/macos_auto_update.py install` on each host. See
+`docs/macos-auto-update.md` before installation. The updater checks at 09:00 and
+21:00 local time plus login; it waits for the app and active work to close,
+requires the signed candidate's read-only compatibility probe, and retains
+private backups. API/storage changes and disconnected gateways defer updates.
+Older releases without the probe are ineligible. It never resets data or
+registrations. Inspect `DIETER_HOME/auto-update/status.json`; uninstall the
+schedule with the installed script's `uninstall` command. This is an opt-in
+local installer, not a remote daemon RPC or a gateway updater.
+
 The initial task should supply an exact card ID. Never guess one. Resolve names
 only for interactive discovery, then retain returned IDs for mutation.
 

@@ -153,3 +153,13 @@ failure evidence, and iOS preparation; Mac execution is disabled.
 [iOS](apps/ios/README.md) · [Website](landingpage/README.md)
 
 Dieter is [MIT-licensed](LICENSE). Pronounced **DEE-ter**. Made in Berlin.
+
+### Opt-in automatic Mac updates
+
+The [safe macOS updater](docs/macos-auto-update.md) checks for matching signed
+app/daemon releases twice daily, retains backups, and defers incompatible or
+busy installations. Releases must include its read-only compatibility probe;
+older releases are never installed automatically by this mechanism.
+
+A [central fleet release watcher](docs/macos-auto-update.md#one-central-release-watcher)
+can select one release twice daily while managed Macs retry safely when online.
