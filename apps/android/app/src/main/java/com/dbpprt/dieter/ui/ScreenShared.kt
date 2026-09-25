@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -186,7 +187,10 @@ internal fun ResizableHorizontalSplitPane(
     leading: @Composable (Modifier) -> Unit,
     trailing: @Composable (Modifier) -> Unit,
 ) {
-    val dividerWidth = 16.dp
+    // Only the visible rule occupies layout space. Keep the drag target over
+    // the pane edges so it does not introduce a blank gutter between them.
+    val dividerWidth = 1.dp
+    val dividerTouchWidth = 24.dp
     val restoredLeadingFraction = initialLeadingFraction.takeIf(Float::isFinite)?.coerceIn(0f, 1f)
         ?: DEFAULT_PANE_LEADING_FRACTION
     var requestedFraction by rememberSaveable(dividerTag) { mutableFloatStateOf(restoredLeadingFraction) }
@@ -217,69 +221,71 @@ internal fun ResizableHorizontalSplitPane(
 
         Row(Modifier.fillMaxSize()) {
             leading(Modifier.width(leadingWidth).fillMaxHeight())
-            Box(
-                Modifier.width(dividerWidth).fillMaxHeight()
-                    .testTag(dividerTag)
-                    .semantics {
-                        contentDescription = "Resize list and detail panes"
-                        stateDescription = "List pane ${(actualFraction * 100).toInt()} percent"
-                        progressBarRangeInfo = ProgressBarRangeInfo(actualFraction, 0f..1f)
-                        setProgress { targetFraction ->
-                            val targetWidthPx = clampedPaneLeadingWidth(
-                                requestedWidth = availableWidthPx * targetFraction.coerceIn(0f, 1f),
-                                totalWidth = totalWidthPx,
-                                dividerWidth = dividerWidthPx,
-                                minimumLeadingWidth = minimumLeadingWidthPx,
-                                minimumTrailingWidth = minimumTrailingWidthPx,
-                            )
-                            val committedFraction = if (availableWidthPx > 0f) {
-                                targetWidthPx / availableWidthPx
-                            } else {
-                                DEFAULT_PANE_LEADING_FRACTION
-                            }
-                            requestedFraction = committedFraction
-                            currentCommitCallback(committedFraction)
-                            true
-                        }
-                    }
-                    .pointerInput(availableWidthPx, minimumLeadingWidthPx, minimumTrailingWidthPx) {
-                        var draggedWidthPx = leadingWidthPx
-                        detectHorizontalDragGestures(
-                            onDragStart = {
-                                draggedWidthPx = currentLeadingWidthPx
-                                dragging = true
-                            },
-                            onDragCancel = { dragging = false },
-                            onDragEnd = {
-                                dragging = false
-                                if (availableWidthPx > 0f) {
-                                    currentCommitCallback(draggedWidthPx / availableWidthPx)
-                                }
-                            },
-                        ) { change, dragAmount ->
-                            change.consume()
-                            draggedWidthPx = clampedPaneLeadingWidth(
-                                requestedWidth = draggedWidthPx + dragAmount,
-                                totalWidth = totalWidthPx,
-                                dividerWidth = dividerWidthPx,
-                                minimumLeadingWidth = minimumLeadingWidthPx,
-                                minimumTrailingWidth = minimumTrailingWidthPx,
-                            )
-                            if (availableWidthPx > 0f) requestedFraction = draggedWidthPx / availableWidthPx
-                        }
-                    },
-                contentAlignment = Alignment.Center,
-            ) {
-                Box(Modifier.fillMaxHeight().width(1.dp).background(DieterOutline))
-                Box(
-                    Modifier.width(if (dragging) 5.dp else 3.dp).height(if (dragging) 58.dp else 42.dp)
-                        .background(
-                            if (dragging) DieterShell else DieterMuted.copy(alpha = 0.58f),
-                            RoundedCornerShape(50),
-                        ),
-                )
-            }
+            Spacer(Modifier.width(dividerWidth))
             trailing(Modifier.weight(1f).fillMaxHeight())
+        }
+        Box(
+            Modifier.offset(x = leadingWidth - (dividerTouchWidth - dividerWidth) / 2)
+                .width(dividerTouchWidth).fillMaxHeight()
+                .testTag(dividerTag)
+                .semantics {
+                    contentDescription = "Resize list and detail panes"
+                    stateDescription = "List pane ${(actualFraction * 100).toInt()} percent"
+                    progressBarRangeInfo = ProgressBarRangeInfo(actualFraction, 0f..1f)
+                    setProgress { targetFraction ->
+                        val targetWidthPx = clampedPaneLeadingWidth(
+                            requestedWidth = availableWidthPx * targetFraction.coerceIn(0f, 1f),
+                            totalWidth = totalWidthPx,
+                            dividerWidth = dividerWidthPx,
+                            minimumLeadingWidth = minimumLeadingWidthPx,
+                            minimumTrailingWidth = minimumTrailingWidthPx,
+                        )
+                        val committedFraction = if (availableWidthPx > 0f) {
+                            targetWidthPx / availableWidthPx
+                        } else {
+                            DEFAULT_PANE_LEADING_FRACTION
+                        }
+                        requestedFraction = committedFraction
+                        currentCommitCallback(committedFraction)
+                        true
+                    }
+                }
+                .pointerInput(availableWidthPx, minimumLeadingWidthPx, minimumTrailingWidthPx) {
+                    var draggedWidthPx = leadingWidthPx
+                    detectHorizontalDragGestures(
+                        onDragStart = {
+                            draggedWidthPx = currentLeadingWidthPx
+                            dragging = true
+                        },
+                        onDragCancel = { dragging = false },
+                        onDragEnd = {
+                            dragging = false
+                            if (availableWidthPx > 0f) {
+                                currentCommitCallback(draggedWidthPx / availableWidthPx)
+                            }
+                        },
+                    ) { change, dragAmount ->
+                        change.consume()
+                        draggedWidthPx = clampedPaneLeadingWidth(
+                            requestedWidth = draggedWidthPx + dragAmount,
+                            totalWidth = totalWidthPx,
+                            dividerWidth = dividerWidthPx,
+                            minimumLeadingWidth = minimumLeadingWidthPx,
+                            minimumTrailingWidth = minimumTrailingWidthPx,
+                        )
+                        if (availableWidthPx > 0f) requestedFraction = draggedWidthPx / availableWidthPx
+                    }
+                },
+            contentAlignment = Alignment.Center,
+        ) {
+            Box(Modifier.fillMaxHeight().width(1.dp).background(DieterOutline))
+            Box(
+                Modifier.width(if (dragging) 5.dp else 3.dp).height(if (dragging) 58.dp else 42.dp)
+                    .background(
+                        if (dragging) DieterShell else DieterMuted.copy(alpha = 0.58f),
+                        RoundedCornerShape(50),
+                    ),
+            )
         }
     }
 }

@@ -255,9 +255,11 @@ class TabletWorkspaceTest {
         val width = compose.onNodeWithTag("activity-feed").fetchSemanticsNode().boundsInRoot.width
         compose.runOnIdle { selected = "review" }
         visibleMessageEditor().assertIsDisplayed()
+        capture("tablet-inbox-detail")
         compose.onNodeWithTag("tablet-inbox-timeline").performClick()
         compose.onNodeWithTag("tablet-activity-timeline").assertIsDisplayed()
         visibleMessageEditor().assertIsDisplayed()
+        capture("tablet-inbox-timeline-detail")
         assertEquals(width, compose.onNodeWithTag("activity-feed").fetchSemanticsNode().boundsInRoot.width, 1f)
         compose.onNodeWithTag("tablet-inbox-list").performClick()
         // Review cards without unread replies sort into Recent, sometimes offscreen.
@@ -367,7 +369,10 @@ class TabletWorkspaceTest {
             val scale = minOf(maxWidth.value / width, maxHeight.value / height)
             CompositionLocalProvider(androidx.compose.ui.platform.LocalDensity provides
                 androidx.compose.ui.unit.Density(density.density * scale, density.fontScale)) {
-                Box(Modifier.requiredSize(width.dp, height.dp).testTag("tablet-test-surface")) { content() }
+                // This represents the tablet's content area. Do not apply the
+                // host phone's unscaled status/navigation insets inside it.
+                Box(Modifier.requiredSize(width.dp, height.dp).consumeWindowInsets(WindowInsets.systemBars)
+                    .testTag("tablet-test-surface")) { content() }
             }
         }
     }

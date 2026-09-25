@@ -57,6 +57,7 @@ class ResizableHorizontalSplitPaneTest {
             .assertContentDescriptionEquals("Resize list and detail panes")
         val leadingBefore = composeRule.onNodeWithTag("leading-pane").fetchSemanticsNode().boundsInRoot.width
         val trailingBefore = composeRule.onNodeWithTag("trailing-pane").fetchSemanticsNode().boundsInRoot.width
+        assertThinDividerWithOverlappingDragTarget()
 
         composeRule.onNodeWithTag("test-pane-divider").performTouchInput {
             down(center)
@@ -69,6 +70,7 @@ class ResizableHorizontalSplitPaneTest {
         val trailingAfter = composeRule.onNodeWithTag("trailing-pane").fetchSemanticsNode().boundsInRoot.width
         assertTrue("Dragging right should widen the leading pane", leadingAfter > leadingBefore)
         assertTrue("Dragging right should narrow the trailing pane", trailingAfter < trailingBefore)
+        assertThinDividerWithOverlappingDragTarget()
         val firstCommittedFraction = requireNotNull(committedFraction)
         assertTrue("Finishing the drag should commit the wider split", firstCommittedFraction > 0.43f)
 
@@ -86,6 +88,20 @@ class ResizableHorizontalSplitPaneTest {
             "Finishing the later drag should commit its new split",
             requireNotNull(committedFraction) < firstCommittedFraction,
         )
+        assertThinDividerWithOverlappingDragTarget()
+    }
+
+    private fun assertThinDividerWithOverlappingDragTarget() {
+        val leading = composeRule.onNodeWithTag("leading-pane").fetchSemanticsNode().boundsInRoot
+        val trailing = composeRule.onNodeWithTag("trailing-pane").fetchSemanticsNode().boundsInRoot
+        val handle = composeRule.onNodeWithTag("test-pane-divider").fetchSemanticsNode().boundsInRoot
+        val expectedGap = with(composeRule.density) { 1.dp.toPx() }
+        assertEquals("The panes should meet at a thin rule without a padded gutter",
+            expectedGap, trailing.left - leading.right, 1f)
+        assertTrue("The drag target should overlap the list edge", handle.left < leading.right)
+        assertTrue("The drag target should overlap the detail edge", handle.right > trailing.left)
+        assertEquals("The drag target should stay centered on the pane boundary",
+            (leading.right + trailing.left) / 2f, handle.center.x, 1f)
     }
 
     @Test
