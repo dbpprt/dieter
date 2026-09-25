@@ -235,6 +235,7 @@ fun DieterApp(container: DieterContainer) {
 
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val tabletLayout = usesTabletLayout(maxWidth.value)
+        val tabletWorkspace = usesTabletWorkspace(maxWidth.value)
         val synchronizedWorkspaceVisible = state.appSurface == null && state.destination.usesSynchronizedWorkspace()
         val workspaceStatusIsInline = state.hasCachedWorkspace && synchronizedWorkspaceVisible ||
             shouldShowInitialWorkspaceSync(
@@ -250,7 +251,26 @@ fun DieterApp(container: DieterContainer) {
         // and underlying destinations leave the accessibility/focus traversal.
         Box(Modifier.fillMaxSize().then(if (toolsOpen) Modifier
             .clearAndSetSemantics { }.focusProperties { canFocus = false } else Modifier)) {
-            if (state.appSurface != null) {
+            if (tabletWorkspace) {
+                TabletWorkspace(
+                    state = state,
+                    model = model,
+                    destinationContent = { tabletState ->
+                        BoxWithConstraints(Modifier.fillMaxSize()) {
+                            DestinationContent(tabletState, model, expanded = usesTabletLayout(maxWidth.value))
+                        }
+                    },
+                    surfaceContent = { AppSurfaceContent(state, model, container.appUpdateManager, Modifier.fillMaxSize(), PaddingValues()) },
+                    statusContent = {
+                        if (globalConnectionStatusVisible) ConnectionStatusIndicator(
+                            phase = state.connectionPhase,
+                            lastConnectedAtMillis = state.lastConnectedAtMillis,
+                            showingCachedData = state.hasCachedWorkspace,
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 6.dp),
+                        )
+                    },
+                )
+            } else if (state.appSurface != null) {
                 Scaffold(
                     containerColor = MaterialTheme.colorScheme.background,
                     topBar = {

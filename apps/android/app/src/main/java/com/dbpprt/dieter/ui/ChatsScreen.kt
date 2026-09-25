@@ -117,7 +117,19 @@ fun ChatsScreen(
         CardDetailScreen(state, model, Modifier.padding(contentPadding))
         return
     }
-    if (expanded) {
+    if (LocalTabletWorkspace.current && expanded) {
+        TabletListDetail(
+            modifier = Modifier.padding(contentPadding),
+            dividerTag = "tablet-chats-pane-divider",
+            initialLeadingFraction = state.chatsPaneLeadingFraction,
+            onLeadingFractionCommitted = model::setChatsPaneLeadingFraction,
+            list = { ChatsList(state, model, it) },
+            detail = {
+                if (state.selectedCardId == null) EmptyDetail("Select a chat", "Open a conversation or start a new one.", Icons.Outlined.ChatBubbleOutline, it)
+                else CardDetailScreen(state, model, it, showBack = false)
+            },
+        )
+    } else if (expanded) {
         ResizableHorizontalSplitPane(
             dividerTag = "chats-pane-divider",
             modifier = Modifier.fillMaxSize().padding(contentPadding),

@@ -27,6 +27,23 @@ class AdaptiveLayoutTest {
         assertTrue(usesTabletLayout(unfoldedLongEdgeDp))
     }
 
+    @Test
+    fun `tablet workspace starts at the expanded breakpoint`() {
+        assertFalse(usesTabletWorkspace(411f))
+        assertFalse(usesTabletWorkspace(839.99f))
+        assertTrue(usesTabletWorkspace(840f))
+        assertTrue(usesTabletWorkspace(1280f))
+    }
+
+    @Test
+    fun `Fold 7 retains its existing split layout in both orientations`() {
+        listOf(1968, 2184).forEach { pixels ->
+            val width = pixelsToDp(pixels, 420)
+            assertTrue(usesTabletLayout(width))
+            assertFalse(usesTabletWorkspace(width))
+        }
+    }
+
     private fun pixelsToDp(pixels: Int, densityDpi: Int): Float =
         pixels * 160f / densityDpi
 }

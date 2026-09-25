@@ -59,6 +59,7 @@ import androidx.compose.ui.unit.sp
 import com.dbpprt.dieter.ui.theme.DieterShell
 import com.dbpprt.dieter.ui.theme.DieterMuted
 import com.dbpprt.dieter.ui.theme.DieterOutline
+import com.dbpprt.dieter.settings.DEFAULT_PANE_LEADING_FRACTION
 import com.dbpprt.dieter.v1.Project
 import com.dbpprt.dieter.ui.theme.DieterShellTint
 
@@ -96,6 +97,7 @@ fun FilesScreen(
         } else if (expanded) {
             ResizableHorizontalSplitPane(
                 dividerTag = "files-pane-divider",
+                initialLeadingFraction = if (LocalTabletWorkspace.current) .28f else DEFAULT_PANE_LEADING_FRACTION,
                 modifier = Modifier.weight(1f).fillMaxWidth(),
                 leading = { paneModifier -> FileList(state, model, paneModifier) },
             ) { paneModifier ->

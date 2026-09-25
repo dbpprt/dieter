@@ -410,78 +410,84 @@ private fun ProjectWorkspacesSheet(
     model: DieterViewModel,
     onDismiss: () -> Unit,
 ) {
+    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = MaterialTheme.colorScheme.background) {
+        ProjectWorkspacesContent(state, model, Modifier.fillMaxWidth().heightIn(max = 720.dp))
+    }
+}
+
+@Composable
+internal fun ProjectWorkspacesContent(state: DieterUiState, model: DieterViewModel, modifier: Modifier = Modifier) {
     var candidate by remember { mutableStateOf<Workspace?>(null) }
     var candidateKind by remember { mutableStateOf(GitOperationKinds.CLEANUP) }
-    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = MaterialTheme.colorScheme.background) {
-        Column(
-            Modifier.fillMaxWidth().heightIn(max = 720.dp).verticalScroll(rememberScrollState())
-                .padding(start = 18.dp, end = 18.dp, bottom = 30.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text("Project workspaces", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-                    Text("Conversation-owned checkouts, branches, and recovery state", color = DieterMuted, fontSize = 12.sp)
-                }
-                TextButton(onClick = model::loadProjectWorkspaces, enabled = !state.projectWorkspacesLoading) {
-                    Text("Refresh")
-                }
+    Column(
+        modifier.verticalScroll(rememberScrollState())
+            .padding(start = 18.dp, end = 18.dp, bottom = 30.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        SurfaceErrorBanner(state.error, model::clearError)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("Project workspaces", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+                Text("Conversation-owned checkouts, branches, and recovery state", color = DieterMuted, fontSize = 12.sp)
             }
-            if (state.projectWorkspacesLoading && state.projectWorkspaces.isEmpty()) {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
-                    CircularProgressIndicator(Modifier.size(26.dp), strokeWidth = 2.dp)
-                }
-            } else if (state.projectWorkspaces.isEmpty()) {
-                Text(
-                    "No provisioned workspaces. A workspace appears when a conversation first uses Git, Files, or a scoped terminal.",
-                    color = DieterMuted,
-                )
+            TextButton(onClick = model::loadProjectWorkspaces, enabled = state.connected && !state.projectWorkspacesLoading) {
+                Text("Refresh")
             }
-            state.projectWorkspaces.forEach { workspace ->
-                val pending = workspace.cardId in state.projectWorkspaceOperations
-                Surface(
-                    color = DieterSurfaceHigh,
-                    shape = RoundedCornerShape(14.dp),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, DieterOutline),
-                    modifier = Modifier.fillMaxWidth().testTag("project-workspace-${workspace.cardId}"),
-                ) {
-                    Column(Modifier.padding(13.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Column(Modifier.weight(1f)) {
-                                val title = (state.cards + state.chats + state.spaceCards)
-                                    .firstOrNull { it.id == workspace.cardId }?.title
-                                    .orEmpty().ifBlank { workspace.branch.ifBlank { workspace.cardId } }
-                                Text(title, fontWeight = FontWeight.SemiBold, maxLines = 1)
-                                Text(
-                                    "${workspace.mode.replace('_', ' ')} · ${workspace.state.replace('_', ' ')}",
-                                    color = DieterMuted,
-                                    fontSize = 11.sp,
-                                )
-                            }
-                            if (pending) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+        }
+        if (state.projectWorkspacesLoading && state.projectWorkspaces.isEmpty()) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
+                CircularProgressIndicator(Modifier.size(26.dp), strokeWidth = 2.dp)
+            }
+        } else if (state.projectWorkspaces.isEmpty()) {
+            Text(
+                "No provisioned workspaces. A workspace appears when a conversation first uses Git, Files, or a scoped terminal.",
+                color = DieterMuted,
+            )
+        }
+        state.projectWorkspaces.forEach { workspace ->
+            val pending = workspace.cardId in state.projectWorkspaceOperations
+            Surface(
+                color = DieterSurfaceHigh,
+                shape = RoundedCornerShape(14.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, DieterOutline),
+                modifier = Modifier.fillMaxWidth().testTag("project-workspace-${workspace.cardId}"),
+            ) {
+                Column(Modifier.padding(13.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            val title = (state.cards + state.chats + state.spaceCards)
+                                .firstOrNull { it.id == workspace.cardId }?.title
+                                .orEmpty().ifBlank { workspace.branch.ifBlank { workspace.cardId } }
+                            Text(title, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                            Text(
+                                "${workspace.mode.replace('_', ' ')} · ${workspace.state.replace('_', ' ')}",
+                                color = DieterMuted,
+                                fontSize = 11.sp,
+                            )
                         }
-                        Text(workspace.path, color = DieterMuted, fontSize = 10.sp, maxLines = 1)
-                        Text(
-                            "${workspace.changedFiles} files · +${workspace.additions} −${workspace.deletions} · ${formatWorkspaceBytes(workspace.sizeBytes)}",
-                            color = DieterMuted,
-                            fontSize = 11.sp,
-                        )
-                        state.projectWorkspaceErrors[workspace.cardId]?.let {
-                            Text(it, color = MaterialTheme.colorScheme.error, fontSize = 11.sp)
-                        }
-                        if (workspace.mode == ConversationWorkspaceMode.WORKTREE.wire) {
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                OutlinedButton(
-                                    onClick = { candidate = workspace; candidateKind = GitOperationKinds.CLEANUP },
-                                    enabled = !pending && workspace.changedFiles == 0,
-                                    modifier = Modifier.testTag("cleanup-workspace-${workspace.cardId}"),
-                                ) { Text("Clean up") }
-                                TextButton(
-                                    onClick = { candidate = workspace; candidateKind = GitOperationKinds.DISCARD },
-                                    enabled = !pending,
-                                    modifier = Modifier.testTag("discard-workspace-${workspace.cardId}"),
-                                ) { Text("Discard", color = MaterialTheme.colorScheme.error) }
-                            }
+                        if (pending) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                    }
+                    Text(workspace.path, color = DieterMuted, fontSize = 10.sp, maxLines = 1)
+                    Text(
+                        "${workspace.changedFiles} files · +${workspace.additions} −${workspace.deletions} · ${formatWorkspaceBytes(workspace.sizeBytes)}",
+                        color = DieterMuted,
+                        fontSize = 11.sp,
+                    )
+                    state.projectWorkspaceErrors[workspace.cardId]?.let {
+                        Text(it, color = MaterialTheme.colorScheme.error, fontSize = 11.sp)
+                    }
+                    if (workspace.mode == ConversationWorkspaceMode.WORKTREE.wire) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedButton(
+                                onClick = { candidate = workspace; candidateKind = GitOperationKinds.CLEANUP },
+                                enabled = state.connected && !pending && workspace.changedFiles == 0,
+                                modifier = Modifier.testTag("cleanup-workspace-${workspace.cardId}"),
+                            ) { Text("Clean up") }
+                            TextButton(
+                                onClick = { candidate = workspace; candidateKind = GitOperationKinds.DISCARD },
+                                enabled = state.connected && !pending,
+                                modifier = Modifier.testTag("discard-workspace-${workspace.cardId}"),
+                            ) { Text("Discard", color = MaterialTheme.colorScheme.error) }
                         }
                     }
                 }

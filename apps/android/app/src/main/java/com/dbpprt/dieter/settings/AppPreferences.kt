@@ -14,6 +14,7 @@ import org.json.JSONArray
 import java.util.concurrent.atomic.AtomicLong
 
 const val DEFAULT_PANE_LEADING_FRACTION = 0.43f
+const val DEFAULT_SIDEBAR_LEADING_FRACTION = 0.32f
 
 data class ConversationCreationPreferences(
     val provider: String = "",
@@ -63,6 +64,14 @@ class AppPreferences(
         if (loadAsync) DEFAULT_PANE_LEADING_FRACTION else readPaneLeadingFraction(KEY_BOARD_PANE_LEADING_FRACTION),
     )
     val boardPaneLeadingFraction: StateFlow<Float> = _boardPaneLeadingFraction.asStateFlow()
+    private val _activityPaneLeadingFraction = MutableStateFlow(
+        if (loadAsync) DEFAULT_SIDEBAR_LEADING_FRACTION else readPaneLeadingFraction(KEY_ACTIVITY_PANE_LEADING_FRACTION, DEFAULT_SIDEBAR_LEADING_FRACTION),
+    )
+    val activityPaneLeadingFraction: StateFlow<Float> = _activityPaneLeadingFraction.asStateFlow()
+    private val _projectsPaneLeadingFraction = MutableStateFlow(
+        if (loadAsync) DEFAULT_SIDEBAR_LEADING_FRACTION else readPaneLeadingFraction(KEY_PROJECTS_PANE_LEADING_FRACTION, DEFAULT_SIDEBAR_LEADING_FRACTION),
+    )
+    val projectsPaneLeadingFraction: StateFlow<Float> = _projectsPaneLeadingFraction.asStateFlow()
     private val _conversationCreation = MutableStateFlow(
         if (loadAsync) ConversationCreationPreferences() else readConversationCreationPreferences(),
     )
@@ -88,6 +97,8 @@ class AppPreferences(
         val notificationSettings = readNotificationSettings()
         val chatsPaneLeadingFraction = readPaneLeadingFraction(KEY_CHATS_PANE_LEADING_FRACTION)
         val boardPaneLeadingFraction = readPaneLeadingFraction(KEY_BOARD_PANE_LEADING_FRACTION)
+        val activityPaneLeadingFraction = readPaneLeadingFraction(KEY_ACTIVITY_PANE_LEADING_FRACTION, DEFAULT_SIDEBAR_LEADING_FRACTION)
+        val projectsPaneLeadingFraction = readPaneLeadingFraction(KEY_PROJECTS_PANE_LEADING_FRACTION, DEFAULT_SIDEBAR_LEADING_FRACTION)
         val conversationCreation = readConversationCreationPreferences()
         if (mutationVersion.get() != expectedVersion) return
         _palette.value = palette
@@ -96,6 +107,8 @@ class AppPreferences(
         _notificationSettings.value = notificationSettings
         _chatsPaneLeadingFraction.value = chatsPaneLeadingFraction
         _boardPaneLeadingFraction.value = boardPaneLeadingFraction
+        _activityPaneLeadingFraction.value = activityPaneLeadingFraction
+        _projectsPaneLeadingFraction.value = projectsPaneLeadingFraction
         _conversationCreation.value = conversationCreation
         DieterLauncherIcon.apply(appContext, _palette.value)
     }
@@ -203,6 +216,14 @@ class AppPreferences(
         setPaneLeadingFraction(KEY_BOARD_PANE_LEADING_FRACTION, fraction, _boardPaneLeadingFraction)
     }
 
+    fun setActivityPaneLeadingFraction(fraction: Float) {
+        setPaneLeadingFraction(KEY_ACTIVITY_PANE_LEADING_FRACTION, fraction, _activityPaneLeadingFraction)
+    }
+
+    fun setProjectsPaneLeadingFraction(fraction: Float) {
+        setPaneLeadingFraction(KEY_PROJECTS_PANE_LEADING_FRACTION, fraction, _projectsPaneLeadingFraction)
+    }
+
     private fun setPaneLeadingFraction(key: String, fraction: Float, state: MutableStateFlow<Float>) {
         if (!fraction.isFinite()) return
         val persistedFraction = fraction.coerceIn(0f, 1f)
@@ -245,11 +266,11 @@ class AppPreferences(
         liveStatusActivityEnabled = preferences.getBoolean(KEY_LIVE_STATUS_ACTIVITY_ENABLED, true),
     )
 
-    private fun readPaneLeadingFraction(key: String): Float =
-        preferences.getFloat(key, DEFAULT_PANE_LEADING_FRACTION)
+    private fun readPaneLeadingFraction(key: String, default: Float = DEFAULT_PANE_LEADING_FRACTION): Float =
+        preferences.getFloat(key, default)
             .takeIf(Float::isFinite)
             ?.coerceIn(0f, 1f)
-            ?: DEFAULT_PANE_LEADING_FRACTION
+            ?: default
 
     private fun readConversationCreationPreferences() = ConversationCreationPreferences(
         provider = preferences.getString(KEY_CONVERSATION_CREATION_PROVIDER, "").orEmpty(),
@@ -273,6 +294,8 @@ class AppPreferences(
         private const val KEY_RESULT_PREVIEWS_ENABLED = "result_previews_enabled"
         private const val KEY_LIVE_STATUS_ACTIVITY_ENABLED = "live_status_activity_enabled"
         private const val KEY_CHATS_PANE_LEADING_FRACTION = "chats_pane_leading_fraction"
+        private const val KEY_ACTIVITY_PANE_LEADING_FRACTION = "activity_pane_leading_fraction"
+        private const val KEY_PROJECTS_PANE_LEADING_FRACTION = "projects_pane_leading_fraction"
         private const val KEY_BOARD_PANE_LEADING_FRACTION = "board_pane_leading_fraction"
         private const val KEY_CONVERSATION_CREATION_PROVIDER = "conversation_creation_provider"
         private const val KEY_CONVERSATION_CREATION_MODEL = "conversation_creation_model"

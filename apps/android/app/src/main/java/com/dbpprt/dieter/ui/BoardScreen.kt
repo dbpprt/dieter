@@ -10,6 +10,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -189,6 +190,10 @@ fun BoardScreen(
     expanded: Boolean,
     contentPadding: PaddingValues,
 ) {
+    if (LocalTabletProjectWorkspaces.current) {
+        ProjectWorkspacesContent(state, model, Modifier.fillMaxSize().padding(contentPadding))
+        return
+    }
     if (state.boardOverviewVisible) {
         SpacesOverview(state, model, Modifier.fillMaxSize().padding(contentPadding))
         return
@@ -197,7 +202,15 @@ fun BoardScreen(
         CardDetailScreen(state, model, Modifier.padding(contentPadding))
         return
     }
-    if (expanded) {
+    if (LocalTabletWorkspace.current) {
+        if (state.selectedCardId == null) {
+            BoardList(state, model, Modifier.fillMaxSize().padding(contentPadding), showAllLanes = true)
+        } else {
+            // The project navigator remains beside this content pane. Back
+            // returns to the board without squeezing a third pane into it.
+            CardDetailScreen(state, model, Modifier.fillMaxSize().padding(contentPadding))
+        }
+    } else if (expanded) {
         ResizableHorizontalSplitPane(
             dividerTag = "board-pane-divider",
             modifier = Modifier.fillMaxSize().padding(contentPadding),
@@ -1246,7 +1259,7 @@ internal fun boardQuietSummary(cards: List<BoardCard>): String = when {
 internal fun plural(count: Int, word: String): String = if (count == 1) word else "${word}s"
 
 @Composable
-internal fun BoardList(state: DieterUiState, model: DieterViewModel, modifier: Modifier = Modifier) {
+internal fun BoardList(state: DieterUiState, model: DieterViewModel, modifier: Modifier = Modifier, showAllLanes: Boolean = false) {
     var switcherOpen by remember { mutableStateOf(false) }
     var quickTaskOpen by remember(state.selectedBoardId) { mutableStateOf(false) }
     var quickTaskStory by rememberSaveable(state.selectedBoardId) { mutableStateOf("") }
@@ -1294,14 +1307,14 @@ internal fun BoardList(state: DieterUiState, model: DieterViewModel, modifier: M
                 onSelect = { selectedLabelId = it },
                 onDrop = { cardId, labelId -> model.assignLabelToBoardCard(cardId, labelId) },
             )
-            LaneTabs(state, model, boardCards)
+            if (!showAllLanes) LaneTabs(state, model, boardCards)
             val lanes = state.board?.lanesList.orEmpty()
             if (state.loading && lanes.isEmpty()) {
                 LoadingState()
             } else if (lanes.isEmpty()) {
                 EmptyList("No workflow lanes", "This board does not have a configured workflow.", Icons.Outlined.ViewKanban)
             } else {
-                BoardLanePager(state, model, lanes, boardCards, labelDragState, Modifier.weight(1f))
+                BoardLanePager(state, model, lanes, boardCards, labelDragState, Modifier.weight(1f), showAllLanes)
             }
         }
         FloatingActionButton(
@@ -1520,6 +1533,7 @@ internal fun BoardLanePager(
     boardCards: List<BoardCard>,
     labelDragState: BoardLabelDragState,
     modifier: Modifier = Modifier,
+    showAllLanes: Boolean = false,
 ) {
     var revealedCardId by remember(state.selectedBoardId, state.selectedLane) { mutableStateOf<String?>(null) }
     var movingCard by remember(state.selectedBoardId) { mutableStateOf<BoardCard?>(null) }
@@ -1530,11 +1544,13 @@ internal fun BoardLanePager(
     val selectedPage = lanes.indexOfFirst { it.id == state.selectedLane }.coerceAtLeast(0)
     val pagerState = rememberPagerState(initialPage = selectedPage, pageCount = { lanes.size })
 
-    LaunchedEffect(laneIds, state.selectedLane) {
+    LaunchedEffect(laneIds, state.selectedLane, showAllLanes) {
+        if (showAllLanes) return@LaunchedEffect
         val page = lanes.indexOfFirst { it.id == state.selectedLane }.coerceAtLeast(0)
         if (pagerState.currentPage != page) pagerState.animateScrollToPage(page)
     }
-    LaunchedEffect(pagerState, laneIds) {
+    LaunchedEffect(pagerState, laneIds, showAllLanes) {
+        if (showAllLanes) return@LaunchedEffect
         snapshotFlow { pagerState.settledPage }
             .distinctUntilChanged()
             .collect { page ->
@@ -1549,11 +1565,7 @@ internal fun BoardLanePager(
         }
     }
 
-    HorizontalPager(
-        state = pagerState,
-        modifier = modifier.fillMaxWidth(),
-        key = { lanes[it].id },
-    ) { page ->
+    val laneContent: @Composable (Int) -> Unit = { page ->
         val lane = lanes[page]
         val sortDirection = if (state.sharedLaneSortDirections["lane.${state.selectedBoardId}.${lane.id}.sort"] == "ascending") CardPlacementSortDirection.ASCENDING else CardPlacementSortDirection.DESCENDING
         val visible = remember(boardCards, lane.id, sortDirection, state.pendingCardMoves) {
@@ -1564,6 +1576,13 @@ internal fun BoardLanePager(
             )
         }
         Column(Modifier.fillMaxSize()) {
+            if (showAllLanes) {
+                Row(Modifier.fillMaxWidth().padding(start = 16.dp, top = 16.dp, end = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.size(7.dp).background(laneColor(lane.id), CircleShape))
+                    Text(lane.name, style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f).padding(start = 8.dp))
+                    Text(visible.size.toString(), style = MaterialTheme.typography.labelMedium, color = DieterMuted)
+                }
+            }
             LaneSortButton(
                 laneName = lane.name,
                 direction = sortDirection,
@@ -1619,6 +1638,19 @@ internal fun BoardLanePager(
                 }
             }
         }
+    }
+
+    if (showAllLanes) {
+        BoxWithConstraints(modifier.fillMaxWidth().testTag("tablet-board-lanes")) {
+            val laneWidth = (maxWidth / lanes.size.coerceAtLeast(1)).coerceIn(220.dp * LocalDensity.current.fontScale.coerceAtLeast(1f), 360.dp * LocalDensity.current.fontScale.coerceAtLeast(1f))
+            LazyRow(Modifier.fillMaxSize(), contentPadding = PaddingValues(horizontal = 8.dp)) {
+                items(lanes.size, key = { lanes[it].id }) { page ->
+                    Box(Modifier.width(laneWidth).fillMaxHeight().testTag("tablet-lane-${lanes[page].id}")) { laneContent(page) }
+                }
+            }
+        }
+    } else {
+        HorizontalPager(state = pagerState, modifier = modifier.fillMaxWidth(), key = { lanes[it].id }) { laneContent(it) }
     }
 
     movingCard?.let { card ->

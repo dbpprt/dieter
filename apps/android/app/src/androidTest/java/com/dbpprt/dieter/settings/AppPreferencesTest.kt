@@ -96,17 +96,25 @@ class AppPreferencesTest {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val preferences = AppPreferences(context)
         val originalChatsFraction = preferences.chatsPaneLeadingFraction.value
+        val originalActivityFraction = preferences.activityPaneLeadingFraction.value
+        val originalProjectsFraction = preferences.projectsPaneLeadingFraction.value
         val originalBoardFraction = preferences.boardPaneLeadingFraction.value
 
         try {
             preferences.setChatsPaneLeadingFraction(0.31f)
+            preferences.setActivityPaneLeadingFraction(0.29f)
+            preferences.setProjectsPaneLeadingFraction(0.36f)
             preferences.setBoardPaneLeadingFraction(0.57f)
 
             val restored = AppPreferences(context)
             assertEquals(0.31f, restored.chatsPaneLeadingFraction.value, 0.0001f)
+            assertEquals(0.29f, restored.activityPaneLeadingFraction.value, 0.0001f)
+            assertEquals(0.36f, restored.projectsPaneLeadingFraction.value, 0.0001f)
             assertEquals(0.57f, restored.boardPaneLeadingFraction.value, 0.0001f)
         } finally {
             preferences.setChatsPaneLeadingFraction(originalChatsFraction)
+            preferences.setActivityPaneLeadingFraction(originalActivityFraction)
+            preferences.setProjectsPaneLeadingFraction(originalProjectsFraction)
             preferences.setBoardPaneLeadingFraction(originalBoardFraction)
         }
     }

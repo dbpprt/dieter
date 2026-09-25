@@ -131,22 +131,12 @@ fun AppSettingsScreen(
         else -> null
     }
 
-    Column(
-        Modifier.fillMaxSize().padding(contentPadding).testTag("app-settings"),
+    SettingsAdaptiveLayout(
+        selectedTab = selectedTab,
+        onSelect = { selectedTab = it },
+        onBack = model::closeSurface,
+        contentPadding = contentPadding,
     ) {
-        SettingsHeader(onBack = model::closeSurface)
-        PrimaryScrollableTabRow(
-            selectedTabIndex = selectedTab,
-            containerColor = MaterialTheme.colorScheme.background,
-            contentColor = DieterShell,
-            edgePadding = 8.dp,
-        ) {
-            SettingsTab("Connect", selectedTab == CONNECTIONS_TAB) { selectedTab = CONNECTIONS_TAB }
-            SettingsTab("Alerts", selectedTab == NOTIFICATIONS_TAB) { selectedTab = NOTIFICATIONS_TAB }
-            SettingsTab("Display", selectedTab == DISPLAY_TAB) { selectedTab = DISPLAY_TAB }
-            SettingsTab("Usage", selectedTab == QUOTAS_TAB) { selectedTab = QUOTAS_TAB }
-            SettingsTab("Updates", selectedTab == UPDATES_TAB) { selectedTab = UPDATES_TAB }
-        }
         SurfaceErrorBanner(state.error, model::clearError)
         Box(Modifier.weight(1f)) {
             when (selectedTab) {
@@ -225,7 +215,7 @@ fun AppSettingsScreen(
 }
 
 @Composable
-private fun SettingsHeader(onBack: () -> Unit) {
+internal fun SettingsHeader(onBack: () -> Unit) {
     Row(
         Modifier.fillMaxWidth().height(72.dp).padding(horizontal = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -239,7 +229,7 @@ private fun SettingsHeader(onBack: () -> Unit) {
 }
 
 @Composable
-private fun SettingsTab(label: String, selected: Boolean, onClick: () -> Unit) {
+internal fun SettingsTab(label: String, selected: Boolean, onClick: () -> Unit) {
     Tab(
         selected = selected,
         onClick = onClick,

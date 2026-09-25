@@ -28,6 +28,7 @@ import com.dbpprt.dieter.settings.NavigationFolderScope
 import com.dbpprt.dieter.settings.AppPreferences
 import com.dbpprt.dieter.settings.ConversationCreationPreferences
 import com.dbpprt.dieter.settings.DEFAULT_PANE_LEADING_FRACTION
+import com.dbpprt.dieter.settings.DEFAULT_SIDEBAR_LEADING_FRACTION
 import com.dbpprt.dieter.settings.DieterPalette
 import com.dbpprt.dieter.settings.DieterNotificationSettings
 import com.dbpprt.dieter.v1.AddChangeCommentRequest
@@ -208,6 +209,8 @@ data class DieterUiState(
     val expandedChatProjectIds: Set<String> = emptySet(),
     val pinnedChatOrder: List<String> = emptyList(),
     val chatsPaneLeadingFraction: Float = DEFAULT_PANE_LEADING_FRACTION,
+    val activityPaneLeadingFraction: Float = DEFAULT_SIDEBAR_LEADING_FRACTION,
+    val projectsPaneLeadingFraction: Float = DEFAULT_SIDEBAR_LEADING_FRACTION,
     val boardPaneLeadingFraction: Float = DEFAULT_PANE_LEADING_FRACTION,
     val projectReplicas: Map<String, ProjectReplica> = emptyMap(),
     val boards: List<Board> = emptyList(),
@@ -537,6 +540,16 @@ class DieterViewModel internal constructor(
         viewModelScope.launch {
             appPreferences.chatsPaneLeadingFraction.collectLatest { fraction ->
                 _state.update { it.copy(chatsPaneLeadingFraction = fraction) }
+            }
+        }
+        viewModelScope.launch {
+            appPreferences.activityPaneLeadingFraction.collectLatest { fraction ->
+                _state.update { it.copy(activityPaneLeadingFraction = fraction) }
+            }
+        }
+        viewModelScope.launch {
+            appPreferences.projectsPaneLeadingFraction.collectLatest { fraction ->
+                _state.update { it.copy(projectsPaneLeadingFraction = fraction) }
             }
         }
         viewModelScope.launch {
@@ -1410,6 +1423,14 @@ class DieterViewModel internal constructor(
 
     fun setChatsPaneLeadingFraction(fraction: Float) {
         appPreferences.setChatsPaneLeadingFraction(fraction)
+    }
+
+    fun setActivityPaneLeadingFraction(fraction: Float) {
+        appPreferences.setActivityPaneLeadingFraction(fraction)
+    }
+
+    fun setProjectsPaneLeadingFraction(fraction: Float) {
+        appPreferences.setProjectsPaneLeadingFraction(fraction)
     }
 
     fun setBoardPaneLeadingFraction(fraction: Float) {
