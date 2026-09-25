@@ -153,7 +153,7 @@ func TestBoundedOutputAndRedaction(t *testing.T) {
 	}
 }
 func TestSelectionPreservesBroadFallbackAndDeletedPaths(t *testing.T) {
-	cases := []Case{{ID: "machines", Components: []string{"machines"}}, {ID: "conversation", Components: []string{"conversation"}}}
+	cases := []Case{{ID: "machines", Platform: "android", Components: []string{"machines"}}, {ID: "conversation", Platform: "android", Components: []string{"conversation"}}}
 	if got := affected(cases, []string{"apps/android/app/src/main/java/ui/MachinesScreen.kt"}); len(got) != 1 || got[0].ID != "machines" {
 		t.Fatal(got)
 	}

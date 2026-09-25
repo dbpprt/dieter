@@ -183,6 +183,8 @@ def plan_checks(root, paths, packages=None):
     e2e = any(p.startswith(("tools/e2e/", "tests/e2e/")) or p == "just/e2e.just" for p in code)
     android = schema or fixture or brand or any(p.startswith(("apps/android/", "native/android-webrtc/")) or p == "just/android.just" for p in code)
     mac_suites = affected_mac_smoke_suites(code)
+    if any(p.startswith(("tools/e2e/", "tests/e2e/cases/mac/")) or p in {"tests/e2e/schema.json", "just/e2e.just"} for p in code):
+        mac_suites = MAC_SMOKE_SUITES
     android_integration = android and (schema or fixture or brand or any(
         (p.startswith("apps/android/") and not p.startswith("apps/android/app/src/test/"))
         or p.startswith("native/android-webrtc/") or p == "just/android.just" for p in code))
@@ -235,9 +237,9 @@ def plan_checks(root, paths, packages=None):
         add("just", "ios", "smoke")
         add("just", "ios", "smoke-ipad")
     if mac_suites == MAC_SMOKE_SUITES:
-        add("just", "mac", "smoke-all")
+        add("just", "e2e", "run", "--platform", "mac", "--suite", "smoke")
     elif mac_suites:
-        add("just", "mac", "smoke-suites", *mac_suites)
+        add("just", "e2e", "run", "--platform", "mac", "--case", ",".join("mac." + suite for suite in mac_suites))
     if android_integration or e2e:
         add("just", "e2e", "run", "--suite", "functional", "--changed")
     if screens or any(p.startswith("native/android-webrtc/") or
@@ -272,7 +274,7 @@ def affected_ci_components(root, paths):
         elif command[:2] == ["just", "ios"]:
             selected["ios"] = True
         elif command[:2] == ["just", "e2e"]:
-            selected["android"] = True
+            selected["macos" if "mac" in command else "android"] = True
         elif command[:2] == ["just", "android"]:
             selected["android"] = True
         else:
@@ -337,8 +339,8 @@ def main():
     if args.dry_run:
         return 0
     for command in commands:
-        if command[:3] in (["just", "mac", "smoke-all"], ["just", "mac", "smoke-suites"]):
-            # The smoke driver refuses concurrent app processes. Check before
+        if command[:5] == ["just", "e2e", "run", "--platform", "mac"]:
+            # The shared runner refuses concurrent app processes. Check before
             # packaging so a known lifecycle conflict doesn't waste a build.
             running = subprocess.run(["pgrep", "-x", "DieterMac"], capture_output=True, text=True)
             if running.returncode == 0:

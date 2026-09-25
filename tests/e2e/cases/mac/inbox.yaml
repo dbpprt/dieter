@@ -1,0 +1,56 @@
+# yaml-language-server: $schema=../../schema.json
+version: 1
+id: mac.inbox
+platform: mac
+suites: [smoke, functional]
+components: [inbox]
+fixture: gateway
+timeout: 4m
+native:
+  suite: inbox
+  checks:
+  - "inbox.activity-sections"
+  - "inbox.all-chats-navigation-unchanged"
+  - "inbox.archived-excluded"
+  - "inbox.board-navigation-unchanged"
+  - "inbox.capture-01-inbox-list-1380-dark"
+  - "inbox.capture-01-inbox-list-1380-light"
+  - "inbox.capture-03-inbox-chat-1380-dark"
+  - "inbox.capture-03-inbox-chat-1380-light"
+  - "inbox.capture-06-inbox-narrow-1100-dark"
+  - "inbox.capture-06-inbox-narrow-1100-light"
+  - "inbox.card-archive-persisted"
+  - "inbox.card-context-archive-clears-selected-detail"
+  - "inbox.card-conversation-retains-inbox"
+  - "inbox.chat-archive-persisted"
+  - "inbox.chat-context-archive-retains-other-detail"
+  - "inbox.close-retains-inbox"
+  - "inbox.connection-fixture"
+  - "inbox.feed-native-resize"
+  - "inbox.finish-moves-review-to-done"
+  - "inbox.finish-only-ready-review"
+  - "inbox.layout-default"
+  - "inbox.layout-width-1100"
+  - "inbox.layout-width-1380"
+  - "inbox.layout-width-1600"
+  - "inbox.pending-excluded"
+  - "inbox.project-filter"
+  - "inbox.project-filter-reset"
+  - "inbox.query-empty-retains-detail"
+  - "inbox.query-filters-feed"
+  - "inbox.real-composer"
+  - "inbox.real-transcript"
+  - "inbox.reopen-after-close"
+  - "inbox.return-to-inbox"
+  - "inbox.review-card-selection"
+  - "inbox.running-before-needs-you"
+  - "inbox.sidebar-inbox"
+  - "inbox.single-grouped-feed"
+  - "inbox.standalone-chat-selection"
+  - "inbox.timeline-range-1-retains-selection-and-draft"
+  - "inbox.timeline-range-24-retains-selection-and-draft"
+  - "inbox.timeline-range-6-retains-selection-and-draft"
+  - "inbox.unseen-reply-needs-attention"
+  - "inbox.visible-reply-clears-attention"
+  - "inbox.workspace-changes-tab"
+  - "inbox.workspace-return-conversation"

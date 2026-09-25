@@ -32,6 +32,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.*
 import org.junit.Assume.assumeTrue
@@ -46,6 +47,9 @@ class NavigationFoldersTest {
     private val lifecycle = ViewModelStore()
     private val managerScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private lateinit var model: DieterViewModel
+    private lateinit var preferences: AppPreferences
+    private val ownedPreferences = mutableListOf<AppPreferences>()
+    private fun newPreferences() = AppPreferences(context).also { ownedPreferences += it }
     private val projects = listOf(Project.newBuilder().setId("p1").setName("Dieter").setPath("/work/dieter").build())
     private val chats = listOf(
         Card.newBuilder().setId("c1").setTitle("Plan navigation").setProjectId("p1").setScope("chat").setPinned(true).build(),
@@ -66,7 +70,8 @@ class NavigationFoldersTest {
             }
         } as DieterRepository
         compose.runOnUiThread {
-            model = DieterViewModel(DieterConnectionManager(context, repository, managerScope), AppPreferences(context))
+            preferences = newPreferences()
+            model = DieterViewModel(DieterConnectionManager(context, repository, managerScope), preferences)
             lifecycle.put("folders", model)
         }
     }
@@ -74,6 +79,9 @@ class NavigationFoldersTest {
     @After fun cleanup() {
         compose.runOnUiThread { lifecycle.clear() }
         managerScope.cancel()
+        runBlocking {
+            ownedPreferences.forEach { it.sharedNavigation.awaitPendingWrites(); it.sharedNavigation.close() }
+        }
     }
 
     @Test fun chatFoldersKeepPinsSupportSearchAndSurviveRecreation() {
@@ -107,7 +115,8 @@ class NavigationFoldersTest {
         compose.onNodeWithTag("folder-name").performTextReplacement("Reviews")
         compose.onNodeWithTag("save-folder").performClick()
         compose.onNodeWithText("Reviews").assertIsDisplayed()
-        val reloaded = AppPreferences(context)
+        runBlocking { preferences.sharedNavigation.awaitPendingWrites() }
+        val reloaded = newPreferences()
         compose.waitUntil(5_000) { reloaded.navigationFolders.layouts.value.getValue(NavigationFolderScope.CHATS).folders.singleOrNull()?.name == "Reviews" }
         compose.runOnIdle {
             val restored = reloaded.navigationFolders.layouts.value.getValue(NavigationFolderScope.CHATS).folders.single()
@@ -143,8 +152,10 @@ class NavigationFoldersTest {
         compose.onNodeWithTag("space-project-p1").assertIsDisplayed()
         capture("project-folders.png")
         compose.onNodeWithTag("folder-$id").performClick()
+        compose.waitUntil(5_000) { compose.onAllNodesWithTag("space-project-p1").fetchSemanticsNodes().isEmpty() }
         compose.onNodeWithTag("space-project-p1").assertDoesNotExist()
         compose.onNodeWithTag("folder-$id").performClick()
+        compose.waitUntil(5_000) { compose.onAllNodesWithTag("project-actions-p1").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithTag("project-actions-p1").performClick()
         compose.onNodeWithTag("project-folder-p1").performClick()
         compose.onNodeWithTag("move-no-folder").performClick()
@@ -171,15 +182,18 @@ class NavigationFoldersTest {
         compose.onNodeWithTag("project-pin-p1").performClick()
         compose.onNodeWithText("PINNED").assertIsDisplayed()
         compose.onNodeWithTag("project-pinned-p1").assertIsDisplayed()
-        val pinnedReload = AppPreferences(context)
+        runBlocking { preferences.sharedNavigation.awaitPendingWrites() }
+        val pinnedReload = newPreferences()
         compose.waitUntil(5_000) { pinnedReload.pinnedProjectOrder.value == listOf("p1") }
         assertEquals(listOf("p1"), pinnedReload.pinnedProjectOrder.value)
 
         compose.onNodeWithTag("project-unpin-p1").performClick()
         compose.onNodeWithTag("project-pinned-p1").assertDoesNotExist()
-        compose.runOnIdle {
-            assertTrue(AppPreferences(context).pinnedProjectOrder.value.isEmpty())
-        }
+        runBlocking { preferences.sharedNavigation.awaitPendingWrites() }
+        val unpinnedReload = newPreferences()
+        runBlocking { unpinnedReload.sharedNavigation.awaitPendingWrites() }
+        compose.waitUntil(5_000) { model.state.value.pinnedProjectOrder.isEmpty() }
+        assertTrue(unpinnedReload.pinnedProjectOrder.value.isEmpty())
     }
 
     @Test fun boardlessProjectsExposeBoardCreationInsteadOfAnEmptyBoard() {
@@ -220,8 +234,14 @@ class NavigationFoldersTest {
         store.update(NavigationFolderScope.PROJECTS) { decoded }
         store.create(NavigationFolderScope.CHATS, "Research", "c1")
         compose.waitUntil(5_000) { store.layouts.value.getValue(NavigationFolderScope.CHATS).folders.isNotEmpty() }
-        val restored = AppPreferences(context).navigationFolders
-        compose.waitUntil(5_000) { restored.layouts.value.getValue(NavigationFolderScope.CHATS).folders.isNotEmpty() }
+        // A restored store reads one durable snapshot. Drain the source queue
+        // before constructing it so it cannot restore a partially written edit.
+        runBlocking { preferences.sharedNavigation.awaitPendingWrites() }
+        val restored = newPreferences().navigationFolders
+        compose.waitUntil(5_000) {
+            restored.layouts.value.getValue(NavigationFolderScope.PROJECTS) == decoded &&
+                restored.layouts.value.getValue(NavigationFolderScope.CHATS).folders.singleOrNull()?.itemIDs == listOf("c1")
+        }
         assertEquals(decoded, restored.layouts.value.getValue(NavigationFolderScope.PROJECTS))
         assertEquals(listOf("c1"), restored.layouts.value.getValue(NavigationFolderScope.CHATS).folders.single().itemIDs)
     }

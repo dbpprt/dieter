@@ -90,6 +90,10 @@ struct DieterMacApp: App {
                                 "task fired, connecting", in: ConversationUISmokeRunner.outputDirectory())
                         }
                         await store.connect()
+                        if arguments.contains("--flow-ui-smoke") {
+                            await NativeUIFlowRunner.run(store: store)
+                            return
+                        }
                         if arguments.contains("--inbox-ui-smoke") {
                             await InboxUISmokeRunner.run(store: store)
                             return

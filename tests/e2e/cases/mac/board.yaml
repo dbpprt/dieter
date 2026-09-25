@@ -1,0 +1,49 @@
+# yaml-language-server: $schema=../../schema.json
+version: 1
+id: mac.board
+platform: mac
+suites: [smoke, functional]
+components: [board]
+fixture: gateway
+timeout: 5m
+native:
+  suite: board
+  checks:
+  - "board.board-card-double-click-edit-0"
+  - "board.board-card-double-click-edit-1"
+  - "board.board-card-editor-dismiss-0"
+  - "board.board-card-editor-dismiss-1"
+  - "board.board-card-open-1"
+  - "board.board-card-open-2"
+  - "board.board-card-open-3"
+  - "board.board-lane-sort-restore"
+  - "board.board-lane-sort-toggle"
+  - "board.board-quick-task-actions"
+  - "board.board-return-retains-lanes"
+  - "board.board-scroll-to-last-card"
+  - "board.board-scrolled-card-click"
+  - "board.board-settings-dismissal"
+  - "board.board-settings-native-sections"
+  - "board.board-stress-largest-lane"
+  - "board.board-stress-total-cards"
+  - "board.board-toolbar-uncovered"
+  - "board.board-virtualized"
+  - "board.card-merge-hover-icon"
+  - "board.connection"
+  - "board.connection-overlap-ownership"
+  - "board.draft-agent-settings"
+  - "board.global-quick-task-actions"
+  - "board.global-quick-task-layout"
+  - "board.global-quick-task-retains-draft"
+  - "board.global-titlebar-actions-top"
+  - "board.global-titlebar-actions-trailing"
+  - "board.mixed-version-compatible-startup"
+  - "board.mixed-version-switch-isolation"
+  - "board.project-context-dismissal"
+  - "board.quick-task-paste-screenshot"
+  - "board.quick-task-run-before-title"
+  - "board.quick-task-run-keeps-task-id"
+  - "board.quick-task-toolbar-uncovered"
+  - "board.required-permissions-onboarding"
+  - "board.sidebar-project-context"
+  - "board.window-titlebar-double-click"

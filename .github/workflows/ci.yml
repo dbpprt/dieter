@@ -126,7 +126,7 @@ jobs:
         run: just harness install
       - name: Native core gate
         if: github.event_name != 'schedule' && github.event_name != 'workflow_dispatch'
-        run: just mac smoke core
+        run: just e2e run --platform mac --case mac.core
       - name: Native navigation gate
         if: github.event_name != 'schedule' && github.event_name != 'workflow_dispatch'
         run: just mac smoke board

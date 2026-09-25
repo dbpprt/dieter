@@ -39,6 +39,15 @@ func validateReferences(root string, cases []Case) error {
 		}
 	}
 	for _, c := range cases {
+		if c.Platform == "mac" && c.Native != nil {
+			names := map[string]string{"core": "Native", "board": "Native", "conversation": "Conversation", "machine": "Machine", "sidebar": "SidebarNavigation", "terminal": "Terminal", "island": "Island", "workspace": "Workspace", "inbox": "Inbox"}
+			name := names[c.Native.Suite] + "UISmokeRunner"
+			data, err := os.ReadFile(filepath.Join(root, "apps/mac/Sources/DieterMac/Testing", name+".swift"))
+			if err != nil || !strings.Contains(string(data), "enum "+name) {
+				return fmt.Errorf("%s: Mac suite %s has no runner source", c.Source, c.Native.Suite)
+			}
+			continue
+		}
 		if c.Native == nil {
 			continue
 		}

@@ -32,10 +32,11 @@ plan *args:
 prepare *args:
     go run ./tools/e2e prepare "$@"
 
-# Execute Android cases; missing/skipped required tests fail qualification.
+# Execute Android or Mac cases; missing/skipped required tests fail qualification.
 [positional-arguments]
 run *args:
     go run ./tools/e2e run "$@"
 
-# Mac adapter deliberately disabled: no Mac execution environment is available.
-# mac: run --platform mac
+# Mac requires a logged-in desktop and no running operator app.
+mac:
+    just e2e run --platform mac --suite smoke

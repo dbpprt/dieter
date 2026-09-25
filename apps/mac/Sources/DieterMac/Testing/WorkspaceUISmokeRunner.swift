@@ -146,7 +146,8 @@
                         == "deleted"
                     && !model.busy
             }
-            let selected = NativeUIAccessibility.click("project-changes.unstaged.web/ChatFolder.swift", in: window)
+            let selected = await NativeUIAccessibility.pressWhenSettled(
+                "project-changes.unstaged.web/ChatFolder.swift", in: window)
             _ = await NativeUIAccessibility.pressWhenSettled("project-changes.diff-mode.split", in: window)
             let visible = await NativeUIAccessibility.wait {
                 model.diff?.path == "web/ChatFolder.swift" && model.diff?.section == "unstaged"
@@ -160,8 +161,12 @@
                 model.commitSubject == "Fold chats to five per project"
                     && model.commitBody == "Keep projects compact and make every chat reachable."
             }
-            _ = NativeUIAccessibility.click("project-changes.unstaged.web/ChatFolder.swift", in: window)
-            try? await DieterTaskSleep.milliseconds(300)
+            _ = await NativeUIAccessibility.pressWhenSettled("project-changes.unstaged.web/ChatFolder.swift", in: window)
+            let rendered = await NativeUIAccessibility.wait {
+                model.diff?.path == "web/ChatFolder.swift" && model.diff?.section == "unstaged"
+                    && NativeUISmokeTargets.diffSplit == true
+                    && NativeUIAccessibility.horizontalScrollView("project-changes.diff", in: window) != nil
+            }
             capture(window, to: output.appending(path: "11-design-dark-split.png"))
             let hunkID = UnifiedDiffParser.parse(model.diff?.patch ?? "").first { $0.kind == .hunk }?.id ?? -1
             let hunkTarget = "workspace-diff.hunk.\(hunkID)"
@@ -176,11 +181,11 @@
             let hunkAfter = NativeUIAccessibility.find(hunkTarget, in: window)?.recordedFrame
             let pinned = hunkBefore != nil && hunkAfter != nil && abs(hunkBefore!.minX - hunkAfter!.minX) < 2
             results["project-split-horizontal-scroll"] =
-                scrolled && offsetChanged && pinned
-                ? "passed" : "failed: long split lines did not scroll with pinned headers"
+                rendered && scrolled && offsetChanged && pinned
+                ? "passed" : "failed: rendered=\(rendered), scrolled=\(scrolled), offset changed=\(offsetChanged), headers pinned=\(pinned)"
             _ = NativeUIAccessibility.scrollHorizontally("project-changes.diff", in: window, delta: 220)
             results["project-design-mixed-staging"] =
-                refreshed && selected && visible ? "passed" : "failed: mixed staged and working-tree edits unavailable"
+                refreshed && selected && visible ? "passed" : "failed: refreshed=\(refreshed), selected=\(selected), split visible=\(visible)"
             _ = NativeUIAccessibility.click("project-changes.staged.web/ChatFolder.swift", in: window)
             let stagedVisible = await NativeUIAccessibility.wait {
                 model.diff?.section == "staged" && NativeUISmokeTargets.diffText.contains("private let foldThreshold")
@@ -748,12 +753,7 @@
         }
 
         static func outputDirectory() -> URL {
-            let arguments = ProcessInfo.processInfo.arguments
-            if let index = arguments.firstIndex(of: "--ui-smoke-output"), arguments.indices.contains(index + 1) {
-                return URL(filePath: arguments[index + 1], directoryHint: .isDirectory)
-            }
-            return URL(filePath: NSTemporaryDirectory()).appending(
-                path: "dieter-workspace-ui-smoke", directoryHint: .isDirectory)
+            NativeTestSupport.outputDirectory(flag: "--ui-smoke-output")
         }
 
         private static func capture(_ window: NSWindow, to url: URL) {
@@ -786,9 +786,7 @@
         }
 
         private static func writeReport(_ values: [String: String], to directory: URL) {
-            let data = try? JSONSerialization.data(withJSONObject: values, options: [.prettyPrinted, .sortedKeys])
-            try? data?.write(to: directory.appending(path: "report.json"), options: .atomic)
-            DispatchQueue.main.async { NSApp.terminate(nil) }
+            NativeTestSupport.writeReport(values, to: directory)
         }
     }
 #endif

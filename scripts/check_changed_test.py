@@ -32,13 +32,13 @@ class CheckChangedTests(unittest.TestCase):
         self.assertEqual(self.plan("native/android-webrtc/build_sdk.py"),
                          [["just", "android", "test"], ["just", "e2e", "run", "--suite", "functional", "--changed"], ["just", "e2e", "run", "--suite", "screens"]])
 
-    def test_yaml_and_runner_changes_validate_catalog_and_android_without_apple_execution(self):
+    def test_yaml_and_runner_changes_validate_affected_platforms(self):
         for path in ("tests/e2e/cases/android/machines.telemetry.yaml", "tools/e2e/android.go", "just/e2e.just"):
             plan = self.plan(path)
             self.assertIn(["just", "e2e", "check"], plan)
             self.assertIn(["just", "e2e", "run", "--suite", "functional", "--changed"], plan)
             self.assertFalse(any(command[:2] in (["just", "mac"], ["just", "ios"]) for command in plan))
-            self.assertEqual(self.components(path), {"core", "android"})
+            self.assertEqual(self.components(path), {"core", "android"} if path.startswith("tests/e2e/cases/android/") else {"core", "android", "macos"})
 
     def test_no_changes_or_docs_need_no_checks(self):
         self.assertEqual(self.plan(), [])
@@ -105,7 +105,7 @@ class CheckChangedTests(unittest.TestCase):
     def test_mac_change_runs_only_mac_unit_and_integration_tests(self):
         self.assertEqual(self.plan("apps/mac/Sources/DieterMac/Features/Conversation/ConversationView.swift"),
                          [["just", "mac", "test"],
-                          ["just", "mac", "smoke-suites", "core", "board", "conversation", "workspace", "inbox"]])
+                          ["just", "e2e", "run", "--platform", "mac", "--case", "mac.core,mac.board,mac.conversation,mac.workspace,mac.inbox"]])
 
     def test_mac_components_select_related_smokes(self):
         for path, suites in {
@@ -133,12 +133,12 @@ class CheckChangedTests(unittest.TestCase):
             with self.subTest(path=path):
                 self.assertEqual(self.plan("apps/mac/Sources/DieterMac/" + path),
                                  [["just", "mac", "test"],
-                                  ["just", "mac", "smoke-suites", "core", "board", "conversation", "workspace"]])
+                                  ["just", "e2e", "run", "--platform", "mac", "--case", "mac.core,mac.board,mac.conversation,mac.workspace"]])
 
     def test_mac_recipe_changes_run_selector_and_recipe_contract_tests(self):
         self.assertEqual(self.plan("just/mac.just"),
                          [["python3", "-m", "unittest", "discover", "-s", "scripts", "-p", "check_changed_test.py"],
-                          ["just", "justfile-check"], ["just", "mac", "test"], ["just", "mac", "smoke-all"]])
+                          ["just", "justfile-check"], ["just", "mac", "test"], ["just", "e2e", "run", "--platform", "mac", "--suite", "smoke"]])
 
     def test_changed_smoke_runners_always_run_their_suite(self):
         for runner, suites in {
@@ -153,7 +153,7 @@ class CheckChangedTests(unittest.TestCase):
         }.items():
             with self.subTest(runner=runner):
                 self.assertEqual(self.plan(f"apps/mac/Sources/DieterMac/Testing/{runner}UISmokeRunner.swift"),
-                                 [["just", "mac", "test"], ["just", "mac", "smoke-suites", *suites]])
+                                 [["just", "mac", "test"], ["just", "e2e", "run", "--platform", "mac", "--case", ",".join("mac." + suite for suite in suites)]])
 
     def test_shared_and_unknown_mac_paths_fall_back_to_full_smokes(self):
         for path in [
@@ -170,7 +170,7 @@ class CheckChangedTests(unittest.TestCase):
             "apps/mac/Resources/asset.png", "apps/mac/Package.swift", "just/mac.just",
         ]:
             with self.subTest(path=path):
-                self.assertIn(["just", "mac", "smoke-all"], self.plan(path))
+                self.assertIn(["just", "e2e", "run", "--platform", "mac", "--suite", "smoke"], self.plan(path))
 
     def test_mixed_mac_changes_union_suites_once_in_canonical_order(self):
         paths = [
@@ -182,16 +182,16 @@ class CheckChangedTests(unittest.TestCase):
             "README.md",
         ]
         expected = [["just", "mac", "test"],
-                    ["just", "mac", "smoke-suites", "core", "board", "conversation", "island", "workspace", "inbox"]]
+                    ["just", "e2e", "run", "--platform", "mac", "--case", "mac.core,mac.board,mac.conversation,mac.island,mac.workspace,mac.inbox"]]
         self.assertEqual(self.plan(*paths), expected)
         self.assertEqual(self.plan(*reversed(paths), *paths), expected)
         self.assertEqual(self.plan(*paths, "apps/mac/Sources/DieterMac/UI/DieterRootView.swift"),
-                         [["just", "mac", "test"], ["just", "mac", "smoke-all"]])
+                         [["just", "mac", "test"], ["just", "e2e", "run", "--platform", "mac", "--suite", "smoke"]])
 
     def test_subset_for_each_suite_collapses_to_full_run(self):
         paths = [f"apps/mac/Sources/DieterMac/Testing/{name}UISmokeRunner.swift"
                  for name in ["Native", "Conversation", "Machine", "SidebarNavigation", "Terminal", "Island", "Workspace", "Inbox"]]
-        self.assertEqual(self.plan(*paths), [["just", "mac", "test"], ["just", "mac", "smoke-all"]])
+        self.assertEqual(self.plan(*paths), [["just", "mac", "test"], ["just", "e2e", "run", "--platform", "mac", "--suite", "smoke"]])
 
     def test_android_change_runs_only_android_unit_and_integration_tests(self):
         self.assertEqual(self.plan("apps/android/app/src/main/java/Conversation.kt"),
@@ -202,8 +202,8 @@ class CheckChangedTests(unittest.TestCase):
         self.assertEqual(self.plan("apps/android/app/src/test/java/SelectionTest.kt"), [["just", "android", "test"]])
 
     def test_integration_tests_and_build_configuration_do_trigger_suites(self):
-        for path in ["apps/mac/Package.resolved", "apps/mac/Tools/DieterMacSmokeDriver/main.swift"]:
-            self.assertIn(["just", "mac", "smoke-all"], self.plan(path))
+        for path in ["apps/mac/Package.resolved", "apps/mac/Sources/DieterMac/Testing/NativeUIFlowRunner.swift"]:
+            self.assertIn(["just", "e2e", "run", "--platform", "mac", "--suite", "smoke"], self.plan(path))
         for path in ["apps/android/build.gradle.kts", "apps/android/app/src/androidTest/java/Example.kt"]:
             self.assertIn(["just", "e2e", "run", "--suite", "functional", "--changed"], self.plan(path))
 
@@ -211,7 +211,7 @@ class CheckChangedTests(unittest.TestCase):
         for path in ["api/proto/dieter/v1/dieter.proto", "scripts/generate-proto.sh",
                      "scripts/isolated-gateway/main.go", "assets/brand/icon.png"]:
             plan = self.plan(path)
-            self.assertIn(["just", "mac", "smoke-all"], plan)
+            self.assertIn(["just", "e2e", "run", "--platform", "mac", "--suite", "smoke"], plan)
             self.assertIn(["just", "e2e", "run", "--suite", "functional", "--changed"], plan)
         self.assertIn(["just", "proto"], self.plan("api/proto/dieter/v1/dieter.proto"))
 
@@ -294,10 +294,10 @@ class CheckChangedTests(unittest.TestCase):
             (root / deleted).unlink()
             self.assertEqual(plan_checks(root, changed_paths(root), packages=[]),
                              [["just", "mac", "test"],
-                              ["just", "mac", "smoke-suites", "core", "board", "conversation", "terminal", "island", "workspace", "inbox"]])
+                              ["just", "e2e", "run", "--platform", "mac", "--case", "mac.core,mac.board,mac.conversation,mac.terminal,mac.island,mac.workspace,mac.inbox"]])
 
     def test_dry_run_does_not_execute_and_failures_stop_the_run(self):
-        commands = [["just", "mac", "test"], ["just", "mac", "smoke-all"]]
+        commands = [["just", "mac", "test"], ["just", "e2e", "run", "--platform", "mac", "--suite", "smoke"]]
         with patch("check_changed.output", return_value="/repo"), \
              patch("sys.stdout", new=io.StringIO()), patch("sys.stderr", new=io.StringIO()), \
              patch("check_changed.changed_paths", return_value=["apps/mac/Sources/View.swift"]), \
@@ -349,12 +349,12 @@ class CheckChangedTests(unittest.TestCase):
             ])
 
     def test_running_mac_app_blocks_integration_before_packaging(self):
-        for recipe in [["smoke-all"], ["smoke-suites", "island"]]:
+        for recipe in [["--suite", "smoke"], ["--case", "mac.island"]]:
             with self.subTest(recipe=recipe), \
                  patch("check_changed.output", return_value="/repo"), \
                  patch("sys.stdout", new=io.StringIO()), patch("sys.stderr", new=io.StringIO()), \
                  patch("check_changed.changed_paths", return_value=[]), \
-                 patch("check_changed.plan_checks", return_value=[["just", "mac", *recipe]]), \
+                 patch("check_changed.plan_checks", return_value=[["just", "e2e", "run", "--platform", "mac", *recipe]]), \
                  patch("sys.argv", ["check_changed.py"]), \
                  patch("check_changed.subprocess.run") as run:
                 run.return_value.returncode = 0
@@ -385,32 +385,21 @@ class SelectedSmokeRecipeTests(unittest.TestCase):
                  "smoke-suites", *suites], env=environment, capture_output=True, text=True, timeout=10)
             return result, log.read_text().splitlines() if log.exists() else []
 
-    def test_builds_once_and_runs_each_selected_suite_once_in_canonical_order(self):
-        result, commands = self.invoke(*reversed(MAC_SMOKE_SUITES), "island", "board")
+    def test_selected_suites_delegate_once_to_shared_runner(self):
+        result, commands = self.invoke("island", "board")
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(commands, ["mac build"] + ["mac _smoke " + suite for suite in MAC_SMOKE_SUITES])
+        self.assertEqual(commands, ["e2e run --platform mac --case mac.island,mac.board"])
 
-    def test_build_and_smoke_failures_stop_remaining_suites(self):
-        for failure, expected in [("mac build", ["mac build"]),
-                                  ("mac _smoke board", ["mac build", "mac _smoke board"])]:
-            with self.subTest(failure=failure):
-                result, commands = self.invoke("island", "board", fail=failure)
-                self.assertNotEqual(result.returncode, 0)
-                self.assertEqual(commands, expected)
+    def test_shared_runner_failure_propagates(self):
+        command = "e2e run --platform mac --case mac.island"
+        result, commands = self.invoke("island", fail=command)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(commands, [command])
 
-    def test_invalid_or_missing_suites_do_not_build(self):
-        for suites in [(), ("island", "unknown"), ("$(exit 99)",)]:
-            with self.subTest(suites=suites):
-                result, commands = self.invoke(*suites)
-                self.assertNotEqual(result.returncode, 0)
-                self.assertEqual(commands, [])
-
-    def test_live_app_and_failed_process_check_do_not_build(self):
-        for status in [0, 2]:
-            with self.subTest(status=status):
-                result, commands = self.invoke("island", running=status)
-                self.assertNotEqual(result.returncode, 0)
-                self.assertEqual(commands, [])
+    def test_missing_suites_do_not_dispatch(self):
+        result, commands = self.invoke()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(commands, [])
 
 
 if __name__ == "__main__":

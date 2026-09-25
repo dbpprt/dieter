@@ -452,9 +452,7 @@
             results[name] = passed ? "passed" : "failed: observable Inbox contract not satisfied"
         }
         private static func finish(_ results: [String: String], output: URL) {
-            let data = try? JSONSerialization.data(withJSONObject: results, options: [.prettyPrinted, .sortedKeys])
-            try? data?.write(to: output.appending(path: "report.json"), options: .atomic)
-            DispatchQueue.main.async { NSApp.terminate(nil) }
+            NativeTestSupport.writeReport(results, to: output)
         }
     }
 #endif

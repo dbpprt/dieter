@@ -100,26 +100,27 @@ suites when these permissions are unavailable.
 ## Run isolated packaged-app smoke tests
 
 ```sh
-just mac smoke core
-just mac smoke conversation
-just mac smoke-all
+just e2e run --platform mac --case mac.core
+just e2e run --platform mac --case mac.conversation
+just e2e run --platform mac --suite smoke
 ```
 
 Suites are `core`, `board`, `conversation`, `machine`, `sidebar`, `terminal`,
-`island`, and `workspace`. Run them sequentially. The Swift smoke driver:
+`island`, `workspace`, and `inbox`, plus the YAML `mac.navigation` journey.
+Legacy `just mac smoke*` commands delegate to the shared runner. Run suites
+sequentially. The shared Go runner:
 
 - refuses to run beside any existing `DieterMac` process;
 - owns the exact packaged-app and isolated-gateway PIDs;
 - uses an ephemeral loopback listener and unique state/preferences roots;
 - waits for multi-phase app processes to exit before relaunching;
 - preserves reports, logs, and screenshots under
-  `apps/mac/.build/smoke/<run-id>`; and
+  `tmp/e2e-<run-id>` with shared JSON/JUnit reports; and
 - verifies no app process remains.
 
 Read every report and inspect relevant PNGs; exit status alone is insufficient.
-The app-side smoke interface exists only in debug builds. Use the confirmed
-`just mac clean-smoke` recipe to remove smoke evidence without removing either
-compilation cache.
+The app-side smoke interface exists only in debug builds. The confirmed `just mac clean-smoke` recipe removes historical Swift-driver
+evidence only; retain current shared-runner evidence until reviewed.
 
 For a longer isolated performance sweep, run
 `DIETER_PERFORMANCE_SWEEP=1 just mac smoke board`. It seeds 40 chats with two

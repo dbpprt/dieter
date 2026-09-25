@@ -571,11 +571,7 @@
         }
 
         private static func outputDirectory() -> URL {
-            if let value = argument(after: "--ui-smoke-output") {
-                return URL(filePath: value, directoryHint: .isDirectory)
-            }
-            return URL(filePath: NSTemporaryDirectory()).appending(
-                path: "dieter-sidebar-ui-smoke", directoryHint: .isDirectory)
+            NativeTestSupport.outputDirectory(flag: "--ui-smoke-output")
         }
 
         private static func argument(after flag: String) -> String? {
@@ -594,9 +590,7 @@
         }
 
         private static func writeReport(_ values: [String: String], to directory: URL) {
-            let data = try? JSONSerialization.data(withJSONObject: values, options: [.prettyPrinted, .sortedKeys])
-            try? data?.write(to: directory.appending(path: "report.json"), options: .atomic)
-            DispatchQueue.main.async { NSApp.terminate(nil) }
+            NativeTestSupport.writeReport(values, to: directory)
         }
     }
 #endif

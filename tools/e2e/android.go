@@ -309,33 +309,10 @@ func (a android) run(ctx context.Context, c Case) (result Result) {
 			result.Reason = err.Error()
 			return
 		}
-		ready := time.NewTimer(60 * time.Second)
-		defer ready.Stop()
-		tick := time.NewTicker(100 * time.Millisecond)
-		defer tick.Stop()
-		for !strings.Contains(fixture.out.String(), "\nREADY\n") {
-			select {
-			case <-ctx.Done():
-				result.Status = "interrupted"
-				result.Reason = ctx.Err().Error()
-				return
-			case <-fixture.done:
-				result.Reason = "fixture exited before readiness"
-				return
-			case <-ready.C:
-				result.Reason = "fixture readiness timed out"
-				return
-			case <-tick.C:
-			}
-		}
-		values := map[string]string{}
-		for _, line := range strings.Split(fixture.out.String(), "\n") {
-			if strings.HasPrefix(line, "DIETER_ISOLATED_") {
-				p := strings.SplitN(line, "=", 2)
-				if len(p) == 2 {
-					values[p[0]] = p[1]
-				}
-			}
+		values, readyErr := awaitGateway(ctx, fixture)
+		if readyErr != nil {
+			result.Reason = readyErr.Error()
+			return
 		}
 		address := values["DIETER_ISOLATED_ADDR"]
 		_, port, _ = strings.Cut(address, "127.0.0.1:")

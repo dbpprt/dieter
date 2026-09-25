@@ -1,0 +1,44 @@
+# yaml-language-server: $schema=../../schema.json
+version: 1
+id: mac.terminal
+platform: mac
+suites: [smoke, functional]
+components: [terminal]
+fixture: gateway
+timeout: 7m
+native:
+  suite: terminal
+  checks:
+  - "create.connection"
+  - "create.cursor-tracking"
+  - "create.initial-output"
+  - "create.machine-home-scope"
+  - "create.new-terminal-sheet"
+  - "create.overview-routing"
+  - "create.project-picker"
+  - "create.resize-cursor-tracking"
+  - "create.resize-output"
+  - "create.scrollback-output"
+  - "create.terminal-context-menu"
+  - "create.terminal-copy"
+  - "create.terminal-create"
+  - "create.terminal-delete-key"
+  - "create.terminal-node-badge"
+  - "create.terminal-paste"
+  - "create.terminal-running"
+  - "create.terminal-text-selection"
+  - "create.viewport-follow"
+  - "create.window-expand-grid"
+  - "create.window-shrink-grid"
+  - "resume.connection"
+  - "resume.created-by-first-app"
+  - "resume.initial-output"
+  - "resume.input-after-restart"
+  - "resume.listed-after-restart"
+  - "resume.machine-restore"
+  - "resume.rendered-after-restart"
+  - "resume.restart-cursor-tracking"
+  - "resume.restart-grid"
+  - "resume.scrollback-replayed"
+  - "resume.terminal-cleanup"
+  - "resume.terminal-running"

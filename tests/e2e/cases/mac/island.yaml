@@ -1,0 +1,35 @@
+# yaml-language-server: $schema=../../schema.json
+version: 1
+id: mac.island
+platform: mac
+suites: [smoke, functional]
+components: [island]
+fixture: none
+timeout: 2m
+native:
+  suite: island
+  checks:
+  - "island.capture-markup-adaptive"
+  - "island.capture-markup-apply"
+  - "island.capture-markup-right-pane"
+  - "island.capture-port-routing"
+  - "island.capture-task-actions"
+  - "island.capture-task-button"
+  - "island.capture-task-draft"
+  - "island.capture-temp-cleanup"
+  - "island.collapsed-window"
+  - "island.display-automatic"
+  - "island.display-picker"
+  - "island.display-placement"
+  - "island.display-selection"
+  - "island.empty-activity-layout"
+  - "island.empty-activity-section-insets"
+  - "island.expanded-section-insets"
+  - "island.expanded-window"
+  - "island.open-board-card"
+  - "island.open-chat"
+  - "island.settings-page"
+  - "island.settings-toggle-off"
+  - "island.settings-toggle-on"
+  - "island.single-activity-layout"
+  - "island.single-activity-section-insets"

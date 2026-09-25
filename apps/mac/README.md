@@ -85,18 +85,19 @@ solid surfaces. macOS Reduce Transparency also disables translucency.
 just check-changed --dry-run
 just check-changed
 just mac test
-just mac smoke core
+just e2e run --platform mac --case mac.core
 ```
 
 `just mac smoke SUITE` supports `core`, `board`, `conversation`, `inbox`, `machine`,
 `sidebar`, `terminal`, `island`, and `workspace`. `just mac smoke-suites board
 inbox conversation` builds once and runs the requested suites serially;
-`just mac smoke-all` runs all nine.
+`just mac smoke-all` delegates to `just e2e run --platform mac --suite smoke`,
+which runs all nine native suites and the YAML navigation journey.
 
-The driver refuses any running Dieter app and owns its exact app/gateway PIDs.
+The shared Go runner refuses any running Dieter app and owns its exact app/gateway PIDs.
 It uses a random loopback port, disposable credentials, unique state/preferences,
 and a mock harness. It preserves reports, logs, and screenshots under
-`apps/mac/.build/smoke/<run-id>` and verifies shutdown. Read reports and inspect
+`tmp/e2e-<run-id>` (including shared JSON/JUnit summaries) and verifies shutdown. Read reports and inspect
 screenshots; an exit code alone does not verify the visual result.
 
 Smoke hooks exist only in debug builds. Screen integration uses

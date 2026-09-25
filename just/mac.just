@@ -242,59 +242,22 @@ proto-check:
 proto-generate:
     DIETER_SWIFT_SCRATCH_PATH="$PWD/{{ app_scratch }}" {{ app_root }}/scripts/sync-proto.sh
 
-# Run one safe packaged-app smoke suite: core, board, conversation, machine, sidebar, terminal, island, or workspace.
-smoke suite="core": build
-    just mac _smoke "{{ suite }}"
+# Run a Mac native case through the shared test runner.
+smoke suite="core":
+    just e2e run --platform mac --case "mac.{{ suite }}"
 
-# Run selected packaged-app smoke suites once each, in canonical order, with one build.
+# Run selected native suites with one build and shared lifecycle/reporting.
 [positional-arguments]
 smoke-suites +suites:
     #!/usr/bin/env bash
     set -euo pipefail
-    for suite in "$@"; do
-        case "$suite" in
-            core|board|conversation|machine|sidebar|terminal|island|workspace|inbox) ;;
-            *) echo "Unknown Mac smoke suite: $suite" >&2; exit 1 ;;
-        esac
-    done
-    if running="$(pgrep -x DieterMac)"; then
-        echo "Mac smoke tests require no DieterMac process; still running: $running" >&2
-        echo "No app or daemon was stopped." >&2
-        exit 1
-    else
-        status=$?
-        [[ "$status" -eq 1 ]] || { echo "Could not check for running DieterMac processes." >&2; exit 1; }
-    fi
-    just mac build
-    for suite in core board conversation machine sidebar terminal island workspace inbox; do
-        for requested in "$@"; do
-            if [[ "$requested" == "$suite" ]]; then
-                just mac _smoke "$suite"
-                break
-            fi
-        done
-    done
+    cases=""
+    for suite in "$@"; do cases="${cases:+$cases,}mac.$suite"; done
+    just e2e run --platform mac --case "$cases"
 
-# Run every packaged-app smoke suite sequentially with one build.
-smoke-all: build
-    #!/usr/bin/env bash
-    set -euo pipefail
-    for suite in core board conversation machine sidebar terminal island workspace inbox; do
-        just mac _smoke "$suite"
-    done
-
-[private]
-_smoke suite:
-    swift run \
-        --package-path "{{ app_root }}" \
-        --scratch-path "$PWD/{{ app_scratch }}" \
-        --only-use-versions-from-resolved-file \
-        --manifest-cache local \
-        --disable-index-store \
-        DieterMacSmokeDriver \
-        --suite "{{ suite }}" \
-        --app "$PWD/{{ app_executable }}" \
-        --output-root "$PWD/{{ app_root }}/.build/smoke"
+# Run the shared Mac smoke catalog, including YAML journeys.
+smoke-all:
+    just e2e run --platform mac --suite smoke
 
 # Remove disposable harness runtimes from retained smoke evidence.
 [confirm]

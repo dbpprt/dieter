@@ -16,7 +16,8 @@
     "platform": {
       "enum": [
         "android",
-        "ios"
+        "ios",
+        "mac"
       ]
     },
     "suites": {
@@ -66,11 +67,72 @@
             "type": "string",
             "minLength": 1
           }
+        },
+        "suite": {
+          "enum": [
+            "core",
+            "board",
+            "conversation",
+            "machine",
+            "sidebar",
+            "terminal",
+            "island",
+            "workspace",
+            "inbox"
+          ]
+        },
+        "checks": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 2048,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[^\\u0000-\\u001f\\u007f]{1,201}$"
+          }
         }
       },
-      "required": [
-        "class",
-        "methods"
+      "oneOf": [
+        {
+          "required": [
+            "class",
+            "methods"
+          ],
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "suite"
+                ]
+              },
+              {
+                "required": [
+                  "checks"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "required": [
+            "suite",
+            "checks"
+          ],
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "class"
+                ]
+              },
+              {
+                "required": [
+                  "methods"
+                ]
+              }
+            ]
+          }
+        }
       ]
     },
     "steps": {
@@ -321,7 +383,12 @@
             "pattern": "^[a-z][a-z0-9.-]{0,100}$"
           },
           "probe": {
-            "enum": ["machine-telemetry", "activity-replies-unread", "activity-card-seen", "activity-chat-seen"]
+            "enum": [
+              "machine-telemetry",
+              "activity-replies-unread",
+              "activity-card-seen",
+              "activity-chat-seen"
+            ]
           }
         },
         "required": [],

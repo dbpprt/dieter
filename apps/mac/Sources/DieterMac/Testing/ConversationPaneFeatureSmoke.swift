@@ -755,8 +755,10 @@
                 guard let rpc = store.rpc else { throw CocoaError(.fileReadUnknown) }
                 let workspace = try await rpc.workspace(cardID: cardID)
                 let root = URL(fileURLWithPath: workspace.path, isDirectory: true).resolvingSymlinksInPath()
-                let fixtureRoot = output.appending(path: "fixture-home", directoryHint: .isDirectory)
-                    .resolvingSymlinksInPath()
+                guard let fixturePath = NativeTestSupport.argument("--ui-smoke-fixture-root") else {
+                    throw CocoaError(.fileWriteNoPermission)
+                }
+                let fixtureRoot = URL(fileURLWithPath: fixturePath, isDirectory: true).resolvingSymlinksInPath()
                 guard root.path.hasPrefix(fixtureRoot.path + "/") else { throw CocoaError(.fileWriteNoPermission) }
                 let image = NSImage(size: NSSize(width: 480, height: 280), flipped: false) { rectangle in
                     NSColor.windowBackgroundColor.setFill(); rectangle.fill()

@@ -1,0 +1,25 @@
+# yaml-language-server: $schema=../../schema.json
+version: 1
+id: mac.machine
+platform: mac
+suites: [smoke, functional]
+components: [machine]
+fixture: gateway
+timeout: 2m
+native:
+  suite: machine
+  checks:
+  - "machine.connection"
+  - "machine.daemon-update"
+  - "machine.daemon-update-capability"
+  - "machine.daemon-version"
+  - "machine.dieter-processes"
+  - "machine.gateway-version"
+  - "machine.gpu"
+  - "machine.host-controls"
+  - "machine.machine-rpc"
+  - "machine.power-control"
+  - "machine.presentation"
+  - "machine.render"
+  - "machine.route"
+  - "machine.telemetry"

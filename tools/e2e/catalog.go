@@ -32,8 +32,10 @@ type Case struct {
 	Source     string            `yaml:"-" json:"source"`
 }
 type Native struct {
-	Class   string   `yaml:"class" json:"class"`
-	Methods []string `yaml:"methods" json:"methods"`
+	Suite   string   `yaml:"suite,omitempty" json:"suite,omitempty"`
+	Checks  []string `yaml:"checks,omitempty" json:"checks,omitempty"`
+	Class   string   `yaml:"class,omitempty" json:"class,omitempty"`
+	Methods []string `yaml:"methods,omitempty" json:"methods,omitempty"`
 }
 type Target struct {
 	ID          string `yaml:"id,omitempty" json:"id,omitempty"`
@@ -148,8 +150,8 @@ func (c Case) validate() error {
 	if !identifier.MatchString(c.ID) {
 		return fmt.Errorf("invalid case ID %q", c.ID)
 	}
-	if c.Platform != "android" && c.Platform != "ios" {
-		return fmt.Errorf("platform %q is disabled; Mac is not implemented", c.Platform)
+	if c.Platform != "android" && c.Platform != "ios" && c.Platform != "mac" {
+		return fmt.Errorf("unsupported platform %q", c.Platform)
 	}
 	if c.Build != "" && c.Build != "performance" {
 		return fmt.Errorf("unsupported build %q", c.Build)
@@ -178,7 +180,22 @@ func (c Case) validate() error {
 	if len(c.Steps) > 100 {
 		return fmt.Errorf("at most 100 steps are allowed")
 	}
-	if c.Native != nil {
+	if c.Platform == "mac" {
+		if c.Fixture != "none" && c.Fixture != "gateway" {
+			return fmt.Errorf("Mac fixtures are none or gateway")
+		}
+		if len(c.Arguments) != 0 {
+			return fmt.Errorf("Mac cases do not accept Android instrumentation arguments")
+		}
+		if c.Native != nil {
+			if err := validateMacNative(*c.Native, c.Fixture); err != nil {
+				return err
+			}
+		}
+	} else if c.Native != nil && (c.Native.Suite != "" || len(c.Native.Checks) != 0) {
+		return fmt.Errorf("suite/checks are Mac-only")
+	}
+	if c.Native != nil && c.Platform != "mac" {
 		if (c.Platform == "android" && !nativeClass.MatchString(c.Native.Class)) || (c.Platform == "ios" && !nativeMethod.MatchString(c.Native.Class)) || len(c.Native.Methods) == 0 {
 			return fmt.Errorf("native class and explicit methods required")
 		}
@@ -196,6 +213,12 @@ func (c Case) validate() error {
 		}
 	}
 	for _, s := range c.Steps {
+		if c.Platform == "mac" && (s.Type != nil || s.Scroll != nil || s.Press != "" || s.Probe != "") {
+			return fmt.Errorf("Mac flows support launch, tap, expect and screenshot; use native suites for other actions")
+		}
+		if c.Platform == "mac" && c.Fixture != "gateway" {
+			return fmt.Errorf("Mac navigation flows require gateway fixture")
+		}
 		b, _ := json.Marshal(s)
 		var fields map[string]any
 		_ = json.Unmarshal(b, &fields)

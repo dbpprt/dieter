@@ -1,6 +1,7 @@
 # Native tests
 
-Run repository commands from the root. Android uses a separate
+Run repository commands from the root. macOS and Android share case selection, deadlines, JSON/JUnit reporting and
+required-result qualification. Android uses a separate
 `com.dbpprt.dieter.e2e` app, disposable authenticated daemon/gateway fixtures,
 and the existing visible `Pixel_9_API_37_1` emulator. No live account or operator
 app data is used.
@@ -27,15 +28,17 @@ just e2e run --suite sync
 just e2e run --suite performance
 just e2e run --suite sdk --serial emulator-5554
 just e2e prepare --platform ios --device ipad
-# just e2e run --platform mac  # deliberately disabled; no Mac adapter yet
+just e2e run --platform mac --suite smoke
+just e2e run --platform mac --case mac.navigation,mac.sidebar
 ```
 
 Android is executable. iOS case discovery and versioned JSON preparation are
 ready, but execution intentionally fails until an XCTest adapter is qualified.
 The existing iOS XCTest suite remains the native implementation to integrate.
-Mac execution is disabled. Android screen journeys need a macOS capture host;
-an unavailable host is reported as unavailable, never a pass. Mac companion
-screen qualification is disabled with the Mac adapter.
+Mac execution requires a logged-in macOS desktop and refuses any existing
+DieterMac process before packaging. It uses the canonical SwiftPM app cache,
+isolated preferences/state, disposable gateways, and a desktop lease. Android screen journeys need a macOS capture host;
+an unavailable host is reported as unavailable, never a pass. Mac companion screen qualification remains separate from this catalog.
 
 `functional` includes focused device component cases and full-stack journeys.
 `sync`, `performance`, and `screens` are explicit separate suites. All required
@@ -54,7 +57,9 @@ exit. No credentials are put in instrumentation argv.
 
 Case format is version 1. One file declares a unique ID, platform, suites,
 components, fixture (`none`, `gateway`, `activity`, `screen`), timeout (1s–10m),
-and either `steps` or an explicit native class/method list. The host rejects
+and either `steps`, an explicit native class/method list, or a Mac native
+`suite` with explicit phase-qualified `checks`. Missing or non-passing Mac
+assertions fail, including incomplete multi-launch suites. The host rejects
 unknown fields, duplicate keys, ambiguous selectors, unsupported placeholders,
 YAML anchors/aliases, and multiple documents. At most 100 steps and 256 KiB per
 case. No shell, expressions, loops, arbitrary hooks, or recursive fragments.
@@ -62,7 +67,9 @@ case. No shell, expressions, loops, arbitrary hooks, or recursive fragments.
 Steps are `launch: connected`, `tap`, `type`, `press: back`, `scroll`, `expect`,
 `screenshot`, and named `probe`. Targets use exactly one of `id`, `text`, or
 `description`. Text entry replaces the field. `expect.value` asserts editable
-text; `visible: false` currently means absent from the semantics tree. Compose
+text; `visible: false` currently means absent from the semantics tree. Mac navigation flows currently support `launch`, `tap`, `expect`, and
+`screenshot` through native accessibility; unsupported actions fail catalog
+validation. Advanced Mac interactions remain in native suites. Compose
 waits for conditions with bounded deadlines. Mutations dispatch once. A scroll
 uses the native container's bounded test action and the case deadline.
 

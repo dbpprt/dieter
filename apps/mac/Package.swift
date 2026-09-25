@@ -11,7 +11,6 @@ let package = Package(
         // automatic products (including Crypto/X509) into incomplete frameworks.
         .library(name: "DieterIOS", type: .dynamic, targets: ["DieterIOS"]),
         .executable(name: "DieterMac", targets: ["DieterMac"]),
-        .executable(name: "DieterMacSmokeDriver", targets: ["DieterMacSmokeDriver"]),
     ],
     dependencies: [
         .package(url: "https://github.com/apple/swift-certificates.git", from: "1.14.0"),
@@ -102,10 +101,6 @@ let package = Package(
                     "-Xlinker", "@executable_path/../Frameworks",
                 ])
             ]
-        ),
-        .executableTarget(
-            name: "DieterMacSmokeDriver",
-            path: "Tools/DieterMacSmokeDriver"
         ),
         // The upstream 151.0.0 and 151.0.1 tags share a manifest whose
         // 151.0.0 asset URL was removed. Pin the surviving, byte-identical

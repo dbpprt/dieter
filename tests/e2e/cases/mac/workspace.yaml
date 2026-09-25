@@ -1,0 +1,48 @@
+# yaml-language-server: $schema=../../schema.json
+version: 1
+id: mac.workspace
+platform: mac
+suites: [smoke, functional]
+components: [workspace]
+fixture: gateway
+timeout: 4m
+native:
+  suite: workspace
+  checks:
+  - "workspace.base-head-check"
+  - "workspace.card-lane"
+  - "workspace.changes-tab-click"
+  - "workspace.changeset-check"
+  - "workspace.conflict-sheet"
+  - "workspace.conflict-update"
+  - "workspace.connection"
+  - "workspace.fixture-commit-conflict-main"
+  - "workspace.fixture-commit-conflict-worktree"
+  - "workspace.fixture-commit-design"
+  - "workspace.fixture-commit-review-fold"
+  - "workspace.fixture-commit-review-scaffold"
+  - "workspace.inline-diff-visible"
+  - "workspace.merge-flow"
+  - "workspace.merge-sheet"
+  - "workspace.merge-toast"
+  - "workspace.project-changes"
+  - "workspace.project-commit"
+  - "workspace.project-compact-diff"
+  - "workspace.project-design-mixed-staging"
+  - "workspace.project-design-staged-diff"
+  - "workspace.project-discard"
+  - "workspace.project-external-refresh"
+  - "workspace.project-file-selection"
+  - "workspace.project-four-destinations"
+  - "workspace.project-inline-draft-persists"
+  - "workspace.project-keyboard-selection"
+  - "workspace.project-navigation"
+  - "workspace.project-restage"
+  - "workspace.project-selection-follows-stage"
+  - "workspace.project-split-horizontal-scroll"
+  - "workspace.project-split-rendered"
+  - "workspace.project-stage"
+  - "workspace.project-stage-all"
+  - "workspace.project-unstage"
+  - "workspace.project-unstage-all"
+  - "workspace.split-diff-visible"

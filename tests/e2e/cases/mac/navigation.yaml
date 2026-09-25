@@ -1,0 +1,36 @@
+# yaml-language-server: $schema=../../schema.json
+version: 1
+id: mac.navigation
+platform: mac
+suites: [smoke, functional]
+components: [navigation]
+fixture: gateway
+timeout: 2m
+steps:
+- launch: connected
+- tap:
+    id: sidebar.inbox
+- expect:
+    id: destination.Inbox
+    visible: true
+- tap:
+    id: sidebar.all-chats
+- expect:
+    id: destination.All chats
+    visible: true
+- tap:
+    id: sidebar.screens
+- expect:
+    id: destination.Screens
+    visible: true
+- tap:
+    id: sidebar.settings
+- expect:
+    id: destination.Settings
+    visible: true
+- tap:
+    id: sidebar.inbox
+- expect:
+    id: destination.Inbox
+    visible: true
+- screenshot: navigation

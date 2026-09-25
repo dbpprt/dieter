@@ -2499,14 +2499,7 @@
         }
 
         private static func outputDirectory() -> URL {
-            let arguments = ProcessInfo.processInfo.arguments
-            if let index = arguments.firstIndex(of: "--ui-smoke-output"),
-                arguments.indices.contains(index + 1)
-            {
-                return URL(filePath: arguments[index + 1], directoryHint: .isDirectory)
-            }
-            return URL(filePath: NSTemporaryDirectory()).appending(
-                path: "dieter-mac-ui-smoke", directoryHint: .isDirectory)
+            NativeTestSupport.outputDirectory(flag: "--ui-smoke-output")
         }
 
         private static func smokeProviderQuotaGroups() -> [Dieter_Gateway_V1_ProviderQuotaGroup] {
@@ -2682,10 +2675,7 @@
         }
 
         private static func writeReport(_ values: [String: String], to directory: URL) {
-            let data = try? JSONSerialization.data(
-                withJSONObject: values, options: [.prettyPrinted, .sortedKeys])
-            try? data?.write(to: directory.appending(path: "report.json"), options: .atomic)
-            DispatchQueue.main.async { NSApp.terminate(nil) }
+            NativeTestSupport.writeReport(values, to: directory)
         }
     }
 

@@ -144,13 +144,7 @@
         }
 
         private static func outputDirectory() -> URL {
-            let arguments = ProcessInfo.processInfo.arguments
-            if let index = arguments.firstIndex(of: "--machine-ui-smoke-output"), arguments.indices.contains(index + 1)
-            {
-                return URL(fileURLWithPath: arguments[index + 1], isDirectory: true)
-            }
-            return URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(
-                "dieter-machine-ui-smoke", isDirectory: true)
+            NativeTestSupport.outputDirectory(flag: "--machine-ui-smoke-output")
         }
 
         private static func waitUntil(timeout: TimeInterval, condition: @escaping @MainActor () -> Bool) async -> Bool {
@@ -177,11 +171,7 @@
         }
 
         private static func writeReport(_ results: [String: String], to output: URL) {
-            guard
-                let data = try? JSONSerialization.data(withJSONObject: results, options: [.prettyPrinted, .sortedKeys])
-            else { return }
-            try? data.write(to: output.appendingPathComponent("report.json"), options: .atomic)
-            DispatchQueue.main.async { NSApp.terminate(nil) }
+            NativeTestSupport.writeReport(results, to: output)
         }
     }
 #endif
