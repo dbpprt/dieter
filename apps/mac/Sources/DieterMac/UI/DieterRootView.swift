@@ -205,7 +205,9 @@ struct DieterRootView: View {
                 ToolbarItem(placement: .navigation) {
                     Button {
                         sidebarVisibility = sidebarVisibility == .detailOnly ? .all : .detailOnly
-                    } label: { Image(systemName: "sidebar.left") }
+                    } label: {
+                        Image(systemName: "sidebar.left")
+                    }
                     .help("Toggle sidebar")
                     .keyboardShortcut("s", modifiers: [.command, .control])
                 }

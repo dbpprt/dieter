@@ -88,7 +88,11 @@ import SwiftUI
 extension View {
     @ViewBuilder func navigationSmokeDestination(_ section: AppSection) -> some View {
         #if DIETER_UI_SMOKE
-            if NativeUISmokeTargets.enabled { background(NavigationSmokeDestination(section: section)).smokeTarget("destination.\(section.rawValue)") } else { self }
+            if NativeUISmokeTargets.enabled {
+                background(NavigationSmokeDestination(section: section)).smokeTarget("destination.\(section.rawValue)")
+            } else {
+                self
+            }
         #else
             self
         #endif

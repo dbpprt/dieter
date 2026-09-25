@@ -161,7 +161,8 @@
                 model.commitSubject == "Fold chats to five per project"
                     && model.commitBody == "Keep projects compact and make every chat reachable."
             }
-            _ = await NativeUIAccessibility.pressWhenSettled("project-changes.unstaged.web/ChatFolder.swift", in: window)
+            _ = await NativeUIAccessibility.pressWhenSettled(
+                "project-changes.unstaged.web/ChatFolder.swift", in: window)
             let rendered = await NativeUIAccessibility.wait {
                 model.diff?.path == "web/ChatFolder.swift" && model.diff?.section == "unstaged"
                     && NativeUISmokeTargets.diffSplit == true
@@ -182,10 +183,12 @@
             let pinned = hunkBefore != nil && hunkAfter != nil && abs(hunkBefore!.minX - hunkAfter!.minX) < 2
             results["project-split-horizontal-scroll"] =
                 rendered && scrolled && offsetChanged && pinned
-                ? "passed" : "failed: rendered=\(rendered), scrolled=\(scrolled), offset changed=\(offsetChanged), headers pinned=\(pinned)"
+                ? "passed"
+                : "failed: rendered=\(rendered), scrolled=\(scrolled), offset changed=\(offsetChanged), headers pinned=\(pinned)"
             _ = NativeUIAccessibility.scrollHorizontally("project-changes.diff", in: window, delta: 220)
             results["project-design-mixed-staging"] =
-                refreshed && selected && visible ? "passed" : "failed: refreshed=\(refreshed), selected=\(selected), split visible=\(visible)"
+                refreshed && selected && visible
+                ? "passed" : "failed: refreshed=\(refreshed), selected=\(selected), split visible=\(visible)"
             _ = NativeUIAccessibility.click("project-changes.staged.web/ChatFolder.swift", in: window)
             let stagedVisible = await NativeUIAccessibility.wait {
                 model.diff?.section == "staged" && NativeUISmokeTargets.diffText.contains("private let foldThreshold")

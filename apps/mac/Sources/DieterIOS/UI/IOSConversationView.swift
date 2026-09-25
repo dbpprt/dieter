@@ -1311,8 +1311,11 @@
                         Text(name).font(.system(.caption, design: .monospaced).weight(.medium)).lineLimit(1)
                         Spacer(minLength: 8)
                         if !part.state.isEmpty {
-                            Text(part.state == "output-error" ? "failed" : part.state.replacingOccurrences(of: "_", with: " "))
-                                .font(.caption2).foregroundStyle(.tertiary)
+                            Text(
+                                part.state == "output-error"
+                                    ? "failed" : part.state.replacingOccurrences(of: "_", with: " ")
+                            )
+                            .font(.caption2).foregroundStyle(.tertiary)
                         }
                     }
                 }
