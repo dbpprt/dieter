@@ -3749,6 +3749,7 @@ class DieterViewModel internal constructor(
         baseRemote: String,
         baseBranch: String,
         validationCommands: List<ValidationCommand>,
+        remotePublishMode: String,
     ) = action(ensureReplicaRoute = false) {
         check(endpointId.isNotBlank()) { "Choose an online machine first." }
         check(baseBranch.isNotBlank()) { "Enter a workspace base branch." }
@@ -3763,6 +3764,7 @@ class DieterViewModel internal constructor(
                 .setBaseRemote(baseRemote.trim())
                 .setBaseBranch(baseBranch.trim())
                 .addAllValidationCommands(validationCommands)
+                .setRemotePublishMode(remotePublishMode)
                 .build()
         val operationId = pendingProjectCreation?.takeIf { it.first == payload }?.second ?: java.util.UUID.randomUUID().toString()
         pendingProjectCreation = payload to operationId
