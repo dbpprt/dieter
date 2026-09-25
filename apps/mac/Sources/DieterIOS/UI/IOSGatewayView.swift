@@ -43,6 +43,16 @@
                         store.busy || store.gatewayAddress.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                     )
                     .accessibilityIdentifier("ios.auth.sign-in")
+                    #if DEBUG
+                        if ProcessInfo.processInfo.environment["DIETER_IOS_TEST_START_SIGNED_OUT"] == "1" {
+                            Button("Connect isolated test session") {
+                                let token = ProcessInfo.processInfo.environment["DIETER_IOS_TEST_TOKEN"] ?? ""
+                                Task { await store.connectWithToken(token) }
+                            }
+                            .disabled(store.busy)
+                            .accessibilityIdentifier("ios.auth.test-connect")
+                        }
+                    #endif
                 }
                 Section {
                     DisclosureGroup("Use an existing access token", isExpanded: $tokenExpanded) {
