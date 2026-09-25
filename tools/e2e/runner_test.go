@@ -64,6 +64,7 @@ func TestCaseValidation(t *testing.T) {
 	}
 	for name, input := range map[string]string{
 		"unknown field":         validCase + "shell: rm\n",
+		"unknown probe":         strings.Replace(validCase, "tap: {id: machine}", "probe: unknown", 1),
 		"version":               strings.Replace(validCase, "version: 1", "version: 2", 1),
 		"duplicate":             validCase + "id: another\n",
 		"documents":             validCase + "---\n" + validCase,
@@ -316,5 +317,14 @@ func TestAndroidNativeCoverageInventory(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestActivityReplyProbes(t *testing.T) {
+	for _, probe := range []string{"activity-replies-unread", "activity-card-seen", "activity-chat-seen"} {
+		input := strings.Replace(validCase, "tap: {id: machine}", "probe: "+probe, 1)
+		if _, err := decodeCase([]byte(input), "activity.yaml"); err != nil {
+			t.Fatal(err)
+		}
 	}
 }

@@ -20,7 +20,7 @@ Android clients. Every card is one durable local AI SDK Harness conversation.
   Conversations and schedules retain one execution owner and checkout.
 - Every card has a Dieter-generated ID and exactly one durable conversation.
 - Dieter owns transcripts, runtime status, harness/model configuration, queues,
-  session resume data, comments, board labels, card label assignments, and
+  session resume data, board labels, card label assignments, and
   fixed workflow positions, schedules, occurrence history, and admission
   settings.
 - Harness workers run locally on the daemon host without a sandbox. Keep the
@@ -37,8 +37,7 @@ Android clients. Every card is one durable local AI SDK Harness conversation.
   scopes or accept a daemon ID without cryptographic proof.
 - Keep relay queues, messages, and concurrent streams bounded. A canceled relay
   RPC cancels only that transport RPC and must not implicitly stop an agent.
-- Comments never wake the agent or count as approval. Human chat messages
-  resume the same harness session.
+- Human chat messages resume the same harness session.
 - Permit concurrent agent turns in the same registered checkout. There are no
   global, harness, or board parallel-session caps. Runtime leases enforce at
   most one active turn per conversation across API, CLI, and scheduled starts.
@@ -123,7 +122,6 @@ Read `.agents/skills/dieter-cli/SKILL.md`. Prefer bounded context:
 
 ```sh
 dieter card context <exact-card-id>
-dieter card comment <exact-card-id> --message "Meaningful progress."
 dieter card move <exact-card-id> --lane review
 ```
 

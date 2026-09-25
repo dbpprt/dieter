@@ -31,8 +31,26 @@ struct InboxActivityTests {
         ])
         #expect(entries.map(\.id) == ["working", "answer", "review", "chat"])
         #expect(entries.map(\.kind) == [.running, .answer, .review, .recent])
-        #expect(entries.filter(\.needsYou).map(\.id) == ["answer", "review"])
+        #expect(entries.filter(\.needsYou).map(\.id) == ["answer"])
         #expect(entries.filter(\.running).map(\.id) == ["working"])
+    }
+
+    @Test func unreadRepliesNeedAttentionUntilSeenAcrossCardsAndChats() {
+        for scope in ["board", "chat"] {
+            var reply = card("reply", runtime: "idle", scope: scope, lane: "review")
+            reply.responseSeq = 30
+            reply.seenResponseSeq = 10
+            #expect(InboxActivity.entries(cards: [reply]).first?.kind == .unread)
+            #expect(InboxActivity.entries(cards: [reply]).first?.needsYou == true)
+            reply.seenResponseSeq = 30
+            #expect(InboxActivity.entries(cards: [reply]).first?.needsYou == false)
+            reply.responseSeq = 50
+            #expect(InboxActivity.entries(cards: [reply]).first?.needsYou == true)
+            reply.runtime = "running"
+            #expect(InboxActivity.entries(cards: [reply]).first?.kind == .running)
+            reply.archived = true
+            #expect(InboxActivity.entries(cards: [reply]).isEmpty)
+        }
     }
 
     @Test func freshestIdentityWinsBeforeArchivedFiltering() {

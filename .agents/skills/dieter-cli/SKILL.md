@@ -167,18 +167,15 @@ only for interactive discovery, then retain returned IDs for mutation.
 
 ## Work inside a card
 
-Load bounded context before acting and use comments only for non-triggering
-annotations:
+Load bounded context before acting:
 
 ```sh
 dieter card context <card-id>
 dieter card transcript --last 20 <card-id>
-dieter card comment --message "Meaningful progress." <card-id>
 dieter card move --lane review <card-id>
 ```
 
-Comments never wake the agent and never count as approval. A human message does
-resume the same durable harness session:
+A human message resumes the same durable harness session:
 
 ```sh
 dieter card send --message "Address the review feedback." <card-id>
@@ -938,3 +935,16 @@ enrollment, keys and peer account. Discovery failures retain the enrolled route.
 continues to require that endpoint. Never edit daemon identity or peer storage
 manually, and never unenroll/re-enroll as a hostname migration shortcut.
 Production rollout updates/restarts are operator work, never a testing method.
+
+### Unseen model replies
+
+Activity on macOS and Android shows **Needs attention** for completed model
+replies that have not been viewed and for questions waiting for an answer.
+Viewing the latest transcript in the foreground acknowledges that reply across
+clients. A Review lane alone does not imply an unread reply.
+
+Card/chat metadata includes `responseSeq`, `responseMessageId`, and
+`seenResponseSeq`. Automation can acknowledge a displayed response using
+`dieter card read --response-seq SEQ CARD` (also `chat read`). The command supports
+local, direct TLS, and relay routes with global `--machine`. Stale receipts never
+clear newer replies. Board comments and the card/chat comment commands are removed.

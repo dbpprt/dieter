@@ -588,19 +588,6 @@ internal fun WorkCard(
                             modifier = Modifier.semantics { contentDescription = taskTokenUsageDetail(card.tokenUsage) })
                     }
                 }
-                if (card.commentCount > 0) {
-                    Row(
-                        Modifier.padding(start = 12.dp)
-                            .semantics(mergeDescendants = true) {
-                                contentDescription = "${card.commentCount} comments"
-                            },
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Icon(Icons.Outlined.ChatBubbleOutline, null, Modifier.size(15.dp), tint = DieterMuted)
-                        Spacer(Modifier.width(4.dp))
-                        Text(card.commentCount.toString(), color = DieterMuted, fontSize = 12.sp, lineHeight = 15.sp)
-                    }
-                }
                 if (isDone) {
                     Spacer(Modifier.width(12.dp))
                     Icon(

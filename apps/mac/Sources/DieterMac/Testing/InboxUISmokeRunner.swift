@@ -44,6 +44,9 @@
                 return
             }
             results["connection-fixture"] = "passed"
+            record(
+                "unseen-reply-needs-attention",
+                store.inboxEntries.contains { $0.id == review.id && $0.kind == .unread && $0.needsYou }, &results)
             let feedReady = await NativeUIAccessibility.wait {
                 store.section == .inbox && visible("inbox.row.\(waiting.id)", window)
             }
@@ -139,6 +142,13 @@
             _ = await chooseMenu("inbox.range", title: "Last 1h", window: window)
             let reviewSelected = await select(review, store: store, window: window)
             record("review-card-selection", reviewSelected, &results)
+            let receiptSynced = await NativeUIAccessibility.wait {
+                store.inboxEntries.contains {
+                    $0.id == review.id && $0.card.responseSeq > 0 && $0.card.seenResponseSeq == $0.card.responseSeq
+                        && !$0.needsYou
+                }
+            }
+            record("visible-reply-clears-attention", receiptSynced, &results)
             let chatSelected = await select(chat, store: store, window: window)
             record("standalone-chat-selection", chatSelected && store.selectedChatID == chat.id, &results)
             await captureAppearances(

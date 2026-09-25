@@ -42,9 +42,6 @@ extension DieterStore {
             chatProjects = projects
             updateSelectedState()
             rebuildOutboxOverlays()
-            if let selectedChatID, let selected = chats.first(where: { $0.id == selectedChatID }) {
-                markChatRead(selected)
-            }
         } catch {
             guard self.rpc === rpc, generation == chatsRequestGeneration else { return }
             if !Self.isExpectedCancellation(error) { chatsError = DieterRPCFailure.message(for: error) }
@@ -162,9 +159,6 @@ extension DieterStore {
             let draft = self.composer.draft
             let harness = self.harnessCatalog.harnesses.first { $0.id == snapshot.detail.card.provider }
             draft.reconcileSettings(card: snapshot.detail.card, harness: harness)
-            if chat, let card = self.chats.first(where: { $0.id == snapshot.detail.card.id }) {
-                self.markChatRead(card)
-            }
         }
         conversationModel.onSnapshot = { [weak self] snapshot, endpointID, refreshedAt in
             guard let self else { return }
@@ -220,9 +214,6 @@ extension DieterStore {
     func closeConversation() {
         conversationSelectionGeneration &+= 1
         conversationRead.cancel()
-        if let selectedChatID, let card = chats.first(where: { $0.id == selectedChatID }) {
-            markChatRead(card)
-        }
         conversationTask?.cancel()
         conversationTask = nil
         gitOperationTask?.cancel()
@@ -633,13 +624,6 @@ extension DieterStore {
 
     nonisolated static func shouldOpenCreatedConversation(chat: Bool, lane: String) -> Bool {
         chat || lane.caseInsensitiveCompare("todo") != .orderedSame
-    }
-
-    func markChatRead(_ card: Dieter_V1_Card) {
-        let activity = card.lastActivityAt.isEmpty ? card.updatedAt : card.lastActivityAt
-        guard !activity.isEmpty, readChatActivity[card.id] != activity else { return }
-        readChatActivity[card.id] = activity
-        environment.defaults.set(readChatActivity, forKey: "DieterReadChatActivity")
     }
 
     func move(_ card: Dieter_V1_Card, lane: String, position: Int64? = nil) async {

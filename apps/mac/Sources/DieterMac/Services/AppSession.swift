@@ -309,7 +309,6 @@ final class AppSession {
     let accessTokenOverride: String?
     @ObservationIgnored let themeDefaults: UserDefaults
     var gatewayOrigins: [DieterEndpoint]
-    var readChatActivity: [String: String]
     let authentication: DieterAuthentication
     @ObservationIgnored let environment: DieterAppEnvironment
     let syncPersistence: DieterSyncPersistence
@@ -370,7 +369,6 @@ final class AppSession {
         } else {
             accessTokenOverride = nil
         }
-        readChatActivity = environment.defaults.dictionary(forKey: "DieterReadChatActivity") as? [String: String] ?? [:]
         if let flag = arguments.firstIndex(of: "--dieter-endpoint"), arguments.indices.contains(flag + 1),
             let override = DieterEndpoint.parse(arguments[flag + 1], name: "Command line")
         {

@@ -8,7 +8,7 @@ import java.time.Duration
 import java.time.Instant
 
 internal enum class ActivityKind(val label: String) {
-    ANSWER("Answer"), REVIEW("Review"), RUNNING("Running"), FAILED("Failed"), RECENT("Recent"),
+    UNREAD("Unread reply"), ANSWER("Answer"), REVIEW("Review"), RUNNING("Running"), FAILED("Failed"), RECENT("Recent"),
 }
 
 /** Small projection of already synchronized snapshots; Activity never loads every transcript. */
@@ -51,7 +51,7 @@ internal data class ActivityEntry(
     val detail: String,
 ) {
     val running: Boolean get() = kind == ActivityKind.RUNNING
-    val needsYou: Boolean get() = kind == ActivityKind.ANSWER || kind == ActivityKind.REVIEW
+    val needsYou: Boolean get() = kind == ActivityKind.ANSWER || kind == ActivityKind.UNREAD
 }
 
 internal fun activityInstant(value: String): Instant? = runCatching { Instant.parse(value) }.getOrNull()
@@ -72,6 +72,7 @@ internal fun buildActivityEntries(
         val kind = when {
             runtime == "waiting_for_user" -> ActivityKind.ANSWER
             active -> ActivityKind.RUNNING
+            card.responseSeq > card.seenResponseSeq -> ActivityKind.UNREAD
             card.scope != "chat" && card.lane == "review" -> ActivityKind.REVIEW
             runtime == "failed" -> ActivityKind.FAILED
             runtime.isNotBlank() && runtime != "pending" && card.initialPromptSentAt.isNotBlank() && card.runtimeUpdatedAt.isNotBlank() -> ActivityKind.RECENT
@@ -87,6 +88,7 @@ internal fun buildActivityEntries(
         ActivityEntry(card, kind, at, start, when {
             runtime == "cancelling" -> "Stopping…"
             active -> detail?.label?.takeIf(String::isNotBlank) ?: card.summary.ifBlank { "Working on your request" }
+            kind == ActivityKind.UNREAD -> "New reply"
             kind == ActivityKind.ANSWER -> "Waiting for your answer"
             kind == ActivityKind.REVIEW -> "Ready for review"
             kind == ActivityKind.FAILED -> "Agent failed"

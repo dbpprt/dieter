@@ -34,14 +34,13 @@ Remote publishing: {{workspace.remote_publish_mode}}
 - Use start_background_process for a dev server, build, or test that should run independently. It registers to this conversation's Processes workspace tab. Read bounded output with read_background_process; stop only with explicit stop_background_process. The CLI equivalent is dieter remote exec --card {{card.id}} --detach -- COMMAND ARG...
 - To show a file or URL to the user, use the present_content harness tool. The CLI equivalent is dieter card present {{card.id}} --path <workspace-relative-path> [--line N] or --url <HTTP(S)-URL>. Presentation does not wake an agent or prove the user has viewed it.
 - Work only in the assigned working tree {{workspace.path}}. Never edit another checkout or worktree for this project.
-- Post concise, non-triggering progress notes with: dieter card comment {{card.id}} --message "..."
 - Keep this card in Running while implementation or verification is incomplete.
 - When the requested outcome is implemented and relevant checks pass, move with: dieter card move {{card.id}} --lane {{board.target_lane}}
-- If blocked, leave the card in Running and comment the exact blocker and required next action.
+- If blocked, leave the card in Running and report the exact blocker in the conversation and required next action.
 - Create a separate Todo card only when explicitly asked to capture distinct follow-up work. Use: dieter card create --project {{project.id}} --board {{board.id}} --lane todo ...
 - Available board labels: {{board.labels}}
 - Use exact label IDs with: dieter card labels {{card.id}} --set <label-id>,<label-id>
-- Comments never count as approval. Human messages continue this same durable harness session.`
+- Human messages continue this same durable harness session.`
 
 	DefaultChatSkillTemplate = `Standalone chat instructions:
 - Use start_background_process for a dev server, build, or test that should run independently. It registers to this conversation's Processes workspace tab. Read bounded output with read_background_process; stop only with explicit stop_background_process. The CLI equivalent is dieter remote exec --card {{card.id}} --detach -- COMMAND ARG...

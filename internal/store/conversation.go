@@ -366,6 +366,23 @@ func (s *Store) appendConversationEvent(card model.Card, conversation model.Conv
 	// immediately. A killed worker can leave the hint <250ms behind; replay of
 	// the fsynced journal still recovers every acknowledged token and timestamp.
 	if shouldPublishConversationActivity(card.LastActivityAt, event) {
+		if event.Type == "ui-chunk" {
+			var chunk struct {
+				Type string `json:"type"`
+			}
+			_ = json.Unmarshal(event.Data, &chunk)
+			if chunk.Type == "finish" && len(conversation.Messages) > 0 {
+				message := conversation.Messages[len(conversation.Messages)-1]
+				if message.Role == "assistant" {
+					for _, part := range message.Parts {
+						if (part.Type == "text" && strings.TrimSpace(part.Text) != "") || part.Type == "file" {
+							card.ResponseSeq, card.ResponseMessageID = event.Seq, message.ID
+							break
+						}
+					}
+				}
+			}
+		}
 		card.LastActivityAt = event.CreatedAt
 		card.UpdatedAt = event.CreatedAt
 		if err := s.writeCard(card); err != nil {
@@ -877,4 +894,30 @@ func conversationEventSequence(line []byte) (int64, bool) {
 	}
 	err := json.Unmarshal(line, &header)
 	return header.Seq, err == nil
+}
+
+// MarkConversationRead acknowledges exactly the response rendered by a client.
+// A delayed receipt must never clear a newer reply, nor change activity ordering.
+func (s *Store) MarkConversationRead(ref string, responseSeq int64) (model.Card, error) {
+	release, err := s.beginWrite()
+	if err != nil {
+		return model.Card{}, err
+	}
+	defer release()
+	card, err := s.ResolveCard(ref)
+	if err != nil {
+		return model.Card{}, err
+	}
+	if err := s.RequireLocalCard(card); err != nil {
+		return model.Card{}, err
+	}
+	if responseSeq <= 0 || responseSeq > card.ResponseSeq {
+		return model.Card{}, errors.New("response sequence is invalid")
+	}
+	if responseSeq != card.ResponseSeq || responseSeq <= card.SeenResponseSeq {
+		return card, nil
+	}
+	card.SeenResponseSeq = responseSeq
+	card.UpdatedAt = timestamp()
+	return card, s.writeCard(card)
 }

@@ -104,14 +104,7 @@ extension DieterStore {
     }
 
     func isChatUnread(_ card: Dieter_V1_Card) -> Bool {
-        guard selectedChatID != card.id else { return false }
-        let activity = card.lastActivityAt.isEmpty ? card.updatedAt : card.lastActivityAt
-        guard !activity.isEmpty else { return false }
-        guard let read = readChatActivity[card.id] else { return true }
-        if let activityDate = Self.parseTimestamp(activity), let readDate = Self.parseTimestamp(read) {
-            return activityDate > readDate
-        }
-        return activity > read
+        card.responseSeq > card.seenResponseSeq
     }
 
     func isPendingCard(_ id: String) -> Bool { pendingCardIDs.contains(id) }

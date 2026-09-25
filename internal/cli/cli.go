@@ -192,7 +192,7 @@ Commands:
   quota        Show, summarize, refresh, and reset provider-account quotas
   project      Create, browse, map hostnames, relocate, archive, and restore projects
   board        Manage boards, hostnames, retention, workflows, and labels
-  card         Create, edit, present files, merge, and manage board conversations
+  card         Create, edit, read, present files, merge, and manage board conversations
   chat         Manage standalone conversations and present files or URLs
   workspace    Inspect changes and run durable Git/SCM operations
   file         Browse and edit project/workspace files with revision checks

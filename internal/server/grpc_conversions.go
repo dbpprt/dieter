@@ -102,7 +102,7 @@ func protoCard(value model.Card) *dieterv1.Card {
 		RuntimeUpdatedAt: value.RuntimeUpdatedAt, LastActivityAt: value.LastActivityAt,
 		Archived: value.Archived, DoneArchiveExempt: value.DoneArchiveExempt,
 		Pinned: value.Pinned, CreatedAt: value.CreatedAt, UpdatedAt: value.UpdatedAt,
-		LabelIds: append([]string(nil), value.LabelIDs...), CommentCount: int32(value.CommentCount),
+		LabelIds: append([]string(nil), value.LabelIDs...), ResponseSeq: value.ResponseSeq, ResponseMessageId: value.ResponseMessageID, SeenResponseSeq: value.SeenResponseSeq,
 		WorkspaceMode: value.WorkspaceMode, WorkspaceBranch: value.WorkspaceBranch, WorkspaceBaseBranch: value.WorkspaceBaseBranch,
 		WorkspaceBaseRemote: value.WorkspaceBaseRemote, RemotePublishMode: value.RemotePublishMode,
 	}
@@ -238,19 +238,7 @@ func protoCardDetail(value model.CardDetail) *dieterv1.CardDetail {
 	result := &dieterv1.CardDetail{
 		Card: protoCard(value.Card), Project: protoProject(value.Project), Board: protoBoard(value.Board),
 	}
-	for _, item := range value.Comments {
-		result.Comments = append(result.Comments, protoComment(item))
-	}
 	return result
-}
-
-func protoComment(value model.Comment) *dieterv1.Comment {
-	return &dieterv1.Comment{
-		Id: value.ID, CardId: value.CardID, Author: &dieterv1.Author{
-			Kind: value.Author.Kind, Name: value.Author.Name, ProjectId: value.Author.ProjectID,
-			CardId: value.Author.CardID, Provider: value.Author.Provider, Model: value.Author.Model,
-		}, Body: value.Body, CreatedAt: value.CreatedAt,
-	}
 }
 
 func protoConversation(value model.Conversation) *dieterv1.Conversation {

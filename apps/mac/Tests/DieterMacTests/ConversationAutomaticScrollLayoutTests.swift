@@ -313,6 +313,12 @@ func initialTranscriptMountsOnlyTheTailAndExpandsToFillShortRows(shortRows: Bool
 }
 
 private actor AutomaticScrollLayoutRPC: ConversationRPC {
+    func markConversationRead(cardID: String, responseSeq: Int64) async throws -> Dieter_V1_Card {
+        var card = Dieter_V1_Card()
+        card.id = cardID; card.responseSeq = responseSeq; card.seenResponseSeq = responseSeq
+        return card
+    }
+
     private var pending: CheckedContinuation<Dieter_V1_ConversationSnapshot, Never>?
     private var requestedBefore = 0
     private var requestedLimit = 0

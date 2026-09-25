@@ -131,7 +131,7 @@ internal fun ActivityFeed(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text("Activity", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.SemiBold)
-                        Text("${state.projects.size} projects · ${attention.size} need you · ${running.size} running",
+                        Text("${state.projects.size} projects · ${attention.size} need attention · ${running.size} running",
                             style = MaterialTheme.typography.bodySmall, color = DieterMuted)
                     }
                     IconButton(onClick = { searchOpen = !searchOpen; if (!searchOpen) query = "" }) {
@@ -161,7 +161,7 @@ internal fun ActivityFeed(
                 ActivityTimelinePanel(intervals, hours, state.connected, running.size, expandedTimeline,
                     onHours = { hours = it }, onExpand = { expandedTimeline = !expandedTimeline }, onOpen = onOpen)
             }
-            activitySection("Needs you", attention, now, projectNames, boardNames, onOpen)
+            activitySection("Needs attention", attention, now, projectNames, boardNames, onOpen)
             activitySection("Running", running, timelineNow, projectNames, boardNames, onOpen)
             activitySection("Recent", recent, now, projectNames, boardNames, onOpen)
             if (filtered.isEmpty()) item("empty") {
@@ -203,7 +203,7 @@ private fun ActivityProjectTile(id: String, name: String, isSelected: Boolean, c
                 color = if (id.isBlank()) DieterShellTint else stableAccent(id),
                 border = if (isSelected) BorderStroke(2.dp, DieterShell) else null,
                 modifier = Modifier.size(58.dp).testTag("activity-project-${id.ifBlank { "all" }}")
-                    .semantics { selected = isSelected; contentDescription = "$name${count?.let { ", $it need you" }.orEmpty()}" }) {
+                    .semantics { selected = isSelected; contentDescription = "$name${count?.let { ", $it need attention" }.orEmpty()}" }) {
                 Box(contentAlignment = Alignment.Center) {
                     if (id.isBlank()) Icon(Icons.Outlined.Timeline, null, tint = DieterText)
                     else Text(name.take(1).lowercase(), color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold)

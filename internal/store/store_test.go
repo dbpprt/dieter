@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -201,12 +200,8 @@ func TestConversationCardLifecycle(t *testing.T) {
 	if err != nil || card.Lane != model.LaneReview {
 		t.Fatalf("review: %#v %v", card, err)
 	}
-	comment, err := s.AddComment(card.ID, "Ready for review.", model.Author{Kind: "agent", Provider: "codex", Model: "gpt-5.5"})
-	if err != nil || comment.Author.CardID != card.ID {
-		t.Fatalf("comment: %#v %v", comment, err)
-	}
 	detail, err := s.CardDetail(card.ID)
-	if err != nil || len(detail.Comments) != 1 || detail.Card.InitialPrompt != "Implement it." {
+	if err != nil || detail.Card.InitialPrompt != "Implement it." {
 		t.Fatalf("detail: %#v %v", detail, err)
 	}
 	if _, err := os.Stat(filepath.Join(p.Path, ".dieter")); !os.IsNotExist(err) {
@@ -787,26 +782,6 @@ func TestCardIDsAreUnique(t *testing.T) {
 	}
 	if _, err := s.CreateCard(input); err == nil {
 		t.Fatal("expected duplicate card rejection")
-	}
-}
-
-func TestConcurrentCommentsRemainReadable(t *testing.T) {
-	s, p, b := setup(t, model.WorkflowReview)
-	card, _ := s.CreateCard(CreateCardInput{Project: p.ID, Board: b.ID, ID: "card_concurrent", Title: "Concurrent"})
-	var wg sync.WaitGroup
-	for i := 0; i < 12; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			if _, err := s.AddComment(card.ID, "progress", model.Author{Kind: "agent"}); err != nil {
-				t.Errorf("comment: %v", err)
-			}
-		}()
-	}
-	wg.Wait()
-	comments, err := s.ListComments(card.ID, 0)
-	if err != nil || len(comments) != 12 {
-		t.Fatalf("comments=%d err=%v", len(comments), err)
 	}
 }
 

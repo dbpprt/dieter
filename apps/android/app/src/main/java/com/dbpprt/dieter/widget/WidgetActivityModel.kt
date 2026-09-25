@@ -70,11 +70,12 @@ fun buildWidgetModel(
 
     val chatCards = chats.filter { !it.archived }
 
-    val waiting = chatCards.filter { it.runtime.equals("waiting_for_user", ignoreCase = true) }
+    val waiting = chatCards.filter { it.runtime.equals("waiting_for_user", ignoreCase = true) ||
+        (!isActiveRuntime(it.runtime) && it.runtime != "cancelling" && it.responseSeq > it.seenResponseSeq) }
         .sortedByDescending { parseInstant(waitingSince(it)) ?: Instant.EPOCH }
     val running = chatCards.filter { isActiveRuntime(it.runtime) }
         .sortedByDescending { parseInstant(it.lastActivityAt.ifBlank { it.updatedAt }) ?: Instant.EPOCH }
-    val finished = finishedChats(chatCards).sortedByDescending { it.at ?: Instant.EPOCH }
+    val finished = finishedChats(chatCards).filter { compact || waiting.none { card -> card.id == it.card.id } }.sortedByDescending { it.at ?: Instant.EPOCH }
 
     if (compact) {
         val items = finished.take(config.maxItems).map { entry ->
@@ -112,7 +113,7 @@ fun buildWidgetModel(
                 cardId = card.id,
                 kind = WidgetRowKind.WAITING,
                 title = card.title.ifBlank { "Untitled" },
-                subtitle = "${projectLabel(card)} · waiting on you",
+                subtitle = "${projectLabel(card)} · " + if (card.runtime == "waiting_for_user") "waiting on you" else "unread reply",
                 trailing = sinceLabel(parseInstant(waitingSince(card)), now),
                 highlighted = true,
             )

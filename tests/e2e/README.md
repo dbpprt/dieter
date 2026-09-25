@@ -70,7 +70,9 @@ Available variables are `fixture.endpointId`, `fixture.cardId`,
 `fixture.chatId`, and `fixture.activityPrefix`. The Activity fixture arranges
 real card/chat records through the API before navigation. The machine telemetry
 probe asserts daemon identity, CPU, memory, and process data through the native
-repository. These setup/probe operations do not replace UI actions under test.
+repository. Activity probes verify that completed card/chat replies need attention
+before opening them, and that viewing each reply synchronizes its read receipt
+and clears attention. These setup/probe operations do not replace UI actions under test.
 
 Artifacts are in `tmp/e2e-<run>/`: `plan.json`, `results.json`, `junit.xml`,
 per-case native logs and captures, flow step events, and failure evidence. Use

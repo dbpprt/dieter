@@ -236,7 +236,8 @@ func (c Case) validate() error {
 		if s.Press != "" && s.Press != "back" {
 			return fmt.Errorf("unknown key")
 		}
-		if s.Probe != "" && s.Probe != "machine-telemetry" {
+		if s.Probe != "" && s.Probe != "machine-telemetry" && s.Probe != "activity-replies-unread" &&
+			s.Probe != "activity-card-seen" && s.Probe != "activity-chat-seen" {
 			return fmt.Errorf("unknown probe")
 		}
 		if s.Screenshot != "" && !identifier.MatchString(s.Screenshot) {

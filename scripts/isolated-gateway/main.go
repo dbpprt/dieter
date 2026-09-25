@@ -659,6 +659,29 @@ func (runner *isolatedRunner) Run(ctx context.Context, request harness.Request, 
 }
 
 func (runner *isolatedRunner) run(ctx context.Context, request harness.Request, emit func(harness.Output) error) error {
+	// Activity receipt tests exercise the real daemon event pipeline without
+	// waiting for an unrelated SDK runtime installation in each disposable home.
+	if request.Harness == "mock" && request.Prompt == "mock-activity-reply" {
+		for _, chunk := range []map[string]string{
+			{"type": "start", "messageId": request.ResponseMessageID},
+			{"type": "text-start", "id": "reply"},
+			{"type": "text-delta", "id": "reply", "delta": "Activity reply ready to read."},
+			{"type": "text-end", "id": "reply"},
+			{"type": "finish"},
+		} {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			raw, err := json.Marshal(chunk)
+			if err != nil {
+				return err
+			}
+			if err := emit(harness.Output{Type: "chunk", Chunk: raw}); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
 	// Queue editing needs a deterministic active turn. The normal mock harness
 	// intentionally finishes immediately, so this opt-in marker holds only the
 	// disposable fixture turn until the test cancels it.
@@ -789,11 +812,6 @@ func seedBoardStressFixture(data *boardstore.Store, project model.Project, board
 					Summary: "Mixed card content exercises variable-height text, labels, menus, sheets, help, and drop targets.",
 				}); err != nil {
 					return model.Board{}, fmt.Errorf("update board stress card %d: %w", cardIndex+1, err)
-				}
-			}
-			if cardIndex%6 == 0 {
-				if _, err = data.AddComment(card.ID, "Board stress fixture comment.", model.Author{Kind: "human", Name: "Fixture"}); err != nil {
-					return model.Board{}, fmt.Errorf("comment on board stress card %d: %w", cardIndex+1, err)
 				}
 			}
 			cardIndex++

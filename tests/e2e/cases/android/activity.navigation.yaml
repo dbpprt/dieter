@@ -11,6 +11,7 @@ fixture: activity
 timeout: 150s
 steps:
 - launch: connected
+- probe: activity-replies-unread
 - tap:
     id: nav-activity
 - expect:
@@ -31,6 +32,10 @@ steps:
 - expect:
     id: message-input
     visible: true
+- expect:
+    text: Activity reply ready to read.
+    visible: true
+- probe: activity-card-seen
 - screenshot: conversation-cardid
 - press: back
 - expect:
@@ -54,6 +59,10 @@ steps:
 - expect:
     id: message-input
     visible: true
+- expect:
+    text: Activity reply ready to read.
+    visible: true
+- probe: activity-chat-seen
 - screenshot: conversation-chatid
 - press: back
 - expect:

@@ -40,6 +40,12 @@ import Testing
 }
 
 private actor StreamFirstFixture: ConversationRPC {
+    func markConversationRead(cardID: String, responseSeq: Int64) async throws -> Dieter_V1_Card {
+        var card = Dieter_V1_Card()
+        card.id = cardID; card.responseSeq = responseSeq; card.seenResponseSeq = responseSeq
+        return card
+    }
+
     let delivers: Bool
     var reads = 0
     var afters: [Int64] = []
@@ -47,7 +53,7 @@ private actor StreamFirstFixture: ConversationRPC {
     func snapshot(_ id: String) -> Dieter_V1_ConversationSnapshot {
         var snapshot = Dieter_V1_ConversationSnapshot()
         snapshot.detail.card.id = id
-        snapshot.detail.card.commentCount = 1
+        snapshot.detail.card.seenResponseSeq = 1
         snapshot.conversation.cardID = id
         snapshot.conversation.lastSeq = 10
         return snapshot
@@ -70,7 +76,7 @@ private actor StreamFirstFixture: ConversationRPC {
     }
 }
 
-@Test @MainActor func streamFirstOpenAvoidsDuplicateReadAndRefreshesCachedComments() async {
+@Test @MainActor func streamFirstOpenAvoidsDuplicateReadAndRefreshesCachedReadState() async {
     let model = ConversationModel(), rpc = StreamFirstFixture(delivers: true)
     model.bind(client: rpc, endpointID: "fixture")
     model.selectedChatID = "chat"
@@ -84,7 +90,7 @@ private actor StreamFirstFixture: ConversationRPC {
     await model.fetchConversation(cardID: "chat", chat: true, rpc: rpc, preferStream: true)
     #expect(await rpc.reads == 0)
     #expect(await rpc.afters == [0])
-    #expect(model.conversation?.detail.card.commentCount == 1)
+    #expect(model.conversation?.detail.card.seenResponseSeq == 1)
     #expect(!model.conversationSyncing)
     #expect(!model.conversationLoading)
     #expect(accepted == 1)
@@ -103,6 +109,12 @@ private actor StreamFirstFixture: ConversationRPC {
 }
 
 private actor LateHedgeFixture: ConversationRPC {
+    func markConversationRead(cardID: String, responseSeq: Int64) async throws -> Dieter_V1_Card {
+        var card = Dieter_V1_Card()
+        card.id = cardID; card.responseSeq = responseSeq; card.seenResponseSeq = responseSeq
+        return card
+    }
+
     var reads = 0
     var watches = 0
     var canceled = false

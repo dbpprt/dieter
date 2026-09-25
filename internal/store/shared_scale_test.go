@@ -50,7 +50,7 @@ func TestSharedScaleTenThousandItemsThreeReplicas(t *testing.T) {
 		fields := pickFields(card, "item")
 		fields["identity"] = rawValue(map[string]any{"id": id, "projectId": p.ID, "ownerDaemonId": identity.DaemonID, "checkoutId": card.CheckoutID, "scope": "board", "createdAt": card.CreatedAt})
 		fields["placement"] = rawValue(map[string]any{"boardId": board.ID, "lane": "todo", "orderKey": next, "position": 0, "phaseChangedAt": card.CreatedAt})
-		fields["summary"] = rawValue(map[string]any{"runtime": "idle", "commentCount": 0})
+		fields["summary"] = rawValue(map[string]any{"runtime": "idle"})
 		if err = applyFields(&data, identity, "item", id, nil, fields); err != nil {
 			t.Fatal(err)
 		}

@@ -85,7 +85,7 @@ class BoardMachineDesignTest {
                 .setTitle("Make the board easier to scan").setSummary("Compact cards, clear destinations, less noise")
                 .setProvider("codex").setModel("gpt-5.6-sol").setLane("running")
                 .setWorkspaceMode("project").setWorkspaceBranch("main").addLabelIds("label")
-                .setUpdatedAt("2026-09-21T08:00:00Z").setCommentCount(3)
+                .setUpdatedAt("2026-09-21T08:00:00Z")
                 .setTokenUsage(TokenUsage.newBuilder().setReportedMessages(2).setTotalTokens(18400)).build(),
             Card.newBuilder().setId("two").setBoardId("board").setOwnerDaemonId("mac")
                 .setTitle("Polish machine selection").setProvider("codex").setModel("gpt-5.6-sol")

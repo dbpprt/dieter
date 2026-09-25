@@ -947,10 +947,10 @@ func (api *grpcAPI) watchConversation(ctx context.Context, request *dieterv1.Wat
 			return nil
 		}
 		if previousSnapshot != nil && nextRevision.transcript == revision.transcript && !pending {
-			// The metadata cursor is shared by the workspace. A comment or
+			// The metadata cursor is shared by the workspace. A title or
 			// status change on another card must not clone and re-encode this
 			// conversation's tool-heavy history. Still read all selected-card
-			// detail so project, board, workspace and comment changes propagate.
+			// detail so project, board, workspace and read-state changes propagate.
 			detail, err := api.server.store.CardDetail(request.GetCardId())
 			if err != nil {
 				return err
@@ -972,7 +972,7 @@ func (api *grpcAPI) watchConversation(ctx context.Context, request *dieterv1.Wat
 			// A resumed stream must acknowledge freshness even while the
 			// transcript is idle. Otherwise reconnecting clients cannot tell a
 			// healthy quiet stream from a stalled refresh. Include metadata:
-			// comments can change without advancing the transcript sequence.
+			// read receipts can change without advancing the transcript sequence.
 			update := conversationDelta(snapshot, snapshot)
 			update.Detail = snapshot.GetDetail()
 			if err := send(update); err != nil {
@@ -1139,18 +1139,6 @@ func (api *grpcAPI) RemoveQueuedMessage(_ context.Context, request *dieterv1.Rem
 		return nil, grpcFailure(err)
 	}
 	return protoQueuedMessage(removed), nil
-}
-
-func (api *grpcAPI) AddComment(_ context.Context, request *dieterv1.AddCommentRequest) (*dieterv1.Comment, error) {
-	card, err := api.server.store.ResolveCard(request.GetCardId())
-	if err != nil {
-		return nil, grpcFailure(err)
-	}
-	value, err := api.server.store.AddComment(card.ID, request.GetMessage(), model.Author{Kind: "human", Name: request.GetName()})
-	if err != nil {
-		return nil, grpcFailure(err)
-	}
-	return protoComment(value), nil
 }
 
 func (api *grpcAPI) MoveCard(_ context.Context, request *dieterv1.MoveCardRequest) (*dieterv1.Card, error) {
@@ -1757,4 +1745,12 @@ func (api *grpcAPI) UpdateBoardHostnames(_ context.Context, request *dieterv1.Up
 		return nil, grpcFailure(err)
 	}
 	return protoBoard(value), nil
+}
+
+func (api *grpcAPI) MarkConversationRead(_ context.Context, request *dieterv1.MarkConversationReadRequest) (*dieterv1.Card, error) {
+	card, err := api.server.store.MarkConversationRead(request.GetCardId(), request.GetResponseSeq())
+	if err != nil {
+		return nil, grpcFailure(err)
+	}
+	return protoCard(card), nil
 }

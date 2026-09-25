@@ -5,6 +5,12 @@ import Testing
 @testable import DieterMac
 
 private actor ConversationReadFixture: ConversationRPC {
+    func markConversationRead(cardID: String, responseSeq: Int64) async throws -> Dieter_V1_Card {
+        var card = Dieter_V1_Card()
+        card.id = cardID; card.responseSeq = responseSeq; card.seenResponseSeq = responseSeq
+        return card
+    }
+
     var requests: [String] = []
     var pending: [Int: CheckedContinuation<Dieter_V1_ConversationSnapshot, Never>] = [:]
     var count: Int { requests.count }
@@ -53,6 +59,12 @@ private actor ConversationReadFixture: ConversationRPC {
 }
 
 private actor EarlierHistoryFixture: ConversationRPC {
+    func markConversationRead(cardID: String, responseSeq: Int64) async throws -> Dieter_V1_Card {
+        var card = Dieter_V1_Card()
+        card.id = cardID; card.responseSeq = responseSeq; card.seenResponseSeq = responseSeq
+        return card
+    }
+
     func conversation(cardID: String, limit: Int32, before: Int32?) async throws -> Dieter_V1_ConversationSnapshot {
         var snapshot = Dieter_V1_ConversationSnapshot()
         var oldest = Dieter_V1_UiMessage(); oldest.id = "oldest"
@@ -70,6 +82,12 @@ private actor EarlierHistoryFixture: ConversationRPC {
 }
 
 private actor ConversationRecoveryFixture: ConversationRPC {
+    func markConversationRead(cardID: String, responseSeq: Int64) async throws -> Dieter_V1_Card {
+        var card = Dieter_V1_Card()
+        card.id = cardID; card.responseSeq = responseSeq; card.seenResponseSeq = responseSeq
+        return card
+    }
+
     enum WatchBehavior: Sendable {
         case stayOpen
         case remoteCancellation

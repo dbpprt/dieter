@@ -79,17 +79,18 @@ host telemetry without losing your board.
 
 **Activity** is the Android starting point. It brings task and chat activity
 together so you can find recent work without first choosing a board. The bottom
-navigation keeps **Boards**, **Chats**, and **Tools** nearby.
+navigation keeps **Boards**, **Chats**, and **Tools** nearby. Completed replies
+that you have not viewed appear in **Needs attention**. Opening the latest
+reply clears that state across clients; questions waiting for your answer
+continue to need attention.
 
 {{< screenshot src="android-activity.png" kind="phone" width="1080" height="2424" alt="Android Activity feed showing sample onboarding tasks with runtime and machine information" caption="Activity brings recent work into one native feed." >}}
 
 A standalone chat stays separate from the board. A task conversation also exposes
-its **Changes**, **Comments**, and **Subagents**. Messages sent during an active
+its **Changes** and **Subagents**. Messages sent during an active
 turn join its queue; closing the app leaves the host working.
 
 {{< screenshot src="android-chat.png" kind="phone" width="1080" height="2424" alt="Android standalone conversation with an onboarding request and a starting mock agent" caption="A standalone chat, captured as the fixture starts its mock agent." >}}
-
-{{< screenshot src="android-task.png" kind="phone" width="1080" height="2424" alt="Android task conversation with its Running lane, review request, and Changes, Comments, and Subagents tabs" caption="A board task keeps its conversation and review context together." >}}
 
 ## Know where the work runs
 

@@ -159,13 +159,15 @@ package enum MachineDirectoryReducer {
         result.pinned = incoming.pinned
         result.doneArchiveExempt = incoming.doneArchiveExempt
         result.runtime = incoming.runtime
+        result.responseSeq = incoming.responseSeq
+        result.responseMessageID = incoming.responseMessageID
+        result.seenResponseSeq = incoming.seenResponseSeq
         result.runtimeUpdatedAt = incoming.runtimeUpdatedAt
         result.lastActivityAt = incoming.lastActivityAt
         result.provider = incoming.provider
         result.model = incoming.model
         result.effort = incoming.effort
         result.initialPromptSentAt = incoming.initialPromptSentAt
-        result.commentCount = incoming.commentCount
         result.mergedIntoCardID = incoming.mergedIntoCardID
         result.placementRevision = incoming.placementRevision
         result.conflictKeys = incoming.conflictKeys

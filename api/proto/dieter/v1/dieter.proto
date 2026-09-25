@@ -89,7 +89,7 @@ service DieterService {
   // the full message so clients can either discard it or restore it to an
   // editor without losing attachments.
   rpc RemoveQueuedMessage(RemoveQueuedMessageRequest) returns (QueuedMessage);
-  rpc AddComment(AddCommentRequest) returns (Comment);
+  rpc MarkConversationRead(MarkConversationReadRequest) returns (Card);
   rpc MoveCard(MoveCardRequest) returns (Card);
   rpc MergeCard(MergeCardRequest) returns (Card);
   // StartCard is an idempotent admission command. It durably admits the
@@ -558,7 +558,10 @@ message Card {
   string created_at = 21;
   string updated_at = 22;
   repeated string label_ids = 23;
-  int32 comment_count = 24;
+  reserved 24;
+  int64 response_seq = 43;
+  string response_message_id = 44;
+  int64 seen_response_seq = 45;
   CardOrigin origin = 25;
   repeated Subagent active_subagents = 26;
   map<string, string> provider_options = 27;
@@ -588,15 +591,7 @@ message CardDetail {
   Card card = 1;
   Project project = 2;
   Board board = 3;
-  repeated Comment comments = 4;
-}
-
-message Comment {
-  string id = 1;
-  string card_id = 2;
-  Author author = 3;
-  string body = 4;
-  string created_at = 5;
+  reserved 4;
 }
 
 message Author {
@@ -1135,12 +1130,6 @@ message SendMessageResponse {
   bool sent = 1;
   bool queued = 2;
   string message_id = 3;
-}
-
-message AddCommentRequest {
-  string card_id = 1;
-  string message = 2;
-  string name = 3;
 }
 
 message MoveCardRequest {
@@ -2483,4 +2472,9 @@ message KVWatchRequest {
 message KVFrame {
   string account = 1; string daemon_id = 2; KVCursor cursor = 3;
   repeated KVEntry entries = 4; bool reset = 5; bool caught_up = 6;
+}
+
+message MarkConversationReadRequest {
+  string card_id = 1;
+  int64 response_seq = 2;
 }

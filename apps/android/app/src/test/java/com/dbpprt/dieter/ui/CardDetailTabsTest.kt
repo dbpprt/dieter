@@ -5,18 +5,18 @@ import org.junit.Test
 
 class CardDetailTabsTest {
     @Test
-    fun boardCardsShowSubagentsAfterCommentsLikeMac() {
+    fun boardCardsShowConversationChangesAndSubagents() {
         assertEquals(
-            listOf("Conversation", "Changes", "Comments", "Subagents"),
-            detailSectionsFor(standalone = false).map(DetailSection::label),
+            listOf("Conversation", "Changes", "Subagents"),
+            detailSectionsFor().map(DetailSection::label),
         )
     }
 
     @Test
     fun standaloneChatsKeepSubagentsNextToConversation() {
         assertEquals(
-            listOf("Conversation", "Changes", "Subagents", "Comments"),
-            detailSectionsFor(standalone = true).map(DetailSection::label),
+            listOf("Conversation", "Changes", "Subagents"),
+            detailSectionsFor().map(DetailSection::label),
         )
     }
 }

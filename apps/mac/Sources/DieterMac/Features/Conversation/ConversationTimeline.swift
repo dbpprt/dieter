@@ -60,6 +60,7 @@ struct ConversationTimelineRow: View {
 }
 
 struct ConversationTimeline: View {
+    @Environment(\.scenePhase) private var scenePhase
     @Environment(ConversationContext.self) private var context
     // The native sidebar supplies its own adaptive glass behind the transcript.
     var background: Color = DieterTheme.background
@@ -85,6 +86,30 @@ struct ConversationTimeline: View {
     @State private var latestMessageLimit = ConversationRenderWindow.initialMessages
     @State private var scroller = ConversationScrollController()
     @State private var jumpToLatestHovered = false
+
+    private struct ResponseReadKey: Hashable {
+        let cardID: String
+        let responseSeq: Int64
+        let seenSeq: Int64
+        let visible: Bool
+    }
+
+    private var responseReadKey: ResponseReadKey {
+        let card = context.conversation?.detail.card
+        let loaded = (context.conversation?.conversation.lastSeq ?? 0) >= (card?.responseSeq ?? 0)
+        return ResponseReadKey(
+            cardID: card?.id ?? "", responseSeq: card?.responseSeq ?? 0,
+            seenSeq: card?.seenResponseSeq ?? 0,
+            visible: loaded && scenePhase == .active && timelineReadyForDisplay
+                && viewportObservation.isAtLatest && viewportObservation.initialPositionComplete)
+    }
+
+    private func acknowledgeVisibleResponse() async {
+        guard responseReadKey.visible else { return }
+        // A transient mount during navigation is not a viewed reply.
+        do { try await Task.sleep(for: .milliseconds(200)) } catch { return }
+        await context.model.markResponseSeen()
+    }
 
     private var messages: [Dieter_V1_UiMessage] { context.conversationMessages }
     private var liveMessages: [Dieter_V1_UiMessage] { context.liveActivityMessages }
@@ -303,6 +328,7 @@ struct ConversationTimeline: View {
                 .onDisappear { updateJumpToLatestCursor(false) }
             }
         }
+        .task(id: responseReadKey) { await acknowledgeVisibleResponse() }
         .onChange(of: showsJumpToLatest) { _, visible in
             #if DIETER_UI_SMOKE
                 ConversationUISmokeRunner.recordJumpToLatestVisibility(visible, conversationID: conversationID)

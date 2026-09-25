@@ -45,7 +45,7 @@ func (s *Store) syncHighwaterPath() string { return filepath.Join(s.syncDir(), "
 func (s *Store) syncMetadataPath() string  { return filepath.Join(s.syncDir(), "metadata-highwater") }
 
 // MetadataCursor excludes token-only invalidations. A selected transcript has
-// its own file revision; unrelated text must not rebuild its card/comments.
+// its own file revision; unrelated text must not rebuild its card metadata.
 func (s *Store) MetadataCursor() (SyncCursor, error) {
 	epoch, err := os.ReadFile(s.syncEpochPath())
 	if errors.Is(err, os.ErrNotExist) {

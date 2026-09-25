@@ -15,6 +15,12 @@ private func automaticHistoryMessage(_ index: Int) -> Dieter_V1_UiMessage {
 }
 
 private actor AutomaticHistoryRPC: ConversationRPC {
+    func markConversationRead(cardID: String, responseSeq: Int64) async throws -> Dieter_V1_Card {
+        var card = Dieter_V1_Card()
+        card.id = cardID; card.responseSeq = responseSeq; card.seenResponseSeq = responseSeq
+        return card
+    }
+
     var requests: [Int32] = []
     var total = 3_030
 
@@ -73,6 +79,12 @@ private actor AutomaticHistoryRPC: ConversationRPC {
 }
 
 private actor SuspendedAutomaticHistoryRPC: ConversationRPC {
+    func markConversationRead(cardID: String, responseSeq: Int64) async throws -> Dieter_V1_Card {
+        var card = Dieter_V1_Card()
+        card.id = cardID; card.responseSeq = responseSeq; card.seenResponseSeq = responseSeq
+        return card
+    }
+
     var pending: CheckedContinuation<Dieter_V1_ConversationSnapshot, Never>?
     var requested: Bool { pending != nil }
     func conversation(cardID: String, limit: Int32, before: Int32?) async throws -> Dieter_V1_ConversationSnapshot {

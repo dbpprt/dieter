@@ -827,16 +827,16 @@ public enum Dieter_V1_DieterService: Sendable {
                 type: .unary
             )
         }
-        /// Namespace for "AddComment" metadata.
-        public enum AddComment: Sendable {
-            /// Request type for "AddComment".
-            public typealias Input = Dieter_V1_AddCommentRequest
-            /// Response type for "AddComment".
-            public typealias Output = Dieter_V1_Comment
-            /// Descriptor for "AddComment".
+        /// Namespace for "MarkConversationRead" metadata.
+        public enum MarkConversationRead: Sendable {
+            /// Request type for "MarkConversationRead".
+            public typealias Input = Dieter_V1_MarkConversationReadRequest
+            /// Response type for "MarkConversationRead".
+            public typealias Output = Dieter_V1_Card
+            /// Descriptor for "MarkConversationRead".
             public static let descriptor = GRPCCore.MethodDescriptor(
                 service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.DieterService"),
-                method: "AddComment",
+                method: "MarkConversationRead",
                 type: .unary
             )
         }
@@ -1762,7 +1762,7 @@ public enum Dieter_V1_DieterService: Sendable {
             PresentConversationContent.descriptor,
             SendMessage.descriptor,
             RemoveQueuedMessage.descriptor,
-            AddComment.descriptor,
+            MarkConversationRead.descriptor,
             MoveCard.descriptor,
             MergeCard.descriptor,
             StartCard.descriptor,
@@ -3058,23 +3058,23 @@ extension Dieter_V1_DieterService {
             onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_QueuedMessage>) async throws -> Result
         ) async throws -> Result where Result: Sendable
 
-        /// Call the "AddComment" method.
+        /// Call the "MarkConversationRead" method.
         ///
         /// - Parameters:
-        ///   - request: A request containing a single `Dieter_V1_AddCommentRequest` message.
-        ///   - serializer: A serializer for `Dieter_V1_AddCommentRequest` messages.
-        ///   - deserializer: A deserializer for `Dieter_V1_Comment` messages.
+        ///   - request: A request containing a single `Dieter_V1_MarkConversationReadRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_MarkConversationReadRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_Card` messages.
         ///   - options: Options to apply to this RPC.
         ///   - handleResponse: A closure which handles the response, the result of which is
         ///       returned to the caller. Returning from the closure will cancel the RPC if it
         ///       hasn't already finished.
         /// - Returns: The result of `handleResponse`.
-        func addComment<Result>(
-            request: GRPCCore.ClientRequest<Dieter_V1_AddCommentRequest>,
-            serializer: some GRPCCore.MessageSerializer<Dieter_V1_AddCommentRequest>,
-            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_Comment>,
+        func markConversationRead<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_MarkConversationReadRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_MarkConversationReadRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_Card>,
             options: GRPCCore.CallOptions,
-            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_Comment>) async throws -> Result
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_Card>) async throws -> Result
         ) async throws -> Result where Result: Sendable
 
         /// Call the "MoveCard" method.
@@ -6265,29 +6265,29 @@ extension Dieter_V1_DieterService {
             )
         }
 
-        /// Call the "AddComment" method.
+        /// Call the "MarkConversationRead" method.
         ///
         /// - Parameters:
-        ///   - request: A request containing a single `Dieter_V1_AddCommentRequest` message.
-        ///   - serializer: A serializer for `Dieter_V1_AddCommentRequest` messages.
-        ///   - deserializer: A deserializer for `Dieter_V1_Comment` messages.
+        ///   - request: A request containing a single `Dieter_V1_MarkConversationReadRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_MarkConversationReadRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_Card` messages.
         ///   - options: Options to apply to this RPC.
         ///   - handleResponse: A closure which handles the response, the result of which is
         ///       returned to the caller. Returning from the closure will cancel the RPC if it
         ///       hasn't already finished.
         /// - Returns: The result of `handleResponse`.
-        public func addComment<Result>(
-            request: GRPCCore.ClientRequest<Dieter_V1_AddCommentRequest>,
-            serializer: some GRPCCore.MessageSerializer<Dieter_V1_AddCommentRequest>,
-            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_Comment>,
+        public func markConversationRead<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_MarkConversationReadRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_MarkConversationReadRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_Card>,
             options: GRPCCore.CallOptions = .defaults,
-            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_Comment>) async throws -> Result = { response in
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_Card>) async throws -> Result = { response in
                 try response.message
             }
         ) async throws -> Result where Result: Sendable {
             try await self.client.unary(
                 request: request,
-                descriptor: Dieter_V1_DieterService.Method.AddComment.descriptor,
+                descriptor: Dieter_V1_DieterService.Method.MarkConversationRead.descriptor,
                 serializer: serializer,
                 deserializer: deserializer,
                 options: options,
@@ -9879,26 +9879,26 @@ extension Dieter_V1_DieterService.ClientProtocol {
         )
     }
 
-    /// Call the "AddComment" method.
+    /// Call the "MarkConversationRead" method.
     ///
     /// - Parameters:
-    ///   - request: A request containing a single `Dieter_V1_AddCommentRequest` message.
+    ///   - request: A request containing a single `Dieter_V1_MarkConversationReadRequest` message.
     ///   - options: Options to apply to this RPC.
     ///   - handleResponse: A closure which handles the response, the result of which is
     ///       returned to the caller. Returning from the closure will cancel the RPC if it
     ///       hasn't already finished.
     /// - Returns: The result of `handleResponse`.
-    public func addComment<Result>(
-        request: GRPCCore.ClientRequest<Dieter_V1_AddCommentRequest>,
+    public func markConversationRead<Result>(
+        request: GRPCCore.ClientRequest<Dieter_V1_MarkConversationReadRequest>,
         options: GRPCCore.CallOptions = .defaults,
-        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_Comment>) async throws -> Result = { response in
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_Card>) async throws -> Result = { response in
             try response.message
         }
     ) async throws -> Result where Result: Sendable {
-        try await self.addComment(
+        try await self.markConversationRead(
             request: request,
-            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_V1_AddCommentRequest>(),
-            deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_V1_Comment>(),
+            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_V1_MarkConversationReadRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_V1_Card>(),
             options: options,
             onResponse: handleResponse
         )
@@ -13405,7 +13405,7 @@ extension Dieter_V1_DieterService.ClientProtocol {
         )
     }
 
-    /// Call the "AddComment" method.
+    /// Call the "MarkConversationRead" method.
     ///
     /// - Parameters:
     ///   - message: request message to send.
@@ -13415,19 +13415,19 @@ extension Dieter_V1_DieterService.ClientProtocol {
     ///       returned to the caller. Returning from the closure will cancel the RPC if it
     ///       hasn't already finished.
     /// - Returns: The result of `handleResponse`.
-    public func addComment<Result>(
-        _ message: Dieter_V1_AddCommentRequest,
+    public func markConversationRead<Result>(
+        _ message: Dieter_V1_MarkConversationReadRequest,
         metadata: GRPCCore.Metadata = [:],
         options: GRPCCore.CallOptions = .defaults,
-        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_Comment>) async throws -> Result = { response in
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_Card>) async throws -> Result = { response in
             try response.message
         }
     ) async throws -> Result where Result: Sendable {
-        let request = GRPCCore.ClientRequest<Dieter_V1_AddCommentRequest>(
+        let request = GRPCCore.ClientRequest<Dieter_V1_MarkConversationReadRequest>(
             message: message,
             metadata: metadata
         )
-        return try await self.addComment(
+        return try await self.markConversationRead(
             request: request,
             options: options,
             onResponse: handleResponse

@@ -95,7 +95,7 @@ func ValidateDomain(r Record) error {
 				case "item/placement":
 					names = "boardId lane position orderKey phaseChangedAt"
 				case "item/summary":
-					names = "runtime runtimeUpdatedAt lastActivityAt provider model effort initialPromptSentAt commentCount mergedIntoCardId"
+					names = "runtime runtimeUpdatedAt lastActivityAt provider model effort initialPromptSentAt responseSeq responseMessageId seenResponseSeq mergedIntoCardId"
 				case "checkout/registration":
 					names = "id projectId daemonId name detached"
 				}
@@ -115,7 +115,7 @@ func ValidateDomain(r Record) error {
 						if json.Unmarshal(raw, &v) != nil {
 							return errors.New("detached must be boolean")
 						}
-					case "position", "commentCount":
+					case "position", "responseSeq", "seenResponseSeq":
 						var v int64
 						if json.Unmarshal(raw, &v) != nil || v < 0 {
 							return errors.New("invalid shared count")

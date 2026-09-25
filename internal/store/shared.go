@@ -490,7 +490,7 @@ func itemFields(card model.Card) map[string]json.RawMessage {
 		fields["identity"] = original
 	}
 	fields["placement"] = rawValue(map[string]any{"boardId": card.BoardID, "lane": card.Lane, "orderKey": card.OrderKey, "phaseChangedAt": card.PhaseChangedAt})
-	fields["summary"] = rawValue(map[string]any{"runtime": card.Runtime, "runtimeUpdatedAt": card.RuntimeUpdatedAt, "lastActivityAt": card.LastActivityAt, "provider": card.Provider, "model": card.Model, "effort": card.Effort, "initialPromptSentAt": card.InitialPromptSentAt, "commentCount": card.CommentCount, "mergedIntoCardId": card.MergedIntoCardID})
+	fields["summary"] = rawValue(map[string]any{"runtime": card.Runtime, "runtimeUpdatedAt": card.RuntimeUpdatedAt, "lastActivityAt": card.LastActivityAt, "provider": card.Provider, "model": card.Model, "effort": card.Effort, "initialPromptSentAt": card.InitialPromptSentAt, "responseSeq": card.ResponseSeq, "responseMessageId": card.ResponseMessageID, "seenResponseSeq": card.SeenResponseSeq, "mergedIntoCardId": card.MergedIntoCardID})
 	return fields
 }
 func (s *Store) publishCard(card model.Card, effects ...localEffect) error {

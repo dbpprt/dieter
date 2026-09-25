@@ -206,7 +206,7 @@ fun BoardScreen(
             leading = { paneModifier -> BoardList(state, model, paneModifier) },
         ) { paneModifier ->
             if (state.selectedCardId == null) {
-                EmptyDetail("Select a card", "Its conversation and comments will stay beside the board.", Icons.Outlined.ViewKanban, paneModifier)
+                EmptyDetail("Select a card", "Its conversation will stay beside the board.", Icons.Outlined.ViewKanban, paneModifier)
             } else {
                 CardDetailScreen(state, model, paneModifier, showBack = false)
             }

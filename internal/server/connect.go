@@ -228,10 +228,6 @@ func (api *connectAPI) RemoveQueuedMessage(ctx context.Context, request *connect
 	return connectUnary(ctx, request, api.core.RemoveQueuedMessage)
 }
 
-func (api *connectAPI) AddComment(ctx context.Context, request *connect.Request[dieterv1.AddCommentRequest]) (*connect.Response[dieterv1.Comment], error) {
-	return connectUnary(ctx, request, api.core.AddComment)
-}
-
 func (api *connectAPI) MoveCard(ctx context.Context, request *connect.Request[dieterv1.MoveCardRequest]) (*connect.Response[dieterv1.Card], error) {
 	return connectUnary(ctx, request, api.core.MoveCard)
 }
@@ -396,4 +392,8 @@ func connectCode(code codes.Code) connect.Code {
 
 func (api *connectAPI) UpdateBoardHostnames(ctx context.Context, request *connect.Request[dieterv1.UpdateBoardHostnamesRequest]) (*connect.Response[dieterv1.Board], error) {
 	return connectUnary(ctx, request, api.core.UpdateBoardHostnames)
+}
+
+func (api *connectAPI) MarkConversationRead(ctx context.Context, request *connect.Request[dieterv1.MarkConversationReadRequest]) (*connect.Response[dieterv1.Card], error) {
+	return connectUnary(ctx, request, api.core.MarkConversationRead)
 }

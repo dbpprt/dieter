@@ -1702,9 +1702,19 @@ public nonisolated struct Dieter_V1_Card: @unchecked Sendable {
     set {_uniqueStorage()._labelIds = newValue}
   }
 
-  public var commentCount: Int32 {
-    get {_storage._commentCount}
-    set {_uniqueStorage()._commentCount = newValue}
+  public var responseSeq: Int64 {
+    get {_storage._responseSeq}
+    set {_uniqueStorage()._responseSeq = newValue}
+  }
+
+  public var responseMessageID: String {
+    get {_storage._responseMessageID}
+    set {_uniqueStorage()._responseMessageID = newValue}
+  }
+
+  public var seenResponseSeq: Int64 {
+    get {_storage._seenResponseSeq}
+    set {_uniqueStorage()._seenResponseSeq = newValue}
   }
 
   public var origin: Dieter_V1_CardOrigin {
@@ -1848,45 +1858,11 @@ public nonisolated struct Dieter_V1_CardDetail: @unchecked Sendable {
   /// Clears the value of `board`. Subsequent reads from it will return its default value.
   public mutating func clearBoard() {_uniqueStorage()._board = nil}
 
-  public var comments: [Dieter_V1_Comment] {
-    get {_storage._comments}
-    set {_uniqueStorage()._comments = newValue}
-  }
-
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
 
   fileprivate var _storage = _StorageClass.defaultInstance
-}
-
-public nonisolated struct Dieter_V1_Comment: Sendable {
-  // SwiftProtobuf.Message conformance is added in an extension below. See the
-  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
-  // methods supported on all messages.
-
-  public var id: String = String()
-
-  public var cardID: String = String()
-
-  public var author: Dieter_V1_Author {
-    get {_author ?? Dieter_V1_Author()}
-    set {_author = newValue}
-  }
-  /// Returns true if `author` has been explicitly set.
-  public var hasAuthor: Bool {self._author != nil}
-  /// Clears the value of `author`. Subsequent reads from it will return its default value.
-  public mutating func clearAuthor() {self._author = nil}
-
-  public var body: String = String()
-
-  public var createdAt: String = String()
-
-  public var unknownFields = SwiftProtobuf.UnknownStorage()
-
-  public init() {}
-
-  fileprivate var _author: Dieter_V1_Author? = nil
 }
 
 public nonisolated struct Dieter_V1_Author: Sendable {
@@ -3602,22 +3578,6 @@ public nonisolated struct Dieter_V1_SendMessageResponse: Sendable {
   public var queued: Bool = false
 
   public var messageID: String = String()
-
-  public var unknownFields = SwiftProtobuf.UnknownStorage()
-
-  public init() {}
-}
-
-public nonisolated struct Dieter_V1_AddCommentRequest: Sendable {
-  // SwiftProtobuf.Message conformance is added in an extension below. See the
-  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
-  // methods supported on all messages.
-
-  public var cardID: String = String()
-
-  public var message: String = String()
-
-  public var name: String = String()
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -8100,6 +8060,20 @@ public nonisolated struct Dieter_V1_KVFrame: Sendable {
   fileprivate var _cursor: Dieter_V1_KVCursor? = nil
 }
 
+public nonisolated struct Dieter_V1_MarkConversationReadRequest: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var cardID: String = String()
+
+  public var responseSeq: Int64 = 0
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
 // MARK: - Code below here is support for the SwiftProtobuf runtime.
 
 fileprivate nonisolated let _protobuf_package = "dieter.v1"
@@ -10254,7 +10228,7 @@ nonisolated extension Dieter_V1_TokenUsage: SwiftProtobuf.Message, SwiftProtobuf
 
 nonisolated extension Dieter_V1_Card: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".Card"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{1}scope\0\u{3}project_id\0\u{3}board_id\0\u{1}lane\0\u{1}position\0\u{1}title\0\u{3}initial_prompt\0\u{3}initial_prompt_sent_at\0\u{3}phase_changed_at\0\u{1}provider\0\u{1}model\0\u{1}effort\0\u{1}runtime\0\u{1}summary\0\u{3}runtime_updated_at\0\u{3}last_activity_at\0\u{1}archived\0\u{3}done_archive_exempt\0\u{1}pinned\0\u{3}created_at\0\u{3}updated_at\0\u{3}label_ids\0\u{3}comment_count\0\u{1}origin\0\u{3}active_subagents\0\u{3}provider_options\0\u{3}workspace_mode\0\u{3}workspace_branch\0\u{3}workspace_base_branch\0\u{1}workspace\0\u{3}pull_request\0\u{3}workspace_base_remote\0\u{3}remote_publish_mode\0\u{3}token_usage\0\u{3}merged_into_card_id\0\u{3}provider_account_key\0\u{3}owner_daemon_id\0\u{3}checkout_id\0\u{3}order_key\0\u{3}conflict_keys\0\u{3}placement_revision\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{1}scope\0\u{3}project_id\0\u{3}board_id\0\u{1}lane\0\u{1}position\0\u{1}title\0\u{3}initial_prompt\0\u{3}initial_prompt_sent_at\0\u{3}phase_changed_at\0\u{1}provider\0\u{1}model\0\u{1}effort\0\u{1}runtime\0\u{1}summary\0\u{3}runtime_updated_at\0\u{3}last_activity_at\0\u{1}archived\0\u{3}done_archive_exempt\0\u{1}pinned\0\u{3}created_at\0\u{3}updated_at\0\u{3}label_ids\0\u{2}\u{2}origin\0\u{3}active_subagents\0\u{3}provider_options\0\u{3}workspace_mode\0\u{3}workspace_branch\0\u{3}workspace_base_branch\0\u{1}workspace\0\u{3}pull_request\0\u{3}workspace_base_remote\0\u{3}remote_publish_mode\0\u{3}token_usage\0\u{3}merged_into_card_id\0\u{3}provider_account_key\0\u{3}owner_daemon_id\0\u{3}checkout_id\0\u{3}order_key\0\u{3}conflict_keys\0\u{3}placement_revision\0\u{3}response_seq\0\u{3}response_message_id\0\u{3}seen_response_seq\0\u{c}\u{18}\u{1}")
 
   fileprivate class _StorageClass {
     var _ownerDaemonID: String = String()
@@ -10285,7 +10259,9 @@ nonisolated extension Dieter_V1_Card: SwiftProtobuf.Message, SwiftProtobuf._Mess
     var _createdAt: String = String()
     var _updatedAt: String = String()
     var _labelIds: [String] = []
-    var _commentCount: Int32 = 0
+    var _responseSeq: Int64 = 0
+    var _responseMessageID: String = String()
+    var _seenResponseSeq: Int64 = 0
     var _origin: Dieter_V1_CardOrigin? = nil
     var _activeSubagents: [Dieter_V1_Subagent] = []
     var _providerOptions: Dictionary<String,String> = [:]
@@ -10337,7 +10313,9 @@ nonisolated extension Dieter_V1_Card: SwiftProtobuf.Message, SwiftProtobuf._Mess
       _createdAt = source._createdAt
       _updatedAt = source._updatedAt
       _labelIds = source._labelIds
-      _commentCount = source._commentCount
+      _responseSeq = source._responseSeq
+      _responseMessageID = source._responseMessageID
+      _seenResponseSeq = source._seenResponseSeq
       _origin = source._origin
       _activeSubagents = source._activeSubagents
       _providerOptions = source._providerOptions
@@ -10392,7 +10370,6 @@ nonisolated extension Dieter_V1_Card: SwiftProtobuf.Message, SwiftProtobuf._Mess
         case 21: try { try decoder.decodeSingularStringField(value: &_storage._createdAt) }()
         case 22: try { try decoder.decodeSingularStringField(value: &_storage._updatedAt) }()
         case 23: try { try decoder.decodeRepeatedStringField(value: &_storage._labelIds) }()
-        case 24: try { try decoder.decodeSingularInt32Field(value: &_storage._commentCount) }()
         case 25: try { try decoder.decodeSingularMessageField(value: &_storage._origin) }()
         case 26: try { try decoder.decodeRepeatedMessageField(value: &_storage._activeSubagents) }()
         case 27: try { try decoder.decodeMapField(fieldType: SwiftProtobuf._ProtobufMap<SwiftProtobuf.ProtobufString,SwiftProtobuf.ProtobufString>.self, value: &_storage._providerOptions) }()
@@ -10411,6 +10388,9 @@ nonisolated extension Dieter_V1_Card: SwiftProtobuf.Message, SwiftProtobuf._Mess
         case 40: try { try decoder.decodeSingularStringField(value: &_storage._orderKey) }()
         case 41: try { try decoder.decodeRepeatedStringField(value: &_storage._conflictKeys) }()
         case 42: try { try decoder.decodeSingularStringField(value: &_storage._placementRevision) }()
+        case 43: try { try decoder.decodeSingularInt64Field(value: &_storage._responseSeq) }()
+        case 44: try { try decoder.decodeSingularStringField(value: &_storage._responseMessageID) }()
+        case 45: try { try decoder.decodeSingularInt64Field(value: &_storage._seenResponseSeq) }()
         default: break
         }
       }
@@ -10492,9 +10472,6 @@ nonisolated extension Dieter_V1_Card: SwiftProtobuf.Message, SwiftProtobuf._Mess
       if !_storage._labelIds.isEmpty {
         try visitor.visitRepeatedStringField(value: _storage._labelIds, fieldNumber: 23)
       }
-      if _storage._commentCount != 0 {
-        try visitor.visitSingularInt32Field(value: _storage._commentCount, fieldNumber: 24)
-      }
       try { if let v = _storage._origin {
         try visitor.visitSingularMessageField(value: v, fieldNumber: 25)
       } }()
@@ -10549,6 +10526,15 @@ nonisolated extension Dieter_V1_Card: SwiftProtobuf.Message, SwiftProtobuf._Mess
       if !_storage._placementRevision.isEmpty {
         try visitor.visitSingularStringField(value: _storage._placementRevision, fieldNumber: 42)
       }
+      if _storage._responseSeq != 0 {
+        try visitor.visitSingularInt64Field(value: _storage._responseSeq, fieldNumber: 43)
+      }
+      if !_storage._responseMessageID.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._responseMessageID, fieldNumber: 44)
+      }
+      if _storage._seenResponseSeq != 0 {
+        try visitor.visitSingularInt64Field(value: _storage._seenResponseSeq, fieldNumber: 45)
+      }
     }
     try unknownFields.traverse(visitor: &visitor)
   }
@@ -10586,7 +10572,9 @@ nonisolated extension Dieter_V1_Card: SwiftProtobuf.Message, SwiftProtobuf._Mess
         if _storage._createdAt != rhs_storage._createdAt {return false}
         if _storage._updatedAt != rhs_storage._updatedAt {return false}
         if _storage._labelIds != rhs_storage._labelIds {return false}
-        if _storage._commentCount != rhs_storage._commentCount {return false}
+        if _storage._responseSeq != rhs_storage._responseSeq {return false}
+        if _storage._responseMessageID != rhs_storage._responseMessageID {return false}
+        if _storage._seenResponseSeq != rhs_storage._seenResponseSeq {return false}
         if _storage._origin != rhs_storage._origin {return false}
         if _storage._activeSubagents != rhs_storage._activeSubagents {return false}
         if _storage._providerOptions != rhs_storage._providerOptions {return false}
@@ -10656,13 +10644,12 @@ nonisolated extension Dieter_V1_CardOrigin: SwiftProtobuf.Message, SwiftProtobuf
 
 nonisolated extension Dieter_V1_CardDetail: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".CardDetail"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}card\0\u{1}project\0\u{1}board\0\u{1}comments\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}card\0\u{1}project\0\u{1}board\0\u{c}\u{4}\u{1}")
 
   fileprivate class _StorageClass {
     var _card: Dieter_V1_Card? = nil
     var _project: Dieter_V1_Project? = nil
     var _board: Dieter_V1_Board? = nil
-    var _comments: [Dieter_V1_Comment] = []
 
       // This property is used as the initial default value for new instances of the type.
       // The type itself is protecting the reference to its storage via CoW semantics.
@@ -10676,7 +10663,6 @@ nonisolated extension Dieter_V1_CardDetail: SwiftProtobuf.Message, SwiftProtobuf
       _card = source._card
       _project = source._project
       _board = source._board
-      _comments = source._comments
     }
   }
 
@@ -10698,7 +10684,6 @@ nonisolated extension Dieter_V1_CardDetail: SwiftProtobuf.Message, SwiftProtobuf
         case 1: try { try decoder.decodeSingularMessageField(value: &_storage._card) }()
         case 2: try { try decoder.decodeSingularMessageField(value: &_storage._project) }()
         case 3: try { try decoder.decodeSingularMessageField(value: &_storage._board) }()
-        case 4: try { try decoder.decodeRepeatedMessageField(value: &_storage._comments) }()
         default: break
         }
       }
@@ -10720,9 +10705,6 @@ nonisolated extension Dieter_V1_CardDetail: SwiftProtobuf.Message, SwiftProtobuf
       try { if let v = _storage._board {
         try visitor.visitSingularMessageField(value: v, fieldNumber: 3)
       } }()
-      if !_storage._comments.isEmpty {
-        try visitor.visitRepeatedMessageField(value: _storage._comments, fieldNumber: 4)
-      }
     }
     try unknownFields.traverse(visitor: &visitor)
   }
@@ -10735,65 +10717,10 @@ nonisolated extension Dieter_V1_CardDetail: SwiftProtobuf.Message, SwiftProtobuf
         if _storage._card != rhs_storage._card {return false}
         if _storage._project != rhs_storage._project {return false}
         if _storage._board != rhs_storage._board {return false}
-        if _storage._comments != rhs_storage._comments {return false}
         return true
       }
       if !storagesAreEqual {return false}
     }
-    if lhs.unknownFields != rhs.unknownFields {return false}
-    return true
-  }
-}
-
-nonisolated extension Dieter_V1_Comment: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
-  public static let protoMessageName: String = _protobuf_package + ".Comment"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{3}card_id\0\u{1}author\0\u{1}body\0\u{3}created_at\0")
-
-  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
-    while let fieldNumber = try decoder.nextFieldNumber() {
-      // The use of inline closures is to circumvent an issue where the compiler
-      // allocates stack space for every case branch when no optimizations are
-      // enabled. https://github.com/apple/swift-protobuf/issues/1034
-      switch fieldNumber {
-      case 1: try { try decoder.decodeSingularStringField(value: &self.id) }()
-      case 2: try { try decoder.decodeSingularStringField(value: &self.cardID) }()
-      case 3: try { try decoder.decodeSingularMessageField(value: &self._author) }()
-      case 4: try { try decoder.decodeSingularStringField(value: &self.body) }()
-      case 5: try { try decoder.decodeSingularStringField(value: &self.createdAt) }()
-      default: break
-      }
-    }
-  }
-
-  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
-    // The use of inline closures is to circumvent an issue where the compiler
-    // allocates stack space for every if/case branch local when no optimizations
-    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
-    // https://github.com/apple/swift-protobuf/issues/1182
-    if !self.id.isEmpty {
-      try visitor.visitSingularStringField(value: self.id, fieldNumber: 1)
-    }
-    if !self.cardID.isEmpty {
-      try visitor.visitSingularStringField(value: self.cardID, fieldNumber: 2)
-    }
-    try { if let v = self._author {
-      try visitor.visitSingularMessageField(value: v, fieldNumber: 3)
-    } }()
-    if !self.body.isEmpty {
-      try visitor.visitSingularStringField(value: self.body, fieldNumber: 4)
-    }
-    if !self.createdAt.isEmpty {
-      try visitor.visitSingularStringField(value: self.createdAt, fieldNumber: 5)
-    }
-    try unknownFields.traverse(visitor: &visitor)
-  }
-
-  public static func ==(lhs: Dieter_V1_Comment, rhs: Dieter_V1_Comment) -> Bool {
-    if lhs.id != rhs.id {return false}
-    if lhs.cardID != rhs.cardID {return false}
-    if lhs._author != rhs._author {return false}
-    if lhs.body != rhs.body {return false}
-    if lhs.createdAt != rhs.createdAt {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -14392,46 +14319,6 @@ nonisolated extension Dieter_V1_SendMessageResponse: SwiftProtobuf.Message, Swif
     if lhs.sent != rhs.sent {return false}
     if lhs.queued != rhs.queued {return false}
     if lhs.messageID != rhs.messageID {return false}
-    if lhs.unknownFields != rhs.unknownFields {return false}
-    return true
-  }
-}
-
-nonisolated extension Dieter_V1_AddCommentRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
-  public static let protoMessageName: String = _protobuf_package + ".AddCommentRequest"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}card_id\0\u{1}message\0\u{1}name\0")
-
-  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
-    while let fieldNumber = try decoder.nextFieldNumber() {
-      // The use of inline closures is to circumvent an issue where the compiler
-      // allocates stack space for every case branch when no optimizations are
-      // enabled. https://github.com/apple/swift-protobuf/issues/1034
-      switch fieldNumber {
-      case 1: try { try decoder.decodeSingularStringField(value: &self.cardID) }()
-      case 2: try { try decoder.decodeSingularStringField(value: &self.message) }()
-      case 3: try { try decoder.decodeSingularStringField(value: &self.name) }()
-      default: break
-      }
-    }
-  }
-
-  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
-    if !self.cardID.isEmpty {
-      try visitor.visitSingularStringField(value: self.cardID, fieldNumber: 1)
-    }
-    if !self.message.isEmpty {
-      try visitor.visitSingularStringField(value: self.message, fieldNumber: 2)
-    }
-    if !self.name.isEmpty {
-      try visitor.visitSingularStringField(value: self.name, fieldNumber: 3)
-    }
-    try unknownFields.traverse(visitor: &visitor)
-  }
-
-  public static func ==(lhs: Dieter_V1_AddCommentRequest, rhs: Dieter_V1_AddCommentRequest) -> Bool {
-    if lhs.cardID != rhs.cardID {return false}
-    if lhs.message != rhs.message {return false}
-    if lhs.name != rhs.name {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -23527,6 +23414,41 @@ nonisolated extension Dieter_V1_KVFrame: SwiftProtobuf.Message, SwiftProtobuf._M
     if lhs.entries != rhs.entries {return false}
     if lhs.reset != rhs.reset {return false}
     if lhs.caughtUp != rhs.caughtUp {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Dieter_V1_MarkConversationReadRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".MarkConversationReadRequest"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}card_id\0\u{3}response_seq\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.cardID) }()
+      case 2: try { try decoder.decodeSingularInt64Field(value: &self.responseSeq) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.cardID.isEmpty {
+      try visitor.visitSingularStringField(value: self.cardID, fieldNumber: 1)
+    }
+    if self.responseSeq != 0 {
+      try visitor.visitSingularInt64Field(value: self.responseSeq, fieldNumber: 2)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Dieter_V1_MarkConversationReadRequest, rhs: Dieter_V1_MarkConversationReadRequest) -> Bool {
+    if lhs.cardID != rhs.cardID {return false}
+    if lhs.responseSeq != rhs.responseSeq {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

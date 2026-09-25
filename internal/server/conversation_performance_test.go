@@ -198,7 +198,7 @@ func TestResumedConversationAcknowledgesFreshMetadataWithoutResendingMessages(t 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := api.server.store.AddComment(card.ID, "Updated while disconnected", model.Author{Kind: "human"}); err != nil {
+	if _, err := api.server.store.RenameCard(card.ID, "Updated metadata"); err != nil {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
@@ -209,7 +209,7 @@ func TestResumedConversationAcknowledgesFreshMetadataWithoutResendingMessages(t 
 		if update.Snapshot != nil || len(update.ChangedMessages) != 0 || len(update.RemovedMessageIds) != 0 {
 			t.Fatal("resumed acknowledgement retransmitted unchanged transcript")
 		}
-		if update.LastSeq != initial.Conversation.LastSeq || update.Status != initial.Conversation.Status || len(update.GetDetail().GetComments()) != 1 || !proto.Equal(update.Page, initial.Page) {
+		if update.LastSeq != initial.Conversation.LastSeq || update.Status != initial.Conversation.Status || update.GetDetail().GetCard().GetTitle() != "Updated metadata" || !proto.Equal(update.Page, initial.Page) {
 			t.Fatalf("incomplete freshness acknowledgement: %v", update)
 		}
 		cancel()
@@ -231,11 +231,11 @@ func TestConversationWatchRefreshesMetadataAndCrossProcessTranscript(t *testing.
 		frames++
 		switch frames {
 		case 1:
-			_, err := other.AddComment(card.ID, "Metadata changes without transcript sequence", model.Author{Kind: "human"})
+			_, err := other.RenameCard(card.ID, "Updated metadata")
 			return err
 		case 2:
-			if len(update.GetDetail().GetComments()) != 1 {
-				t.Fatal("comment-only update was skipped")
+			if update.GetDetail().GetCard().GetTitle() != "Updated metadata" {
+				t.Fatal("metadata-only update was skipped")
 			}
 			_, err := other.StartConversationTurn(card.ID, "turn", "new-message", "A new message")
 			return err
@@ -272,8 +272,8 @@ func TestConversationWatchSkipsTranscriptBuildForOtherCardMetadata(t *testing.T)
 			if frames == 1 {
 				close(ready)
 			} else {
-				if len(update.GetDetail().GetComments()) != 1 {
-					return fmt.Errorf("selected comment was lost")
+				if update.GetDetail().GetCard().GetTitle() != "Updated metadata" {
+					return fmt.Errorf("selected metadata was lost")
 				}
 				cancel()
 			}
@@ -286,7 +286,7 @@ func TestConversationWatchSkipsTranscriptBuildForOtherCardMetadata(t *testing.T)
 		t.Fatal("watch did not start")
 	}
 	for range 2 {
-		if _, err := other.AddComment(unrelated.ID, "Unrelated metadata", model.Author{Kind: "human"}); err != nil {
+		if _, err := other.RenameCard(unrelated.ID, "Updated metadata"); err != nil {
 			cancel()
 			<-done
 			t.Fatal(err)
@@ -294,7 +294,7 @@ func TestConversationWatchSkipsTranscriptBuildForOtherCardMetadata(t *testing.T)
 		// Give the real notification/debounce path a separate delivery window.
 		time.Sleep(350 * time.Millisecond)
 	}
-	if _, err := other.AddComment(card.ID, "Selected metadata", model.Author{Kind: "human"}); err != nil {
+	if _, err := other.RenameCard(card.ID, "Updated metadata"); err != nil {
 		cancel()
 		<-done
 		t.Fatal(err)
@@ -333,7 +333,7 @@ func TestConversationWatchRevisionIgnoresUnrelatedTokens(t *testing.T) {
 	if err != nil || pending || after != before {
 		t.Fatalf("unrelated tokens invalidated selected transcript: %+v %+v %v", before, after, err)
 	}
-	if _, err := api.server.store.AddComment(card.ID, "comment", model.Author{Kind: "human"}); err != nil {
+	if _, err := api.server.store.RenameCard(card.ID, "Updated metadata"); err != nil {
 		t.Fatal(err)
 	}
 	after, _, err = api.conversationWatchRevision(card.ID)
@@ -351,12 +351,12 @@ func TestConversationCommitDeliveryDoesNotWaitForRecoveryPoll(t *testing.T) {
 	err := api.watchConversation(ctx, &dieterv1.WatchConversationRequest{CardId: card.ID}, func(update *dieterv1.ConversationUpdate) error {
 		frames++
 		if frames == 1 {
-			_, err := api.server.store.AddComment(card.ID, "wake", model.Author{Kind: "human"})
+			_, err := api.server.store.RenameCard(card.ID, "Updated metadata")
 			committed = time.Now()
 			return err
 		}
 		t.Logf("commit-to-frame=%s", time.Since(committed))
-		if len(update.GetDetail().GetComments()) != 1 {
+		if update.GetDetail().GetCard().GetTitle() != "Updated metadata" {
 			t.Fatal("commit notification delivered stale metadata")
 		}
 		cancel()

@@ -808,7 +808,7 @@ func TestCreateRunningCardStartsHarnessWithBoardInstructions(t *testing.T) {
 		return fake.count() == 1 && stored.Runtime == "idle" && len(conversation.Session) > 0 && !hasActiveTurn(service, project.ID)
 	})
 	request := fake.request(0)
-	if !strings.HasPrefix(card.ID, "c_") || request.Prompt != "Ship it" || request.ResponseMessageID == "" || !strings.Contains(request.Instructions, "Run tests.") || !strings.Contains(request.Instructions, "dieter card comment "+card.ID) {
+	if !strings.HasPrefix(card.ID, "c_") || request.Prompt != "Ship it" || request.ResponseMessageID == "" || !strings.Contains(request.Instructions, "Run tests.") || !strings.Contains(request.Instructions, "dieter card context "+card.ID) {
 		t.Fatalf("card=%#v request=%#v", card, request)
 	}
 }

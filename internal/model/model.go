@@ -190,7 +190,9 @@ type Card struct {
 	UpdatedAt           string                     `json:"updatedAt" yaml:"updated_at"`
 	LabelIDs            []string                   `json:"labelIds,omitempty" yaml:"labels,omitempty"`
 	Origin              *CardOrigin                `json:"origin,omitempty" yaml:"origin,omitempty"`
-	CommentCount        int                        `json:"commentCount" yaml:"-"`
+	ResponseSeq         int64                      `json:"responseSeq,omitempty" yaml:"response_seq,omitempty"`
+	ResponseMessageID   string                     `json:"responseMessageId,omitempty" yaml:"response_message_id,omitempty"`
+	SeenResponseSeq     int64                      `json:"seenResponseSeq,omitempty" yaml:"seen_response_seq,omitempty"`
 	WorkspaceMode       string                     `json:"workspaceMode,omitempty" yaml:"workspace_mode,omitempty"`
 	WorkspaceBranch     string                     `json:"workspaceBranch,omitempty" yaml:"workspace_branch,omitempty"`
 	WorkspaceBaseBranch string                     `json:"workspaceBaseBranch,omitempty" yaml:"workspace_base_branch,omitempty"`
@@ -688,19 +690,10 @@ type ConversationEvent struct {
 	CreatedAt string          `json:"createdAt"`
 }
 
-type Comment struct {
-	ID        string `json:"id" yaml:"id"`
-	CardID    string `json:"cardId" yaml:"card_id"`
-	Author    Author `json:"author" yaml:"author"`
-	Body      string `json:"body" yaml:"-"`
-	CreatedAt string `json:"createdAt" yaml:"created_at"`
-}
-
 type CardDetail struct {
-	Card     Card      `json:"card"`
-	Project  Project   `json:"project"`
-	Board    Board     `json:"board"`
-	Comments []Comment `json:"comments"`
+	Card    Card    `json:"card"`
+	Project Project `json:"project"`
+	Board   Board   `json:"board"`
 }
 
 type State struct {

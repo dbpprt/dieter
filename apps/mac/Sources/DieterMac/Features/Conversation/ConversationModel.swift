@@ -62,6 +62,28 @@ final class ConversationModel {
     @ObservationIgnored private var presentedContentIDs: Set<String> = []
     @ObservationIgnored private var presentedContentOrder: [String] = []
 
+    func markResponseSeen() async {
+        guard let rpc, let card = conversation?.detail.card,
+            card.id == (selectedCardID ?? selectedChatID),
+            card.responseSeq > card.seenResponseSeq,
+            (conversation?.conversation.lastSeq ?? 0) >= card.responseSeq,
+            conversation?.conversation.messages.contains(where: { $0.id == card.responseMessageID }) == true,
+            !browsingEarlierHistory
+        else { return }
+        do {
+            let updated = try await rpc.markConversationRead(cardID: card.id, responseSeq: card.responseSeq)
+            guard self.rpc === rpc, var snapshot = conversation,
+                snapshot.detail.card.id == card.id,
+                snapshot.detail.card.responseSeq == updated.responseSeq,
+                snapshot.detail.card.updatedAt <= updated.updatedAt
+            else { return }
+            snapshot.detail.card = updated
+            await acceptConversation(snapshot, chat: updated.scope == "chat")
+        } catch {
+            // Leave the reply unread; a later visible refresh can retry the receipt.
+        }
+    }
+
     func bind(client: (any ConversationRPC)?, endpointID: String) {
         guard rpc !== client || self.endpointID != endpointID else { return }
         conversationRead.cancel(); conversationTask?.cancel(); conversationTask = nil
@@ -99,7 +121,7 @@ final class ConversationModel {
                     initialSequence: 0, requireSnapshot: true)
                 // Give the already-open stream a chance before spending a second
                 // RPC on the same cold projection. A slow stream still gets a
-                // bounded unary hedge; cached sequence never hides fresh comments.
+                // bounded unary hedge; cached sequence never hides fresh metadata.
                 try await DieterTaskSleep.milliseconds(500)
                 guard !Task.isCancelled, self.rpc === rpc, selectionGeneration == conversationSelectionGeneration,
                     (selectedCardID ?? selectedChatID) == cardID

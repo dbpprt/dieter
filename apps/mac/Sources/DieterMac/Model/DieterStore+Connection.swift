@@ -1022,9 +1022,6 @@ extension DieterStore {
         refreshReplicaPresentation()
         rebuildOutboxOverlays()
         if current != next { updateSelectedState() }
-        if let selectedChatID, let selected = chats.first(where: { $0.id == selectedChatID }) {
-            markChatRead(selected)
-        }
         if persistenceChanged { await scheduleSyncPersistence() }
     }
 

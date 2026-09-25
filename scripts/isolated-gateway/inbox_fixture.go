@@ -78,6 +78,11 @@ func seedInboxFixture(ctx context.Context, data *boardstore.Store, project model
 		if _, err = data.InitializeForkConversation(card.ID, messages); err != nil {
 			return err
 		}
+		if fixture.lane == "review" {
+			if _, _, err = data.AppendConversationEvent(card.ID, "ui-chunk", "fixture", messages[1].ID, map[string]string{"type": "finish", "messageId": messages[1].ID}); err != nil {
+				return err
+			}
+		}
 		if _, err = data.SetConversationStatus(card.ID, "", fixture.runtime); err != nil {
 			return err
 		}

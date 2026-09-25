@@ -54,10 +54,6 @@
                         Text(card.lane.capitalized).font(.caption).foregroundStyle(.secondary)
                     }
                     Spacer(minLength: 0)
-                    if card.commentCount > 0 {
-                        Label("\(card.commentCount)", systemImage: "text.bubble")
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
                 }
             }
             .padding(.vertical, 5)

@@ -2182,10 +2182,26 @@ class DieterViewModel internal constructor(
         ensureConversationRecovery(id)
     }
 
-    fun addComment(text: String) = action {
-        val id = _state.value.selectedCardId ?: return@action
-        connectionManager.ensureConversationRoute(id)
-        repository.addComment(id, text)
+    suspend fun markResponseSeen(cardId: String, responseSeq: Long) {
+        val snapshot = _state.value.conversation ?: return
+        val card = snapshot.detail.card
+        if (_state.value.selectedCardId != cardId || card.id != cardId ||
+            card.responseSeq != responseSeq || responseSeq <= card.seenResponseSeq ||
+            snapshot.conversation.lastSeq < responseSeq ||
+            snapshot.conversation.messagesList.none { it.id == card.responseMessageId }) return
+        runCatching {
+            connectionManager.ensureConversationRoute(cardId)
+            repository.markConversationRead(cardId, responseSeq)
+        }.onSuccess { updated ->
+            val current = _state.value
+            val latest = (current.spaceCards + current.cards + current.chats +
+                listOfNotNull(current.conversation?.detail?.card))
+                .filter { it.id == cardId }.maxByOrNull { it.updatedAt }
+            // A receipt response may arrive after the next turn's sync frame.
+            if (latest == null || (latest.responseSeq <= updated.responseSeq && latest.updatedAt <= updated.updatedAt)) {
+                connectionManager.acceptCardMutation(updated)
+            }
+        }
     }
 
     fun moveCard(lane: String, position: Long? = null) {

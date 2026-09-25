@@ -52,10 +52,14 @@ class SharedDirectoryTest {
         directory.replace("owner", listOf(owner))
 
         val hydrated = sharedItems(listOf(sparse), directory.snapshot()).single()
-        val changedReplica = sparse.toBuilder().setTitle("Renamed elsewhere").setLane("running").setRuntime("running").build()
+        val changedReplica = sparse.toBuilder().setTitle("Renamed elsewhere").setLane("running").setRuntime("running")
+            .setResponseSeq(30).setResponseMessageId("reply").setSeenResponseSeq(30).build()
         val updated = sharedItems(listOf(hydrated, changedReplica), directory.snapshot()).single()
 
         assertEquals("Renamed elsewhere", updated.title)
+        assertEquals(30L, updated.responseSeq)
+        assertEquals("reply", updated.responseMessageId)
+        assertEquals(30L, updated.seenResponseSeq)
         assertEquals("running", updated.lane)
         assertEquals("Do the work", updated.initialPrompt)
         assertEquals("project", updated.workspaceMode)

@@ -41,11 +41,15 @@ import Testing
         // execution owner's details or relying on incomparable client clocks.
         var edited = replicated
         edited.title = "Renamed remotely"; edited.lane = "review"; edited.labelIds = ["label"]
+        edited.responseSeq = 30; edited.responseMessageID = "reply"; edited.seenResponseSeq = 30
         current = MachineDirectoryReducer.merging(current, snapshots: [snapshot(peer, edited)])
         #expect(current.cards[project.id]?.first?.summary == full.summary)
         #expect(current.cards[project.id]?.first?.title == edited.title)
         #expect(current.cards[project.id]?.first?.lane == edited.lane)
         #expect(current.cards[project.id]?.first?.labelIds == edited.labelIds)
+        #expect(current.cards[project.id]?.first?.responseSeq == 30)
+        #expect(current.cards[project.id]?.first?.responseMessageID == "reply")
+        #expect(current.cards[project.id]?.first?.seenResponseSeq == 30)
         // Empty fields from the owner are authoritative, not missing data.
         current = MachineDirectoryReducer.merging(current, snapshots: [snapshot(owner, edited)])
         #expect(current.cards[project.id] == [edited])

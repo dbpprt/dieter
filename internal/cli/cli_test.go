@@ -128,13 +128,6 @@ func TestCLIConversationWorkflowAndHelp(t *testing.T) {
 		t.Fatalf("requests=%#v", requests)
 	}
 	out.Reset()
-	if err := c.Run([]string{"card", "comment", cardID, "--message", "Progress"}); err != nil {
-		t.Fatal(err)
-	}
-	if len(fake.snapshot()) != 1 {
-		t.Fatal("comment unexpectedly sent an agent message")
-	}
-	out.Reset()
 	if err := c.Run([]string{"card", "move", cardID, "--lane", "review"}); err != nil {
 		t.Fatal(err)
 	}
@@ -164,7 +157,7 @@ func TestCLIConversationWorkflowAndHelp(t *testing.T) {
 	if err := c.Run([]string{"card", "--help"}); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out.String(), "annotation") {
+	if !strings.Contains(out.String(), "Mark a displayed model response as seen") {
 		t.Fatalf("help=%s", out.String())
 	}
 }

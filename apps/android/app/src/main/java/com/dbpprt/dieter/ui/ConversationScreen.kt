@@ -98,6 +98,10 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.withContext
+import androidx.compose.runtime.derivedStateOf
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.currentStateAsState
 import com.dbpprt.dieter.ui.theme.DieterAmberTint
 import com.dbpprt.dieter.ui.theme.DieterAbyss
 
@@ -124,6 +128,18 @@ internal fun ConversationBody(state: DieterUiState, model: DieterViewModel, modi
     val conversation = state.conversation?.conversation
     val queuedMessages = conversation?.queueList.orEmpty()
     val card = state.conversation?.detail?.card ?: state.selectedCard
+    val lifecycleState by LocalLifecycleOwner.current.lifecycle.currentStateAsState()
+    val latestVisible by remember(listState) { derivedStateOf { listState.isAtConversationEnd() } }
+    val responseLoaded = (conversation?.lastSeq ?: 0) >= (card?.responseSeq ?: 0)
+    LaunchedEffect(card?.id, card?.responseSeq, card?.seenResponseSeq, initialScrollComplete, responseLoaded,
+        latestVisible, lifecycleState, state.connected) {
+        if (lifecycleState == Lifecycle.State.RESUMED && initialScrollComplete && latestVisible && state.connected && card != null) {
+            // Let the completed reply settle into the viewport. Scrolling or backgrounding
+            // cancels this effect before it can acknowledge a merely mounted message.
+            delay(200)
+            if (listState.isAtConversationEnd()) model.markResponseSeen(card.id, card.responseSeq)
+        }
+    }
     val host = card?.let(state::conversationHost)
     val storageQueue = host?.endpointId?.let(state.machineOutboxSummaries::get)?.takeIf { it.storageBlocked && !it.failed }
     val draft = state.composerDraft

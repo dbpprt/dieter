@@ -57,11 +57,9 @@ queued message into the composer with its attachments and selection; Remove
 discards it. Steering the next message requests cancellation first, then waits
 for provider cleanup before the queued turn starts.
 
-**Comments never start an agent and never count as approval.** Use them for
-progress notes. Send a human message to ask for more work.
+Send a human message to ask for more work.
 
 ```sh
-dieter card comment CARD_ID --message "Reviewed the proposed direction."
 dieter card send CARD_ID --message "Add keyboard navigation and verify it."
 dieter card queue remove CARD_ID --message MESSAGE_ID
 ```

@@ -46,7 +46,7 @@ Quota commands are account-wide and reject `--machine`.
 | `machine` | Directory, routes, live telemetry, contract/release versions, updates, power, and connection signaling |
 | `harness`, `quota` | Host model catalogs and account quota windows |
 | `project`, `board` | Shared project identities, local checkouts, board settings, labels, host mappings, retention |
-| `card`, `chat` | Durable conversations, follow-ups, queues, comments, presentation, archives |
+| `card`, `chat` | Durable conversations, follow-ups, queues, read receipts, presentation, archives |
 | `workspace` | Uncommitted changes, revisions, Git and SCM operations |
 | `file` | Directory listings, file reads, revision-checked saves |
 | `terminal` | Daemon-owned interactive PTYs |
@@ -88,17 +88,21 @@ dieter card watch CARD_ID
 Creating or sending returns after admission, not after the agent finishes.
 Do not replay a start or message simply because the connection dropped.
 
-### Continue or annotate
+### Continue and review
 
 ```sh
 dieter card send CARD_ID --message "Address the review feedback."
-dieter card comment CARD_ID --message "Validation passed."
 dieter card move CARD_ID --lane review
 dieter card queue remove CARD_ID --message MESSAGE_ID
 ```
 
-Comments do not wake agents. Queue removal returns the complete payload and
-selection so a caller can restore a draft for editing.
+Queue removal returns the complete payload and selection so a caller can restore a draft for editing.
+
+Completed, unseen replies appear in **Needs attention** on Mac and Android.
+Viewing the latest reply acknowledges it across clients. Automation can use
+`dieter card read --response-seq SEQ CARD_ID` with the `responseSeq` returned by
+`card show` after displaying that response. This also works with `chat read`
+and global `--machine`; an old receipt cannot clear a newer reply.
 
 ### Inspect and commit selected changes
 

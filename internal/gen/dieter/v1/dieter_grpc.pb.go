@@ -82,7 +82,7 @@ const (
 	DieterService_PresentConversationContent_FullMethodName      = "/dieter.v1.DieterService/PresentConversationContent"
 	DieterService_SendMessage_FullMethodName                     = "/dieter.v1.DieterService/SendMessage"
 	DieterService_RemoveQueuedMessage_FullMethodName             = "/dieter.v1.DieterService/RemoveQueuedMessage"
-	DieterService_AddComment_FullMethodName                      = "/dieter.v1.DieterService/AddComment"
+	DieterService_MarkConversationRead_FullMethodName            = "/dieter.v1.DieterService/MarkConversationRead"
 	DieterService_MoveCard_FullMethodName                        = "/dieter.v1.DieterService/MoveCard"
 	DieterService_MergeCard_FullMethodName                       = "/dieter.v1.DieterService/MergeCard"
 	DieterService_StartCard_FullMethodName                       = "/dieter.v1.DieterService/StartCard"
@@ -231,7 +231,7 @@ type DieterServiceClient interface {
 	// the full message so clients can either discard it or restore it to an
 	// editor without losing attachments.
 	RemoveQueuedMessage(ctx context.Context, in *RemoveQueuedMessageRequest, opts ...grpc.CallOption) (*QueuedMessage, error)
-	AddComment(ctx context.Context, in *AddCommentRequest, opts ...grpc.CallOption) (*Comment, error)
+	MarkConversationRead(ctx context.Context, in *MarkConversationReadRequest, opts ...grpc.CallOption) (*Card, error)
 	MoveCard(ctx context.Context, in *MoveCardRequest, opts ...grpc.CallOption) (*Card, error)
 	MergeCard(ctx context.Context, in *MergeCardRequest, opts ...grpc.CallOption) (*Card, error)
 	// StartCard is an idempotent admission command. It durably admits the
@@ -979,10 +979,10 @@ func (c *dieterServiceClient) RemoveQueuedMessage(ctx context.Context, in *Remov
 	return out, nil
 }
 
-func (c *dieterServiceClient) AddComment(ctx context.Context, in *AddCommentRequest, opts ...grpc.CallOption) (*Comment, error) {
+func (c *dieterServiceClient) MarkConversationRead(ctx context.Context, in *MarkConversationReadRequest, opts ...grpc.CallOption) (*Card, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(Comment)
-	err := c.cc.Invoke(ctx, DieterService_AddComment_FullMethodName, in, out, cOpts...)
+	out := new(Card)
+	err := c.cc.Invoke(ctx, DieterService_MarkConversationRead_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -1765,7 +1765,7 @@ type DieterServiceServer interface {
 	// the full message so clients can either discard it or restore it to an
 	// editor without losing attachments.
 	RemoveQueuedMessage(context.Context, *RemoveQueuedMessageRequest) (*QueuedMessage, error)
-	AddComment(context.Context, *AddCommentRequest) (*Comment, error)
+	MarkConversationRead(context.Context, *MarkConversationReadRequest) (*Card, error)
 	MoveCard(context.Context, *MoveCardRequest) (*Card, error)
 	MergeCard(context.Context, *MergeCardRequest) (*Card, error)
 	// StartCard is an idempotent admission command. It durably admits the
@@ -2043,8 +2043,8 @@ func (UnimplementedDieterServiceServer) SendMessage(context.Context, *SendMessag
 func (UnimplementedDieterServiceServer) RemoveQueuedMessage(context.Context, *RemoveQueuedMessageRequest) (*QueuedMessage, error) {
 	return nil, status.Error(codes.Unimplemented, "method RemoveQueuedMessage not implemented")
 }
-func (UnimplementedDieterServiceServer) AddComment(context.Context, *AddCommentRequest) (*Comment, error) {
-	return nil, status.Error(codes.Unimplemented, "method AddComment not implemented")
+func (UnimplementedDieterServiceServer) MarkConversationRead(context.Context, *MarkConversationReadRequest) (*Card, error) {
+	return nil, status.Error(codes.Unimplemented, "method MarkConversationRead not implemented")
 }
 func (UnimplementedDieterServiceServer) MoveCard(context.Context, *MoveCardRequest) (*Card, error) {
 	return nil, status.Error(codes.Unimplemented, "method MoveCard not implemented")
@@ -3353,20 +3353,20 @@ func _DieterService_RemoveQueuedMessage_Handler(srv interface{}, ctx context.Con
 	return interceptor(ctx, in, info, handler)
 }
 
-func _DieterService_AddComment_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(AddCommentRequest)
+func _DieterService_MarkConversationRead_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MarkConversationReadRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(DieterServiceServer).AddComment(ctx, in)
+		return srv.(DieterServiceServer).MarkConversationRead(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: DieterService_AddComment_FullMethodName,
+		FullMethod: DieterService_MarkConversationRead_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(DieterServiceServer).AddComment(ctx, req.(*AddCommentRequest))
+		return srv.(DieterServiceServer).MarkConversationRead(ctx, req.(*MarkConversationReadRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -4771,8 +4771,8 @@ var DieterService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _DieterService_RemoveQueuedMessage_Handler,
 		},
 		{
-			MethodName: "AddComment",
-			Handler:    _DieterService_AddComment_Handler,
+			MethodName: "MarkConversationRead",
+			Handler:    _DieterService_MarkConversationRead_Handler,
 		},
 		{
 			MethodName: "MoveCard",

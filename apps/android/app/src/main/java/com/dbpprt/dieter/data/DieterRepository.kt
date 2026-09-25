@@ -18,7 +18,6 @@ import com.dbpprt.dieter.gateway.v1.ConsumeProviderQuotaResetResponse
 import com.dbpprt.dieter.gateway.v1.ProviderQuotaProvider
 import com.dbpprt.dieter.gateway.v1.WatchDaemonsRequest
 import com.dbpprt.dieter.gateway.v1.WatchProviderQuotasRequest
-import com.dbpprt.dieter.v1.AddCommentRequest
 import com.dbpprt.dieter.v1.ArchiveCardRequest
 import com.dbpprt.dieter.v1.ArchiveProjectRequest
 import com.dbpprt.dieter.v1.Board
@@ -28,7 +27,6 @@ import com.dbpprt.dieter.v1.Card
 import com.dbpprt.dieter.v1.CardDetail
 import com.dbpprt.dieter.v1.CardsResponse
 import com.dbpprt.dieter.v1.ChatsResponse
-import com.dbpprt.dieter.v1.Comment
 import com.dbpprt.dieter.v1.ConversationSnapshot
 import com.dbpprt.dieter.v1.CreateBoardLabelRequest
 import com.dbpprt.dieter.v1.CreateBoardRequest
@@ -321,7 +319,7 @@ interface DieterRepository {
     ): SendMessageResponse
     suspend fun sendMessage(request: SendMessageRequest): SendMessageResponse
     suspend fun removeQueuedMessage(cardId: String, messageId: String): QueuedMessage
-    suspend fun addComment(cardId: String, text: String, name: String = "You"): Comment
+    suspend fun markConversationRead(cardId: String, responseSeq: Long): Card
     suspend fun moveCard(cardId: String, lane: String, after: String = "", before: String = "", revision: String = ""): Card
     suspend fun startCard(request: StartCardRequest): StartCardResponse
     suspend fun setCardLabels(cardId: String, labelIds: List<String>): Card
@@ -1123,8 +1121,9 @@ class GrpcDieterRepository(context: Context) : DieterRepository {
             RemoveQueuedMessageRequest.newBuilder().setCardId(cardId).setMessageId(messageId).build(),
         )
 
-    override suspend fun addComment(cardId: String, text: String, name: String): Comment = unary().addComment(
-        AddCommentRequest.newBuilder().setCardId(cardId).setMessage(text).setName(name).build(),
+
+    override suspend fun markConversationRead(cardId: String, responseSeq: Long): Card = unary().markConversationRead(
+        com.dbpprt.dieter.v1.MarkConversationReadRequest.newBuilder().setCardId(cardId).setResponseSeq(responseSeq).build(),
     )
 
     override suspend fun moveCard(cardId: String, lane: String, after: String, before: String, revision: String): Card {

@@ -45,8 +45,7 @@ Use `dieter card context CARD_ID`, `dieter card transcript --last 20 CARD_ID`, a
 or failed before acting. A lost client connection does not stop its turn.
 
 After a start/send command times out, inspect the conversation before sending it
-again. The original turn may already have been admitted. Comments are annotations;
-they will never resume the agent.
+again. The original turn may already have been admitted.
 
 ## Screen sharing is unavailable
 

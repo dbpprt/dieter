@@ -153,3 +153,16 @@ failure evidence, and iOS preparation; Mac execution is disabled.
 [iOS](apps/ios/README.md) · [Website](landingpage/README.md)
 
 Dieter is [MIT-licensed](LICENSE). Pronounced **DEE-ter**. Made in Berlin.
+
+### Unseen model replies
+
+Activity on macOS and Android shows **Needs attention** for completed model
+replies that have not been viewed and for questions waiting for an answer.
+Viewing the latest transcript in the foreground acknowledges that reply across
+clients. A Review lane alone does not imply an unread reply.
+
+Card/chat metadata includes `responseSeq`, `responseMessageId`, and
+`seenResponseSeq`. Automation can acknowledge a displayed response using
+`dieter card read --response-seq SEQ CARD` (also `chat read`). The command supports
+local, direct TLS, and relay routes with global `--machine`. Stale receipts never
+clear newer replies. Board comments and the card/chat comment commands are removed.

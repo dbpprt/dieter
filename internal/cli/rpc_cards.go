@@ -21,7 +21,7 @@ const cardHelp = `Usage: dieter card <action>
 Actions:
   create       Create a board conversation
   list         Search board conversations
-  show         Show card metadata and comments
+  show         Show card metadata
   context      Print bounded agent context
   transcript   Read the durable conversation
   poll         Fetch one bounded conversation update
@@ -31,7 +31,7 @@ Actions:
   fork         Fork a completed conversation into a standalone chat
   send         Submit a human message to the daemon-owned turn lifecycle
   queue        Manage messages waiting behind the active turn
-  comment      Add a non-triggering annotation
+  read         Mark a displayed model response as seen
   merge        Add an idle card’s initial request to a started task; mark source Done
   move         Move a card between workflow lanes
   start        Start a draft card idempotently
@@ -48,7 +48,7 @@ const chatHelp = `Usage: dieter chat <action>
 
 Actions:
   create, list, show, context, transcript, watch, tool-output, present, fork, send,
-  queue, comment, cancel, rename, update, archive, unarchive, workspace, pin, unpin
+  queue, read, cancel, rename, update, archive, unarchive, workspace, pin, unpin
 
 Standalone chats use the same durable conversation and workspace operations as
 cards but are not assigned to a board lane.
@@ -88,8 +88,8 @@ func (c *CLI) rpcCard(args []string, chat bool) error {
 		return c.rpcCardSend(args[1:])
 	case "queue":
 		return c.rpcCardQueue(args[1:])
-	case "comment":
-		return c.rpcCardComment(args[1:])
+	case "read":
+		return c.rpcCardRead(args[1:])
 	case "merge":
 		if chat {
 			return errors.New("only board cards can be merged")
@@ -452,7 +452,7 @@ func (c *CLI) rpcCardShow(args []string, compact bool) error {
 			"cardId": detail.GetCard().GetId(), "project": detail.GetProject().GetName(),
 			"projectPrompt": detail.GetProject().GetPrompt(), "board": detail.GetBoard().GetName(),
 			"workflow": detail.GetBoard().GetWorkflow(), "lane": detail.GetCard().GetLane(),
-			"task": detail.GetCard().GetInitialPrompt(), "comments": detail.GetComments(),
+			"task":       detail.GetCard().GetInitialPrompt(),
 			"tokenUsage": tokenUsage,
 		})
 	}
@@ -747,36 +747,6 @@ func (c *CLI) rpcCardQueueRemove(args []string) error {
 		return err
 	}
 	return protoJSONOut(c.Out, removed)
-}
-
-func (c *CLI) rpcCardComment(args []string) error {
-	const usage = "Usage: dieter card comment [--message TEXT|--file FILE] [--author NAME] CARD\n\nComments never wake the agent or count as approval.\n"
-	set := flags("card comment")
-	message := set.String("message", "", "comment text")
-	file := set.String("file", "", "comment file or -")
-	author := set.String("author", "Dieter CLI", "display author")
-	help, err := parse(set, args, usage, c.Out)
-	if help || err != nil {
-		return err
-	}
-	if set.NArg() != 1 {
-		return errors.New("exactly one CARD is required")
-	}
-	value, err := textValue(*message, *file, c.In)
-	if err != nil {
-		return err
-	}
-	ctx, cancel := c.commandContext()
-	defer cancel()
-	client, rpcCtx, err := c.rpc(ctx)
-	if err != nil {
-		return err
-	}
-	comment, err := client.AddComment(rpcCtx, &dieterv1.AddCommentRequest{CardId: set.Arg(0), Message: value, Name: *author})
-	if err != nil {
-		return err
-	}
-	return protoJSONOut(c.Out, comment)
 }
 
 func (c *CLI) rpcCardMerge(args []string) error {
@@ -1081,4 +1051,28 @@ func (c *CLI) rpcChatPin(args []string, pinned bool) error {
 		return err
 	}
 	return protoJSONOut(c.Out, value)
+}
+
+func (c *CLI) rpcCardRead(args []string) error {
+	const usage = "Usage: dieter card read --response-seq SEQ CARD\n\nMark the displayed model response as seen. Use responseSeq from card show; stale receipts cannot clear newer replies. Also available as chat read and with global --machine.\n"
+	set := flags("card read")
+	seq := set.Int64("response-seq", 0, "sequence of the displayed completed response")
+	help, err := parse(set, args, usage, c.Out)
+	if help || err != nil {
+		return err
+	}
+	if set.NArg() != 1 || *seq <= 0 {
+		return errors.New("CARD and a positive --response-seq are required")
+	}
+	ctx, cancel := c.commandContext()
+	defer cancel()
+	client, rpcCtx, err := c.rpc(ctx)
+	if err != nil {
+		return err
+	}
+	card, err := client.MarkConversationRead(rpcCtx, &dieterv1.MarkConversationReadRequest{CardId: set.Arg(0), ResponseSeq: *seq})
+	if err != nil {
+		return err
+	}
+	return protoJSONOut(c.Out, card)
 }

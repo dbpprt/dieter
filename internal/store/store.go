@@ -113,7 +113,7 @@ func (s *Store) Ensure() error {
 		return err
 	}
 	for _, dir := range []string{
-		s.cardDir(), s.archivedCardDir(), s.commentDir(), s.conversationDir(), s.runtimeDir(), s.syncDir(),
+		s.cardDir(), s.archivedCardDir(), s.conversationDir(), s.runtimeDir(), s.syncDir(),
 		s.workspaceDir(), s.gitOperationDir(), s.pullRequestDir(), s.changeCommentDir(), s.recoveryDir(), filepath.Join(s.Root, "logs"), filepath.Join(s.runtimeDir(), "leases"),
 	} {
 		if err := os.MkdirAll(dir, 0o700); err != nil {
@@ -226,7 +226,6 @@ func (s *Store) beginWriteKind(kind string) (func(), error) {
 
 func (s *Store) cardDir() string              { return filepath.Join(s.Root, "cards") }
 func (s *Store) archivedCardDir() string      { return filepath.Join(s.Root, "archived-cards") }
-func (s *Store) commentDir() string           { return filepath.Join(s.Root, "comments") }
 func (s *Store) conversationDir() string      { return filepath.Join(s.Root, "conversations") }
 func (s *Store) runtimeDir() string           { return filepath.Join(s.Root, "runtime") }
 func (s *Store) scheduleDatabasePath() string { return filepath.Join(s.Root, "schedules.db") }

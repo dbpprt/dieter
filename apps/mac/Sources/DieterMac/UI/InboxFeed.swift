@@ -31,7 +31,7 @@ struct InboxFeed: View {
                             emptyState(filtered: !query.isEmpty || !selectedProject.isEmpty)
                         } else {
                             section("Running", id: "running", entries: filtered.filter(\.running), now: now)
-                            section("Needs you", id: "needs-you", entries: filtered.filter(\.needsYou), now: now)
+                            section("Needs attention", id: "needs-you", entries: filtered.filter(\.needsYou), now: now)
                             section(
                                 "Recent", id: "recent", entries: filtered.filter { !$0.needsYou && !$0.running },
                                 now: now)
@@ -73,7 +73,7 @@ struct InboxFeed: View {
             HStack(spacing: 5) {
                 Text("\(entries.filter(\.running).count) running").foregroundStyle(DieterTheme.subtle)
                 Text("·").foregroundStyle(DieterTheme.tertiary)
-                Text("\(entries.filter(\.needsYou).count) need you")
+                Text("\(entries.filter(\.needsYou).count) need attention")
                     .foregroundStyle(entries.contains(where: \.needsYou) ? DieterTheme.amber : DieterTheme.subtle)
             }
             .font(DieterFont.meta)
@@ -263,7 +263,7 @@ private struct InboxActivityRow: View {
                             Spacer(minLength: 4)
                             Text(InboxActivity.age(entry.running ? entry.start : entry.at, now: now))
                                 .font(.system(size: 9, design: .monospaced)).foregroundStyle(DieterTheme.tertiary)
-                            if entry.kind == .review { Color.clear.frame(width: 62, height: 20) }
+                            if entry.canFinish { Color.clear.frame(width: 62, height: 20) }
                         }
                         .foregroundStyle(accent)
                     }
@@ -284,7 +284,7 @@ private struct InboxActivityRow: View {
             .accessibilityElement(children: .combine)
             .accessibilityAddTraits(selected ? .isSelected : [])
             .accessibilityIdentifier("inbox.row.\(entry.id)").smokeTarget("inbox.row.\(entry.id)")
-            if entry.kind == .review {
+            if entry.canFinish {
                 Button {
                     Task { await store.move(entry.card, lane: "done") }
                 } label: {
@@ -315,7 +315,7 @@ private struct InboxActivityRow: View {
 @MainActor
 private func inboxAccent(_ kind: InboxActivityKind) -> Color {
     switch kind {
-    case .answer: DieterTheme.amber
+    case .answer, .unread: DieterTheme.amber
     case .review: DieterTheme.coral
     case .running: DieterTheme.primary
     case .failed: DieterTheme.coral
@@ -325,7 +325,7 @@ private func inboxAccent(_ kind: InboxActivityKind) -> Color {
 
 private func statusSymbol(_ kind: InboxActivityKind) -> String {
     switch kind {
-    case .answer: "bubble.left.and.bubble.right"
+    case .answer, .unread: "bubble.left.and.bubble.right"
     case .review: "checkmark.circle"
     case .running: "waveform"
     case .failed: "exclamationmark.circle"

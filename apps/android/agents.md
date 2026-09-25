@@ -158,8 +158,7 @@ validates the visible control instead of merely replaying stale coordinates.
 Use dedicated non-destructive test data when an interaction starts an agent.
 Never launch an existing user's queued card merely to test the UI. Create test
 cards through the app or `board` CLI, give the agent an explicitly read-only
-task, and archive the test card after verification. Dieter card comments do not
-start or approve work.
+task, and archive the test card after verification.
 
 ## Checks before handoff
 

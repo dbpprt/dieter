@@ -654,8 +654,11 @@ package final class DieterRPC: Sendable {
         return try await service.removeQueuedMessage(request: .init(message: request))
     }
 
-    package func addComment(_ request: Dieter_V1_AddCommentRequest) async throws -> Dieter_V1_Comment {
-        try await service.addComment(request: .init(message: request))
+    package func markConversationRead(cardID: String, responseSeq: Int64) async throws -> Dieter_V1_Card {
+        var request = Dieter_V1_MarkConversationReadRequest()
+        request.cardID = cardID
+        request.responseSeq = responseSeq
+        return try await service.markConversationRead(request: .init(message: request))
     }
 
     package func moveCard(_ request: Dieter_V1_MoveCardRequest) async throws -> Dieter_V1_Card {

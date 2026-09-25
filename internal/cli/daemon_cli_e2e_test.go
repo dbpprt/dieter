@@ -160,7 +160,6 @@ func TestDaemonCLIControlsLocalDaemonEndToEnd(t *testing.T) {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	runDaemonCLI(t, client, output, "card", "comment", "--message", "CLI annotation", card.ID)
 	runDaemonCLI(t, client, output, "workspace", "show", card.ID)
 	changesJSON := runDaemonCLI(t, client, output, "workspace", "changes", "--project", created.Project.ID)
 	var projectChanges struct {
@@ -638,6 +637,7 @@ func testDaemonRoutes(t *testing.T, withRTC bool) {
 	assertProjectHostnameCLI(t, first, &firstOutput, remoteProject.ID)
 	assertConversationSelectionCLI(t, first, &firstOutput, remoteStore, remoteProject.ID)
 	assertContentPresentationCLI(t, first, &firstOutput, remoteStore, remoteProject.ID)
+	assertConversationReadCLI(t, first, &firstOutput, remoteStore, remoteProject.ID)
 	assertBackgroundProcessCLI(t, first, &firstOutput, remoteStore, remoteProject.ID)
 	first.Close()
 
@@ -699,6 +699,7 @@ func testDaemonRoutes(t *testing.T, withRTC bool) {
 	assertProjectHostnameCLI(t, second, &secondOutput, remoteProject.ID)
 	assertConversationSelectionCLI(t, second, &secondOutput, remoteStore, remoteProject.ID)
 	assertContentPresentationCLI(t, second, &secondOutput, remoteStore, remoteProject.ID)
+	assertConversationReadCLI(t, second, &secondOutput, remoteStore, remoteProject.ID)
 	assertBackgroundProcessCLI(t, second, &secondOutput, remoteStore, remoteProject.ID)
 
 }

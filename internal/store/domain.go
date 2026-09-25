@@ -1031,10 +1031,6 @@ func (s *Store) readCard(path string) (model.Card, error) {
 			BaseSHA: pullRequest.BaseSHA, UpdatedAt: pullRequest.LastSyncedAt,
 		}
 	}
-	// Directory projections need only the badge count. Avoid decoding every
-	// comment body on every sync mutation as histories grow.
-	comments, _ := listMarkdown(filepath.Join(s.commentDir(), item.ID))
-	item.CommentCount = len(comments)
 	item.TokenUsage = s.cardTokenUsage(item.ID)
 	return s.overlayCard(item)
 }
@@ -1720,58 +1716,7 @@ func (s *Store) CardDetail(ref string) (model.CardDetail, error) {
 			return model.CardDetail{}, err
 		}
 	}
-	comments, err := s.ListComments(card.ID, 0)
-	return model.CardDetail{Card: card, Project: project, Board: board, Comments: comments}, err
-}
-
-func (s *Store) AddComment(cardRef, body string, author model.Author) (model.Comment, error) {
-	if strings.TrimSpace(body) == "" {
-		return model.Comment{}, errors.New("comment body is required")
-	}
-	card, err := s.ResolveCard(cardRef)
-	if err != nil {
-		return model.Comment{}, err
-	}
-	if author.Kind == "" {
-		author.Kind = "human"
-	}
-	if author.CardID == "" && author.Kind == "agent" {
-		author.CardID, author.ProjectID = card.ID, card.ProjectID
-	}
-	release, err := s.beginWrite()
-	if err != nil {
-		return model.Comment{}, err
-	}
-	defer release()
-	now := timestamp()
-	item := model.Comment{ID: newID("m_"), CardID: card.ID, Author: author, Body: strings.TrimSpace(body), CreatedAt: now}
-	path := filepath.Join(s.commentDir(), card.ID, item.ID+".md")
-	return item, writeMarkdown(path, item, item.Body)
-}
-
-func (s *Store) ListComments(cardRef string, limit int) ([]model.Comment, error) {
-	if cardRef == "" {
-		return []model.Comment{}, nil
-	}
-	paths, err := listMarkdown(filepath.Join(s.commentDir(), cardRef))
-	if err != nil {
-		return nil, err
-	}
-	result := make([]model.Comment, 0, len(paths))
-	for _, path := range paths {
-		var item model.Comment
-		body, readErr := readMarkdown(path, &item)
-		if readErr != nil {
-			return nil, readErr
-		}
-		item.Body = body
-		result = append(result, item)
-	}
-	sort.Slice(result, func(i, j int) bool { return result[i].CreatedAt < result[j].CreatedAt })
-	if limit > 0 && len(result) > limit {
-		result = result[len(result)-limit:]
-	}
-	return result, nil
+	return model.CardDetail{Card: card, Project: project, Board: board}, nil
 }
 
 func (s *Store) State(projectRef string, filter CardFilter) (model.State, error) {
@@ -1810,7 +1755,7 @@ func (s *Store) State(projectRef string, filter CardFilter) (model.State, error)
 
 // GlobalState materializes the active workspace projection in one pass over
 // each domain directory. WatchSync previously called State once per project;
-// every call rescanned every project, board, card, and comment, making one
+// every call rescanned every project, board, and card, making one
 // daemon-wide delta quadratic in the number of projects.
 func (s *Store) GlobalState() (model.State, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

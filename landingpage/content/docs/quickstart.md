@@ -70,8 +70,7 @@ Open files or the Changes surface to inspect the result. Send a follow-up to
 continue the same conversation; messages sent during an active turn wait in its
 queue. Closing the client leaves the agent running on its host.
 
-A **comment** records a note without waking the agent. A **chat message** asks it
-to work. Moving a card to Review is workflow state, not a Git merge or publication.
+Moving a card to Review is workflow state, not a Git merge or publication.
 See [projects and tasks](/docs/projects/) for delivery settings.
 
 ## The same task from the CLI

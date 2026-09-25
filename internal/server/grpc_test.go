@@ -199,9 +199,6 @@ func TestGRPCMachineListener(t *testing.T) {
 	if err != nil || removed.GetText() != "Edit before running" || len(removed.GetParts()) != 2 {
 		t.Fatalf("removed queued message = %#v, %v", removed, err)
 	}
-	if _, err := client.AddComment(ctx, &dieterv1.AddCommentRequest{CardId: card.GetId(), Message: "Looks good", Name: "Android"}); err != nil {
-		t.Fatal(err)
-	}
 	files, err := client.ListFiles(ctx, &dieterv1.ListFilesRequest{ProjectId: project.ID})
 	if err != nil || len(files.GetEntries()) != 1 || files.GetEntries()[0].GetName() != "README.md" {
 		t.Fatalf("files = %#v, %v", files, err)

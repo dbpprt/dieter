@@ -34,7 +34,7 @@ func TestResolveUsesBoardProjectGlobalPrecedenceAndBoardLabelOrder(t *testing.T)
 	if android < 0 || security < 0 || android > security {
 		t.Fatalf("labels were not rendered in board order: %q", resolved.Context)
 	}
-	if !strings.Contains(resolved.Skill, "dieter card comment c_one") || !strings.Contains(resolved.Skill, "--lane review") {
+	if !strings.Contains(resolved.Skill, "dieter card context c_one") || !strings.Contains(resolved.Skill, "--lane review") {
 		t.Fatalf("Board skill was not rendered: %q", resolved.Skill)
 	}
 }

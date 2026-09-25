@@ -14,6 +14,8 @@ import com.dbpprt.dieter.MainActivity
 import com.dbpprt.dieter.connection.ConnectionPhase
 import com.dbpprt.dieter.data.DieterEndpoint
 import com.dbpprt.dieter.v1.CreateConversationRequest
+import com.dbpprt.dieter.ui.ActivityKind
+import com.dbpprt.dieter.ui.buildActivityEntries
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -164,7 +166,7 @@ class FlowTest {
                     repository.createConversation(CreateConversationRequest.newBuilder()
                         .setProjectId(board.projectId).setBoardId(if (chat) "" else board.id)
                         .setTitle("$prefix ${if (chat) "chat" else "card"}")
-                        .setLane("running").setPrompt("Reply briefly for the Activity navigation test.")
+                        .setLane("running").setPrompt("mock-activity-reply")
                         .setProvider("mock").setModel("mock").setWorkspaceMode("project").build(), chat)
                 }
             }
@@ -179,10 +181,28 @@ class FlowTest {
         }
     }
     private fun probe(name: String) {
-        check(name == "machine-telemetry")
-        val information = runBlocking { container.repository.machineInformationOn(variables.getValue("fixture.endpointId")) }
-        check(information.hostname.isNotBlank() && information.osName.isNotBlank())
-        check(information.logicalCpuCount > 0 && information.memoryTotalBytes > 0)
-        check(information.processesList.any { it.kind == "daemon" })
+        when (name) {
+            "machine-telemetry" -> {
+                val information = runBlocking { container.repository.machineInformationOn(variables.getValue("fixture.endpointId")) }
+                check(information.hostname.isNotBlank() && information.osName.isNotBlank())
+                check(information.logicalCpuCount > 0 && information.memoryTotalBytes > 0)
+                check(information.processesList.any { it.kind == "daemon" })
+            }
+            "activity-replies-unread" -> compose.waitUntil(15_000) {
+                val state = container.connectionManager.state.value
+                val entries = buildActivityEntries(state.cards + state.chats)
+                listOf("fixture.cardId", "fixture.chatId").all { key ->
+                    entries.any { it.card.id == variables.getValue(key) && it.kind == ActivityKind.UNREAD && it.needsYou }
+                }
+            }
+            "activity-card-seen", "activity-chat-seen" -> compose.waitUntil(15_000) {
+                val id = variables.getValue(if (name == "activity-card-seen") "fixture.cardId" else "fixture.chatId")
+                val state = container.connectionManager.state.value
+                buildActivityEntries(state.cards + state.chats).any {
+                    it.card.id == id && it.card.responseSeq > 0 && it.card.seenResponseSeq == it.card.responseSeq && !it.needsYou
+                }
+            }
+            else -> error("Unsupported probe $name")
+        }
     }
 }

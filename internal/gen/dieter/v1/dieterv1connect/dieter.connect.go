@@ -208,9 +208,9 @@ const (
 	// DieterServiceRemoveQueuedMessageProcedure is the fully-qualified name of the DieterService's
 	// RemoveQueuedMessage RPC.
 	DieterServiceRemoveQueuedMessageProcedure = "/dieter.v1.DieterService/RemoveQueuedMessage"
-	// DieterServiceAddCommentProcedure is the fully-qualified name of the DieterService's AddComment
-	// RPC.
-	DieterServiceAddCommentProcedure = "/dieter.v1.DieterService/AddComment"
+	// DieterServiceMarkConversationReadProcedure is the fully-qualified name of the DieterService's
+	// MarkConversationRead RPC.
+	DieterServiceMarkConversationReadProcedure = "/dieter.v1.DieterService/MarkConversationRead"
 	// DieterServiceMoveCardProcedure is the fully-qualified name of the DieterService's MoveCard RPC.
 	DieterServiceMoveCardProcedure = "/dieter.v1.DieterService/MoveCard"
 	// DieterServiceMergeCardProcedure is the fully-qualified name of the DieterService's MergeCard RPC.
@@ -481,7 +481,7 @@ type DieterServiceClient interface {
 	// the full message so clients can either discard it or restore it to an
 	// editor without losing attachments.
 	RemoveQueuedMessage(context.Context, *connect.Request[v1.RemoveQueuedMessageRequest]) (*connect.Response[v1.QueuedMessage], error)
-	AddComment(context.Context, *connect.Request[v1.AddCommentRequest]) (*connect.Response[v1.Comment], error)
+	MarkConversationRead(context.Context, *connect.Request[v1.MarkConversationReadRequest]) (*connect.Response[v1.Card], error)
 	MoveCard(context.Context, *connect.Request[v1.MoveCardRequest]) (*connect.Response[v1.Card], error)
 	MergeCard(context.Context, *connect.Request[v1.MergeCardRequest]) (*connect.Response[v1.Card], error)
 	// StartCard is an idempotent admission command. It durably admits the
@@ -948,10 +948,10 @@ func NewDieterServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 			connect.WithSchema(dieterServiceMethods.ByName("RemoveQueuedMessage")),
 			connect.WithClientOptions(opts...),
 		),
-		addComment: connect.NewClient[v1.AddCommentRequest, v1.Comment](
+		markConversationRead: connect.NewClient[v1.MarkConversationReadRequest, v1.Card](
 			httpClient,
-			baseURL+DieterServiceAddCommentProcedure,
-			connect.WithSchema(dieterServiceMethods.ByName("AddComment")),
+			baseURL+DieterServiceMarkConversationReadProcedure,
+			connect.WithSchema(dieterServiceMethods.ByName("MarkConversationRead")),
 			connect.WithClientOptions(opts...),
 		),
 		moveCard: connect.NewClient[v1.MoveCardRequest, v1.Card](
@@ -1417,7 +1417,7 @@ type dieterServiceClient struct {
 	presentConversationContent      *connect.Client[v1.PresentConversationContentRequest, v1.ContentPresentation]
 	sendMessage                     *connect.Client[v1.SendMessageRequest, v1.SendMessageResponse]
 	removeQueuedMessage             *connect.Client[v1.RemoveQueuedMessageRequest, v1.QueuedMessage]
-	addComment                      *connect.Client[v1.AddCommentRequest, v1.Comment]
+	markConversationRead            *connect.Client[v1.MarkConversationReadRequest, v1.Card]
 	moveCard                        *connect.Client[v1.MoveCardRequest, v1.Card]
 	mergeCard                       *connect.Client[v1.MergeCardRequest, v1.Card]
 	startCard                       *connect.Client[v1.StartCardRequest, v1.StartCardResponse]
@@ -1796,9 +1796,9 @@ func (c *dieterServiceClient) RemoveQueuedMessage(ctx context.Context, req *conn
 	return c.removeQueuedMessage.CallUnary(ctx, req)
 }
 
-// AddComment calls dieter.v1.DieterService.AddComment.
-func (c *dieterServiceClient) AddComment(ctx context.Context, req *connect.Request[v1.AddCommentRequest]) (*connect.Response[v1.Comment], error) {
-	return c.addComment.CallUnary(ctx, req)
+// MarkConversationRead calls dieter.v1.DieterService.MarkConversationRead.
+func (c *dieterServiceClient) MarkConversationRead(ctx context.Context, req *connect.Request[v1.MarkConversationReadRequest]) (*connect.Response[v1.Card], error) {
+	return c.markConversationRead.CallUnary(ctx, req)
 }
 
 // MoveCard calls dieter.v1.DieterService.MoveCard.
@@ -2209,7 +2209,7 @@ type DieterServiceHandler interface {
 	// the full message so clients can either discard it or restore it to an
 	// editor without losing attachments.
 	RemoveQueuedMessage(context.Context, *connect.Request[v1.RemoveQueuedMessageRequest]) (*connect.Response[v1.QueuedMessage], error)
-	AddComment(context.Context, *connect.Request[v1.AddCommentRequest]) (*connect.Response[v1.Comment], error)
+	MarkConversationRead(context.Context, *connect.Request[v1.MarkConversationReadRequest]) (*connect.Response[v1.Card], error)
 	MoveCard(context.Context, *connect.Request[v1.MoveCardRequest]) (*connect.Response[v1.Card], error)
 	MergeCard(context.Context, *connect.Request[v1.MergeCardRequest]) (*connect.Response[v1.Card], error)
 	// StartCard is an idempotent admission command. It durably admits the
@@ -2672,10 +2672,10 @@ func NewDieterServiceHandler(svc DieterServiceHandler, opts ...connect.HandlerOp
 		connect.WithSchema(dieterServiceMethods.ByName("RemoveQueuedMessage")),
 		connect.WithHandlerOptions(opts...),
 	)
-	dieterServiceAddCommentHandler := connect.NewUnaryHandler(
-		DieterServiceAddCommentProcedure,
-		svc.AddComment,
-		connect.WithSchema(dieterServiceMethods.ByName("AddComment")),
+	dieterServiceMarkConversationReadHandler := connect.NewUnaryHandler(
+		DieterServiceMarkConversationReadProcedure,
+		svc.MarkConversationRead,
+		connect.WithSchema(dieterServiceMethods.ByName("MarkConversationRead")),
 		connect.WithHandlerOptions(opts...),
 	)
 	dieterServiceMoveCardHandler := connect.NewUnaryHandler(
@@ -3200,8 +3200,8 @@ func NewDieterServiceHandler(svc DieterServiceHandler, opts ...connect.HandlerOp
 			dieterServiceSendMessageHandler.ServeHTTP(w, r)
 		case DieterServiceRemoveQueuedMessageProcedure:
 			dieterServiceRemoveQueuedMessageHandler.ServeHTTP(w, r)
-		case DieterServiceAddCommentProcedure:
-			dieterServiceAddCommentHandler.ServeHTTP(w, r)
+		case DieterServiceMarkConversationReadProcedure:
+			dieterServiceMarkConversationReadHandler.ServeHTTP(w, r)
 		case DieterServiceMoveCardProcedure:
 			dieterServiceMoveCardHandler.ServeHTTP(w, r)
 		case DieterServiceMergeCardProcedure:
@@ -3591,8 +3591,8 @@ func (UnimplementedDieterServiceHandler) RemoveQueuedMessage(context.Context, *c
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.RemoveQueuedMessage is not implemented"))
 }
 
-func (UnimplementedDieterServiceHandler) AddComment(context.Context, *connect.Request[v1.AddCommentRequest]) (*connect.Response[v1.Comment], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.AddComment is not implemented"))
+func (UnimplementedDieterServiceHandler) MarkConversationRead(context.Context, *connect.Request[v1.MarkConversationReadRequest]) (*connect.Response[v1.Card], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.MarkConversationRead is not implemented"))
 }
 
 func (UnimplementedDieterServiceHandler) MoveCard(context.Context, *connect.Request[v1.MoveCardRequest]) (*connect.Response[v1.Card], error) {

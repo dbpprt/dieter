@@ -17,6 +17,7 @@ package protocol FilesRPC: AnyObject, Sendable {
 }
 
 package protocol ConversationRPC: AnyObject, Sendable {
+    func markConversationRead(cardID: String, responseSeq: Int64) async throws -> Dieter_V1_Card
     func conversation(cardID: String, limit: Int32, before: Int32?) async throws -> Dieter_V1_ConversationSnapshot
     func watchConversation(
         cardID: String, after: Int64, receive: @escaping @Sendable (Dieter_V1_ConversationUpdate) async -> Void)

@@ -110,9 +110,8 @@ internal fun CardDetailScreen(
         return
     }
     val standalone = card.scope == "chat"
-    val detailSections = detailSectionsFor(standalone)
+    val detailSections = detailSectionsFor()
     val detailPageCount = detailSections.size
-    val commentCount = snapshot?.detail?.commentsCount ?: card.commentCount
     val subagents = snapshot?.conversation?.subagentsList.orEmpty()
     val activeSubagents = subagents.count { it.status == "running" || it.status == "pending" }
     val serverBacked = isServerConversationId(card.id)
@@ -122,7 +121,7 @@ internal fun CardDetailScreen(
     } else {
         state.workspaceReview.changeset?.filesCount ?: card.workspace.changedFiles
     }
-    val showDetailTabs = !standalone || serverBacked || subagents.isNotEmpty() || commentCount > 0
+    val showDetailTabs = !standalone || serverBacked || subagents.isNotEmpty()
     val cardOperation = state.cardOperations[card.id]
     val displayRuntime = resolvedCardRuntime(card.runtime, snapshot?.conversation?.status.orEmpty(), cardOperation)
     val detailTab by rememberUpdatedState(state.detailTab)
@@ -262,7 +261,6 @@ internal fun CardDetailScreen(
                                 count = when (section) {
                                     DetailSection.CONVERSATION -> 0
                                     DetailSection.CHANGES -> changedFileCount
-                                    DetailSection.COMMENTS -> commentCount
                                     DetailSection.SUBAGENTS -> activeSubagents
                                 },
                                 selected = state.detailTab == index,
@@ -284,7 +282,6 @@ internal fun CardDetailScreen(
                         active = detailSections.getOrNull(state.detailTab) == DetailSection.CHANGES,
                         modifier = Modifier.fillMaxSize(),
                     )
-                    DetailSection.COMMENTS -> CommentsBody(state, model, Modifier.fillMaxSize())
                     DetailSection.SUBAGENTS -> SubagentsBody(state, model, Modifier.fillMaxSize())
                 }
             }
@@ -310,15 +307,10 @@ internal fun CardDetailScreen(
 internal enum class DetailSection(val label: String) {
     CONVERSATION("Conversation"),
     CHANGES("Changes"),
-    COMMENTS("Comments"),
     SUBAGENTS("Subagents"),
 }
 
-internal fun detailSectionsFor(standalone: Boolean): List<DetailSection> = if (standalone) {
-    listOf(DetailSection.CONVERSATION, DetailSection.CHANGES, DetailSection.SUBAGENTS, DetailSection.COMMENTS)
-} else {
-    listOf(DetailSection.CONVERSATION, DetailSection.CHANGES, DetailSection.COMMENTS, DetailSection.SUBAGENTS)
-}
+internal fun detailSectionsFor(): List<DetailSection> = DetailSection.entries
 
 @Composable
 internal fun DetailTabLabel(label: String, count: Int = 0, selected: Boolean) {
@@ -337,8 +329,6 @@ internal fun DetailTabLabel(label: String, count: Int = 0, selected: Boolean) {
                     modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp),
                 )
             }
-        } else if (label == "Comments") {
-            Text("0", color = DieterMuted, fontSize = 12.sp)
         }
     }
 }

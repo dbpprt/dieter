@@ -22,6 +22,20 @@ class ActivityModelTest {
         assertEquals(1, entries.count { it.kind == ActivityKind.FAILED })
     }
 
+    @Test fun `unread replies need attention until seen across cards and chats`() {
+        for (scope in listOf("board", "chat")) {
+            val reply = card("reply", "idle", scope, "review").toBuilder().setResponseSeq(30).setSeenResponseSeq(10).build()
+            assertEquals(ActivityKind.UNREAD, buildActivityEntries(listOf(reply)).single().kind)
+            assertTrue(buildActivityEntries(listOf(reply)).single().needsYou)
+            val seen = reply.toBuilder().setSeenResponseSeq(30).build()
+            assertFalse(buildActivityEntries(listOf(seen)).single().needsYou)
+            val next = seen.toBuilder().setResponseSeq(50).build()
+            assertTrue(buildActivityEntries(listOf(next)).single().needsYou)
+            assertTrue(buildActivityEntries(listOf(next.toBuilder().setRuntime("running").build())).single().running)
+            assertTrue(buildActivityEntries(listOf(next.toBuilder().setArchived(true).build())).isEmpty())
+        }
+    }
+
     @Test fun `latest copy wins including archived tombstone and unstarted drafts stay out`() {
         val old = card("one", "running")
         val updated = old.toBuilder().setRuntime("idle").setUpdatedAt(now.toString()).build()

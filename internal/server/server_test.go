@@ -319,10 +319,6 @@ func TestConnectConversationEndToEnd(t *testing.T) {
 		t.Fatalf("stale poll=%#v err=%v", stale, err)
 	}
 
-	comment, err := client.AddComment(ctx, connect.NewRequest(&dieterv1.AddCommentRequest{CardId: card.GetId(), Message: "Reviewed", Name: "Human"}))
-	if err != nil || comment.Msg.GetBody() != "Reviewed" {
-		t.Fatalf("comment=%#v err=%v", comment, err)
-	}
 	labelBoard, err := client.CreateBoardLabel(ctx, connect.NewRequest(&dieterv1.CreateBoardLabelRequest{BoardId: board.GetId(), Name: "Backend", Color: "#6558df"}))
 	if err != nil || len(labelBoard.Msg.GetLabels()) != 1 {
 		t.Fatalf("labels=%#v err=%v", labelBoard, err)

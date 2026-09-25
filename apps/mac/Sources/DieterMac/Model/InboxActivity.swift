@@ -3,10 +3,11 @@ import Foundation
 
 /// Mirrors Android ActivityModel: one latest activity per conversation, not a run history.
 enum InboxActivityKind: Int, Equatable {
-    case running, answer, review, failed, recent
+    case running, answer, unread, review, failed, recent
 
     var label: String {
         switch self {
+        case .unread: "Unread reply"
         case .answer: "Answer"
         case .running: "Running"
         case .review: "Review"
@@ -24,8 +25,9 @@ struct InboxActivityEntry: Identifiable, Equatable {
     let detail: String
 
     var id: String { card.id }
-    var needsYou: Bool { kind == .answer || kind == .review }
+    var needsYou: Bool { kind == .answer || kind == .unread }
     var running: Bool { kind == .running }
+    var canFinish: Bool { card.scope != "chat" && card.lane == "review" && !running && kind != .answer }
 }
 
 struct InboxActivityDetail: Equatable {
@@ -64,6 +66,8 @@ enum InboxActivity {
                 kind = .answer
             } else if active {
                 kind = .running
+            } else if card.responseSeq > card.seenResponseSeq {
+                kind = .unread
             } else if card.scope != "chat", card.lane == "review" {
                 kind = .review
             } else if runtime == "failed" {
@@ -91,6 +95,8 @@ enum InboxActivity {
                 } else {
                     detail = card.summary.isEmpty ? "Working on your request" : card.summary
                 }
+            } else if kind == .unread {
+                detail = "New reply"
             } else if kind == .answer {
                 detail = "Waiting for your answer"
             } else if kind == .review {

@@ -14,7 +14,7 @@ import Testing
     let revision = model.conversationPresentationRevision
     for sequence in 1...1_000 {
         snapshot.conversation.lastSeq = Int64(sequence)
-        snapshot.detail.card.commentCount = Int32(sequence)
+        snapshot.detail.card.seenResponseSeq = Int64(sequence)
         model.conversation = snapshot
     }
     #expect(model.conversationPresentationRevision == revision)
