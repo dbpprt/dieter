@@ -15,7 +15,7 @@ import (
 )
 
 func TestSyncRejectsUnsupportedContractBeforeReadingStore(t *testing.T) {
-	for _, version := range []int32{0, 2, 3, 4, -1} {
+	for _, version := range []int32{0, protocol.Number - 1, protocol.Number + 1, protocol.Number + 2, -1} {
 		api := &grpcAPI{}
 		sent := false
 		err := api.watchSync(context.Background(), &dieterv1.SyncRequest{ProtocolVersion: version}, func(*dieterv1.SyncFrame) error { sent = true; return nil })

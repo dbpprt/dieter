@@ -626,70 +626,58 @@ extension DieterStore {
         chat || lane.caseInsensitiveCompare("todo") != .orderedSame
     }
 
-    func move(_ card: Dieter_V1_Card, lane: String, position: Int64? = nil) async {
+    func move(
+        _ card: Dieter_V1_Card, lane: String,
+        afterCardID: String = "", beforeCardID: String = ""
+    ) async {
         guard pendingCardMoves[card.id] == nil else { return }
-        let original = state.cards.first(where: { $0.id == card.id }) ?? card
-        let optimisticPosition =
-            position
-            ?? ((boardCards.filter { $0.id != card.id && $0.lane == lane }.map(\.position).max() ?? 0)
-                + 1_024)
-
+        let account = activeGateway.credentialID
+        let original = navigationCards[card.projectID]?.first(where: { $0.id == card.id }) ?? card
+        // Capture the target board and stable neighbors before a route switch
+        // suspends this action. Inbox may be showing a completely different board.
+        let peers = (navigationCards[card.projectID] ?? []).filter {
+            $0.id != card.id && $0.boardID == card.boardID && $0.lane == lane
+        }.sorted { $0.orderKey == $1.orderKey ? $0.id < $1.id : $0.orderKey < $1.orderKey }
+        var request = Dieter_V1_MoveCardRequest()
+        request.cardID = card.id; request.lane = lane
+        request.expectedRevision = original.placementRevision
+        request.afterCardID = afterCardID; request.beforeCardID = beforeCardID
         let operationID = UUID()
-        pendingCardMoves[card.id] = OptimisticCardMove(
-            operationID: operationID,
-            lane: lane,
-            position: optimisticPosition,
-            confirmsPosition: position != nil || original.lane == lane
-        )
-
-        var optimistic = original
-        optimistic.lane = lane
-        optimistic.position = optimisticPosition
-        acceptWorkspaceCard(optimistic)
+        let pending = OptimisticCardMove(
+            operationID: operationID, lane: lane,
+            position: (peers.map(\.position).max() ?? 0) + 1_024,
+            afterCardID: request.afterCardID, beforeCardID: request.beforeCardID)
+        pendingCardMoves[card.id] = pending
+        replica.upsert(pending.applying(to: original))
+        refreshReplicaPresentation()
         movingCardIDs.insert(card.id)
-
         let connected: Bool
         if lane == "running" && card.initialPromptSentAt.isEmpty {
             connected = await ensureConversationConnection(card)
         } else {
             connected = await ensureReplicaConnection(card.projectID)
         }
-        guard connected, selectedProjectIsLive, let rpc,
-            pendingCardMoves[card.id]?.operationID == operationID
-        else {
+        guard activeGateway.credentialID == account else { return }
+        guard connected, let rpc, pendingCardMoves[card.id]?.operationID == operationID else {
             if pendingCardMoves[card.id]?.operationID == operationID {
-                pendingCardMoves.removeValue(forKey: card.id)
-                movingCardIDs.remove(card.id)
+                pendingCardMoves.removeValue(forKey: card.id); movingCardIDs.remove(card.id)
                 acceptWorkspaceCard(original)
             }
             return
         }
-
-        var request = Dieter_V1_MoveCardRequest()
-        request.cardID = card.id
-        request.lane = lane
-        request.expectedRevision = original.placementRevision
-        if let position {
-            let peers = boardCards.filter { $0.id != card.id && $0.lane == lane }.sorted { $0.position < $1.position }
-            request.afterCardID = peers.last { $0.position < position }?.id ?? ""
-            request.beforeCardID = peers.first { $0.position >= position }?.id ?? ""
-        }
+        let mutationDaemonID = endpoint.daemonID
         do {
             let moved = try await rpc.moveCard(request)
-            if var pending = pendingCardMoves[card.id], pending.operationID == operationID {
-                pending.position = moved.position
-                pending.confirmsPosition = pending.confirmsPosition || original.lane == lane
-                pendingCardMoves[card.id] = pending
-            } else if pendingCardMoves[card.id] != nil {
-                return
-            }
-            guard self.rpc === rpc else { return }
-            acceptWorkspaceCard(moved)
-        } catch {
+            guard activeGateway.credentialID == account else { return }
             guard pendingCardMoves[card.id]?.operationID == operationID else { return }
-            pendingCardMoves.removeValue(forKey: card.id)
-            movingCardIDs.remove(card.id)
-            if self.rpc === rpc { acceptWorkspaceCard(original) }
+            pendingCardMoves.removeValue(forKey: card.id); movingCardIDs.remove(card.id)
+            // Merge the committed causal receipt even if navigation changed.
+            acceptWorkspaceCard(moved, sourceDaemonID: mutationDaemonID)
+        } catch {
+            guard activeGateway.credentialID == account else { return }
+            guard pendingCardMoves[card.id]?.operationID == operationID else { return }
+            pendingCardMoves.removeValue(forKey: card.id); movingCardIDs.remove(card.id)
+            acceptWorkspaceCard(original)
             show(error)
         }
     }
@@ -735,7 +723,10 @@ extension DieterStore {
     }
 
     func applyBoardCardMutation(_ updated: Dieter_V1_Card) {
-        let updated = replica.retainingOwnerDetails([updated], sourceDaemonID: endpoint.daemonID)[0]
+        var received = Dieter_V1_State()
+        received.cards = replica.retainingOwnerDetails([updated], sourceDaemonID: endpoint.daemonID)
+        // Optimistic operations are a presentation layer over the causal state.
+        let updated = replica.reconcile(received).cards[0]
         if let index = state.cards.firstIndex(where: { $0.id == updated.id }) {
             var next = state
             next.cards[index] = updated

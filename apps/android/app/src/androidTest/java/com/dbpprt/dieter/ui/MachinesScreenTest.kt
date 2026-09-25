@@ -17,6 +17,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToNode
 import com.dbpprt.dieter.connection.ConnectionPhase
 import com.dbpprt.dieter.connection.EndpointConnection
+import com.dbpprt.dieter.data.DIETER_API_VERSION
 import com.dbpprt.dieter.ui.theme.DieterTheme
 import com.dbpprt.dieter.v1.BuildInformation
 import com.dbpprt.dieter.v1.GPUDevice
@@ -124,7 +125,7 @@ class MachinesScreenTest {
         latencyMs = 12,
         online = true,
         daemonId = "fixture",
-        apiVersion = "1",
+        apiVersion = DIETER_API_VERSION,
     )
 
     private fun fixtureInformation(): MachineInformation = MachineInformation.newBuilder()
@@ -152,7 +153,7 @@ class MachinesScreenTest {
         .setDaemonBuild(
             BuildInformation.newBuilder()
                 .setReleaseVersion("v1.2.3")
-                .setApiVersion("1")
+                .setApiVersion(DIETER_API_VERSION)
                 .setSourceRevision("0123456789abcdef"),
         )
         .setGpu(

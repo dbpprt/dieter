@@ -152,7 +152,21 @@ type TokenUsage struct {
 	Partial          bool  `json:"partial"`
 }
 
+// CardStateField is projection-only causal metadata, never persisted in a card.
+type CardStateField struct {
+	Name     string
+	Revision string
+	Versions []CardStateVersion
+}
+type CardStateVersion struct {
+	Clock   map[string]uint64
+	Rank    string
+	Value   *Card
+	Deleted bool
+}
+
 type Card struct {
+	StateFields         []CardStateField           `json:"-" yaml:"-"`
 	PlacementRevision   string                     `json:"placementRevision,omitempty" yaml:"-"`
 	OwnerDaemonID       string                     `json:"ownerDaemonId" yaml:"owner_daemon_id"`
 	CheckoutID          string                     `json:"checkoutId" yaml:"checkout_id"`

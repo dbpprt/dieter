@@ -1405,9 +1405,12 @@ func (s *Store) UpdateCardCache(ref string, input CardCacheInput) (model.Card, e
 	if item.Title != title {
 		item.TitleRevision++
 	}
+	item.UpdatedAt = timestamp()
+	if runtime != item.Runtime {
+		item.RuntimeUpdatedAt = item.UpdatedAt
+	}
 	item.Title = title
 	item.Provider, item.ProviderAccountKey, item.Model, item.Effort, item.ProviderOptions, item.Runtime, item.Summary = provider, providerAccountKey, modelName, effort, providerOptions, runtime, summary
-	item.RuntimeUpdatedAt, item.UpdatedAt = timestamp(), timestamp()
 	return s.saveCard(item)
 }
 
@@ -1435,6 +1438,7 @@ func (s *Store) MarkPromptSent(ref string) (model.Card, error) {
 		}
 	}
 	item.Runtime, item.PhaseChangedAt, item.UpdatedAt = "starting", timestamp(), timestamp()
+	item.RuntimeUpdatedAt = item.UpdatedAt
 	return s.saveCard(item)
 }
 

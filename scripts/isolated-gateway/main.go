@@ -37,6 +37,7 @@ import (
 	"github.com/dbpprt/dieter/internal/machine"
 	"github.com/dbpprt/dieter/internal/model"
 	"github.com/dbpprt/dieter/internal/peerstore"
+	"github.com/dbpprt/dieter/internal/protocol"
 	"github.com/dbpprt/dieter/internal/server"
 	boardstore "github.com/dbpprt/dieter/internal/store"
 )
@@ -383,7 +384,7 @@ func run(address, home, offlineTrigger, daemonRestartTrigger string, boardStress
 	if err = incompatibleIdentity.SaveCredential(incompatibleCredential.GetDaemonId(), incompatibleCredential.GetDaemonName(), incompatibleCredential.GetCertificatePem(), incompatibleCredential.GetDaemonCaPem(), incompatibleCredential.GetGatewaySigningPublicKey(), incompatibleCredential.GetExpiresAt(), incompatibleCredential.GetGeneration()); err != nil {
 		return err
 	}
-	if err = gatewayStore.MarkDaemonSeen(incompatibleIdentity.ID, "incompatible-e2e", "2", []byte("[]"), []byte("{}")); err != nil {
+	if err = gatewayStore.MarkDaemonSeen(incompatibleIdentity.ID, "incompatible-e2e", fmt.Sprint(protocol.Number+1), []byte("[]"), []byte("{}")); err != nil {
 		return err
 	}
 

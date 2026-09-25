@@ -2,17 +2,22 @@ import DieterAPI
 import Foundation
 
 package struct OptimisticCardMove: Equatable, Sendable {
-    package init(operationID: UUID, lane: String, position: Int64, confirmsPosition: Bool) {
+    package init(
+        operationID: UUID, lane: String, position: Int64, afterCardID: String = "",
+        beforeCardID: String = "", placementRevision: String = ""
+    ) {
         self.operationID = operationID; self.lane = lane; self.position = position;
-        self.confirmsPosition = confirmsPosition
+        self.afterCardID = afterCardID; self.beforeCardID = beforeCardID; self.placementRevision = placementRevision
     }
     package let operationID: UUID
     package var lane: String
     package var position: Int64
-    package var confirmsPosition: Bool
+    package var afterCardID: String
+    package var beforeCardID: String
+    package var placementRevision: String
 
     package func isConfirmed(by card: Dieter_V1_Card) -> Bool {
-        card.lane == lane && (!confirmsPosition || card.position == position)
+        !placementRevision.isEmpty && card.placementRevision == placementRevision
     }
 
     package func applying(to card: Dieter_V1_Card) -> Dieter_V1_Card {

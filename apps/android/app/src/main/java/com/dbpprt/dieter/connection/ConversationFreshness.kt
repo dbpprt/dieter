@@ -12,10 +12,10 @@ internal fun freshestConversation(
     existing: ConversationSnapshot?,
     incoming: ConversationSnapshot,
 ): ConversationSnapshot {
-    existing ?: return incoming
+    if (existing == null || existing.detail.card.id != incoming.detail.card.id) return incoming
     val existingSeq = existing.conversation.lastSeq
     val incomingSeq = incoming.conversation.lastSeq
-    return when {
+    val transcript = when {
         incomingSeq > existingSeq -> incoming
         incomingSeq < existingSeq -> existing
         // Same live tail: keep the richer page so foreground paging survives
@@ -23,4 +23,9 @@ internal fun freshestConversation(
         incoming.conversation.messagesCount >= existing.conversation.messagesCount -> incoming
         else -> existing
     }
+    val detail = incoming.detail.toBuilder()
+        .setCard(mergeCardState(incoming.detail.card, existing.detail.card)).build()
+    // Keep the cached instance when only the observation's arrival changed.
+    return if (detail == transcript.detail) transcript
+        else transcript.toBuilder().setDetail(detail).build()
 }

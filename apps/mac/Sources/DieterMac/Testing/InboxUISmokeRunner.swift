@@ -223,6 +223,7 @@
             _ = await select(waiting, store: store, window: window)
             let retainedDraft = store.composerText
             await replaceSearch(review.title, window: window)
+            let recentOrder = store.inboxEntries.filter { !$0.running && !$0.needsYou }.map(\.id)
             let finishClicked = await click("inbox.finish.\(review.id)", window)
             let finished = await NativeUIAccessibility.wait {
                 store.inboxEntries.contains { $0.id == review.id && $0.card.lane == "done" && !$0.needsYou }
@@ -232,6 +233,10 @@
             record(
                 "finish-moves-review-to-done",
                 finishClicked && finished && selectedID(store) == waiting.id && store.composerText == retainedDraft,
+                &results)
+            record(
+                "finish-preserves-recent-order",
+                store.inboxEntries.filter { !$0.running && !$0.needsYou }.map(\.id) == recentOrder,
                 &results)
             capture(window, "07-inbox-finished-review.png", output)
 

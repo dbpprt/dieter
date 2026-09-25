@@ -28,6 +28,7 @@ import (
 	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
 	"github.com/dbpprt/dieter/internal/harness"
+	"github.com/dbpprt/dieter/internal/protocol"
 	"github.com/dbpprt/dieter/internal/remotedesktop"
 	"github.com/dbpprt/dieter/internal/server"
 	"github.com/dbpprt/dieter/internal/store"
@@ -327,7 +328,7 @@ func TestGatewayEnrollsDaemonAndRelaysDieterService(t *testing.T) {
 		t.Fatalf("close relayed terminal: %v", err)
 	}
 
-	syncStream, err := dieterClient.WatchSync(routed, &dieterv1.SyncRequest{ConversationLimit: 0, HeartbeatMs: 1_000, ProtocolVersion: 1})
+	syncStream, err := dieterClient.WatchSync(routed, &dieterv1.SyncRequest{ConversationLimit: 0, HeartbeatMs: 1_000, ProtocolVersion: protocol.Number})
 	if err != nil {
 		t.Fatalf("open relayed global sync: %v", err)
 	}
@@ -1163,13 +1164,13 @@ func testRemoteDesktopThroughGateway(t *testing.T, routed context.Context, clien
 		t.Fatal(err)
 	}
 	ordered := true
-	stateChannel, err := viewer.CreateDataChannel("dieter-input-state-v1", &webrtc.DataChannelInit{Ordered: &ordered})
+	stateChannel, err := viewer.CreateDataChannel("dieter-input-state-v"+protocol.Version, &webrtc.DataChannelInit{Ordered: &ordered})
 	if err != nil {
 		t.Fatal(err)
 	}
 	unordered := false
 	zero := uint16(0)
-	if _, err := viewer.CreateDataChannel("dieter-pointer-v1", &webrtc.DataChannelInit{Ordered: &unordered, MaxRetransmits: &zero}); err != nil {
+	if _, err := viewer.CreateDataChannel("dieter-pointer-v"+protocol.Version, &webrtc.DataChannelInit{Ordered: &unordered, MaxRetransmits: &zero}); err != nil {
 		t.Fatal(err)
 	}
 	trackReceived := make(chan struct{}, 1)
@@ -1194,7 +1195,7 @@ func testRemoteDesktopThroughGateway(t *testing.T, routed context.Context, clien
 		t.Fatal("viewer ICE gathering timed out")
 	}
 	offer = *viewer.LocalDescription()
-	request := &dieterv1.StartRemoteDesktopRequest{InputProtocolVersion: 1,
+	request := &dieterv1.StartRemoteDesktopRequest{InputProtocolVersion: protocol.Number,
 		ClientNonce: "gateway-e2e-nonce", RtcConfiguration: rtc,
 		Offer:     &dieterv1.RemoteDesktopSessionDescription{Type: "offer", Sdp: offer.SDP},
 		DisplayId: "primary", Control: true, MaxFps: 10, MaxBitrateKbps: 500,

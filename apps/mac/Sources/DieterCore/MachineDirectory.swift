@@ -138,8 +138,8 @@ package enum MachineDirectoryReducer {
     ) -> Dieter_V1_Card {
         guard let previous, previous.id == incoming.id,
             !incoming.ownerDaemonID.isEmpty, previous.ownerDaemonID == incoming.ownerDaemonID,
-            sourceDaemonID != incoming.ownerDaemonID
-        else { return incoming }
+            sourceDaemonID != incoming.ownerDaemonID || CardStateProjection.hasOlderRuntime(incoming, than: previous)
+        else { return CardStateProjection.merge(incoming, with: previous) }
         // Start with the full card so future owner-local fields are retained.
         // Overlay the peerstore.DomainFields["item"] contract and assignments.
         var result = previous
@@ -172,7 +172,12 @@ package enum MachineDirectoryReducer {
         result.placementRevision = incoming.placementRevision
         result.conflictKeys = incoming.conflictKeys
         result.labelIds = incoming.labelIds
-        return result
+        result.stateFields = incoming.stateFields
+        var merged = CardStateProjection.merge(result, with: previous)
+        // Owner-only subagent activity belongs to that runtime observation.
+        // A newer sparse completion must not retain an old running badge.
+        if merged.runtimeUpdatedAt != previous.runtimeUpdatedAt { merged.activeSubagents = [] }
+        return merged
     }
 
     package static func mergeProject(_ previous: Dieter_V1_Project?, _ incoming: Dieter_V1_Project) -> Dieter_V1_Project

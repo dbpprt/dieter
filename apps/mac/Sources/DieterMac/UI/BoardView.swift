@@ -95,17 +95,18 @@ enum BoardCardStartPolicy {
 }
 
 enum BoardDropOrdering {
-    static func position(before targetCardID: String, movingCardID: String, cards: [Dieter_V1_Card])
-        -> Int64?
-    {
-        let remaining = cards.filter { $0.id != movingCardID }.sorted { $0.position < $1.position }
-        guard let index = remaining.firstIndex(where: { $0.id == targetCardID }) else { return nil }
-        let upper = remaining[index].position
-        guard index > 0 else { return upper - 1_024 }
-        let lower = remaining[index - 1].position
-        guard upper > lower + 1 else { return upper }
-        return lower + ((upper - lower) / 2)
+    static func neighbors(
+        before target: String?, movingCardID: String, cards: [Dieter_V1_Card],
+        direction: BoardCardSortDirection, moves: [String: OptimisticCardMove] = [:]
+    ) -> (after: String, before: String) {
+        let visible = BoardCardOrdering.sorted(
+            cards.filter { $0.id != movingCardID }, direction: direction, moves: moves)
+        let index = target.flatMap { id in visible.firstIndex { $0.id == id } } ?? visible.count
+        let preceding = index > 0 ? visible[index - 1].id : ""
+        let following = index < visible.count ? visible[index].id : ""
+        return direction == .ascending ? (preceding, following) : (following, preceding)
     }
+
 }
 
 enum BoardCardSortDirection {
@@ -113,33 +114,31 @@ enum BoardCardSortDirection {
     case ascending
 
     var toggled: Self { self == .descending ? .ascending : .descending }
-    var title: String { self == .descending ? "Newest first" : "Oldest first" }
+    var title: String { self == .descending ? "Reverse board order" : "Board order" }
     var systemImage: String { self == .descending ? "arrow.down" : "arrow.up" }
 }
 
 enum BoardCardOrdering {
     static func sorted(
         _ cards: [Dieter_V1_Card],
-        direction: BoardCardSortDirection = .descending
+        direction: BoardCardSortDirection = .descending,
+        moves: [String: OptimisticCardMove] = [:]
     ) -> [Dieter_V1_Card] {
-        cards.sorted { left, right in
-            let leftDate = createdAt(left.createdAt)
-            let rightDate = createdAt(right.createdAt)
-            switch (leftDate, rightDate) {
-            case (let leftDate?, let rightDate?) where leftDate != rightDate:
-                return direction == .descending ? leftDate > rightDate : leftDate < rightDate
-            case (_?, nil):
-                return true
-            case (nil, _?):
-                return false
-            default:
-                return direction == .descending ? left.id > right.id : left.id < right.id
-            }
+        var ordered = cards.sorted { left, right in
+            if left.orderKey != right.orderKey { return left.orderKey < right.orderKey }
+            if left.orderKey.isEmpty, left.position != right.position { return left.position < right.position }
+            return left.id < right.id
         }
-    }
-
-    private static func createdAt(_ value: String) -> Date? {
-        DieterTimestamp.date(from: value)
+        for (id, move) in moves.sorted(by: { $0.key < $1.key }) {
+            guard let index = ordered.firstIndex(where: { $0.id == id && $0.lane == move.lane }) else { continue }
+            let card = ordered.remove(at: index)
+            let insertion =
+                ordered.firstIndex { $0.id == move.beforeCardID }
+                ?? ordered.firstIndex { $0.id == move.afterCardID }.map { $0 + 1 }
+                ?? ordered.count
+            ordered.insert(card, at: insertion)
+        }
+        return direction == .ascending ? ordered : ordered.reversed()
     }
 }
 
@@ -1244,7 +1243,7 @@ struct KanbanView: View {
                             lane: lane,
                             cards: BoardCardOrdering.sorted(
                                 store.boardProjection.displayedCardsByLane[lane.id] ?? [],
-                                direction: direction
+                                direction: direction, moves: store.pendingCardMoves
                             ),
                             sortDirection: direction,
                             onToggleSort: { store.toggleLaneSort(board: board.id, lane: lane.id) }
@@ -1346,7 +1345,10 @@ struct LaneColumn: View {
                 let card = store.state.cards.first(where: { $0.id == payload.cardID })
             else { return false }
             if payload.sourceLane == lane.id, cards.last?.id == payload.cardID { return true }
-            Task { await store.move(card, lane: lane.id) }
+            let anchors = BoardDropOrdering.neighbors(
+                before: nil, movingCardID: card.id, cards: cards, direction: sortDirection,
+                moves: store.pendingCardMoves)
+            Task { await store.move(card, lane: lane.id, afterCardID: anchors.after, beforeCardID: anchors.before) }
             return true
         } isTargeted: {
             isDropTargeted = $0
@@ -1382,15 +1384,12 @@ struct LaneInsertionTarget: View {
                 let card = store.state.cards.first(where: { $0.id == payload.cardID })
             else { return false }
             if payload.sourceLane == laneID, beforeCardID == payload.cardID { return true }
-            let position: Int64?
-            if let beforeCardID {
-                position = BoardDropOrdering.position(
-                    before: beforeCardID, movingCardID: payload.cardID,
-                    cards: store.boardProjection.displayedCardsByLane[laneID] ?? [])
-            } else {
-                position = nil
-            }
-            Task { await store.move(card, lane: laneID, position: position) }
+            let anchors = BoardDropOrdering.neighbors(
+                before: beforeCardID, movingCardID: payload.cardID,
+                cards: store.boardProjection.displayedCardsByLane[laneID] ?? [],
+                direction: store.laneSortDirection(board: card.boardID, lane: laneID),
+                moves: store.pendingCardMoves)
+            Task { await store.move(card, lane: laneID, afterCardID: anchors.after, beforeCardID: anchors.before) }
             return true
         } isTargeted: {
             targeted = $0
@@ -1649,12 +1648,12 @@ struct BoardCardView: View {
             Task { await store.merge(dragged, into: card) }
             return true
         }
-        let laneCards = store.displayedCards.filter { $0.lane == card.lane }.sorted {
-            $0.position < $1.position
-        }
-        let position = BoardDropOrdering.position(
-            before: card.id, movingCardID: payload.cardID, cards: laneCards)
-        Task { await store.move(dragged, lane: card.lane, position: position) }
+        let anchors = BoardDropOrdering.neighbors(
+            before: card.id, movingCardID: payload.cardID,
+            cards: store.displayedCards.filter { $0.lane == card.lane },
+            direction: store.laneSortDirection(board: card.boardID, lane: card.lane),
+            moves: store.pendingCardMoves)
+        Task { await store.move(dragged, lane: card.lane, afterCardID: anchors.after, beforeCardID: anchors.before) }
         return true
     }
 

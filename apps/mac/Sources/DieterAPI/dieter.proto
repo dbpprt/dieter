@@ -529,7 +529,24 @@ message TokenUsage {
   bool partial = 6;
 }
 
+// Causal presentation of the shared placement and runtime registers. Native
+// clients join these frontiers before publishing observations from several
+// replicas. rank is the daemon's deterministic sibling selection key; value
+// contains only the fields belonging to the named register, never owner data.
+message CardStateVersion {
+  map<string, uint64> clock = 1;
+  string rank = 2;
+  Card value = 3;
+  bool deleted = 4;
+}
+message CardStateField {
+  string name = 1;
+  string revision = 2;
+  repeated CardStateVersion versions = 3;
+}
+
 message Card {
+ repeated CardStateField state_fields = 46;
  string owner_daemon_id = 38;
  string checkout_id = 39;
  string order_key = 40;

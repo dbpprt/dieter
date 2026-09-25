@@ -28,6 +28,7 @@ native:
   - "inbox.connection-fixture"
   - "inbox.feed-native-resize"
   - "inbox.finish-moves-review-to-done"
+  - "inbox.finish-preserves-recent-order"
   - "inbox.finish-only-ready-review"
   - "inbox.layout-default"
   - "inbox.layout-width-1100"

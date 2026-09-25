@@ -104,7 +104,13 @@ package final class WorkspaceReplica {
             projectReplicaEndpointIDs = projection.projectReplicaEndpointIDs
         }
         if navigationBoards != projection.boards { navigationBoards = projection.boards }
-        if navigationCards != projection.cards { navigationCards = projection.cards }
+        let reconciled = OptimisticCardProjection.reconcile(
+            cards: projection.cards.values.flatMap { $0 }, moves: pendingCardMoves,
+            labels: pendingCardLabelUpdates, starts: pendingCardStarts)
+        pendingCardMoves = reconciled.moves; pendingCardLabelUpdates = reconciled.labels
+        pendingCardStarts = reconciled.starts
+        let cards = Dictionary(grouping: reconciled.cards, by: \.projectID)
+        if navigationCards != cards { navigationCards = cards }
         if chats != projection.chats { chats = projection.chats }
         if chatProjects != projects { chatProjects = projects }
     }
@@ -122,8 +128,6 @@ package final class WorkspaceReplica {
     }
 
     package func retainingOwnerDetails(_ cards: [Dieter_V1_Card], sourceDaemonID: String?) -> [Dieter_V1_Card] {
-        guard cards.contains(where: { !$0.ownerDaemonID.isEmpty && $0.ownerDaemonID != sourceDaemonID })
-        else { return cards }
         let known = Dictionary(
             (state.cards + state.chats + navigationCards.values.flatMap { $0 } + chats).map { ($0.id, $0) },
             uniquingKeysWith: { _, latest in latest })

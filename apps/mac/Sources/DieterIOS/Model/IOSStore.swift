@@ -238,7 +238,8 @@
                     if ProcessInfo.processInfo.environment["DIETER_IOS_TEST_GATEWAY"] != nil {
                         let startsSignedOut =
                             ProcessInfo.processInfo.environment["DIETER_IOS_TEST_START_SIGNED_OUT"] == "1"
-                        token = !startsSignedOut || acceptedTestSignIn
+                        token =
+                            !startsSignedOut || acceptedTestSignIn
                             ? ProcessInfo.processInfo.environment["DIETER_IOS_TEST_TOKEN"] : nil
                     }
                 #endif
@@ -446,6 +447,26 @@
             }
         }
 
+        private func acceptSelectedDetail(_ incoming: Dieter_V1_CardDetail) {
+            var detail = incoming
+            let known = (directoryProjection.cards[incoming.card.projectID] ?? []) + directoryProjection.chats
+            detail.card = MachineDirectoryReducer.retainingOwnerDetails(
+                incoming.card, from: known.first { $0.id == incoming.card.id },
+                sourceDaemonID: incoming.card.ownerDaemonID)
+            detail.card = MachineDirectoryReducer.retainingOwnerDetails(
+                detail.card, from: selectedCard?.card, sourceDaemonID: incoming.card.ownerDaemonID)
+            let card = detail.card
+            if card.scope == "chat", card.boardID.isEmpty {
+                directoryProjection.chats.removeAll { $0.id == card.id }
+                directoryProjection.chats.append(card)
+            } else {
+                directoryProjection.cards[card.projectID, default: []].removeAll { $0.id == card.id }
+                directoryProjection.cards[card.projectID, default: []].append(card)
+            }
+            selectedCard = detail
+            publishDirectory()
+        }
+
         private func updateMachines(_ values: [DieterEndpoint], preferredUtilityID: String?) {
             let previousSupported = Set(supportedMachines.compactMap(\.daemonID))
             // Only the current application contract enters workspace or utility state.
@@ -607,7 +628,7 @@
             do {
                 let snapshot = try await rpc.conversation(cardID: id, limit: 60)
                 guard owns(requestScope) else { return }
-                selectedCard = snapshot.detail
+                acceptSelectedDetail(snapshot.detail)
                 transcript.reset(snapshot)
                 publishTranscript()
                 watchConversation(id: id, scope: requestScope)
@@ -655,9 +676,9 @@
             guard owns(scope) else { return }
             transcript.apply(update)
             if update.hasSnapshot {
-                selectedCard = update.snapshot.detail
+                acceptSelectedDetail(update.snapshot.detail)
             } else if update.hasDetail {
-                selectedCard = update.detail
+                acceptSelectedDetail(update.detail)
             }
             publishTranscript()
         }
@@ -894,9 +915,16 @@
         func cancelTask() async { await mutateSelected { rpc, card in try await rpc.cancelCard(id: card.id) } }
 
         func moveTask(lane: String) async {
+            let requestScope = scope
             await mutateSelected { rpc, card in
                 var request = Dieter_V1_MoveCardRequest(); request.cardID = card.id; request.lane = lane
-                _ = try await rpc.moveCard(request)
+                request.expectedRevision = card.placementRevision
+                let moved = try await rpc.moveCard(request)
+                guard self.owns(requestScope), var detail = self.selectedCard, detail.card.id == moved.id else {
+                    return
+                }
+                detail.card = moved
+                self.acceptSelectedDetail(detail)
             }
         }
 
@@ -912,7 +940,7 @@
                 guard owns(scope) else { return }
                 let detail = try await rpc.card(id: card.id)
                 guard owns(scope) else { return }
-                selectedCard = detail
+                acceptSelectedDetail(detail)
             } catch {
                 guard owns(scope) else { return }
                 errorMessage = IOSUserError.message(error)

@@ -101,7 +101,7 @@ import UniformTypeIdentifiers
     )
     #expect(
         String(data: message, encoding: .utf8)
-            == "dieter-remote-desktop-v1\nrd_one\nnonce\nsha-256 AA:BB\n2026-08-25T08:00:00Z\nAAEC\ntrue\nprimary\n1\nBwcHBwcHBwcHBwcHBwcHBw"
+            == "dieter-remote-desktop-v\(DieterContract.number)\nrd_one\nnonce\nsha-256 AA:BB\n2026-08-25T08:00:00Z\nAAEC\ntrue\nprimary\n\(DieterContract.number)\nBwcHBwcHBwcHBwcHBwcHBw"
     )
 }
 
@@ -258,7 +258,7 @@ private actor CardStartRPCStub: DieterCardStartRPC {
     #expect(!request.commandID.isEmpty)
     #expect(store.state.cards.first?.lane == "running")
     #expect(store.state.cards.first?.initialPromptSentAt == "2026-09-04T19:00:00Z")
-    #expect(store.pendingCardStarts[card.id] != nil)
+    #expect(store.pendingCardStarts[card.id] == nil)
 }
 
 @Test @MainActor func pinningAndUnpinningAChatUpdatesTheMacProjectionImmediately() async throws {
@@ -677,14 +677,6 @@ func liveDirectRouteRejectsTheWrongDaemonIdentity() async throws {
     #expect(!MachinePresenceText.online(serverOnline: false, lastSeenAt: "2026-08-18T14:59:59Z", relativeTo: now))
 }
 
-@Test func cardDropOrderingCreatesStableInsertionPositions() {
-    let cards = [dragCard("a", position: 1_024), dragCard("b", position: 2_048), dragCard("c", position: 3_072)]
-
-    #expect(BoardDropOrdering.position(before: "a", movingCardID: "c", cards: cards) == 0)
-    #expect(BoardDropOrdering.position(before: "c", movingCardID: "a", cards: cards) == 2_560)
-    #expect(BoardDropOrdering.position(before: "missing", movingCardID: "a", cards: cards) == nil)
-}
-
 @Test func cardDragPayloadRejectsUnrelatedText() {
     let encoded = BoardCardDragPayload(cardID: "c_123", boardID: "b_456", sourceLane: "todo").encoded
     #expect(BoardCardDragPayload(encoded)?.cardID == "c_123")
@@ -767,7 +759,7 @@ func liveDirectRouteRejectsTheWrongDaemonIdentity() async throws {
         operationID: UUID(),
         lane: "review",
         position: 2_048,
-        confirmsPosition: true
+        placementRevision: "committed"
     )
 
     let projected = OptimisticCardProjection.reconcile(
@@ -782,6 +774,7 @@ func liveDirectRouteRejectsTheWrongDaemonIdentity() async throws {
     var confirmed = stale
     confirmed.lane = "review"
     confirmed.position = 2_048
+    confirmed.placementRevision = "committed"
     let synchronized = OptimisticCardProjection.reconcile(
         cards: [confirmed],
         moves: projected.moves,
@@ -1729,38 +1722,23 @@ private func terminalKeyEvent(
     #expect(!title.hasSuffix(" "))
 }
 
-@Test func boardCardsDefaultToNewestFirstAndCanSortOldestFirst() {
-    func card(_ id: String, _ createdAt: String) -> Dieter_V1_Card {
-        var card = Dieter_V1_Card()
-        card.id = id
-        card.createdAt = createdAt
-        return card
-    }
-    let cards = [
-        card("oldest", "2026-08-16T18:00:00Z"),
-        card("newest", "2026-08-16T20:00:00Z"),
-        card("middle", "2026-08-16T19:00:00Z"),
-    ]
-
-    #expect(BoardCardOrdering.sorted(cards).map(\.id) == ["newest", "middle", "oldest"])
-    #expect(BoardCardOrdering.sorted(cards, direction: .ascending).map(\.id) == ["oldest", "middle", "newest"])
-}
-
-@Test func boardCardCreationOrderingKeepsMissingDatesLastAndBreaksTiesDeterministically() {
-    func card(_ id: String, _ createdAt: String) -> Dieter_V1_Card {
-        var card = Dieter_V1_Card()
-        card.id = id
-        card.createdAt = createdAt
-        return card
-    }
-    let cards = [
-        card("a", "not-a-timestamp"),
-        card("b", "2026-08-16T20:00:00Z"),
-        card("c", "2026-08-16T20:00:00Z"),
-    ]
-
+@Test func boardOrderingUsesPlacementEvenWhenCreationTimesDisagree() {
+    var a = Dieter_V1_Card(); a.id = "a"; a.orderKey = "100"; a.createdAt = "2099-01-01T00:00:00Z"
+    var b = a; b.id = "b"; b.orderKey = "200"; b.createdAt = "2020-01-01T00:00:00Z"
+    var c = a; c.id = "c"; c.orderKey = "300"
+    let cards = [c, a, b]
     #expect(BoardCardOrdering.sorted(cards).map(\.id) == ["c", "b", "a"])
-    #expect(BoardCardOrdering.sorted(cards, direction: .ascending).map(\.id) == ["b", "c", "a"])
+    #expect(BoardCardOrdering.sorted(cards, direction: .ascending).map(\.id) == ["a", "b", "c"])
+    let ascending = BoardDropOrdering.neighbors(before: "b", movingCardID: "c", cards: cards, direction: .ascending)
+    #expect(ascending.after == "a" && ascending.before == "b")
+    let descending = BoardDropOrdering.neighbors(before: "b", movingCardID: "a", cards: cards, direction: .descending)
+    #expect(descending.after == "b" && descending.before == "c")
+    let end = BoardDropOrdering.neighbors(before: nil, movingCardID: "c", cards: cards, direction: .descending)
+    #expect(end.after == "" && end.before == "a")
+    let pending = ["b": OptimisticCardMove(operationID: UUID(), lane: "", position: 0, beforeCardID: "a")]
+    let duringMove = BoardDropOrdering.neighbors(
+        before: "a", movingCardID: "c", cards: cards, direction: .ascending, moves: pending)
+    #expect(duringMove.after == "b" && duringMove.before == "a")
 }
 
 @Test func laneCardPagesBoundTenThousandCardsAndClampAfterDeletion() {
@@ -2094,7 +2072,7 @@ private func terminalKeyEvent(
     let gateway = DieterEndpoint(name: "Gateway", host: "example.com", port: 443, secure: true)
     let incompatible = DieterEndpoint(
         name: "Legacy", host: gateway.host, port: gateway.port, secure: true,
-        daemonID: "legacy", online: true, apiVersion: "2"
+        daemonID: "legacy", online: true, apiVersion: String(DieterContract.number + 1)
     )
     let unknown = DieterEndpoint(
         name: "Unknown", host: gateway.host, port: gateway.port, secure: true,
@@ -2117,14 +2095,14 @@ private func terminalKeyEvent(
             preferredDaemonID: "legacy",
             explicitMachineSelection: true
         ) == [incompatible])
-    #expect(try #require(incompatible.incompatibilityDescription).contains("API 2"))
+    #expect(try #require(incompatible.incompatibilityDescription).contains("API \(DieterContract.number + 1)"))
 }
 
 @Test func explicitGatewaySelectionClearsTheCurrentMachinePreference() {
     let gateway = DieterEndpoint(name: "Gateway", host: "example.com", port: 443, secure: true)
     let machine = DieterEndpoint(
         name: "Legacy", host: gateway.host, port: gateway.port, secure: true,
-        daemonID: "legacy", online: true, apiVersion: "2"
+        daemonID: "legacy", online: true, apiVersion: String(DieterContract.number + 1)
     )
 
     #expect(MachineRoutingPolicy.preferredDaemonID(newEndpoint: nil, currentEndpoint: machine) == "legacy")

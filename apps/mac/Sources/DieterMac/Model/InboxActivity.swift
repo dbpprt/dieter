@@ -110,7 +110,6 @@ enum InboxActivity {
             }
             return InboxActivityEntry(card: card, kind: kind, at: at, start: start, detail: detail)
         }.sorted {
-            if $0.kind != $1.kind { return $0.kind.rawValue < $1.kind.rawValue }
             if $0.at != $1.at { return ($0.at ?? .distantPast) > ($1.at ?? .distantPast) }
             return $0.id < $1.id
         }
@@ -197,10 +196,11 @@ final class InboxActivityProjection {
 
 extension DieterStore {
     var inboxEntries: [InboxActivityEntry] {
-        // Source order is stable for ties; newest timestamp wins before filtering archived copies.
-        let cards =
-            navigationCards.keys.sorted().flatMap { navigationCards[$0] ?? [] }
-            + chats + state.cards + state.chats
+        // Read the reconciled directory once. Combining independent timestamp-
+        // selected copies here can undo causal merges or optimistic Finish.
+        let directoryCards = navigationCards.keys.sorted().flatMap { navigationCards[$0] ?? [] } + chats
+        let known = Set(directoryCards.map(\.id))
+        let cards = directoryCards + (state.cards + state.chats).filter { !known.contains($0.id) }
         var snapshots = syncSnapshot?.conversations ?? []
         if let conversation { snapshots.append(conversation) }
         return inboxActivityProjection.resolve(

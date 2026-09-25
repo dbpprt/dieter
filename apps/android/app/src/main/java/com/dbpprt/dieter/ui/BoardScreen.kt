@@ -1555,11 +1555,12 @@ internal fun BoardLanePager(
         key = { lanes[it].id },
     ) { page ->
         val lane = lanes[page]
-        val sortDirection = if (state.sharedLaneSortDirections["lane.${state.selectedBoardId}.${lane.id}.sort"] == "ascending") CardCreationSortDirection.ASCENDING else CardCreationSortDirection.DESCENDING
-        val visible = remember(boardCards, lane.id, sortDirection) {
-            cardsByCreationTime(
+        val sortDirection = if (state.sharedLaneSortDirections["lane.${state.selectedBoardId}.${lane.id}.sort"] == "ascending") CardPlacementSortDirection.ASCENDING else CardPlacementSortDirection.DESCENDING
+        val visible = remember(boardCards, lane.id, sortDirection, state.pendingCardMoves) {
+            cardsByPlacement(
                 boardCards.filter { card -> card.lane == lane.id },
                 direction = sortDirection,
+                moves = state.pendingCardMoves,
             )
         }
         Column(Modifier.fillMaxSize()) {
@@ -1647,13 +1648,13 @@ internal fun BoardLanePager(
 @Composable
 internal fun LaneSortButton(
     laneName: String,
-    direction: CardCreationSortDirection,
+    direction: CardPlacementSortDirection,
     onToggle: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val descending = direction == CardCreationSortDirection.DESCENDING
-    val currentLabel = if (descending) "newest first" else "oldest first"
-    val nextLabel = if (descending) "oldest first" else "newest first"
+    val descending = direction == CardPlacementSortDirection.DESCENDING
+    val currentLabel = if (descending) "reverse board order" else "board order"
+    val nextLabel = if (descending) "board order" else "reverse board order"
     TextButton(
         onClick = onToggle,
         modifier = modifier
@@ -1670,6 +1671,6 @@ internal fun LaneSortButton(
             modifier = Modifier.size(17.dp),
         )
         Spacer(Modifier.width(6.dp))
-        Text(if (descending) "Newest first" else "Oldest first", fontSize = 12.sp, fontWeight = FontWeight.Medium)
+        Text(if (descending) "Reverse board order" else "Board order", fontSize = 12.sp, fontWeight = FontWeight.Medium)
     }
 }

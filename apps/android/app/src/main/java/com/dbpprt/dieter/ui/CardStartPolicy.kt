@@ -28,10 +28,12 @@ data class OptimisticCardMove(
     val operationId: String,
     val lane: String,
     val position: Long,
-    val confirmsPosition: Boolean,
+    val placementRevision: String = "",
+    val afterCardId: String = "",
+    val beforeCardId: String = "",
 ) {
     fun isConfirmedBy(card: Card): Boolean =
-        card.lane == lane && (!confirmsPosition || card.position == position)
+        placementRevision.isNotEmpty() && card.placementRevision == placementRevision
 
     fun applyingTo(card: Card): Card = card.toBuilder()
         .setLane(lane)

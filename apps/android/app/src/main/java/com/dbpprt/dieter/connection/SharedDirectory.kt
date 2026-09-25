@@ -32,10 +32,14 @@ internal fun sharedItems(
     ownerDetails: Map<String, Card> = emptyMap(),
 ): List<Card> = values.groupBy { it.id }.values.map { versions ->
     val accepted = versions.filter { it.ownerDaemonId.isNotEmpty() }
-    val replica = if (accepted.isEmpty()) versions.last() else accepted.last()
+    val replica = (if (accepted.isEmpty()) versions else accepted).reduce { previous, incoming -> mergeCardState(incoming, previous) }
     val owner = ownerDetails[replica.id]
         ?.takeIf { it.ownerDaemonId.isNotEmpty() && it.ownerDaemonId == replica.ownerDaemonId }
-    if (owner == null) replica else replica.withOwnerDetails(owner)
+    if (owner == null) replica else {
+        val merged = mergeCardState(replica.withOwnerDetails(owner), owner)
+        if (merged.runtimeUpdatedAt == owner.runtimeUpdatedAt) merged
+        else merged.toBuilder().clearActiveSubagents().build()
+    }
 }.sortedBy { it.id }
 
 /**
@@ -73,6 +77,7 @@ private fun Card.withOwnerDetails(owner: Card): Card {
         .setEffort(effort)
         .setInitialPromptSentAt(initialPromptSentAt)
         .setMergedIntoCardId(mergedIntoCardId)
+        .clearStateFields().addAllStateFields(stateFieldsList)
         .setPlacementRevision(placementRevision)
         .clearConflictKeys().addAllConflictKeys(conflictKeysList)
         .clearLabelIds().addAllLabelIds(labelIdsList)

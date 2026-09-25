@@ -5,48 +5,26 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class CardLaneOrderTest {
-    @Test
-    fun sortsCardsByCreationTimeNewestFirstByDefault() {
+    @Test fun placementWinsOverCreationTimeInBothDirections() {
         val cards = listOf(
-            card("oldest", "2026-08-16T18:00:00Z"),
-            card("newest", "2026-08-16T20:00:00Z"),
-            card("middle", "2026-08-16T19:00:00Z"),
+            Card.newBuilder().setId("a").setOrderKey("100").setCreatedAt("2099-01-01T00:00:00Z").build(),
+            Card.newBuilder().setId("b").setOrderKey("300").setCreatedAt("2020-01-01T00:00:00Z").build(),
+            Card.newBuilder().setId("c").setOrderKey("200").build(),
         )
-
-        assertEquals(listOf("newest", "middle", "oldest"), cardsByCreationTime(cards).map { it.id })
+        assertEquals(listOf("b", "c", "a"), cardsByPlacement(cards).map { it.id })
+        assertEquals(listOf("a", "c", "b"), cardsByPlacement(cards, CardPlacementSortDirection.ASCENDING).map { it.id })
     }
 
-    @Test
-    fun sortsCardsByCreationTimeOldestFirstWhenAscending() {
-        val cards = listOf(
-            card("oldest", "2026-08-16T18:00:00Z"),
-            card("newest", "2026-08-16T20:00:00Z"),
-            card("middle", "2026-08-16T19:00:00Z"),
-        )
-
-        assertEquals(
-            listOf("oldest", "middle", "newest"),
-            cardsByCreationTime(cards, CardCreationSortDirection.ASCENDING).map { it.id },
-        )
+    @Test fun pendingCrossLaneMoveUsesItsDestinationUntilTheReceiptArrives() {
+        val cards = listOf("a", "b", "c").map {
+            Card.newBuilder().setId(it).setLane("done").setOrderKey(it).build()
+        }
+        val move = OptimisticCardMove("move", "done", 4096)
+        assertEquals(listOf("a", "c", "b"), cardsByPlacement(cards, moves = mapOf("a" to move)).map { it.id })
     }
 
-    @Test
-    fun putsMissingTimestampsLastAndBreaksTiesDeterministically() {
-        val cards = listOf(
-            card("a", "not-a-timestamp"),
-            card("b", "2026-08-16T20:00:00Z"),
-            card("c", "2026-08-16T20:00:00Z"),
-        )
-
-        assertEquals(listOf("c", "b", "a"), cardsByCreationTime(cards).map { it.id })
-        assertEquals(
-            listOf("b", "c", "a"),
-            cardsByCreationTime(cards, CardCreationSortDirection.ASCENDING).map { it.id },
-        )
+    @Test fun simultaneousPlacementTiesUseStableIdentity() {
+        val cards = listOf("b", "a", "c").map { Card.newBuilder().setId(it).setOrderKey("same").build() }
+        assertEquals(listOf("c", "b", "a"), cardsByPlacement(cards).map { it.id })
     }
-
-    private fun card(id: String, createdAt: String): Card = Card.newBuilder()
-        .setId(id)
-        .setCreatedAt(createdAt)
-        .build()
 }

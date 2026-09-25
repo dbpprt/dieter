@@ -186,7 +186,7 @@ func Selected(r Record) (json.RawMessage, bool) {
 		if version.Deleted {
 			return nil, false
 		}
-		if selected.Value == nil || Revision(version) > Revision(selected) {
+		if selected.Value == nil || PresentationRank(version) > PresentationRank(selected) {
 			selected = version
 		}
 	}

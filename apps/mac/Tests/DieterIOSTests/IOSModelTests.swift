@@ -323,14 +323,14 @@ struct IOSModelTests {
     }
 
     @Test func machineCompatibilityRequiresCurrentApplicationContract() {
-        #expect(DieterContract.version == "1")
+        #expect(DieterContract.version == String(DieterContract.number))
         #expect(!IOSMachinePolicy.isCompatible(machine(id: "unknown", api: "")))
-        #expect(!IOSMachinePolicy.isCompatible(machine(id: "incompatible", api: "2")))
+        #expect(!IOSMachinePolicy.isCompatible(machine(id: "incompatible", api: String(DieterContract.number + 1))))
         #expect(IOSMachinePolicy.isCompatible(machine(id: "current", api: DieterContract.version)))
     }
 
     @Test func utilityMachineSelectionSkipsIncompatibleAndOfflineMachines() {
-        let incompatible = machine(id: "incompatible", api: "2")
+        let incompatible = machine(id: "incompatible", api: String(DieterContract.number + 1))
         let offline = machine(id: "offline", api: DieterContract.version, online: false)
         let current = machine(id: "current", api: DieterContract.version)
         #expect(

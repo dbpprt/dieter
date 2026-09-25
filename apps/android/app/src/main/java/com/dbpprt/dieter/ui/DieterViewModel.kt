@@ -2215,6 +2215,7 @@ class DieterViewModel internal constructor(
 
     private fun moveCardOptimistically(cardId: String, lane: String, position: Long? = null) {
         val snapshot = _state.value
+        val gatewayId = snapshot.activeGatewayId
         if (snapshot.cardOperations.containsKey(cardId)) return
         val original = (snapshot.cards + snapshot.spaceCards).firstOrNull { it.id == cardId }
             ?: snapshot.selectedCard?.takeIf { it.id == cardId }
@@ -2231,7 +2232,8 @@ class DieterViewModel internal constructor(
             operationId = operationId,
             lane = lane,
             position = optimisticPosition,
-            confirmsPosition = position != null || original.lane == lane,
+            afterCardId = after,
+            beforeCardId = before,
         )
         val optimistic = pending.applyingTo(original)
         _state.update { current ->
@@ -2246,7 +2248,7 @@ class DieterViewModel internal constructor(
             try {
                 if (lane == "running") connectionManager.ensureConversationRoute(cardId)
                 else connectionManager.ensureReplicaRoute(original.projectId)
-                if (_state.value.pendingCardMoves[cardId]?.operationId != operationId) return@launch
+                if (connectionManager.state.value.activeGatewayId != gatewayId || _state.value.pendingCardMoves[cardId]?.operationId != operationId) return@launch
                 val moved = repository.moveCard(
                     cardId,
                     lane,
@@ -2254,33 +2256,22 @@ class DieterViewModel internal constructor(
                     before,
                     original.placementRevision,
                 )
+                if (connectionManager.state.value.activeGatewayId != gatewayId) return@launch
+                connectionManager.acceptCardMutation(moved)
+                val accepted = connectionManager.state.value.cards.firstOrNull { it.id == cardId } ?: moved
                 _state.update { current ->
                     val active = current.pendingCardMoves[cardId]
-                    when {
-                        active?.operationId == operationId -> {
-                            val updatedMove = active.copy(position = moved.position)
-                            val synchronized = connectionManager.state.value.cards
-                                .firstOrNull { it.id == cardId && updatedMove.isConfirmedBy(it) }
-                            if (synchronized != null) {
-                                current.replacingCard(synchronized).copy(
-                                    pendingCardMoves = current.pendingCardMoves - cardId,
-                                    cardOperations = current.cardOperations - cardId,
-                                )
-                            } else {
-                                current.replacingCard(moved).copy(
-                                    pendingCardMoves = current.pendingCardMoves + (cardId to updatedMove),
-                                )
-                            }
-                        }
-                        active != null -> current
-                        else -> current.replacingCard(moved)
-                    }
+                    if (active != null && active.operationId != operationId) current
+                    else current.replacingCard(accepted).copy(
+                        pendingCardMoves = current.pendingCardMoves - cardId,
+                        cardOperations = current.cardOperations - cardId,
+                    )
                 }
             } catch (cancelled: CancellationException) {
-                rollbackCardMove(cardId, operationId, original)
+                if (connectionManager.state.value.activeGatewayId == gatewayId) rollbackCardMove(cardId, operationId, original)
                 throw cancelled
             } catch (error: Throwable) {
-                rollbackCardMove(cardId, operationId, original, readableError(error))
+                if (connectionManager.state.value.activeGatewayId == gatewayId) rollbackCardMove(cardId, operationId, original, readableError(error))
             }
         }
     }
@@ -2293,7 +2284,8 @@ class DieterViewModel internal constructor(
     ) {
         _state.update { current ->
             if (current.pendingCardMoves[cardId]?.operationId != operationId) return@update current
-            current.replacingCard(original).copy(
+            val authoritative = connectionManager.state.value.cards.firstOrNull { it.id == cardId } ?: original
+            current.replacingCard(authoritative).copy(
                 pendingCardMoves = current.pendingCardMoves - cardId,
                 cardOperations = current.cardOperations - cardId,
                 cardOperationErrors = if (message == null) current.cardOperationErrors

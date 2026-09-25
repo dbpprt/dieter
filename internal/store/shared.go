@@ -570,7 +570,29 @@ func sharedCard(data PeerData, id string, local model.Card) (model.Card, bool, e
 	sort.Strings(local.LabelIDs)
 	fields["labelIds"] = rawValue(local.LabelIDs)
 	local.SharedBase, local.ConflictKeys = fields, conflicts
-	local.PlacementRevision = data.Records[peerstore.Key("item", id+".placement")].Revision()
+	local.PlacementRevision = data.Records[peerstore.Key("item", id+".placement")].ValueRevision()
+	local.StateFields = nil
+	// These independent registers must never be compared using card timestamps
+	// or the arrival order of snapshots from different replicas.
+	for _, name := range []string{"placement", "summary"} {
+		record := data.Records[peerstore.Key("item", id+"."+name)]
+		field := model.CardStateField{Name: name, Revision: record.ValueRevision()}
+		for _, version := range record.Versions {
+			value := model.Card{}
+			if !version.Deleted {
+				if err := json.Unmarshal(version.Value, &value); err != nil {
+					return local, false, err
+				}
+			}
+			field.Versions = append(field.Versions, model.CardStateVersion{
+				Clock: version.Clock, Rank: peerstore.PresentationRank(version), Value: &value, Deleted: version.Deleted,
+			})
+		}
+		// Clients compare the normalized frontier to recognize a daemon CAS
+		// receipt. Raw peer ordering can change when authentication is renewed.
+		sort.Slice(field.Versions, func(i, j int) bool { return field.Versions[i].Rank < field.Versions[j].Rank })
+		local.StateFields = append(local.StateFields, field)
+	}
 	return local, true, nil
 }
 func (s *Store) overlayCard(local model.Card) (model.Card, error) {

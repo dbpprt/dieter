@@ -100,3 +100,22 @@ func TestPeerJSONEncodingDoesNotCreateFalseEquivocation(t *testing.T) {
 		t.Fatal(merged)
 	}
 }
+
+func TestProofRenewalDoesNotChangeConcurrentPresentationOrValueReceipt(t *testing.T) {
+	a := Version{Clock: Clock{"a": 1}, Value: []byte(`"review"`), Provenance: []byte(`{"proof":"first"}`)}
+	b := Version{Clock: Clock{"b": 1}, Value: []byte(`"done"`), Provenance: []byte(`{"proof":"other"}`)}
+	original := Record{Kind: "item", ID: "card.placement", Versions: []Version{a, b}}
+	want, _ := Selected(original)
+	revision := original.ValueRevision()
+	for _, proof := range []string{`{"proof":"renewed"}`, `{"proof":"third"}`, `{"proof":"fourth"}`} {
+		a.Provenance = []byte(proof)
+		next := Record{Kind: "item", ID: "card.placement", Versions: []Version{b, a}}
+		got, _ := Selected(next)
+		if string(got) != string(want) || next.ValueRevision() != revision {
+			t.Fatal("proof renewal changed presentation or CAS receipt")
+		}
+		if next.Revision() == original.Revision() {
+			t.Fatal("raw replication receipt hid proof renewal")
+		}
+	}
+}

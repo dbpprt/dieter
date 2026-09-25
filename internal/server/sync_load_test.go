@@ -15,6 +15,7 @@ import (
 
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
 	"github.com/dbpprt/dieter/internal/model"
+	"github.com/dbpprt/dieter/internal/protocol"
 	"github.com/dbpprt/dieter/internal/store"
 	"google.golang.org/protobuf/proto"
 )
@@ -154,7 +155,7 @@ func TestSyncLargeWorkspaceSoak(t *testing.T) {
 				began := time.Now()
 				last := began
 				first := true
-				err := api.watchSync(streamCtx, &dieterv1.SyncRequest{ProtocolVersion: 1, After: after, HeartbeatMs: 1000, ConversationLimit: 30, RecentConversationLimit: 8}, func(frame *dieterv1.SyncFrame) error {
+				err := api.watchSync(streamCtx, &dieterv1.SyncRequest{ProtocolVersion: protocol.Number, After: after, HeartbeatMs: 1000, ConversationLimit: 30, RecentConversationLimit: 8}, func(frame *dieterv1.SyncFrame) error {
 					now := time.Now()
 					mu.Lock()
 					defer mu.Unlock()

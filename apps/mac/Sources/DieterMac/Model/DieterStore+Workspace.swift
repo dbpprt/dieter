@@ -210,13 +210,17 @@ extension DieterStore {
         worktreeChanges.clearWorkspaceContentPreservingOperation()
     }
 
-    func acceptWorkspaceCard(_ card: Dieter_V1_Card) {
-        let card = replica.retainingOwnerDetails([card], sourceDaemonID: endpoint.daemonID)[0]
+    func acceptWorkspaceCard(_ card: Dieter_V1_Card, sourceDaemonID: String? = nil) {
+        let card = replica.retainingOwnerDetails([card], sourceDaemonID: sourceDaemonID ?? endpoint.daemonID)[0]
         replica.upsert(card)
         refreshReplicaPresentation()
         if var detail = selectedDetail, detail.card.id == card.id {
             detail.card = card
             selectedDetail = detail
+        }
+        if var snapshot = conversation, snapshot.detail.card.id == card.id {
+            snapshot.detail.card = card
+            conversation = snapshot
         }
     }
 

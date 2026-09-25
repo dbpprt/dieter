@@ -105,7 +105,7 @@ class CardStartPolicyTest {
             operationId = "move-1",
             lane = "review",
             position = 2_048,
-            confirmsPosition = true,
+            placementRevision = "committed",
         )
 
         val projected = projectCardsDuringOperations(
@@ -122,12 +122,12 @@ class CardStartPolicyTest {
 
     @Test
     fun synchronizedMoveClearsThePendingProjection() {
-        val moved = card(id = "card-1", lane = "review").toBuilder().setPosition(2_048).build()
+        val moved = card(id = "card-1", lane = "review").toBuilder().setPosition(2_048).setPlacementRevision("committed").build()
         val move = OptimisticCardMove(
             operationId = "move-1",
             lane = "review",
             position = 2_048,
-            confirmsPosition = true,
+            placementRevision = "committed",
         )
 
         val projected = projectCardsDuringOperations(
@@ -143,12 +143,12 @@ class CardStartPolicyTest {
 
     @Test
     fun crossLaneMoveDoesNotWaitForItsEstimatedPosition() {
-        val moved = card(id = "card-1", lane = "review").toBuilder().setPosition(3_072).build()
+        val moved = card(id = "card-1", lane = "review").toBuilder().setPosition(3_072).setPlacementRevision("committed").build()
         val move = OptimisticCardMove(
             operationId = "move-1",
             lane = "review",
             position = 2_048,
-            confirmsPosition = false,
+            placementRevision = "committed",
         )
 
         val projected = projectCardsDuringOperations(

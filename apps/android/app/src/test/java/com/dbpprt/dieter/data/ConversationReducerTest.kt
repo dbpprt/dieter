@@ -73,7 +73,7 @@ class ConversationReducerTest {
         assertEquals("127.0.0.1:4242", DIETER_LOCAL_ENDPOINT)
         assertEquals(listOf("https://gateway.getdieter.com:443"), DIETER_ENDPOINTS.map { it.address })
         assertEquals(true, DIETER_ENDPOINTS.single().secure)
-        assertEquals("1", DIETER_API_VERSION)
+        assertEquals(DIETER_PROTOCOL_VERSION.toString(), DIETER_API_VERSION)
     }
 
     @Test

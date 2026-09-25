@@ -393,7 +393,6 @@ extension DieterStore {
         var global = snapshot.state
         global.chats = reconcilePendingChatPins(global.chats)
         global = replica.reconcile(global)
-        movingCardIDs = Set(pendingCardMoves.keys)
         labelUpdatingCardIDs = Set(pendingCardLabelUpdates.keys)
         notifyTransitions(global.cards + global.chats, endpointID: endpointID)
         // Cached projection keys retain their authenticated source daemon even
@@ -404,6 +403,7 @@ extension DieterStore {
                 name: endpointID, host: "", port: 0,
                 daemonID: endpointID.split(separator: "#", maxSplits: 1).dropFirst().first.map(String.init))
         replica.replaceMetadata(global, endpoint: sourceEndpoint, endpointID: endpointID)
+        movingCardIDs = Set(pendingCardMoves.keys)
         updateSelectedState(base: global)
         if projectReplicaEndpointIDs[selectedProjectID] == endpointID {
             boardSettings = snapshot.settings
@@ -421,11 +421,11 @@ extension DieterStore {
         endpointID: String
     ) {
         guard let selectedID = selectedCardID ?? selectedChatID,
-            var projected = snapshot.conversations.first(where: { $0.detail.card.id == selectedID })
+            let projected = snapshot.conversations.first(where: { $0.detail.card.id == selectedID })
         else { return }
         let latest = TranscriptFreshness.merging(projected, with: conversation)
         if conversation != latest { conversation = latest }
-        if selectedDetail != projected.detail { selectedDetail = projected.detail }
+        if selectedDetail != latest.detail { selectedDetail = latest.detail }
         conversationLoading = false
         conversationSyncing = false
         conversationError = nil

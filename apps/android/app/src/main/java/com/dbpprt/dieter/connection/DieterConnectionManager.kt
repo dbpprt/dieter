@@ -1684,7 +1684,7 @@ class DieterConnectionManager(
 
     private fun acceptStartedCard(card: Card) {
         fun replace(cards: List<Card>): List<Card> =
-            if (cards.any { it.id == card.id }) cards.map { if (it.id == card.id) card else it }
+            if (cards.any { it.id == card.id }) cards.map { if (it.id == card.id) mergeCardState(card, it) else it }
             else cards + card
 
         globalSnapshot = globalSnapshot?.let { snapshot ->
@@ -1708,7 +1708,7 @@ class DieterConnectionManager(
             if (!targetScope) return cards
             if (card.archived) return cards.filterNot { it.id == card.id }
             return if (cards.any { it.id == card.id }) {
-                cards.map { if (it.id == card.id) card else it }
+                cards.map { if (it.id == card.id) mergeCardState(card, it) else it }
             } else {
                 cards + card
             }
@@ -1716,7 +1716,7 @@ class DieterConnectionManager(
 
         fun updateConversation(snapshot: ConversationSnapshot): ConversationSnapshot =
             snapshot.toBuilder()
-                .setDetail(snapshot.detail.toBuilder().setCard(card))
+                .setDetail(snapshot.detail.toBuilder().setCard(mergeCardState(card, snapshot.detail.card)))
                 .build()
 
         val isChat = card.scope == "chat"

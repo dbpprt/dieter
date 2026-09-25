@@ -29,10 +29,21 @@ struct InboxActivityTests {
             card("chat", runtime: "completed", scope: "chat", lane: "review"),
             card("pending", runtime: "pending"), draft,
         ])
-        #expect(entries.map(\.id) == ["working", "answer", "review", "chat"])
-        #expect(entries.map(\.kind) == [.running, .answer, .review, .recent])
+        #expect(entries.map(\.id) == ["answer", "chat", "review", "working"])
+        #expect(entries.map(\.kind) == [.answer, .recent, .review, .running])
         #expect(entries.filter(\.needsYou).map(\.id) == ["answer"])
         #expect(entries.filter(\.running).map(\.id) == ["working"])
+    }
+
+    @Test func finishingReviewKeepsRecentChronological() {
+        var review = card("review", runtime: "idle", lane: "review")
+        var failed = card("failed", runtime: "failed")
+        failed.runtimeUpdatedAt = "2026-09-24T11:00:00Z"
+        let recent = card("recent", runtime: "idle")
+        let before = InboxActivity.entries(cards: [review, failed, recent]).map(\.id)
+        review.lane = "done"
+        #expect(InboxActivity.entries(cards: [review, failed, recent]).map(\.id) == before)
+        #expect(before == ["failed", "recent", "review"])
     }
 
     @Test func unreadRepliesNeedAttentionUntilSeenAcrossCardsAndChats() {

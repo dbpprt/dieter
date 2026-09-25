@@ -106,6 +106,15 @@ func protoCard(value model.Card) *dieterv1.Card {
 		WorkspaceMode: value.WorkspaceMode, WorkspaceBranch: value.WorkspaceBranch, WorkspaceBaseBranch: value.WorkspaceBaseBranch,
 		WorkspaceBaseRemote: value.WorkspaceBaseRemote, RemotePublishMode: value.RemotePublishMode,
 	}
+	for _, field := range value.StateFields {
+		projected := &dieterv1.CardStateField{Name: field.Name, Revision: field.Revision}
+		for _, version := range field.Versions {
+			projected.Versions = append(projected.Versions, &dieterv1.CardStateVersion{
+				Clock: version.Clock, Rank: version.Rank, Value: protoCard(*version.Value), Deleted: version.Deleted,
+			})
+		}
+		result.StateFields = append(result.StateFields, projected)
+	}
 	if value.TokenUsage != nil {
 		u := value.TokenUsage
 		result.TokenUsage = &dieterv1.TokenUsage{InputTokens: u.InputTokens, OutputTokens: u.OutputTokens,

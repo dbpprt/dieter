@@ -14,16 +14,16 @@ package enum TranscriptFreshness {
     package static func merging(
         _ incoming: Dieter_V1_ConversationSnapshot, with current: Dieter_V1_ConversationSnapshot?
     ) -> Dieter_V1_ConversationSnapshot {
-        guard let current, current.detail.card.id == incoming.detail.card.id,
-            isOlder(
-                sequence: incoming.conversation.lastSeq, updatedAt: incoming.conversation.updatedAt,
-                than: current.conversation)
-        else { return incoming }
-        // Card metadata has its own lifecycle; only retain the transcript and
-        // its matching pagination window when that projection is older.
+        guard let current, current.detail.card.id == incoming.detail.card.id else { return incoming }
         var result = incoming
-        result.conversation = current.conversation
-        result.page = current.page
+        result.detail.card = CardStateProjection.merge(incoming.detail.card, with: current.detail.card)
+        if isOlder(
+            sequence: incoming.conversation.lastSeq, updatedAt: incoming.conversation.updatedAt,
+            than: current.conversation)
+        {
+            result.conversation = current.conversation
+            result.page = current.page
+        }
         return result
     }
 }

@@ -485,7 +485,7 @@ func testManagerAndRequest(t *testing.T, operator string) (*Manager, *dieterv1.S
 		t.Fatal(err)
 	}
 	configuration.SignedEnvelope = []byte(envelope)
-	request := &dieterv1.StartRemoteDesktopRequest{InputProtocolVersion: 1,
+	request := &dieterv1.StartRemoteDesktopRequest{InputProtocolVersion: inputProtocolVersion,
 		ClientNonce: "nonce_test", RtcConfiguration: configuration, DisplayId: "primary",
 		MaxFps: 10, MaxBitrateKbps: 500,
 	}

@@ -64,6 +64,28 @@ func (r Record) Revision() string {
 	}
 	return Revision(r)
 }
+
+// PresentationRank excludes renewable authentication proofs: renewing a proof
+// is not an edit and must never move a card or change a conflict's presentation.
+func PresentationRank(v Version) string {
+	v.Provenance = nil
+	return Revision(v)
+}
+
+// ValueRevision identifies the causal values, independently of proof renewal.
+// Raw peer receipts still use Revision so proof propagation remains observable.
+func (r Record) ValueRevision() string {
+	if len(r.Versions) == 0 {
+		return ""
+	}
+	r.Versions = append([]Version(nil), r.Versions...)
+	for i := range r.Versions {
+		r.Versions[i].Provenance = nil
+	}
+	sort.Slice(r.Versions, func(i, j int) bool { return PresentationRank(r.Versions[i]) < PresentationRank(r.Versions[j]) })
+	return Revision(r)
+}
+
 func dominates(a, b Clock) bool {
 	for actor, n := range b {
 		if a[actor] < n {

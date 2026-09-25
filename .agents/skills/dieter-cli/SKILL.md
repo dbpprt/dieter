@@ -948,3 +948,10 @@ Card/chat metadata includes `responseSeq`, `responseMessageId`, and
 `dieter card read --response-seq SEQ CARD` (also `chat read`). The command supports
 local, direct TLS, and relay routes with global `--machine`. Stale receipts never
 clear newer replies. Board comments and the card/chat comment commands are removed.
+
+Card `stateFields` contain bounded causal placement/runtime projections used by
+native clients to merge observations across replicas. Treat `placementRevision`
+as an opaque daemon receipt, not a timestamp or ordinal position. A successful
+move is durable on that daemon; a delayed peer observation does not undo it.
+Application contract 2 requires matching gateways, daemons, and native clients;
+update them together rather than mixing this projection with older contracts.
