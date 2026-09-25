@@ -1,4 +1,5 @@
 import AppKit
+import SwiftUI
 import Testing
 @testable import DieterMac
 
@@ -75,5 +76,60 @@ struct QuickTaskStoryEditorTests {
         #expect(consumed)
         #expect(quickTaskCalls == 1)
         #expect(conversationCalls == 0)
+    }
+
+    @Test func typingKeepsTheNativeEditorFocusedAcrossBindingUpdates() async throws {
+        let state = QuickTaskStoryEditorTestState()
+        let host = NSHostingView(rootView: QuickTaskStoryEditorTestView(state: state).frame(width: 360))
+        let window = NSWindow(
+            contentRect: NSRect(x: -3_000, y: -3_000, width: 360, height: 160),
+            styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = host
+        defer { window.close() }
+
+        host.layoutSubtreeIfNeeded()
+        try? await Task.sleep(for: .milliseconds(60))
+        let editor = try #require(quickTaskEditor(in: host))
+        #expect(window.makeFirstResponder(editor))
+
+        for character in ["f", "o", "c", "u", "s"] {
+            editor.insertText(character, replacementRange: editor.selectedRange())
+            try? await Task.sleep(for: .milliseconds(30))
+            host.layoutSubtreeIfNeeded()
+            #expect(quickTaskEditor(in: host) === editor)
+            #expect(editor.window === window)
+            #expect(window.firstResponder === editor)
+        }
+        #expect(state.text == "focus")
+    }
+
+    private func quickTaskEditor(in view: NSView) -> QuickTaskStoryTextView? {
+        (view as? QuickTaskStoryTextView)
+            ?? view.subviews.lazy.compactMap { quickTaskEditor(in: $0) }.first
+    }
+}
+
+@MainActor @Observable
+private final class QuickTaskStoryEditorTestState {
+    var text = ""
+}
+
+private struct QuickTaskStoryEditorTestView: View {
+    @Bindable var state: QuickTaskStoryEditorTestState
+    @State private var focused = false
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            QuickTaskStoryEditor(
+                text: $state.text,
+                focus: $focused,
+                canPasteAttachment: { _ in false },
+                pasteAttachment: { _ in false })
+            if state.text.isEmpty {
+                Text("What should the agent accomplish?")
+                    .allowsHitTesting(false)
+            }
+        }
     }
 }

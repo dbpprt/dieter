@@ -6,7 +6,9 @@ import SwiftUI
 /// AppKit field editor consumes Paste first.
 struct QuickTaskStoryEditor: NSViewRepresentable {
     @Binding var text: String
-    let focus: FocusState<Bool>.Binding
+    // A custom AppKit responder needs durable view state; an unattached
+    // FocusState resets during SwiftUI reconciliation.
+    @Binding var focus: Bool
     let canPasteAttachment: (NSPasteboard) -> Bool
     let pasteAttachment: (NSPasteboard) -> Bool
 
@@ -15,6 +17,9 @@ struct QuickTaskStoryEditor: NSViewRepresentable {
     func makeNSView(context: Context) -> QuickTaskStoryEditorContainer {
         let view = QuickTaskStoryEditorContainer()
         view.textView.delegate = context.coordinator
+        view.textView.onFocusChange = { [weak coordinator = context.coordinator] focused in
+            coordinator?.parent.focus = focused
+        }
         view.textView.canPasteAttachment = canPasteAttachment
         view.textView.pasteAttachment = pasteAttachment
         context.coordinator.apply(text, to: view.textView)
@@ -58,15 +63,16 @@ struct QuickTaskStoryEditor: NSViewRepresentable {
             }
         #endif
         view.textView.delegate = nil
+        view.textView.onFocusChange = nil
         view.textView.canPasteAttachment = nil
         view.textView.pasteAttachment = nil
     }
 
     private func updateFocus(of textView: NSTextView) {
-        if focus.wrappedValue {
+        if focus {
             guard textView.window?.firstResponder !== textView else { return }
             DispatchQueue.main.async { [weak textView] in
-                guard focus.wrappedValue, let textView, let window = textView.window else { return }
+                guard focus, let textView, let window = textView.window else { return }
                 window.makeFirstResponder(textView)
             }
         } else if textView.window?.firstResponder === textView {
@@ -97,11 +103,11 @@ struct QuickTaskStoryEditor: NSViewRepresentable {
         }
 
         func textDidBeginEditing(_ notification: Notification) {
-            parent.focus.wrappedValue = true
+            parent.focus = true
         }
 
         func textDidEndEditing(_ notification: Notification) {
-            parent.focus.wrappedValue = false
+            parent.focus = false
         }
     }
 }
@@ -173,6 +179,19 @@ final class QuickTaskStoryTextView: NSTextView, AttachmentPasteFirstResponder {
 
     var canPasteAttachment: ((NSPasteboard) -> Bool)?
     var pasteAttachment: ((NSPasteboard) -> Bool)?
+    var onFocusChange: ((Bool) -> Void)?
+
+    override func becomeFirstResponder() -> Bool {
+        let becameFirstResponder = super.becomeFirstResponder()
+        if becameFirstResponder { onFocusChange?(true) }
+        return becameFirstResponder
+    }
+
+    override func resignFirstResponder() -> Bool {
+        let resignedFirstResponder = super.resignFirstResponder()
+        if resignedFirstResponder { onFocusChange?(false) }
+        return resignedFirstResponder
+    }
 
     override func keyDown(with event: NSEvent) {
         if consumesAttachmentPasteShortcut(event) { return }

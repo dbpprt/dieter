@@ -793,7 +793,7 @@ struct QuickTaskPopover: View {
         self.screenshotInspector = screenshotInspector
         self.screenshotInspectorWide = screenshotInspectorWide
     }
-    @FocusState private var storyFocused: Bool
+    @State private var storyFocused = false
 
     private var cleanStory: String { story.trimmingCharacters(in: .whitespacesAndNewlines) }
     private var cannotSubmit: Bool {
