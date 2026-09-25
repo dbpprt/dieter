@@ -81,7 +81,7 @@ struct DieterThemePerformanceTests {
                 }
             }
             .padding(8)
-            .background(DieterTheme.background)
+            .background(DieterTheme.surface)
             .preferredColorScheme(scheme)
             let renderer = ImageRenderer(content: fixture)
             renderer.proposedSize = .init(width: 166, height: 166)
@@ -90,31 +90,29 @@ struct DieterThemePerformanceTests {
         }
     }
 
-    @Test @MainActor func installingANewThemeInvalidatesExistingColorConsumers() async {
+    @Test @MainActor func installingANewThemeInvalidatesExistingColorConsumers() {
         defer { DieterTheme.install(palette: .monochrome, colorScheme: .light) }
         DieterTheme.install(palette: .monochrome, colorScheme: .light)
-        let (changes, continuation) = AsyncStream<Void>.makeStream()
+        let changed = Mutex(false)
 
         withObservationTracking {
-            _ = DieterTheme.background
+            _ = DieterTheme.surface
         } onChange: {
-            continuation.yield()
+            changed.withLock { $0 = true }
         }
         DieterTheme.install(palette: .coralSignal, colorScheme: .dark)
 
-        var iterator = changes.makeAsyncIterator()
-        #expect(await iterator.next() != nil)
-        continuation.finish()
+        #expect(changed.withLock { $0 })
     }
 
     @Test @MainActor func renderingAStaleAuxiliaryRootCannotReinstallThePreviousTheme() {
         defer { DieterTheme.install(palette: .monochrome, colorScheme: .light) }
         DieterTheme.install(selection: .init(appearance: .light, palette: .coralSignal))
-        let expectedBackground = DieterTheme.background
+        let expectedBackground = DieterTheme.surface
         let expectedAddition = DieterTheme.diffAddition
         let changedDuringLayout = Mutex(false)
         withObservationTracking {
-            _ = DieterTheme.background
+            _ = DieterTheme.surface
             _ = DieterTheme.diffAddition
         } onChange: {
             changedDuringLayout.withLock { $0 = true }
@@ -131,7 +129,7 @@ struct DieterThemePerformanceTests {
         host.layoutSubtreeIfNeeded()
 
         #expect(!changedDuringLayout.withLock { $0 })
-        #expect(DieterTheme.background == expectedBackground)
+        #expect(DieterTheme.surface == expectedBackground)
         #expect(DieterTheme.diffAddition == expectedAddition)
     }
 
@@ -139,28 +137,28 @@ struct DieterThemePerformanceTests {
         defer { DieterTheme.install(palette: .monochrome, colorScheme: .light) }
         for palette in [DieterPalette.monochrome, .coralSignal] {
             DieterTheme.install(palette: palette, colorScheme: .dark)
-            let darkBackground = DieterTheme.background
+            let darkBackground = DieterTheme.surface
             let darkAddition = DieterTheme.diffAddition
             DieterTheme.install(palette: palette, colorScheme: .light)
-            let lightBackground = DieterTheme.background
+            let lightBackground = DieterTheme.surface
             let lightAddition = DieterTheme.diffAddition
 
             // The initial colors are unchanged when switching Light to System.
             // The following system change must still update every cached token.
             DieterTheme.install(selection: .init(appearance: .system, palette: palette), systemColorScheme: .light)
             DieterTheme.systemColorSchemeDidChange(.dark)
-            #expect(DieterTheme.background == darkBackground)
+            #expect(DieterTheme.surface == darkBackground)
             #expect(DieterTheme.diffAddition == darkAddition)
             DieterTheme.systemColorSchemeDidChange(.light)
-            #expect(DieterTheme.background == lightBackground)
+            #expect(DieterTheme.surface == lightBackground)
             #expect(DieterTheme.diffAddition == lightAddition)
 
             DieterTheme.install(selection: .init(appearance: .light, palette: palette))
             DieterTheme.systemColorSchemeDidChange(.dark)
-            #expect(DieterTheme.background == lightBackground)
+            #expect(DieterTheme.surface == lightBackground)
             DieterTheme.install(selection: .init(appearance: .dark, palette: palette))
             DieterTheme.systemColorSchemeDidChange(.light)
-            #expect(DieterTheme.background == darkBackground)
+            #expect(DieterTheme.surface == darkBackground)
         }
     }
 

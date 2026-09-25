@@ -41,7 +41,9 @@ private enum SmokeSuite: String, CaseIterable {
         // fills scrollback, and waits for multiple PTY resize round trips.
         case .terminal: 180
         case .machine: 60
-        case .sidebar: 30
+        // Includes the compact-window matrix across four destinations, two
+        // appearances, and both ordinary and overflowing machine directories.
+        case .sidebar: 60
         case .inbox: 150
         // The optional native screenshot checkpoint can itself wait 30 seconds.
         // Keep the normal Island deadline unchanged while allowing capture mode

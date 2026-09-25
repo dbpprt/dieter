@@ -82,7 +82,7 @@ final class DieterWindowBackdropView: NSVisualEffectView {
         super.init(frame: frameRect)
         material = .underWindowBackground
         blendingMode = .behindWindow
-        state = .followsWindowActiveState
+        state = .active
         setAccessibilityIdentifier("workspace.window-backdrop")
     }
 

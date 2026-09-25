@@ -41,12 +41,16 @@ enum SidebarSizing {
 
 struct DieterRootView: View {
     @Environment(DieterStore.self) private var store
-    @AppStorage(SidebarSizing.storageKey, store: SidebarProjectNavigationPreferences.applicationDefaults())
-    private var navigationWidth = Double(SidebarSizing.defaultWidth)
+    @AppStorage private var navigationWidth: Double
     @State private var sidebarVisibility: NavigationSplitViewVisibility = .all
     @State private var hasOpenedBoard = false
     @State private var hasOpenedChats = false
     @State private var hasOpenedInbox = false
+
+    init(navigationDefaults: UserDefaults = SidebarProjectNavigationPreferences.applicationDefaults()) {
+        _navigationWidth = AppStorage(
+            wrappedValue: Double(SidebarSizing.defaultWidth), SidebarSizing.storageKey, store: navigationDefaults)
+    }
 
     private var showsSynchronizedWorkspace: Bool {
         switch store.section {
@@ -72,30 +76,10 @@ struct DieterRootView: View {
         let sidebarWidth = sidebarVisibility == .detailOnly ? 0 : CGFloat(navigationWidth)
         let sidebarDividerWidth: CGFloat = sidebarVisibility == .detailOnly ? 0 : 1
 
-        NavigationSplitView(columnVisibility: $sidebarVisibility) {
+        WorkspaceSplit(visibility: $sidebarVisibility, sidebarWidth: $navigationWidth) {
             AppSidebar()
                 .frame(minWidth: SidebarSizing.minimumWidth)
-                .background {
-                    if !DieterTheme.usesTransparency { DieterTheme.opaqueSurface.ignoresSafeArea() }
-                }
-                .background(
-                    NativeSplitColumnBounds(
-                        minimum: SidebarSizing.minimumWidth, maximum: SidebarSizing.maximumWidth,
-                        initialWidth: SidebarSizing.clamped(CGFloat(navigationWidth)),
-                        onWidthChange: { width in
-                            guard sidebarVisibility != .detailOnly, width >= SidebarSizing.minimumWidth else {
-                                return
-                            }
-                            let clampedWidth = Double(SidebarSizing.clamped(width))
-                            if abs(clampedWidth - navigationWidth) > 0.5 { navigationWidth = clampedWidth }
-                        })
-                )
-                .navigationSplitViewColumnWidth(
-                    min: SidebarSizing.minimumWidth,
-                    ideal: SidebarSizing.defaultWidth,
-                    max: SidebarSizing.maximumWidth
-                )
-
+                .background { DieterPaneBackground(role: .navigation, extendsUnderTitlebar: true) }
         } detail: {
             VStack(spacing: 0) {
                 if workspaceSurfaceTreatment.showsNotice {
@@ -199,13 +183,14 @@ struct DieterRootView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .navigationSmokeDestination(store.section)
         }
-        .navigationSplitViewStyle(.balanced)
+        .ignoresSafeArea(.container, edges: .top)
         .environment(
             \.conversationWorkspaceTabsInTitlebar,
             (store.section == .board && store.selectedCardID != nil)
                 || (store.section == .chats && store.selectedChatID != nil)
                 || (store.section == .inbox && (store.selectedCardID ?? store.selectedChatID) != nil)
         )
+        .background(DieterTheme.usesTransparency ? DieterTheme.surface : DieterTheme.opaqueSurface)
         .background {
             DieterWindowBackdrop(
                 transparencyEnabled: DieterTheme.usesTransparency,
@@ -217,11 +202,19 @@ struct DieterRootView: View {
         }
         .toolbar {
             if !usesPaneTitlebar {
+                ToolbarItem(placement: .navigation) {
+                    Button {
+                        sidebarVisibility = sidebarVisibility == .detailOnly ? .all : .detailOnly
+                    } label: { Image(systemName: "sidebar.left") }
+                    .help("Toggle sidebar")
+                    .keyboardShortcut("s", modifiers: [.command, .control])
+                }
                 ToolbarItem(placement: .primaryAction) {
                     GlobalQuickTaskButton()
                 }
             }
         }
+        .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
         .toolbarVisibility(
             usesPaneTitlebar ? .hidden : .visible,
             for: .windowToolbar
@@ -477,10 +470,20 @@ struct AppSidebar: View {
             searchControl
             allChatsControl
 
-            ScrollView {
-                expandedProjects
+            GeometryReader { geometry in
+                ScrollView {
+                    VStack(spacing: 0) {
+                        expandedProjects
+                        Spacer(minLength: 0)
+                        sidebarStatus
+                    }
+                    .frame(minHeight: geometry.size.height, alignment: .top)
+                }
             }
-            sidebarFooter
+            .clipped()
+            .smokeTarget("sidebar.scroll-region")
+            sidebarActions
+                .fixedSize(horizontal: false, vertical: true)
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("sidebar.main-pane")
@@ -648,7 +651,7 @@ struct AppSidebar: View {
         .padding(.horizontal, 8).padding(.top, 6).padding(.bottom, 10)
     }
 
-    @ViewBuilder private var sidebarFooter: some View {
+    @ViewBuilder private var sidebarStatus: some View {
         if store.navigationPendingCount > 0 || store.navigationSyncError != nil {
             Text(
                 store.navigationPendingCount > 0
@@ -711,7 +714,13 @@ struct AppSidebar: View {
             .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(DieterTheme.border))
 
             ProviderQuotaSidebarBlock()
+        }
+        .fixedSize(horizontal: false, vertical: true)
+        .padding(8)
+    }
 
+    private var sidebarActions: some View {
+        VStack(spacing: 5) {
             SidebarDestination(title: "Settings", symbol: "gearshape", selected: store.section == .settings) {
                 store.openSettings()
             }

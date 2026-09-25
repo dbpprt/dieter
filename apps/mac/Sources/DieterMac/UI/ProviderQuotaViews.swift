@@ -53,8 +53,11 @@ struct ProviderQuotaCompactView: View {
                                     provider: item.provider,
                                     account: item.account
                                 )
+                                .fixedSize(horizontal: false, vertical: true)
+                                .smokeTarget("sidebar.quota.\(item.id)")
                             }
                         }
+                        .fixedSize(horizontal: false, vertical: true)
                         .frame(maxWidth: .infinity, alignment: .leading)
                     } else {
                         HStack(alignment: .center, spacing: embeddedInToolbar ? 10 : 6) {
@@ -99,6 +102,7 @@ struct ProviderQuotaSidebarBlock: View {
         if visible {
             VStack(alignment: .leading, spacing: 4) {
                 Text("QUOTAS")
+                    .smokeTarget("sidebar.quotas-title")
                     .font(DieterFont.sectionLabel)
                     .tracking(0.8)
                     .foregroundStyle(DieterTheme.tertiary)

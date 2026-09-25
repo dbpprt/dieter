@@ -28,6 +28,7 @@
             // it with a deterministic UI-only workspace for this smoke process.
             try? await DieterTaskSleep.seconds(1)
             seed(store)
+            try? "seeded".write(to: output.appending(path: "progress.txt"), atomically: true, encoding: .utf8)
             // This suite deliberately uses an offline account fixture. Its
             // restart assertions exercise the durable client outbox/cache.
             store.environment.defaults.set("sidebar-fixture", forKey: "DieterSharedKV.activeAccount")
@@ -70,14 +71,20 @@
             }
             results["shared-project-navigation"] =
                 projectHasNoSingleMachine ? "passed" : "failed: project has an owner badge"
+            try? "window ready: \(phase)".write(to: output.appending(path: "progress.txt"), atomically: true, encoding: .utf8)
             switch phase {
             case "prepare":
                 await recordProjectRowLayout(store: store, window: window, results: &results)
+                try? "project row checked".write(to: output.appending(path: "progress.txt"), atomically: true, encoding: .utf8)
                 await prepare(store: store, window: window, results: &results)
             case "verify":
                 await verify(store: store, window: window, results: &results)
             default:
                 results["phase"] = "failed: unknown phase \(phase)"
+            }
+            try? "navigation checked".write(to: output.appending(path: "progress.txt"), atomically: true, encoding: .utf8)
+            if phase == "prepare" {
+                results.merge(await WorkspaceChromeUISmoke.run(store: store, window: window, output: output)) { _, new in new }
             }
             capture(window, to: output.appending(path: "sidebar-\(phase).png"))
             writeReport(results, to: output)

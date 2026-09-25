@@ -370,8 +370,8 @@ enum DieterTheme {
     static var opaqueSurface: Color { state.colors.surface }
     // One native backdrop supplies blur. Low-opacity pane tints preserve that
     // continuous canvas rather than stacking independent material effects.
-    static var background: Color { state.colors.background.opacity(usesTransparency ? 0.06 : 1) }
-    static var sidebar: Color { state.colors.sidebar.opacity(usesTransparency ? 0.08 : 1) }
+    static var background: Color { usesTransparency ? .clear : state.colors.background }
+    static var sidebar: Color { usesTransparency ? .clear : state.colors.sidebar }
     static var surface: Color { state.colors.surface.opacity(usesTransparency ? 0.12 : 1) }
     static var raised: Color { state.colors.raised.opacity(usesTransparency ? 0.38 : 1) }
     static var elevated: Color { state.colors.elevated.opacity(usesTransparency ? 0.55 : 1) }
@@ -537,10 +537,10 @@ struct DieterPaneBackground: View {
     @ViewBuilder var body: some View {
         switch role {
         case .navigation:
-            DieterTheme.surface
+            (DieterTheme.usesTransparency ? Color.clear : DieterTheme.opaqueSurface)
                 .ignoresSafeArea(.container, edges: extendsUnderTitlebar ? .top : [])
         case .content:
-            DieterTheme.surface
+            (DieterTheme.usesTransparency ? Color.clear : DieterTheme.opaqueSurface)
                 .ignoresSafeArea(.container, edges: extendsUnderTitlebar ? .top : [])
         }
     }

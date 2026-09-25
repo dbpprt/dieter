@@ -297,7 +297,7 @@
                 if let split = view as? NSSplitView, split.isVertical,
                     let controller = split.delegate as? NSSplitViewController,
                     !(controller is BoardConversationSplitController),
-                    controller.splitViewItems.first?.behavior == .sidebar
+                    (controller is WorkspaceSplitController || controller.splitViewItems.first?.behavior == .sidebar)
                 {
                     return controller
                 }
