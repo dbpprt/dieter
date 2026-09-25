@@ -371,6 +371,29 @@ final class RemoteNodeUITests: XCTestCase {
         screenshot(app, "05-connecting-activity")
     }
 
+    func testFirstSignInLoadsWorkspaceWithoutRelaunch() throws {
+        let environment = ProcessInfo.processInfo.environment
+        let gateway = try XCTUnwrap(environment["DIETER_IOS_TEST_GATEWAY"])
+        let token = try XCTUnwrap(environment["DIETER_IOS_TEST_TOKEN"])
+        let project = try XCTUnwrap(environment["DIETER_IOS_TEST_PROJECT"])
+        let board = try XCTUnwrap(environment["DIETER_IOS_TEST_BOARD"])
+        let app = XCUIApplication()
+        app.launchEnvironment["DIETER_IOS_TEST_GATEWAY"] = gateway
+        app.launchEnvironment["DIETER_IOS_TEST_TOKEN"] = token
+        app.launchEnvironment["DIETER_IOS_TEST_START_SIGNED_OUT"] = "1"
+        app.launch()
+
+        XCTAssertTrue(
+            element(app, "ios.auth").waitForExistence(timeout: 20),
+            "A fresh install must begin at sign-in.\n\(app.debugDescription)")
+        tap(app, "ios.auth.test-connect")
+
+        waitForBoard(app, project: project, board: board)
+        XCTAssertTrue(element(app, "ios.workspace").exists)
+        XCTAssertFalse(element(app, "ios.auth").exists)
+        screenshot(app, "06-first-sign-in-workspace")
+    }
+
     func testRemoteScreenFixtureStreamsVideo() throws {
         let environment = ProcessInfo.processInfo.environment
         guard let fixture = environment["DIETER_IOS_TEST_SCREEN_FIXTURE"] else {

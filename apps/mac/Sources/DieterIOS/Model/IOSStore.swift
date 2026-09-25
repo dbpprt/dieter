@@ -64,6 +64,9 @@
         @ObservationIgnored private var selectionID = UUID()
         @ObservationIgnored private var bootstrapStarted = false
         @ObservationIgnored private var foreground = true
+        #if DEBUG
+            @ObservationIgnored private var acceptedTestSignIn = false
+        #endif
         @ObservationIgnored private var accessToken: String?
         @ObservationIgnored private var connectedOrigin: DieterEndpoint?
         @ObservationIgnored private var transcript = IOSTranscript()
@@ -130,6 +133,9 @@
             cancelAuthentication()
             do {
                 let origin = try configuredOrigin()
+                #if DEBUG
+                    acceptedTestSignIn = true
+                #endif
                 await authenticate(to: origin) { token }
             } catch { errorMessage = IOSUserError.message(error) }
         }
@@ -198,6 +204,9 @@
             utilityMachineID = nil
             isAuthenticated = false
             accessToken = nil
+            #if DEBUG
+                acceptedTestSignIn = false
+            #endif
             phase = .authenticationRequired
             var removedOrigins = Set<String>()
             for origin in origins where removedOrigins.insert(origin.credentialID).inserted {
@@ -227,7 +236,10 @@
                 var token = await DieterCredentialStore.token(for: origin)
                 #if DEBUG
                     if ProcessInfo.processInfo.environment["DIETER_IOS_TEST_GATEWAY"] != nil {
-                        token = ProcessInfo.processInfo.environment["DIETER_IOS_TEST_TOKEN"]
+                        let startsSignedOut =
+                            ProcessInfo.processInfo.environment["DIETER_IOS_TEST_START_SIGNED_OUT"] == "1"
+                        token = !startsSignedOut || acceptedTestSignIn
+                            ? ProcessInfo.processInfo.environment["DIETER_IOS_TEST_TOKEN"] : nil
                     }
                 #endif
                 guard owns(attempt) else { return }
@@ -240,12 +252,9 @@
                 gatewayTask = ConnectionManager.run(control)
                 let directory = try await control.daemons()
                 guard owns(attempt) else { return }
-                isAuthenticated = true
                 updateMachines(makeMachines(directory, origin: origin), preferredUtilityID: previousUtilityID)
                 startProviderQuotaRefresh(attempt: attempt)
                 defaults.set(gatewayAddress, forKey: "DieterIOSGateway")
-                await refreshGlobalDirectory(attempt: attempt)
-                guard owns(attempt) else { return }
                 guard supportedMachines.contains(where: \.online) else {
                     phase = .disconnected
                     errorMessage =
@@ -253,8 +262,12 @@
                         ? "No compatible machines are enrolled for this account."
                         : "Your compatible machines are offline."
                     startDirectoryRefresh(attempt: attempt)
+                    isAuthenticated = true
                     return
                 }
+                let loadedWorkspace = await refreshGlobalDirectory(attempt: attempt)
+                guard owns(attempt) else { return }
+                guard loadedWorkspace else { throw IOSStoreError.workspaceUnavailable }
                 if let previousCardID,
                     cards.contains(where: { $0.id == previousCardID })
                         || chats.contains(where: { $0.id == previousCardID })
@@ -268,6 +281,10 @@
                 // readable snapshot while conversationPlane is still nil.
                 phase = .connected(version: IOSMachinePolicy.apiVersion)
                 startDirectoryRefresh(attempt: attempt)
+                // Switching the root view retires the sign-in controls. Do it
+                // only after the initial workspace is readable so their task
+                // cannot leave a saved session in an empty half-connected UI.
+                isAuthenticated = true
             } catch {
                 guard owns(attempt) else { return }
                 connectionFailed(error, attempt: attempt)
@@ -282,7 +299,7 @@
                 let directory = try await control.daemons()
                 guard owns(attempt) else { return }
                 updateMachines(makeMachines(directory, origin: origin), preferredUtilityID: utilityMachineID)
-                await refreshGlobalDirectory(attempt: attempt)
+                _ = await refreshGlobalDirectory(attempt: attempt)
                 guard owns(attempt) else { return }
                 guard supportedMachines.contains(where: \.online) else {
                     phase = .disconnected
@@ -401,7 +418,8 @@
             }
         }
 
-        private func refreshGlobalDirectory(attempt: UUID) async {
+        @discardableResult
+        private func refreshGlobalDirectory(attempt: UUID) async -> Bool {
             let online = supportedMachines.filter(\.online)
             let tasks = online.map { machine in
                 Task { await self.loadMachineSnapshot(machine, attempt: attempt) }
@@ -410,9 +428,10 @@
             for task in tasks {
                 if let snapshot = await task.value { snapshots.append(snapshot) }
             }
-            guard owns(attempt), !snapshots.isEmpty else { return }
+            guard owns(attempt), !snapshots.isEmpty else { return false }
             directoryProjection = MachineDirectoryReducer.merging(directoryProjection, snapshots: snapshots)
             publishDirectory()
+            return true
         }
 
         private func publishDirectory() {
@@ -1154,11 +1173,12 @@
     }
 
     private enum IOSStoreError: LocalizedError {
-        case invalidGateway, streamEnded, incompatible(String)
+        case invalidGateway, streamEnded, workspaceUnavailable, incompatible(String)
         var errorDescription: String? {
             switch self {
             case .invalidGateway: "Enter a gateway address such as https://gateway.getdieter.com."
             case .streamEnded: "The connection ended. Reconnecting…"
+            case .workspaceUnavailable: "Couldn’t load your workspace from an online machine. Reconnecting…"
             case .incompatible(let version):
                 "This machine uses application contract \(version). Update its Dieter daemon to contract \(IOSMachinePolicy.apiVersion)."
             }
