@@ -2,6 +2,9 @@ package com.dbpprt.dieter.ui
 
 import android.content.Context
 import android.graphics.Bitmap
+import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
+import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -10,7 +13,10 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.*
-import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModelStore
 import androidx.test.platform.app.InstrumentationRegistry
@@ -29,6 +35,7 @@ import com.dbpprt.dieter.v1.MessagePart
 import com.dbpprt.dieter.settings.NavigationFolder
 import com.dbpprt.dieter.settings.NavigationFolderPreferences
 import com.dbpprt.dieter.ui.theme.DieterTheme
+import com.dbpprt.dieter.ui.theme.DieterSurface
 import com.dbpprt.dieter.v1.Board
 import com.dbpprt.dieter.v1.Card
 import com.dbpprt.dieter.v1.Lane
@@ -48,7 +55,7 @@ import org.junit.Test
 
 /** Real Android compositions with isolated data. No operator account or daemon. */
 class TabletWorkspaceTest {
-    @get:Rule val compose = createComposeRule()
+    @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
     private val context get() = InstrumentationRegistry.getInstrumentation().targetContext
     private val lifecycle = ViewModelStore()
     private val managerScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -93,6 +100,70 @@ class TabletWorkspaceTest {
     @After fun cleanup() {
         compose.runOnUiThread { lifecycle.clear() }
         managerScope.cancel()
+    }
+
+    @Test fun sidebarBackgroundCoversSystemBarsWhileControlsStayInsideInsets() {
+        var destination by mutableStateOf(Destination.ACTIVITY)
+        var topInset = 0
+        var bottomInset = 0
+        var surfaceColor = 0
+        compose.runOnUiThread {
+            compose.activity.enableEdgeToEdge(
+                statusBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
+                navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
+            )
+        }
+        compose.setContent { TabletTestSurface(consumeSystemBars = false) {
+            val density = LocalDensity.current
+            val insets = WindowInsets.systemBars
+            val statusInsetPx = insets.getTop(density)
+            val navigationInsetPx = insets.getBottom(density)
+            DieterTheme(darkTheme = true) {
+                SideEffect {
+                    topInset = statusInsetPx
+                    bottomInset = navigationInsetPx
+                    surfaceColor = DieterSurface.toArgb()
+                }
+                TabletWorkspace(fixture.copy(destination = destination, selectedCardId = "review",
+                    conversation = snapshot("review")), model,
+                    destinationContent = {
+                        if (it.destination == Destination.BOARD) BoardScreen(it, model, true, PaddingValues())
+                        else ActivityScreen(it, model, true, PaddingValues())
+                    }, surfaceContent = {})
+            }
+        } }
+        fun verify(name: String) {
+            capture(name)
+            val window = requireNotNull(InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot())
+            try {
+                File(context.getExternalFilesDir(null), "$name-window.png").outputStream().use {
+                    assertTrue(window.compress(Bitmap.CompressFormat.PNG, 100, it))
+                }
+            } finally { window.recycle() }
+            val root = compose.onNodeWithTag("tablet-test-surface")
+            val bounds = root.fetchSemanticsNode().boundsInRoot
+            val sidebar = compose.onNode(SemanticsMatcher.expectValue(SemanticsProperties.PaneTitle, "List"))
+                .fetchSemanticsNode().boundsInRoot
+            val bitmap = root.captureToImage().asAndroidBitmap()
+            try {
+                val x = ((sidebar.left + sidebar.right) / 2 - bounds.left).toInt()
+                assertEquals("Sidebar must paint behind the status bar", surfaceColor, bitmap.getPixel(x, 1))
+                assertEquals("Sidebar must paint behind the navigation bar", surfaceColor, bitmap.getPixel(x, bitmap.height - 2))
+            } finally { bitmap.recycle() }
+            assertTrue("Exercise real status bar insets", topInset > 0)
+            assertTrue("Exercise real navigation bar insets", bottomInset > 0)
+            assertEquals(bounds.top, sidebar.top, 1f)
+            assertEquals(bounds.bottom, sidebar.bottom, 1f)
+            val header = compose.onNode(hasText(if (destination == Destination.BOARD) "Projects" else "Inbox") and
+                hasAnyAncestor(hasTestTag(if (destination == Destination.BOARD) "tablet-project-navigator" else "activity-feed")))
+                .fetchSemanticsNode().boundsInRoot
+            assertTrue("Header stays below the status bar", header.top >= bounds.top + topInset)
+            assertTrue("Composer stays above the navigation bar",
+                visibleMessageEditor().fetchSemanticsNode().boundsInRoot.bottom <= bounds.bottom - bottomInset + 1f)
+        }
+        verify("tablet-inbox-system-bars")
+        compose.runOnIdle { destination = Destination.BOARD }
+        verify("tablet-projects-system-bars")
     }
 
     @Test fun boardShowsParallelLanesAndKeepsProjectsBesideDetail() {
@@ -363,7 +434,7 @@ class TabletWorkspaceTest {
     }
 
     @Composable
-    private fun TabletTestSurface(width: Float = 1280f, height: Float = 800f, content: @Composable () -> Unit) {
+    private fun TabletTestSurface(width: Float = 1280f, height: Float = 800f, consumeSystemBars: Boolean = true, content: @Composable () -> Unit) {
         val density = androidx.compose.ui.platform.LocalDensity.current
         BoxWithConstraints(Modifier.fillMaxSize()) {
             val scale = minOf(maxWidth.value / width, maxHeight.value / height)
@@ -371,7 +442,8 @@ class TabletWorkspaceTest {
                 androidx.compose.ui.unit.Density(density.density * scale, density.fontScale)) {
                 // This represents the tablet's content area. Do not apply the
                 // host phone's unscaled status/navigation insets inside it.
-                Box(Modifier.requiredSize(width.dp, height.dp).consumeWindowInsets(WindowInsets.systemBars)
+                Box(Modifier.requiredSize(width.dp, height.dp)
+                    .then(if (consumeSystemBars) Modifier.consumeWindowInsets(WindowInsets.systemBars) else Modifier)
                     .testTag("tablet-test-surface")) { content() }
             }
         }

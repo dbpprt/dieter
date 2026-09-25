@@ -35,6 +35,7 @@ internal const val TABLET_WORKSPACE_MIN_WIDTH_DP = 840
 internal fun usesTabletWorkspace(widthDp: Float) = widthDp >= TABLET_WORKSPACE_MIN_WIDTH_DP
 internal val LocalTabletWorkspace = staticCompositionLocalOf { false }
 internal val LocalTabletProjectWorkspaces = staticCompositionLocalOf { false }
+private val LocalTabletStatusContent = staticCompositionLocalOf<@Composable () -> Unit> { {} }
 
 internal enum class TabletProjectTab(val label: String) {
     BOARD("Board"), CHATS("Chats"), FILES("Files"), SCHEDULES("Schedules"), WORKSPACES("Worktrees")
@@ -79,7 +80,7 @@ internal fun TabletWorkspace(
         if (state.destination != Destination.BOARD) workspaces = false
         if (state.destination.isPrimaryDestination()) usage = false
     }
-    CompositionLocalProvider(LocalTabletWorkspace provides true) {
+    CompositionLocalProvider(LocalTabletWorkspace provides true, LocalTabletStatusContent provides statusContent) {
         Surface(color = MaterialTheme.colorScheme.background, contentColor = MaterialTheme.colorScheme.onBackground) {
             Row(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).testTag("tablet-workspace")) {
                 TabletNavigationRail(
@@ -98,10 +99,9 @@ internal fun TabletWorkspace(
                     onConnections = model::showConnectionDialog,
                     onSettings = { model.openSurface(AppSurface.APP_SETTINGS) },
                 )
-                Column(Modifier.weight(1f).fillMaxHeight().statusBarsPadding().navigationBarsPadding()) {
-                    statusContent()
+                Column(Modifier.weight(1f).fillMaxHeight()) {
                     when {
-                        settings -> surfaceContent()
+                        settings -> TabletDetailPane { surfaceContent() }
                         newChat -> TabletListDetail(
                             dividerTag = "tablet-chats-pane-divider",
                             initialLeadingFraction = state.chatsPaneLeadingFraction,
@@ -168,7 +168,7 @@ internal fun TabletWorkspace(
                                 model.refreshProviderQuotas()
                             })
                             VerticalDivider(color = DieterDivider)
-                            Box(Modifier.weight(1f).fillMaxHeight()) {
+                            TabletDetailPane(Modifier.weight(1f).fillMaxHeight()) {
                                 when {
                                     state.appSurface != null -> surfaceContent()
                                     usage -> Column(Modifier.fillMaxSize()) {
@@ -180,7 +180,7 @@ internal fun TabletWorkspace(
                                 }
                             }
                         }
-                        state.appSurface != null -> surfaceContent()
+                        state.appSurface != null -> TabletDetailPane { surfaceContent() }
                         else -> destinationContent(state)
                     }
                 }
@@ -260,9 +260,31 @@ internal fun TabletListDetail(
         onLeadingFractionCommitted = onLeadingFractionCommitted,
         minimumLeadingWidth = 260.dp,
         minimumTrailingWidth = 420.dp,
-        leading = { list(it.background(DieterSurface).semantics { paneTitle = "List" }) },
-        trailing = { detail(it.semantics { paneTitle = "Detail" }) },
+        leading = { paneModifier ->
+            // Paint the entire pane, including behind the system bars. Insets
+            // belong to the controls inside it, not to the split's background.
+            Box(paneModifier.background(DieterSurface).semantics { paneTitle = "List" }) {
+                list(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding())
+            }
+        },
+        trailing = { paneModifier ->
+            TabletDetailPane(paneModifier.semantics { paneTitle = "Detail" }) {
+                detail(Modifier.fillMaxSize())
+            }
+        },
     )
+}
+
+@Composable
+private fun TabletDetailPane(modifier: Modifier = Modifier.fillMaxSize(), content: @Composable () -> Unit) {
+    Column(modifier.statusBarsPadding().navigationBarsPadding()) {
+        LocalTabletStatusContent.current()
+        // A project may contain another split. Render connection status once
+        // and let consumed window insets protect that nested content as well.
+        CompositionLocalProvider(LocalTabletStatusContent provides {}) {
+            Box(Modifier.weight(1f).fillMaxWidth()) { content() }
+        }
+    }
 }
 
 @Composable
@@ -283,7 +305,8 @@ internal fun TabletProjectTabs(projectName: String, selected: TabletProjectTab, 
 
 @Composable
 private fun TabletToolsPane(selected: Destination, usage: Boolean, onSelect: (Destination) -> Unit, onUsage: () -> Unit) {
-    Column(Modifier.width(184.dp).fillMaxHeight().background(DieterSurface).verticalScroll(rememberScrollState()).padding(12.dp)
+    Column(Modifier.width(184.dp).fillMaxHeight().background(DieterSurface).statusBarsPadding().navigationBarsPadding()
+        .verticalScroll(rememberScrollState()).padding(12.dp)
         .semantics { paneTitle = "Tools" }) {
         Text("Tools", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(8.dp, 12.dp))
         listOf(

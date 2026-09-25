@@ -13,6 +13,7 @@ timeout: 300s
 native:
   class: com.dbpprt.dieter.ui.TabletWorkspaceTest
   methods:
+  - sidebarBackgroundCoversSystemBarsWhileControlsStayInsideInsets
   - boardShowsParallelLanesAndKeepsProjectsBesideDetail
   - projectSearchKeepsSyncedFoldersAndBoardSelectionReachable
   - inboxTimelineUsesExistingActivityAndReturnsTheSelectedConversation
