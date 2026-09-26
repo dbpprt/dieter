@@ -39,6 +39,12 @@ Your laptop is the remote control. An agent on another host keeps running when
 you close the app, disconnect, or put your laptop to sleep. Keep that execution
 host powered on and awake; a headless Linux host needs no desktop.
 
+Background commands use Dieter's registered process tools. Their completion
+does not wake an idle conversation: agents must collect required build/test
+results before ending the turn, or verify readiness for a persistent server.
+OMP and Claude native background execution is disabled to prevent promised
+follow-ups from being lost when their provider session closes.
+
 - **Give work a home.** Boards, standalone chats, labels, and schedules. Every
   task keeps one durable conversation.
 - **Keep context beside the chat.** Open files, diffs, web pages, terminals, and

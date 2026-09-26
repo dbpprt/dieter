@@ -15,7 +15,13 @@ export const CLAUDE_CODE_VERSION = '2.1.280';
 // runtime pins forward explicitly so a harness package release cannot leave
 // Dieter on a stale Claude CLI.
 export function createLocalClaudeCode(settings = {}) {
-  const harness = createClaudeCode(settings);
+  const harness = createClaudeCode({
+    ...settings,
+    // The bridge closes its query at the final result; native background
+    // task notifications cannot resume a completed Dieter turn. Keep Bash
+    // and Agent calls foreground and use Dieter's tools for durable processes.
+    env: { ...settings.env, CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: '1' },
+  });
   return {
     ...harness,
     async getBootstrap(options) {

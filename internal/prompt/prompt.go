@@ -32,6 +32,7 @@ Remote publishing: {{workspace.remote_publish_mode}}
 - Use the Dieter CLI for Dieter operations; never call the browser API or edit DIETER_HOME directly.
 - Load bounded card context with: dieter card context {{card.id}}
 - Use start_background_process for a dev server, build, or test that should run independently. It registers to this conversation's Processes workspace tab. Read bounded output with read_background_process; stop only with explicit stop_background_process. The CLI equivalent is dieter remote exec --card {{card.id}} --detach -- COMMAND ARG...
+- Process completion does not wake an idle conversation. Collect required build/test results before your final reply. For a persistent server, verify readiness instead of waiting for exit. Do not use provider-native background jobs that promise a later wake-up.
 - To show a file or URL to the user, use the present_content harness tool. The CLI equivalent is dieter card present {{card.id}} --path <workspace-relative-path> [--line N] or --url <HTTP(S)-URL>. Presentation does not wake an agent or prove the user has viewed it.
 - Work only in the assigned working tree {{workspace.path}}. Never edit another checkout or worktree for this project.
 - Keep this card in Running while implementation or verification is incomplete.
@@ -44,6 +45,7 @@ Remote publishing: {{workspace.remote_publish_mode}}
 
 	DefaultChatSkillTemplate = `Standalone chat instructions:
 - Use start_background_process for a dev server, build, or test that should run independently. It registers to this conversation's Processes workspace tab. Read bounded output with read_background_process; stop only with explicit stop_background_process. The CLI equivalent is dieter remote exec --card {{card.id}} --detach -- COMMAND ARG...
+- Process completion does not wake an idle conversation. Collect required build/test results before your final reply. For a persistent server, verify readiness instead of waiting for exit. Do not use provider-native background jobs that promise a later wake-up.
 - To show a file or URL to the user, use the present_content harness tool. The CLI equivalent is dieter chat present {{card.id}} --path <workspace-relative-path> [--line N] or --url <HTTP(S)-URL>. Presentation does not wake an agent or prove the user has viewed it.
 - Work only in the assigned working tree {{workspace.path}}. Never edit another checkout or worktree for this project.
 - This is a standalone chat, not a Kanban card. Do not move it between lanes or assign board labels.

@@ -44,7 +44,7 @@ export function createBackgroundProcessTools(request, call) {
   const processRef = z.object({ executionId: text(128).min(1) }).strict();
   return {
     start_background_process: tool({
-      description: 'Start an exact-argv background process in this conversation’s workspace and return its registered execution ID immediately. Use for dev servers, builds, or tests that should continue while you work. Visible in the Processes workspace tab. No implicit shell; pass /bin/sh and -c explicitly if shell syntax is needed. Closing the tab or finishing this turn does not stop it.',
+      description: 'Start an exact-argv background process in this conversation’s workspace and return its registered execution ID immediately. Use for dev servers, builds, or tests that should continue while you work. Visible in the Processes workspace tab. No implicit shell; pass /bin/sh and -c explicitly if shell syntax is needed. Closing the tab or finishing this turn does not stop it. Completion does not wake an idle conversation: collect required results with read_background_process before your final reply.',
       inputSchema: z.object({
         argv: z.array(text(8192)).min(1).max(256), name: text(80).optional(),
         workingDirectory: text(4096).optional(), environment: z.record(text(256), text(8192)).optional(),
@@ -72,4 +72,4 @@ export function createBackgroundProcessTools(request, call) {
   };
 }
 
-export const backgroundProcessInstructions = 'Use start_background_process for a dev server, build, test, or other command that should continue after your tool call. Dieter registers it to this conversation and shows it in the Processes workspace tab. Use list_background_processes/read_background_process for bounded status/output, and stop_background_process only for explicit cancellation. Do not launch detached shell jobs as a substitute: those are not registered with Dieter. Processes survive turn completion and UI disconnects, but end when the daemon stops.';
+export const backgroundProcessInstructions = 'Use start_background_process for a dev server, build, test, or other command that should continue after your tool call. Dieter registers it to this conversation and shows it in the Processes workspace tab. Use list_background_processes/read_background_process for bounded status/output, and stop_background_process only for explicit cancellation. Do not launch detached shell jobs or provider-native background jobs as a substitute: those are not registered with Dieter. Processes survive turn completion and UI disconnects, but end when the daemon stops. Process completion does not wake an idle conversation. Keep the current turn active and collect required build/test results before your final reply; never end a reply expecting a background notification to resume it. For an intentionally persistent server, verify readiness before replying; do not wait for it to exit.';

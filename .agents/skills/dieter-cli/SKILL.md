@@ -422,6 +422,14 @@ conversation and returns the admitted execution ID. `list_background_processes`,
 `stop_background_process` stay bound to that conversation. Reads return bounded
 stdout/stderr pages; a tool timeout is not evidence the command stopped.
 
+Completion does not wake an idle conversation. Keep the current turn active
+and collect required build/test results before replying; for a persistent
+server, verify readiness instead of waiting for exit. OMP and Claude native
+background jobs are disabled because their provider bridges end the turn
+before a later completion can be delivered. Use Dieter's registered processes
+for work that must outlive a tool call. An already idle task needs a human
+follow-up to resume; do not assume a promised provider wake-up will arrive.
+
 The equivalent CLI command is:
 
 ```sh

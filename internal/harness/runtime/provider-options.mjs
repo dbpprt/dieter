@@ -19,7 +19,11 @@ export const ompPackageVersion = ompImplementations[0].packageVersion;
 export const ompStreamTimeoutSeconds = 30 * 60;
 
 export function ompRuntimeConfig() {
-  return `providers:\n  streamFirstEventTimeoutSeconds: ${ompStreamTimeoutSeconds}\n  streamIdleTimeoutSeconds: ${ompStreamTimeoutSeconds}\n`;
+  // ACP ends a prompt when the agent is idle, even while native async jobs
+  // are still running. Their promised follow-up is lost when Dieter stops
+  // the session. Keep native tools foreground; detached processes belong to
+  // Dieter's process manager and must be explicitly read before finalizing.
+  return `providers:\n  streamFirstEventTimeoutSeconds: ${ompStreamTimeoutSeconds}\n  streamIdleTimeoutSeconds: ${ompStreamTimeoutSeconds}\nasync:\n  enabled: false\nbash:\n  autoBackground:\n    enabled: false\neval:\n  autoBackground:\n    enabled: false\n`;
 }
 
 export function codexConfig(request) {

@@ -57,9 +57,20 @@ test('launches new OMP bridges with the selected model while legacy resumes keep
   assert.equal(ompACPArgs(request, '/hook.mjs', '/config.yml').includes('--model=openrouter/openai/gpt-6-sol'), false);
 });
 
-test('gives Dieter OMP turns a thirty-minute first-event and idle watchdog', () => {
+test('keeps OMP tools foreground with a thirty-minute provider watchdog', () => {
   assert.equal(ompStreamTimeoutSeconds, 1800);
-  assert.equal(ompRuntimeConfig(), 'providers:\n  streamFirstEventTimeoutSeconds: 1800\n  streamIdleTimeoutSeconds: 1800\n');
+  assert.equal(ompRuntimeConfig(), `providers:
+  streamFirstEventTimeoutSeconds: 1800
+  streamIdleTimeoutSeconds: 1800
+async:
+  enabled: false
+bash:
+  autoBackground:
+    enabled: false
+eval:
+  autoBackground:
+    enabled: false
+`);
 });
 
 test('builds a pinned DSH ACP launch without overriding DSH configuration', () => {
