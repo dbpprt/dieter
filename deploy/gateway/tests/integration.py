@@ -14,7 +14,7 @@ import time
 
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / "deploy/gateway/scripts"))
-from common import atomic, read_json, validate_gateway_health
+from common import atomic, read_json, semver_key, validate_gateway_health
 from bundle import pack
 from render import render
 
@@ -34,8 +34,11 @@ def main():
     volume = prefix + "-state"
     fixture_volume = prefix + "-fixture"
     image = prefix + ":gateway"
+    source_revision = "a" * 40
     alpine = "alpine@sha256:85fe1e81d6758c208f3e1eed4338a1997e19d4be002d4dd32d3100c9a8c010a0"
     deps = read_json(ROOT / "deploy/gateway/dependencies.lock.json")
+    policy = read_json(ROOT / "deploy/gateway/compatibility-policy.json")
+    release_version = max(policy.values(), key=semver_key)
     scratch = Path.home() / ".cache" / "dieter-deployment-tests"
     scratch.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix=prefix, dir=scratch) as temporary:
@@ -76,7 +79,10 @@ def main():
             env = dict(os.environ, CGO_ENABLED="0", GOOS="linux", GOARCH=goarch)
             for target, binary in (("./scripts/gateway-turn-probe", "probe"),):
                 subprocess.run(["go", "build", "-trimpath", "-o", str(temp / binary), target], cwd=ROOT, env=env, check=True, timeout=300)
-            run("docker", "build", "-q", "-f", ROOT / "Dockerfile.gateway", "-t", image, ROOT, timeout=600)
+            run("docker", "build", "-q", "-f", ROOT / "Dockerfile.gateway",
+                "--build-arg", "RELEASE_VERSION=" + release_version,
+                "--build-arg", "SOURCE_REVISION=" + source_revision,
+                "-t", image, ROOT, timeout=600)
             run("docker", "network", "create", "--subnet", "198.18.0.0/24", network)
             run("docker", "volume", "create", volume)
             run("docker", "volume", "create", fixture_volume)
@@ -90,7 +96,6 @@ def main():
             config.update(publicIPv4="198.18.0.2", turnIPv4="198.18.0.2")
             private = {"githubClientID": "fixture", "githubClientSecret": "fixture", "authSecret": random.token_hex(32),
                        "turnSharedSecret": 'fixture-$"\\= café/' + random.token_hex(32)}
-            policy = {"minimumClientVersion": "0.0.0-dev.0", "minimumDaemonVersion": "0.0.0-dev.0"}
             output = render(config, private, "ghcr.io/dbpprt/dieter-gateway@sha256:" + "a"*64, "fixture", temp / "rendered", policy)
             output.chmod(0o755)
             turn = (output / "private/turnserver.conf").read_text().replace("/certificates/turn/current/", "/fixture/")
@@ -130,7 +135,8 @@ def main():
                 raise RuntimeError("gateway TLS/HTTP2 readiness failed")
             health = json.loads(run("docker", "exec", gateway, "wget", "-qO-", "http://127.0.0.1:4243/healthz"))
             validate_gateway_health(health)
-            manifest = pack(temp / "compatibility-bundle", "a" * 40, "0.0.0-dev.0", "ghcr.io/dbpprt/dieter-gateway@sha256:" + "a" * 64, "fixture")
+            manifest = pack(temp / "compatibility-bundle", source_revision, release_version,
+                            "ghcr.io/dbpprt/dieter-gateway@sha256:" + "a" * 64, "fixture")
             validate_gateway_health(health, manifest)
             for hostname in ("unknown.example.com", ""):
                 probe({"address":"198.18.0.2:443", "serverName":hostname, "transport":"reject-sni"})
