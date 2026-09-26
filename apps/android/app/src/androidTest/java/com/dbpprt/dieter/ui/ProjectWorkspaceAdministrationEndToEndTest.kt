@@ -130,7 +130,6 @@ class ProjectWorkspaceAdministrationEndToEndTest {
                 }
             }
             val board = fixtureState.boards.first { it.projectId == initialProject.id }
-            val harness = runBlocking { repository.harnesses().harnessesList.first() }
             val card = runBlocking {
                 repository.createConversation(
                     CreateConversationRequest.newBuilder()
@@ -139,8 +138,8 @@ class ProjectWorkspaceAdministrationEndToEndTest {
                         .setLane("todo")
                         .setTitle("Managed workspace $nonce")
                         .setPrompt("Deferred workspace administration fixture")
-                        .setProvider(harness.id)
-                        .setModel(harness.defaultModel)
+                        .setProvider("mock")
+                        .setModel("mock")
                         .setDeferStart(true)
                         .setWorkspaceMode("worktree")
                         .setWorkspaceBaseBranch("main")

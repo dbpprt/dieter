@@ -79,7 +79,6 @@ class ConversationJumpToLatestEndToEndTest {
             lane.id.equals("todo", true) || lane.name.equals("todo", true)
         }.id
         val project = connected.projects.first { it.id == board.projectId }
-        val harness = runBlocking { container.repository.harnesses().harnessesList.first() }
         val fixture = runBlocking {
             container.repository.createConversation(
                 CreateConversationRequest.newBuilder()
@@ -88,8 +87,8 @@ class ConversationJumpToLatestEndToEndTest {
                     .setLane(todoLane)
                     .setTitle("Android jump-to-latest E2E ${UUID.randomUUID().toString().take(8)}")
                     .setPrompt((1..100).joinToString("\n") { "Unsent conversation fixture line $it." })
-                    .setProvider(harness.id)
-                    .setModel(harness.defaultModel)
+                    .setProvider("mock")
+                    .setModel("mock")
                     .setDeferStart(true)
                     .setWorkspaceMode("project")
                     .setClientId("android-conversation-scroll-test")

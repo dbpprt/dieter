@@ -95,7 +95,6 @@ class WorkspaceChangesEndToEndTest {
         }.id
         val project = connected.projects.first { it.id == board.projectId }
         val repository = container.repository
-        val harness = runBlocking { repository.harnesses().harnessesList.first() }
         val fixture = runBlocking {
             repository.createConversation(
                 CreateConversationRequest.newBuilder()
@@ -104,8 +103,8 @@ class WorkspaceChangesEndToEndTest {
                     .setLane(todoLane)
                     .setTitle("Android workspace E2E ${UUID.randomUUID().toString().take(8)}")
                     .setPrompt("Review-only workspace fixture. Do not start.")
-                    .setProvider(harness.id)
-                    .setModel(harness.defaultModel)
+                    .setProvider("mock")
+                    .setModel("mock")
                     .setDeferStart(true)
                     .setWorkspaceMode("worktree")
                     .setClientId("android-workspace-changes-test")
