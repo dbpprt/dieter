@@ -225,6 +225,7 @@ class DieterConnectionManager(
     private var appForeground = false
     private var serviceActive = false
     private var periodicSyncWindowActive = false
+    private var widgetRefreshActive = false
     @Volatile
     private var discoveredEndpoints: List<DieterEndpoint> = emptyList()
 
@@ -529,6 +530,29 @@ class DieterConnectionManager(
         _state.update { it.copy(desiredConnected = true, error = null) }
         if (_state.value.backgroundSyncMode.usesBackgroundService) DieterSyncService.start(appContext)
         reconcile()
+    }
+
+    /** A bounded, explicit widget refresh does not change the user's background-sync policy. */
+    suspend fun refreshForWidget(): Boolean {
+        hydrationJob?.join()
+        if (!_state.value.desiredConnected) return false
+        synchronized(lock) { widgetRefreshActive = true }
+        try {
+            reconcile()
+            recoverStaleConnection()
+            state.first { it.phase in setOf(ConnectionPhase.CONNECTED, ConnectionPhase.AUTH_REQUIRED, ConnectionPhase.INCOMPATIBLE) }
+            if (state.value.phase != ConnectionPhase.CONNECTED) return false
+            val refreshed = refreshMachineDirectory(force = true)
+            if (refreshed) {
+                val now = System.currentTimeMillis()
+                _state.update { it.copy(lastConnectedAtMs = now) }
+                DieterWidgetPrefs.recordSyncFrame(appContext, now)
+            }
+            return refreshed
+        } finally {
+            synchronized(lock) { widgetRefreshActive = false }
+            reconcile()
+        }
     }
 
     fun reconnect() {
@@ -840,7 +864,7 @@ class DieterConnectionManager(
     }
 
     private fun shouldRun(): Boolean = synchronized(lock) {
-        backgroundConnectionShouldRun(
+        (_state.value.desiredConnected && widgetRefreshActive) || backgroundConnectionShouldRun(
             desiredConnected = _state.value.desiredConnected,
             appForeground = appForeground,
             serviceActive = serviceActive,
@@ -1127,7 +1151,6 @@ class DieterConnectionManager(
                 pendingSyncSnapshot = null
             }
             lastAppliedSyncElapsedMs = SystemClock.elapsedRealtime()
-            DieterWidgetPrefs.recordSyncFrame(appContext, receivedAtMillis)
             val refreshedConversationIds = when {
                 frame.hasSnapshot() -> frame.snapshot.conversationsList.mapTo(hashSetOf()) { it.detail.card.id }
                 frame.hasDelta() -> frame.delta.conversationsList.mapTo(hashSetOf()) { it.detail.card.id }
@@ -1187,6 +1210,7 @@ class DieterConnectionManager(
                     error = null,
                 )
             }
+            DieterWidgetPrefs.recordSyncFrame(appContext, receivedAtMillis)
         }
         // Normal server completion is still a lost subscription. Resubscribe
         // on this channel; the independent liveness deadline bounds silence.
@@ -1298,14 +1322,14 @@ class DieterConnectionManager(
         }
     }
 
-    suspend fun refreshMachineDirectory(includeArchivedChats: Boolean = false) = directoryRefreshMutex.withLock {
+    suspend fun refreshMachineDirectory(includeArchivedChats: Boolean = false, force: Boolean = false): Boolean = directoryRefreshMutex.withLock {
         val directoryGeneration = synchronized(lock) { generation }
         val activeEndpointId = repository.activeEndpoint.id
         val machines = discoveredEndpoints.filter { machine ->
             machine.online && machine.isCompatible &&
-                (includeArchivedChats || machine.id != activeEndpointId)
+                (force || includeArchivedChats || machine.id != activeEndpointId)
         }
-        if (machines.isEmpty()) return@withLock
+        if (machines.isEmpty()) return@withLock false
         // Relay calls use independent channels, so fetch machines and their
         // complete catalogs concurrently. Keep one shared bound across the
         // batch to avoid exhausting the gateway's logical-stream allowance.
@@ -1316,7 +1340,7 @@ class DieterConnectionManager(
                     runCatching {
                         val root = permits.withPermit {
                             val request = GetStateRequest.newBuilder().setAllProjects(true)
-                            if (!includeArchivedChats) synchronized(lock) { directoryCursors[machine.id] }?.let { request.setIfNotModified(it) }
+                            if (!force && !includeArchivedChats) synchronized(lock) { directoryCursors[machine.id] }?.let { request.setIfNotModified(it) }
                             repository.relayState(machine, request.build())
                         }
                         if (root.notModified) return@runCatching null
@@ -1336,7 +1360,7 @@ class DieterConnectionManager(
                 }
             }.awaitAll().filterNotNull()
         }
-        if (snapshots.isEmpty() || directoryGeneration != synchronized(lock) { generation }) return@withLock
+        if (snapshots.isEmpty() || directoryGeneration != synchronized(lock) { generation }) return@withLock false
         snapshots.forEach { snapshot ->
             ownerCards.replace(snapshot.endpoint.daemonId.orEmpty(), snapshot.cards + snapshot.chats)
         }
@@ -1377,6 +1401,7 @@ class DieterConnectionManager(
         }
         synchronized(lock) { snapshots.forEach { directoryCursors[it.endpoint.id] = it.cursor } }
         persistMachineDirectory()
+        snapshots.size == machines.size
     }
 
     private fun persistMachineDirectory() {

@@ -1,16 +1,18 @@
 package com.dbpprt.dieter.widget
 
-import com.dbpprt.dieter.connection.currentModelActivities
-import com.dbpprt.dieter.connection.isActiveRuntime
+import com.dbpprt.dieter.ui.ActivityKind
+import com.dbpprt.dieter.ui.activityAge
+import com.dbpprt.dieter.ui.activityDetails
+import com.dbpprt.dieter.ui.buildActivityEntries
 import com.dbpprt.dieter.v1.Card
 import com.dbpprt.dieter.v1.ConversationSnapshot
 import com.dbpprt.dieter.v1.Project
-import java.time.Duration
 import java.time.Instant
-import java.time.OffsetDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
+// LAST_FINISHED is a persisted style identifier. All styles now show the same
+// Inbox; this option only chooses a compact presentation.
 enum class WidgetStyle { AUTO, ACTIVITY, LAST_FINISHED }
 
 data class WidgetConfig(
@@ -24,16 +26,16 @@ data class WidgetConfig(
     }
 }
 
-enum class WidgetRowKind { WAITING, RUNNING, FAILED, CHAT }
+enum class WidgetRowKind { WAITING, RUNNING, REVIEW, FAILED, CHAT }
 
 sealed interface WidgetRow {
     data class Section(val title: String) : WidgetRow
-
     data class Item(
         val cardId: String,
         val kind: WidgetRowKind,
         val title: String,
         val subtitle: String,
+        val detail: String,
         val trailing: String,
         val highlighted: Boolean = false,
     ) : WidgetRow
@@ -42,220 +44,77 @@ sealed interface WidgetRow {
 data class WidgetActivityModel(
     val compact: Boolean,
     val headerTitle: String,
+    val summary: String,
     val statusText: String,
-    val online: Boolean,
     val rows: List<WidgetRow>,
     val emptyTitle: String,
     val emptyBody: String,
 )
 
-/**
- * Projects standalone chats from the cached connection state into home-screen
- * rows: attention first, then live work, then recent replies grouped by day.
- */
+/** The same canonical conversation selection, timestamps and attention rules as Inbox. */
 fun buildWidgetModel(
-    chats: List<Card>,
+    cards: List<Card>,
     conversations: Map<String, ConversationSnapshot>,
     projects: List<Project>,
-    hostname: String?,
     lastSyncAtMs: Long,
+    connected: Boolean,
     config: WidgetConfig,
     compact: Boolean,
     now: Instant = Instant.now(),
-    zoneId: ZoneId = ZoneId.systemDefault(),
 ): WidgetActivityModel {
-    val projectNames = projects.associate { it.id to it.name }
-    fun projectLabel(card: Card): String = projectNames[card.projectId]?.takeIf(String::isNotBlank)
-        ?: "Chat"
-
-    val chatCards = chats.filter { !it.archived }
-
-    val waiting = chatCards.filter { it.runtime.equals("waiting_for_user", ignoreCase = true) ||
-        (!isActiveRuntime(it.runtime) && it.runtime != "cancelling" && it.responseSeq > it.seenResponseSeq) }
-        .sortedByDescending { parseInstant(waitingSince(it)) ?: Instant.EPOCH }
-    val running = chatCards.filter { isActiveRuntime(it.runtime) }
-        .sortedByDescending { parseInstant(it.lastActivityAt.ifBlank { it.updatedAt }) ?: Instant.EPOCH }
-    val finished = finishedChats(chatCards).filter { compact || waiting.none { card -> card.id == it.card.id } }.sortedByDescending { it.at ?: Instant.EPOCH }
-
-    if (compact) {
-        val items = finished.take(config.maxItems).map { entry ->
-            WidgetRow.Item(
-                cardId = entry.card.id,
-                kind = entry.kind,
-                title = "${entry.card.title.ifBlank { "Untitled" }} · ${compactPhrase(entry)}",
-                subtitle = "",
-                trailing = entry.at?.let { shortAge(Duration.between(it, now)) }.orEmpty(),
-            )
+    val entries = buildActivityEntries(cards, activityDetails(conversations))
+    val attention = entries.filter { it.needsYou }
+    val running = entries.filter { it.running }
+    val recent = entries.filter { !it.needsYou && !it.running }
+    val names = projects.associate { it.id to it.name }
+    var remaining = config.maxItems.coerceIn(1, WidgetConfig.MAX_ITEM_CHOICES.last())
+    val rows = buildList {
+        listOf("Needs attention" to attention, "Running" to running, "Recent" to recent).forEach { (title, group) ->
+            val visible = group.take(remaining)
+            if (visible.isNotEmpty() && config.showSections && !compact) add(WidgetRow.Section("$title · ${group.size}"))
+            visible.forEach { entry ->
+                val card = entry.card
+                add(WidgetRow.Item(
+                    cardId = card.id,
+                    kind = when (entry.kind) {
+                        ActivityKind.ANSWER, ActivityKind.UNREAD -> WidgetRowKind.WAITING
+                        ActivityKind.RUNNING -> WidgetRowKind.RUNNING
+                        ActivityKind.REVIEW -> WidgetRowKind.REVIEW
+                        ActivityKind.FAILED -> WidgetRowKind.FAILED
+                        ActivityKind.RECENT -> WidgetRowKind.CHAT
+                    },
+                    title = card.title.ifBlank { "Untitled conversation" },
+                    subtitle = listOfNotNull(names[card.projectId]?.takeIf(String::isNotBlank),
+                        if (card.scope == "chat" && card.boardId.isBlank()) "Chat" else "Card").joinToString(" · "),
+                    detail = entry.detail,
+                    trailing = entry.at?.let { activityAge(it, now) }.orEmpty(),
+                    highlighted = entry.needsYou,
+                ))
+            }
+            remaining -= visible.size
         }
-        return WidgetActivityModel(
-            compact = true,
-            headerTitle = "Recent replies",
-            statusText = statusLine(hostname, lastSyncAtMs, now),
-            online = isOnline(lastSyncAtMs, now),
-            rows = items,
-            emptyTitle = "No replies yet",
-            emptyBody = "Recent chat replies show up here",
-        )
     }
-
-    val rows = mutableListOf<WidgetRow>()
-    var remaining = config.maxItems
-
-    fun addItems(items: List<WidgetRow.Item>) {
-        val taken = items.take(remaining)
-        rows += taken
-        remaining -= taken.size
-    }
-
-    addItems(
-        waiting.map { card ->
-            WidgetRow.Item(
-                cardId = card.id,
-                kind = WidgetRowKind.WAITING,
-                title = card.title.ifBlank { "Untitled" },
-                subtitle = "${projectLabel(card)} · " + if (card.runtime == "waiting_for_user") "waiting on you" else "unread reply",
-                trailing = sinceLabel(parseInstant(waitingSince(card)), now),
-                highlighted = true,
-            )
-        },
-    )
-    addItems(
-        running.map { card ->
-            val detail = currentModelActivities(card, conversations[card.id]).firstOrNull()?.detail
-                ?: "Working on your request"
-            WidgetRow.Item(
-                cardId = card.id,
-                kind = WidgetRowKind.RUNNING,
-                title = card.title.ifBlank { "Untitled" },
-                subtitle = "${projectLabel(card)} · $detail",
-                trailing = elapsedLabel(parseInstant(card.runtimeUpdatedAt), now),
-            )
-        },
-    )
-    val today = now.atZone(zoneId).toLocalDate()
-    val clock = DateTimeFormatter.ofPattern("HH:mm")
-    val dayStamp = DateTimeFormatter.ofPattern("MMM d")
-    var section: String? = null
-    finished.take(remaining.coerceAtLeast(0)).forEach { entry ->
-        val date = entry.at?.atZone(zoneId)?.toLocalDate()
-        val title = when {
-            date == null -> "Earlier"
-            date == today -> "Replied today"
-            date == today.minusDays(1) -> "Yesterday"
-            else -> "Earlier"
-        }
-        if (config.showSections && title != section) {
-            section = title
-            rows += WidgetRow.Section(title)
-        }
-        val trailing = when {
-            entry.at == null -> ""
-            date == today || date == today.minusDays(1) -> clock.format(entry.at.atZone(zoneId))
-            else -> dayStamp.format(entry.at.atZone(zoneId))
-        }
-        rows += WidgetRow.Item(
-            cardId = entry.card.id,
-            kind = entry.kind,
-            title = entry.card.title.ifBlank { "Untitled" },
-            subtitle = finishedSubtitle(entry, projectLabel(entry.card)),
-            trailing = trailing,
-        )
-    }
-
     return WidgetActivityModel(
-        compact = false,
-        headerTitle = "Chats",
-        statusText = statusLine(hostname, lastSyncAtMs, now),
-        online = isOnline(lastSyncAtMs, now),
+        compact = compact,
+        headerTitle = "Inbox",
+        summary = when {
+            compact && (attention.isNotEmpty() || running.isNotEmpty()) -> "${attention.size} need attention\n${running.size} running"
+            attention.isNotEmpty() || running.isNotEmpty() -> "${attention.size} need attention · ${running.size} running"
+            entries.isNotEmpty() -> "${entries.size} recent ${if (entries.size == 1) "conversation" else "conversations"}"
+            else -> "Cards and chats, together"
+        },
+        statusText = widgetStatusText(lastSyncAtMs, connected, now),
         rows = rows,
-        emptyTitle = "No chats yet",
-        emptyBody = "Start a chat in Dieter",
+        emptyTitle = if (lastSyncAtMs <= 0 && !connected) "Open Dieter to connect" else "All quiet here",
+        emptyBody = "Activity from cards and chats appears here.",
     )
 }
 
-internal data class FinishedEntry(val card: Card, val at: Instant?, val kind: WidgetRowKind)
-
-private fun finishedChats(chats: List<Card>): List<FinishedEntry> = chats
-    .filter { chat ->
-        chat.runtimeUpdatedAt.isNotBlank() &&
-            chat.runtime.isNotBlank() &&
-            !isActiveRuntime(chat.runtime) &&
-            !chat.runtime.equals("waiting_for_user", ignoreCase = true) &&
-            !chat.runtime.equals("pending", ignoreCase = true)
-    }
-    .map { chat ->
-        FinishedEntry(
-            card = chat,
-            at = parseInstant(chat.runtimeUpdatedAt.ifBlank { chat.lastActivityAt }),
-            kind = when {
-                chat.runtime.equals("failed", ignoreCase = true) -> WidgetRowKind.FAILED
-                else -> WidgetRowKind.CHAT
-            },
-        )
-    }
-
-private fun finishedSubtitle(entry: FinishedEntry, project: String): String = when (entry.kind) {
-    WidgetRowKind.CHAT -> "$project · replied"
-    WidgetRowKind.FAILED -> "$project · failed"
-    WidgetRowKind.WAITING, WidgetRowKind.RUNNING -> project
+internal fun widgetStatusText(lastSyncAtMs: Long, connected: Boolean, now: Instant): String {
+    if (lastSyncAtMs <= 0) return if (connected) "Syncing…" else "Not synced yet"
+    // An absolute timestamp stays truthful when Android suspends background
+    // execution and the host retains this RemoteViews snapshot for hours.
+    val time = DateTimeFormatter.ofPattern("MMM d, HH:mm").withZone(ZoneId.systemDefault())
+        .format(Instant.ofEpochMilli(lastSyncAtMs))
+    return if (connected) "Updated $time" else "Offline · updated $time"
 }
-
-private fun compactPhrase(entry: FinishedEntry): String = when (entry.kind) {
-    WidgetRowKind.CHAT -> "replied"
-    WidgetRowKind.FAILED -> "failed"
-    WidgetRowKind.WAITING, WidgetRowKind.RUNNING -> "updated"
-}
-
-private fun waitingSince(card: Card): String =
-    card.runtimeUpdatedAt.ifBlank { card.phaseChangedAt.ifBlank { card.updatedAt } }
-
-internal fun parseInstant(value: String?): Instant? {
-    if (value.isNullOrBlank()) return null
-    return runCatching { Instant.parse(value) }.getOrNull()
-        ?: runCatching { OffsetDateTime.parse(value).toInstant() }.getOrNull()
-}
-
-internal fun statusLine(hostname: String?, lastSyncAtMs: Long, now: Instant): String {
-    val polled = when {
-        lastSyncAtMs <= 0L -> "not synced yet"
-        else -> {
-            val age = Duration.between(Instant.ofEpochMilli(lastSyncAtMs), now)
-            if (age.toMinutes() < 1) "just polled" else "polled ${shortAge(age)} ago"
-        }
-    }
-    return listOfNotNull(hostname?.takeIf(String::isNotBlank), polled).joinToString(" · ")
-}
-
-internal fun isOnline(lastSyncAtMs: Long, now: Instant): Boolean = lastSyncAtMs > 0 &&
-    Duration.between(Instant.ofEpochMilli(lastSyncAtMs), now).seconds in 0..ONLINE_WINDOW_SECONDS
-
-internal fun shortAge(age: Duration): String {
-    val clamped = if (age.isNegative) Duration.ZERO else age
-    return when {
-        clamped.toMinutes() < 1 -> "now"
-        clamped.toMinutes() < 60 -> "${clamped.toMinutes()}m"
-        clamped.toHours() < 24 -> "${clamped.toHours()}h"
-        else -> "${clamped.toDays()}d"
-    }
-}
-
-internal fun sinceLabel(at: Instant?, now: Instant): String {
-    at ?: return ""
-    val age = Duration.between(at, now)
-    return when {
-        age.toMinutes() < 1 -> "just now"
-        else -> "since ${shortAge(age)}"
-    }
-}
-
-internal fun elapsedLabel(at: Instant?, now: Instant): String {
-    at ?: return ""
-    val age = Duration.between(at, now)
-    return when {
-        age.toMinutes() < 1 -> "just started"
-        else -> "${shortAge(age)} elapsed"
-    }
-}
-
-/** One missed 15 s heartbeat plus generous slack still counts as live. */
-private const val ONLINE_WINDOW_SECONDS = 150L

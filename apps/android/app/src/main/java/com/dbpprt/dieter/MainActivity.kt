@@ -45,6 +45,7 @@ class MainActivity : ComponentActivity() {
         intent?.data?.let(container.connectionManager::completeAuthentication)
         container.requestOpen(
             cardId = intent?.getStringExtra(DieterSyncService.EXTRA_CARD_ID).orEmpty(),
+            showInbox = intent?.getBooleanExtra(com.dbpprt.dieter.widget.DieterActivityWidgetProvider.EXTRA_OPEN_INBOX, false) == true,
             showConnection = intent?.getBooleanExtra(DieterSyncService.EXTRA_SHOW_CONNECTION, false) == true,
         )
     }

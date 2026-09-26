@@ -189,10 +189,17 @@ fun DieterApp(container: DieterContainer) {
             container.appUpdateManager.checkForUpdates()
         }
     }
-    LaunchedEffect(openRequest) {
+    LaunchedEffect(openRequest, state.loading, state.spaceCards, state.chats, state.connectionPhase) {
         val request = openRequest ?: return@LaunchedEffect
         if (request.showConnection) model.showConnectionDialogIfNeeded()
-        if (request.cardId.isNotBlank()) model.openNotificationCard(request.cardId)
+        if (request.showInbox) {
+            val card = (state.spaceCards + state.cards + state.chats).firstOrNull { it.id == request.cardId && !it.archived }
+            // Keep a cold-launch request until cached state or the first live
+            // projection arrives. Removed conversations safely land in Inbox.
+            if (request.cardId.isNotBlank() && card == null && (state.loading || state.connectionPhase in setOf(
+                    ConnectionPhase.CONNECTING, ConnectionPhase.SYNCING, ConnectionPhase.RECONNECTING))) return@LaunchedEffect
+            if (card != null) model.openCard(card, Destination.ACTIVITY) else model.navigate(Destination.ACTIVITY)
+        } else if (request.cardId.isNotBlank()) model.openNotificationCard(request.cardId)
         container.consumeOpenRequest(request)
     }
     LaunchedEffect(state.backgroundSyncMode, state.desiredConnected) {

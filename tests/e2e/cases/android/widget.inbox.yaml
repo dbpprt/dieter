@@ -1,0 +1,15 @@
+# yaml-language-server: $schema=../../schema.json
+version: 1
+id: widget.inbox
+platform: android
+suites:
+- functional
+components:
+- activity
+- navigation
+fixture: gateway
+timeout: 180s
+native:
+  class: com.dbpprt.dieter.widget.WidgetInboxEndToEndTest
+  methods:
+  - widgetTracksInboxAndRefreshesWhileAppOnlySyncIsSleeping

@@ -1,12 +1,12 @@
 <resources>
     <string name="app_name">Dieter</string>
-    <string name="widget_label">Dieter Chats</string>
-    <string name="widget_description">Standalone chat activity at a glance: what needs you, what is running, and recent replies.</string>
-    <string name="widget_title_activity">Chats</string>
-    <string name="widget_title_last_finished">Recent replies</string>
+    <string name="widget_label">Dieter Inbox</string>
+    <string name="widget_description">Your Inbox at a glance: cards and chats that need attention, running work, and recent conversations.</string>
+    <string name="widget_title_activity">Inbox</string>
+    <string name="widget_title_last_finished">Inbox</string>
     <string name="widget_refresh">Refresh</string>
-    <string name="widget_empty_title">No chats yet</string>
-    <string name="widget_empty_body">Start a chat in Dieter</string>
-    <string name="widget_empty_recent_title">No replies yet</string>
-    <string name="widget_empty_recent_body">Recent chat replies show up here</string>
+    <string name="widget_empty_title">All quiet here</string>
+    <string name="widget_empty_body">Activity from cards and chats appears here</string>
+    <string name="widget_empty_recent_title">All quiet here</string>
+    <string name="widget_empty_recent_body">Activity from cards and chats appears here</string>
 </resources>

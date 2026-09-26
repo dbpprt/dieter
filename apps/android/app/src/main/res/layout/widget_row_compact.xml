@@ -4,6 +4,7 @@
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="horizontal"
+    android:minHeight="52dp"
     android:gravity="center_vertical"
     android:paddingStart="4dp"
     android:paddingEnd="6dp"
@@ -19,17 +20,12 @@
         android:src="@drawable/ic_widget_check"
         android:importantForAccessibility="no" />
 
-    <TextView
-        android:id="@+id/widget_row_title"
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:layout_weight="1"
-        android:layout_marginStart="9dp"
-        android:textColor="@color/widget_title"
-        android:textSize="12sp"
-        android:textStyle="bold"
-        android:singleLine="true"
-        android:ellipsize="end" />
+    <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:layout_marginStart="8dp" android:orientation="vertical">
+        <TextView android:id="@+id/widget_row_title" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:textColor="@color/widget_title" android:textSize="13sp" android:textStyle="bold" android:maxLines="2" android:ellipsize="end" />
+        <TextView android:id="@+id/widget_row_subtitle" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:textColor="@color/widget_muted" android:textSize="11sp" android:singleLine="true" android:ellipsize="end" />
+    </LinearLayout>
 
     <TextView
         android:id="@+id/widget_row_trailing"

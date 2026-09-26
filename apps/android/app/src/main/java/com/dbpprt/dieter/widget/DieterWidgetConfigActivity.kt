@@ -99,17 +99,17 @@ private fun WidgetConfigScreen(
                 Text("Style", style = MaterialTheme.typography.titleSmall)
                 StyleOption(
                     title = "Automatic",
-                    subtitle = "Chat activity when wide, recent replies when small",
+                    subtitle = "Inbox adapts to the widget size",
                     selected = style == WidgetStyle.AUTO,
                 ) { style = WidgetStyle.AUTO }
                 StyleOption(
-                    title = "Chat activity",
-                    subtitle = "Waiting, running, and recent replies",
+                    title = "Detailed Inbox",
+                    subtitle = "Needs attention, running, and recent conversations",
                     selected = style == WidgetStyle.ACTIVITY,
                 ) { style = WidgetStyle.ACTIVITY }
                 StyleOption(
-                    title = "Recent replies",
-                    subtitle = "Compact list of recently answered chats",
+                    title = "Compact Inbox",
+                    subtitle = "The same Inbox with shorter rows",
                     selected = style == WidgetStyle.LAST_FINISHED,
                 ) { style = WidgetStyle.LAST_FINISHED }
 
@@ -127,7 +127,7 @@ private fun WidgetConfigScreen(
                 }
 
                 Spacer(Modifier.height(16.dp))
-                ToggleRow("Date sections", "Group recent replies by day", showSections) { showSections = it }
+                ToggleRow("Sections", "Group by attention, running, and recent", showSections) { showSections = it }
 
                 Spacer(Modifier.height(24.dp))
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
