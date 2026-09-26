@@ -8,6 +8,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -1005,6 +1006,7 @@ internal fun BoardDetailHeader(
     model: DieterViewModel,
     onOpenSwitcher: () -> Unit,
     onToggleSearch: () -> Unit,
+    compactContent: (@Composable () -> Unit)? = null,
 ) {
     val board = state.board
     var menuOpen by remember { mutableStateOf(false) }
@@ -1012,10 +1014,16 @@ internal fun BoardDetailHeader(
     val reviews = boardCards.count { it.lane.contains("review", true) }
     Column(Modifier.fillMaxWidth()) {
         Row(
-            Modifier.fillMaxWidth().padding(start = 14.dp, end = 4.dp, top = 12.dp, bottom = 8.dp),
+            Modifier.fillMaxWidth().padding(
+                start = if (compactContent != null) 0.dp else 14.dp, end = 4.dp,
+                top = if (compactContent != null) 4.dp else 12.dp,
+                bottom = if (compactContent != null) 4.dp else 8.dp,
+            ),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Row(
+            if (compactContent != null) {
+                Box(Modifier.weight(1f)) { compactContent() }
+            } else Row(
                 Modifier.weight(1f).clip(RoundedCornerShape(14.dp)).clickable(onClick = onOpenSwitcher).padding(vertical = 3.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -1282,6 +1290,17 @@ internal fun BoardList(state: DieterUiState, model: DieterViewModel, modifier: M
         BoardlessProjectState(state, model, modifier)
         return
     }
+    val filters: @Composable () -> Unit = {
+        BoardLabelFilters(
+            state = state,
+            selectedLabelId = selectedLabelId,
+            selectedMachineId = selectedMachineId,
+            onMachineSelect = { selectedMachineId = it },
+            dragState = labelDragState,
+            onSelect = { selectedLabelId = it },
+            onDrop = { cardId, labelId -> model.assignLabelToBoardCard(cardId, labelId) },
+        )
+    }
     Box(modifier.onGloballyPositioned { boardListOrigin = it.positionInRoot() }) {
         Column(Modifier.fillMaxSize()) {
             BoardDetailHeader(
@@ -1292,21 +1311,14 @@ internal fun BoardList(state: DieterUiState, model: DieterViewModel, modifier: M
                     switcherOpen = true
                 },
                 onToggleSearch = { searchOpen = !searchOpen },
+                compactContent = if (showAllLanes) filters else null,
             )
             if (!state.connected && state.projects.isEmpty()) {
                 ConnectionEmptyState(state, model)
                 return@Column
             }
             if (searchOpen) CompactSearchField(query, { query = it }, "Search this board")
-            BoardLabelFilters(
-                state = state,
-                selectedLabelId = selectedLabelId,
-                selectedMachineId = selectedMachineId,
-                onMachineSelect = { selectedMachineId = it },
-                dragState = labelDragState,
-                onSelect = { selectedLabelId = it },
-                onDrop = { cardId, labelId -> model.assignLabelToBoardCard(cardId, labelId) },
-            )
+            if (!showAllLanes) filters()
             if (!showAllLanes) LaneTabs(state, model, boardCards)
             val lanes = state.board?.lanesList.orEmpty()
             if (state.loading && lanes.isEmpty()) {
@@ -1534,7 +1546,22 @@ internal fun BoardLanePager(
     labelDragState: BoardLabelDragState,
     modifier: Modifier = Modifier,
     showAllLanes: Boolean = false,
+    onCardDrop: (BoardCardLaneDrop) -> Unit = { model.moveBoardCard(it.cardId, it.laneId) },
 ) {
+    val cardDragState = remember(state.selectedBoardId, showAllLanes) { BoardCardDragState() }
+    val laneRowState = rememberScrollState()
+    var pagerBounds by remember { mutableStateOf(Rect.Zero) }
+    val scrollEdge = with(LocalDensity.current) { 48.dp.toPx() }
+    val scrollStep = with(LocalDensity.current) { 12.dp.toPx() }
+    LaunchedEffect(cardDragState.card?.id) {
+        while (cardDragState.card != null) {
+            val pointer = cardDragState.pointerInRoot
+            if (pagerBounds.contains(pointer)) {
+                laneRowState.scrollBy(boardDragScrollDelta(pointer.x, pagerBounds.left, pagerBounds.right, scrollEdge) * scrollStep)
+            }
+            delay(16)
+        }
+    }
     var revealedCardId by remember(state.selectedBoardId, state.selectedLane) { mutableStateOf<String?>(null) }
     var movingCard by remember(state.selectedBoardId) { mutableStateOf<BoardCard?>(null) }
     var editingCard by remember(state.selectedBoardId) { mutableStateOf<BoardCard?>(null) }
@@ -1575,15 +1602,25 @@ internal fun BoardLanePager(
                 moves = state.pendingCardMoves,
             )
         }
-        Column(Modifier.fillMaxSize()) {
+        DisposableEffect(cardDragState, lane.id) {
+            onDispose { cardDragState.unregisterLane(lane.id) }
+        }
+        val dropTargeted = cardDragState.targetLaneId == lane.id && cardDragState.card?.lane != lane.id
+        Column(Modifier.fillMaxSize()
+            .onGloballyPositioned { if (showAllLanes) cardDragState.registerLane(lane.id, it.boundsInRoot()) }
+            .then(if (dropTargeted) Modifier.background(DieterEyes.copy(alpha = 0.08f), RoundedCornerShape(12.dp))
+                .border(2.dp, DieterEyes, RoundedCornerShape(12.dp)) else Modifier)
+            .testTag("board-drop-lane-${lane.id}"),
+        ) {
             if (showAllLanes) {
                 Row(Modifier.fillMaxWidth().padding(start = 16.dp, top = 16.dp, end = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                     Box(Modifier.size(7.dp).background(laneColor(lane.id), CircleShape))
                     Text(lane.name, style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f).padding(start = 8.dp))
                     Text(visible.size.toString(), style = MaterialTheme.typography.labelMedium, color = DieterMuted)
+                    LaneSortButton(lane.name, sortDirection, { model.toggleLaneSort(state.selectedBoardId, lane.id) }, compact = true)
                 }
             }
-            LaneSortButton(
+            if (!showAllLanes) LaneSortButton(
                 laneName = lane.name,
                 direction = sortDirection,
                 onToggle = { model.toggleLaneSort(state.selectedBoardId, lane.id) },
@@ -1632,6 +1669,8 @@ internal fun BoardLanePager(
                             },
                             onStart = { model.startBoardCard(card.id) },
                             labelDragState = labelDragState,
+                            cardDragState = cardDragState.takeIf { showAllLanes },
+                            onCardDrop = onCardDrop,
                             onClick = { model.openCard(card, Destination.BOARD) },
                         )
                     }
@@ -1641,11 +1680,37 @@ internal fun BoardLanePager(
     }
 
     if (showAllLanes) {
-        BoxWithConstraints(modifier.fillMaxWidth().testTag("tablet-board-lanes")) {
-            val laneWidth = (maxWidth / lanes.size.coerceAtLeast(1)).coerceIn(220.dp * LocalDensity.current.fontScale.coerceAtLeast(1f), 360.dp * LocalDensity.current.fontScale.coerceAtLeast(1f))
-            LazyRow(Modifier.fillMaxSize(), contentPadding = PaddingValues(horizontal = 8.dp)) {
-                items(lanes.size, key = { lanes[it].id }) { page ->
+        BoxWithConstraints(modifier.fillMaxWidth().testTag("tablet-board-lanes")
+            .onGloballyPositioned { pagerBounds = it.boundsInRoot() }) {
+            val laneWidth = ((maxWidth - 16.dp) / lanes.size.coerceAtLeast(1)).coerceIn(220.dp * LocalDensity.current.fontScale.coerceAtLeast(1f), 360.dp * LocalDensity.current.fontScale.coerceAtLeast(1f))
+            // Keep the source composed while edge scrolling the four workflow lanes.
+            Row(Modifier.fillMaxSize().horizontalScroll(laneRowState).padding(horizontal = 8.dp)) {
+                lanes.indices.forEach { page ->
                     Box(Modifier.width(laneWidth).fillMaxHeight().testTag("tablet-lane-${lanes[page].id}")) { laneContent(page) }
+                }
+            }
+            cardDragState.card?.let { dragged ->
+                val targetName = lanes.firstOrNull { it.id == cardDragState.targetLaneId && it.id != dragged.lane }?.name
+                val previewWidth = minOf(240.dp, maxWidth)
+                val previewWidthPx = with(LocalDensity.current) { previewWidth.toPx() }
+                Surface(
+                    modifier = Modifier.width(previewWidth).offset {
+                        IntOffset(
+                            (cardDragState.pointerInRoot.x - pagerBounds.left - previewWidthPx / 2)
+                                .coerceIn(0f, (pagerBounds.width - previewWidthPx).coerceAtLeast(0f)).toInt(),
+                            (cardDragState.pointerInRoot.y - pagerBounds.top + 16.dp.toPx())
+                                .coerceIn(0f, (pagerBounds.height - 100.dp.toPx()).coerceAtLeast(0f)).toInt(),
+                        )
+                    }.zIndex(3f).testTag("board-card-drag-preview"),
+                    shape = RoundedCornerShape(12.dp),
+                    color = DieterSurfaceHigh,
+                    border = androidx.compose.foundation.BorderStroke(1.dp, DieterEyes),
+                    shadowElevation = 8.dp,
+                ) {
+                    Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(dragged.title, maxLines = 2, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold)
+                        Text(targetName?.let { "Move to $it" } ?: "Drag to another lane", color = DieterEyes, fontSize = 12.sp)
+                    }
                 }
             }
         }
@@ -1683,18 +1748,23 @@ internal fun LaneSortButton(
     direction: CardPlacementSortDirection,
     onToggle: () -> Unit,
     modifier: Modifier = Modifier,
+    compact: Boolean = false,
 ) {
     val descending = direction == CardPlacementSortDirection.DESCENDING
     val currentLabel = if (descending) "reverse board order" else "board order"
     val nextLabel = if (descending) "board order" else "reverse board order"
+    val sortModifier = modifier
+        .testTag("lane-sort-${laneName.lowercase().replace(' ', '-')}")
+        .semantics { contentDescription = "$laneName lane sorted $currentLabel; sort $nextLabel" }
+    if (compact) {
+        IconButton(onClick = onToggle, modifier = sortModifier) {
+            Icon(if (descending) Icons.Outlined.ArrowDownward else Icons.Outlined.ArrowUpward, null, Modifier.size(17.dp))
+        }
+        return
+    }
     TextButton(
         onClick = onToggle,
-        modifier = modifier
-            .padding(horizontal = 8.dp, vertical = 2.dp)
-            .testTag("lane-sort-${laneName.lowercase().replace(' ', '-')}")
-            .semantics {
-                contentDescription = "$laneName lane sorted $currentLabel; sort $nextLabel"
-            },
+        modifier = sortModifier.padding(horizontal = 8.dp, vertical = 2.dp),
         contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
     ) {
         Icon(

@@ -176,6 +176,10 @@ class TabletWorkspaceTest {
             }
         } }
         compose.onNodeWithTag("tablet-project-navigator").assertIsDisplayed()
+        compose.onAllNodesWithText("Main").assertCountEquals(1)
+        compose.onAllNodesWithText("dieter").assertCountEquals(1)
+        compose.onNodeWithText("Reverse board order").assertDoesNotExist()
+        compose.onNodeWithTag("card-runtime-running", useUnmergedTree = true).assertIsDisplayed()
         val navigatorWidth = compose.onNodeWithTag("tablet-project-navigator").fetchSemanticsNode().boundsInRoot.width
         compose.onNodeWithTag("tablet-lane-todo").assertIsDisplayed()
         compose.onNodeWithTag("tablet-lane-running").assertIsDisplayed()
@@ -192,6 +196,89 @@ class TabletWorkspaceTest {
         capture("tablet-board-detail")
         compose.runOnIdle { selected = null }
         compose.onNodeWithTag("tablet-project-navigator").assertIsDisplayed()
+    }
+
+    @Test fun longPressDragMovesCardsBetweenPopulatedAndEmptyLanes() {
+        var current by mutableStateOf(fixture)
+        val drops = mutableListOf<BoardCardLaneDrop>()
+        compose.setContent { TabletTestSurface {
+            DieterTheme {
+                BoardLanePager(current, model, board.lanesList, current.cards,
+                    remember { BoardLabelDragState() }, Modifier.fillMaxSize(), showAllLanes = true,
+                    onCardDrop = { drop ->
+                        drops += drop
+                        current = current.copy(cards = current.cards.map {
+                            if (it.id == drop.cardId) it.toBuilder().setLane(drop.laneId).build() else it
+                        })
+                    })
+            }
+        } }
+        fun drag(cardId: String, laneId: String, cancelDrop: Boolean = false) {
+            val root = compose.onNodeWithTag("tablet-test-surface").fetchSemanticsNode().boundsInRoot
+            val source = compose.onNodeWithTag("swipe-card-$cardId").fetchSemanticsNode().boundsInRoot.center - root.topLeft
+            val target = compose.onNodeWithTag("board-drop-lane-$laneId").fetchSemanticsNode().boundsInRoot.center - root.topLeft
+            compose.onNodeWithTag("tablet-test-surface").performTouchInput {
+                down(source)
+                advanceEventTime(650)
+                moveTo(source)
+                moveTo(target, delayMillis = 200)
+            }
+            compose.onNodeWithTag("board-card-drag-preview").assertIsDisplayed()
+            compose.onNodeWithText("Move to ${laneId.replaceFirstChar(Char::uppercase)}").assertIsDisplayed()
+            compose.onNodeWithTag("tablet-test-surface").performTouchInput {
+                if (cancelDrop) cancel() else up()
+            }
+            compose.onNodeWithTag("board-card-drag-preview").assertDoesNotExist()
+        }
+        drag("running", "review", cancelDrop = true)
+        compose.runOnIdle { assertTrue(drops.isEmpty()) }
+        drag("running", "review")
+        compose.runOnIdle { assertEquals(listOf(BoardCardLaneDrop("running", "review")), drops) }
+        compose.onNodeWithTag("swipe-card-running").assert(hasAnyAncestor(hasTestTag("board-drop-lane-review")))
+        compose.onNodeWithTag("card-runtime-running", useUnmergedTree = true).assertIsDisplayed()
+        drag("running", "running") // The source lane is now empty.
+        compose.runOnIdle { assertEquals(BoardCardLaneDrop("running", "running"), drops.last()); assertEquals(2, drops.size) }
+        compose.onNodeWithTag("swipe-card-running").assert(hasAnyAncestor(hasTestTag("board-drop-lane-running")))
+        capture("tablet-board-dragged")
+    }
+
+    @Test fun draggingAtBoardEdgeReachesAnOffscreenLane() {
+        var dropped: BoardCardLaneDrop? = null
+        compose.setContent { TabletTestSurface {
+            DieterTheme {
+                BoardLanePager(fixture, model, board.lanesList, cards,
+                    remember { BoardLabelDragState() }, Modifier.width(480.dp).fillMaxHeight(),
+                    showAllLanes = true, onCardDrop = { dropped = it })
+            }
+        } }
+        val root = compose.onNodeWithTag("tablet-test-surface").fetchSemanticsNode().boundsInRoot
+        val viewport = compose.onNodeWithTag("tablet-board-lanes").fetchSemanticsNode().boundsInRoot
+        val laneWidth = compose.onNodeWithTag("tablet-lane-todo").fetchSemanticsNode().boundsInRoot.width
+        val source = compose.onNodeWithTag("swipe-card-plan").fetchSemanticsNode().boundsInRoot.center - root.topLeft
+        val edge = Offset(viewport.right - root.left - 2f, viewport.center.y - root.top)
+        compose.onNodeWithTag("tablet-test-surface").performTouchInput {
+            down(source)
+            advanceEventTime(650)
+            moveTo(source)
+            moveTo(edge, delayMillis = 200)
+        }
+        try {
+            compose.waitUntil(5_000) {
+                val done = compose.onNodeWithTag("tablet-lane-done").fetchSemanticsNode().boundsInRoot
+                done.width >= laneWidth - 1f && done.right <= viewport.right
+            }
+        } finally {
+            capture("tablet-board-edge-held")
+        }
+        // Move inward from the board's outer padding onto the newly visible lane.
+        val target = compose.onNodeWithTag("board-drop-lane-done").fetchSemanticsNode().boundsInRoot.center - root.topLeft
+        compose.onNodeWithTag("tablet-test-surface").performTouchInput { moveTo(target) }
+        compose.onNodeWithText("Move to Done").assertIsDisplayed()
+        compose.onNodeWithTag("board-card-drag-preview").assertIsDisplayed()
+        capture("tablet-board-drag-preview")
+        compose.onNodeWithTag("tablet-test-surface").performTouchInput { up() }
+        compose.runOnIdle { assertEquals(BoardCardLaneDrop("plan", "done"), dropped) }
+        compose.onNodeWithTag("board-card-drag-preview").assertDoesNotExist()
     }
 
     @Test fun projectSearchKeepsSyncedFoldersAndBoardSelectionReachable() {

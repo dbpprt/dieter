@@ -129,7 +129,7 @@ internal fun TabletWorkspace(
                                     Column(paneModifier) {
                                         if ((state.project != null && !state.boardOverviewVisible) ||
                                             state.destination in listOf(Destination.FILES, Destination.SCHEDULES) || projectChats) {
-                                            TabletProjectTabs(state.project?.name.orEmpty(), projectTab, projectScopedNavigationEnabled(state)) { tab ->
+                                            TabletProjectTabs(projectTab, projectScopedNavigationEnabled(state)) { tab ->
                                                 model.closeSurface()
                                                 usage = false
                                                 workspaces = tab == TabletProjectTab.WORKSPACES
@@ -288,10 +288,8 @@ private fun TabletDetailPane(modifier: Modifier = Modifier.fillMaxSize(), conten
 }
 
 @Composable
-internal fun TabletProjectTabs(projectName: String, selected: TabletProjectTab, projectToolsEnabled: Boolean = true, onSelect: (TabletProjectTab) -> Unit) {
+internal fun TabletProjectTabs(selected: TabletProjectTab, projectToolsEnabled: Boolean = true, onSelect: (TabletProjectTab) -> Unit) {
     Column(Modifier.fillMaxWidth()) {
-        Text(projectName, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold,
-            modifier = Modifier.padding(start = 20.dp, top = 16.dp, bottom = 4.dp), maxLines = 1, overflow = TextOverflow.Ellipsis)
         PrimaryScrollableTabRow(selectedTabIndex = selected.ordinal, edgePadding = 12.dp,
             containerColor = MaterialTheme.colorScheme.background, contentColor = DieterShell) {
             TabletProjectTab.entries.forEach { tab ->

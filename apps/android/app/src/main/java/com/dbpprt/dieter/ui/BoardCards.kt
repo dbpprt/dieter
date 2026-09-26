@@ -92,6 +92,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.sp
 import androidx.core.graphics.toColorInt
+import com.dbpprt.dieter.ui.theme.DieterRunning
 import com.dbpprt.dieter.ui.theme.DieterCoral
 import com.dbpprt.dieter.ui.theme.DieterEyes
 import com.dbpprt.dieter.ui.theme.DieterShell
@@ -252,12 +253,43 @@ internal fun SwipeableWorkCard(
     onArchive: () -> Unit,
     onStart: () -> Unit,
     labelDragState: BoardLabelDragState,
+    cardDragState: BoardCardDragState? = null,
+    onCardDrop: (BoardCardLaneDrop) -> Unit = {},
     onClick: () -> Unit,
 ) {
     val density = LocalDensity.current
     val revealDistance = with(density) { 264.dp.toPx() }
     var dragOffset by remember(card.id) { mutableFloatStateOf(0f) }
     val labelDropTargeted = labelDragState.isTargeted(card.id)
+    val haptic = LocalHapticFeedback.current
+    val currentCard by rememberUpdatedState(card)
+    val currentOnCardDrop by rememberUpdatedState(onCardDrop)
+    val currentCloseActions by rememberUpdatedState(onCloseActions)
+    var cardOrigin by remember(card.id) { mutableStateOf(Offset.Zero) }
+    val canDrag = cardDragState != null && !pending && operation == null
+    DisposableEffect(cardDragState, card.id) {
+        onDispose { if (cardDragState?.card?.id == card.id) cardDragState.reset() }
+    }
+    LaunchedEffect(canDrag) {
+        if (!canDrag && cardDragState?.card?.id == card.id) cardDragState.reset()
+    }
+    val cardDragModifier = if (!canDrag) Modifier else Modifier
+        .pointerInput(card.id, cardDragState) {
+            detectDragGesturesAfterLongPress(
+                onDragStart = { offset ->
+                    currentCloseActions()
+                    cardDragState.start(currentCard, cardOrigin + offset)
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                },
+                onDrag = { change, _ ->
+                    change.consume()
+                    // The source itself moves when the board edge scrolls.
+                    cardDragState.moveTo(cardOrigin + change.position)
+                },
+                onDragEnd = { cardDragState.finish()?.let(currentOnCardDrop) },
+                onDragCancel = cardDragState::reset,
+            )
+        }
     // The action must read as enabled in every palette. A translucent shell
     // fill paired with the deeper shell tint collapses to near-identical
     // colors on dark surfaces.
@@ -277,15 +309,21 @@ internal fun SwipeableWorkCard(
 
     Box(
         Modifier.fillMaxWidth()
+            .then(cardDragModifier)
+            .alpha(if (cardDragState?.card?.id == card.id) 0.45f else 1f)
             .clip(RoundedCornerShape(12.dp))
             .background(DieterSurfaceHigh)
             .then(
                 if (labelDropTargeted) Modifier.border(2.dp, DieterEyes, RoundedCornerShape(12.dp))
                 else Modifier,
             )
-            .onGloballyPositioned { labelDragState.registerCard(card.id, it.boundsInRoot()) }
+            .onGloballyPositioned {
+                cardOrigin = it.positionInRoot()
+                labelDragState.registerCard(card.id, it.boundsInRoot())
+            }
             .semantics {
-                contentDescription = "${card.title.ifBlank { "Untitled conversation" }}; drop a board label here"
+                contentDescription = "${card.title.ifBlank { "Untitled conversation" }}; drop a board label here" +
+                    if (canDrag) "; hold and drag to another lane" else ""
             }
             .testTag("swipe-card-${card.id}"),
     ) {
@@ -504,7 +542,10 @@ internal fun WorkCard(
     val starting = operation == CardOperation.STARTING || card.runtime.equals("starting", ignoreCase = true)
     val activityAge = boardCardActivityText(card.updatedAt, card.lastActivityAt, activityNow)
     val hasStartAction = starting || onStart != null
-    val isDone = card.lane.contains("done", ignoreCase = true)
+    val runtimeBadge = boardCardRuntimeBadge(card.runtime, operation)
+    val runtimeTint = DieterRunning.takeIf { colorContrastRatio(it, DieterSurfaceHigh) >= 4.5f }
+        ?: MaterialTheme.colorScheme.onSurface
+    val isDone = card.lane.contains("done", ignoreCase = true) && runtimeBadge == null
     val startContentColor = MaterialTheme.colorScheme.onPrimary
     Card(
         onClick = onClick,
@@ -586,6 +627,20 @@ internal fun WorkCard(
                     if (card.hasTokenUsage() && card.tokenUsage.reportedMessages > 0) {
                         Text(taskTokenUsageLabel(card.tokenUsage), color = DieterMuted, fontSize = 10.sp, lineHeight = 13.sp,
                             modifier = Modifier.semantics { contentDescription = taskTokenUsageDetail(card.tokenUsage) })
+                    }
+                }
+                if (runtimeBadge != null && !hasStartAction) {
+                    Spacer(Modifier.width(8.dp))
+                    Row(
+                        Modifier.clip(RoundedCornerShape(20.dp)).background(DieterRunning.copy(alpha = 0.13f))
+                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                            .testTag("card-runtime-${card.id}")
+                            .semantics { contentDescription = "Agent $runtimeBadge" },
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(5.dp),
+                    ) {
+                        Box(Modifier.size(6.dp).background(DieterRunning, CircleShape))
+                        Text(runtimeBadge, color = runtimeTint, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                     }
                 }
                 if (isDone) {

@@ -124,3 +124,13 @@ private fun displayAgentToolName(name: String): String = name
     .replace('_', ' ')
     .replace('-', ' ')
     .replaceFirstChar { it.uppercase() }
+
+// Runtime is independent of the workflow lane: a card can keep working in Review.
+internal fun boardCardRuntimeBadge(runtime: String, operation: CardOperation? = null): String? = when {
+    operation == CardOperation.CANCELLING -> "Stopping…"
+    operation == CardOperation.STARTING -> "Starting…"
+    runtime.trim().lowercase() == "starting" -> "Starting…"
+    runtime.trim().lowercase() == "cancelling" -> "Stopping…"
+    runtime.trim().lowercase() in setOf("running", "working", "streaming") -> "Running"
+    else -> null
+}
