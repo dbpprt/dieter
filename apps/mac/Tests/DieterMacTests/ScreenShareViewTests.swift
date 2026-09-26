@@ -10,7 +10,8 @@ struct ScreenShareViewTests {
         let controller = RemoteDesktopController()
         defer { controller.disconnect() }
         let surface = RemoteDesktopInputView(renderer: controller.renderer, controller: controller)
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 800, height: 600),
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 800, height: 600),
             styleMask: [.borderless], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
         defer { window.close() }
@@ -23,9 +24,11 @@ struct ScreenShareViewTests {
         #expect(surface.hitTest(NSPoint(x: 400, y: 300)) === surface)
         #expect(surface.hitTest(NSPoint(x: -1, y: 300)) == nil)
         func event(_ point: NSPoint) throws -> NSEvent {
-            try #require(NSEvent.mouseEvent(with: .leftMouseDown, location: point, modifierFlags: [],
-                timestamp: 0, windowNumber: window.windowNumber, context: nil, eventNumber: 1,
-                clickCount: 1, pressure: 1))
+            try #require(
+                NSEvent.mouseEvent(
+                    with: .leftMouseDown, location: point, modifierFlags: [],
+                    timestamp: 0, windowNumber: window.windowNumber, context: nil, eventNumber: 1,
+                    clickCount: 1, pressure: 1))
         }
         controller.phase = .streaming
         #expect(surface.acceptsFirstMouse(for: try event(NSPoint(x: 400, y: 300))))
