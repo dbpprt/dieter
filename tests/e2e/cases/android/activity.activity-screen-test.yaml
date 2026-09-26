@@ -18,3 +18,5 @@ native:
   - referenceLayoutDarkLightLargeTextAndUnavailableUsage
   - longPressRenamesArchivesAndPinsWithoutOpeningTheConversation
   - timelineSupportsLongPressAndOfflineActionsStayDisabled
+  - cardsShowLatestActivityAndOwningMachineAcrossUpdatesAndOffline
+  - narrowCardKeepsTimeAndMachineAccessibleWithLargeText

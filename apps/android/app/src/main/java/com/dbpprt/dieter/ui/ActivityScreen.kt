@@ -242,9 +242,9 @@ internal fun ActivityFeed(
                     } else ActivityTimelinePanel(intervals, hours, state.connected, running.size, expandedTimeline,
                         onHours = { hours = it }, onExpand = { expandedTimeline = !expandedTimeline }, onOpen = onOpen, actions = itemActions)
                 }
-                activitySection("Needs attention", attention, now, projectNames, boardNames, onOpen, state.selectedCardId, itemActions)
-                activitySection("Running", running, timelineNow, projectNames, boardNames, onOpen, state.selectedCardId, itemActions)
-                activitySection("Recent", recent, now, projectNames, boardNames, onOpen, state.selectedCardId, itemActions)
+                activitySection("Needs attention", attention, now, projectNames, boardNames, state::machineLabel, onOpen, state.selectedCardId, itemActions)
+                activitySection("Running", running, now, projectNames, boardNames, state::machineLabel, onOpen, state.selectedCardId, itemActions)
+                activitySection("Recent", recent, now, projectNames, boardNames, state::machineLabel, onOpen, state.selectedCardId, itemActions)
                 if (filtered.isEmpty()) item("empty") {
                     Column(Modifier.fillMaxWidth().padding(vertical = 24.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text(if (query.isNotBlank()) "No matching activity" else "All quiet here", fontWeight = FontWeight.SemiBold)
@@ -382,14 +382,14 @@ private fun ActivityTimelinePanel(
 
 private fun LazyListScope.activitySection(
     title: String, entries: List<ActivityEntry>, now: Instant, projects: Map<String, String>, boards: Map<String, String>,
-    onOpen: (Card) -> Unit,
+    machineLabel: (String) -> String, onOpen: (Card) -> Unit,
     selectedId: String? = null,
     actions: (Card) -> ActivityItemActions? = { null },
 ) {
     if (entries.isEmpty()) return
     item("heading-$title") { ActivitySectionHeading("$title · ${entries.size}") }
     items(entries, key = { "$title-${it.card.id}" }) { entry ->
-        ActivityRow(entry, projects[entry.card.projectId], boards[entry.card.boardId], now, entry.card.id == selectedId, actions(entry.card)) { onOpen(entry.card) }
+        ActivityRow(entry, projects[entry.card.projectId], boards[entry.card.boardId], machineLabel(entry.card.ownerDaemonId), now, entry.card.id == selectedId, actions(entry.card)) { onOpen(entry.card) }
     }
 }
 
@@ -397,32 +397,6 @@ private fun LazyListScope.activitySection(
 private fun ActivitySectionHeading(title: String, modifier: Modifier = Modifier) {
     Text(title.uppercase(), color = DieterMuted, fontFamily = FontFamily.Monospace,
         style = MaterialTheme.typography.labelMedium, modifier = modifier.padding(top = 20.dp, bottom = 8.dp))
-}
-
-@Composable
-private fun ActivityRow(entry: ActivityEntry, project: String?, board: String?, now: Instant, isSelected: Boolean = false, actions: ActivityItemActions? = null, onClick: () -> Unit) {
-    ActivityItem(card = entry.card, onOpen = { onClick() }, actions = actions, color = if (isSelected) DieterShellTint else DieterSurface,
-        modifier = Modifier.fillMaxWidth().testTag("activity-row-${entry.card.id}").semantics { selected = isSelected }) {
-        Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Box(Modifier.width(4.dp).height(42.dp).background(stableAccent(entry.card.projectId), RoundedCornerShape(2.dp)))
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(entry.card.title.ifBlank { "Untitled" }, fontWeight = FontWeight.SemiBold,
-                    style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                Text(listOfNotNull(project, board?.takeIf { entry.card.scope != "chat" },
-                    if (entry.card.scope == "chat") "Chat" else "Card").joinToString(" · "),
-                    color = DieterMuted, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(entry.detail, color = if (entry.kind == ActivityKind.FAILED) DieterCoral else DieterMuted,
-                    style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            }
-            if (entry.needsYou) {
-                Surface(shape = RoundedCornerShape(50), color = if (entry.kind == ActivityKind.ANSWER) DieterShell else DieterAmberTint) {
-                    Text(entry.kind.label, color = if (entry.kind == ActivityKind.ANSWER) DieterAbyss else DieterAmber,
-                        fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp))
-                }
-            } else Text(activityAge(if (entry.running) entry.start else entry.at, now),
-                color = if (entry.running) DieterRunning else DieterMuted, style = MaterialTheme.typography.labelMedium)
-        }
-    }
 }
 
 @Composable

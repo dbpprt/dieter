@@ -11,8 +11,10 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.dp
 import androidx.test.platform.app.InstrumentationRegistry
 import com.dbpprt.dieter.connection.ConnectionPhase
+import com.dbpprt.dieter.connection.EndpointConnection
 import com.dbpprt.dieter.gateway.v1.*
 import com.dbpprt.dieter.ui.theme.DieterTheme
 import com.dbpprt.dieter.v1.Board
@@ -30,6 +32,7 @@ class ActivityScreenTest {
     private val provider = ProviderQuotaProvider.PROVIDER_QUOTA_PROVIDER_OPENAI_CODEX
     private fun card(id: String, title: String, runtime: String, project: String = "dieter", chat: Boolean = false) =
         Card.newBuilder().setId(id).setTitle(title).setProjectId(project).setBoardId(if (chat) "" else "main")
+            .setOwnerDaemonId(if (chat) "mac" else "linux")
             .setScope(if (chat) "chat" else "card").setInitialPromptSentAt(now.minusSeconds(1800).toString()).setRuntime(runtime).setLane(if (runtime == "idle") "review" else "running")
             .setRuntimeUpdatedAt(now.minusSeconds(1200).toString()).setUpdatedAt(now.minusSeconds(1200).toString()).build()
     private val account = ProviderQuotaSnapshot.newBuilder().setAccountKey("account-one").setProvider(provider)
@@ -39,6 +42,10 @@ class ActivityScreenTest {
         .addWindows(ProviderQuotaWindow.newBuilder().setLabel("Weekly").setRemainingPercent(41)).build()
     private val state get() = DieterUiState(
         connectionPhase = ConnectionPhase.CONNECTED,
+        endpointConnections = listOf(
+            EndpointConnection("linux", "garuda", "", daemonId = "linux"),
+            EndpointConnection("mac", "MacBook Pro", "", daemonId = "mac"),
+        ),
         projects = listOf(Project.newBuilder().setId("dieter").setName("dieter").build(), Project.newBuilder().setId("atlas").setName("atlas").build()),
         spaceBoards = listOf(Board.newBuilder().setId("main").setName("Main").build()),
         spaceCards = listOf(card("review", "Understand the code", "idle"), card("running", "Migrate schedule store", "running")),
@@ -133,11 +140,15 @@ class ActivityScreenTest {
         }
         compose.onNodeWithTag("nav-activity").assertIsSelected()
         capture("activity-dark.png")
+        compose.onNodeWithTag("activity-feed").performScrollToNode(hasTestTag("activity-row-running"))
+        capture("activity-cards-dark.png")
         compose.onNodeWithTag("activity-feed").performScrollToNode(hasTestTag("activity-account-account-one"))
         capture("activity-accounts.png")
         compose.runOnIdle { dark = false; fontScale = 1.5f }
         compose.onNodeWithText("Weekly · 41% remaining").performScrollTo().assertIsDisplayed()
         capture("activity-light-large-text.png")
+        compose.onNodeWithTag("activity-feed").performScrollToNode(hasTestTag("activity-row-running"))
+        capture("activity-cards-light-large-text.png")
         compose.runOnIdle {
             current = state.copy(connectionPhase = ConnectionPhase.UNAVAILABLE,
                 lastConnectedAtMillis = now.minusSeconds(60).toEpochMilli(),
@@ -150,6 +161,61 @@ class ActivityScreenTest {
         compose.onNodeWithText("0% remaining", substring = true).assertDoesNotExist()
         compose.onNodeWithTag("activity-feed").performScrollToNode(hasTestTag("activity-timeline"))
         compose.onNodeWithText("CACHED").assertIsDisplayed()
+    }
+
+    @Test fun cardsShowLatestActivityAndOwningMachineAcrossUpdatesAndOffline() {
+        val running = card("running", "Polish the Inbox cards", "running").toBuilder()
+            .setRuntimeUpdatedAt(now.minusSeconds(7200).toString())
+            .setLastActivityAt(now.minusSeconds(120).toString()).build()
+        var current by mutableStateOf(state.copy(spaceCards = listOf(running)))
+        var clock by mutableStateOf(now)
+        compose.setContent { DieterTheme {
+            ActivityFeed(current, onOpen = {}, onConnections = {}, onAccount = {}, onRefreshAccounts = {}, clock = clock)
+        } }
+        compose.onNodeWithTag("activity-feed").performScrollToNode(hasTestTag("activity-row-running"))
+        compose.onNodeWithTag("activity-age-running", useUnmergedTree = true)
+            .assertContentDescriptionEquals("Last activity: 2m ago").assertIsDisplayed()
+        compose.onNodeWithTag("activity-machine-running", useUnmergedTree = true)
+            .assertContentDescriptionEquals("Machine: garuda").assertIsDisplayed()
+        compose.runOnIdle {
+            current = current.copy(spaceCards = listOf(running.toBuilder().setLastActivityAt(now.toString()).build()))
+        }
+        compose.onNodeWithTag("activity-age-running", useUnmergedTree = true)
+            .assertContentDescriptionEquals("Last activity: Just now")
+        compose.runOnIdle {
+            current = current.copy(connectionPhase = ConnectionPhase.UNAVAILABLE, lastConnectedAtMillis = now.toEpochMilli())
+            clock = now.plusSeconds(180)
+        }
+        compose.onNodeWithTag("activity-age-running", useUnmergedTree = true)
+            .assertContentDescriptionEquals("Last activity: 3m ago")
+        compose.onNodeWithTag("activity-feed").performScrollToNode(hasTestTag("activity-row-answer"))
+        compose.onNodeWithTag("activity-age-answer", useUnmergedTree = true).assertIsDisplayed()
+        compose.onNodeWithTag("activity-machine-answer", useUnmergedTree = true)
+            .assertContentDescriptionEquals("Machine: MacBook Pro").assertIsDisplayed()
+    }
+
+    @Test fun narrowCardKeepsTimeAndMachineAccessibleWithLargeText() {
+        val entry = buildActivityEntries(listOf(card("narrow", "Make the Inbox feel thoughtful, clear, and a little more delightful", "waiting_for_user"))).single()
+        val machine = "Development workstation with a very long machine name"
+        var dark by mutableStateOf(true)
+        compose.setContent {
+            val density = LocalDensity.current
+            CompositionLocalProvider(LocalDensity provides Density(density.density, 2f)) {
+                DieterTheme(darkTheme = dark) {
+                    Box(Modifier.width(320.dp).padding(12.dp)) {
+                        ActivityRow(entry, "A long project name", "Main", machine, now) {}
+                    }
+                }
+            }
+        }
+        compose.onNodeWithTag("activity-age-narrow", useUnmergedTree = true)
+            .assertContentDescriptionEquals("Last activity: 20m ago").assertIsDisplayed()
+        compose.onNodeWithTag("activity-machine-narrow", useUnmergedTree = true)
+            .assertContentDescriptionEquals("Machine: $machine").assertIsDisplayed()
+        capture("activity-card-narrow-dark.png")
+        compose.runOnIdle { dark = false }
+        compose.onNodeWithTag("activity-machine-narrow", useUnmergedTree = true).assertIsDisplayed()
+        capture("activity-card-narrow-light.png")
     }
 
     @Test fun longPressRenamesArchivesAndPinsWithoutOpeningTheConversation() {

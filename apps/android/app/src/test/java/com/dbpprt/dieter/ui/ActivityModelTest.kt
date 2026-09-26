@@ -85,6 +85,32 @@ class ActivityModelTest {
         assertEquals("Reset time unavailable", activityResetText("bad", now))
     }
 
+    @Test fun `latest message advances age and ordering without changing turn duration`() {
+        val running = card("running", "running", ago = 7200).toBuilder()
+            .setLastActivityAt(now.minusSeconds(30).toString()).build()
+        val entries = buildActivityEntries(listOf(card("recent", "idle", ago = 60), running))
+        assertEquals("running", entries.first().card.id)
+        assertEquals(now.minusSeconds(30), entries.first().at)
+        assertEquals("Just now", activityAge(entries.first().at, now))
+        assertEquals(now.minusSeconds(7200), entries.first().start)
+        assertEquals(0f, activityTimeline(entries, now, 1).first().from)
+    }
+
+    @Test fun `message and runtime timestamps compete but metadata edits never reset age`() {
+        for (runtime in listOf("running", "idle", "waiting_for_user", "failed")) {
+            val message = card("card", runtime).toBuilder()
+                .setLastActivityAt(now.minusSeconds(120).toString())
+                .setUpdatedAt(now.toString()).setPhaseChangedAt(now.toString()).build()
+            assertEquals("2m", activityAge(buildActivityEntries(listOf(message)).single().at, now))
+            val finished = message.toBuilder().setRuntimeUpdatedAt(now.minusSeconds(60).toString()).build()
+            assertEquals("1m", activityAge(buildActivityEntries(listOf(finished)).single().at, now))
+            val malformed = message.toBuilder().setRuntimeUpdatedAt("bad").build()
+            assertEquals(now.minusSeconds(120), buildActivityEntries(listOf(malformed)).single().at)
+            val unavailable = malformed.toBuilder().setLastActivityAt("bad").build()
+            assertNull(buildActivityEntries(listOf(unavailable)).single().at)
+        }
+    }
+
     @Test fun `missing and malformed timestamps do not invent completed duration`() {
         val missing = card("missing", "failed").toBuilder().setRuntimeUpdatedAt("bad").build()
         assertNull(buildActivityEntries(listOf(missing)).single().at)

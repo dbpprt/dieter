@@ -78,9 +78,10 @@ internal fun buildActivityEntries(
             runtime.isNotBlank() && runtime != "pending" && card.initialPromptSentAt.isNotBlank() && card.runtimeUpdatedAt.isNotBlank() -> ActivityKind.RECENT
             else -> return@mapNotNull null
         }
-        val at = activityInstant(card.runtimeUpdatedAt)
-            ?: activityInstant(card.lastActivityAt)
-            ?: activityInstant(card.phaseChangedAt)
+        // Activity advances with messages/model events, independently of turn duration.
+        // Placement, title edits and read receipts must not reset the conversation clock.
+        val at = listOf(card.lastActivityAt, card.runtimeUpdatedAt)
+            .mapNotNull(::activityInstant).maxOrNull()
         // A cached snapshot from a previous turn must not supply this turn's start/activity.
         val detail = details[card.id]?.takeIf { it.runtimeUpdatedAt == card.runtimeUpdatedAt }
         val start = detail?.start?.takeIf { at != null && it <= at }

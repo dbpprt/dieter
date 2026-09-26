@@ -1,5 +1,6 @@
 package com.dbpprt.dieter.ui
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -40,13 +41,14 @@ internal fun ActivityItem(
     modifier: Modifier = Modifier,
     color: Color = DieterSurface,
     shape: Shape = RoundedCornerShape(16.dp),
+    border: BorderStroke? = null,
     content: @Composable () -> Unit,
 ) {
     var menuOpen by remember(card.id) { mutableStateOf(false) }
     var renameOpen by remember(card.id) { mutableStateOf(false) }
     var title by remember(card.id) { mutableStateOf(card.title) }
     val enabled = actions?.enabled == true
-    Surface(color = color, shape = shape, modifier = modifier.clip(shape).combinedClickable(
+    Surface(color = color, shape = shape, border = border, modifier = modifier.clip(shape).combinedClickable(
         role = Role.Button,
         onClickLabel = "Open conversation",
         onClick = { onOpen(card) },
