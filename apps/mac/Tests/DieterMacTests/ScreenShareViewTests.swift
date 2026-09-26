@@ -6,6 +6,34 @@ import Testing
 
 @Suite(.serialized) @MainActor
 struct ScreenShareViewTests {
+    @Test func presentationSubviewsDoNotInterceptClicksAndActivationClickReachesDesktop() throws {
+        let controller = RemoteDesktopController()
+        defer { controller.disconnect() }
+        let surface = RemoteDesktopInputView(renderer: controller.renderer, controller: controller)
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 800, height: 600),
+            styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+        window.contentView = surface
+        surface.layoutSubtreeIfNeeded(); surface.layout()
+        // Reproduce a visible cursor image over the desktop, including inactive
+        // windows where it remains visible until the activation click.
+        let cursor = NSImageView(frame: NSRect(x: 390, y: 290, width: 24, height: 24))
+        surface.addSubview(cursor)
+        #expect(surface.hitTest(NSPoint(x: 400, y: 300)) === surface)
+        #expect(surface.hitTest(NSPoint(x: -1, y: 300)) == nil)
+        func event(_ point: NSPoint) throws -> NSEvent {
+            try #require(NSEvent.mouseEvent(with: .leftMouseDown, location: point, modifierFlags: [],
+                timestamp: 0, windowNumber: window.windowNumber, context: nil, eventNumber: 1,
+                clickCount: 1, pressure: 1))
+        }
+        controller.phase = .streaming
+        #expect(surface.acceptsFirstMouse(for: try event(NSPoint(x: 400, y: 300))))
+        #expect(!surface.acceptsFirstMouse(for: try event(NSPoint(x: 400, y: 5))))
+        controller.phase = .reconnecting
+        #expect(!surface.acceptsFirstMouse(for: try event(NSPoint(x: 400, y: 300))))
+    }
+
     @Test func switchingMachinesKeepsVideoInputAndClipboardOnTheSelectedSession() async throws {
         let fixture = try ScreenShareViewFixture()
         defer { fixture.close() }

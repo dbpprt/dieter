@@ -1,5 +1,6 @@
 package com.dbpprt.dieter.screens
 
+import android.animation.ValueAnimator
 import android.content.Context
 import android.graphics.*
 import android.os.SystemClock
@@ -61,26 +62,41 @@ class ScreenCanvasView(context: Context, val controller: ScreenController) : Fra
     private var cursorBitmap: Bitmap? = null
     private var cursor = RemoteDesktopCursor.getDefaultInstance()
     private var lastLocalMove = 0L
-    private var downTime = 0L
-    private var lastTap = 0L
-    private var previousX = 0f
-    private var previousY = 0f
-    private var previousSpan = 0f
-    private var downX = 0f
-    private var downY = 0f
-    private var fingers = 0
-    private var maxFingers = 0
-    private var moved = false
-    private var dragging = false
-    private var scrolling = false
-    private val slop = ViewConfiguration.get(context).scaledTouchSlop
+    private val touchConfiguration = ViewConfiguration.get(context)
+    private var canvasAnimation: ValueAnimator? = null
+    private var animationTargetZoom = 1f
+    var onCanvasChanged: (() -> Unit)? = null
+    private var inputWasAvailable = false
     var modifiers = 0
-    private val longPress = Runnable {
-        if (fingers == 1 && maxFingers == 1 && !moved && controller.state.value.control) {
-            dragging = true; moved = true
-            button(Button.BUTTON_LEFT, true)
-            performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+    private val gestures = ScreenTouchGesture(
+        touchConfiguration.scaledTouchSlop.toFloat(), touchConfiguration.scaledDoubleTapSlop.toFloat(),
+        ViewConfiguration.getDoubleTapTimeout().toLong(),
+        move = { dx, dy ->
+            canvasModel.move(dx, dy)
+            controller.pointer(canvasModel.cursorX, canvasModel.cursorY)
+            lastLocalMove = SystemClock.uptimeMillis(); applyCanvasTransform()
+        },
+        transform = { factor, oldX, oldY, newX, newY ->
+            canvasModel.transform(factor, oldX, oldY, newX, newY); applyCanvasTransform()
+        },
+        button = { down, count -> button(Button.BUTTON_LEFT, down, count) },
+        scroll = { dx, dy, phase -> controller.scroll(dx / resources.displayMetrics.density, dy / resources.displayMetrics.density, phase) },
+        clicked = { notifyClick() },
+    )
+    private val mouseButtons = ScreenMouseButtons(ViewConfiguration.getDoubleTapTimeout().toLong(),
+        touchConfiguration.scaledTouchSlop.toFloat()) { mask, down, count ->
+        val which = when (mask) {
+            MotionEvent.BUTTON_SECONDARY -> Button.BUTTON_RIGHT
+            MotionEvent.BUTTON_TERTIARY -> Button.BUTTON_MIDDLE
+            MotionEvent.BUTTON_BACK -> Button.BUTTON_BACK
+            MotionEvent.BUTTON_FORWARD -> Button.BUTTON_FORWARD
+            else -> Button.BUTTON_LEFT
         }
+        button(which, down, count)
+    }
+    private val longPress = Runnable {
+        if (controller.state.value.control && gestures.longPress())
+            performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
     }
     private val editorBuffer = Editable.Factory.getInstance().newEditable("")
 
@@ -104,8 +120,9 @@ class ScreenCanvasView(context: Context, val controller: ScreenController) : Fra
                 val session = drawnSession
                 post { if (!released && controller.acceptsFrame(session)) { texture.alpha = 1f; directCover.visibility = GONE } }
             }
+            val session = drawnSession
             if (w != frameWidth || h != frameHeight) post {
-                if (!released) { frameWidth = w; frameHeight = h; geometry() }
+                if (!released && controller.acceptsFrame(session)) { frameWidth = w; frameHeight = h; geometry() }
             }
         }
         texture.surfaceTextureListener = object : TextureView.SurfaceTextureListener {
@@ -211,6 +228,7 @@ class ScreenCanvasView(context: Context, val controller: ScreenController) : Fra
     }
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) { super.onSizeChanged(w, h, oldw, oldh); geometry() }
     private fun geometry() {
+        canvasAnimation?.cancel()
         canvasModel.resize(width, height, frameWidth, frameHeight)
         applyCanvasTransform()
     }
@@ -237,21 +255,59 @@ class ScreenCanvasView(context: Context, val controller: ScreenController) : Fra
             }
         }
         invalidate()
+        onCanvasChanged?.invoke()
     }
-    fun resetCanvas() { canvasModel.reset(); applyCanvasTransform() }
+    fun resetCanvas(animated: Boolean = false) = changeCanvas(animated) { canvasModel.reset() }
+    fun zoomCanvas(factor: Float) {
+        val base = if (canvasAnimation?.isRunning == true) animationTargetZoom else canvasModel.zoom
+        val target = (base * factor).coerceIn(ScreenCanvasModel.MIN_ZOOM, ScreenCanvasModel.MAX_ZOOM)
+        changeCanvas(true) {
+            val x = width / 2f; val y = height / 2f
+            canvasModel.transform(target / canvasModel.zoom, x, y, x, y)
+        }
+    }
+    private fun changeCanvas(animated: Boolean, change: () -> Unit) {
+        canvasAnimation?.cancel()
+        val m = canvasModel
+        val startZoom = m.zoom; val startX = m.panX; val startY = m.panY
+        change()
+        if (!animated) { applyCanvasTransform(); return }
+        val endZoom = m.zoom; val endX = m.panX; val endY = m.panY
+        animationTargetZoom = endZoom
+        m.setView(startZoom, startX, startY)
+        canvasAnimation = ValueAnimator.ofFloat(0f, 1f).apply {
+            duration = 180
+            addUpdateListener {
+                val fraction = it.animatedValue as Float
+                m.setView(startZoom + (endZoom - startZoom) * fraction,
+                    startX + (endX - startX) * fraction, startY + (endY - startY) * fraction)
+                applyCanvasTransform()
+            }
+            start()
+        }
+    }
+    fun updateInputAvailability(controlling: Boolean) {
+        if (inputWasAvailable && !controlling) { cancelGesture(); mouseButtons.release(); modifiers = 0 }
+        inputWasAvailable = controlling
+        isClickable = controlling
+    }
     fun clearFrame() {
         if (released) return
+        cancelGesture(); mouseButtons.release(); canvasAnimation?.cancel()
         visibleSession = -1L
         if (direct) { directCover.visibility = VISIBLE; texture.alpha = 1f; clearPendingDirect() }
         else videoView.visibility = INVISIBLE
         synchronized(frameSessions) { frameSessions.clear() }
         paused = true; renderer.pauseVideo()
         renderer.clearImage(12 / 255f, 15 / 255f, 20 / 255f, 1f)
-        cursorShapes.clear(); cursorBitmap = null; invalidate()
+        cursorShapes.clear(); cursorBitmap = null
+        // A reconnect can reset the model without changing decoded dimensions.
+        // Reapply now so video, cursor, and hit testing share the same transform.
+        applyCanvasTransform()
     }
     fun release() {
         if (released) return
-        cancelGesture(); controller.releaseInput()
+        cancelGesture(); mouseButtons.release(); canvasAnimation?.cancel(); controller.releaseInput()
         if (controller.onCursor === cursorListener) controller.onCursor = null
         if (controller.videoSink === sink) controller.videoSink = null
         if (controller.onVideoReset === resetListener) controller.onVideoReset = null
@@ -275,7 +331,8 @@ class ScreenCanvasView(context: Context, val controller: ScreenController) : Fra
             }
         }
         cursorBitmap = cursorShapes[value.shapeId]
-        if (changedDisplay || (value.lastInputOrdinal >= controller.lastPointerOrdinal && SystemClock.uptimeMillis() - lastLocalMove > 100)) {
+        if (changedDisplay) { cancelGesture(); mouseButtons.release() }
+        if (changedDisplay || (!gestures.holdingCursor && !mouseButtons.isDragging && value.lastInputOrdinal >= controller.lastPointerOrdinal && SystemClock.uptimeMillis() - lastLocalMove > 100)) {
             canvasModel.cursor(value.normalizedX / 1_000_000f, value.normalizedY / 1_000_000f)
         }
         invalidate()
@@ -299,97 +356,77 @@ class ScreenCanvasView(context: Context, val controller: ScreenController) : Fra
         }
     }
     private fun button(which: Button, down: Boolean, count: Int = 1) = controller.button(which, down, canvasModel.cursorX, canvasModel.cursorY, count, modifiers)
-    fun click(which: Button = Button.BUTTON_LEFT) { button(which, true); button(which, false); super.performClick() }
-    override fun performClick(): Boolean { button(Button.BUTTON_LEFT, true); button(Button.BUTTON_LEFT, false); super.performClick(); return true }
-    private fun cancelGesture() {
-        removeCallbacks(longPress)
-        if (dragging) button(Button.BUTTON_LEFT, false)
-        if (scrolling) controller.scroll(0f, 0f, 4)
-        dragging = false; scrolling = false; fingers = 0; maxFingers = 0; previousSpan = 0f
+    private fun notifyClick() { super.performClick() }
+    fun click(which: Button = Button.BUTTON_LEFT) {
+        if (!controller.state.value.control) return
+        requestFocus()
+        button(which, true); button(which, false); notifyClick()
     }
-    private fun rebasePointers(event: MotionEvent, excluding: Int = -1) {
-        val active = (0 until event.pointerCount).filter { it != excluding }
-        fingers = active.size
-        if (active.isEmpty()) { previousSpan = 0f; return }
-        previousX = active.sumOf { event.getX(it).toDouble() }.toFloat() / fingers
-        previousY = active.sumOf { event.getY(it).toDouble() }.toFloat() / fingers
-        previousSpan = if (fingers == 2) hypot(event.getX(active[1]) - event.getX(active[0]),
-            event.getY(active[1]) - event.getY(active[0])) else 0f
+    override fun performClick(): Boolean {
+        if (!controller.state.value.control) return false
+        click(); return true
     }
+    private fun cancelGesture() { removeCallbacks(longPress); gestures.cancel() }
     override fun onTouchEvent(event: MotionEvent): Boolean {
         if (event.source and InputDevice.SOURCE_MOUSE == InputDevice.SOURCE_MOUSE) return mouse(event)
-        parent?.requestDisallowInterceptTouchEvent(true)
-        val count = event.pointerCount
-        val cx = (0 until count).sumOf { event.getX(it).toDouble() }.toFloat() / count
-        val cy = (0 until count).sumOf { event.getY(it).toDouble() }.toFloat() / count
-        val span = if (count == 2) hypot(event.getX(1) - event.getX(0), event.getY(1) - event.getY(0)) else 0f
+        fun finger(index: Int) = ScreenTouchGesture.Finger(event.getPointerId(index), event.getX(index), event.getY(index))
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
-                requestFocus(); cancelGesture(); downTime = event.eventTime; fingers = 1; maxFingers = 1; moved = false
-                downX = cx; downY = cy; previousX = cx; previousY = cy
+                canvasAnimation?.cancel(); requestFocus()
+                parent?.requestDisallowInterceptTouchEvent(true)
+                gestures.begin(finger(0), controller.state.value.control)
                 postDelayed(longPress, ViewConfiguration.getLongPressTimeout().toLong())
             }
-            MotionEvent.ACTION_POINTER_DOWN -> {
+            MotionEvent.ACTION_POINTER_DOWN, MotionEvent.ACTION_POINTER_UP -> {
                 removeCallbacks(longPress)
-                if (dragging) { button(Button.BUTTON_LEFT, false); dragging = false }
-                if (scrolling) { controller.scroll(0f, 0f, 4); scrolling = false }
-                fingers = count; maxFingers = max(maxFingers, count); moved = true
-                if (count == 3 && maxFingers == 3) { controller.scroll(0f, 0f, 1); scrolling = true }
-                rebasePointers(event)
+                gestures.fingers((0 until event.pointerCount)
+                    .filter { event.actionMasked != MotionEvent.ACTION_POINTER_UP || it != event.actionIndex }.map(::finger))
             }
             MotionEvent.ACTION_MOVE -> {
-                val dx = cx - previousX; val dy = cy - previousY
-                if (hypot(cx - downX, cy - downY) > slop) { moved = true; removeCallbacks(longPress) }
-                when {
-                    count == 1 && maxFingers == 1 -> {
-                        canvasModel.move(dx, dy); controller.pointer(canvasModel.cursorX, canvasModel.cursorY)
-                        lastLocalMove = event.eventTime; applyCanvasTransform()
-                    }
-                    count == 2 && maxFingers == 2 -> {
-                        val factor = if (previousSpan > 1f && span > 1f) span / previousSpan else 1f
-                        canvasModel.transform(factor, previousX, previousY, cx, cy); applyCanvasTransform()
-                    }
-                    count == 3 && maxFingers == 3 -> controller.scroll(dx / resources.displayMetrics.density, dy / resources.displayMetrics.density, 2)
-                }
-                previousX = cx; previousY = cy; previousSpan = span
-            }
-            MotionEvent.ACTION_POINTER_UP -> {
-                removeCallbacks(longPress)
-                if (scrolling) { controller.scroll(0f, 0f, 4); scrolling = false }
-                // Rebase around the remaining pointer IDs so replacing one
-                // finger can continue the canvas gesture without a jump.
-                // maxFingers still prevents an accidental one-finger mouse move/click.
-                rebasePointers(event, event.actionIndex)
+                gestures.move((0 until event.pointerCount).map(::finger))
+                if (!gestures.canLongPress) removeCallbacks(longPress)
             }
             MotionEvent.ACTION_UP -> {
-                if (maxFingers == 1 && !moved && !dragging && event.eventTime - downTime < ViewConfiguration.getLongPressTimeout()) {
-                    val clicks = if (event.eventTime - lastTap < ViewConfiguration.getDoubleTapTimeout()) 2 else 1
-                    button(Button.BUTTON_LEFT, true, clicks); button(Button.BUTTON_LEFT, false, clicks)
-                    lastTap = if (clicks == 2) 0 else event.eventTime; super.performClick()
-                }
-                cancelGesture()
+                removeCallbacks(longPress)
+                gestures.end(finger(0), event.eventTime)
+                parent?.requestDisallowInterceptTouchEvent(false)
             }
-            MotionEvent.ACTION_CANCEL -> { cancelGesture(); controller.releaseInput() }
+            MotionEvent.ACTION_CANCEL -> {
+                cancelGesture(); controller.releaseInput()
+                parent?.requestDisallowInterceptTouchEvent(false)
+            }
         }
         return true
     }
     private fun mouse(event: MotionEvent): Boolean {
-        val m = canvasModel
-        m.cursor((event.x - m.left) / (m.remoteWidth * m.scale), (event.y - m.top) / (m.remoteHeight * m.scale))
-        controller.pointer(m.cursorX, m.cursorY); lastLocalMove = event.eventTime; invalidate()
-        val which = if (event.buttonState and MotionEvent.BUTTON_SECONDARY != 0 || event.actionButton == MotionEvent.BUTTON_SECONDARY) Button.BUTTON_RIGHT else Button.BUTTON_LEFT
-        when (event.actionMasked) {
-            MotionEvent.ACTION_DOWN, MotionEvent.ACTION_BUTTON_PRESS -> button(which, true)
-            MotionEvent.ACTION_UP, MotionEvent.ACTION_BUTTON_RELEASE -> button(which, false)
-            MotionEvent.ACTION_SCROLL -> controller.scroll(event.getAxisValue(MotionEvent.AXIS_HSCROLL) * 40, event.getAxisValue(MotionEvent.AXIS_VSCROLL) * 40, 0)
+        if (event.actionMasked == MotionEvent.ACTION_CANCEL) {
+            mouseButtons.release(); controller.releaseInput(); return true
         }
+        val m = canvasModel
+        val inside = m.contains(event.x, event.y)
+        if (controller.state.value.control && (inside || mouseButtons.isDragging)) {
+            m.cursor((event.x - m.left) / (m.remoteWidth * m.scale), (event.y - m.top) / (m.remoteHeight * m.scale))
+            controller.pointer(m.cursorX, m.cursorY); lastLocalMove = event.eventTime
+            invalidate()
+        }
+        val buttons = when (event.actionMasked) {
+            MotionEvent.ACTION_UP -> 0
+            MotionEvent.ACTION_BUTTON_RELEASE -> event.buttonState and event.actionButton.inv()
+            MotionEvent.ACTION_BUTTON_PRESS -> event.buttonState or event.actionButton
+            else -> event.buttonState
+        }
+        if (buttons != 0 && inside) requestFocus()
+        mouseButtons.update(buttons, inside && controller.state.value.control,
+            newGesture = event.actionMasked == MotionEvent.ACTION_DOWN, time = event.eventTime, x = event.x, y = event.y)
+        if (inside && event.actionMasked == MotionEvent.ACTION_SCROLL)
+            controller.scroll(event.getAxisValue(MotionEvent.AXIS_HSCROLL) * 40, event.getAxisValue(MotionEvent.AXIS_VSCROLL) * 40, 0)
         return true
     }
     override fun onGenericMotionEvent(event: MotionEvent): Boolean =
         if (event.source and InputDevice.SOURCE_MOUSE == InputDevice.SOURCE_MOUSE) mouse(event) else super.onGenericMotionEvent(event)
     override fun onWindowFocusChanged(hasWindowFocus: Boolean) {
         super.onWindowFocusChanged(hasWindowFocus)
-        if (!hasWindowFocus) { cancelGesture(); editorBuffer.clear(); modifiers = 0 }
+        if (!hasWindowFocus) { cancelGesture(); mouseButtons.release(); editorBuffer.clear(); modifiers = 0 }
         controller.focus(hasWindowFocus)
     }
     fun showKeyboard(show: Boolean) {

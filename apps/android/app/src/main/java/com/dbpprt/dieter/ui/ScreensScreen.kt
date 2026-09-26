@@ -4,6 +4,8 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
@@ -18,6 +20,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
@@ -25,6 +29,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.dbpprt.dieter.screens.ScreenCanvasView
+import com.dbpprt.dieter.screens.ScreenCanvasModel
 import com.dbpprt.dieter.screens.ScreenController
 import com.dbpprt.dieter.v1.RemoteDesktopPointerButton.Button
 import com.dbpprt.dieter.v1.RemoteDesktopCodecPreference
@@ -52,6 +57,8 @@ internal fun ScreenWorkspace(
     val activity = LocalContext.current.screenActivity()
     var selected by rememberSaveable { mutableStateOf<String?>(null) }
     var canvas by remember { mutableStateOf<ScreenCanvasView?>(null) }
+    var zoom by remember { mutableFloatStateOf(controller.canvasModel.zoom) }
+    var fitted by remember { mutableStateOf(controller.canvasModel.isFitted) }
     var machineMenu by remember { mutableStateOf(false) }
     var displayMenu by remember { mutableStateOf(false) }
     var qualityMenu by remember { mutableStateOf(false) }
@@ -160,9 +167,21 @@ internal fun ScreenWorkspace(
         }
         if (screen.controlError.isNotBlank()) Text(screen.controlError, color = MaterialTheme.colorScheme.error,
             modifier = Modifier.padding(horizontal = 12.dp), style = MaterialTheme.typography.labelSmall)
-        AndroidView(factory = { ScreenCanvasView(it, controller).also { view -> canvas = view } },
-            onRelease = { it.release(); if (canvas === it) canvas = null },
-            modifier = Modifier.weight(1f).fillMaxWidth().testTag("screen-canvas"))
+        Column(Modifier.weight(1f).fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+            AndroidView(factory = { ScreenCanvasView(it, controller).also { view ->
+                canvas = view
+                view.onCanvasChanged = { zoom = view.canvasModel.zoom; fitted = view.canvasModel.isFitted }
+            } },
+                update = { it.updateInputAvailability(screen.control) },
+                onRelease = { it.onCanvasChanged = null; it.release(); if (canvas === it) canvas = null },
+                modifier = Modifier.weight(1f).fillMaxWidth().testTag("screen-canvas"))
+            if (screen.phase == "streaming") ScreenCanvasControls(
+                zoom = zoom, fitted = fitted, onZoom = { canvas?.zoomCanvas(it) },
+                onFit = { canvas?.resetCanvas(animated = true) },
+                // Reserve space so controls never cover a remote dock or taskbar.
+                modifier = Modifier.padding(vertical = 6.dp),
+            )
+        }
         if (active) {
             Text(if (screen.phase == "streaming")
                 "${screen.session.width} × ${screen.session.height} · ${screen.receivedFps.roundToInt()} fps · ${screen.mediaRoute} · ${if (screen.control) "Control" else "View only"}"
@@ -198,15 +217,38 @@ internal fun ScreenWorkspace(
                 IconButton(enabled = screen.control, onClick = { keyboard = !keyboard; canvas?.showKeyboard(keyboard) }) { Icon(Icons.Outlined.Keyboard, "Toggle keyboard") }
                 IconButton(enabled = screen.control, onClick = { specialKeys = !specialKeys }) { Icon(Icons.Outlined.KeyboardCommandKey, "Special keys") }
                 TextButton(enabled = screen.control, onClick = { canvas?.click(Button.BUTTON_RIGHT) }) { Text("Right click") }
-                IconButton(onClick = { canvas?.resetCanvas() }) { Icon(Icons.Outlined.FitScreen, "Fit screen") }
+                TextButton(enabled = screen.control, onClick = { canvas?.click() }) { Text("Click") }
                 IconButton(enabled = active, onClick = { controller.configure(refresh = true) }) { Icon(Icons.Outlined.Refresh, "Refresh screen") }
             }
         }
     }
     }
     if (help) AlertDialog(onDismissRequest = { help = false }, title = { Text("Screen gestures") }, text = {
-        Text("One finger: move the cursor\nTap: left click\nDouble tap: double click\nHold, then move: drag\nTwo fingers: freely move and resize the canvas, including zooming out\nThree fingers: scroll the remote screen\n\nFit screen centers the entire desktop again. The bottom bar also opens the keyboard, modifier keys, and right click. Copy retrieves the remote selection; Paste inserts the phone clipboard. Share clipboard synchronizes text, images and files while this screen is focused (up to 8 MiB for images/files). Backgrounding releases held keys; returning reconnects automatically. Leaving Screens or Disconnect stops recovery.")
+        Text("Use the screen like a trackpad. Clicks happen at the cursor.\n\nOne finger: move the cursor\nTap: click at the cursor\nDouble tap: double click\nHold, then move: drag\nTwo fingers: zoom and pan around the point between your fingers\nThree fingers: scroll the remote screen\n\nUse − and + for precise zoom steps. Tap the zoom percentage to fit and center the desktop. 100% means fit to this window. You can also zoom out below 100%.\n\nThe bottom bar provides Click, Right click, and the keyboard. Share clipboard enables Copy and Paste for text, images and files. Backgrounding releases held input; returning reconnects automatically.",
+            modifier = Modifier.verticalScroll(rememberScrollState()))
     }, confirmButton = { TextButton(onClick = { help = false }) { Text("Got it") } })
+}
+
+@Composable
+internal fun ScreenCanvasControls(
+    zoom: Float, fitted: Boolean, onZoom: (Float) -> Unit, onFit: () -> Unit, modifier: Modifier = Modifier,
+) {
+    Surface(modifier, shape = RoundedCornerShape(28.dp), tonalElevation = 6.dp, shadowElevation = 3.dp,
+        color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = .96f)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = { onZoom(1 / 1.25f) }, enabled = zoom > ScreenCanvasModel.MIN_ZOOM + .001f,
+                modifier = Modifier.testTag("screen-zoom-out")) { Icon(Icons.Outlined.Remove, "Zoom out") }
+            TextButton(onClick = onFit, modifier = Modifier.widthIn(min = 112.dp).testTag("screen-fit").semantics {
+                contentDescription = "Fit screen. Current zoom ${(zoom * 100).roundToInt()} percent"
+            }) {
+                Icon(Icons.Outlined.FitScreen, null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(6.dp))
+                Text(if (fitted) "Fit · 100%" else "${(zoom * 100).roundToInt()}%")
+            }
+            IconButton(onClick = { onZoom(1.25f) }, enabled = zoom < ScreenCanvasModel.MAX_ZOOM - .001f,
+                modifier = Modifier.testTag("screen-zoom-in")) { Icon(Icons.Outlined.Add, "Zoom in") }
+        }
+    }
 }
 
 private tailrec fun Context.screenActivity(): Activity? = when (this) {

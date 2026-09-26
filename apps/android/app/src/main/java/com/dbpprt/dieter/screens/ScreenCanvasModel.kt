@@ -13,6 +13,7 @@ class ScreenCanvasModel {
     var panY = 0f; private set
     var cursorX = .5f; private set
     var cursorY = .5f; private set
+    val isFitted get() = abs(zoom - 1f) < .001f && abs(panX) < .5f && abs(panY) < .5f
     val fit get() = min(viewportWidth / remoteWidth, viewportHeight / remoteHeight)
     val scale get() = fit * zoom
     val left get() = (viewportWidth - remoteWidth * scale) / 2 + panX
@@ -30,20 +31,34 @@ class ScreenCanvasModel {
         clampPan()
     }
     fun reset() { zoom = 1f; panX = 0f; panY = 0f }
-    fun cursor(x: Float, y: Float) { cursorX = x.coerceIn(0f, 1f); cursorY = y.coerceIn(0f, 1f) }
+    fun setView(zoom: Float, panX: Float, panY: Float) {
+        if (!zoom.isFinite() || !panX.isFinite() || !panY.isFinite()) return
+        this.zoom = zoom.coerceIn(MIN_ZOOM, MAX_ZOOM); this.panX = panX; this.panY = panY
+        clampPan()
+    }
+    fun cursor(x: Float, y: Float) {
+        if (!x.isFinite() || !y.isFinite()) return
+        cursorX = x.coerceIn(0f, 1f); cursorY = y.coerceIn(0f, 1f)
+    }
+    fun contains(x: Float, y: Float) = x.isFinite() && y.isFinite() &&
+        x >= left && x <= left + remoteWidth * scale && y >= top && y <= top + remoteHeight * scale
     fun move(dx: Float, dy: Float) {
+        if (!dx.isFinite() || !dy.isFinite()) return
         cursor(cursorX + dx / (remoteWidth * scale), cursorY + dy / (remoteHeight * scale))
         // Keep the cursor in view while moving across a magnified desktop.
         val margin = 24f.coerceAtMost(min(viewportWidth, viewportHeight) / 4)
         val x = left + cursorX * remoteWidth * scale; val y = top + cursorY * remoteHeight * scale
-        panX += x.coerceIn(margin, viewportWidth - margin) - x
-        panY += y.coerceIn(margin, viewportHeight - margin) - y
+        // Do not nudge a fully visible desktop when pointing at a corner.
+        if (left < 0 || left + remoteWidth * scale > viewportWidth)
+            panX += x.coerceIn(margin, viewportWidth - margin) - x
+        if (top < 0 || top + remoteHeight * scale > viewportHeight)
+            panY += y.coerceIn(margin, viewportHeight - margin) - y
         clampPan()
     }
     fun transform(factor: Float, oldX: Float, oldY: Float, newX: Float, newY: Float) {
         if (!factor.isFinite() || factor <= 0 || !oldX.isFinite() || !oldY.isFinite() || !newX.isFinite() || !newY.isFinite()) return
         val anchorX = (oldX - left) / scale; val anchorY = (oldY - top) / scale
-        zoom = (zoom * factor).coerceIn(.25f, 8f)
+        zoom = (zoom * factor).coerceIn(MIN_ZOOM, MAX_ZOOM)
         panX = newX - anchorX * scale - (viewportWidth - remoteWidth * scale) / 2
         panY = newY - anchorY * scale - (viewportHeight - remoteHeight * scale) / 2
         clampPan()
@@ -56,5 +71,10 @@ class ScreenCanvasModel {
         val x = limit(viewportWidth, remoteWidth * scale)
         val y = limit(viewportHeight, remoteHeight * scale)
         panX = panX.coerceIn(-x, x); panY = panY.coerceIn(-y, y)
+    }
+
+    companion object {
+        const val MIN_ZOOM = .25f
+        const val MAX_ZOOM = 8f
     }
 }

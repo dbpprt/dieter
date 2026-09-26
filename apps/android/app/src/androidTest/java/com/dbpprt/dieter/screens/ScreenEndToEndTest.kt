@@ -241,7 +241,8 @@ class ScreenEndToEndTest {
             val startX = canvas.canvasModel.cursorX
             val startY = canvas.canvasModel.cursorY
             val cx = canvas.width * .5f; val cy = canvas.height * .55f
-            gesture(canvas, listOf(listOf(cx to cy), listOf(cx + 12 to cy + 10), listOf(cx + 24 to cy + 20)))
+            val travel = android.view.ViewConfiguration.get(canvas.context).scaledTouchSlop * 1.5f
+            gesture(canvas, listOf(listOf(cx to cy), listOf(cx + travel / 2 to cy + travel / 2), listOf(cx + travel to cy + travel)))
             assertTrue("Relative X: $startX -> ${canvas.canvasModel.cursorX}; canvas ${canvas.width}x${canvas.height}, scale ${canvas.canvasModel.scale}", canvas.canvasModel.cursorX > startX && canvas.canvasModel.cursorX < startX + .1)
             assertTrue(canvas.canvasModel.cursorY > startY && canvas.canvasModel.cursorY < startY + .1)
             gesture(canvas, listOf(listOf(40f to 100f), listOf(40f to 100f)))

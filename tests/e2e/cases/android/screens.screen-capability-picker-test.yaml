@@ -12,4 +12,5 @@ timeout: 300s
 native:
   class: com.dbpprt.dieter.ui.ScreenCapabilityPickerTest
   methods:
+  - canvasControlsAndTouchEventsKeepZoomAnchoredAndFitRecoverable
   - unreadyHostCanBeSelectedForGuidanceAndRetryWhileOfflineHostsStayDisabled

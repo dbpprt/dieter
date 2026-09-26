@@ -72,6 +72,19 @@ These gestures transform the local GPU view without changing capture quality.
 Three fingers scroll the remote screen; the bottom bar provides keyboard and
 special keys.
 
+The zoom strip shows the current size relative to fit: **100%** fits the desktop
+to the available canvas. **−** and **+** make animated 25% zoom steps (25–800%);
+repeated presses accumulate, and touching the canvas immediately takes over the
+animation. Tap the percentage to fit and center again. The strip sits outside the
+remote image so it cannot block a dock, taskbar, or remote button. Zooming does not
+change capture resolution. Small tap movements leave the cursor still; a tap or
+the bottom-bar **Click** acts at the cursor, not at the finger. Lifting a finger
+after a pinch cannot produce a click. Physical mouse input ignores the letterbox,
+deduplicates Android button events, forwards double clicks with matched press and
+release counts, and releases drags even outside the image. A press that starts
+outside the desktop cannot turn into a remote drag when the mouse moves inside.
+Reconnects reset the displayed transform together with input coordinates.
+
 Each Mac viewer session is a machine-scoped Screens tab. It remains connected when
 the user navigates to another Dieter workspace, and the Screens sidebar count shows
 currently live tabs. General settings provides an optional inactivity timeout,
@@ -125,6 +138,8 @@ are supported. Enable local text composition in Screen options for IME input.
 Focus loss releases held input; ⌘⇧Esc releases input locally. Fullscreen keyboard
 capture forwards system shortcuts when Accessibility permission is available;
 protected system input and hardware/system gestures remain local.
+On Mac, clicking inside a streaming desktop also activates its window. Video and
+host-cursor presentation layers pass all pointer input to the screen input view.
 
 The CLI works on local, verified direct TLS and authenticated relay routes:
 

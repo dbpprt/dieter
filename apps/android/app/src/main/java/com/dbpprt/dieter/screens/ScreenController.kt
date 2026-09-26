@@ -713,6 +713,7 @@ class ScreenController(context: Context) : AutoCloseable {
         renderMeasurement = RemoteDesktopRenderMeasurement.REMOTE_DESKTOP_RENDER_MEASUREMENT_UNSPECIFIED
         canvasModel.reset(); canvasModel.cursor(.5f, .5f)
         mutable.value = mutable.value.copy(control = false, canTransferControl = false, controlTransferPending = false, controlError = "")
+        onVideoReset?.invoke()
         disconnecting = false
     }
     private fun connectionFailure(error: Exception) {

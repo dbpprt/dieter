@@ -4,6 +4,26 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class ScreenCanvasModelTest {
+    @Test fun fittedDesktopDoesNotShiftWhenPointingAtAnyCorner() {
+        val canvas = ScreenCanvasModel().apply { resize(1000, 1800, 1920, 1080) }
+        for ((x, y) in listOf(0f to 0f, 1f to 0f, 1f to 1f, 0f to 1f)) {
+            canvas.cursor(x, y); canvas.move(0f, 0f)
+            assertTrue(canvas.isFitted)
+        }
+        assertFalse(canvas.contains(500f, 100f))
+        assertTrue(canvas.contains(500f, 900f))
+    }
+    @Test fun zoomLimitsReverseImmediatelyAndDoNotAccumulateOvershoot() {
+        val canvas = ScreenCanvasModel().apply { resize(1000, 1800, 1920, 1080) }
+        canvas.transform(100f, 500f, 900f, 500f, 900f)
+        assertEquals(8f, canvas.zoom, 0f)
+        canvas.transform(.99f, 500f, 900f, 500f, 900f)
+        assertEquals(7.92f, canvas.zoom, .0001f)
+        canvas.transform(.001f, 500f, 900f, 500f, 900f)
+        assertEquals(.25f, canvas.zoom, 0f)
+        canvas.transform(1.01f, 500f, 900f, 500f, 900f)
+        assertEquals(.2525f, canvas.zoom, .0001f)
+    }
     @Test fun relativeMotionDoesNotTeleportToFingerLocation() {
         val canvas = ScreenCanvasModel().apply { resize(1000, 1000, 2000, 1000) }
         canvas.move(100f, -50f)

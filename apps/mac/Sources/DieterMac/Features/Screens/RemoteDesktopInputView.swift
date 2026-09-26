@@ -54,6 +54,15 @@ final class RemoteDesktopInputView: NSView, @preconcurrency NSTextInputClient, @
 
     required init?(coder: NSCoder) { nil }
     override var acceptsFirstResponder: Bool { true }
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        // Video and cursor layers are presentation only. In particular, the
+        // visible host cursor must not intercept the click that resumes control.
+        super.hitTest(point) == nil ? nil : self
+    }
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+        guard controller?.phase == .streaming, let event else { return false }
+        return normalizedPoint(event) != nil
+    }
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         controller?.clipboardWindow = window
