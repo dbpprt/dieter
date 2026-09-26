@@ -124,3 +124,19 @@ printf 'candidate:%s\n' "$*" >>"$DIETER_UPDATE_TEST_TRACE"
 		t.Fatalf("steps=%q want=%q", raw, want)
 	}
 }
+
+func TestUpdateCandidateVersionRejectsReleaseBelowRequiredFloor(t *testing.T) {
+	directory := t.TempDir()
+	candidate := filepath.Join(directory, "dieter")
+	if err := os.WriteFile(candidate, []byte("#!/bin/sh\nprintf '%s\\n' \"${DIETER_TEST_CANDIDATE_VERSION}\"\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("DIETER_TEST_CANDIDATE_VERSION", "0.4.11")
+	if err := verifyUpdateCandidateVersion(candidate, "0.4.12"); err == nil || !strings.Contains(err.Error(), "required minimum") {
+		t.Fatalf("below-floor candidate error = %v", err)
+	}
+	t.Setenv("DIETER_TEST_CANDIDATE_VERSION", "v0.4.12")
+	if err := verifyUpdateCandidateVersion(candidate, "0.4.12"); err != nil {
+		t.Fatalf("matching candidate rejected: %v", err)
+	}
+}

@@ -3,6 +3,8 @@ package gateway
 import (
 	"testing"
 	"time"
+
+	"github.com/dbpprt/dieter/internal/compatibility"
 )
 
 func TestProxyModeRequiresLoopbackAndHTTPSPublicOrigin(t *testing.T) {
@@ -57,8 +59,38 @@ func setMinimumGatewayEnvironment(t *testing.T) {
 	t.Setenv("DIETER_GATEWAY_TLS_KEY", "")
 	t.Setenv("DIETER_GATEWAY_DEV_INSECURE", "")
 	t.Setenv("DIETER_GATEWAY_PROXY_MODE", "")
+	t.Setenv("DIETER_MINIMUM_CLIENT_VERSION", "0.4.1-dev")
+	t.Setenv("DIETER_MINIMUM_DAEMON_VERSION", "0.4.1-dev")
 	t.Setenv("DIETER_GITHUB_BASE_URL", "")
 	t.Setenv("DIETER_GITHUB_API_URL", "")
+}
+
+func TestCompatibilityFloorsAreRequiredOutsideDisposableDevelopment(t *testing.T) {
+	setMinimumGatewayEnvironment(t)
+	t.Setenv("DIETER_GATEWAY_PROXY_MODE", "1")
+	t.Setenv("DIETER_PUBLIC_URL", "https://dieter.example.com")
+	t.Setenv("DIETER_MINIMUM_CLIENT_VERSION", "")
+	if _, err := ConfigFromEnv(t.TempDir()); err == nil {
+		t.Fatal("production gateway accepted a missing client floor")
+	}
+	t.Setenv("DIETER_MINIMUM_CLIENT_VERSION", "0.4.1")
+	t.Setenv("DIETER_MINIMUM_DAEMON_VERSION", "")
+	if _, err := ConfigFromEnv(t.TempDir()); err == nil {
+		t.Fatal("production gateway accepted a missing daemon floor")
+	}
+
+	setMinimumGatewayEnvironment(t)
+	t.Setenv("DIETER_GATEWAY_DEV_INSECURE", "1")
+	t.Setenv("DIETER_PUBLIC_URL", "http://127.0.0.1:4243")
+	t.Setenv("DIETER_MINIMUM_CLIENT_VERSION", "")
+	t.Setenv("DIETER_MINIMUM_DAEMON_VERSION", "")
+	config, err := ConfigFromEnv(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.MinimumClientVersion != compatibility.DevelopmentMinimum || config.MinimumDaemonVersion != compatibility.DevelopmentMinimum {
+		t.Fatalf("development floors = %q/%q", config.MinimumClientVersion, config.MinimumDaemonVersion)
+	}
 }
 
 func TestGitHubEndpointsRequireTLSOrDevelopmentLoopback(t *testing.T) {

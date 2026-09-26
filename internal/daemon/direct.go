@@ -11,6 +11,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/dbpprt/dieter/internal/buildinfo"
 	"github.com/dbpprt/dieter/internal/rpcraw"
 	"github.com/dbpprt/dieter/internal/trust"
 	"google.golang.org/grpc"
@@ -65,6 +66,17 @@ func (s *DirectServer) handle(_ any, stream grpc.ServerStream) error {
 	}
 	values, _ := metadata.FromIncomingContext(ctx)
 	authorization := values.Get("authorization")
+	clientVersions := values.Get("x-dieter-client-version")
+	clientVersion := ""
+	if len(clientVersions) > 0 {
+		clientVersion = clientVersions[0]
+		for _, value := range clientVersions[1:] {
+			if value != clientVersion {
+				clientVersion = ""
+				break
+			}
+		}
+	}
 	if len(authorization) != 1 {
 		return status.Error(codes.Unauthenticated, "daemon access token is required")
 	}
@@ -89,7 +101,7 @@ func (s *DirectServer) handle(_ any, stream grpc.ServerStream) error {
 	ctx, cancel := context.WithDeadline(ctx, time.Unix(claims.ExpiresAt, 0).Add(10*time.Second))
 	defer cancel()
 	completed := make(chan error, 1)
-	go func() { completed <- s.forward(ctx, stream, method, claims.Subject) }()
+	go func() { completed <- s.forward(ctx, stream, method, claims.Subject, clientVersion) }()
 	select {
 	case err := <-completed:
 		return err
@@ -98,13 +110,16 @@ func (s *DirectServer) handle(_ any, stream grpc.ServerStream) error {
 	}
 }
 
-func (s *DirectServer) forward(ctx context.Context, stream grpc.ServerStream, method, operatorSubject string) error {
+func (s *DirectServer) forward(ctx context.Context, stream grpc.ServerStream, method, operatorSubject, clientVersion string) error {
 	var request rpcraw.Message
 	if err := stream.RecvMsg(&request); err != nil {
 		return err
 	}
 	description := &grpc.StreamDesc{ServerStreams: true, ClientStreams: false}
-	localContext := metadata.NewOutgoingContext(ctx, metadata.Pairs("x-dieter-operator-subject", operatorSubject))
+	localContext := metadata.NewOutgoingContext(ctx, metadata.Pairs(
+		"x-dieter-operator-subject", operatorSubject,
+		"x-dieter-client-version", clientVersion,
+	))
 	call, err := s.local.NewStream(localContext, description, method, grpc.ForceCodec(rpcraw.Codec{}))
 	if err != nil {
 		return err
@@ -175,7 +190,7 @@ func DialDirectWithCredentials(ctx context.Context, address, daemonID string, da
 type daemonTokenCredential struct{ token string }
 
 func (c daemonTokenCredential) GetRequestMetadata(context.Context, ...string) (map[string]string, error) {
-	return map[string]string{"authorization": "Bearer " + c.token}, nil
+	return map[string]string{"authorization": "Bearer " + c.token, "x-dieter-client-version": buildinfo.ReleaseVersion}, nil
 }
 
 func (daemonTokenCredential) RequireTransportSecurity() bool { return true }

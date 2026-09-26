@@ -24,11 +24,15 @@ struct WorkspaceDeltaLabel: View {
     let deletions: Int32
 
     var body: some View {
-        HStack(spacing: 6) {
-            Text("+\(additions)").foregroundStyle(DieterTheme.diffAddition)
-            Text("−\(deletions)").foregroundStyle(DieterTheme.coral)
+        Group {
+            if additions != 0 || deletions != 0 {
+                HStack(spacing: 6) {
+                    Text("+\(additions)").foregroundStyle(DieterTheme.diffAddition)
+                    Text("−\(deletions)").foregroundStyle(DieterTheme.coral)
+                }
+                .font(.system(size: 10, weight: .semibold, design: .monospaced)).fixedSize()
+            }
         }
-        .font(.system(size: 10, weight: .semibold, design: .monospaced)).fixedSize()
     }
 }
 

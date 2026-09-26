@@ -14,7 +14,7 @@ direct TLS, WebRTC (direct or TURN), or relay. The gateway stores no KV contents
 ## Contract
 
 `GetKV`, `ListKV`, `PutKV`, `DeleteKV`, `MoveKV`, and `WatchKV` use the current
-application contract. Namespaces and keys use ASCII letters, digits, dots,
+release compatibility baseline. Namespaces and keys use ASCII letters, digits, dots,
 dashes and underscores. Namespaces are at most 120 bytes; keys at most 128.
 Values are canonical JSON, at most 32 KiB. Namespaces are data organization,
 not authorization scopes: clients retain binary full account access.

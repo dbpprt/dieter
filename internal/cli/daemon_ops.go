@@ -21,7 +21,6 @@ import (
 
 	dieterdaemon "github.com/dbpprt/dieter/internal/daemon"
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
-	"github.com/dbpprt/dieter/internal/protocol"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/protobuf/types/known/emptypb"
@@ -289,7 +288,7 @@ func daemonHealth(address string) bool {
 	}
 	defer connection.Close()
 	health, err := dieterv1.NewDieterServiceClient(connection).Health(ctx, &emptypb.Empty{})
-	return err == nil && health.GetStatus() == "ok" && health.GetVersion() == protocol.Version
+	return err == nil && health.GetStatus() == "ok" && health.GetReleaseVersion() != ""
 }
 
 func homebrewServiceStatus() string {

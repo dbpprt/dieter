@@ -12,6 +12,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"connectrpc.com/connect"
 	"github.com/dbpprt/dieter/internal/app"
 	"github.com/dbpprt/dieter/internal/attachments"
 	"github.com/dbpprt/dieter/internal/changeset"
@@ -187,7 +188,10 @@ func newServer(data *store.Store, logger *slog.Logger, runner harness.Runner) *S
 		}
 		return false
 	}
-	path, handler := dieterv1connect.NewDieterServiceHandler(&connectAPI{core: &grpcAPI{server: s}})
+	path, handler := dieterv1connect.NewDieterServiceHandler(
+		&connectAPI{core: &grpcAPI{server: s}},
+		connect.WithInterceptors(&clientCompatibilityInterceptor{store: data}),
+	)
 	s.mux.Handle(path, handler)
 	s.mux.HandleFunc("/", http.NotFound)
 	return s

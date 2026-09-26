@@ -7,10 +7,7 @@ import (
 
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
 	"github.com/dbpprt/dieter/internal/model"
-	"github.com/dbpprt/dieter/internal/protocol"
 	"github.com/dbpprt/dieter/internal/store"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -308,9 +305,6 @@ func globalDeltaEmpty(delta *dieterv1.GlobalDelta) bool {
 // watchSync has one sender and one bounded projection worker. Slow projection
 // work cannot suppress liveness, and canceled senders cancel their worker.
 func (api *grpcAPI) watchSync(parent context.Context, request *dieterv1.SyncRequest, send func(*dieterv1.SyncFrame) error) error {
-	if request.GetProtocolVersion() != protocol.Number {
-		return status.Error(codes.FailedPrecondition, "unsupported Dieter sync contract")
-	}
 	ctx, cancel := context.WithCancel(parent)
 	defer cancel()
 	heartbeat := time.Duration(request.GetHeartbeatMs()) * time.Millisecond

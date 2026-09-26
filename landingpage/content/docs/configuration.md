@@ -73,12 +73,13 @@ Never launch a second daemon beside an existing service to change configuration.
 Inspect `dieter daemon status` and use the platform's managed service lifecycle.
 Development tests must use isolated state and random loopback ports.
 
-## Contract and protocol
+## Release compatibility and protocol
 
-The authoritative schema lives in `api/proto`, and `api/contract-version` sets
-one application contract. `just proto` regenerates Go and copied Swift schema
-clients; Android generates its bindings during the build. There is no historical
-API compatibility branch, REST application API, or browser application.
+The authoritative schema lives in `api/proto`. Gateway, daemon/CLI, and native
+clients share one release version; the gateway publishes minimum client and
+daemon releases. `just proto` regenerates Go and copied Swift schema clients;
+Android generates its bindings during the build. There is no historical API
+compatibility branch, REST application API, or browser application.
 
 ## Mac workspace panel
 

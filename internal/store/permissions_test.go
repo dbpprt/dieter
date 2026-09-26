@@ -19,6 +19,9 @@ func TestPrivateMetadataCreationPreservesWorktreePermissions(t *testing.T) {
 	if err := os.WriteFile(worktreeFile, []byte("project data"), 0644); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.Chmod(worktreeFile, 0o644); err != nil {
+		t.Fatal(err)
+	}
 	if err := s.Ensure(); err != nil {
 		t.Fatal(err)
 	}

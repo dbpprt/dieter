@@ -68,7 +68,7 @@ func linuxUpdateCapability(root string) OperationCapability {
 	return result
 }
 
-func startLinuxUpdateWorker(root string) error {
+func startLinuxUpdateWorker(root, minimumVersion string) error {
 	executable, err := os.Executable()
 	if err != nil {
 		return err
@@ -87,14 +87,19 @@ func startLinuxUpdateWorker(root string) error {
 		return err
 	}
 	defer logFile.Close()
-	command := exec.Command(systemdRun,
+	workerArguments := []string{executable, "__linux-update-worker", "--root", root}
+	if minimumVersion != "" {
+		workerArguments = append(workerArguments, "--minimum-version", minimumVersion)
+	}
+	arguments := []string{
 		"--user", "--unit=dieter-update", "--collect", "--quiet", "--property=Type=exec",
-		"--setenv=PATH="+os.Getenv("PATH"),
-		"--property=StandardOutput=append:"+logPath,
-		"--property=StandardError=append:"+logPath,
+		"--setenv=PATH=" + os.Getenv("PATH"),
+		"--property=StandardOutput=append:" + logPath,
+		"--property=StandardError=append:" + logPath,
 		"--",
-		executable, "__linux-update-worker", "--root", root,
-	)
+	}
+	arguments = append(arguments, workerArguments...)
+	command := exec.Command(systemdRun, arguments...)
 	command.Stdin = nil
 	command.Stdout, command.Stderr = logFile, logFile
 	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
@@ -109,6 +114,7 @@ func RunLinuxDaemonUpdateWorker(args []string, output io.Writer) error {
 	set.SetOutput(output)
 	root := set.String("root", "", "absolute DIETER_HOME")
 	baseURL := set.String("base-url", linuxReleaseBaseURL, "release asset base URL")
+	minimumVersion := set.String("minimum-version", "", "minimum acceptable Dieter release")
 	if err := set.Parse(args); err != nil {
 		return err
 	}
@@ -169,6 +175,9 @@ func RunLinuxDaemonUpdateWorker(args []string, output io.Writer) error {
 		return err
 	}
 	if err := extractLinuxDaemon(archive, asset+"/dieter-capture", filepath.Join(stage, "dieter-capture")); err != nil {
+		return err
+	}
+	if err := verifyUpdateCandidateVersion(filepath.Join(stage, "dieter"), *minimumVersion); err != nil {
 		return err
 	}
 	fmt.Fprintf(output, "%s: prepare candidate harness runtime\n", time.Now().UTC().Format(time.RFC3339))

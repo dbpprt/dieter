@@ -181,12 +181,12 @@
             window.makeKeyAndOrderFront(nil)
             let compatibleEndpointID = store.endpoint.id
             results["mixed-version-compatible-startup"] =
-                store.endpoint.apiCompatibility == .compatible
-                    && store.machines.contains(where: { $0.apiCompatibility == .incompatible })
+                store.endpoint.compatibilityState == .compatible
+                    && store.machines.contains(where: { $0.compatibilityState == .incompatible })
                 ? "passed"
-                : "failed: startup did not select API \(dieterExpectedAPIVersion) from the mixed fleet"
+                : "failed: startup did not select a compatible release from the mixed fleet"
             if let incompatibleMachine = store.machines.first(where: {
-                $0.apiCompatibility == .incompatible
+                $0.compatibilityState == .incompatible
             }) {
                 await store.connect(to: incompatibleMachine)
                 results["mixed-version-switch-isolation"] =
@@ -1299,7 +1299,7 @@
                 secure: store.endpoint.secure,
                 daemonID: "smoke-duplicate-machine",
                 online: false,
-                version: "v0.4.57"
+                releaseVersion: "v0.4.57"
             )
             let savedProject = store.projectDirectory[project.id] ?? project
             var sharedProject = savedProject

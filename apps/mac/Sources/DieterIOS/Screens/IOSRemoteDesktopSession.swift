@@ -202,11 +202,12 @@
             let stateConfiguration = RTCDataChannelConfiguration()
             stateConfiguration.isOrdered = true
             pointerChannel = peer.dataChannel(
-                forLabel: "dieter-pointer-v\(DieterContract.version)", configuration: pointerConfiguration)
+                forLabel: "dieter-pointer-v\(DieterRemoteDesktopProtocol.version)", configuration: pointerConfiguration)
             stateChannel = peer.dataChannel(
-                forLabel: "dieter-input-state-v\(DieterContract.version)", configuration: stateConfiguration)
+                forLabel: "dieter-input-state-v\(DieterRemoteDesktopProtocol.version)",
+                configuration: stateConfiguration)
             hostChannel = peer.dataChannel(
-                forLabel: "dieter-session-v\(DieterContract.version)", configuration: stateConfiguration)
+                forLabel: "dieter-session-v\(DieterRemoteDesktopProtocol.version)", configuration: stateConfiguration)
             pointerDelegate = IOSRemoteDesktopDataChannelDelegate(owner: self, role: .pointer)
             stateDelegate = IOSRemoteDesktopDataChannelDelegate(owner: self, role: .state)
             hostDelegate = IOSRemoteDesktopDataChannelDelegate(owner: self, role: .host)
@@ -215,7 +216,7 @@
             hostChannel?.delegate = hostDelegate
 
             let inputProtocolVersion: UInt32 =
-                DieterContract.number
+                DieterRemoteDesktopProtocol.number
             let transceiver = RTCRtpTransceiverInit()
             transceiver.direction = .recvOnly
             guard let video = peer.addTransceiver(of: .video, init: transceiver) else {

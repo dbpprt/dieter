@@ -33,18 +33,16 @@ linux-ci-dependencies:
         gstreamer1.0-plugins-good gstreamer1.0-plugins-bad \
         gstreamer1.0-plugins-ugly xvfb x11-utils
 
-# Build the daemon and CLI, optionally embedding a release tag.
+# Build the daemon and CLI, embedding either the supplied release or a source pseudo-version.
 build version="":
     #!/usr/bin/env bash
     set -euo pipefail
     mkdir -p bin
-    if [[ -n "{{ version }}" ]]; then
-        go build -trimpath \
-            -ldflags "-X github.com/dbpprt/dieter/internal/buildinfo.ReleaseVersion={{ version }}" \
-            -o "{{ binary }}" "{{ target }}"
-    else
-        go build -trimpath -o "{{ binary }}" "{{ target }}"
-    fi
+    selected="{{ version }}"
+    [[ -n "$selected" ]] || selected="$(just release pseudo-version)"
+    go build -trimpath \
+        -ldflags "-X github.com/dbpprt/dieter/internal/buildinfo.ReleaseVersion=$selected" \
+        -o "{{ binary }}" "{{ target }}"
 
 # Test every Dieter package in the daemon command's dependency graph.
 test:
@@ -155,7 +153,9 @@ package-release:
     fi
     cp LICENSE "$package/LICENSE"
     cp scripts/install.sh "$package/install.sh"
+    printf '%s\n' "$RELEASE_VERSION" >"$package/VERSION"
     tar -C stage -czf "$archive" "$ASSET"
+    printf '%s\n' "$RELEASE_VERSION" >"$archive.version"
     echo "$archive"
 
 # Execute a packaged Linux daemon on its target architecture.
@@ -227,6 +227,7 @@ package-macos:
     native/macos-capture/build.sh "{{ mac_package }}/dieter-capture"
     cp LICENSE "{{ mac_package }}/LICENSE"
     cp scripts/install.sh "{{ mac_package }}/install.sh"
+    printf '%s\n' "$RELEASE_VERSION" >"{{ mac_package }}/VERSION"
 
 # Run the signed daemon from a disposable fixed runtime before publishing it.
 test-signed-runtime:
@@ -297,10 +298,17 @@ installer-test:
 
 # Archive the staged Apple Silicon daemon package.
 archive-macos:
+    #!/usr/bin/env bash
+    set -euo pipefail
     test -x "{{ mac_package }}/dieter"
     test -x "{{ mac_package }}/dieter-capture"
+    test -s "{{ mac_package }}/VERSION"
     mkdir -p dist
     tar -C stage -czf dist/dieter-darwin-arm64.tar.gz dieter-darwin-arm64
+    cp "{{ mac_package }}/VERSION" dist/dieter-darwin-arm64.tar.gz.version
+    if [[ -f dist/dieter-darwin-arm64.pkg ]]; then
+        cp "{{ mac_package }}/VERSION" dist/dieter-darwin-arm64.pkg.version
+    fi
 
 # Remove only daemon build and staged release outputs.
 [confirm]

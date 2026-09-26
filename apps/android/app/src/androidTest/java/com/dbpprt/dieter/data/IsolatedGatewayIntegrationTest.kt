@@ -214,12 +214,14 @@ class IsolatedGatewayIntegrationTest {
             val endpoint = connect(repository, origin, token)
             repository.prepareDaemon()
             val activeBefore = repository.activeEndpoint
-            val incompatibleDaemon = repository.daemons().daemonsList.first { it.apiVersion != DIETER_API_VERSION }
+            val incompatibleDaemon = repository.daemons().daemonsList.first { it.compatibility != com.dbpprt.dieter.gateway.v1.CompatibilityStatus.COMPATIBILITY_STATUS_COMPATIBLE }
             val incompatibleEndpoint = origin.copy(
                 id = "${origin.credentialId}#${incompatibleDaemon.id}",
                 label = incompatibleDaemon.name,
                 daemonId = incompatibleDaemon.id,
-                apiVersion = incompatibleDaemon.apiVersion,
+                releaseVersion = incompatibleDaemon.releaseVersion,
+                compatibility = incompatibleDaemon.compatibility,
+                minimumReleaseVersion = incompatibleDaemon.minimumReleaseVersion,
             )
             repository.replaceEndpoints(listOf(endpoint, incompatibleEndpoint))
             val incompatible = runCatching { repository.listDirectoriesOn(incompatibleEndpoint.id) }.exceptionOrNull()
@@ -252,7 +254,6 @@ class IsolatedGatewayIntegrationTest {
                     .setBaseRemote("origin")
                     .setBaseBranch("main")
                     .addValidationCommands(validation)
-                    .setRemotePublishMode("manual")
                     .build(),
             )
             projectId = created.project.id
@@ -628,12 +629,14 @@ class IsolatedGatewayIntegrationTest {
         repository.setAccessToken(origin, token)
         repository.replaceEndpoints(listOf(origin))
         repository.selectEndpoint(origin)
-        val daemon = repository.daemons().daemonsList.first { it.apiVersion == DIETER_API_VERSION }
+        val daemon = repository.daemons().daemonsList.first { it.compatibility == com.dbpprt.dieter.gateway.v1.CompatibilityStatus.COMPATIBILITY_STATUS_COMPATIBLE }
         val endpoint = origin.copy(
             id = "${origin.credentialId}#${daemon.id}",
             label = daemon.name.ifBlank { daemon.id },
             daemonId = daemon.id,
-            apiVersion = daemon.apiVersion,
+            releaseVersion = daemon.releaseVersion,
+            compatibility = daemon.compatibility,
+            minimumReleaseVersion = daemon.minimumReleaseVersion,
         )
         repository.replaceEndpoints(listOf(endpoint))
         repository.selectEndpoint(endpoint)

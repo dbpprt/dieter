@@ -91,7 +91,6 @@ Options:
   --workflow direct|review    Initial board workflow
   --base-remote REMOTE        Git base remote
   --base-branch BRANCH        Git base branch
-  --remote-publish MODE       Initial board mode: manual, pull_request, or push_base
   --validation-file FILE      Validation command JSON
   --format json|id            Output format
 `, mode)
@@ -105,7 +104,6 @@ Options:
 	workflow := set.String("workflow", "review", "initial board workflow")
 	baseRemote := set.String("base-remote", "", "Git base remote")
 	baseBranch := set.String("base-branch", "", "Git base branch")
-	remotePublish := set.String("remote-publish", "manual", "initial board remote publish mode")
 	validationFile := set.String("validation-file", "", "validation command JSON")
 	format := set.String("format", "json", "json or id")
 	help, err := parse(set, args, usage, c.Out)
@@ -132,7 +130,7 @@ Options:
 	response, err := client.CreateProject(rpcCtx, &dieterv1.CreateProjectRequest{
 		OperationId: *operationID, Mode: mode, Path: set.Arg(0), Name: *name, Summary: *summary, Prompt: promptValue,
 		BoardName: *boardName, Workflow: *workflow, BaseRemote: *baseRemote, BaseBranch: *baseBranch,
-		ValidationCommands: validation, RemotePublishMode: *remotePublish,
+		ValidationCommands: validation,
 	})
 	if err != nil {
 		return err

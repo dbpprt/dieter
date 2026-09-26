@@ -140,7 +140,8 @@ private fun ProjectChangeList(
     val changes = review.changeset
     val staged = changes?.filesList?.filter { it.staged }.orEmpty()
     val unstaged = changes?.filesList?.filter { it.unstaged }.orEmpty()
-    val disabled = review.operationActive || changes?.volatile == true
+    val disabled = review.operationActive
+    val hasRemote = state.projects.firstOrNull { it.id == review.projectId }?.baseRemote?.isNotBlank() == true
     Column(modifier.fillMaxSize()) {
         SimpleScreenHeader(
             "Project changes",
@@ -163,7 +164,7 @@ private fun ProjectChangeList(
         }
         if (changes?.volatile == true) {
             Text(
-                "A project-directory conversation is active. Inspection remains available; mutations wait until it finishes.",
+                "A project-directory conversation is active. This shared change list can keep moving while you work.",
                 color = DieterAmber,
                 fontSize = 11.sp,
                 modifier = Modifier.fillMaxWidth().background(DieterSurfaceHigh).padding(12.dp),
@@ -202,6 +203,31 @@ private fun ProjectChangeList(
                     modifier = Modifier.testTag("project-changes-commit"),
                 ) { Text("Commit") }
             }
+        }
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            TextButton(
+                onClick = {
+                    model.startProjectGitOperation(
+                        GitOperationKinds.UPDATE,
+                        parameters = mapOf("fetch" to "true", "validate" to "false"),
+                    )
+                },
+                enabled = !disabled && changes?.dirty == false,
+                modifier = Modifier.testTag("project-changes-update"),
+            ) { Text("Update") }
+            TextButton(
+                onClick = { model.startProjectGitOperation(GitOperationKinds.VALIDATE) },
+                enabled = !disabled && changes != null,
+                modifier = Modifier.testTag("project-changes-validate"),
+            ) { Text("Validate") }
+            TextButton(
+                onClick = { model.startProjectGitOperation(GitOperationKinds.PUSH) },
+                enabled = !disabled && changes?.branch?.isNotEmpty() == true && hasRemote,
+                modifier = Modifier.testTag("project-changes-push"),
+            ) { Text("Push") }
         }
         LazyColumn(
             Modifier.weight(1f),
@@ -268,8 +294,10 @@ private fun ProjectChangeRow(
                 Text(file.path, fontFamily = FontFamily.Monospace, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
                     Text(if (section == "staged") file.indexStatus.ifBlank { file.status } else file.worktreeStatus.ifBlank { file.status }, color = DieterMuted, fontSize = 10.sp)
-                    Text("+$additions", color = DieterEyes, fontSize = 10.sp)
-                    Text("−$deletions", color = DieterCoral, fontSize = 10.sp)
+                    if (additions != 0 || deletions != 0) {
+                        Text("+$additions", color = DieterEyes, fontSize = 10.sp)
+                        Text("−$deletions", color = DieterCoral, fontSize = 10.sp)
+                    }
                 }
             }
             TextButton(

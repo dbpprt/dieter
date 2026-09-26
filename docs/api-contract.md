@@ -1,49 +1,56 @@
-# Application contract
+# Release compatibility
 
-Dieter is pre-release and supports exactly one application contract: **1**.
-`api/contract-version` is its source of truth. `just proto` generates the Go,
-Swift, Kotlin, and capture-helper constants together with the RPC bindings.
-The protobuf packages are `dieter.v1` and `dieter.gateway.v1`; they describe
-different services within the same contract, not alternative API versions.
+Dieter ships one canonical Semantic Versioning release across the gateway,
+daemon/CLI, macOS, iOS, Android, and native helpers. The protobuf package names
+`dieter.v1` and `dieter.gateway.v1` are stable namespaces, not independently
+versioned contracts. Dieter does not keep historical wire implementations or
+negotiate v1/v2 product APIs.
 
-Each daemon stores its local conversations, schedule occurrences, execution
-state, and credentials under `DIETER_HOME`. Shared projects, boards, labels,
+The gateway publishes one authenticated compatibility policy containing its
+release, `minimum_client_version`, `minimum_daemon_version`, and a digest
+revision. Clients and daemons send their release on every gateway and data-plane
+route. Compatibility is `installed release >= minimum release` using strict
+SemVer precedence; build metadata does not affect ordering. Missing or malformed
+versions are incompatible.
+
+An additive schema or capability change does not raise a floor. A change that
+would make an older client or daemon unsafe raises the corresponding floor in
+the signed gateway compatibility policy. Raise the client floor only after the
+Mac, iOS, and Android release is available; raise the daemon floor only after
+the signed Linux and Homebrew release is available. When the final stable
+release number is not known, pin a prerelease floor such as `0.4.309-dev.0`.
+The eventual `0.4.309` release and every later compatible release sort above
+that floor without causing future releases to raise it automatically.
+
+Source builds can use `just release pseudo-version`, which derives a valid
+SemVer such as `0.4.309-dev.439+de14862b` from the latest release line, Git
+history, and source revision. Published artifacts replace that identity with
+the release workflow's single numeric version. Apple build numbers and Android
+version codes remain platform-specific monotonic identifiers, not compatibility
+inputs.
+
+An incompatible managed daemon persists the authenticated policy, admits one
+signed automatic update attempt for the installed-release/policy tuple, verifies
+the candidate checksum, Sigstore identity, and `--version >= minimum` before
+activation, then stays incompatible if it still cannot meet the floor. Native
+clients and the CLI present Update Required instead of entering normal product
+state. The unauthenticated compatibility bootstrap and `/healthz` remain
+available so old software can explain the required update.
+
+Remote-desktop input and persisted sync projections retain their own narrowly
+scoped revisions because they describe subsystem framing or stored state, not a
+second Dieter product contract. Capabilities remain appropriate for genuine
+platform differences such as codecs, capture permissions, clipboard formats,
+and provider support.
+
+Each daemon stores local conversations, schedule occurrences, execution state,
+and credentials under `DIETER_HOME`. Shared projects, boards, labels,
 placements, and portable settings replicate through the leaderless peer store;
-no machine owns a project. A checkout references a working tree on its immutable
-owner daemon. Conversations and schedules retain one execution owner and checkout.
+no machine owns a project. The gateway stores account authentication, enrolled
+daemon identity, routing, presence, and normalized provider quota snapshots,
+never project or conversation data.
 
-The daemon's loopback gRPC API is authoritative; Connect is a thin adapter to the
-same implementation. Operational CLI commands and native clients use that API.
-Authenticated direct TLS, WebRTC, and bounded gateway relay provide routes to it
-without changing operation semantics. Store mutations use atomic writes and the
-central cross-process lock.
-
-The gateway owns account authentication, enrolled daemon identity, routing,
-presence, and normalized provider quota snapshots. It has no project or
-conversation store and no public application UI. Daemon browser authentication
-and daemon-side OAuth sessions have been removed.
-
-Clients verify the gateway contract and the selected daemon's contract before
-using them. Daemon tunnel enrollment verifies it in both directions. Sync and
-screen input require the generated numeric contract explicitly; a missing or
-different version is an error. Capture-helper control messages use that same
-contract. Heartbeat acknowledgement, metadata-first sync,
-projection-scoped caches, signed screen session bindings, USB HID keys, and
-machine-wide control grants are baseline behavior.
-
-There are no old sync snapshots, screen input versions, cache conversions,
-workspace-mode aliases, direct-store operational CLI mode, or store import
-commands. Capability discovery remains for actual host/platform differences,
-including codecs, capture permissions, clipboard formats, and provider support.
-
-Release versions describe builds and may differ without changing this contract.
-Storage schema 2, gateway database schema 1, and internal projection revisions
-describe their own persisted formats; they are not additional supported APIs.
-Unsupported development databases are rejected without migration. Use a fresh
-`DIETER_HOME` or `DIETER_GATEWAY_HOME` for an unsupported store and preserve the
-previous directory. Development checks use disposable homes and credentials;
-they never reset data or restart the operator's services.
-
-Changes to the baseline update the authoritative schemas, generated bindings,
-daemon core, CLI/help, all native clients, and relevant local/direct/relay tests
-together. Do not add compatibility branches for historical development builds.
+Schema changes update authoritative protobufs, generated bindings, daemon core,
+CLI/help, native clients, deployment policy, and local/direct/WebRTC/relay tests
+in one change. Unsupported development stores are rejected without migration;
+preserve the old directory and use a fresh disposable home for development.

@@ -1,6 +1,6 @@
 package com.dbpprt.dieter.screens
 
-import com.dbpprt.dieter.data.DIETER_PROTOCOL_VERSION
+import com.dbpprt.dieter.data.DIETER_INPUT_PROTOCOL_VERSION
 import com.dbpprt.dieter.BuildConfig
 
 import android.content.Context
@@ -175,7 +175,7 @@ class ScreenController(context: Context) : AutoCloseable {
                     )
                     return@launch
                 }
-                require(caps.inputProtocolVersion == DIETER_PROTOCOL_VERSION) { "Update the Dieter daemon and client together" }
+                require(caps.inputProtocolVersion == DIETER_INPUT_PROTOCOL_VERSION) { "Update the Dieter daemon and client together" }
                 clipboard.binarySupported = caps.binaryClipboardSupported
                 val references = ScreenReferenceReceiver { feedbackPump.acknowledge(it) }
                 referenceReceiver?.stop(); referenceReceiver = references
@@ -204,9 +204,9 @@ class ScreenController(context: Context) : AutoCloseable {
                 }
                 val pc = requireNotNull(factory!!.createPeerConnection(rtc, observer(current)))
                 peer = pc
-                pointer = pc.createDataChannel("dieter-pointer-v$DIETER_PROTOCOL_VERSION", DataChannel.Init().apply { ordered = false; maxRetransmits = 0 })
-                input = pc.createDataChannel("dieter-input-state-v$DIETER_PROTOCOL_VERSION", DataChannel.Init())
-                host = pc.createDataChannel("dieter-session-v$DIETER_PROTOCOL_VERSION", DataChannel.Init())
+                pointer = pc.createDataChannel("dieter-pointer-v$DIETER_INPUT_PROTOCOL_VERSION", DataChannel.Init().apply { ordered = false; maxRetransmits = 0 })
+                input = pc.createDataChannel("dieter-input-state-v$DIETER_INPUT_PROTOCOL_VERSION", DataChannel.Init())
+                host = pc.createDataChannel("dieter-session-v$DIETER_INPUT_PROTOCOL_VERSION", DataChannel.Init())
                 if (caps.clipboardSupported) clipboard.attach(pc.createDataChannel("dieter-clipboard-v1", DataChannel.Init()))
                 listOfNotNull(pointer, input, host).forEach { channel -> channel.registerObserver(channelObserver(channel, current)) }
                 val video = pc.addTransceiver(MediaStreamTrack.MediaType.MEDIA_TYPE_VIDEO,
@@ -226,7 +226,7 @@ class ScreenController(context: Context) : AutoCloseable {
                     ?: caps.displaysList.firstOrNull { it.primary } ?: caps.displaysList.first()
                 val start = StartRemoteDesktopRequest.newBuilder().setReferenceRecovery(offer.description.contains(SCREEN_GENERIC_DESCRIPTOR_URI)).setCodecPreference(effectiveCodec).setClipboard(caps.clipboardSupported && clipboard.enabled).setClientNonce(UUID.randomUUID().toString())
                     .setRtcConfiguration(route.rtc).setDisplayId(display.id)
-                    .setInputProtocolVersion(DIETER_PROTOCOL_VERSION).setClientName("Android")
+                    .setInputProtocolVersion(DIETER_INPUT_PROTOCOL_VERSION).setClientName("Android")
                     .setControl(shouldRequestScreenControl(caps))
                     .setEmbeddedCursor(shouldEmbedScreenCursor(caps))
                     .setMaxWidth(1920).setMaxHeight(1080).setMaxFps(minOf(preferredMaxFPS, caps.maxFps.takeIf { it > 0 } ?: 60)).setMaxBitrateKbps(12000).setQuality(configuration.quality)
@@ -304,7 +304,7 @@ class ScreenController(context: Context) : AutoCloseable {
             req.control, req.displayId, req.inputProtocolVersion)
         authorized = true
         mutable.value = mutable.value.copy(canTransferControl = b.controlGranted)
-        feedbackPump.start(host, RemoteDesktopReceiverFeedback.newBuilder().setProtocolVersion(DIETER_PROTOCOL_VERSION).setInputEpoch(b.inputEpoch).build())
+        feedbackPump.start(host, RemoteDesktopReceiverFeedback.newBuilder().setProtocolVersion(DIETER_INPUT_PROTOCOL_VERSION).setInputEpoch(b.inputEpoch).build())
         setDescription(requireNotNull(peer), SessionDescription(SessionDescription.Type.ANSWER, sdp), local = false)
         remoteApplied = true
         remoteCandidates.forEach { require(peer?.addIceCandidate(it) == true) }; remoteCandidates.clear()
@@ -614,7 +614,7 @@ class ScreenController(context: Context) : AutoCloseable {
                     fun delta(key: String) = max(0.0, values.getValue(key) - (previous[key] ?: values.getValue(key)))
                     val now = SystemClock.elapsedRealtime(); val elapsed = max(0.001, (now - previousTime) / 1000.0)
                     val fps = delta("presented") / elapsed
-                    val feedback = RemoteDesktopReceiverFeedback.newBuilder().setProtocolVersion(DIETER_PROTOCOL_VERSION)
+                    val feedback = RemoteDesktopReceiverFeedback.newBuilder().setProtocolVersion(DIETER_INPUT_PROTOCOL_VERSION)
                         .setInputEpoch(binding?.inputEpoch ?: com.google.protobuf.ByteString.EMPTY)
                         .setFramesPerSecond(fps).setRenderedFrames(framesPresented.get().coerceAtMost(Int.MAX_VALUE.toLong()).toInt())
                         .setDecodeMs(if (delta("framesDecoded") > 0) delta("totalDecodeTime") * 1000 / delta("framesDecoded") else 0.0)

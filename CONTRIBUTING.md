@@ -65,13 +65,14 @@ Keep Dieter metadata under `DIETER_HOME`; never add project-local runtime metada
 Do not commit credentials, production transcript captures, private signing
 material, or generated build output.
 
-## Keep the contract coherent
+## Keep release compatibility coherent
 
 Native operations, protobuf RPCs, core server implementation, Connect adapter,
 CLI, help, documentation, and local/direct-TLS/relay tests belong in the same
-change. Run `just proto` for schema edits. Use one application contract from
-`api/contract-version`; do not add old-version branches or development-store
-migrations. See [API documentation](api/proto/README.md).
+change. Run `just proto` for schema edits. Use the one canonical release version
+and the gateway's reviewed client/daemon floors; do not add old-version branches
+or development-store migrations. See [release compatibility](docs/api-contract.md)
+and [API documentation](api/proto/README.md).
 
 ## Write a useful pull request
 

@@ -286,11 +286,11 @@ struct IOSModelTests {
         let first = heartbeat.next(inputActive: false)
         let second = heartbeat.next(inputActive: true)
 
-        #expect(first.protocolVersion == DieterContract.number)
+        #expect(first.protocolVersion == DieterRemoteDesktopProtocol.number)
         #expect(first.inputEpoch == epoch)
         #expect(first.sequence == 1)
         #expect(!first.inputActive)
-        #expect(second.protocolVersion == DieterContract.number)
+        #expect(second.protocolVersion == DieterRemoteDesktopProtocol.number)
         #expect(second.inputEpoch == epoch)
         #expect(second.sequence == 2)
         #expect(second.inputActive)
@@ -322,17 +322,16 @@ struct IOSModelTests {
         #expect(IOSRemoteDesktopFrameRate.capped(30, hostMaximum: 24) == 24)
     }
 
-    @Test func machineCompatibilityRequiresCurrentApplicationContract() {
-        #expect(DieterContract.version == String(DieterContract.number))
-        #expect(!IOSMachinePolicy.isCompatible(machine(id: "unknown", api: "")))
-        #expect(!IOSMachinePolicy.isCompatible(machine(id: "incompatible", api: String(DieterContract.number + 1))))
-        #expect(IOSMachinePolicy.isCompatible(machine(id: "current", api: DieterContract.version)))
+    @Test func machineCompatibilityUsesTheGatewayDecision() {
+        #expect(!IOSMachinePolicy.isCompatible(machine(id: "unknown", compatibility: .unknown)))
+        #expect(!IOSMachinePolicy.isCompatible(machine(id: "incompatible", compatibility: .updateRequired)))
+        #expect(IOSMachinePolicy.isCompatible(machine(id: "current", compatibility: .compatible)))
     }
 
     @Test func utilityMachineSelectionSkipsIncompatibleAndOfflineMachines() {
-        let incompatible = machine(id: "incompatible", api: String(DieterContract.number + 1))
-        let offline = machine(id: "offline", api: DieterContract.version, online: false)
-        let current = machine(id: "current", api: DieterContract.version)
+        let incompatible = machine(id: "incompatible", compatibility: .updateRequired)
+        let offline = machine(id: "offline", compatibility: .compatible, online: false)
+        let current = machine(id: "current", compatibility: .compatible)
         #expect(
             IOSMachinePolicy.preferred(in: [incompatible, offline, current], preferredID: "incompatible")?.daemonID
                 == "current")
@@ -501,8 +500,11 @@ struct IOSModelTests {
         #expect(transcript.conversation?.queue.isEmpty == true)
     }
 
-    private func machine(id: String, api: String, online: Bool = true) -> DieterEndpoint {
-        .init(name: id, host: "example.com", port: 443, secure: true, daemonID: id, online: online, apiVersion: api)
+    private func machine(id: String, compatibility: DieterCompatibility, online: Bool = true) -> DieterEndpoint {
+        .init(
+            name: id, host: "example.com", port: 443, secure: true, daemonID: id, online: online,
+            releaseVersion: "0.4.309", compatibility: compatibility,
+            minimumReleaseVersion: compatibility == .compatible ? "0.4.300" : "0.4.309")
     }
 
     private func message(_ number: Int, text: String = "message") -> Dieter_V1_UiMessage {

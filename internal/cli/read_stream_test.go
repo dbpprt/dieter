@@ -10,7 +10,7 @@ import (
 	"time"
 
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
-	"github.com/dbpprt/dieter/internal/protocol"
+	"github.com/dbpprt/dieter/internal/remotedesktop"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
@@ -48,7 +48,7 @@ func TestReadStreamsResumeOnlyDeliveredCheckpoints(t *testing.T) {
 		{"WatchExecution", &dieterv1.WatchExecutionRequest{ExecutionId: "exec"}, &dieterv1.WatchExecutionRequest{ExecutionId: "exec", AfterSequence: 7}, []proto.Message{&dieterv1.ExecutionEvent{Sequence: 7, Data: []byte("data")}, &dieterv1.ExecutionEvent{Sequence: 99, Heartbeat: true}}},
 		{"WatchExecution", &dieterv1.WatchExecutionRequest{ExecutionId: "exec", AfterSequence: 100}, &dieterv1.WatchExecutionRequest{ExecutionId: "exec", AfterSequence: 7}, []proto.Message{&dieterv1.ExecutionEvent{Sequence: 7, Reset_: true}}},
 		{"WatchGitOperation", &dieterv1.WatchGitOperationRequest{OperationId: "op"}, &dieterv1.WatchGitOperationRequest{OperationId: "op", AfterSequence: 7}, []proto.Message{&dieterv1.GitOperationFrame{Logs: []*dieterv1.GitOperationLogEntry{{Sequence: 6}, {Sequence: 7}}}}},
-		{"WatchSync", &dieterv1.SyncRequest{ProtocolVersion: protocol.Number}, &dieterv1.SyncRequest{ProtocolVersion: protocol.Number, After: &dieterv1.SyncCursor{Sequence: 7}}, []proto.Message{
+		{"WatchSync", &dieterv1.SyncRequest{}, &dieterv1.SyncRequest{After: &dieterv1.SyncCursor{Sequence: 7}}, []proto.Message{
 			&dieterv1.SyncFrame{Cursor: &dieterv1.SyncCursor{Sequence: 7}},
 			&dieterv1.SyncFrame{Cursor: &dieterv1.SyncCursor{Sequence: 8}, ProjectionPending: true},
 			&dieterv1.SyncFrame{Cursor: &dieterv1.SyncCursor{Sequence: 9}, Heartbeat: true},
@@ -158,7 +158,7 @@ func TestRecoveryNeverReplaysMutationsOrScreenAdmission(t *testing.T) {
 	if calls.Load() != 1 {
 		t.Fatalf("mutation dispatched %d times", calls.Load())
 	}
-	stream, err := client.StartRemoteDesktop(ctx, &dieterv1.StartRemoteDesktopRequest{InputProtocolVersion: protocol.Number})
+	stream, err := client.StartRemoteDesktop(ctx, &dieterv1.StartRemoteDesktopRequest{InputProtocolVersion: remotedesktop.InputProtocolVersion})
 	if err == nil {
 		_, _ = stream.Recv()
 	}

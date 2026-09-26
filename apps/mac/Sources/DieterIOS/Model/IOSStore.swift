@@ -251,6 +251,10 @@
                 let control = try DieterRPC(endpoint: origin, accessToken: token)
                 gateway = control
                 gatewayTask = ConnectionManager.run(control)
+                let clientCompatibility = try await control.compatibility()
+                guard clientCompatibility.status == .compatible else {
+                    throw IOSStoreError.incompatible(clientCompatibility.minimumReleaseVersion)
+                }
                 let directory = try await control.daemons()
                 guard owns(attempt) else { return }
                 updateMachines(makeMachines(directory, origin: origin), preferredUtilityID: previousUtilityID)
@@ -280,7 +284,7 @@
                 // selection has restored its owner transport. Publishing the
                 // connected phase first lets foregrounded views submit into a
                 // readable snapshot while conversationPlane is still nil.
-                phase = .connected(version: IOSMachinePolicy.apiVersion)
+                phase = .connected(version: DieterRelease.current)
                 startDirectoryRefresh(attempt: attempt)
                 // Switching the root view retires the sign-in controls. Do it
                 // only after the initial workspace is readable so their task
@@ -318,7 +322,7 @@
                     await selectCard(id: previousCardID)
                 }
                 guard owns(attempt) else { return }
-                phase = .connected(version: IOSMachinePolicy.apiVersion)
+                phase = .connected(version: DieterRelease.current)
             } catch {
                 guard owns(attempt) else { return }
                 connectionFailed(error, attempt: attempt)
@@ -379,7 +383,9 @@
             to machine: DieterEndpoint, refreshDirectToken: Bool = false
         ) async throws -> DataPlaneConnection {
             guard let gateway, let accessToken else { throw IOSAuthenticationError.invalidResponse }
-            guard IOSMachinePolicy.isCompatible(machine) else { throw IOSStoreError.incompatible(machine.apiVersion) }
+            guard IOSMachinePolicy.isCompatible(machine) else {
+                throw IOSStoreError.incompatible(machine.minimumReleaseVersion)
+            }
             var candidateScope = DirectCandidateScope.nonLoopback
             #if DEBUG
                 if ProcessInfo.processInfo.environment["DIETER_IOS_TEST_GATEWAY"] != nil { candidateScope = .all }
@@ -389,9 +395,7 @@
                 directCandidateScope: candidateScope, refreshDirectToken: refreshDirectToken)
             do {
                 let health = try await plane.rpc.health(timeout: .seconds(5))
-                guard health.version == IOSMachinePolicy.apiVersion else {
-                    throw IOSStoreError.incompatible(health.version)
-                }
+                guard health.status == "ok" else { throw IOSStoreError.workspaceUnavailable }
             } catch {
                 plane.shutdown()
                 throw error
@@ -469,7 +473,7 @@
 
         private func updateMachines(_ values: [DieterEndpoint], preferredUtilityID: String?) {
             let previousSupported = Set(supportedMachines.compactMap(\.daemonID))
-            // Only the current application contract enters workspace or utility state.
+            // Only daemons accepted by the gateway release policy enter workspace or utility state.
             machines = values.filter(IOSMachinePolicy.isCompatible)
             let currentSupported = Set(supportedMachines.compactMap(\.daemonID))
             if !previousSupported.subtracting(currentSupported).isEmpty {
@@ -1192,7 +1196,9 @@
                     name: $0.name.isEmpty ? $0.id : $0.name, host: origin.host, port: origin.port,
                     secure: origin.secure, daemonID: $0.id,
                     online: MachinePresenceText.online(serverOnline: $0.online, lastSeenAt: $0.lastSeenAt),
-                    lastSeenAt: $0.lastSeenAt, version: $0.version, apiVersion: $0.apiVersion)
+                    lastSeenAt: $0.lastSeenAt, releaseVersion: $0.releaseVersion,
+                    compatibility: IOSMachinePolicy.compatibility($0.compatibility),
+                    minimumReleaseVersion: $0.minimumReleaseVersion)
             }.sorted { left, right in
                 if left.online != right.online { return left.online }
                 return left.name.localizedStandardCompare(right.name) == .orderedAscending
@@ -1208,7 +1214,7 @@
             case .streamEnded: "The connection ended. Reconnecting…"
             case .workspaceUnavailable: "Couldn’t load your workspace from an online machine. Reconnecting…"
             case .incompatible(let version):
-                "This machine uses application contract \(version). Update its Dieter daemon to contract \(IOSMachinePolicy.apiVersion)."
+                "Update required · minimum Dieter release \(version.isEmpty ? "unknown" : version)."
             }
         }
     }

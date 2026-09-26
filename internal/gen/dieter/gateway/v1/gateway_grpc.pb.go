@@ -20,6 +20,7 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
+	GatewayService_GetCompatibility_FullMethodName                 = "/dieter.gateway.v1.GatewayService/GetCompatibility"
 	GatewayService_GetAccount_FullMethodName                       = "/dieter.gateway.v1.GatewayService/GetAccount"
 	GatewayService_ListDaemons_FullMethodName                      = "/dieter.gateway.v1.GatewayService/ListDaemons"
 	GatewayService_WatchDaemons_FullMethodName                     = "/dieter.gateway.v1.GatewayService/WatchDaemons"
@@ -49,6 +50,9 @@ const (
 // service. The gateway may cache normalized, credential-free provider quota
 // snapshots for the authenticated account.
 type GatewayServiceClient interface {
+	// GetCompatibility is the stable, unauthenticated bootstrap used before
+	// sign-in. It contains no account or machine data.
+	GetCompatibility(ctx context.Context, in *CompatibilityRequest, opts ...grpc.CallOption) (*CompatibilityResponse, error)
 	GetAccount(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*Account, error)
 	ListDaemons(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*ListDaemonsResponse, error)
 	WatchDaemons(ctx context.Context, in *WatchDaemonsRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[DaemonPresenceUpdate], error)
@@ -82,6 +86,16 @@ type gatewayServiceClient struct {
 
 func NewGatewayServiceClient(cc grpc.ClientConnInterface) GatewayServiceClient {
 	return &gatewayServiceClient{cc}
+}
+
+func (c *gatewayServiceClient) GetCompatibility(ctx context.Context, in *CompatibilityRequest, opts ...grpc.CallOption) (*CompatibilityResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CompatibilityResponse)
+	err := c.cc.Invoke(ctx, GatewayService_GetCompatibility_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (c *gatewayServiceClient) GetAccount(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*Account, error) {
@@ -291,6 +305,9 @@ func (c *gatewayServiceClient) ConsumeProviderQuotaReset(ctx context.Context, in
 // service. The gateway may cache normalized, credential-free provider quota
 // snapshots for the authenticated account.
 type GatewayServiceServer interface {
+	// GetCompatibility is the stable, unauthenticated bootstrap used before
+	// sign-in. It contains no account or machine data.
+	GetCompatibility(context.Context, *CompatibilityRequest) (*CompatibilityResponse, error)
 	GetAccount(context.Context, *emptypb.Empty) (*Account, error)
 	ListDaemons(context.Context, *emptypb.Empty) (*ListDaemonsResponse, error)
 	WatchDaemons(*WatchDaemonsRequest, grpc.ServerStreamingServer[DaemonPresenceUpdate]) error
@@ -326,6 +343,9 @@ type GatewayServiceServer interface {
 // pointer dereference when methods are called.
 type UnimplementedGatewayServiceServer struct{}
 
+func (UnimplementedGatewayServiceServer) GetCompatibility(context.Context, *CompatibilityRequest) (*CompatibilityResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetCompatibility not implemented")
+}
 func (UnimplementedGatewayServiceServer) GetAccount(context.Context, *emptypb.Empty) (*Account, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetAccount not implemented")
 }
@@ -399,6 +419,24 @@ func RegisterGatewayServiceServer(s grpc.ServiceRegistrar, srv GatewayServiceSer
 		t.testEmbeddedByValue()
 	}
 	s.RegisterService(&GatewayService_ServiceDesc, srv)
+}
+
+func _GatewayService_GetCompatibility_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CompatibilityRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(GatewayServiceServer).GetCompatibility(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: GatewayService_GetCompatibility_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(GatewayServiceServer).GetCompatibility(ctx, req.(*CompatibilityRequest))
+	}
+	return interceptor(ctx, in, info, handler)
 }
 
 func _GatewayService_GetAccount_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
@@ -718,6 +756,10 @@ var GatewayService_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "dieter.gateway.v1.GatewayService",
 	HandlerType: (*GatewayServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "GetCompatibility",
+			Handler:    _GatewayService_GetCompatibility_Handler,
+		},
 		{
 			MethodName: "GetAccount",
 			Handler:    _GatewayService_GetAccount_Handler,

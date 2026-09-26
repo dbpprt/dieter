@@ -1677,7 +1677,7 @@ private struct OnboardingMachineRow: View {
     private var detail: String {
         if !machine.online { return MachinePresenceText.lastSeen(machine.lastSeenAt) }
         if let incompatibility = machine.incompatibilityDescription { return incompatibility }
-        return machine.version.isEmpty ? "Online" : "Online · Dieter \(machine.version)"
+        return machine.releaseVersion.isEmpty ? "Online" : "Online · Dieter \(machine.releaseVersion)"
     }
 
     var body: some View {
@@ -1689,7 +1689,7 @@ private struct OnboardingMachineRow: View {
             }
             Spacer()
             Text(
-                machine.apiCompatibility == .incompatible
+                machine.compatibilityState == .incompatible
                     ? "Update daemon" : (machine.online ? "Included automatically" : "Offline")
             )
             .font(.caption2).foregroundStyle(storeColor)
@@ -1699,7 +1699,7 @@ private struct OnboardingMachineRow: View {
     }
 
     private var storeColor: Color {
-        machine.apiCompatibility == .incompatible
+        machine.compatibilityState == .incompatible
             ? DieterTheme.coral : (machine.online ? DieterTheme.shell : DieterTheme.tertiary)
     }
 }

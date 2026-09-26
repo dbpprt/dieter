@@ -23,7 +23,8 @@ Actions:
   run --kind KIND [target]  Start a serialized durable Git operation
   cancel OPERATION          Request cancellation of an operation
 
-Project targets support stage, unstage, discard_changes, commit, and validate.
+Project targets support stage, unstage, discard_changes, commit, update,
+validate, and push.
 Worktree cards additionally support update, continue_conflict, abort_conflict,
 validate, merge_local, push, cleanup, discard, adopt, create_pr, refresh_pr,
 and merge_pr. Commit uses the staged index; pass --param stage_all=true only

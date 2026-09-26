@@ -27,7 +27,7 @@ func TestHealthReportsGatewayBuildIdentity(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	auth.health(recorder, httptest.NewRequest(http.MethodGet, "/healthz", nil))
 	body := recorder.Body.String()
-	if recorder.Code != http.StatusOK || !strings.Contains(body, `"service":"dieter-gateway"`) || !strings.Contains(body, `"apiVersion":"`+GatewayAPIVersion+`"`) || !strings.Contains(body, `"version":`) {
+	if recorder.Code != http.StatusOK || !strings.Contains(body, `"service":"dieter-gateway"`) || !strings.Contains(body, `"minimumClientVersion":`) || !strings.Contains(body, `"minimumDaemonVersion":`) || !strings.Contains(body, `"version":`) {
 		t.Fatalf("status=%d body=%q", recorder.Code, body)
 	}
 }

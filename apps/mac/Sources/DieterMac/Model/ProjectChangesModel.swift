@@ -43,7 +43,7 @@ final class ProjectChangesModel {
         pendingKind != nil || needsReconciliation || GitOperationStatus.active(operation?.status ?? "")
             || !(changes?.currentOperationID.isEmpty ?? true)
     }
-    var mutationsDisabled: Bool { client == nil || changes == nil || busy || changes?.volatile == true }
+    var mutationsDisabled: Bool { client == nil || changes == nil || busy }
 
     func bind(projectID: String, client: any ProjectChangesRPC) {
         guard self.projectID != projectID || self.client !== client else { return }
@@ -265,6 +265,9 @@ final class ProjectChangesModel {
         case "unstage": "Changes unstaged"
         case "commit": "Staged changes committed"
         case "discard_changes": "Changes discarded · recovery copy saved"
+        case "update": "Branch updated"
+        case "validate": "Validation passed"
+        case "push": "Branch pushed"
         default: "Operation completed"
         }
     }

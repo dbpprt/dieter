@@ -33,7 +33,7 @@ func TestStartLinuxUpdateWorkerPreservesPATHAndDurableOutput(t *testing.T) {
 	if err := os.Mkdir(root, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := startLinuxUpdateWorker(root); err != nil {
+	if err := startLinuxUpdateWorker(root, "0.4.12"); err != nil {
 		t.Fatal(err)
 	}
 	raw, err := os.ReadFile(trace)
@@ -46,6 +46,8 @@ func TestStartLinuxUpdateWorkerPreservesPATHAndDurableOutput(t *testing.T) {
 		"--setenv=PATH=" + pathValue,
 		"--property=StandardOutput=append:" + logPath,
 		"--property=StandardError=append:" + logPath,
+		"--minimum-version",
+		"0.4.12",
 	} {
 		if !containsString(arguments, expected) {
 			t.Errorf("systemd-run arguments missing %q: %q", expected, arguments)

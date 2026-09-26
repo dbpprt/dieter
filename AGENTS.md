@@ -7,9 +7,11 @@ Android clients. Every card is one durable local AI SDK Harness conversation.
 
 ## Invariants
 
-- Support one application contract from `api/contract-version` across gateway,
-  daemon, CLI, native clients, sync, and screen input. Reject mismatches; do not
-  add historical API branches or development-store migration paths.
+- Ship one canonical SemVer release across gateway, daemon/CLI, and native
+  clients. The gateway publishes minimum client and daemon releases; reject
+  callers below those floors and do not add historical API branches. Keep only
+  genuine subsystem revisions such as remote-desktop framing and persisted
+  projection formats.
 - Store all Dieter data centrally under `DIETER_HOME` (default `~/.dieter`). Never
   write Dieter metadata into project repositories.
 - Every logical project has a Dieter-generated shared identity and may have

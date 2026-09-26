@@ -150,7 +150,8 @@ package final class DieterRPC: Sendable {
         } else {
             bearer = nil
         }
-        let interceptors: [any ClientInterceptor] = bearer.map { [$0] } ?? []
+        var interceptors: [any ClientInterceptor] = [ReleaseVersionInterceptor()]
+        if let bearer { interceptors.append(bearer) }
         let core = GRPCClient(transport: transport, interceptors: interceptors)
         self.core = core
         self.service = Service(wrapping: core)
@@ -231,16 +232,20 @@ package final class DieterRPC: Sendable {
     }
 
     package func daemons() async throws -> Dieter_Gateway_V1_ListDaemonsResponse {
-        let response = try await gatewayService.listDaemons(
+        try await gatewayService.listDaemons(
             request: .init(message: Google_Protobuf_Empty()),
             options: Self.boundedUnaryCallOptions()
         )
-        guard response.gatewayInformation.apiVersion == DieterContract.version else {
-            throw RPCError(
-                code: .failedPrecondition,
-                message: "Update the Dieter gateway and clients together; application contract mismatch.")
-        }
-        return response
+    }
+
+    package func compatibility() async throws -> Dieter_Gateway_V1_CompatibilityResponse {
+        var request = Dieter_Gateway_V1_CompatibilityRequest()
+        request.releaseVersion = DieterRelease.current
+        request.component = .client
+        return try await gatewayService.getCompatibility(
+            request: .init(message: request),
+            options: Self.boundedUnaryCallOptions()
+        )
     }
 
     package func providerQuotas() async throws -> Dieter_Gateway_V1_ListProviderQuotasResponse {
@@ -1141,6 +1146,17 @@ private struct BearerInterceptor: ClientInterceptor {
         var request = request
         request.metadata.addString("Bearer \(source.token)", forKey: "authorization")
         if let daemonID { request.metadata.addString(daemonID, forKey: "x-dieter-daemon-id") }
+        return try await next(request, context)
+    }
+}
+
+private struct ReleaseVersionInterceptor: ClientInterceptor {
+    func intercept<Input: Sendable, Output: Sendable>(
+        request: StreamingClientRequest<Input>, context: ClientContext,
+        next: (StreamingClientRequest<Input>, ClientContext) async throws -> StreamingClientResponse<Output>
+    ) async throws -> StreamingClientResponse<Output> {
+        var request = request
+        request.metadata.addString(DieterRelease.current, forKey: "x-dieter-client-version")
         return try await next(request, context)
     }
 }

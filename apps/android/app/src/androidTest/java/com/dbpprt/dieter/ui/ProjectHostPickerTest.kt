@@ -8,7 +8,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import com.dbpprt.dieter.connection.EndpointConnection
 import com.dbpprt.dieter.connection.EndpointPhase
-import com.dbpprt.dieter.data.DIETER_API_VERSION
+import com.dbpprt.dieter.gateway.v1.CompatibilityStatus
 import com.dbpprt.dieter.ui.theme.DieterTheme
 import org.junit.Assert.assertEquals
 import org.junit.Rule
@@ -29,7 +29,7 @@ class ProjectReplicaPickerTest {
                 phase = EndpointPhase.CONNECTED,
                 online = true,
                 daemonId = "daemon-a",
-                apiVersion = DIETER_API_VERSION,
+                compatibility = CompatibilityStatus.COMPATIBILITY_STATUS_COMPATIBLE,
             ),
             EndpointConnection(
                 id = "machine-b",
@@ -37,7 +37,7 @@ class ProjectReplicaPickerTest {
                 address = "https://gateway.test",
                 online = true,
                 daemonId = "daemon-b",
-                apiVersion = DIETER_API_VERSION,
+                compatibility = CompatibilityStatus.COMPATIBILITY_STATUS_COMPATIBLE,
             ),
             EndpointConnection(
                 id = "machine-old",
@@ -45,7 +45,8 @@ class ProjectReplicaPickerTest {
                 address = "https://gateway.test",
                 online = true,
                 daemonId = "daemon-old",
-                apiVersion = "unsupported",
+                compatibility = CompatibilityStatus.COMPATIBILITY_STATUS_UPDATE_REQUIRED,
+                minimumReleaseVersion = "99.0.0",
             ),
         )
 

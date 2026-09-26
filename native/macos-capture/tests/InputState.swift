@@ -6,27 +6,38 @@ import Foundation
         try testDisplayModeLeases()
         let damageBounds = CGRect(x: 0, y: 0, width: 100, height: 100)
         precondition(captureChangedFraction(rects: [], bounds: damageBounds) == 0)
-        precondition(captureChangedFraction(rects: [CGRect(x: 200, y: 0, width: 50, height: 50)], bounds: damageBounds) == nil,
+        precondition(
+            captureChangedFraction(rects: [CGRect(x: 200, y: 0, width: 50, height: 50)], bounds: damageBounds) == nil,
             "Out-of-space damage cannot suppress a frame")
-        precondition(captureChangedFraction(rects: [CGRect(x: 0, y: 0, width: 50, height: 50)], bounds: damageBounds) == 0.25)
-        precondition(captureChangedFraction(rects: [], bounds: CGRect(x: 0, y: 0, width: CGFloat.infinity, height: 100)) == nil)
+        precondition(
+            captureChangedFraction(rects: [CGRect(x: 0, y: 0, width: 50, height: 50)], bounds: damageBounds) == 0.25)
+        precondition(
+            captureChangedFraction(rects: [], bounds: CGRect(x: 0, y: 0, width: CGFloat.infinity, height: 100)) == nil)
         var recovery = CaptureRecoverySchedule()
-        precondition(recovery.request(now: 1_000_000_000, windowMS: 50, referenceAvailable: true, pending: false) == true)
+        precondition(
+            recovery.request(now: 1_000_000_000, windowMS: 50, referenceAvailable: true, pending: false) == true)
         precondition(recovery.request(now: 1_010_000_000, windowMS: 50, referenceAvailable: true, pending: true) == nil)
-        precondition(recovery.request(now: 1_050_000_000, windowMS: 50, referenceAvailable: true, pending: true) == false)
-        precondition(recovery.request(now: 1_100_000_000, windowMS: 50, referenceAvailable: false, pending: false) == nil,
+        precondition(
+            recovery.request(now: 1_050_000_000, windowMS: 50, referenceAvailable: true, pending: true) == false)
+        precondition(
+            recovery.request(now: 1_100_000_000, windowMS: 50, referenceAvailable: false, pending: false) == nil,
             "Repeated loss must not produce an IDR storm")
-        precondition(recovery.request(now: 1_250_000_000, windowMS: 50, referenceAvailable: false, pending: false) == false)
-        precondition(recovery.request(now: 1_300_000_000, windowMS: 50, referenceAvailable: true, pending: false) == true)
+        precondition(
+            recovery.request(now: 1_250_000_000, windowMS: 50, referenceAvailable: false, pending: false) == false)
+        precondition(
+            recovery.request(now: 1_300_000_000, windowMS: 50, referenceAvailable: true, pending: false) == true)
         precondition(recovery.referenceDeadline == 1_450_000_000, "Fallback must preserve the IDR throttle")
         precondition(!recovery.expireReference(now: 1_449_999_999))
         precondition(recovery.expireReference(now: 1_450_000_000))
         precondition(!recovery.expireReference(now: 1_450_000_001), "Only one fallback per episode")
-        precondition(recovery.request(now: 1_450_000_000, windowMS: 50, referenceAvailable: false, pending: true) == false)
-        precondition(recovery.request(now: 1_700_000_000, windowMS: 250, referenceAvailable: true, pending: false) == true)
+        precondition(
+            recovery.request(now: 1_450_000_000, windowMS: 50, referenceAvailable: false, pending: true) == false)
+        precondition(
+            recovery.request(now: 1_700_000_000, windowMS: 250, referenceAvailable: true, pending: false) == true)
         precondition(recovery.producedReference(now: 1_800_000_000))
         precondition(recovery.referenceDeadline == 2_050_000_000)
-        precondition(!recovery.producedReference(now: 1_900_000_000), "One output cannot repeatedly extend ACK admission")
+        precondition(
+            !recovery.producedReference(now: 1_900_000_000), "One output cannot repeatedly extend ACK admission")
         precondition(recovery.referenceDeadline == 2_050_000_000)
         precondition(!recovery.expireReference(now: 2_049_999_999))
         recovery.acknowledgeRecovery()
@@ -39,10 +50,14 @@ import Foundation
         }
         precondition(burstAttempts == 2 && fallback.contains("burst=1.0s") && fallback.contains("burstFallback=-1"))
         burstAttempts = 0
-        let rejected = EncoderBurstEnvelope(milliseconds: 250).apply(kbps: 12000) { _ in burstAttempts += 1; return -1 }
+        let rejected = EncoderBurstEnvelope(milliseconds: 250).apply(kbps: 12000) { _ in
+            burstAttempts += 1; return -1
+        }
         precondition(burstAttempts == 2 && rejected.contains("burst=unsupported"))
         burstAttempts = 0
-        _ = EncoderBurstEnvelope(milliseconds: nil).apply(kbps: 12000) { _ in burstAttempts += 1; return -1 }
+        _ = EncoderBurstEnvelope(milliseconds: nil).apply(kbps: 12000) { _ in
+            burstAttempts += 1; return -1
+        }
         precondition(burstAttempts == 1, "Do not retry an already rejected ordinary envelope")
         var credits = CaptureFrameCredits()
         precondition(credits.produced(id: 1, generation: 1, bytes: 1000))
@@ -55,10 +70,14 @@ import Foundation
         precondition(!credits.consumed(id: 1, generation: 2))
         precondition(credits.consumed(id: 1, generation: 1))
         precondition(!credits.consumed(id: 1, generation: 1))
-        precondition(!credits.canEncode(generation: 1, now: 1, frameAge: 0, encodeEstimate: 1), "Consumption cannot invent another send-start token")
+        precondition(
+            !credits.canEncode(generation: 1, now: 1, frameAge: 0, encodeEstimate: 1),
+            "Consumption cannot invent another send-start token")
         credits.sending(id: 2, generation: 1, now: 1, budgetMS: 30)
         credits.sending(id: 2, generation: 1, now: 40_000_000, budgetMS: 30)
-        precondition(!credits.canEncode(generation: 1, now: 40_000_000, frameAge: 0, encodeEstimate: 1), "Duplicate send-start extended admission")
+        precondition(
+            !credits.canEncode(generation: 1, now: 40_000_000, frameAge: 0, encodeEstimate: 1),
+            "Duplicate send-start extended admission")
         precondition(!credits.canEncode(generation: 2, now: 2, frameAge: 0, encodeEstimate: 1))
         let liveness = NativeDaemonLiveness(now: 0)
         precondition(liveness.timeoutDiagnostic(now: 3_000_000_000) == nil)
@@ -133,7 +152,7 @@ import Foundation
         let stoppedRunner = CaptureRunner(options: CaptureOptions())
         await stoppedRunner.stopAndWait()
         let finalCredit = NativeCommand(
-            version: CaptureContract.version, id: 1, kind: "frame_consumed", input: nil,
+            version: CaptureInputProtocol.version, id: 1, kind: "frame_consumed", input: nil,
             configuration: nil, frameId: 1, streamId: nil, profile: nil, codec: nil)
         stoppedRunner.enqueue(finalCredit) { error in
             precondition(error == "native capture rendition stopped", "Final frame credit lost shutdown cause")

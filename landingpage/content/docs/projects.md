@@ -36,6 +36,10 @@ that same checkout concurrently, so use separate worktrees when their edits need
 isolation. There is at most one active turn per conversation; there are no
 global, provider, or board conversation caps. Machine resource limits still apply.
 
+Changes reads one lightweight Git status snapshot and loads a patch only after
+you select a file. In project-directory mode the list is intentionally shared:
+it shows all edits in that checkout, including edits from other active agents.
+
 ## Cards and standalone chats
 
 A **card** belongs to a board and moves through Todo, Running, Review, and Done.
@@ -76,8 +80,14 @@ explicit, `pull_request` uses a PR, and `push_base` publishes validated local
 integration to the configured base branch. A lane transition alone is not proof
 that code has been committed, merged, or pushed.
 
+Project creation does not choose a publishing policy for you. The initial board
+starts in `manual`; configure publishing later when the repository and review
+flow are known. Changes offers explicit Update, Validate, and Push actions.
+
 ```sh
 dieter board git BOARD_ID --base-remote origin --remote-publish pull_request
+dieter workspace run --project PROJECT_ID --kind validate --wait
+dieter workspace run --project PROJECT_ID --kind push --wait
 dieter card move CARD_ID --lane review
 ```
 

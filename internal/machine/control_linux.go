@@ -61,7 +61,7 @@ func parseBusctlString(output []byte) (string, error) {
 	return value, nil
 }
 
-func executeOperation(ctx context.Context, root string, operation Operation) error {
+func executeOperation(ctx context.Context, root string, operation Operation, minimumVersion string) error {
 	if operation == OperationUpdate {
 		capability := linuxUpdateCapability(root)
 		if !capability.Supported || !capability.Authorized {
@@ -70,7 +70,7 @@ func executeOperation(ctx context.Context, root string, operation Operation) err
 			}
 			return ErrOperationUnsupported
 		}
-		return startLinuxUpdateWorker(root)
+		return startLinuxUpdateWorker(root, minimumVersion)
 	}
 	path, err := exec.LookPath("busctl")
 	if err != nil {

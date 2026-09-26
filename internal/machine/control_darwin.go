@@ -25,7 +25,7 @@ func operationCapabilities(ctx context.Context, root string) []OperationCapabili
 	}
 }
 
-func executeOperation(ctx context.Context, root string, operation Operation) error {
+func executeOperation(ctx context.Context, root string, operation Operation, minimumVersion string) error {
 	if operation == OperationUpdate {
 		capability := homebrewUpdateCapability(ctx, root)
 		if !capability.Supported || !capability.Authorized {
@@ -35,7 +35,7 @@ func executeOperation(ctx context.Context, root string, operation Operation) err
 			return ErrOperationUnsupported
 		}
 		brew, _ := homebrewExecutable()
-		return startHomebrewUpdateWorker(root, brew)
+		return startHomebrewUpdateWorker(root, brew, minimumVersion)
 	}
 	verb := "restart"
 	if operation == OperationShutdown {
@@ -110,7 +110,7 @@ func homebrewExecutable() (string, error) {
 	return filepath.Abs(path)
 }
 
-func startHomebrewUpdateWorker(root, brew string) error {
+func startHomebrewUpdateWorker(root, brew, minimumVersion string) error {
 	executable, err := os.Executable()
 	if err != nil {
 		return err
@@ -125,7 +125,11 @@ func startHomebrewUpdateWorker(root, brew string) error {
 		return err
 	}
 	defer logFile.Close()
-	command := exec.Command(executable, "__daemon-update-worker", "--brew", brew, "--root", root)
+	arguments := []string{"__daemon-update-worker", "--brew", brew, "--root", root}
+	if minimumVersion != "" {
+		arguments = append(arguments, "--minimum-version", minimumVersion)
+	}
+	command := exec.Command(executable, arguments...)
 	command.Stdin = nil
 	command.Stdout = logFile
 	command.Stderr = logFile

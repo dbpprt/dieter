@@ -125,7 +125,7 @@
             results["render"] =
                 capture(window: window, to: output.appendingPathComponent("machine-information.png"))
                 ? "passed" : "failed: could not capture machine popup"
-            if machine.version == "isolated-e2e" {
+            if machine.releaseVersion == "isolated-e2e" {
                 await store.performMachineOperation(.updateDaemon, confirmation: "UPDATE")
                 results["daemon-update"] =
                     store.machineOperationMessage?.contains("reconnect") == true
@@ -138,7 +138,7 @@
                     ? "passed" : "failed: isolated restart was not accepted"
                 store.machineOperationMessage = nil
             } else {
-                results["power-control"] = "failed: refused non-isolated target \(machine.version)"
+                results["power-control"] = "failed: refused non-isolated target \(machine.releaseVersion)"
             }
             writeReport(results, to: output)
         }

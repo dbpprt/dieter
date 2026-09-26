@@ -14,7 +14,6 @@ import (
 	"github.com/dbpprt/dieter/internal/gateway"
 	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
-	"github.com/dbpprt/dieter/internal/server"
 	"github.com/dbpprt/dieter/internal/store"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -72,7 +71,7 @@ type expiringExecutionServer struct {
 }
 
 func (*expiringExecutionServer) Health(context.Context, *emptypb.Empty) (*dieterv1.HealthResponse, error) {
-	return &dieterv1.HealthResponse{Version: server.APIVersion}, nil
+	return &dieterv1.HealthResponse{Status: "ok", ReleaseVersion: "0.4.1-dev"}, nil
 }
 
 func (*expiringExecutionServer) GetExecution(context.Context, *dieterv1.ExecutionRef) (*dieterv1.Execution, error) {

@@ -96,7 +96,7 @@ turn join its queue; closing the app leaves the host working.
 
 Open **Tools → Machines** to inspect enrolled hosts and their availability.
 Clients check compatibility before connecting and reject a mismatched
-application contract. The fixture below also includes an intentionally
+release compatibility policy. The fixture below also includes an intentionally
 incompatible host.
 
 {{< screenshot src="android-machines.png" kind="phone" width="1080" height="2424" alt="Android Machines screen with an online compatible host and an intentionally incompatible test host" caption="Machine discovery makes availability and compatibility visible." >}}

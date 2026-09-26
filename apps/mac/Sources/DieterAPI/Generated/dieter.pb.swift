@@ -457,13 +457,24 @@ public nonisolated struct Dieter_V1_HealthResponse: Sendable {
 
   public var status: String = String()
 
-  public var version: String = String()
+  public var releaseVersion: String = String()
 
   public var storePath: String = String()
+
+  public var compatibilityPolicy: Dieter_Gateway_V1_CompatibilityPolicy {
+    get {_compatibilityPolicy ?? Dieter_Gateway_V1_CompatibilityPolicy()}
+    set {_compatibilityPolicy = newValue}
+  }
+  /// Returns true if `compatibilityPolicy` has been explicitly set.
+  public var hasCompatibilityPolicy: Bool {self._compatibilityPolicy != nil}
+  /// Clears the value of `compatibilityPolicy`. Subsequent reads from it will return its default value.
+  public mutating func clearCompatibilityPolicy() {self._compatibilityPolicy = nil}
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
+
+  fileprivate var _compatibilityPolicy: Dieter_Gateway_V1_CompatibilityPolicy? = nil
 }
 
 public nonisolated struct Dieter_V1_RuntimeStatus: Sendable {
@@ -660,8 +671,6 @@ public nonisolated struct Dieter_V1_BuildInformation: Sendable {
   // methods supported on all messages.
 
   public var releaseVersion: String = String()
-
-  public var apiVersion: String = String()
 
   public var sourceRevision: String = String()
 
@@ -1052,10 +1061,6 @@ public nonisolated struct Dieter_V1_SyncRequest: Sendable {
   /// the most recently active conversations up to this count, and conversation
   /// changes ride the delta frames instead of full snapshots.
   public var recentConversationLimit: Int32 = 0
-
-  /// Version 1 separates transport liveness from applied data, supports bounded
-  /// metadata-first frames, and resumes an exact retained projection identity.
-  public var protocolVersion: Int32 = 0
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -2898,8 +2903,6 @@ public nonisolated struct Dieter_V1_CreateProjectRequest: Sendable {
   public var baseBranch: String = String()
 
   public var validationCommands: [Dieter_V1_ValidationCommand] = []
-
-  public var remotePublishMode: String = String()
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -5764,7 +5767,7 @@ public nonisolated struct Dieter_V1_StartRemoteDesktopRequest: @unchecked Sendab
     set {_uniqueStorage()._embeddedCursor = newValue}
   }
 
-  /// Must match the current Dieter application contract; ownership is revocable.
+  /// Independent remote-desktop input revision; ownership is revocable.
   public var inputProtocolVersion: UInt32 {
     get {_storage._inputProtocolVersion}
     set {_uniqueStorage()._inputProtocolVersion = newValue}
@@ -8172,7 +8175,7 @@ nonisolated extension Dieter_V1_RemoteDesktopRenderMeasurement: SwiftProtobuf._P
 
 nonisolated extension Dieter_V1_HealthResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".HealthResponse"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}status\0\u{1}version\0\u{3}store_path\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}status\0\u{3}release_version\0\u{3}store_path\0\u{3}compatibility_policy\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -8181,30 +8184,39 @@ nonisolated extension Dieter_V1_HealthResponse: SwiftProtobuf.Message, SwiftProt
       // enabled. https://github.com/apple/swift-protobuf/issues/1034
       switch fieldNumber {
       case 1: try { try decoder.decodeSingularStringField(value: &self.status) }()
-      case 2: try { try decoder.decodeSingularStringField(value: &self.version) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.releaseVersion) }()
       case 3: try { try decoder.decodeSingularStringField(value: &self.storePath) }()
+      case 4: try { try decoder.decodeSingularMessageField(value: &self._compatibilityPolicy) }()
       default: break
       }
     }
   }
 
   public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    // The use of inline closures is to circumvent an issue where the compiler
+    // allocates stack space for every if/case branch local when no optimizations
+    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+    // https://github.com/apple/swift-protobuf/issues/1182
     if !self.status.isEmpty {
       try visitor.visitSingularStringField(value: self.status, fieldNumber: 1)
     }
-    if !self.version.isEmpty {
-      try visitor.visitSingularStringField(value: self.version, fieldNumber: 2)
+    if !self.releaseVersion.isEmpty {
+      try visitor.visitSingularStringField(value: self.releaseVersion, fieldNumber: 2)
     }
     if !self.storePath.isEmpty {
       try visitor.visitSingularStringField(value: self.storePath, fieldNumber: 3)
     }
+    try { if let v = self._compatibilityPolicy {
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 4)
+    } }()
     try unknownFields.traverse(visitor: &visitor)
   }
 
   public static func ==(lhs: Dieter_V1_HealthResponse, rhs: Dieter_V1_HealthResponse) -> Bool {
     if lhs.status != rhs.status {return false}
-    if lhs.version != rhs.version {return false}
+    if lhs.releaseVersion != rhs.releaseVersion {return false}
     if lhs.storePath != rhs.storePath {return false}
+    if lhs._compatibilityPolicy != rhs._compatibilityPolicy {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -8530,7 +8542,7 @@ nonisolated extension Dieter_V1_MachineInformation: SwiftProtobuf.Message, Swift
 
 nonisolated extension Dieter_V1_BuildInformation: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".BuildInformation"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}release_version\0\u{3}api_version\0\u{3}source_revision\0\u{3}built_at\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}release_version\0\u{4}\u{2}source_revision\0\u{3}built_at\0\u{b}api_version\0\u{c}\u{2}\u{1}")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -8539,7 +8551,6 @@ nonisolated extension Dieter_V1_BuildInformation: SwiftProtobuf.Message, SwiftPr
       // enabled. https://github.com/apple/swift-protobuf/issues/1034
       switch fieldNumber {
       case 1: try { try decoder.decodeSingularStringField(value: &self.releaseVersion) }()
-      case 2: try { try decoder.decodeSingularStringField(value: &self.apiVersion) }()
       case 3: try { try decoder.decodeSingularStringField(value: &self.sourceRevision) }()
       case 4: try { try decoder.decodeSingularStringField(value: &self.builtAt) }()
       default: break
@@ -8550,9 +8561,6 @@ nonisolated extension Dieter_V1_BuildInformation: SwiftProtobuf.Message, SwiftPr
   public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
     if !self.releaseVersion.isEmpty {
       try visitor.visitSingularStringField(value: self.releaseVersion, fieldNumber: 1)
-    }
-    if !self.apiVersion.isEmpty {
-      try visitor.visitSingularStringField(value: self.apiVersion, fieldNumber: 2)
     }
     if !self.sourceRevision.isEmpty {
       try visitor.visitSingularStringField(value: self.sourceRevision, fieldNumber: 3)
@@ -8565,7 +8573,6 @@ nonisolated extension Dieter_V1_BuildInformation: SwiftProtobuf.Message, SwiftPr
 
   public static func ==(lhs: Dieter_V1_BuildInformation, rhs: Dieter_V1_BuildInformation) -> Bool {
     if lhs.releaseVersion != rhs.releaseVersion {return false}
-    if lhs.apiVersion != rhs.apiVersion {return false}
     if lhs.sourceRevision != rhs.sourceRevision {return false}
     if lhs.builtAt != rhs.builtAt {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
@@ -9200,7 +9207,7 @@ nonisolated extension Dieter_V1_SyncCursor: SwiftProtobuf.Message, SwiftProtobuf
 
 nonisolated extension Dieter_V1_SyncRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".SyncRequest"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}after\0\u{3}conversation_limit\0\u{3}heartbeat_ms\0\u{3}recent_conversation_limit\0\u{3}protocol_version\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}after\0\u{3}conversation_limit\0\u{3}heartbeat_ms\0\u{3}recent_conversation_limit\0\u{b}protocol_version\0\u{c}\u{5}\u{1}")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -9212,7 +9219,6 @@ nonisolated extension Dieter_V1_SyncRequest: SwiftProtobuf.Message, SwiftProtobu
       case 2: try { try decoder.decodeSingularInt32Field(value: &self.conversationLimit) }()
       case 3: try { try decoder.decodeSingularInt32Field(value: &self.heartbeatMs) }()
       case 4: try { try decoder.decodeSingularInt32Field(value: &self.recentConversationLimit) }()
-      case 5: try { try decoder.decodeSingularInt32Field(value: &self.protocolVersion) }()
       default: break
       }
     }
@@ -9235,9 +9241,6 @@ nonisolated extension Dieter_V1_SyncRequest: SwiftProtobuf.Message, SwiftProtobu
     if self.recentConversationLimit != 0 {
       try visitor.visitSingularInt32Field(value: self.recentConversationLimit, fieldNumber: 4)
     }
-    if self.protocolVersion != 0 {
-      try visitor.visitSingularInt32Field(value: self.protocolVersion, fieldNumber: 5)
-    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -9246,7 +9249,6 @@ nonisolated extension Dieter_V1_SyncRequest: SwiftProtobuf.Message, SwiftProtobu
     if lhs.conversationLimit != rhs.conversationLimit {return false}
     if lhs.heartbeatMs != rhs.heartbeatMs {return false}
     if lhs.recentConversationLimit != rhs.recentConversationLimit {return false}
-    if lhs.protocolVersion != rhs.protocolVersion {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -12936,7 +12938,7 @@ nonisolated extension Dieter_V1_DirectoryListing: SwiftProtobuf.Message, SwiftPr
 
 nonisolated extension Dieter_V1_CreateProjectRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".CreateProjectRequest"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}mode\0\u{1}path\0\u{1}name\0\u{1}summary\0\u{1}prompt\0\u{3}board_name\0\u{1}workflow\0\u{4}\u{2}base_remote\0\u{3}base_branch\0\u{3}validation_commands\0\u{3}remote_publish_mode\0\u{4}\u{4}operation_id\0\u{b}default_workspace_mode\0\u{c}\u{8}\u{1}")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}mode\0\u{1}path\0\u{1}name\0\u{1}summary\0\u{1}prompt\0\u{3}board_name\0\u{1}workflow\0\u{4}\u{2}base_remote\0\u{3}base_branch\0\u{3}validation_commands\0\u{4}\u{5}operation_id\0\u{b}default_workspace_mode\0\u{b}remote_publish_mode\0\u{c}\u{8}\u{1}\u{c}\u{c}\u{1}")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -12954,7 +12956,6 @@ nonisolated extension Dieter_V1_CreateProjectRequest: SwiftProtobuf.Message, Swi
       case 9: try { try decoder.decodeSingularStringField(value: &self.baseRemote) }()
       case 10: try { try decoder.decodeSingularStringField(value: &self.baseBranch) }()
       case 11: try { try decoder.decodeRepeatedMessageField(value: &self.validationCommands) }()
-      case 12: try { try decoder.decodeSingularStringField(value: &self.remotePublishMode) }()
       case 16: try { try decoder.decodeSingularStringField(value: &self.operationID) }()
       default: break
       }
@@ -12992,9 +12993,6 @@ nonisolated extension Dieter_V1_CreateProjectRequest: SwiftProtobuf.Message, Swi
     if !self.validationCommands.isEmpty {
       try visitor.visitRepeatedMessageField(value: self.validationCommands, fieldNumber: 11)
     }
-    if !self.remotePublishMode.isEmpty {
-      try visitor.visitSingularStringField(value: self.remotePublishMode, fieldNumber: 12)
-    }
     if !self.operationID.isEmpty {
       try visitor.visitSingularStringField(value: self.operationID, fieldNumber: 16)
     }
@@ -13013,7 +13011,6 @@ nonisolated extension Dieter_V1_CreateProjectRequest: SwiftProtobuf.Message, Swi
     if lhs.baseRemote != rhs.baseRemote {return false}
     if lhs.baseBranch != rhs.baseBranch {return false}
     if lhs.validationCommands != rhs.validationCommands {return false}
-    if lhs.remotePublishMode != rhs.remotePublishMode {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

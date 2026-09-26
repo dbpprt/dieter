@@ -579,10 +579,10 @@ func (s *Service) SuspendActiveTurns(ctx context.Context) error {
 }
 
 type ProjectInput struct {
-	OperationID, InitialBoardName, InitialWorkflow, InitialRemotePublishMode string
-	Path, Name, Summary, Prompt, BaseRemote, BaseBranch                      string
-	ValidationCommands                                                       []model.ValidationCommand
-	Create                                                                   bool
+	OperationID, InitialBoardName, InitialWorkflow      string
+	Path, Name, Summary, Prompt, BaseRemote, BaseBranch string
+	ValidationCommands                                  []model.ValidationCommand
+	Create                                              bool
 }
 
 func (s *Service) RegisterProject(ctx context.Context, input ProjectInput) (model.Project, error) {
@@ -609,7 +609,7 @@ func (s *Service) RegisterProject(ctx context.Context, input ProjectInput) (mode
 		return model.Project{}, errors.New("project path must be an existing Git working tree")
 	}
 	return s.Store.CreateProject(store.CreateProjectInput{
-		OperationID: input.OperationID, InitialBoardName: input.InitialBoardName, InitialWorkflow: input.InitialWorkflow, InitialRemotePublishMode: input.InitialRemotePublishMode,
+		OperationID: input.OperationID, InitialBoardName: input.InitialBoardName, InitialWorkflow: input.InitialWorkflow,
 		Name: input.Name, Path: abs, Summary: input.Summary, Prompt: input.Prompt,
 		BaseRemote: input.BaseRemote, BaseBranch: input.BaseBranch, ValidationCommands: input.ValidationCommands,
 	})

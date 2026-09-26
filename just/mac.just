@@ -42,7 +42,11 @@ status:
 
 # Build and package Dieter.app with the canonical SwiftPM cache.
 build configuration="debug":
-    CONFIGURATION="{{ configuration }}" DIETER_SWIFT_SCRATCH_PATH="$PWD/{{ app_scratch }}" {{ app_root }}/scripts/build.sh
+    #!/usr/bin/env bash
+    set -euo pipefail
+    release_version="${DIETER_RELEASE_VERSION:-$(just release pseudo-version)}"
+    CONFIGURATION="{{ configuration }}" DIETER_RELEASE_VERSION="$release_version" \
+        DIETER_SWIFT_SCRATCH_PATH="$PWD/{{ app_scratch }}" {{ app_root }}/scripts/build.sh
 
 # Run Mac unit tests with an optional Swift Testing filter.
 test filter="":
@@ -161,6 +165,7 @@ set-release-version:
     test -f "$plist"
     /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $RELEASE_VERSION" "$plist"
     /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD_NUMBER" "$plist"
+    /usr/libexec/PlistBuddy -c "Set :DieterReleaseVersion $RELEASE_VERSION" "$plist"
     codesign --force --sign - "{{ app_bundle }}/Contents/Frameworks/WebRTC.framework"
     codesign --force --deep --sign - "{{ app_bundle }}"
     just mac verify
@@ -227,12 +232,14 @@ package-release:
     trap 'rm -rf "$extracted_bundle"' EXIT
     ditto -x -k "$archive" "$extracted_bundle"
     {{ app_root }}/scripts/verify-bundle.sh "$extracted_bundle/Dieter.app"
+    release_version="$(/usr/libexec/PlistBuddy -c 'Print :DieterReleaseVersion' "$extracted_bundle/Dieter.app/Contents/Info.plist")"
+    printf '%s\n' "$release_version" >"$archive.version"
     echo "$archive"
 
 # Remove only the packaged macOS release archive.
 [confirm]
 clean-release:
-    rm -f dist/Dieter-macOS-arm64.zip
+    rm -f dist/Dieter-macOS-arm64.zip dist/Dieter-macOS-arm64.zip.version
 
 # Check that the checked-in Swift protobuf clients match their inputs.
 proto-check:

@@ -187,15 +187,17 @@ class HostTests(unittest.TestCase):
 
     def test_readiness_binds_to_operation_and_requires_authentication_and_payload(self):
         self.admit()
-        self.host.transition("first", "checking", sourceRevision="a"*40, applicationContract=2)
+        policy = {"minimumClientVersion": "0.4.20", "minimumDaemonVersion": "0.4.19"}
+        self.host.transition("first", "checking", sourceRevision="a"*40, compatibilityPolicy=policy)
         report = self.root / "report.json"
         evidence = {"requestSHA256": self.host.status("first")["requestSHA256"], "sourceRevision": "a"*40,
                     "gatewayAuthenticated": True, "daemonAuthenticated": True, "unauthenticatedRejected": True,
-                    "turnPayloadTransports": ["udp", "tcp", "tls"], "applicationContract": 2}
+                    "turnPayloadTransports": ["udp", "tcp", "tls"], "compatibilityPolicy": policy}
         for field, bad in (("sourceRevision", "b"*40), ("gatewayAuthenticated", False),
                            ("daemonAuthenticated", False), ("turnPayloadTransports", ["udp", "tcp"]),
-                           ("unauthenticatedRejected", False), ("applicationContract", 1),
-                           ("applicationContract", None), ("applicationContract", True)):
+                           ("unauthenticatedRejected", False),
+                           ("compatibilityPolicy", {"minimumClientVersion": "0.4.18", "minimumDaemonVersion": "0.4.19"}),
+                           ("compatibilityPolicy", None)):
             atomic(report, canonical(dict(evidence, **{field: bad})))
             with self.assertRaises(ValueError):
                 self.host.accept("first", report)
@@ -203,19 +205,22 @@ class HostTests(unittest.TestCase):
         atomic(report, canonical(evidence))
         self.assertTrue(self.host.accept("first", report)["readinessReceived"])
 
-    def test_health_uses_selected_release_contract_including_rollback(self):
-        for contract in (1, 2, 17):
-            manifest = {'sourceRevision': 'a'*40, 'applicationContract': contract}
-            health = {'service': 'dieter-gateway', 'status': 'ok', 'apiVersion': str(contract), 'revision': 'a'*40}
+    def test_health_uses_selected_release_and_policy_including_rollback(self):
+        for version in ("0.4.20", "0.5.0-dev.4+abc"):
+            policy = {'minimumClientVersion': '0.4.18', 'minimumDaemonVersion': '0.4.19'}
+            manifest = {'sourceRevision': 'a'*40, 'releaseVersion': version, 'compatibilityPolicy': policy}
+            health = {'service': 'dieter-gateway', 'status': 'ok', 'version': version, 'revision': 'a'*40, **policy}
             validate_gateway_health(health, manifest)
-            with self.assertRaisesRegex(ValueError, 'contract differs'):
-                validate_gateway_health(dict(health, apiVersion=str(contract + 1)), manifest)
+            with self.assertRaisesRegex(ValueError, 'release differs'):
+                validate_gateway_health(dict(health, version='0.6.0'), manifest)
+            with self.assertRaisesRegex(ValueError, 'compatibility policy differs'):
+                validate_gateway_health(dict(health, minimumClientVersion='0.4.17'), manifest)
             with self.assertRaisesRegex(ValueError, 'source revision'):
                 validate_gateway_health(dict(health, revision='b'*40), manifest)
             with self.assertRaisesRegex(ValueError, 'not healthy'):
                 validate_gateway_health(dict(health, status='failed'), manifest)
             with self.assertRaisesRegex(ValueError, 'missing or invalid'):
-                validate_gateway_health(dict(health, apiVersion=''), manifest)
+                validate_gateway_health(dict(health, version=''), manifest)
 
 
 if __name__ == "__main__":

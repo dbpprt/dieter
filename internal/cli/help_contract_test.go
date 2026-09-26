@@ -103,6 +103,35 @@ func TestEveryDaemonCLICommandHasOfflineHelp(t *testing.T) {
 	}
 }
 
+func TestProjectCreationHelpKeepsPublishingInBoardSettings(t *testing.T) {
+	for _, command := range [][]string{{"project", "create"}, {"project", "open"}} {
+		t.Run(strings.Join(command, "/"), func(t *testing.T) {
+			client := New(store.New(t.TempDir()))
+			var output bytes.Buffer
+			client.Out = &output
+			if err := client.Run(append(command, "--help")); err != nil {
+				t.Fatal(err)
+			}
+			if strings.Contains(output.String(), "--remote-publish") {
+				t.Fatalf("project creation still advertises publishing: %q", output.String())
+			}
+		})
+	}
+	for _, command := range [][]string{{"board", "create"}, {"board", "git"}} {
+		t.Run(strings.Join(command, "/"), func(t *testing.T) {
+			client := New(store.New(t.TempDir()))
+			var output bytes.Buffer
+			client.Out = &output
+			if err := client.Run(append(command, "--help")); err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(output.String(), "--remote-publish") {
+				t.Fatalf("board settings lost publishing: %q", output.String())
+			}
+		})
+	}
+}
+
 func TestHostnameHelpExplainsPortsAndRouting(t *testing.T) {
 	for _, command := range []struct {
 		args  []string

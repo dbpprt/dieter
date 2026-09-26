@@ -47,6 +47,17 @@ func initTestRepository(t *testing.T, name string) string {
 	return path
 }
 
+func runCLITestGit(t *testing.T, directory string, args ...string) string {
+	t.Helper()
+	command := exec.Command("git", args...)
+	command.Dir = directory
+	output, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %v: %s: %v", args, output, err)
+	}
+	return strings.TrimSpace(string(output))
+}
+
 func daemonCLIForTest(t *testing.T) (*CLI, *bytes.Buffer, *store.Store) {
 	t.Helper()
 	root := t.TempDir()
@@ -84,16 +95,23 @@ func TestDaemonCLIControlsLocalDaemonEndToEnd(t *testing.T) {
 	t.Setenv("DIETER_ENABLE_MOCK_HARNESS", "1")
 	client, output, data := daemonCLIForTest(t)
 	repository := initTestRepository(t, "first")
-	createdJSON := runDaemonCLI(t, client, output, "project", "open", "--name", "CLI fixture", "--format", "json", repository)
+	remote := filepath.Join(t.TempDir(), "remote.git")
+	runCLITestGit(t, "", "init", "--bare", remote)
+	runCLITestGit(t, repository, "remote", "add", "origin", remote)
+	createdJSON := runDaemonCLI(
+		t, client, output, "project", "open", "--name", "CLI fixture", "--base-remote", "origin",
+		"--base-branch", "main", "--format", "json", repository,
+	)
 	var created struct {
 		Project struct {
 			ID string `json:"id"`
 		} `json:"project"`
 		Board struct {
-			ID string `json:"id"`
+			ID                string `json:"id"`
+			RemotePublishMode string `json:"remotePublishMode"`
 		} `json:"board"`
 	}
-	if err := json.Unmarshal([]byte(createdJSON), &created); err != nil || created.Project.ID == "" || created.Board.ID == "" {
+	if err := json.Unmarshal([]byte(createdJSON), &created); err != nil || created.Project.ID == "" || created.Board.ID == "" || created.Board.RemotePublishMode != "manual" {
 		t.Fatalf("created project JSON=%q err=%v", createdJSON, err)
 	}
 
@@ -180,6 +198,12 @@ func TestDaemonCLIControlsLocalDaemonEndToEnd(t *testing.T) {
 		t.Fatalf("staged project changes JSON=%q err=%v", changesJSON, err)
 	}
 	runDaemonCLI(t, client, output, "workspace", "run", "--project", created.Project.ID, "--kind", "commit", "--revision", projectChanges.Revision, "--param", "subject=initial project commit", "--param", "validate=false", "--wait")
+	runDaemonCLI(t, client, output, "workspace", "run", "--project", created.Project.ID, "--kind", "push", "--wait")
+	runDaemonCLI(t, client, output, "workspace", "run", "--project", created.Project.ID, "--kind", "update", "--param", "fetch=true", "--param", "validate=false", "--wait")
+	runDaemonCLI(t, client, output, "workspace", "run", "--project", created.Project.ID, "--kind", "validate", "--wait")
+	if local, pushed := runCLITestGit(t, repository, "rev-parse", "HEAD"), runCLITestGit(t, "", "--git-dir="+remote, "rev-parse", "refs/heads/main"); local != pushed {
+		t.Fatalf("CLI project push did not publish HEAD: local=%s remote=%s", local, pushed)
+	}
 
 	runDaemonCLI(t, client, output, "file", "create", "--project", created.Project.ID, "--content", "one\n", "notes.txt")
 	if got := runDaemonCLI(t, client, output, "file", "read", "--project", created.Project.ID, "notes.txt"); got != "one\n" {
@@ -467,7 +491,7 @@ func testDaemonRoutes(t *testing.T, withRTC bool) {
 			_ = directRoute.listener.Close()
 		}
 	}()
-	tunnel := &dieterdaemon.GatewayClient{ControlWebRTC: withRTC, Identity: identity, LocalTarget: localListener.Addr().String(), Version: "test", APIVersion: server.APIVersion, Routes: []*gatewayv1.DirectCandidate{directRoute.candidate}, Log: logger}
+	tunnel := &dieterdaemon.GatewayClient{ControlWebRTC: withRTC, Identity: identity, LocalTarget: localListener.Addr().String(), Version: "0.4.1-dev", Routes: []*gatewayv1.DirectCandidate{directRoute.candidate}, Log: logger}
 	go func() { _ = tunnel.Run(ctx) }()
 	deadline := time.Now().Add(5 * time.Second)
 	for !gatewayServer.Hub.Online(identity.ID) && time.Now().Before(deadline) {

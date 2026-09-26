@@ -58,7 +58,7 @@ just --yes ios testflight 0.1.0 1.1 --upload
 
 1. Enter your HTTPS Dieter gateway in the sign-in screen.
 2. Sign in with GitHub using the native authentication session, or supply an existing gateway session token in the advanced section.
-3. The app loads one global workspace from every enrolled, online machine using the current application contract. Incompatible and unversioned daemons are excluded.
+3. The app loads one global workspace from every enrolled, online machine accepted by the gateway's release policy. Daemons requiring an update or reporting an invalid version are excluded.
 4. Open a project and board, create a task on one of its checkouts, or continue a conversation. The app routes each operation to that checkout or conversation's machine without changing the workspace.
 5. Open **Machine state** to choose a machine and inspect live CPU, memory, storage, network, GPU, daemon build, and Dieter process telemetry.
 

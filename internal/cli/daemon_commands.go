@@ -13,7 +13,6 @@ import (
 
 	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
-	"github.com/dbpprt/dieter/internal/protocol"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -135,7 +134,7 @@ func (c *CLI) daemonBackedStatus(args []string) error {
 		return err
 	}
 	if *format == "table" {
-		fmt.Fprintf(c.Out, "STATUS\t%s\nVERSION\t%s\nROUTE\t%s\nPROJECTS\t%d\nCARDS\t%d\nCHATS\t%d\n", health.GetStatus(), health.GetVersion(), c.transport.route, len(state.GetProjects()), len(state.GetCards()), len(state.GetChats()))
+		fmt.Fprintf(c.Out, "STATUS\t%s\nVERSION\t%s\nROUTE\t%s\nPROJECTS\t%d\nCARDS\t%d\nCHATS\t%d\n", health.GetStatus(), health.GetReleaseVersion(), c.transport.route, len(state.GetProjects()), len(state.GetCards()), len(state.GetChats()))
 		return nil
 	}
 	return jsonOut(c.Out, map[string]any{
@@ -268,7 +267,7 @@ func (c *CLI) machineCommand(args []string) error {
 		}
 		writer := tabwriter.NewWriter(c.Out, 0, 3, 2, ' ', 0)
 		if *format == "table" {
-			fmt.Fprintln(writer, "ID\tSTATUS\tVERSION\tAPI\tNAME")
+			fmt.Fprintln(writer, "ID\tSTATUS\tRELEASE\tCOMPATIBILITY\tNAME")
 		}
 		for _, item := range response.GetDaemons() {
 			switch *format {
@@ -283,7 +282,7 @@ func (c *CLI) machineCommand(args []string) error {
 				if item.GetOnline() {
 					state = "online"
 				}
-				fmt.Fprintf(writer, "%s\t%s\t%s\t%s\t%s\n", item.GetId(), state, item.GetVersion(), item.GetApiVersion(), item.GetName())
+				fmt.Fprintf(writer, "%s\t%s\t%s\t%s\t%s\n", item.GetId(), state, item.GetReleaseVersion(), item.GetCompatibility().String(), item.GetName())
 			}
 		}
 		return writer.Flush()
@@ -508,7 +507,7 @@ projection (projectionPending=false), never from a heartbeat.
 			}
 		}
 	case "sync":
-		stream, err := client.WatchSync(rpcCtx, &dieterv1.SyncRequest{HeartbeatMs: 5_000, ProtocolVersion: protocol.Number})
+		stream, err := client.WatchSync(rpcCtx, &dieterv1.SyncRequest{HeartbeatMs: 5_000})
 		if err != nil {
 			return err
 		}

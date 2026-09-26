@@ -18,7 +18,6 @@ import (
 	"time"
 
 	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
-	"github.com/dbpprt/dieter/internal/protocol"
 	"github.com/dbpprt/dieter/internal/rpcraw"
 	"github.com/dbpprt/dieter/internal/trust"
 	"google.golang.org/grpc"
@@ -273,7 +272,7 @@ func (g *stalledControlGateway) Connect(stream grpc.BidiStreamingServer[gatewayv
 	if _, err := stream.Recv(); err != nil {
 		return err
 	}
-	if err := stream.Send(&gatewayv1.DaemonLinkFrame{Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_HELLO_ACK, ApiVersion: protocol.Version, DaemonId: hello.GetDaemonId(), Generation: g.generation}); err != nil {
+	if err := stream.Send(&gatewayv1.DaemonLinkFrame{Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_HELLO_ACK, ReleaseVersion: "0.4.1-dev", Compatibility: gatewayv1.CompatibilityStatus_COMPATIBILITY_STATUS_COMPATIBLE, DaemonId: hello.GetDaemonId(), Generation: g.generation}); err != nil {
 		return err
 	}
 	// Stop reading after handshake. The daemon's output flow-control window

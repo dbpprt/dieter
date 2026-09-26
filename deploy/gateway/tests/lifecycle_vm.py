@@ -102,7 +102,7 @@ def main():
         (host.etc / 'acme-webroot').mkdir()
         baseline = host.install / 'releases/baseline'
         shutil.copytree(bundle, baseline)
-        rendered = render(config, private, manifest['image'], 'baseline', FIXTURE / 'rendered')
+        rendered = render(config, private, manifest['image'], 'baseline', FIXTURE / 'rendered', manifest['compatibilityPolicy'])
         shutil.copytree(rendered / 'public', baseline / 'public')
         shutil.copytree(rendered / 'private', host.etc / 'releases/baseline')
         turn = host.etc / 'releases/baseline/turnserver.conf'

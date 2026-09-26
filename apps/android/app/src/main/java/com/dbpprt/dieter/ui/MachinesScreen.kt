@@ -69,7 +69,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.dbpprt.dieter.connection.EndpointConnection
-import com.dbpprt.dieter.data.DIETER_API_VERSION
+import com.dbpprt.dieter.connection.isCompatible
 import com.dbpprt.dieter.ui.theme.DieterAmber
 import com.dbpprt.dieter.ui.theme.DieterCoral
 import com.dbpprt.dieter.ui.theme.DieterDivider
@@ -585,7 +585,7 @@ private fun MachineDetail(
                         color = DieterMuted,
                         fontSize = 12.sp,
                     )
-                    if (machine.online && machine.apiVersion == DIETER_API_VERSION) {
+                    if (machine.online && machine.isCompatible) {
                         Button(onClick = onRefresh) { Text("Try again") }
                     }
                 }
@@ -930,7 +930,7 @@ private fun MachineSoftwarePanel(machine: EndpointConnection, information: Machi
                 Text(
                     listOf(
                         build.releaseVersion.ifBlank { "Unknown" },
-                        (build.apiVersion.ifBlank { machine.apiVersion }).takeIf(String::isNotBlank)?.let { "API $it" },
+                        machine.releaseVersion.takeIf(String::isNotBlank),
                         MachineInformationPresentation.shortRevision(build.sourceRevision),
                     ).filterNotNull().joinToString(" · "),
                     color = DieterMuted,

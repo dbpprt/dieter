@@ -16,7 +16,7 @@ on:
         type: string
         required: true
       release_version:
-        description: Immutable release version (for example main-0123456789ab)
+        description: Canonical semantic release version (for example 0.4.309)
         type: string
         required: true
 
@@ -70,6 +70,7 @@ jobs:
           name: dieter-gateway-deployment
           path: |
             dist/dieter-gateway-deploy.tar.gz
+            dist/dieter-gateway-deploy.tar.gz.version
             dist/gateway-manifest.json
             dist/gateway-manifest.sigstore.json
             dist/gateway-release.lock.json

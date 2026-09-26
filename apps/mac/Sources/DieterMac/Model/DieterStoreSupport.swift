@@ -7,7 +7,6 @@ import Observation
 import UniformTypeIdentifiers
 import UserNotifications
 
-let dieterExpectedAPIVersion = DieterContract.version
 // Match iOS: conversation reads are large enough that a scrollback boundary
 // reveals a useful stretch of context instead of one short turn.
 let conversationPageSize: Int32 = 60
@@ -148,7 +147,7 @@ enum DieterStoreConnectionError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .incompatible(let found):
-            "Dieter API \(found.isEmpty ? "unknown" : found) is incompatible; macOS requires \(dieterExpectedAPIVersion)."
+            "Dieter update required · minimum release \(found.isEmpty ? "unknown" : found)."
         case .syncEnded:
             "Live updates stopped unexpectedly."
         case .syncTimedOut:
@@ -172,20 +171,21 @@ enum ConnectionAttemptOwnership {
     }
 }
 
-enum MachineAPICompatibility: Equatable, Sendable {
+enum MachineCompatibility: Equatable, Sendable {
     case compatible
     case incompatible
 }
 
 extension DieterEndpoint {
-    var apiCompatibility: MachineAPICompatibility {
+    var compatibilityState: MachineCompatibility {
         guard daemonID != nil else { return .compatible }
-        return apiVersion == dieterExpectedAPIVersion ? .compatible : .incompatible
+        return compatibility == .compatible ? .compatible : .incompatible
     }
 
     var incompatibilityDescription: String? {
-        guard apiCompatibility == .incompatible else { return nil }
-        return "Update required · API \(apiVersion) (requires \(dieterExpectedAPIVersion))"
+        guard compatibilityState == .incompatible else { return nil }
+        return
+            "Update required · Dieter \(releaseVersion.isEmpty ? "unknown" : releaseVersion) (requires \(minimumReleaseVersion.isEmpty ? "a newer release" : minimumReleaseVersion))"
     }
 }
 
@@ -407,7 +407,7 @@ enum MachineRoutingPolicy {
         if explicitMachineSelection, let preferredDaemonID {
             return online.filter { $0.daemonID == preferredDaemonID }
         }
-        let eligible = online.filter { $0.apiCompatibility != .incompatible }
+        let eligible = online.filter { $0.compatibilityState != .incompatible }
         let sorted = eligible.sorted {
             let names = $0.name.localizedCaseInsensitiveCompare($1.name)
             if names != .orderedSame { return names == .orderedAscending }

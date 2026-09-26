@@ -159,7 +159,7 @@ class RealDieterIntegrationTest {
 
             val health = repository.health()
             assertEquals("ok", health.status)
-            assertEquals(DIETER_API_VERSION, health.version)
+            assertEquals(com.dbpprt.dieter.BuildConfig.VERSION_NAME, health.releaseVersion)
 
             val runtime = repository.runtimeStatus()
             assertTrue(runtime.ready)

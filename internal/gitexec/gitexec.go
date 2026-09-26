@@ -17,9 +17,10 @@ const maxOutputBytes = 8 << 20
 var credentialURL = regexp.MustCompile(`(?i)(https?://)[^/@\s]+@`)
 
 type Result struct {
-	Output   []byte
-	ExitCode int
-	Duration time.Duration
+	Output    []byte
+	ExitCode  int
+	Duration  time.Duration
+	Truncated bool
 }
 
 type Runner interface {
@@ -53,7 +54,7 @@ func (ExecRunner) Run(ctx context.Context, directory string, args ...string) (Re
 	var output limitedBuffer
 	command.Stdout, command.Stderr = &output, &output
 	err := command.Run()
-	result := Result{Output: append([]byte(nil), output.Bytes()...), Duration: time.Since(started)}
+	result := Result{Output: append([]byte(nil), output.Bytes()...), Duration: time.Since(started), Truncated: output.truncated}
 	if err == nil {
 		return result, nil
 	}

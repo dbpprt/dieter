@@ -47,7 +47,7 @@ enum ProjectDestinationCatalog {
                 return ProjectDestination(
                     project: project, machineID: machine?.id ?? "unavailable:\(checkout.daemonID)",
                     machineName: machine?.name ?? checkout.daemonID, machineOnline: machine?.online ?? false,
-                    machineVersion: machine?.version ?? "", checkoutID: checkout.id)
+                    machineVersion: machine?.releaseVersion ?? "", checkoutID: checkout.id)
             }
         }
         let grouped = Dictionary(grouping: destinations, by: \ProjectDestination.machineID)

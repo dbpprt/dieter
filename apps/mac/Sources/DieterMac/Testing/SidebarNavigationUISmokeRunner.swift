@@ -432,7 +432,7 @@
                     port: 4242,
                     daemonID: "sidebar-smoke-zulu",
                     online: true,
-                    version: "smoke"
+                    releaseVersion: "smoke"
                 ),
                 DieterEndpoint(
                     name: "alpha",
@@ -440,7 +440,7 @@
                     port: 4243,
                     daemonID: "sidebar-smoke-alpha",
                     online: false,
-                    version: "smoke"
+                    releaseVersion: "smoke"
                 ),
                 DieterEndpoint(
                     name: "Beta",
@@ -448,7 +448,7 @@
                     port: 4244,
                     daemonID: "sidebar-smoke-beta",
                     online: true,
-                    version: "smoke"
+                    releaseVersion: "smoke"
                 ),
             ]
             let machine = machines[0]

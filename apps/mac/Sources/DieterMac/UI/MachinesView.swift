@@ -445,21 +445,19 @@ struct MachinePopover: View {
                 softwareRow(
                     name: "Dieter daemon",
                     version: information.daemonBuild.releaseVersion.isEmpty
-                        ? machine.version : information.daemonBuild.releaseVersion,
-                    apiVersion: information.daemonBuild.apiVersion.isEmpty
-                        ? machine.apiVersion : information.daemonBuild.apiVersion,
+                        ? machine.releaseVersion : information.daemonBuild.releaseVersion,
                     revision: information.daemonBuild.sourceRevision,
                     systemImage: "server.rack"
                 )
                 Divider().overlay(DieterTheme.border).padding(.leading, 38)
                 if let gateway = store.gatewayInformation[machine.credentialID] {
                     softwareRow(
-                        name: "Dieter gateway", version: gateway.releaseVersion, apiVersion: gateway.apiVersion,
+                        name: "Dieter gateway", version: gateway.releaseVersion,
                         revision: gateway.sourceRevision, systemImage: "network")
                 } else {
                     softwareRow(
                         name: "Dieter gateway", version: machine.daemonID == nil ? "Local connection" : "Unavailable",
-                        apiVersion: "", revision: "", systemImage: "network")
+                        revision: "", systemImage: "network")
                 }
             }
             .background(DieterTheme.surface.opacity(0.45), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
@@ -467,7 +465,7 @@ struct MachinePopover: View {
         }
     }
 
-    private func softwareRow(name: String, version: String, apiVersion: String, revision: String, systemImage: String)
+    private func softwareRow(name: String, version: String, revision: String, systemImage: String)
         -> some View
     {
         HStack(spacing: 11) {
@@ -476,7 +474,7 @@ struct MachinePopover: View {
             Spacer()
             let shownVersion = version.isEmpty ? "Unknown" : version
             Text(
-                [shownVersion, apiVersion.isEmpty ? nil : "API \(apiVersion)", shortRevision(revision)].compactMap {
+                [shownVersion, shortRevision(revision)].compactMap {
                     $0
                 }.joined(separator: "  ·  ")
             )

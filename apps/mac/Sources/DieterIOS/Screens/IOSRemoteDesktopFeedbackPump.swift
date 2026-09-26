@@ -8,7 +8,7 @@ struct IOSRemoteDesktopFeedbackHeartbeat {
     mutating func next(inputActive: Bool) -> Dieter_V1_RemoteDesktopReceiverFeedback {
         sequence &+= 1
         var value = Dieter_V1_RemoteDesktopReceiverFeedback()
-        value.protocolVersion = DieterContract.number
+        value.protocolVersion = DieterRemoteDesktopProtocol.number
         value.inputEpoch = inputEpoch
         value.sequence = sequence
         value.measurementSequence = 1

@@ -1,6 +1,10 @@
 package com.dbpprt.dieter.data
 
 import android.content.Context
+import com.dbpprt.dieter.gateway.v1.CompatibilityComponent
+import com.dbpprt.dieter.gateway.v1.CompatibilityRequest
+import com.dbpprt.dieter.gateway.v1.CompatibilityResponse
+import com.dbpprt.dieter.gateway.v1.CompatibilityStatus
 import com.dbpprt.dieter.gateway.v1.DaemonRef
 import com.dbpprt.dieter.gateway.v1.DaemonPresenceUpdate
 import com.dbpprt.dieter.gateway.v1.ExchangeDaemonTokenRequest
@@ -165,8 +169,9 @@ data class DieterEndpoint(
     val daemonId: String? = null,
     val online: Boolean = true,
     val lastSeenAt: String = "",
-    val version: String = "",
-    val apiVersion: String = "",
+    val releaseVersion: String = "",
+    val compatibility: CompatibilityStatus = CompatibilityStatus.COMPATIBILITY_STATUS_COMPATIBLE,
+    val minimumReleaseVersion: String = "",
     val remoteDesktopReady: Boolean = true,
     val remoteDesktopReason: String = "",
     val remoteDesktopPlatform: String = "",
@@ -182,6 +187,9 @@ data class DieterEndpoint(
             this
         }
 }
+
+val DieterEndpoint.isCompatible: Boolean
+    get() = compatibility == CompatibilityStatus.COMPATIBILITY_STATUS_COMPATIBLE
 
 val DIETER_ENDPOINTS = listOf(
     DieterEndpoint("gateway", "Dieter Gateway", "gateway.getdieter.com", 443, true),
@@ -241,6 +249,11 @@ interface DieterRepository {
     fun replaceEndpoints(endpoints: List<DieterEndpoint>)
     fun selectEndpoint(endpoint: DieterEndpoint)
     fun setAccessToken(endpoint: DieterEndpoint, token: String?)
+    suspend fun compatibility(): CompatibilityResponse = CompatibilityResponse.newBuilder()
+        .setStatus(CompatibilityStatus.COMPATIBILITY_STATUS_COMPATIBLE)
+        .setCurrentReleaseVersion(DIETER_RELEASE_VERSION)
+        .setMinimumReleaseVersion("0.0.0")
+        .build()
     suspend fun daemons(): ListDaemonsResponse
     suspend fun providerQuotas(): ListProviderQuotasResponse
     suspend fun refreshProviderQuotas(): RefreshProviderQuotasResponse
@@ -469,8 +482,9 @@ class GrpcDieterRepository(context: Context) : DieterRepository {
         requireNotNull(gatewayChannel)
     }
 
-    private fun metadata(token: String, daemonId: String? = null): Metadata = Metadata().apply {
-        put(Metadata.Key.of("authorization", Metadata.ASCII_STRING_MARSHALLER), "Bearer $token")
+    private fun metadata(token: String? = null, daemonId: String? = null): Metadata = Metadata().apply {
+        token?.let { put(Metadata.Key.of("authorization", Metadata.ASCII_STRING_MARSHALLER), "Bearer $it") }
+        put(Metadata.Key.of("x-dieter-client-version", Metadata.ASCII_STRING_MARSHALLER), DIETER_RELEASE_VERSION)
         daemonId?.let { put(Metadata.Key.of("x-dieter-daemon-id", Metadata.ASCII_STRING_MARSHALLER), it) }
     }
 
@@ -479,7 +493,7 @@ class GrpcDieterRepository(context: Context) : DieterRepository {
         // while the IO dispatcher is preparing this RPC.
         val (transport, endpoint, direct) = synchronized(lock) { Triple(channel(), selectedEndpoint, directAccessToken) }
         val stub = DieterServiceGrpcKt.DieterServiceCoroutineStub(transport)
-        val token = direct ?: credentials.get(endpoint.credentialId) ?: return stub
+        val token = direct ?: credentials.get(endpoint.credentialId)
         return stub.withInterceptors(MetadataUtils.newAttachHeadersInterceptor(metadata(token, if (direct == null) endpoint.daemonId else null)))
     }
 
@@ -489,19 +503,27 @@ class GrpcDieterRepository(context: Context) : DieterRepository {
     private suspend fun gatewayStreamingStub(): GatewayServiceGrpcKt.GatewayServiceCoroutineStub = withContext(Dispatchers.IO) {
         val (transport, endpoint) = synchronized(lock) { gatewayChannel() to selectedEndpoint }
         val stub = GatewayServiceGrpcKt.GatewayServiceCoroutineStub(transport)
-        val token = credentials.get(endpoint.credentialId) ?: return@withContext stub
+        val token = credentials.get(endpoint.credentialId)
         stub.withInterceptors(MetadataUtils.newAttachHeadersInterceptor(metadata(token)))
+    }
+
+    override suspend fun compatibility(): CompatibilityResponse = withContext(Dispatchers.IO) {
+        val stub = GatewayServiceGrpcKt.GatewayServiceCoroutineStub(gatewayChannel())
+            .withInterceptors(MetadataUtils.newAttachHeadersInterceptor(metadata()))
+            .withDeadlineAfter(15, TimeUnit.SECONDS)
+        stub.getCompatibility(
+            CompatibilityRequest.newBuilder()
+                .setReleaseVersion(DIETER_RELEASE_VERSION)
+                .setComponent(CompatibilityComponent.COMPATIBILITY_COMPONENT_CLIENT)
+                .build(),
+        )
     }
 
     private suspend fun credential(endpoint: DieterEndpoint): String? =
         withContext(Dispatchers.IO) { credentials.get(endpoint.credentialId) }
 
     override suspend fun daemons(): ListDaemonsResponse {
-        val response = gatewayStub().listDaemons(Empty.getDefaultInstance())
-        require(response.gatewayInformation.apiVersion == DIETER_API_VERSION) {
-            "Update the Dieter gateway and clients together; application contract mismatch."
-        }
-        return response
+        return gatewayStub().listDaemons(Empty.getDefaultInstance())
     }
 
     override suspend fun providerQuotas(): ListProviderQuotasResponse = gatewayStub().listProviderQuotas(
@@ -577,8 +599,8 @@ class GrpcDieterRepository(context: Context) : DieterRepository {
         val endpoint = endpoints.firstOrNull { it.id == endpointId }
             ?: error("The selected Dieter machine is no longer available")
         require(endpoint.online) { "${endpoint.label} is offline. Start Dieter on that machine to continue." }
-        require(endpoint.apiVersion == DIETER_API_VERSION) {
-            "Dieter API ${endpoint.apiVersion} is incompatible; Android requires $DIETER_API_VERSION."
+        require(endpoint.isCompatible) {
+            "Dieter daemon ${endpoint.releaseVersion.ifBlank { "unknown" }} requires ${endpoint.minimumReleaseVersion.ifBlank { "a newer release" }}."
         }
         val scoped = openScopedMachine(endpoint, deadlineSeconds)
         return try {
@@ -797,7 +819,9 @@ class GrpcDieterRepository(context: Context) : DieterRepository {
         channel: ManagedChannel,
         endpoint: DieterEndpoint,
     ): GatewayServiceGrpcKt.GatewayServiceCoroutineStub = withContext(Dispatchers.IO) {
-        var stub = GatewayServiceGrpcKt.GatewayServiceCoroutineStub(channel).withDeadlineAfter(15, TimeUnit.SECONDS)
+        var stub = GatewayServiceGrpcKt.GatewayServiceCoroutineStub(channel)
+            .withInterceptors(MetadataUtils.newAttachHeadersInterceptor(metadata()))
+            .withDeadlineAfter(15, TimeUnit.SECONDS)
         credentials.get(endpoint.credentialId)?.let { token ->
             stub = stub.withInterceptors(MetadataUtils.newAttachHeadersInterceptor(metadata(token)))
         }
@@ -960,7 +984,6 @@ class GrpcDieterRepository(context: Context) : DieterRepository {
             .setConversationLimit(conversationLimit.coerceIn(0, 100))
             .setRecentConversationLimit(recentConversationLimit.coerceIn(0, 100))
             .setHeartbeatMs(5_000)
-            .setProtocolVersion(DIETER_PROTOCOL_VERSION)
             .also { if (after != null) it.after = after }
             .build()
         streaming().watchSync(request).collect(::emit)

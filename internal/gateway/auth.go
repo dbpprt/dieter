@@ -23,7 +23,9 @@ import (
 	"time"
 
 	"github.com/dbpprt/dieter/internal/buildinfo"
+	"github.com/dbpprt/dieter/internal/compatibility"
 	"github.com/dbpprt/dieter/internal/linkauth"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -75,10 +77,14 @@ func (a *Auth) RegisterHTTP(mux *http.ServeMux) {
 }
 
 func (a *Auth) UnaryInterceptor(ctx context.Context, request any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
-	if info.FullMethod == "/dieter.gateway.v1.GatewayService/BeginDaemonEnrollment" ||
+	if info.FullMethod == "/dieter.gateway.v1.GatewayService/GetCompatibility" ||
+		info.FullMethod == "/dieter.gateway.v1.GatewayService/BeginDaemonEnrollment" ||
 		info.FullMethod == "/dieter.gateway.v1.GatewayService/CompleteDaemonEnrollment" ||
 		info.FullMethod == "/dieter.gateway.v1.GatewayService/UnenrollDaemon" {
 		return handler(ctx, request)
+	}
+	if err := a.requireCompatibleClient(ctx); err != nil {
+		return nil, err
 	}
 	principal, err := a.grpcPrincipal(ctx)
 	if err != nil {
@@ -90,6 +96,9 @@ func (a *Auth) UnaryInterceptor(ctx context.Context, request any, info *grpc.Una
 func (a *Auth) StreamInterceptor(service any, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
 	if info.FullMethod == "/dieter.gateway.v1.DaemonLinkService/Connect" {
 		return handler(service, stream)
+	}
+	if err := a.requireCompatibleClient(stream.Context()); err != nil {
+		return err
 	}
 	headers, _ := metadata.FromIncomingContext(stream.Context())
 	if len(headers.Get("authorization")) != 1 {
@@ -108,6 +117,48 @@ func (a *Auth) StreamInterceptor(service any, stream grpc.ServerStream, info *gr
 	case <-ctx.Done():
 		return context.Cause(ctx)
 	}
+}
+
+func (a *Auth) requireCompatibleClient(ctx context.Context) error {
+	values, _ := metadata.FromIncomingContext(ctx)
+	release := consistentMetadataValue(values.Get("x-dieter-client-version"))
+	policy, err := compatibilityPolicy(a.config)
+	if err != nil {
+		return status.Error(codes.Internal, "gateway compatibility policy is invalid")
+	}
+	state, current := compatibility.Evaluate(release, policy.MinimumClientVersion)
+	if state == compatibility.StatusCompatible {
+		return nil
+	}
+	if current == "" {
+		current = release
+	}
+	result := status.New(codes.FailedPrecondition, fmt.Sprintf("Dieter client update required by gateway: installed %q, minimum %s", current, policy.MinimumClientVersion))
+	result, detailErr := result.WithDetails(&errdetails.ErrorInfo{
+		Reason: "CLIENT_UPDATE_REQUIRED",
+		Domain: "dieter.gateway",
+		Metadata: map[string]string{
+			"currentVersion": current,
+			"minimumVersion": policy.MinimumClientVersion,
+			"gatewayVersion": policy.GatewayReleaseVersion,
+		},
+	})
+	if detailErr != nil {
+		return status.Error(codes.FailedPrecondition, "Dieter client update required")
+	}
+	return result.Err()
+}
+
+func consistentMetadataValue(values []string) string {
+	if len(values) == 0 || values[0] == "" {
+		return ""
+	}
+	for _, value := range values[1:] {
+		if value != values[0] {
+			return ""
+		}
+	}
+	return values[0]
 }
 
 // AuthenticateSession ties a streaming transport to its current session. Polling
@@ -242,11 +293,13 @@ func (a *Auth) grpcPrincipal(ctx context.Context) (Principal, error) {
 }
 
 func (a *Auth) health(w http.ResponseWriter, _ *http.Request) {
+	policy, _ := compatibilityPolicy(a.config)
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]string{
 		"status": "ok", "service": "dieter-gateway", "version": buildinfo.ReleaseVersion,
-		"apiVersion": GatewayAPIVersion, "revision": buildinfo.SourceRevision, "builtAt": buildinfo.BuiltAt,
+		"minimumClientVersion": policy.MinimumClientVersion, "minimumDaemonVersion": policy.MinimumDaemonVersion,
+		"policyRevision": policy.Revision, "revision": buildinfo.SourceRevision, "builtAt": buildinfo.BuiltAt,
 	})
 }
 

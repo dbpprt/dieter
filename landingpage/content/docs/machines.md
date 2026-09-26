@@ -61,9 +61,9 @@ TURN still relays traffic. Read the [architecture](/docs/architecture/) for the
 transport and ownership boundaries.
 
 `machine info` reports live CPU, memory, processes, and optional GPU/sensor data.
-An absent sensor is unknown, not a measurement of zero. Release version and
-application contract version are separate fields; clients require an exact
-contract match.
+An absent sensor is unknown, not a measurement of zero. Machine listings show
+the daemon release, compatibility decision, and minimum required release. An
+older but compatible release remains routable; Update Required does not.
 
 {{< screenshot src="macos-machines.png" width="1380" height="870" alt="Build Mac machine details showing live route, CPU, memory, and GPU values over a multi-machine board" caption="Inspect the host from the Mac sidebar. These are capture-time values from an isolated fixture, not performance claims." >}}
 

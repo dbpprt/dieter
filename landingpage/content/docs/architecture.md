@@ -1,7 +1,7 @@
 ---
 title: "Architecture"
 linkTitle: "Architecture"
-description: "Shared project metadata, machine-owned execution, and one application contract."
+description: "Shared project metadata, machine-owned execution, and release compatibility floors."
 group: "Reference"
 weight: 40
 slug: "architecture"
@@ -42,7 +42,7 @@ Clients prefer:
 2. **Data-only WebRTC**, using a direct ICE pair or TURN when supported.
 3. **Authenticated gateway relay** if earlier routes cannot connect.
 
-All carry the same `dieter.v1.DieterService` contract. WebRTC API transport is
+All carry the same `dieter.v1.DieterService` API. WebRTC API transport is
 independent of Screens and requests no capture permissions. It carries an
 end-to-end daemon TLS connection through a bounded reliable data channel.
 TURN is a relay, even when used as the WebRTC route.
@@ -88,10 +88,12 @@ and end on daemon shutdown. [Automation](/docs/automation/) explains both.
 
 ## Compatibility
 
-`api/contract-version` is the single application contract across gateway, daemon,
-CLI, clients, sync, and screen input. Clients reject missing or mismatched
-versions; release version and contract version are distinct.
+Gateway, daemon/CLI, and native clients report one canonical SemVer release. The
+gateway publishes separate minimum client and daemon releases and rejects
+software below those floors. Compatible releases may differ. The stable
+`dieter.v1` and `dieter.gateway.v1` package names are namespaces, not historical
+API implementations.
 
 The project is pre-release. Unsupported development stores have no automatic
-migration path. See the [contract reference](https://github.com/dbpprt/dieter/blob/main/docs/api-contract.md)
+migration path. See the [release compatibility reference](https://github.com/dbpprt/dieter/blob/main/docs/api-contract.md)
 and [API schema](https://github.com/dbpprt/dieter/tree/main/api/proto).

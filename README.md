@@ -124,6 +124,12 @@ Read the [security model](https://getdieter.com/docs/security/).
 There is no browser application or hosted agent runtime. The website is the
 project's documentation; your agents run on your machines.
 
+Changes behaves like a source-control panel, not a per-agent report. Project
+mode shows the shared checkout; worktree mode shows the conversation checkout.
+The daemon reads one lightweight status snapshot, loads diffs on selection, and
+owns stage, commit, update, validation, integration, and explicit publishing so
+Mac, Android, and CLI clients converge on the same Git state.
+
 ## Find your way
 
 | You want to… | Read |
@@ -170,8 +176,8 @@ local, direct TLS, and relay routes with global `--machine`. Stale receipts neve
 clear newer replies. Board comments and the card/chat comment commands are removed.
 
 Card placement and runtime observations carry independent causal frontiers in
-`stateFields` under application contract 2. Update gateways, daemons, and clients
-together; older contracts are rejected. Native clients join these before
+`stateFields`. The gateway rejects clients or daemons below its reviewed minimum
+release. Native clients join these observations before
 presenting snapshots from different machines; an older replica cannot undo an
 acknowledged move or revive a finished turn. `placementRevision` remains the
 accepting daemon's CAS receipt (a client-only

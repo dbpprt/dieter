@@ -11,7 +11,7 @@ slug: "troubleshooting"
 
 1. Confirm the app and daemon use the same HTTPS gateway origin and GitHub account.
 2. Run `dieter daemon status` on the host, then `dieter machine list`.
-3. Compare gateway and daemon application contract versions with the client.
+3. Check the gateway's minimum client/daemon releases and each installed release.
 4. Check `dieter machine route MACHINE_ID` and `dieter --machine MACHINE_ID status`.
 
 A healthy local API can coexist with a reconnecting gateway tunnel. A recent

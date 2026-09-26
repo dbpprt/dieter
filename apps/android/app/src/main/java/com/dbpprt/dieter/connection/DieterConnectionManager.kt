@@ -7,10 +7,10 @@ import android.os.SystemClock
 import android.util.Base64
 import android.util.Log
 import com.dbpprt.dieter.BuildConfig
-import com.dbpprt.dieter.data.DIETER_API_VERSION
 import com.dbpprt.dieter.data.DIETER_ENDPOINTS
 import com.dbpprt.dieter.data.DieterEndpoint
 import com.dbpprt.dieter.data.DieterRepository
+import com.dbpprt.dieter.data.isCompatible
 import com.dbpprt.dieter.data.AndroidOutboxEntry
 import com.dbpprt.dieter.data.CachedMachineDirectory
 import com.dbpprt.dieter.data.CachedProjectReplica
@@ -33,6 +33,7 @@ import com.dbpprt.dieter.v1.MessagePart
 import com.dbpprt.dieter.v1.State
 import com.dbpprt.dieter.v1.StartCardRequest
 import com.dbpprt.dieter.v1.SyncCursor
+import com.dbpprt.dieter.gateway.v1.CompatibilityStatus
 import io.grpc.Status
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -116,11 +117,21 @@ data class EndpointConnection(
     val online: Boolean = true,
     val daemonId: String? = null,
     val lastSeenAt: String = "",
-    val apiVersion: String = "",
+    val releaseVersion: String = "",
+    val compatibility: CompatibilityStatus = CompatibilityStatus.COMPATIBILITY_STATUS_COMPATIBLE,
+    val minimumReleaseVersion: String = "",
     val remoteDesktopReady: Boolean = true,
     val remoteDesktopReason: String = "",
     val remoteDesktopPlatform: String = "",
 )
+
+val EndpointConnection.isCompatible: Boolean
+    get() = compatibility == CompatibilityStatus.COMPATIBILITY_STATUS_COMPATIBLE
+
+private class ClientUpdateRequired(
+    installed: String,
+    minimum: String,
+) : IllegalStateException("Dieter update required: installed ${installed.ifBlank { "unknown" }}, minimum ${minimum.ifBlank { "unknown" }}")
 
 data class ProjectReplica(
     val endpointId: String,
@@ -438,7 +449,7 @@ class DieterConnectionManager(
     suspend fun ensureReplicaRoute(projectId: String) {
         if (projectId.isBlank()) return
         if (_state.value.phase == ConnectionPhase.CONNECTED) return
-        val target = discoveredEndpoints.firstOrNull { it.online && it.daemonId != null && it.apiVersion == DIETER_API_VERSION }
+        val target = discoveredEndpoints.firstOrNull { it.online && it.daemonId != null && it.isCompatible }
             ?: error("No project replica is online")
         ensureMachineRoute(target.id)
     }
@@ -902,11 +913,11 @@ class DieterConnectionManager(
                 val attemptStartedAt = System.currentTimeMillis()
                 val health = connectToGateway(currentGeneration)
                 Log.i(SYNC_LOG_TAG, "routeReadyMs=${System.currentTimeMillis() - attemptStartedAt} route=${repository.dataRoute()}")
-                if (health.status != "ok" || health.version != DIETER_API_VERSION) {
+                if (health.status != "ok") {
                     _state.update {
                         it.copy(
-                            phase = ConnectionPhase.INCOMPATIBLE,
-                            error = "Dieter API ${health.version.ifBlank { "unknown" }} is incompatible; Android requires $DIETER_API_VERSION.",
+                            phase = ConnectionPhase.UNAVAILABLE,
+                            error = "The Dieter daemon is not healthy.",
                         )
                     }
                     return
@@ -969,6 +980,10 @@ class DieterConnectionManager(
                     retryAttempt = 0
                     continue
                 }
+                if (error is ClientUpdateRequired) {
+                    _state.update { it.copy(phase = ConnectionPhase.INCOMPATIBLE, error = error.message) }
+                    return
+                }
                 if (Status.fromThrowable(error).code == Status.Code.UNAUTHENTICATED) {
                     _state.update { it.copy(phase = ConnectionPhase.AUTH_REQUIRED, error = "Sign in with GitHub to use ${repository.activeEndpoint.label}.") }
                     return
@@ -992,6 +1007,10 @@ class DieterConnectionManager(
         repository.replaceEndpoints(listOf(origin))
         repository.selectEndpoint(origin)
         updateEndpoint(origin, EndpointPhase.TRYING, "Finding machines", null)
+        val compatibility = repository.compatibility()
+        if (compatibility.status != CompatibilityStatus.COMPATIBILITY_STATUS_COMPATIBLE) {
+            throw ClientUpdateRequired(compatibility.currentReleaseVersion, compatibility.minimumReleaseVersion)
+        }
         val directory = repository.daemons()
         val discovered = directory.daemonsList.map { daemon ->
             DieterEndpoint(
@@ -1003,8 +1022,9 @@ class DieterConnectionManager(
                 daemonId = daemon.id,
                 online = machinePresenceOnline(daemon.online, daemon.lastSeenAt),
                 lastSeenAt = daemon.lastSeenAt,
-                version = daemon.version,
-                apiVersion = daemon.apiVersion,
+                releaseVersion = daemon.releaseVersion,
+                compatibility = daemon.compatibility,
+                minimumReleaseVersion = daemon.minimumReleaseVersion,
                 remoteDesktopReady = daemon.remoteDesktop.ready,
                 remoteDesktopReason = daemon.remoteDesktop.reason,
                 remoteDesktopPlatform = daemon.remoteDesktop.platform,
@@ -1247,8 +1267,9 @@ class DieterConnectionManager(
                     label = daemon.name.ifBlank { daemon.id },
                     online = machinePresenceOnline(daemon.online, daemon.lastSeenAt),
                     lastSeenAt = daemon.lastSeenAt,
-                    version = daemon.version,
-                    apiVersion = daemon.apiVersion,
+                    releaseVersion = daemon.releaseVersion,
+                    compatibility = daemon.compatibility,
+                    minimumReleaseVersion = daemon.minimumReleaseVersion,
                 )
             }
             discoveredEndpoints
@@ -1281,7 +1302,7 @@ class DieterConnectionManager(
         val directoryGeneration = synchronized(lock) { generation }
         val activeEndpointId = repository.activeEndpoint.id
         val machines = discoveredEndpoints.filter { machine ->
-            machine.online && machine.apiVersion == DIETER_API_VERSION &&
+            machine.online && machine.isCompatible &&
                 (includeArchivedChats || machine.id != activeEndpointId)
         }
         if (machines.isEmpty()) return@withLock
@@ -2125,7 +2146,9 @@ class DieterConnectionManager(
         online = endpoint.online,
         daemonId = endpoint.daemonId,
         lastSeenAt = endpoint.lastSeenAt,
-        apiVersion = endpoint.apiVersion,
+        releaseVersion = endpoint.releaseVersion,
+        compatibility = endpoint.compatibility,
+        minimumReleaseVersion = endpoint.minimumReleaseVersion,
         remoteDesktopReady = endpoint.remoteDesktopReady,
         remoteDesktopReason = endpoint.remoteDesktopReason,
         remoteDesktopPlatform = endpoint.remoteDesktopPlatform,

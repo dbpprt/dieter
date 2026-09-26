@@ -1,6 +1,6 @@
 package com.dbpprt.dieter.screens
 
-import com.dbpprt.dieter.data.DIETER_PROTOCOL_VERSION
+import com.dbpprt.dieter.data.DIETER_INPUT_PROTOCOL_VERSION
 
 import com.dbpprt.dieter.v1.RemoteDesktopReceiverFeedback
 import java.util.concurrent.CountDownLatch
@@ -18,7 +18,7 @@ class ScreenFeedbackPumpTest {
             latch.countDown()
         })
         try {
-            pump.start(null, RemoteDesktopReceiverFeedback.newBuilder().setProtocolVersion(DIETER_PROTOCOL_VERSION).build())
+            pump.start(null, RemoteDesktopReceiverFeedback.newBuilder().setProtocolVersion(DIETER_INPUT_PROTOCOL_VERSION).build())
             pump.input(true)
             // The controller/statistics/lease never run again during this wait.
             assertTrue("Receiver liveness stalled with its controller", latch.await(3, TimeUnit.SECONDS))

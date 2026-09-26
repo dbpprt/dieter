@@ -11,6 +11,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/dbpprt/dieter/internal/buildinfo"
+	"github.com/dbpprt/dieter/internal/compatibility"
 	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
 	"github.com/dbpprt/dieter/internal/linkauth"
 	"google.golang.org/grpc"
@@ -153,9 +155,6 @@ func (h *Hub) handshake(stream grpc.BidiStreamingServer[gatewayv1.DaemonLinkFram
 	if err := linkauth.VerifyCertificate(record.Certificate, h.config.IdentityOrigin(), identity, challenge, proof.GetPayload()); err != nil {
 		return daemonHandshake{err: status.Error(codes.Unauthenticated, "daemon challenge response is invalid")}
 	}
-	if hello.GetApiVersion() != GatewayAPIVersion {
-		return daemonHandshake{err: status.Error(codes.FailedPrecondition, "application contract mismatch; update Dieter gateway and machines together")}
-	}
 	return daemonHandshake{hello: hello, record: record}
 }
 
@@ -187,6 +186,26 @@ func (h *Hub) connect(stream grpc.BidiStreamingServer[gatewayv1.DaemonLinkFrame,
 	}
 	hello, record := authenticated.hello, authenticated.record
 	identity := record.ID
+	policy, err := compatibilityPolicy(h.config)
+	if err != nil {
+		return status.Error(codes.Internal, "gateway compatibility policy is invalid")
+	}
+	compatibilityValue, normalizedRelease := compatibility.Evaluate(hello.GetReleaseVersion(), policy.MinimumDaemonVersion)
+	if normalizedRelease == "" {
+		normalizedRelease = hello.GetReleaseVersion()
+	}
+	if compatibilityValue != compatibility.StatusCompatible {
+		if err := h.store.MarkDaemonSeen(identity, normalizedRelease, []byte("[]"), []byte("{}")); err != nil {
+			return status.Error(codes.Unauthenticated, "daemon is revoked")
+		}
+		h.signalChanged()
+		_ = stream.Send(&gatewayv1.DaemonLinkFrame{
+			Kind:     gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_HELLO_ACK,
+			DaemonId: identity, Generation: record.Generation, ReleaseVersion: buildinfo.ReleaseVersion,
+			CompatibilityPolicy: protoCompatibilityPolicy(policy), Compatibility: protoCompatibilityStatus(compatibilityValue),
+		})
+		return status.Errorf(codes.FailedPrecondition, "daemon update required: installed %q, minimum %s", normalizedRelease, policy.MinimumDaemonVersion)
+	}
 	controlWebRTC := false
 	for _, capability := range hello.GetCapabilities() {
 		if capability == "control_webrtc_v1" {
@@ -210,7 +229,7 @@ func (h *Hub) connect(stream grpc.BidiStreamingServer[gatewayv1.DaemonLinkFrame,
 	// either reject this write or find this link and close it.
 	routes, _ := json.Marshal(hello.GetDirectCandidates())
 	remoteDesktop, _ := json.Marshal(hello.GetRemoteDesktop())
-	if err := h.store.MarkDaemonSeen(identity, hello.GetVersion(), hello.GetApiVersion(), routes, remoteDesktop); err != nil {
+	if err := h.store.MarkDaemonSeen(identity, normalizedRelease, routes, remoteDesktop); err != nil {
 		return status.Error(codes.Unauthenticated, "daemon is revoked")
 	}
 
@@ -263,9 +282,10 @@ func (h *Hub) connect(stream grpc.BidiStreamingServer[gatewayv1.DaemonLinkFrame,
 		}
 	}()
 	ack := &gatewayv1.DaemonLinkFrame{
-		Kind:       gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_HELLO_ACK,
-		ApiVersion: GatewayAPIVersion,
-		DaemonId:   identity, Generation: record.Generation, Version: "1",
+		Kind:     gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_HELLO_ACK,
+		DaemonId: identity, Generation: record.Generation, ReleaseVersion: buildinfo.ReleaseVersion,
+		CompatibilityPolicy: protoCompatibilityPolicy(policy),
+		Compatibility:       gatewayv1.CompatibilityStatus_COMPATIBILITY_STATUS_COMPATIBLE,
 	}
 	if h.quota != nil && link.capabilities[providerQuotaCapability] {
 		correlationKey, err := h.store.ProviderCorrelationKey(record.GitHubID)
@@ -301,7 +321,13 @@ func (h *Hub) connect(stream grpc.BidiStreamingServer[gatewayv1.DaemonLinkFrame,
 				}
 				routes, _ := json.Marshal(frame.GetDirectCandidates())
 				remoteDesktop, _ := json.Marshal(frame.GetRemoteDesktop())
-				if err := h.store.MarkDaemonSeen(identity, frame.GetVersion(), frame.GetApiVersion(), routes, remoteDesktop); err != nil {
+				currentPolicy, policyErr := compatibilityPolicy(h.config)
+				value, release := compatibility.Evaluate(frame.GetReleaseVersion(), currentPolicy.MinimumDaemonVersion)
+				if policyErr != nil || value != compatibility.StatusCompatible {
+					recvErr <- status.Error(codes.FailedPrecondition, "daemon update required by current gateway policy")
+					return
+				}
+				if err := h.store.MarkDaemonSeen(identity, release, routes, remoteDesktop); err != nil {
 					recvErr <- err
 					return
 				}

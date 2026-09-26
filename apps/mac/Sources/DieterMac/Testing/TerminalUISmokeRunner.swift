@@ -58,11 +58,11 @@
                     timeout: 15,
                     condition: {
                         store.endpoints.contains {
-                            $0.id != store.endpoint.id && $0.online && $0.apiCompatibility == .compatible
+                            $0.id != store.endpoint.id && $0.online && $0.compatibilityState == .compatible
                         }
                     }),
                 let destination = store.endpoints.first(where: {
-                    $0.id != store.endpoint.id && $0.online && $0.apiCompatibility == .compatible
+                    $0.id != store.endpoint.id && $0.online && $0.compatibilityState == .compatible
                 })
             else {
                 writeReport(

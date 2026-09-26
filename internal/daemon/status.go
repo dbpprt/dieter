@@ -14,28 +14,35 @@ const (
 	GatewayConnecting   = "connecting"
 	GatewayConnected    = "connected"
 	GatewayDisconnected = "disconnected"
+	GatewayIncompatible = "update-required"
 )
 
 type RuntimeStatus struct {
-	PID                int    `json:"pid"`
-	Version            string `json:"version"`
-	State              string `json:"state"`
-	StartedAt          string `json:"startedAt"`
-	UpdatedAt          string `json:"updatedAt"`
-	StoppedAt          string `json:"stoppedAt,omitempty"`
-	Store              string `json:"store"`
-	ListenAddress      string `json:"listenAddress"`
-	ServiceManaged     bool   `json:"serviceManaged"`
-	ServiceManager     string `json:"serviceManager,omitempty"`
-	LogPath            string `json:"logPath,omitempty"`
-	Enrolled           bool   `json:"enrolled"`
-	DaemonID           string `json:"daemonId,omitempty"`
-	DaemonName         string `json:"daemonName,omitempty"`
-	GatewayURL         string `json:"gatewayUrl,omitempty"`
-	GatewayState       string `json:"gatewayState"`
-	GatewayConnectedAt string `json:"gatewayConnectedAt,omitempty"`
-	GatewayLastAckAt   string `json:"gatewayLastAcknowledgedAt,omitempty"`
-	GatewayLastError   string `json:"gatewayLastError,omitempty"`
+	PID                         int    `json:"pid"`
+	Version                     string `json:"version"`
+	State                       string `json:"state"`
+	StartedAt                   string `json:"startedAt"`
+	UpdatedAt                   string `json:"updatedAt"`
+	StoppedAt                   string `json:"stoppedAt,omitempty"`
+	Store                       string `json:"store"`
+	ListenAddress               string `json:"listenAddress"`
+	ServiceManaged              bool   `json:"serviceManaged"`
+	ServiceManager              string `json:"serviceManager,omitempty"`
+	LogPath                     string `json:"logPath,omitempty"`
+	Enrolled                    bool   `json:"enrolled"`
+	DaemonID                    string `json:"daemonId,omitempty"`
+	DaemonName                  string `json:"daemonName,omitempty"`
+	GatewayURL                  string `json:"gatewayUrl,omitempty"`
+	GatewayState                string `json:"gatewayState"`
+	GatewayConnectedAt          string `json:"gatewayConnectedAt,omitempty"`
+	GatewayLastAckAt            string `json:"gatewayLastAcknowledgedAt,omitempty"`
+	GatewayLastError            string `json:"gatewayLastError,omitempty"`
+	GatewayReleaseVersion       string `json:"gatewayReleaseVersion,omitempty"`
+	MinimumClientVersion        string `json:"minimumClientVersion,omitempty"`
+	MinimumDaemonVersion        string `json:"minimumDaemonVersion,omitempty"`
+	CompatibilityPolicyRevision string `json:"compatibilityPolicyRevision,omitempty"`
+	AutomaticUpdateAttemptedAt  string `json:"automaticUpdateAttemptedAt,omitempty"`
+	AutomaticUpdateOutcome      string `json:"automaticUpdateOutcome,omitempty"`
 }
 
 type GatewayEvent struct {

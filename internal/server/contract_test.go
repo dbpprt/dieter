@@ -6,24 +6,11 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/dbpprt/dieter/internal/buildinfo"
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
-	"github.com/dbpprt/dieter/internal/protocol"
 	"github.com/dbpprt/dieter/internal/store"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 )
-
-func TestSyncRejectsUnsupportedContractBeforeReadingStore(t *testing.T) {
-	for _, version := range []int32{0, protocol.Number - 1, protocol.Number + 1, protocol.Number + 2, -1} {
-		api := &grpcAPI{}
-		sent := false
-		err := api.watchSync(context.Background(), &dieterv1.SyncRequest{ProtocolVersion: version}, func(*dieterv1.SyncFrame) error { sent = true; return nil })
-		if status.Code(err) != codes.FailedPrecondition || sent {
-			t.Fatalf("version %d: sent=%v err=%v", version, sent, err)
-		}
-	}
-}
 
 func TestCurrentSyncIncludesSettingsOnlyChanges(t *testing.T) {
 	previous := &dieterv1.GlobalSnapshot{Settings: &dieterv1.Settings{PromptTemplate: "before"}}
@@ -52,7 +39,7 @@ func TestDaemonExposesOnlyCurrentRPCContract(t *testing.T) {
 		}
 	}
 	health, err := (&grpcAPI{server: application}).Health(context.Background(), nil)
-	if err != nil || health.GetVersion() != protocol.Version {
+	if err != nil || health.GetReleaseVersion() != buildinfo.ReleaseVersion {
 		t.Fatalf("health=%v err=%v", health, err)
 	}
 }

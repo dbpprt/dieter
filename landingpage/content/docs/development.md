@@ -41,7 +41,7 @@ helper dependencies. A deliberately headless source install can omit the helper:
 | Directory | Responsibility |
 | --- | --- |
 | `cmd`, `internal` | Daemon, CLI, gateway, storage, transports, harnesses |
-| `api/proto`, `api/contract-version` | Authoritative application contract |
+| `api/proto` | Authoritative RPC schema and stable package namespaces |
 | `apps/mac`, `apps/ios`, `apps/android` | Native clients and their fixtures |
 | `native` | Platform screen capture and WebRTC integration |
 | `config` | Embedded harness registry |
@@ -90,12 +90,14 @@ If the integration environment is unavailable, report it explicitly. Do not
 silently use a production account or stop somebody else's app to make a test pass.
 The native platform guides document process, build-cache, and emulator lifecycle.
 
-## Change the application contract together
+## Change release compatibility together
 
 A native operation requires a declared protobuf RPC, an explicit `grpcAPI`
 implementation, a thin Connect adapter, CLI parity, offline help, and route tests.
-Regenerate bindings with `just proto`. Update user documentation and the CLI skill
-in the same change. Contract tests catch declared RPCs without implementations.
+Regenerate bindings with `just proto`. Update user documentation, gateway floors,
+and the CLI skill in the same change when older software becomes unsafe. Additive
+changes do not raise the floors. Contract tests catch declared RPCs without
+implementations.
 
 Use `gofmt` for Go and the native formatter commands for their sources. Keep
 accessibility and adaptive layouts intact.

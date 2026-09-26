@@ -10,37 +10,62 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/dbpprt/dieter/internal/compatibility"
 )
 
 type Config struct {
-	Root            string
-	Address         string
-	PublicURL       *url.URL
-	IssuerURL       *url.URL
-	GitHubClientID  string
-	GitHubSecret    string
-	AllowedUserIDs  map[int64]struct{}
-	AuthSecret      []byte
-	SessionTTL      time.Duration
-	NativeRedirects map[string]struct{}
-	GitHubBaseURL   string
-	GitHubAPIURL    string
-	TLSCertFile     string
-	TLSKeyFile      string
-	DevInsecure     bool
-	ProxyMode       bool
-	RTCSTUNURLs     []string
-	RTCTURNURLs     []string
-	RTCTURNSecret   []byte
-	RTCTTL          time.Duration
+	Root                 string
+	Address              string
+	PublicURL            *url.URL
+	IssuerURL            *url.URL
+	GitHubClientID       string
+	GitHubSecret         string
+	AllowedUserIDs       map[int64]struct{}
+	AuthSecret           []byte
+	SessionTTL           time.Duration
+	NativeRedirects      map[string]struct{}
+	GitHubBaseURL        string
+	GitHubAPIURL         string
+	TLSCertFile          string
+	TLSKeyFile           string
+	DevInsecure          bool
+	ProxyMode            bool
+	RTCSTUNURLs          []string
+	RTCTURNURLs          []string
+	RTCTURNSecret        []byte
+	RTCTTL               time.Duration
+	MinimumClientVersion string
+	MinimumDaemonVersion string
 }
 
 func ConfigFromEnv(root string) (Config, error) {
+	var err error
 	config := Config{
 		Root: root, Address: envOr("DIETER_GATEWAY_ADDR", "127.0.0.1:4243"), SessionTTL: 30 * 24 * time.Hour,
 		GitHubBaseURL: envOr("DIETER_GITHUB_BASE_URL", "https://github.com"), GitHubAPIURL: envOr("DIETER_GITHUB_API_URL", "https://api.github.com"),
 		TLSCertFile: strings.TrimSpace(os.Getenv("DIETER_GATEWAY_TLS_CERT")), TLSKeyFile: strings.TrimSpace(os.Getenv("DIETER_GATEWAY_TLS_KEY")),
 		DevInsecure: os.Getenv("DIETER_GATEWAY_DEV_INSECURE") == "1", ProxyMode: os.Getenv("DIETER_GATEWAY_PROXY_MODE") == "1", NativeRedirects: map[string]struct{}{}, RTCTTL: 5 * time.Minute,
+		MinimumClientVersion: strings.TrimSpace(os.Getenv("DIETER_MINIMUM_CLIENT_VERSION")),
+		MinimumDaemonVersion: strings.TrimSpace(os.Getenv("DIETER_MINIMUM_DAEMON_VERSION")),
+	}
+	if config.MinimumClientVersion == "" {
+		if !config.DevInsecure {
+			return config, errors.New("DIETER_MINIMUM_CLIENT_VERSION is required outside disposable development gateways")
+		}
+		config.MinimumClientVersion = compatibility.DevelopmentMinimum
+	}
+	if config.MinimumDaemonVersion == "" {
+		if !config.DevInsecure {
+			return config, errors.New("DIETER_MINIMUM_DAEMON_VERSION is required outside disposable development gateways")
+		}
+		config.MinimumDaemonVersion = compatibility.DevelopmentMinimum
+	}
+	if config.MinimumClientVersion, err = compatibility.Normalize(config.MinimumClientVersion); err != nil {
+		return config, errors.New("DIETER_MINIMUM_CLIENT_VERSION must be a semantic version")
+	}
+	if config.MinimumDaemonVersion, err = compatibility.Normalize(config.MinimumDaemonVersion); err != nil {
+		return config, errors.New("DIETER_MINIMUM_DAEMON_VERSION must be a semantic version")
 	}
 	publicURL, err := url.Parse(strings.TrimSpace(os.Getenv("DIETER_PUBLIC_URL")))
 	if err != nil || publicURL.Host == "" || publicURL.User != nil || publicURL.Path != "" || publicURL.RawQuery != "" || publicURL.Fragment != "" || (!config.DevInsecure && publicURL.Scheme != "https") || (config.DevInsecure && publicURL.Scheme != "http" && publicURL.Scheme != "https") {

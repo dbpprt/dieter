@@ -16,7 +16,7 @@ class ControllerUpgradeTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary).resolve()
             distribution = root / 'distribution'
-            manifest = bundle.pack(distribution, 'a'*40, 'fixture',
+            manifest = bundle.pack(distribution, 'a'*40, '0.4.309',
                                    'ghcr.io/dbpprt/dieter-gateway@sha256:' + 'b'*64, 'fixture')
             (distribution / bundle.SIGNATURE).write_text('fixture signature')
             old = root / 'old-controller'

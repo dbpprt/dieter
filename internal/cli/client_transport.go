@@ -17,7 +17,6 @@ import (
 	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
 	"github.com/dbpprt/dieter/internal/linkauth"
-	"github.com/dbpprt/dieter/internal/protocol"
 	"github.com/dbpprt/dieter/internal/trust"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
@@ -40,10 +39,28 @@ type dieterTransport struct {
 	relay    bool
 }
 
-func (value *dieterTransport) context(ctx context.Context) context.Context {
-	if value != nil && value.relay {
-		return metadata.AppendToOutgoingContext(ctx, "x-dieter-daemon-id", value.daemonID)
+type dieterMetadataConn struct {
+	grpc.ClientConnInterface
+	daemonID string
+}
+
+func (c dieterMetadataConn) context(ctx context.Context) context.Context {
+	ctx = metadata.AppendToOutgoingContext(ctx, "x-dieter-client-version", Version)
+	if c.daemonID != "" {
+		ctx = metadata.AppendToOutgoingContext(ctx, "x-dieter-daemon-id", c.daemonID)
 	}
+	return ctx
+}
+
+func (c dieterMetadataConn) Invoke(ctx context.Context, method string, in, out any, options ...grpc.CallOption) error {
+	return c.ClientConnInterface.Invoke(c.context(ctx), method, in, out, options...)
+}
+
+func (c dieterMetadataConn) NewStream(ctx context.Context, description *grpc.StreamDesc, method string, options ...grpc.CallOption) (grpc.ClientStream, error) {
+	return c.ClientConnInterface.NewStream(c.context(ctx), description, method, options...)
+}
+
+func (value *dieterTransport) context(ctx context.Context) context.Context {
 	return ctx
 }
 
@@ -61,7 +78,7 @@ func (credential daemonGatewayCredential) GetRequestMetadata(context.Context, ..
 		return nil, errors.New("the local Dieter daemon is not enrolled; run `dieter setup`")
 	}
 	proof := linkauth.SignPeer(identity.PrivateKey, identity.ID, identity.Issuer(), identity.Generation, time.Now())
-	return map[string]string{"authorization": "Bearer " + proof}, nil
+	return map[string]string{"authorization": "Bearer " + proof, "x-dieter-client-version": Version}, nil
 }
 
 func (credential daemonGatewayCredential) RequireTransportSecurity() bool { return credential.secure }
@@ -154,18 +171,20 @@ func (c *CLI) dialGateway(ctx context.Context) (*gatewayTransport, error) {
 		return nil, err
 	}
 	result := &gatewayTransport{url: origin, conn: connection, client: gatewayv1.NewGatewayServiceClient(connection)}
+	compatibilityResult, err := result.client.GetCompatibility(ctx, &gatewayv1.CompatibilityRequest{
+		ReleaseVersion: Version, Component: gatewayv1.CompatibilityComponent_COMPATIBILITY_COMPONENT_CLIENT,
+	})
+	if err != nil {
+		_ = connection.Close()
+		return nil, fmt.Errorf("check Dieter gateway compatibility: %w", err)
+	}
+	if compatibilityResult.GetStatus() != gatewayv1.CompatibilityStatus_COMPATIBILITY_STATUS_COMPATIBLE {
+		_ = connection.Close()
+		return nil, fmt.Errorf("Dieter update required: installed %q, minimum %s", Version, compatibilityResult.GetMinimumReleaseVersion())
+	}
 	if _, err := result.client.GetAccount(ctx, &emptypb.Empty{}); err != nil {
 		_ = connection.Close()
 		return nil, fmt.Errorf("authenticate with Dieter gateway %s: %w", origin, err)
-	}
-	directory, err := result.client.ListDaemons(ctx, &emptypb.Empty{})
-	if err != nil {
-		_ = connection.Close()
-		return nil, err
-	}
-	if directory.GetGatewayInformation().GetApiVersion() != protocol.Version {
-		_ = connection.Close()
-		return nil, fmt.Errorf("Dieter update required: gateway contract %q, client contract %s", directory.GetGatewayInformation().GetApiVersion(), protocol.Version)
 	}
 	c.gateway = result
 	return result, nil
@@ -217,7 +236,7 @@ func (c *CLI) dialDieter(ctx context.Context) (*dieterTransport, error) {
 		if err != nil {
 			return nil, err
 		}
-		result := &dieterTransport{conn: connection, client: dieterv1.NewDieterServiceClient(readResumingConn{connection}), route: "local"}
+		result := &dieterTransport{conn: connection, client: dieterv1.NewDieterServiceClient(readResumingConn{dieterMetadataConn{ClientConnInterface: connection}}), route: "local"}
 		if _, err := result.client.Health(ctx, &emptypb.Empty{}); err != nil {
 			_ = connection.Close()
 			return nil, fmt.Errorf("connect to local Dieter daemon at %s: %w", statusValue.ListenAddress, err)
@@ -237,8 +256,8 @@ func (c *CLI) dialDieter(ctx context.Context) (*dieterTransport, error) {
 	if err != nil {
 		return nil, err
 	}
-	if machine.GetApiVersion() != protocol.Version {
-		return nil, fmt.Errorf("Dieter update required: daemon contract %q, client contract %s", machine.GetApiVersion(), protocol.Version)
+	if machine.GetCompatibility() != gatewayv1.CompatibilityStatus_COMPATIBILITY_STATUS_COMPATIBLE {
+		return nil, fmt.Errorf("Dieter daemon update required: installed %q, minimum %s", machine.GetReleaseVersion(), machine.GetMinimumReleaseVersion())
 	}
 	if !machine.GetOnline() {
 		return nil, fmt.Errorf("Dieter machine %s (%s) is offline", machine.GetName(), machine.GetId())
@@ -262,7 +281,7 @@ func (c *CLI) dialDieter(ctx context.Context) (*dieterTransport, error) {
 			probeCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 			connection, dialErr := dieterdaemon.DialDirectWithCredentials(probeCtx, address, machine.GetId(), route.GetDaemonCaPem(), credential)
 			if dialErr == nil {
-				client := dieterv1.NewDieterServiceClient(readResumingConn{connection})
+				client := dieterv1.NewDieterServiceClient(readResumingConn{dieterMetadataConn{ClientConnInterface: connection}})
 				_, dialErr = client.Health(probeCtx, &emptypb.Empty{})
 				if dialErr == nil {
 					cancel()
@@ -298,7 +317,7 @@ func (c *CLI) dialDieter(ctx context.Context) (*dieterTransport, error) {
 		return nil, fmt.Errorf("Dieter machine %s has no reachable direct route and its relay is unavailable", machine.GetName())
 	}
 	result := &dieterTransport{
-		conn: gateway.conn, client: dieterv1.NewDieterServiceClient(readResumingConn{gateway.conn}),
+		conn: gateway.conn, client: dieterv1.NewDieterServiceClient(readResumingConn{dieterMetadataConn{ClientConnInterface: gateway.conn, daemonID: machine.GetId()}}),
 		route: "relay", daemonID: machine.GetId(), relay: true,
 	}
 	c.transport = result
@@ -311,12 +330,9 @@ func (c *CLI) rpc(ctx context.Context) (dieterv1.DieterServiceClient, context.Co
 		return nil, ctx, err
 	}
 	rpcCtx := transport.context(ctx)
-	health, err := transport.client.Health(rpcCtx, &emptypb.Empty{})
+	_, err = transport.client.Health(rpcCtx, &emptypb.Empty{})
 	if err != nil {
 		return nil, ctx, err
-	}
-	if health.GetVersion() != protocol.Version {
-		return nil, ctx, fmt.Errorf("Dieter update required: daemon contract %q, client contract %s", health.GetVersion(), protocol.Version)
 	}
 	return transport.client, rpcCtx, nil
 }

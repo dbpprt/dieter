@@ -97,11 +97,11 @@ import UniformTypeIdentifiers
         fingerprint: "sha-256 AA:BB",
         expiresAt: "2026-08-25T08:00:00Z",
         offerHash: Data([0, 1, 2]), controlGranted: true, displayID: "primary",
-        inputProtocolVersion: DieterContract.number, inputEpoch: Data(repeating: 7, count: 16)
+        inputProtocolVersion: DieterRemoteDesktopProtocol.number, inputEpoch: Data(repeating: 7, count: 16)
     )
     #expect(
         String(data: message, encoding: .utf8)
-            == "dieter-remote-desktop-v\(DieterContract.number)\nrd_one\nnonce\nsha-256 AA:BB\n2026-08-25T08:00:00Z\nAAEC\ntrue\nprimary\n\(DieterContract.number)\nBwcHBwcHBwcHBwcHBwcHBw"
+            == "dieter-remote-desktop-v\(DieterRemoteDesktopProtocol.number)\nrd_one\nnonce\nsha-256 AA:BB\n2026-08-25T08:00:00Z\nAAEC\ntrue\nprimary\n\(DieterRemoteDesktopProtocol.number)\nBwcHBwcHBwcHBwcHBwcHBw"
     )
 }
 
@@ -370,7 +370,7 @@ private actor CardStartRPCStub: DieterCardStartRPC {
     binding.helperDtlsFingerprint = "sha-256 AA:BB"
     binding.expiresAt = "2099-08-25T08:00:00Z"
     binding.offerSha256 = Data(SHA256.hash(data: Data(offer.utf8)))
-    binding.inputProtocolVersion = DieterContract.number
+    binding.inputProtocolVersion = DieterRemoteDesktopProtocol.number
     binding.inputEpoch = Data(repeating: 1, count: 16)
     binding.daemonSignature = try #require(
         Data(base64Encoded: "ctCMwB2SL9Wk9JqpQzgtM+NQxXqUXGGKSSpQ1X2lNX3G3uS8UR7uKe5J8fjZheT1WxX3U5s37saWnSk7dqIADQ=="))
@@ -410,7 +410,7 @@ private actor CardStartRPCStub: DieterCardStartRPC {
     binding.helperDtlsFingerprint = "sha-256 AA:BB"
     binding.expiresAt = "2026-08-25T07:00:00Z"
     binding.offerSha256 = Data(SHA256.hash(data: Data(offer.utf8)))
-    binding.inputProtocolVersion = DieterContract.number
+    binding.inputProtocolVersion = DieterRemoteDesktopProtocol.number
     binding.inputEpoch = Data(repeating: 1, count: 16)
     do {
         try RemoteDesktopSessionTrust.verify(
@@ -615,14 +615,15 @@ func liveDirectRouteRejectsTheWrongDaemonIdentity() async throws {
         daemonID: "daemon-1",
         online: false,
         lastSeenAt: "2026-08-18T12:00:00Z",
-        version: "v0.4.92",
-        apiVersion: dieterExpectedAPIVersion
+        releaseVersion: "0.4.92",
+        compatibility: .compatible,
+        minimumReleaseVersion: "0.4.80"
     )
     #expect(endpoint.id == "https://dieter.example:443#daemon-1")
     #expect(endpoint.credentialID == "https://dieter.example:443")
     #expect(endpoint.name == "Studio Mac")
     #expect(!endpoint.online)
-    #expect(endpoint.apiCompatibility == .compatible)
+    #expect(endpoint.compatibilityState == .compatible)
     #expect(endpoint.gatewayEndpoint.daemonID == nil)
     #expect(endpoint.gatewayEndpoint.credentialID == endpoint.credentialID)
     #expect(DieterRPC.Route.gateway.daemonID == nil)
@@ -2049,11 +2050,11 @@ private func terminalKeyEvent(
     let gateway = DieterEndpoint(name: "Gateway", host: "example.com", port: 443, secure: true)
     let offlinePreferred = DieterEndpoint(
         name: "Studio Mac", host: gateway.host, port: gateway.port, secure: true,
-        daemonID: "mac", online: false, apiVersion: DieterContract.version
+        daemonID: "mac", online: false, releaseVersion: "0.4.309", compatibility: .compatible
     )
     let onlineFallback = DieterEndpoint(
         name: "Build server", host: gateway.host, port: gateway.port, secure: true,
-        daemonID: "server", online: true, apiVersion: DieterContract.version
+        daemonID: "server", online: true, releaseVersion: "0.4.309", compatibility: .compatible
     )
 
     #expect(
@@ -2072,15 +2073,16 @@ private func terminalKeyEvent(
     let gateway = DieterEndpoint(name: "Gateway", host: "example.com", port: 443, secure: true)
     let incompatible = DieterEndpoint(
         name: "Legacy", host: gateway.host, port: gateway.port, secure: true,
-        daemonID: "legacy", online: true, apiVersion: String(DieterContract.number + 1)
+        daemonID: "legacy", online: true, releaseVersion: "0.4.200", compatibility: .updateRequired,
+        minimumReleaseVersion: "0.4.309"
     )
     let unknown = DieterEndpoint(
         name: "Unknown", host: gateway.host, port: gateway.port, secure: true,
-        daemonID: "unknown", online: true
+        daemonID: "unknown", online: true, compatibility: .unknown
     )
     let compatible = DieterEndpoint(
         name: "Current", host: gateway.host, port: gateway.port, secure: true,
-        daemonID: "current", online: true, apiVersion: dieterExpectedAPIVersion
+        daemonID: "current", online: true, releaseVersion: "0.4.309", compatibility: .compatible
     )
 
     #expect(
@@ -2095,14 +2097,15 @@ private func terminalKeyEvent(
             preferredDaemonID: "legacy",
             explicitMachineSelection: true
         ) == [incompatible])
-    #expect(try #require(incompatible.incompatibilityDescription).contains("API \(DieterContract.number + 1)"))
+    #expect(try #require(incompatible.incompatibilityDescription).contains("requires 0.4.309"))
 }
 
 @Test func explicitGatewaySelectionClearsTheCurrentMachinePreference() {
     let gateway = DieterEndpoint(name: "Gateway", host: "example.com", port: 443, secure: true)
     let machine = DieterEndpoint(
         name: "Legacy", host: gateway.host, port: gateway.port, secure: true,
-        daemonID: "legacy", online: true, apiVersion: String(DieterContract.number + 1)
+        daemonID: "legacy", online: true, releaseVersion: "0.4.200", compatibility: .updateRequired,
+        minimumReleaseVersion: "0.4.309"
     )
 
     #expect(MachineRoutingPolicy.preferredDaemonID(newEndpoint: nil, currentEndpoint: machine) == "legacy")
@@ -2113,11 +2116,11 @@ private func terminalKeyEvent(
     let gateway = DieterEndpoint(name: "Gateway", host: "example.com", port: 443, secure: true)
     let home = DieterEndpoint(
         name: "mini-home", host: gateway.host, port: gateway.port, secure: true,
-        daemonID: "home", online: true, version: "v0.4.92"
+        daemonID: "home", online: true, releaseVersion: "0.4.92"
     )
     let office = DieterEndpoint(
         name: "mini-office", host: gateway.host, port: gateway.port, secure: true,
-        daemonID: "office", online: false, version: "v0.4.57"
+        daemonID: "office", online: false, releaseVersion: "0.4.57"
     )
     var homeProject = Dieter_V1_Project()
     homeProject.id = "p_home"

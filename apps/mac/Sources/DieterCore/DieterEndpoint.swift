@@ -1,5 +1,13 @@
 import Darwin
+import DieterAPI
 import Foundation
+
+package enum DieterCompatibility: String, Codable, Equatable, Hashable, Sendable {
+    case compatible
+    case updateRequired
+    case invalidVersion
+    case unknown
+}
 
 package struct DieterEndpoint: Codable, Equatable, Hashable, Identifiable, Sendable {
     package var id: String { credentialID + (daemonID.map { "#\($0)" } ?? "") }
@@ -11,8 +19,9 @@ package struct DieterEndpoint: Codable, Equatable, Hashable, Identifiable, Senda
     package var daemonID: String?
     package var online: Bool
     package var lastSeenAt: String
-    package var version: String
-    package var apiVersion: String
+    package var releaseVersion: String
+    package var compatibility: DieterCompatibility
+    package var minimumReleaseVersion: String
     package var remoteDesktopReady: Bool
     package var remoteDesktopReason: String
     package var remoteDesktopPlatform: String
@@ -81,7 +90,8 @@ package struct DieterEndpoint: Codable, Equatable, Hashable, Identifiable, Senda
     }
 
     private enum CodingKeys: String, CodingKey {
-        case name, host, port, secure, daemonID, online, lastSeenAt, version, apiVersion
+        case name, host, port, secure, daemonID, online, lastSeenAt, releaseVersion, compatibility,
+            minimumReleaseVersion
         case remoteDesktopReady, remoteDesktopReason, remoteDesktopPlatform
     }
     package init(
@@ -92,8 +102,9 @@ package struct DieterEndpoint: Codable, Equatable, Hashable, Identifiable, Senda
         daemonID: String? = nil,
         online: Bool = true,
         lastSeenAt: String = "",
-        version: String = "",
-        apiVersion: String = "",
+        releaseVersion: String = "",
+        compatibility: DieterCompatibility = .compatible,
+        minimumReleaseVersion: String = "",
         remoteDesktopReady: Bool = false,
         remoteDesktopReason: String = "",
         remoteDesktopPlatform: String = ""
@@ -105,8 +116,9 @@ package struct DieterEndpoint: Codable, Equatable, Hashable, Identifiable, Senda
         self.daemonID = daemonID
         self.online = online
         self.lastSeenAt = lastSeenAt
-        self.version = version
-        self.apiVersion = apiVersion
+        self.releaseVersion = releaseVersion
+        self.compatibility = compatibility
+        self.minimumReleaseVersion = minimumReleaseVersion
         self.remoteDesktopReady = remoteDesktopReady
         self.remoteDesktopReason = remoteDesktopReason
         self.remoteDesktopPlatform = remoteDesktopPlatform
@@ -119,8 +131,9 @@ package struct DieterEndpoint: Codable, Equatable, Hashable, Identifiable, Senda
         daemonID = try values.decodeIfPresent(String.self, forKey: .daemonID)
         online = try values.decodeIfPresent(Bool.self, forKey: .online) ?? true
         lastSeenAt = try values.decodeIfPresent(String.self, forKey: .lastSeenAt) ?? ""
-        version = try values.decodeIfPresent(String.self, forKey: .version) ?? ""
-        apiVersion = try values.decodeIfPresent(String.self, forKey: .apiVersion) ?? ""
+        releaseVersion = try values.decodeIfPresent(String.self, forKey: .releaseVersion) ?? ""
+        compatibility = try values.decodeIfPresent(DieterCompatibility.self, forKey: .compatibility) ?? .compatible
+        minimumReleaseVersion = try values.decodeIfPresent(String.self, forKey: .minimumReleaseVersion) ?? ""
         remoteDesktopReady = try values.decodeIfPresent(Bool.self, forKey: .remoteDesktopReady) ?? false
         remoteDesktopReason = try values.decodeIfPresent(String.self, forKey: .remoteDesktopReason) ?? ""
         remoteDesktopPlatform = try values.decodeIfPresent(String.self, forKey: .remoteDesktopPlatform) ?? ""

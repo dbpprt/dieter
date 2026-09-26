@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/dbpprt/dieter/internal/buildinfo"
+	"github.com/dbpprt/dieter/internal/compatibility"
 	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
 	"github.com/dbpprt/dieter/internal/linkauth"
 	"github.com/dbpprt/dieter/internal/trust"
@@ -50,6 +51,24 @@ func NewService(store *Store, auth *Auth, keys *Keys, hub *Hub, config Config) *
 
 func (s *Service) SetQuotaManager(manager *QuotaManager) { s.quota = manager }
 
+func (s *Service) GetCompatibility(_ context.Context, request *gatewayv1.CompatibilityRequest) (*gatewayv1.CompatibilityResponse, error) {
+	policy, err := compatibilityPolicy(s.config)
+	if err != nil {
+		return nil, status.Error(codes.Internal, "gateway compatibility policy is invalid")
+	}
+	minimum := policy.MinimumClientVersion
+	if request.GetComponent() == gatewayv1.CompatibilityComponent_COMPATIBILITY_COMPONENT_DAEMON {
+		minimum = policy.MinimumDaemonVersion
+	} else if request.GetComponent() != gatewayv1.CompatibilityComponent_COMPATIBILITY_COMPONENT_CLIENT {
+		return nil, status.Error(codes.InvalidArgument, "compatibility component is required")
+	}
+	value, normalized := compatibility.Evaluate(request.GetReleaseVersion(), minimum)
+	return &gatewayv1.CompatibilityResponse{
+		Policy: protoCompatibilityPolicy(policy), Status: protoCompatibilityStatus(value),
+		CurrentReleaseVersion: normalized, MinimumReleaseVersion: minimum,
+	}, nil
+}
+
 func (s *Service) GetAccount(ctx context.Context, _ *emptypb.Empty) (*gatewayv1.Account, error) {
 	principal, ok := PrincipalFromContext(ctx)
 	if !ok {
@@ -58,7 +77,7 @@ func (s *Service) GetAccount(ctx context.Context, _ *emptypb.Empty) (*gatewayv1.
 	now := time.Now()
 	endpoint, err := trust.SignCompact(s.keys.SigningPrivate, trust.GatewayEndpointClaims{
 		Issuer: s.config.IdentityOrigin(), Audience: "dieter-gateway-endpoint", Subject: fmt.Sprintf("github:%d", principal.GitHubID),
-		Endpoint: s.config.PublicURL.String(), Contract: GatewayAPIVersion, IssuedAt: now.Unix(), ExpiresAt: now.Add(5 * time.Minute).Unix(),
+		Endpoint: s.config.PublicURL.String(), IssuedAt: now.Unix(), ExpiresAt: now.Add(5 * time.Minute).Unix(),
 	})
 	if err != nil {
 		return nil, status.Error(codes.Internal, "sign gateway endpoint")
@@ -75,7 +94,7 @@ func (s *Service) ListDaemons(ctx context.Context, _ *emptypb.Empty) (*gatewayv1
 	if err != nil {
 		return nil, status.Error(codes.Internal, "list daemons")
 	}
-	result := &gatewayv1.ListDaemonsResponse{GatewayInformation: gatewayBuildInformation()}
+	result := &gatewayv1.ListDaemonsResponse{GatewayInformation: gatewayBuildInformation(s.config)}
 	for _, item := range items {
 		result.Daemons = append(result.Daemons, s.protoDaemon(item))
 	}
@@ -126,7 +145,7 @@ func (s *Service) ListProviderQuotas(ctx context.Context, request *gatewayv1.Lis
 		return nil, status.Error(codes.Internal, "list provider quotas")
 	}
 	return &gatewayv1.ListProviderQuotasResponse{
-		Groups: groups, Revision: s.quota.Revision(), GatewayInformation: gatewayBuildInformation(),
+		Groups: groups, Revision: s.quota.Revision(), GatewayInformation: gatewayBuildInformation(s.config),
 	}, nil
 }
 
@@ -241,12 +260,13 @@ func (s *Service) ConsumeProviderQuotaReset(ctx context.Context, request *gatewa
 	return &gatewayv1.ConsumeProviderQuotaResetResponse{Groups: groups, Revision: s.quota.Revision(), Accepted: accepted}, nil
 }
 
-func gatewayBuildInformation() *gatewayv1.GatewayInformation {
+func gatewayBuildInformation(config Config) *gatewayv1.GatewayInformation {
+	policy, _ := compatibilityPolicy(config)
 	return &gatewayv1.GatewayInformation{
-		ReleaseVersion: buildinfo.ReleaseVersion,
-		ApiVersion:     GatewayAPIVersion,
-		SourceRevision: buildinfo.SourceRevision,
-		BuiltAt:        buildinfo.BuiltAt,
+		ReleaseVersion:      buildinfo.ReleaseVersion,
+		SourceRevision:      buildinfo.SourceRevision,
+		BuiltAt:             buildinfo.BuiltAt,
+		CompatibilityPolicy: protoCompatibilityPolicy(policy),
 	}
 }
 
@@ -564,11 +584,22 @@ func (s *Service) ownedDaemon(id string, githubID int64) (DaemonRecord, error) {
 }
 
 func (s *Service) protoDaemon(record DaemonRecord) *gatewayv1.Daemon {
+	policy, _ := compatibilityPolicy(s.config)
+	value, _ := compatibility.Evaluate(record.Version, policy.MinimumDaemonVersion)
 	var routes []*gatewayv1.DirectCandidate
-	_ = json.Unmarshal(record.RoutesJSON, &routes)
+	if value == compatibility.StatusCompatible {
+		_ = json.Unmarshal(record.RoutesJSON, &routes)
+	}
 	remoteDesktop := &gatewayv1.RemoteDesktopPresence{}
-	_ = json.Unmarshal(record.RemoteDesktopJSON, remoteDesktop)
-	return &gatewayv1.Daemon{Id: record.ID, Name: record.Name, Online: s.hub.Online(record.ID), LastSeenAt: record.LastSeenAt.Format(time.RFC3339Nano), Version: record.Version, ApiVersion: record.APIVersion, Generation: record.Generation, DirectCandidates: routes, RemoteDesktop: remoteDesktop}
+	if value == compatibility.StatusCompatible {
+		_ = json.Unmarshal(record.RemoteDesktopJSON, remoteDesktop)
+	}
+	return &gatewayv1.Daemon{
+		Id: record.ID, Name: record.Name, Online: value == compatibility.StatusCompatible && s.hub.Online(record.ID),
+		LastSeenAt: record.LastSeenAt.Format(time.RFC3339Nano), ReleaseVersion: record.Version,
+		Generation: record.Generation, DirectCandidates: routes, RemoteDesktop: remoteDesktop,
+		Compatibility: protoCompatibilityStatus(value), MinimumReleaseVersion: policy.MinimumDaemonVersion,
+	}
 }
 
 func (s *Service) credential(record DaemonRecord) *gatewayv1.DaemonCredential {

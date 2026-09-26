@@ -14,6 +14,9 @@ import "google/protobuf/empty.proto";
 // service. The gateway may cache normalized, credential-free provider quota
 // snapshots for the authenticated account.
 service GatewayService {
+  // GetCompatibility is the stable, unauthenticated bootstrap used before
+  // sign-in. It contains no account or machine data.
+  rpc GetCompatibility(CompatibilityRequest) returns (CompatibilityResponse);
   rpc GetAccount(google.protobuf.Empty) returns (Account);
   rpc ListDaemons(google.protobuf.Empty) returns (ListDaemonsResponse);
   rpc WatchDaemons(WatchDaemonsRequest) returns (stream DaemonPresenceUpdate);
@@ -64,13 +67,16 @@ message Daemon {
   string name = 2;
   bool online = 3;
   string last_seen_at = 4;
-  string version = 5;
+  // Canonical Dieter release version. The field number is retained from the
+  // former generic version field for wire continuity.
+  string release_version = 5;
   uint64 generation = 6;
   repeated DirectCandidate direct_candidates = 7;
   RemoteDesktopPresence remote_desktop = 8;
-  // Shared application contract returned by DieterService.Health. Gateway,
-  // daemon, and clients require the exact same contract; release versions may differ.
-  string api_version = 9;
+  reserved 9;
+  reserved "api_version";
+  CompatibilityStatus compatibility = 10;
+  string minimum_release_version = 11;
 }
 
 // RemoteDesktopPresence is intentionally coarse gateway metadata. Display
@@ -90,9 +96,43 @@ message ListDaemonsResponse {
 
 message GatewayInformation {
   string release_version = 1;
-  string api_version = 2;
+  reserved 2;
+  reserved "api_version";
   string source_revision = 3;
   string built_at = 4;
+  CompatibilityPolicy compatibility_policy = 5;
+}
+
+enum CompatibilityComponent {
+  COMPATIBILITY_COMPONENT_UNSPECIFIED = 0;
+  COMPATIBILITY_COMPONENT_CLIENT = 1;
+  COMPATIBILITY_COMPONENT_DAEMON = 2;
+}
+
+enum CompatibilityStatus {
+  COMPATIBILITY_STATUS_UNSPECIFIED = 0;
+  COMPATIBILITY_STATUS_COMPATIBLE = 1;
+  COMPATIBILITY_STATUS_UPDATE_REQUIRED = 2;
+  COMPATIBILITY_STATUS_INVALID_VERSION = 3;
+}
+
+message CompatibilityPolicy {
+  string gateway_release_version = 1;
+  string minimum_client_version = 2;
+  string minimum_daemon_version = 3;
+  string revision = 4;
+}
+
+message CompatibilityRequest {
+  string release_version = 1;
+  CompatibilityComponent component = 2;
+}
+
+message CompatibilityResponse {
+  CompatibilityPolicy policy = 1;
+  CompatibilityStatus status = 2;
+  string current_release_version = 3;
+  string minimum_release_version = 4;
 }
 
 message WatchDaemonsRequest {
@@ -497,11 +537,12 @@ message DaemonLinkFrame {
   string status_message = 11;
   map<string, string> metadata = 12;
   uint32 window_bytes = 13;
-  string version = 14;
+  string release_version = 14;
   uint64 generation = 15;
   repeated DirectCandidate direct_candidates = 16;
   RemoteDesktopPresence remote_desktop = 17;
-  string api_version = 18;
+  reserved 18;
+  reserved "api_version";
   repeated string capabilities = 19;
   bytes provider_account_correlation_key = 20;
   ProviderAccountsPresence provider_accounts = 21;
@@ -509,4 +550,6 @@ message DaemonLinkFrame {
   ProviderQuotaRefreshResult provider_quota_refresh_result = 23;
   ProviderQuotaResetRequest provider_quota_reset_request = 24;
   ProviderQuotaResetResult provider_quota_reset_result = 25;
+  CompatibilityPolicy compatibility_policy = 26;
+  CompatibilityStatus compatibility = 27;
 }

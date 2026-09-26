@@ -25,6 +25,86 @@ fileprivate nonisolated struct _GeneratedWithProtocGenSwiftVersion: SwiftProtobu
   typealias Version = _2
 }
 
+public nonisolated enum Dieter_Gateway_V1_CompatibilityComponent: SwiftProtobuf.Enum, Swift.CaseIterable {
+  public typealias RawValue = Int
+  case unspecified // = 0
+  case client // = 1
+  case daemon // = 2
+  case UNRECOGNIZED(Int)
+
+  public init() {
+    self = .unspecified
+  }
+
+  public init?(rawValue: Int) {
+    switch rawValue {
+    case 0: self = .unspecified
+    case 1: self = .client
+    case 2: self = .daemon
+    default: self = .UNRECOGNIZED(rawValue)
+    }
+  }
+
+  public var rawValue: Int {
+    switch self {
+    case .unspecified: return 0
+    case .client: return 1
+    case .daemon: return 2
+    case .UNRECOGNIZED(let i): return i
+    }
+  }
+
+  // The compiler won't synthesize support with the UNRECOGNIZED case.
+  public static let allCases: [Dieter_Gateway_V1_CompatibilityComponent] = [
+    .unspecified,
+    .client,
+    .daemon,
+  ]
+
+}
+
+public nonisolated enum Dieter_Gateway_V1_CompatibilityStatus: SwiftProtobuf.Enum, Swift.CaseIterable {
+  public typealias RawValue = Int
+  case unspecified // = 0
+  case compatible // = 1
+  case updateRequired // = 2
+  case invalidVersion // = 3
+  case UNRECOGNIZED(Int)
+
+  public init() {
+    self = .unspecified
+  }
+
+  public init?(rawValue: Int) {
+    switch rawValue {
+    case 0: self = .unspecified
+    case 1: self = .compatible
+    case 2: self = .updateRequired
+    case 3: self = .invalidVersion
+    default: self = .UNRECOGNIZED(rawValue)
+    }
+  }
+
+  public var rawValue: Int {
+    switch self {
+    case .unspecified: return 0
+    case .compatible: return 1
+    case .updateRequired: return 2
+    case .invalidVersion: return 3
+    case .UNRECOGNIZED(let i): return i
+    }
+  }
+
+  // The compiler won't synthesize support with the UNRECOGNIZED case.
+  public static let allCases: [Dieter_Gateway_V1_CompatibilityStatus] = [
+    .unspecified,
+    .compatible,
+    .updateRequired,
+    .invalidVersion,
+  ]
+
+}
+
 public nonisolated enum Dieter_Gateway_V1_ProviderQuotaProvider: SwiftProtobuf.Enum, Swift.CaseIterable {
   public typealias RawValue = Int
   case unspecified // = 0
@@ -437,7 +517,9 @@ public nonisolated struct Dieter_Gateway_V1_Daemon: Sendable {
 
   public var lastSeenAt: String = String()
 
-  public var version: String = String()
+  /// Canonical Dieter release version. The field number is retained from the
+  /// former generic version field for wire continuity.
+  public var releaseVersion: String = String()
 
   public var generation: UInt64 = 0
 
@@ -452,9 +534,9 @@ public nonisolated struct Dieter_Gateway_V1_Daemon: Sendable {
   /// Clears the value of `remoteDesktop`. Subsequent reads from it will return its default value.
   public mutating func clearRemoteDesktop() {self._remoteDesktop = nil}
 
-  /// Shared application contract returned by DieterService.Health. Gateway,
-  /// daemon, and clients require the exact same contract; release versions may differ.
-  public var apiVersion: String = String()
+  public var compatibility: Dieter_Gateway_V1_CompatibilityStatus = .unspecified
+
+  public var minimumReleaseVersion: String = String()
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -515,15 +597,83 @@ public nonisolated struct Dieter_Gateway_V1_GatewayInformation: Sendable {
 
   public var releaseVersion: String = String()
 
-  public var apiVersion: String = String()
-
   public var sourceRevision: String = String()
 
   public var builtAt: String = String()
 
+  public var compatibilityPolicy: Dieter_Gateway_V1_CompatibilityPolicy {
+    get {_compatibilityPolicy ?? Dieter_Gateway_V1_CompatibilityPolicy()}
+    set {_compatibilityPolicy = newValue}
+  }
+  /// Returns true if `compatibilityPolicy` has been explicitly set.
+  public var hasCompatibilityPolicy: Bool {self._compatibilityPolicy != nil}
+  /// Clears the value of `compatibilityPolicy`. Subsequent reads from it will return its default value.
+  public mutating func clearCompatibilityPolicy() {self._compatibilityPolicy = nil}
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
+
+  fileprivate var _compatibilityPolicy: Dieter_Gateway_V1_CompatibilityPolicy? = nil
+}
+
+public nonisolated struct Dieter_Gateway_V1_CompatibilityPolicy: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var gatewayReleaseVersion: String = String()
+
+  public var minimumClientVersion: String = String()
+
+  public var minimumDaemonVersion: String = String()
+
+  public var revision: String = String()
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct Dieter_Gateway_V1_CompatibilityRequest: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var releaseVersion: String = String()
+
+  public var component: Dieter_Gateway_V1_CompatibilityComponent = .unspecified
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct Dieter_Gateway_V1_CompatibilityResponse: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var policy: Dieter_Gateway_V1_CompatibilityPolicy {
+    get {_policy ?? Dieter_Gateway_V1_CompatibilityPolicy()}
+    set {_policy = newValue}
+  }
+  /// Returns true if `policy` has been explicitly set.
+  public var hasPolicy: Bool {self._policy != nil}
+  /// Clears the value of `policy`. Subsequent reads from it will return its default value.
+  public mutating func clearPolicy() {self._policy = nil}
+
+  public var status: Dieter_Gateway_V1_CompatibilityStatus = .unspecified
+
+  public var currentReleaseVersion: String = String()
+
+  public var minimumReleaseVersion: String = String()
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+
+  fileprivate var _policy: Dieter_Gateway_V1_CompatibilityPolicy? = nil
 }
 
 public nonisolated struct Dieter_Gateway_V1_WatchDaemonsRequest: Sendable {
@@ -1569,9 +1719,9 @@ public nonisolated struct Dieter_Gateway_V1_DaemonLinkFrame: @unchecked Sendable
     set {_uniqueStorage()._windowBytes = newValue}
   }
 
-  public var version: String {
-    get {_storage._version}
-    set {_uniqueStorage()._version = newValue}
+  public var releaseVersion: String {
+    get {_storage._releaseVersion}
+    set {_uniqueStorage()._releaseVersion = newValue}
   }
 
   public var generation: UInt64 {
@@ -1592,11 +1742,6 @@ public nonisolated struct Dieter_Gateway_V1_DaemonLinkFrame: @unchecked Sendable
   public var hasRemoteDesktop: Bool {_storage._remoteDesktop != nil}
   /// Clears the value of `remoteDesktop`. Subsequent reads from it will return its default value.
   public mutating func clearRemoteDesktop() {_uniqueStorage()._remoteDesktop = nil}
-
-  public var apiVersion: String {
-    get {_storage._apiVersion}
-    set {_uniqueStorage()._apiVersion = newValue}
-  }
 
   public var capabilities: [String] {
     get {_storage._capabilities}
@@ -1653,6 +1798,20 @@ public nonisolated struct Dieter_Gateway_V1_DaemonLinkFrame: @unchecked Sendable
   /// Clears the value of `providerQuotaResetResult`. Subsequent reads from it will return its default value.
   public mutating func clearProviderQuotaResetResult() {_uniqueStorage()._providerQuotaResetResult = nil}
 
+  public var compatibilityPolicy: Dieter_Gateway_V1_CompatibilityPolicy {
+    get {_storage._compatibilityPolicy ?? Dieter_Gateway_V1_CompatibilityPolicy()}
+    set {_uniqueStorage()._compatibilityPolicy = newValue}
+  }
+  /// Returns true if `compatibilityPolicy` has been explicitly set.
+  public var hasCompatibilityPolicy: Bool {_storage._compatibilityPolicy != nil}
+  /// Clears the value of `compatibilityPolicy`. Subsequent reads from it will return its default value.
+  public mutating func clearCompatibilityPolicy() {_uniqueStorage()._compatibilityPolicy = nil}
+
+  public var compatibility: Dieter_Gateway_V1_CompatibilityStatus {
+    get {_storage._compatibility}
+    set {_uniqueStorage()._compatibility = newValue}
+  }
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
@@ -1663,6 +1822,14 @@ public nonisolated struct Dieter_Gateway_V1_DaemonLinkFrame: @unchecked Sendable
 // MARK: - Code below here is support for the SwiftProtobuf runtime.
 
 fileprivate nonisolated let _protobuf_package = "dieter.gateway.v1"
+
+nonisolated extension Dieter_Gateway_V1_CompatibilityComponent: SwiftProtobuf._ProtoNameProviding {
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0COMPATIBILITY_COMPONENT_UNSPECIFIED\0\u{1}COMPATIBILITY_COMPONENT_CLIENT\0\u{1}COMPATIBILITY_COMPONENT_DAEMON\0")
+}
+
+nonisolated extension Dieter_Gateway_V1_CompatibilityStatus: SwiftProtobuf._ProtoNameProviding {
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0COMPATIBILITY_STATUS_UNSPECIFIED\0\u{1}COMPATIBILITY_STATUS_COMPATIBLE\0\u{1}COMPATIBILITY_STATUS_UPDATE_REQUIRED\0\u{1}COMPATIBILITY_STATUS_INVALID_VERSION\0")
+}
 
 nonisolated extension Dieter_Gateway_V1_ProviderQuotaProvider: SwiftProtobuf._ProtoNameProviding {
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0PROVIDER_QUOTA_PROVIDER_UNSPECIFIED\0\u{1}PROVIDER_QUOTA_PROVIDER_OPENAI_CODEX\0\u{1}PROVIDER_QUOTA_PROVIDER_ANTHROPIC_CLAUDE\0")
@@ -1764,7 +1931,7 @@ nonisolated extension Dieter_Gateway_V1_DaemonRef: SwiftProtobuf.Message, SwiftP
 
 nonisolated extension Dieter_Gateway_V1_Daemon: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".Daemon"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{1}name\0\u{1}online\0\u{3}last_seen_at\0\u{1}version\0\u{1}generation\0\u{3}direct_candidates\0\u{3}remote_desktop\0\u{3}api_version\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{1}name\0\u{1}online\0\u{3}last_seen_at\0\u{3}release_version\0\u{1}generation\0\u{3}direct_candidates\0\u{3}remote_desktop\0\u{2}\u{2}compatibility\0\u{3}minimum_release_version\0\u{b}api_version\0\u{c}\u{9}\u{1}")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -1776,11 +1943,12 @@ nonisolated extension Dieter_Gateway_V1_Daemon: SwiftProtobuf.Message, SwiftProt
       case 2: try { try decoder.decodeSingularStringField(value: &self.name) }()
       case 3: try { try decoder.decodeSingularBoolField(value: &self.online) }()
       case 4: try { try decoder.decodeSingularStringField(value: &self.lastSeenAt) }()
-      case 5: try { try decoder.decodeSingularStringField(value: &self.version) }()
+      case 5: try { try decoder.decodeSingularStringField(value: &self.releaseVersion) }()
       case 6: try { try decoder.decodeSingularUInt64Field(value: &self.generation) }()
       case 7: try { try decoder.decodeRepeatedMessageField(value: &self.directCandidates) }()
       case 8: try { try decoder.decodeSingularMessageField(value: &self._remoteDesktop) }()
-      case 9: try { try decoder.decodeSingularStringField(value: &self.apiVersion) }()
+      case 10: try { try decoder.decodeSingularEnumField(value: &self.compatibility) }()
+      case 11: try { try decoder.decodeSingularStringField(value: &self.minimumReleaseVersion) }()
       default: break
       }
     }
@@ -1803,8 +1971,8 @@ nonisolated extension Dieter_Gateway_V1_Daemon: SwiftProtobuf.Message, SwiftProt
     if !self.lastSeenAt.isEmpty {
       try visitor.visitSingularStringField(value: self.lastSeenAt, fieldNumber: 4)
     }
-    if !self.version.isEmpty {
-      try visitor.visitSingularStringField(value: self.version, fieldNumber: 5)
+    if !self.releaseVersion.isEmpty {
+      try visitor.visitSingularStringField(value: self.releaseVersion, fieldNumber: 5)
     }
     if self.generation != 0 {
       try visitor.visitSingularUInt64Field(value: self.generation, fieldNumber: 6)
@@ -1815,8 +1983,11 @@ nonisolated extension Dieter_Gateway_V1_Daemon: SwiftProtobuf.Message, SwiftProt
     try { if let v = self._remoteDesktop {
       try visitor.visitSingularMessageField(value: v, fieldNumber: 8)
     } }()
-    if !self.apiVersion.isEmpty {
-      try visitor.visitSingularStringField(value: self.apiVersion, fieldNumber: 9)
+    if self.compatibility != .unspecified {
+      try visitor.visitSingularEnumField(value: self.compatibility, fieldNumber: 10)
+    }
+    if !self.minimumReleaseVersion.isEmpty {
+      try visitor.visitSingularStringField(value: self.minimumReleaseVersion, fieldNumber: 11)
     }
     try unknownFields.traverse(visitor: &visitor)
   }
@@ -1826,11 +1997,12 @@ nonisolated extension Dieter_Gateway_V1_Daemon: SwiftProtobuf.Message, SwiftProt
     if lhs.name != rhs.name {return false}
     if lhs.online != rhs.online {return false}
     if lhs.lastSeenAt != rhs.lastSeenAt {return false}
-    if lhs.version != rhs.version {return false}
+    if lhs.releaseVersion != rhs.releaseVersion {return false}
     if lhs.generation != rhs.generation {return false}
     if lhs.directCandidates != rhs.directCandidates {return false}
     if lhs._remoteDesktop != rhs._remoteDesktop {return false}
-    if lhs.apiVersion != rhs.apiVersion {return false}
+    if lhs.compatibility != rhs.compatibility {return false}
+    if lhs.minimumReleaseVersion != rhs.minimumReleaseVersion {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -1927,7 +2099,7 @@ nonisolated extension Dieter_Gateway_V1_ListDaemonsResponse: SwiftProtobuf.Messa
 
 nonisolated extension Dieter_Gateway_V1_GatewayInformation: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".GatewayInformation"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}release_version\0\u{3}api_version\0\u{3}source_revision\0\u{3}built_at\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}release_version\0\u{4}\u{2}source_revision\0\u{3}built_at\0\u{3}compatibility_policy\0\u{b}api_version\0\u{c}\u{2}\u{1}")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -1936,9 +2108,101 @@ nonisolated extension Dieter_Gateway_V1_GatewayInformation: SwiftProtobuf.Messag
       // enabled. https://github.com/apple/swift-protobuf/issues/1034
       switch fieldNumber {
       case 1: try { try decoder.decodeSingularStringField(value: &self.releaseVersion) }()
-      case 2: try { try decoder.decodeSingularStringField(value: &self.apiVersion) }()
       case 3: try { try decoder.decodeSingularStringField(value: &self.sourceRevision) }()
       case 4: try { try decoder.decodeSingularStringField(value: &self.builtAt) }()
+      case 5: try { try decoder.decodeSingularMessageField(value: &self._compatibilityPolicy) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    // The use of inline closures is to circumvent an issue where the compiler
+    // allocates stack space for every if/case branch local when no optimizations
+    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+    // https://github.com/apple/swift-protobuf/issues/1182
+    if !self.releaseVersion.isEmpty {
+      try visitor.visitSingularStringField(value: self.releaseVersion, fieldNumber: 1)
+    }
+    if !self.sourceRevision.isEmpty {
+      try visitor.visitSingularStringField(value: self.sourceRevision, fieldNumber: 3)
+    }
+    if !self.builtAt.isEmpty {
+      try visitor.visitSingularStringField(value: self.builtAt, fieldNumber: 4)
+    }
+    try { if let v = self._compatibilityPolicy {
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 5)
+    } }()
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Dieter_Gateway_V1_GatewayInformation, rhs: Dieter_Gateway_V1_GatewayInformation) -> Bool {
+    if lhs.releaseVersion != rhs.releaseVersion {return false}
+    if lhs.sourceRevision != rhs.sourceRevision {return false}
+    if lhs.builtAt != rhs.builtAt {return false}
+    if lhs._compatibilityPolicy != rhs._compatibilityPolicy {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Dieter_Gateway_V1_CompatibilityPolicy: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".CompatibilityPolicy"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}gateway_release_version\0\u{3}minimum_client_version\0\u{3}minimum_daemon_version\0\u{1}revision\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.gatewayReleaseVersion) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.minimumClientVersion) }()
+      case 3: try { try decoder.decodeSingularStringField(value: &self.minimumDaemonVersion) }()
+      case 4: try { try decoder.decodeSingularStringField(value: &self.revision) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.gatewayReleaseVersion.isEmpty {
+      try visitor.visitSingularStringField(value: self.gatewayReleaseVersion, fieldNumber: 1)
+    }
+    if !self.minimumClientVersion.isEmpty {
+      try visitor.visitSingularStringField(value: self.minimumClientVersion, fieldNumber: 2)
+    }
+    if !self.minimumDaemonVersion.isEmpty {
+      try visitor.visitSingularStringField(value: self.minimumDaemonVersion, fieldNumber: 3)
+    }
+    if !self.revision.isEmpty {
+      try visitor.visitSingularStringField(value: self.revision, fieldNumber: 4)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Dieter_Gateway_V1_CompatibilityPolicy, rhs: Dieter_Gateway_V1_CompatibilityPolicy) -> Bool {
+    if lhs.gatewayReleaseVersion != rhs.gatewayReleaseVersion {return false}
+    if lhs.minimumClientVersion != rhs.minimumClientVersion {return false}
+    if lhs.minimumDaemonVersion != rhs.minimumDaemonVersion {return false}
+    if lhs.revision != rhs.revision {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Dieter_Gateway_V1_CompatibilityRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".CompatibilityRequest"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}release_version\0\u{1}component\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.releaseVersion) }()
+      case 2: try { try decoder.decodeSingularEnumField(value: &self.component) }()
       default: break
       }
     }
@@ -1948,23 +2212,64 @@ nonisolated extension Dieter_Gateway_V1_GatewayInformation: SwiftProtobuf.Messag
     if !self.releaseVersion.isEmpty {
       try visitor.visitSingularStringField(value: self.releaseVersion, fieldNumber: 1)
     }
-    if !self.apiVersion.isEmpty {
-      try visitor.visitSingularStringField(value: self.apiVersion, fieldNumber: 2)
-    }
-    if !self.sourceRevision.isEmpty {
-      try visitor.visitSingularStringField(value: self.sourceRevision, fieldNumber: 3)
-    }
-    if !self.builtAt.isEmpty {
-      try visitor.visitSingularStringField(value: self.builtAt, fieldNumber: 4)
+    if self.component != .unspecified {
+      try visitor.visitSingularEnumField(value: self.component, fieldNumber: 2)
     }
     try unknownFields.traverse(visitor: &visitor)
   }
 
-  public static func ==(lhs: Dieter_Gateway_V1_GatewayInformation, rhs: Dieter_Gateway_V1_GatewayInformation) -> Bool {
+  public static func ==(lhs: Dieter_Gateway_V1_CompatibilityRequest, rhs: Dieter_Gateway_V1_CompatibilityRequest) -> Bool {
     if lhs.releaseVersion != rhs.releaseVersion {return false}
-    if lhs.apiVersion != rhs.apiVersion {return false}
-    if lhs.sourceRevision != rhs.sourceRevision {return false}
-    if lhs.builtAt != rhs.builtAt {return false}
+    if lhs.component != rhs.component {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Dieter_Gateway_V1_CompatibilityResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".CompatibilityResponse"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}policy\0\u{1}status\0\u{3}current_release_version\0\u{3}minimum_release_version\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularMessageField(value: &self._policy) }()
+      case 2: try { try decoder.decodeSingularEnumField(value: &self.status) }()
+      case 3: try { try decoder.decodeSingularStringField(value: &self.currentReleaseVersion) }()
+      case 4: try { try decoder.decodeSingularStringField(value: &self.minimumReleaseVersion) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    // The use of inline closures is to circumvent an issue where the compiler
+    // allocates stack space for every if/case branch local when no optimizations
+    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+    // https://github.com/apple/swift-protobuf/issues/1182
+    try { if let v = self._policy {
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 1)
+    } }()
+    if self.status != .unspecified {
+      try visitor.visitSingularEnumField(value: self.status, fieldNumber: 2)
+    }
+    if !self.currentReleaseVersion.isEmpty {
+      try visitor.visitSingularStringField(value: self.currentReleaseVersion, fieldNumber: 3)
+    }
+    if !self.minimumReleaseVersion.isEmpty {
+      try visitor.visitSingularStringField(value: self.minimumReleaseVersion, fieldNumber: 4)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Dieter_Gateway_V1_CompatibilityResponse, rhs: Dieter_Gateway_V1_CompatibilityResponse) -> Bool {
+    if lhs._policy != rhs._policy {return false}
+    if lhs.status != rhs.status {return false}
+    if lhs.currentReleaseVersion != rhs.currentReleaseVersion {return false}
+    if lhs.minimumReleaseVersion != rhs.minimumReleaseVersion {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -4010,7 +4315,7 @@ nonisolated extension Dieter_Gateway_V1_ProviderQuotaResetResult: SwiftProtobuf.
 
 nonisolated extension Dieter_Gateway_V1_DaemonLinkFrame: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".DaemonLinkFrame"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}kind\0\u{3}stream_id\0\u{3}daemon_id\0\u{3}request_id\0\u{1}method\0\u{1}payload\0\u{3}payload_sha256\0\u{3}delegation_assertion\0\u{3}deadline_unix_millis\0\u{3}status_code\0\u{3}status_message\0\u{1}metadata\0\u{3}window_bytes\0\u{1}version\0\u{1}generation\0\u{3}direct_candidates\0\u{3}remote_desktop\0\u{3}api_version\0\u{1}capabilities\0\u{3}provider_account_correlation_key\0\u{3}provider_accounts\0\u{3}provider_quota_refresh_request\0\u{3}provider_quota_refresh_result\0\u{3}provider_quota_reset_request\0\u{3}provider_quota_reset_result\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}kind\0\u{3}stream_id\0\u{3}daemon_id\0\u{3}request_id\0\u{1}method\0\u{1}payload\0\u{3}payload_sha256\0\u{3}delegation_assertion\0\u{3}deadline_unix_millis\0\u{3}status_code\0\u{3}status_message\0\u{1}metadata\0\u{3}window_bytes\0\u{3}release_version\0\u{1}generation\0\u{3}direct_candidates\0\u{3}remote_desktop\0\u{2}\u{2}capabilities\0\u{3}provider_account_correlation_key\0\u{3}provider_accounts\0\u{3}provider_quota_refresh_request\0\u{3}provider_quota_refresh_result\0\u{3}provider_quota_reset_request\0\u{3}provider_quota_reset_result\0\u{3}compatibility_policy\0\u{1}compatibility\0\u{b}api_version\0\u{c}\u{12}\u{1}")
 
   fileprivate class _StorageClass {
     var _kind: Dieter_Gateway_V1_DaemonLinkFrameKind = .unspecified
@@ -4026,11 +4331,10 @@ nonisolated extension Dieter_Gateway_V1_DaemonLinkFrame: SwiftProtobuf.Message, 
     var _statusMessage: String = String()
     var _metadata: Dictionary<String,String> = [:]
     var _windowBytes: UInt32 = 0
-    var _version: String = String()
+    var _releaseVersion: String = String()
     var _generation: UInt64 = 0
     var _directCandidates: [Dieter_Gateway_V1_DirectCandidate] = []
     var _remoteDesktop: Dieter_Gateway_V1_RemoteDesktopPresence? = nil
-    var _apiVersion: String = String()
     var _capabilities: [String] = []
     var _providerAccountCorrelationKey: Data = Data()
     var _providerAccounts: Dieter_Gateway_V1_ProviderAccountsPresence? = nil
@@ -4038,6 +4342,8 @@ nonisolated extension Dieter_Gateway_V1_DaemonLinkFrame: SwiftProtobuf.Message, 
     var _providerQuotaRefreshResult: Dieter_Gateway_V1_ProviderQuotaRefreshResult? = nil
     var _providerQuotaResetRequest: Dieter_Gateway_V1_ProviderQuotaResetRequest? = nil
     var _providerQuotaResetResult: Dieter_Gateway_V1_ProviderQuotaResetResult? = nil
+    var _compatibilityPolicy: Dieter_Gateway_V1_CompatibilityPolicy? = nil
+    var _compatibility: Dieter_Gateway_V1_CompatibilityStatus = .unspecified
 
       // This property is used as the initial default value for new instances of the type.
       // The type itself is protecting the reference to its storage via CoW semantics.
@@ -4061,11 +4367,10 @@ nonisolated extension Dieter_Gateway_V1_DaemonLinkFrame: SwiftProtobuf.Message, 
       _statusMessage = source._statusMessage
       _metadata = source._metadata
       _windowBytes = source._windowBytes
-      _version = source._version
+      _releaseVersion = source._releaseVersion
       _generation = source._generation
       _directCandidates = source._directCandidates
       _remoteDesktop = source._remoteDesktop
-      _apiVersion = source._apiVersion
       _capabilities = source._capabilities
       _providerAccountCorrelationKey = source._providerAccountCorrelationKey
       _providerAccounts = source._providerAccounts
@@ -4073,6 +4378,8 @@ nonisolated extension Dieter_Gateway_V1_DaemonLinkFrame: SwiftProtobuf.Message, 
       _providerQuotaRefreshResult = source._providerQuotaRefreshResult
       _providerQuotaResetRequest = source._providerQuotaResetRequest
       _providerQuotaResetResult = source._providerQuotaResetResult
+      _compatibilityPolicy = source._compatibilityPolicy
+      _compatibility = source._compatibility
     }
   }
 
@@ -4104,11 +4411,10 @@ nonisolated extension Dieter_Gateway_V1_DaemonLinkFrame: SwiftProtobuf.Message, 
         case 11: try { try decoder.decodeSingularStringField(value: &_storage._statusMessage) }()
         case 12: try { try decoder.decodeMapField(fieldType: SwiftProtobuf._ProtobufMap<SwiftProtobuf.ProtobufString,SwiftProtobuf.ProtobufString>.self, value: &_storage._metadata) }()
         case 13: try { try decoder.decodeSingularUInt32Field(value: &_storage._windowBytes) }()
-        case 14: try { try decoder.decodeSingularStringField(value: &_storage._version) }()
+        case 14: try { try decoder.decodeSingularStringField(value: &_storage._releaseVersion) }()
         case 15: try { try decoder.decodeSingularUInt64Field(value: &_storage._generation) }()
         case 16: try { try decoder.decodeRepeatedMessageField(value: &_storage._directCandidates) }()
         case 17: try { try decoder.decodeSingularMessageField(value: &_storage._remoteDesktop) }()
-        case 18: try { try decoder.decodeSingularStringField(value: &_storage._apiVersion) }()
         case 19: try { try decoder.decodeRepeatedStringField(value: &_storage._capabilities) }()
         case 20: try { try decoder.decodeSingularBytesField(value: &_storage._providerAccountCorrelationKey) }()
         case 21: try { try decoder.decodeSingularMessageField(value: &_storage._providerAccounts) }()
@@ -4116,6 +4422,8 @@ nonisolated extension Dieter_Gateway_V1_DaemonLinkFrame: SwiftProtobuf.Message, 
         case 23: try { try decoder.decodeSingularMessageField(value: &_storage._providerQuotaRefreshResult) }()
         case 24: try { try decoder.decodeSingularMessageField(value: &_storage._providerQuotaResetRequest) }()
         case 25: try { try decoder.decodeSingularMessageField(value: &_storage._providerQuotaResetResult) }()
+        case 26: try { try decoder.decodeSingularMessageField(value: &_storage._compatibilityPolicy) }()
+        case 27: try { try decoder.decodeSingularEnumField(value: &_storage._compatibility) }()
         default: break
         }
       }
@@ -4167,8 +4475,8 @@ nonisolated extension Dieter_Gateway_V1_DaemonLinkFrame: SwiftProtobuf.Message, 
       if _storage._windowBytes != 0 {
         try visitor.visitSingularUInt32Field(value: _storage._windowBytes, fieldNumber: 13)
       }
-      if !_storage._version.isEmpty {
-        try visitor.visitSingularStringField(value: _storage._version, fieldNumber: 14)
+      if !_storage._releaseVersion.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._releaseVersion, fieldNumber: 14)
       }
       if _storage._generation != 0 {
         try visitor.visitSingularUInt64Field(value: _storage._generation, fieldNumber: 15)
@@ -4179,9 +4487,6 @@ nonisolated extension Dieter_Gateway_V1_DaemonLinkFrame: SwiftProtobuf.Message, 
       try { if let v = _storage._remoteDesktop {
         try visitor.visitSingularMessageField(value: v, fieldNumber: 17)
       } }()
-      if !_storage._apiVersion.isEmpty {
-        try visitor.visitSingularStringField(value: _storage._apiVersion, fieldNumber: 18)
-      }
       if !_storage._capabilities.isEmpty {
         try visitor.visitRepeatedStringField(value: _storage._capabilities, fieldNumber: 19)
       }
@@ -4203,6 +4508,12 @@ nonisolated extension Dieter_Gateway_V1_DaemonLinkFrame: SwiftProtobuf.Message, 
       try { if let v = _storage._providerQuotaResetResult {
         try visitor.visitSingularMessageField(value: v, fieldNumber: 25)
       } }()
+      try { if let v = _storage._compatibilityPolicy {
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 26)
+      } }()
+      if _storage._compatibility != .unspecified {
+        try visitor.visitSingularEnumField(value: _storage._compatibility, fieldNumber: 27)
+      }
     }
     try unknownFields.traverse(visitor: &visitor)
   }
@@ -4225,11 +4536,10 @@ nonisolated extension Dieter_Gateway_V1_DaemonLinkFrame: SwiftProtobuf.Message, 
         if _storage._statusMessage != rhs_storage._statusMessage {return false}
         if _storage._metadata != rhs_storage._metadata {return false}
         if _storage._windowBytes != rhs_storage._windowBytes {return false}
-        if _storage._version != rhs_storage._version {return false}
+        if _storage._releaseVersion != rhs_storage._releaseVersion {return false}
         if _storage._generation != rhs_storage._generation {return false}
         if _storage._directCandidates != rhs_storage._directCandidates {return false}
         if _storage._remoteDesktop != rhs_storage._remoteDesktop {return false}
-        if _storage._apiVersion != rhs_storage._apiVersion {return false}
         if _storage._capabilities != rhs_storage._capabilities {return false}
         if _storage._providerAccountCorrelationKey != rhs_storage._providerAccountCorrelationKey {return false}
         if _storage._providerAccounts != rhs_storage._providerAccounts {return false}
@@ -4237,6 +4547,8 @@ nonisolated extension Dieter_Gateway_V1_DaemonLinkFrame: SwiftProtobuf.Message, 
         if _storage._providerQuotaRefreshResult != rhs_storage._providerQuotaRefreshResult {return false}
         if _storage._providerQuotaResetRequest != rhs_storage._providerQuotaResetRequest {return false}
         if _storage._providerQuotaResetResult != rhs_storage._providerQuotaResetResult {return false}
+        if _storage._compatibilityPolicy != rhs_storage._compatibilityPolicy {return false}
+        if _storage._compatibility != rhs_storage._compatibility {return false}
         return true
       }
       if !storagesAreEqual {return false}

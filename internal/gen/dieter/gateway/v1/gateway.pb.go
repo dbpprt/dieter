@@ -22,6 +22,107 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+type CompatibilityComponent int32
+
+const (
+	CompatibilityComponent_COMPATIBILITY_COMPONENT_UNSPECIFIED CompatibilityComponent = 0
+	CompatibilityComponent_COMPATIBILITY_COMPONENT_CLIENT      CompatibilityComponent = 1
+	CompatibilityComponent_COMPATIBILITY_COMPONENT_DAEMON      CompatibilityComponent = 2
+)
+
+// Enum value maps for CompatibilityComponent.
+var (
+	CompatibilityComponent_name = map[int32]string{
+		0: "COMPATIBILITY_COMPONENT_UNSPECIFIED",
+		1: "COMPATIBILITY_COMPONENT_CLIENT",
+		2: "COMPATIBILITY_COMPONENT_DAEMON",
+	}
+	CompatibilityComponent_value = map[string]int32{
+		"COMPATIBILITY_COMPONENT_UNSPECIFIED": 0,
+		"COMPATIBILITY_COMPONENT_CLIENT":      1,
+		"COMPATIBILITY_COMPONENT_DAEMON":      2,
+	}
+)
+
+func (x CompatibilityComponent) Enum() *CompatibilityComponent {
+	p := new(CompatibilityComponent)
+	*p = x
+	return p
+}
+
+func (x CompatibilityComponent) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (CompatibilityComponent) Descriptor() protoreflect.EnumDescriptor {
+	return file_dieter_gateway_v1_gateway_proto_enumTypes[0].Descriptor()
+}
+
+func (CompatibilityComponent) Type() protoreflect.EnumType {
+	return &file_dieter_gateway_v1_gateway_proto_enumTypes[0]
+}
+
+func (x CompatibilityComponent) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use CompatibilityComponent.Descriptor instead.
+func (CompatibilityComponent) EnumDescriptor() ([]byte, []int) {
+	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{0}
+}
+
+type CompatibilityStatus int32
+
+const (
+	CompatibilityStatus_COMPATIBILITY_STATUS_UNSPECIFIED     CompatibilityStatus = 0
+	CompatibilityStatus_COMPATIBILITY_STATUS_COMPATIBLE      CompatibilityStatus = 1
+	CompatibilityStatus_COMPATIBILITY_STATUS_UPDATE_REQUIRED CompatibilityStatus = 2
+	CompatibilityStatus_COMPATIBILITY_STATUS_INVALID_VERSION CompatibilityStatus = 3
+)
+
+// Enum value maps for CompatibilityStatus.
+var (
+	CompatibilityStatus_name = map[int32]string{
+		0: "COMPATIBILITY_STATUS_UNSPECIFIED",
+		1: "COMPATIBILITY_STATUS_COMPATIBLE",
+		2: "COMPATIBILITY_STATUS_UPDATE_REQUIRED",
+		3: "COMPATIBILITY_STATUS_INVALID_VERSION",
+	}
+	CompatibilityStatus_value = map[string]int32{
+		"COMPATIBILITY_STATUS_UNSPECIFIED":     0,
+		"COMPATIBILITY_STATUS_COMPATIBLE":      1,
+		"COMPATIBILITY_STATUS_UPDATE_REQUIRED": 2,
+		"COMPATIBILITY_STATUS_INVALID_VERSION": 3,
+	}
+)
+
+func (x CompatibilityStatus) Enum() *CompatibilityStatus {
+	p := new(CompatibilityStatus)
+	*p = x
+	return p
+}
+
+func (x CompatibilityStatus) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (CompatibilityStatus) Descriptor() protoreflect.EnumDescriptor {
+	return file_dieter_gateway_v1_gateway_proto_enumTypes[1].Descriptor()
+}
+
+func (CompatibilityStatus) Type() protoreflect.EnumType {
+	return &file_dieter_gateway_v1_gateway_proto_enumTypes[1]
+}
+
+func (x CompatibilityStatus) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use CompatibilityStatus.Descriptor instead.
+func (CompatibilityStatus) EnumDescriptor() ([]byte, []int) {
+	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{1}
+}
+
 type ProviderQuotaProvider int32
 
 const (
@@ -55,11 +156,11 @@ func (x ProviderQuotaProvider) String() string {
 }
 
 func (ProviderQuotaProvider) Descriptor() protoreflect.EnumDescriptor {
-	return file_dieter_gateway_v1_gateway_proto_enumTypes[0].Descriptor()
+	return file_dieter_gateway_v1_gateway_proto_enumTypes[2].Descriptor()
 }
 
 func (ProviderQuotaProvider) Type() protoreflect.EnumType {
-	return &file_dieter_gateway_v1_gateway_proto_enumTypes[0]
+	return &file_dieter_gateway_v1_gateway_proto_enumTypes[2]
 }
 
 func (x ProviderQuotaProvider) Number() protoreflect.EnumNumber {
@@ -68,7 +169,7 @@ func (x ProviderQuotaProvider) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use ProviderQuotaProvider.Descriptor instead.
 func (ProviderQuotaProvider) EnumDescriptor() ([]byte, []int) {
-	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{0}
+	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{2}
 }
 
 type ProviderAccountKind int32
@@ -104,11 +205,11 @@ func (x ProviderAccountKind) String() string {
 }
 
 func (ProviderAccountKind) Descriptor() protoreflect.EnumDescriptor {
-	return file_dieter_gateway_v1_gateway_proto_enumTypes[1].Descriptor()
+	return file_dieter_gateway_v1_gateway_proto_enumTypes[3].Descriptor()
 }
 
 func (ProviderAccountKind) Type() protoreflect.EnumType {
-	return &file_dieter_gateway_v1_gateway_proto_enumTypes[1]
+	return &file_dieter_gateway_v1_gateway_proto_enumTypes[3]
 }
 
 func (x ProviderAccountKind) Number() protoreflect.EnumNumber {
@@ -117,7 +218,7 @@ func (x ProviderAccountKind) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use ProviderAccountKind.Descriptor instead.
 func (ProviderAccountKind) EnumDescriptor() ([]byte, []int) {
-	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{1}
+	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{3}
 }
 
 type ProviderQuotaAvailability int32
@@ -162,11 +263,11 @@ func (x ProviderQuotaAvailability) String() string {
 }
 
 func (ProviderQuotaAvailability) Descriptor() protoreflect.EnumDescriptor {
-	return file_dieter_gateway_v1_gateway_proto_enumTypes[2].Descriptor()
+	return file_dieter_gateway_v1_gateway_proto_enumTypes[4].Descriptor()
 }
 
 func (ProviderQuotaAvailability) Type() protoreflect.EnumType {
-	return &file_dieter_gateway_v1_gateway_proto_enumTypes[2]
+	return &file_dieter_gateway_v1_gateway_proto_enumTypes[4]
 }
 
 func (x ProviderQuotaAvailability) Number() protoreflect.EnumNumber {
@@ -175,7 +276,7 @@ func (x ProviderQuotaAvailability) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use ProviderQuotaAvailability.Descriptor instead.
 func (ProviderQuotaAvailability) EnumDescriptor() ([]byte, []int) {
-	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{2}
+	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{4}
 }
 
 type ProviderQuotaWindowKind int32
@@ -220,11 +321,11 @@ func (x ProviderQuotaWindowKind) String() string {
 }
 
 func (ProviderQuotaWindowKind) Descriptor() protoreflect.EnumDescriptor {
-	return file_dieter_gateway_v1_gateway_proto_enumTypes[3].Descriptor()
+	return file_dieter_gateway_v1_gateway_proto_enumTypes[5].Descriptor()
 }
 
 func (ProviderQuotaWindowKind) Type() protoreflect.EnumType {
-	return &file_dieter_gateway_v1_gateway_proto_enumTypes[3]
+	return &file_dieter_gateway_v1_gateway_proto_enumTypes[5]
 }
 
 func (x ProviderQuotaWindowKind) Number() protoreflect.EnumNumber {
@@ -233,7 +334,7 @@ func (x ProviderQuotaWindowKind) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use ProviderQuotaWindowKind.Descriptor instead.
 func (ProviderQuotaWindowKind) EnumDescriptor() ([]byte, []int) {
-	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{3}
+	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{5}
 }
 
 type ProviderQuotaRefreshState int32
@@ -275,11 +376,11 @@ func (x ProviderQuotaRefreshState) String() string {
 }
 
 func (ProviderQuotaRefreshState) Descriptor() protoreflect.EnumDescriptor {
-	return file_dieter_gateway_v1_gateway_proto_enumTypes[4].Descriptor()
+	return file_dieter_gateway_v1_gateway_proto_enumTypes[6].Descriptor()
 }
 
 func (ProviderQuotaRefreshState) Type() protoreflect.EnumType {
-	return &file_dieter_gateway_v1_gateway_proto_enumTypes[4]
+	return &file_dieter_gateway_v1_gateway_proto_enumTypes[6]
 }
 
 func (x ProviderQuotaRefreshState) Number() protoreflect.EnumNumber {
@@ -288,7 +389,7 @@ func (x ProviderQuotaRefreshState) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use ProviderQuotaRefreshState.Descriptor instead.
 func (ProviderQuotaRefreshState) EnumDescriptor() ([]byte, []int) {
-	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{4}
+	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{6}
 }
 
 type ProviderQuotaFreshness int32
@@ -324,11 +425,11 @@ func (x ProviderQuotaFreshness) String() string {
 }
 
 func (ProviderQuotaFreshness) Descriptor() protoreflect.EnumDescriptor {
-	return file_dieter_gateway_v1_gateway_proto_enumTypes[5].Descriptor()
+	return file_dieter_gateway_v1_gateway_proto_enumTypes[7].Descriptor()
 }
 
 func (ProviderQuotaFreshness) Type() protoreflect.EnumType {
-	return &file_dieter_gateway_v1_gateway_proto_enumTypes[5]
+	return &file_dieter_gateway_v1_gateway_proto_enumTypes[7]
 }
 
 func (x ProviderQuotaFreshness) Number() protoreflect.EnumNumber {
@@ -337,7 +438,7 @@ func (x ProviderQuotaFreshness) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use ProviderQuotaFreshness.Descriptor instead.
 func (ProviderQuotaFreshness) EnumDescriptor() ([]byte, []int) {
-	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{5}
+	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{7}
 }
 
 type DaemonLinkFrameKind int32
@@ -427,11 +528,11 @@ func (x DaemonLinkFrameKind) String() string {
 }
 
 func (DaemonLinkFrameKind) Descriptor() protoreflect.EnumDescriptor {
-	return file_dieter_gateway_v1_gateway_proto_enumTypes[6].Descriptor()
+	return file_dieter_gateway_v1_gateway_proto_enumTypes[8].Descriptor()
 }
 
 func (DaemonLinkFrameKind) Type() protoreflect.EnumType {
-	return &file_dieter_gateway_v1_gateway_proto_enumTypes[6]
+	return &file_dieter_gateway_v1_gateway_proto_enumTypes[8]
 }
 
 func (x DaemonLinkFrameKind) Number() protoreflect.EnumNumber {
@@ -440,7 +541,7 @@ func (x DaemonLinkFrameKind) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use DaemonLinkFrameKind.Descriptor instead.
 func (DaemonLinkFrameKind) EnumDescriptor() ([]byte, []int) {
-	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{6}
+	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{8}
 }
 
 type Account struct {
@@ -549,20 +650,21 @@ func (x *DaemonRef) GetDaemonId() string {
 }
 
 type Daemon struct {
-	state            protoimpl.MessageState `protogen:"open.v1"`
-	Id               string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	Name             string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
-	Online           bool                   `protobuf:"varint,3,opt,name=online,proto3" json:"online,omitempty"`
-	LastSeenAt       string                 `protobuf:"bytes,4,opt,name=last_seen_at,json=lastSeenAt,proto3" json:"last_seen_at,omitempty"`
-	Version          string                 `protobuf:"bytes,5,opt,name=version,proto3" json:"version,omitempty"`
-	Generation       uint64                 `protobuf:"varint,6,opt,name=generation,proto3" json:"generation,omitempty"`
-	DirectCandidates []*DirectCandidate     `protobuf:"bytes,7,rep,name=direct_candidates,json=directCandidates,proto3" json:"direct_candidates,omitempty"`
-	RemoteDesktop    *RemoteDesktopPresence `protobuf:"bytes,8,opt,name=remote_desktop,json=remoteDesktop,proto3" json:"remote_desktop,omitempty"`
-	// Shared application contract returned by DieterService.Health. Gateway,
-	// daemon, and clients require the exact same contract; release versions may differ.
-	ApiVersion    string `protobuf:"bytes,9,opt,name=api_version,json=apiVersion,proto3" json:"api_version,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	Id         string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Name       string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	Online     bool                   `protobuf:"varint,3,opt,name=online,proto3" json:"online,omitempty"`
+	LastSeenAt string                 `protobuf:"bytes,4,opt,name=last_seen_at,json=lastSeenAt,proto3" json:"last_seen_at,omitempty"`
+	// Canonical Dieter release version. The field number is retained from the
+	// former generic version field for wire continuity.
+	ReleaseVersion        string                 `protobuf:"bytes,5,opt,name=release_version,json=releaseVersion,proto3" json:"release_version,omitempty"`
+	Generation            uint64                 `protobuf:"varint,6,opt,name=generation,proto3" json:"generation,omitempty"`
+	DirectCandidates      []*DirectCandidate     `protobuf:"bytes,7,rep,name=direct_candidates,json=directCandidates,proto3" json:"direct_candidates,omitempty"`
+	RemoteDesktop         *RemoteDesktopPresence `protobuf:"bytes,8,opt,name=remote_desktop,json=remoteDesktop,proto3" json:"remote_desktop,omitempty"`
+	Compatibility         CompatibilityStatus    `protobuf:"varint,10,opt,name=compatibility,proto3,enum=dieter.gateway.v1.CompatibilityStatus" json:"compatibility,omitempty"`
+	MinimumReleaseVersion string                 `protobuf:"bytes,11,opt,name=minimum_release_version,json=minimumReleaseVersion,proto3" json:"minimum_release_version,omitempty"`
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
 }
 
 func (x *Daemon) Reset() {
@@ -623,9 +725,9 @@ func (x *Daemon) GetLastSeenAt() string {
 	return ""
 }
 
-func (x *Daemon) GetVersion() string {
+func (x *Daemon) GetReleaseVersion() string {
 	if x != nil {
-		return x.Version
+		return x.ReleaseVersion
 	}
 	return ""
 }
@@ -651,9 +753,16 @@ func (x *Daemon) GetRemoteDesktop() *RemoteDesktopPresence {
 	return nil
 }
 
-func (x *Daemon) GetApiVersion() string {
+func (x *Daemon) GetCompatibility() CompatibilityStatus {
 	if x != nil {
-		return x.ApiVersion
+		return x.Compatibility
+	}
+	return CompatibilityStatus_COMPATIBILITY_STATUS_UNSPECIFIED
+}
+
+func (x *Daemon) GetMinimumReleaseVersion() string {
+	if x != nil {
+		return x.MinimumReleaseVersion
 	}
 	return ""
 }
@@ -789,13 +898,13 @@ func (x *ListDaemonsResponse) GetGatewayInformation() *GatewayInformation {
 }
 
 type GatewayInformation struct {
-	state          protoimpl.MessageState `protogen:"open.v1"`
-	ReleaseVersion string                 `protobuf:"bytes,1,opt,name=release_version,json=releaseVersion,proto3" json:"release_version,omitempty"`
-	ApiVersion     string                 `protobuf:"bytes,2,opt,name=api_version,json=apiVersion,proto3" json:"api_version,omitempty"`
-	SourceRevision string                 `protobuf:"bytes,3,opt,name=source_revision,json=sourceRevision,proto3" json:"source_revision,omitempty"`
-	BuiltAt        string                 `protobuf:"bytes,4,opt,name=built_at,json=builtAt,proto3" json:"built_at,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	state               protoimpl.MessageState `protogen:"open.v1"`
+	ReleaseVersion      string                 `protobuf:"bytes,1,opt,name=release_version,json=releaseVersion,proto3" json:"release_version,omitempty"`
+	SourceRevision      string                 `protobuf:"bytes,3,opt,name=source_revision,json=sourceRevision,proto3" json:"source_revision,omitempty"`
+	BuiltAt             string                 `protobuf:"bytes,4,opt,name=built_at,json=builtAt,proto3" json:"built_at,omitempty"`
+	CompatibilityPolicy *CompatibilityPolicy   `protobuf:"bytes,5,opt,name=compatibility_policy,json=compatibilityPolicy,proto3" json:"compatibility_policy,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
 }
 
 func (x *GatewayInformation) Reset() {
@@ -835,13 +944,6 @@ func (x *GatewayInformation) GetReleaseVersion() string {
 	return ""
 }
 
-func (x *GatewayInformation) GetApiVersion() string {
-	if x != nil {
-		return x.ApiVersion
-	}
-	return ""
-}
-
 func (x *GatewayInformation) GetSourceRevision() string {
 	if x != nil {
 		return x.SourceRevision
@@ -856,6 +958,201 @@ func (x *GatewayInformation) GetBuiltAt() string {
 	return ""
 }
 
+func (x *GatewayInformation) GetCompatibilityPolicy() *CompatibilityPolicy {
+	if x != nil {
+		return x.CompatibilityPolicy
+	}
+	return nil
+}
+
+type CompatibilityPolicy struct {
+	state                 protoimpl.MessageState `protogen:"open.v1"`
+	GatewayReleaseVersion string                 `protobuf:"bytes,1,opt,name=gateway_release_version,json=gatewayReleaseVersion,proto3" json:"gateway_release_version,omitempty"`
+	MinimumClientVersion  string                 `protobuf:"bytes,2,opt,name=minimum_client_version,json=minimumClientVersion,proto3" json:"minimum_client_version,omitempty"`
+	MinimumDaemonVersion  string                 `protobuf:"bytes,3,opt,name=minimum_daemon_version,json=minimumDaemonVersion,proto3" json:"minimum_daemon_version,omitempty"`
+	Revision              string                 `protobuf:"bytes,4,opt,name=revision,proto3" json:"revision,omitempty"`
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
+}
+
+func (x *CompatibilityPolicy) Reset() {
+	*x = CompatibilityPolicy{}
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CompatibilityPolicy) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CompatibilityPolicy) ProtoMessage() {}
+
+func (x *CompatibilityPolicy) ProtoReflect() protoreflect.Message {
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CompatibilityPolicy.ProtoReflect.Descriptor instead.
+func (*CompatibilityPolicy) Descriptor() ([]byte, []int) {
+	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *CompatibilityPolicy) GetGatewayReleaseVersion() string {
+	if x != nil {
+		return x.GatewayReleaseVersion
+	}
+	return ""
+}
+
+func (x *CompatibilityPolicy) GetMinimumClientVersion() string {
+	if x != nil {
+		return x.MinimumClientVersion
+	}
+	return ""
+}
+
+func (x *CompatibilityPolicy) GetMinimumDaemonVersion() string {
+	if x != nil {
+		return x.MinimumDaemonVersion
+	}
+	return ""
+}
+
+func (x *CompatibilityPolicy) GetRevision() string {
+	if x != nil {
+		return x.Revision
+	}
+	return ""
+}
+
+type CompatibilityRequest struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	ReleaseVersion string                 `protobuf:"bytes,1,opt,name=release_version,json=releaseVersion,proto3" json:"release_version,omitempty"`
+	Component      CompatibilityComponent `protobuf:"varint,2,opt,name=component,proto3,enum=dieter.gateway.v1.CompatibilityComponent" json:"component,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *CompatibilityRequest) Reset() {
+	*x = CompatibilityRequest{}
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CompatibilityRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CompatibilityRequest) ProtoMessage() {}
+
+func (x *CompatibilityRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CompatibilityRequest.ProtoReflect.Descriptor instead.
+func (*CompatibilityRequest) Descriptor() ([]byte, []int) {
+	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *CompatibilityRequest) GetReleaseVersion() string {
+	if x != nil {
+		return x.ReleaseVersion
+	}
+	return ""
+}
+
+func (x *CompatibilityRequest) GetComponent() CompatibilityComponent {
+	if x != nil {
+		return x.Component
+	}
+	return CompatibilityComponent_COMPATIBILITY_COMPONENT_UNSPECIFIED
+}
+
+type CompatibilityResponse struct {
+	state                 protoimpl.MessageState `protogen:"open.v1"`
+	Policy                *CompatibilityPolicy   `protobuf:"bytes,1,opt,name=policy,proto3" json:"policy,omitempty"`
+	Status                CompatibilityStatus    `protobuf:"varint,2,opt,name=status,proto3,enum=dieter.gateway.v1.CompatibilityStatus" json:"status,omitempty"`
+	CurrentReleaseVersion string                 `protobuf:"bytes,3,opt,name=current_release_version,json=currentReleaseVersion,proto3" json:"current_release_version,omitempty"`
+	MinimumReleaseVersion string                 `protobuf:"bytes,4,opt,name=minimum_release_version,json=minimumReleaseVersion,proto3" json:"minimum_release_version,omitempty"`
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
+}
+
+func (x *CompatibilityResponse) Reset() {
+	*x = CompatibilityResponse{}
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CompatibilityResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CompatibilityResponse) ProtoMessage() {}
+
+func (x *CompatibilityResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CompatibilityResponse.ProtoReflect.Descriptor instead.
+func (*CompatibilityResponse) Descriptor() ([]byte, []int) {
+	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *CompatibilityResponse) GetPolicy() *CompatibilityPolicy {
+	if x != nil {
+		return x.Policy
+	}
+	return nil
+}
+
+func (x *CompatibilityResponse) GetStatus() CompatibilityStatus {
+	if x != nil {
+		return x.Status
+	}
+	return CompatibilityStatus_COMPATIBILITY_STATUS_UNSPECIFIED
+}
+
+func (x *CompatibilityResponse) GetCurrentReleaseVersion() string {
+	if x != nil {
+		return x.CurrentReleaseVersion
+	}
+	return ""
+}
+
+func (x *CompatibilityResponse) GetMinimumReleaseVersion() string {
+	if x != nil {
+		return x.MinimumReleaseVersion
+	}
+	return ""
+}
+
 type WatchDaemonsRequest struct {
 	state            protoimpl.MessageState `protogen:"open.v1"`
 	HeartbeatSeconds uint32                 `protobuf:"varint,1,opt,name=heartbeat_seconds,json=heartbeatSeconds,proto3" json:"heartbeat_seconds,omitempty"`
@@ -865,7 +1162,7 @@ type WatchDaemonsRequest struct {
 
 func (x *WatchDaemonsRequest) Reset() {
 	*x = WatchDaemonsRequest{}
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[6]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -877,7 +1174,7 @@ func (x *WatchDaemonsRequest) String() string {
 func (*WatchDaemonsRequest) ProtoMessage() {}
 
 func (x *WatchDaemonsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[6]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -890,7 +1187,7 @@ func (x *WatchDaemonsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchDaemonsRequest.ProtoReflect.Descriptor instead.
 func (*WatchDaemonsRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{6}
+	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *WatchDaemonsRequest) GetHeartbeatSeconds() uint32 {
@@ -911,7 +1208,7 @@ type DaemonPresenceUpdate struct {
 
 func (x *DaemonPresenceUpdate) Reset() {
 	*x = DaemonPresenceUpdate{}
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[7]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -923,7 +1220,7 @@ func (x *DaemonPresenceUpdate) String() string {
 func (*DaemonPresenceUpdate) ProtoMessage() {}
 
 func (x *DaemonPresenceUpdate) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[7]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -936,7 +1233,7 @@ func (x *DaemonPresenceUpdate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DaemonPresenceUpdate.ProtoReflect.Descriptor instead.
 func (*DaemonPresenceUpdate) Descriptor() ([]byte, []int) {
-	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{7}
+	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *DaemonPresenceUpdate) GetDaemons() []*Daemon {
@@ -970,7 +1267,7 @@ type BeginDaemonEnrollmentRequest struct {
 
 func (x *BeginDaemonEnrollmentRequest) Reset() {
 	*x = BeginDaemonEnrollmentRequest{}
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[8]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -982,7 +1279,7 @@ func (x *BeginDaemonEnrollmentRequest) String() string {
 func (*BeginDaemonEnrollmentRequest) ProtoMessage() {}
 
 func (x *BeginDaemonEnrollmentRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[8]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -995,7 +1292,7 @@ func (x *BeginDaemonEnrollmentRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BeginDaemonEnrollmentRequest.ProtoReflect.Descriptor instead.
 func (*BeginDaemonEnrollmentRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{8}
+	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *BeginDaemonEnrollmentRequest) GetName() string {
@@ -1025,7 +1322,7 @@ type DaemonEnrollment struct {
 
 func (x *DaemonEnrollment) Reset() {
 	*x = DaemonEnrollment{}
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[9]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1037,7 +1334,7 @@ func (x *DaemonEnrollment) String() string {
 func (*DaemonEnrollment) ProtoMessage() {}
 
 func (x *DaemonEnrollment) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[9]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1050,7 +1347,7 @@ func (x *DaemonEnrollment) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DaemonEnrollment.ProtoReflect.Descriptor instead.
 func (*DaemonEnrollment) Descriptor() ([]byte, []int) {
-	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{9}
+	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *DaemonEnrollment) GetEnrollmentId() string {
@@ -1098,7 +1395,7 @@ type CompleteDaemonEnrollmentRequest struct {
 
 func (x *CompleteDaemonEnrollmentRequest) Reset() {
 	*x = CompleteDaemonEnrollmentRequest{}
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[10]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1110,7 +1407,7 @@ func (x *CompleteDaemonEnrollmentRequest) String() string {
 func (*CompleteDaemonEnrollmentRequest) ProtoMessage() {}
 
 func (x *CompleteDaemonEnrollmentRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[10]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1123,7 +1420,7 @@ func (x *CompleteDaemonEnrollmentRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CompleteDaemonEnrollmentRequest.ProtoReflect.Descriptor instead.
 func (*CompleteDaemonEnrollmentRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{10}
+	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *CompleteDaemonEnrollmentRequest) GetEnrollmentId() string {
@@ -1151,7 +1448,7 @@ type UnenrollDaemonRequest struct {
 
 func (x *UnenrollDaemonRequest) Reset() {
 	*x = UnenrollDaemonRequest{}
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[11]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1163,7 +1460,7 @@ func (x *UnenrollDaemonRequest) String() string {
 func (*UnenrollDaemonRequest) ProtoMessage() {}
 
 func (x *UnenrollDaemonRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[11]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1176,7 +1473,7 @@ func (x *UnenrollDaemonRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UnenrollDaemonRequest.ProtoReflect.Descriptor instead.
 func (*UnenrollDaemonRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{11}
+	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *UnenrollDaemonRequest) GetDaemonId() string {
@@ -1210,7 +1507,7 @@ type DaemonRecoveryRef struct {
 
 func (x *DaemonRecoveryRef) Reset() {
 	*x = DaemonRecoveryRef{}
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[12]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1222,7 +1519,7 @@ func (x *DaemonRecoveryRef) String() string {
 func (*DaemonRecoveryRef) ProtoMessage() {}
 
 func (x *DaemonRecoveryRef) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[12]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1235,7 +1532,7 @@ func (x *DaemonRecoveryRef) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DaemonRecoveryRef.ProtoReflect.Descriptor instead.
 func (*DaemonRecoveryRef) Descriptor() ([]byte, []int) {
-	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{12}
+	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *DaemonRecoveryRef) GetRevokedDaemonId() string {
@@ -1262,7 +1559,7 @@ type DaemonRecoveryState struct {
 
 func (x *DaemonRecoveryState) Reset() {
 	*x = DaemonRecoveryState{}
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[13]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1274,7 +1571,7 @@ func (x *DaemonRecoveryState) String() string {
 func (*DaemonRecoveryState) ProtoMessage() {}
 
 func (x *DaemonRecoveryState) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[13]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1287,7 +1584,7 @@ func (x *DaemonRecoveryState) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DaemonRecoveryState.ProtoReflect.Descriptor instead.
 func (*DaemonRecoveryState) Descriptor() ([]byte, []int) {
-	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{13}
+	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *DaemonRecoveryState) GetRevokedGeneration() uint64 {
@@ -1318,7 +1615,7 @@ type RecoverDaemonRequest struct {
 
 func (x *RecoverDaemonRequest) Reset() {
 	*x = RecoverDaemonRequest{}
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[14]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1330,7 +1627,7 @@ func (x *RecoverDaemonRequest) String() string {
 func (*RecoverDaemonRequest) ProtoMessage() {}
 
 func (x *RecoverDaemonRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[14]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1343,7 +1640,7 @@ func (x *RecoverDaemonRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RecoverDaemonRequest.ProtoReflect.Descriptor instead.
 func (*RecoverDaemonRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{14}
+	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *RecoverDaemonRequest) GetRevokedDaemonId() string {
@@ -1405,7 +1702,7 @@ type DaemonCredential struct {
 
 func (x *DaemonCredential) Reset() {
 	*x = DaemonCredential{}
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[15]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1417,7 +1714,7 @@ func (x *DaemonCredential) String() string {
 func (*DaemonCredential) ProtoMessage() {}
 
 func (x *DaemonCredential) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[15]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1430,7 +1727,7 @@ func (x *DaemonCredential) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DaemonCredential.ProtoReflect.Descriptor instead.
 func (*DaemonCredential) Descriptor() ([]byte, []int) {
-	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{15}
+	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *DaemonCredential) GetDaemonId() string {
@@ -1499,7 +1796,7 @@ type RenameDaemonRequest struct {
 
 func (x *RenameDaemonRequest) Reset() {
 	*x = RenameDaemonRequest{}
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[16]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1511,7 +1808,7 @@ func (x *RenameDaemonRequest) String() string {
 func (*RenameDaemonRequest) ProtoMessage() {}
 
 func (x *RenameDaemonRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[16]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1524,7 +1821,7 @@ func (x *RenameDaemonRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RenameDaemonRequest.ProtoReflect.Descriptor instead.
 func (*RenameDaemonRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{16}
+	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *RenameDaemonRequest) GetDaemonId() string {
@@ -1553,7 +1850,7 @@ type ExchangeDaemonTokenRequest struct {
 
 func (x *ExchangeDaemonTokenRequest) Reset() {
 	*x = ExchangeDaemonTokenRequest{}
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[17]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1565,7 +1862,7 @@ func (x *ExchangeDaemonTokenRequest) String() string {
 func (*ExchangeDaemonTokenRequest) ProtoMessage() {}
 
 func (x *ExchangeDaemonTokenRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[17]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1578,7 +1875,7 @@ func (x *ExchangeDaemonTokenRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExchangeDaemonTokenRequest.ProtoReflect.Descriptor instead.
 func (*ExchangeDaemonTokenRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{17}
+	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *ExchangeDaemonTokenRequest) GetDaemonId() string {
@@ -1607,7 +1904,7 @@ type DaemonAccessToken struct {
 
 func (x *DaemonAccessToken) Reset() {
 	*x = DaemonAccessToken{}
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[18]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1619,7 +1916,7 @@ func (x *DaemonAccessToken) String() string {
 func (*DaemonAccessToken) ProtoMessage() {}
 
 func (x *DaemonAccessToken) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[18]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1632,7 +1929,7 @@ func (x *DaemonAccessToken) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DaemonAccessToken.ProtoReflect.Descriptor instead.
 func (*DaemonAccessToken) Descriptor() ([]byte, []int) {
-	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{18}
+	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *DaemonAccessToken) GetAccessToken() string {
@@ -1677,7 +1974,7 @@ type DirectCandidate struct {
 
 func (x *DirectCandidate) Reset() {
 	*x = DirectCandidate{}
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[19]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1689,7 +1986,7 @@ func (x *DirectCandidate) String() string {
 func (*DirectCandidate) ProtoMessage() {}
 
 func (x *DirectCandidate) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[19]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1702,7 +1999,7 @@ func (x *DirectCandidate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DirectCandidate.ProtoReflect.Descriptor instead.
 func (*DirectCandidate) Descriptor() ([]byte, []int) {
-	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{19}
+	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *DirectCandidate) GetId() string {
@@ -1767,7 +2064,7 @@ type DaemonRoute struct {
 
 func (x *DaemonRoute) Reset() {
 	*x = DaemonRoute{}
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[20]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1779,7 +2076,7 @@ func (x *DaemonRoute) String() string {
 func (*DaemonRoute) ProtoMessage() {}
 
 func (x *DaemonRoute) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[20]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1792,7 +2089,7 @@ func (x *DaemonRoute) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DaemonRoute.ProtoReflect.Descriptor instead.
 func (*DaemonRoute) Descriptor() ([]byte, []int) {
-	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{20}
+	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *DaemonRoute) GetDaemonId() string {
@@ -1855,7 +2152,7 @@ type RTCIceServer struct {
 
 func (x *RTCIceServer) Reset() {
 	*x = RTCIceServer{}
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[21]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1867,7 +2164,7 @@ func (x *RTCIceServer) String() string {
 func (*RTCIceServer) ProtoMessage() {}
 
 func (x *RTCIceServer) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[21]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1880,7 +2177,7 @@ func (x *RTCIceServer) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RTCIceServer.ProtoReflect.Descriptor instead.
 func (*RTCIceServer) Descriptor() ([]byte, []int) {
-	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{21}
+	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *RTCIceServer) GetUrls() []string {
@@ -1920,7 +2217,7 @@ type RTCConfiguration struct {
 
 func (x *RTCConfiguration) Reset() {
 	*x = RTCConfiguration{}
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[22]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1932,7 +2229,7 @@ func (x *RTCConfiguration) String() string {
 func (*RTCConfiguration) ProtoMessage() {}
 
 func (x *RTCConfiguration) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[22]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1945,7 +2242,7 @@ func (x *RTCConfiguration) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RTCConfiguration.ProtoReflect.Descriptor instead.
 func (*RTCConfiguration) Descriptor() ([]byte, []int) {
-	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{22}
+	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *RTCConfiguration) GetIceServers() []*RTCIceServer {
@@ -2019,7 +2316,7 @@ type ProviderQuotaWindow struct {
 
 func (x *ProviderQuotaWindow) Reset() {
 	*x = ProviderQuotaWindow{}
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[23]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2031,7 +2328,7 @@ func (x *ProviderQuotaWindow) String() string {
 func (*ProviderQuotaWindow) ProtoMessage() {}
 
 func (x *ProviderQuotaWindow) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[23]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2044,7 +2341,7 @@ func (x *ProviderQuotaWindow) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProviderQuotaWindow.ProtoReflect.Descriptor instead.
 func (*ProviderQuotaWindow) Descriptor() ([]byte, []int) {
-	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{23}
+	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *ProviderQuotaWindow) GetId() string {
@@ -2107,7 +2404,7 @@ type ProviderCreditBalance struct {
 
 func (x *ProviderCreditBalance) Reset() {
 	*x = ProviderCreditBalance{}
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[24]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2119,7 +2416,7 @@ func (x *ProviderCreditBalance) String() string {
 func (*ProviderCreditBalance) ProtoMessage() {}
 
 func (x *ProviderCreditBalance) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[24]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2132,7 +2429,7 @@ func (x *ProviderCreditBalance) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProviderCreditBalance.ProtoReflect.Descriptor instead.
 func (*ProviderCreditBalance) Descriptor() ([]byte, []int) {
-	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{24}
+	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *ProviderCreditBalance) GetBalance() string {
@@ -2169,7 +2466,7 @@ type ProviderSpendAllowance struct {
 
 func (x *ProviderSpendAllowance) Reset() {
 	*x = ProviderSpendAllowance{}
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[25]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2181,7 +2478,7 @@ func (x *ProviderSpendAllowance) String() string {
 func (*ProviderSpendAllowance) ProtoMessage() {}
 
 func (x *ProviderSpendAllowance) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[25]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2194,7 +2491,7 @@ func (x *ProviderSpendAllowance) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProviderSpendAllowance.ProtoReflect.Descriptor instead.
 func (*ProviderSpendAllowance) Descriptor() ([]byte, []int) {
-	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{25}
+	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *ProviderSpendAllowance) GetUsed() string {
@@ -2245,7 +2542,7 @@ type ProviderResetCredit struct {
 
 func (x *ProviderResetCredit) Reset() {
 	*x = ProviderResetCredit{}
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[26]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2257,7 +2554,7 @@ func (x *ProviderResetCredit) String() string {
 func (*ProviderResetCredit) ProtoMessage() {}
 
 func (x *ProviderResetCredit) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[26]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2270,7 +2567,7 @@ func (x *ProviderResetCredit) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProviderResetCredit.ProtoReflect.Descriptor instead.
 func (*ProviderResetCredit) Descriptor() ([]byte, []int) {
-	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{26}
+	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *ProviderResetCredit) GetTitle() string {
@@ -2318,7 +2615,7 @@ type ProviderResetCredits struct {
 
 func (x *ProviderResetCredits) Reset() {
 	*x = ProviderResetCredits{}
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[27]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2330,7 +2627,7 @@ func (x *ProviderResetCredits) String() string {
 func (*ProviderResetCredits) ProtoMessage() {}
 
 func (x *ProviderResetCredits) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[27]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2343,7 +2640,7 @@ func (x *ProviderResetCredits) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProviderResetCredits.ProtoReflect.Descriptor instead.
 func (*ProviderResetCredits) Descriptor() ([]byte, []int) {
-	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{27}
+	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *ProviderResetCredits) GetAvailableCount() uint32 {
@@ -2376,7 +2673,7 @@ type ProviderQuotaMachine struct {
 
 func (x *ProviderQuotaMachine) Reset() {
 	*x = ProviderQuotaMachine{}
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[28]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2388,7 +2685,7 @@ func (x *ProviderQuotaMachine) String() string {
 func (*ProviderQuotaMachine) ProtoMessage() {}
 
 func (x *ProviderQuotaMachine) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[28]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2401,7 +2698,7 @@ func (x *ProviderQuotaMachine) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProviderQuotaMachine.ProtoReflect.Descriptor instead.
 func (*ProviderQuotaMachine) Descriptor() ([]byte, []int) {
-	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{28}
+	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *ProviderQuotaMachine) GetDaemonId() string {
@@ -2473,7 +2770,7 @@ type ProviderQuotaSnapshot struct {
 
 func (x *ProviderQuotaSnapshot) Reset() {
 	*x = ProviderQuotaSnapshot{}
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[29]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2485,7 +2782,7 @@ func (x *ProviderQuotaSnapshot) String() string {
 func (*ProviderQuotaSnapshot) ProtoMessage() {}
 
 func (x *ProviderQuotaSnapshot) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[29]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2498,7 +2795,7 @@ func (x *ProviderQuotaSnapshot) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProviderQuotaSnapshot.ProtoReflect.Descriptor instead.
 func (*ProviderQuotaSnapshot) Descriptor() ([]byte, []int) {
-	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{29}
+	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *ProviderQuotaSnapshot) GetProvider() ProviderQuotaProvider {
@@ -2679,7 +2976,7 @@ type ProviderQuotaSummary struct {
 
 func (x *ProviderQuotaSummary) Reset() {
 	*x = ProviderQuotaSummary{}
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[30]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2691,7 +2988,7 @@ func (x *ProviderQuotaSummary) String() string {
 func (*ProviderQuotaSummary) ProtoMessage() {}
 
 func (x *ProviderQuotaSummary) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[30]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2704,7 +3001,7 @@ func (x *ProviderQuotaSummary) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProviderQuotaSummary.ProtoReflect.Descriptor instead.
 func (*ProviderQuotaSummary) Descriptor() ([]byte, []int) {
-	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{30}
+	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *ProviderQuotaSummary) GetTotalAccountCount() uint32 {
@@ -2802,7 +3099,7 @@ type ProviderQuotaGroup struct {
 
 func (x *ProviderQuotaGroup) Reset() {
 	*x = ProviderQuotaGroup{}
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[31]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2814,7 +3111,7 @@ func (x *ProviderQuotaGroup) String() string {
 func (*ProviderQuotaGroup) ProtoMessage() {}
 
 func (x *ProviderQuotaGroup) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[31]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2827,7 +3124,7 @@ func (x *ProviderQuotaGroup) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProviderQuotaGroup.ProtoReflect.Descriptor instead.
 func (*ProviderQuotaGroup) Descriptor() ([]byte, []int) {
-	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{31}
+	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *ProviderQuotaGroup) GetProvider() ProviderQuotaProvider {
@@ -2860,7 +3157,7 @@ type ListProviderQuotasRequest struct {
 
 func (x *ListProviderQuotasRequest) Reset() {
 	*x = ListProviderQuotasRequest{}
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[32]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2872,7 +3169,7 @@ func (x *ListProviderQuotasRequest) String() string {
 func (*ListProviderQuotasRequest) ProtoMessage() {}
 
 func (x *ListProviderQuotasRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[32]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2885,7 +3182,7 @@ func (x *ListProviderQuotasRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListProviderQuotasRequest.ProtoReflect.Descriptor instead.
 func (*ListProviderQuotasRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{32}
+	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{35}
 }
 
 func (x *ListProviderQuotasRequest) GetProvider() ProviderQuotaProvider {
@@ -2906,7 +3203,7 @@ type ListProviderQuotasResponse struct {
 
 func (x *ListProviderQuotasResponse) Reset() {
 	*x = ListProviderQuotasResponse{}
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[33]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[36]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2918,7 +3215,7 @@ func (x *ListProviderQuotasResponse) String() string {
 func (*ListProviderQuotasResponse) ProtoMessage() {}
 
 func (x *ListProviderQuotasResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[33]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[36]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2931,7 +3228,7 @@ func (x *ListProviderQuotasResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListProviderQuotasResponse.ProtoReflect.Descriptor instead.
 func (*ListProviderQuotasResponse) Descriptor() ([]byte, []int) {
-	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{33}
+	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{36}
 }
 
 func (x *ListProviderQuotasResponse) GetGroups() []*ProviderQuotaGroup {
@@ -2965,7 +3262,7 @@ type WatchProviderQuotasRequest struct {
 
 func (x *WatchProviderQuotasRequest) Reset() {
 	*x = WatchProviderQuotasRequest{}
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[34]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[37]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2977,7 +3274,7 @@ func (x *WatchProviderQuotasRequest) String() string {
 func (*WatchProviderQuotasRequest) ProtoMessage() {}
 
 func (x *WatchProviderQuotasRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[34]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[37]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2990,7 +3287,7 @@ func (x *WatchProviderQuotasRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchProviderQuotasRequest.ProtoReflect.Descriptor instead.
 func (*WatchProviderQuotasRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{34}
+	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{37}
 }
 
 func (x *WatchProviderQuotasRequest) GetHeartbeatSeconds() uint32 {
@@ -3018,7 +3315,7 @@ type ProviderQuotaUpdate struct {
 
 func (x *ProviderQuotaUpdate) Reset() {
 	*x = ProviderQuotaUpdate{}
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[35]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[38]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3030,7 +3327,7 @@ func (x *ProviderQuotaUpdate) String() string {
 func (*ProviderQuotaUpdate) ProtoMessage() {}
 
 func (x *ProviderQuotaUpdate) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[35]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[38]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3043,7 +3340,7 @@ func (x *ProviderQuotaUpdate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProviderQuotaUpdate.ProtoReflect.Descriptor instead.
 func (*ProviderQuotaUpdate) Descriptor() ([]byte, []int) {
-	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{35}
+	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{38}
 }
 
 func (x *ProviderQuotaUpdate) GetGroups() []*ProviderQuotaGroup {
@@ -3077,7 +3374,7 @@ type RefreshProviderQuotasRequest struct {
 
 func (x *RefreshProviderQuotasRequest) Reset() {
 	*x = RefreshProviderQuotasRequest{}
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[36]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[39]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3089,7 +3386,7 @@ func (x *RefreshProviderQuotasRequest) String() string {
 func (*RefreshProviderQuotasRequest) ProtoMessage() {}
 
 func (x *RefreshProviderQuotasRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[36]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[39]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3102,7 +3399,7 @@ func (x *RefreshProviderQuotasRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RefreshProviderQuotasRequest.ProtoReflect.Descriptor instead.
 func (*RefreshProviderQuotasRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{36}
+	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{39}
 }
 
 func (x *RefreshProviderQuotasRequest) GetProvider() ProviderQuotaProvider {
@@ -3130,7 +3427,7 @@ type RefreshProviderQuotasResponse struct {
 
 func (x *RefreshProviderQuotasResponse) Reset() {
 	*x = RefreshProviderQuotasResponse{}
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[37]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[40]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3142,7 +3439,7 @@ func (x *RefreshProviderQuotasResponse) String() string {
 func (*RefreshProviderQuotasResponse) ProtoMessage() {}
 
 func (x *RefreshProviderQuotasResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[37]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[40]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3155,7 +3452,7 @@ func (x *RefreshProviderQuotasResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RefreshProviderQuotasResponse.ProtoReflect.Descriptor instead.
 func (*RefreshProviderQuotasResponse) Descriptor() ([]byte, []int) {
-	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{37}
+	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{40}
 }
 
 func (x *RefreshProviderQuotasResponse) GetGroups() []*ProviderQuotaGroup {
@@ -3190,7 +3487,7 @@ type SetProviderQuotaSummaryInclusionRequest struct {
 
 func (x *SetProviderQuotaSummaryInclusionRequest) Reset() {
 	*x = SetProviderQuotaSummaryInclusionRequest{}
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[38]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[41]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3202,7 +3499,7 @@ func (x *SetProviderQuotaSummaryInclusionRequest) String() string {
 func (*SetProviderQuotaSummaryInclusionRequest) ProtoMessage() {}
 
 func (x *SetProviderQuotaSummaryInclusionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[38]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[41]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3215,7 +3512,7 @@ func (x *SetProviderQuotaSummaryInclusionRequest) ProtoReflect() protoreflect.Me
 
 // Deprecated: Use SetProviderQuotaSummaryInclusionRequest.ProtoReflect.Descriptor instead.
 func (*SetProviderQuotaSummaryInclusionRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{38}
+	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{41}
 }
 
 func (x *SetProviderQuotaSummaryInclusionRequest) GetProvider() ProviderQuotaProvider {
@@ -3249,7 +3546,7 @@ type SetProviderQuotaSummaryInclusionResponse struct {
 
 func (x *SetProviderQuotaSummaryInclusionResponse) Reset() {
 	*x = SetProviderQuotaSummaryInclusionResponse{}
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[39]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[42]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3261,7 +3558,7 @@ func (x *SetProviderQuotaSummaryInclusionResponse) String() string {
 func (*SetProviderQuotaSummaryInclusionResponse) ProtoMessage() {}
 
 func (x *SetProviderQuotaSummaryInclusionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[39]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[42]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3274,7 +3571,7 @@ func (x *SetProviderQuotaSummaryInclusionResponse) ProtoReflect() protoreflect.M
 
 // Deprecated: Use SetProviderQuotaSummaryInclusionResponse.ProtoReflect.Descriptor instead.
 func (*SetProviderQuotaSummaryInclusionResponse) Descriptor() ([]byte, []int) {
-	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{39}
+	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{42}
 }
 
 func (x *SetProviderQuotaSummaryInclusionResponse) GetGroups() []*ProviderQuotaGroup {
@@ -3303,7 +3600,7 @@ type ConsumeProviderQuotaResetRequest struct {
 
 func (x *ConsumeProviderQuotaResetRequest) Reset() {
 	*x = ConsumeProviderQuotaResetRequest{}
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[40]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[43]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3315,7 +3612,7 @@ func (x *ConsumeProviderQuotaResetRequest) String() string {
 func (*ConsumeProviderQuotaResetRequest) ProtoMessage() {}
 
 func (x *ConsumeProviderQuotaResetRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[40]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[43]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3328,7 +3625,7 @@ func (x *ConsumeProviderQuotaResetRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConsumeProviderQuotaResetRequest.ProtoReflect.Descriptor instead.
 func (*ConsumeProviderQuotaResetRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{40}
+	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{43}
 }
 
 func (x *ConsumeProviderQuotaResetRequest) GetProvider() ProviderQuotaProvider {
@@ -3363,7 +3660,7 @@ type ConsumeProviderQuotaResetResponse struct {
 
 func (x *ConsumeProviderQuotaResetResponse) Reset() {
 	*x = ConsumeProviderQuotaResetResponse{}
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[41]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[44]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3375,7 +3672,7 @@ func (x *ConsumeProviderQuotaResetResponse) String() string {
 func (*ConsumeProviderQuotaResetResponse) ProtoMessage() {}
 
 func (x *ConsumeProviderQuotaResetResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[41]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[44]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3388,7 +3685,7 @@ func (x *ConsumeProviderQuotaResetResponse) ProtoReflect() protoreflect.Message 
 
 // Deprecated: Use ConsumeProviderQuotaResetResponse.ProtoReflect.Descriptor instead.
 func (*ConsumeProviderQuotaResetResponse) Descriptor() ([]byte, []int) {
-	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{41}
+	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{44}
 }
 
 func (x *ConsumeProviderQuotaResetResponse) GetGroups() []*ProviderQuotaGroup {
@@ -3426,7 +3723,7 @@ type ProviderAccountPresence struct {
 
 func (x *ProviderAccountPresence) Reset() {
 	*x = ProviderAccountPresence{}
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[42]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[45]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3438,7 +3735,7 @@ func (x *ProviderAccountPresence) String() string {
 func (*ProviderAccountPresence) ProtoMessage() {}
 
 func (x *ProviderAccountPresence) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[42]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[45]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3451,7 +3748,7 @@ func (x *ProviderAccountPresence) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProviderAccountPresence.ProtoReflect.Descriptor instead.
 func (*ProviderAccountPresence) Descriptor() ([]byte, []int) {
-	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{42}
+	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{45}
 }
 
 func (x *ProviderAccountPresence) GetProvider() ProviderQuotaProvider {
@@ -3505,7 +3802,7 @@ type ProviderAccountsPresence struct {
 
 func (x *ProviderAccountsPresence) Reset() {
 	*x = ProviderAccountsPresence{}
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[43]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[46]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3517,7 +3814,7 @@ func (x *ProviderAccountsPresence) String() string {
 func (*ProviderAccountsPresence) ProtoMessage() {}
 
 func (x *ProviderAccountsPresence) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[43]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[46]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3530,7 +3827,7 @@ func (x *ProviderAccountsPresence) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProviderAccountsPresence.ProtoReflect.Descriptor instead.
 func (*ProviderAccountsPresence) Descriptor() ([]byte, []int) {
-	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{43}
+	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{46}
 }
 
 func (x *ProviderAccountsPresence) GetAccounts() []*ProviderAccountPresence {
@@ -3550,7 +3847,7 @@ type ProviderQuotaRefreshRequest struct {
 
 func (x *ProviderQuotaRefreshRequest) Reset() {
 	*x = ProviderQuotaRefreshRequest{}
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[44]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[47]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3562,7 +3859,7 @@ func (x *ProviderQuotaRefreshRequest) String() string {
 func (*ProviderQuotaRefreshRequest) ProtoMessage() {}
 
 func (x *ProviderQuotaRefreshRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[44]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[47]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3575,7 +3872,7 @@ func (x *ProviderQuotaRefreshRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProviderQuotaRefreshRequest.ProtoReflect.Descriptor instead.
 func (*ProviderQuotaRefreshRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{44}
+	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{47}
 }
 
 func (x *ProviderQuotaRefreshRequest) GetProvider() ProviderQuotaProvider {
@@ -3603,7 +3900,7 @@ type ProviderQuotaRefreshResult struct {
 
 func (x *ProviderQuotaRefreshResult) Reset() {
 	*x = ProviderQuotaRefreshResult{}
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[45]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[48]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3615,7 +3912,7 @@ func (x *ProviderQuotaRefreshResult) String() string {
 func (*ProviderQuotaRefreshResult) ProtoMessage() {}
 
 func (x *ProviderQuotaRefreshResult) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[45]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[48]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3628,7 +3925,7 @@ func (x *ProviderQuotaRefreshResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProviderQuotaRefreshResult.ProtoReflect.Descriptor instead.
 func (*ProviderQuotaRefreshResult) Descriptor() ([]byte, []int) {
-	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{45}
+	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{48}
 }
 
 func (x *ProviderQuotaRefreshResult) GetSnapshot() *ProviderQuotaSnapshot {
@@ -3663,7 +3960,7 @@ type ProviderQuotaResetRequest struct {
 
 func (x *ProviderQuotaResetRequest) Reset() {
 	*x = ProviderQuotaResetRequest{}
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[46]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[49]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3675,7 +3972,7 @@ func (x *ProviderQuotaResetRequest) String() string {
 func (*ProviderQuotaResetRequest) ProtoMessage() {}
 
 func (x *ProviderQuotaResetRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[46]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[49]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3688,7 +3985,7 @@ func (x *ProviderQuotaResetRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProviderQuotaResetRequest.ProtoReflect.Descriptor instead.
 func (*ProviderQuotaResetRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{46}
+	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{49}
 }
 
 func (x *ProviderQuotaResetRequest) GetProvider() ProviderQuotaProvider {
@@ -3724,7 +4021,7 @@ type ProviderQuotaResetResult struct {
 
 func (x *ProviderQuotaResetResult) Reset() {
 	*x = ProviderQuotaResetResult{}
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[47]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[50]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3736,7 +4033,7 @@ func (x *ProviderQuotaResetResult) String() string {
 func (*ProviderQuotaResetResult) ProtoMessage() {}
 
 func (x *ProviderQuotaResetResult) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[47]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[50]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3749,7 +4046,7 @@ func (x *ProviderQuotaResetResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProviderQuotaResetResult.ProtoReflect.Descriptor instead.
 func (*ProviderQuotaResetResult) Descriptor() ([]byte, []int) {
-	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{47}
+	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{50}
 }
 
 func (x *ProviderQuotaResetResult) GetSnapshot() *ProviderQuotaSnapshot {
@@ -3795,11 +4092,10 @@ type DaemonLinkFrame struct {
 	StatusMessage                 string                       `protobuf:"bytes,11,opt,name=status_message,json=statusMessage,proto3" json:"status_message,omitempty"`
 	Metadata                      map[string]string            `protobuf:"bytes,12,rep,name=metadata,proto3" json:"metadata,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	WindowBytes                   uint32                       `protobuf:"varint,13,opt,name=window_bytes,json=windowBytes,proto3" json:"window_bytes,omitempty"`
-	Version                       string                       `protobuf:"bytes,14,opt,name=version,proto3" json:"version,omitempty"`
+	ReleaseVersion                string                       `protobuf:"bytes,14,opt,name=release_version,json=releaseVersion,proto3" json:"release_version,omitempty"`
 	Generation                    uint64                       `protobuf:"varint,15,opt,name=generation,proto3" json:"generation,omitempty"`
 	DirectCandidates              []*DirectCandidate           `protobuf:"bytes,16,rep,name=direct_candidates,json=directCandidates,proto3" json:"direct_candidates,omitempty"`
 	RemoteDesktop                 *RemoteDesktopPresence       `protobuf:"bytes,17,opt,name=remote_desktop,json=remoteDesktop,proto3" json:"remote_desktop,omitempty"`
-	ApiVersion                    string                       `protobuf:"bytes,18,opt,name=api_version,json=apiVersion,proto3" json:"api_version,omitempty"`
 	Capabilities                  []string                     `protobuf:"bytes,19,rep,name=capabilities,proto3" json:"capabilities,omitempty"`
 	ProviderAccountCorrelationKey []byte                       `protobuf:"bytes,20,opt,name=provider_account_correlation_key,json=providerAccountCorrelationKey,proto3" json:"provider_account_correlation_key,omitempty"`
 	ProviderAccounts              *ProviderAccountsPresence    `protobuf:"bytes,21,opt,name=provider_accounts,json=providerAccounts,proto3" json:"provider_accounts,omitempty"`
@@ -3807,13 +4103,15 @@ type DaemonLinkFrame struct {
 	ProviderQuotaRefreshResult    *ProviderQuotaRefreshResult  `protobuf:"bytes,23,opt,name=provider_quota_refresh_result,json=providerQuotaRefreshResult,proto3" json:"provider_quota_refresh_result,omitempty"`
 	ProviderQuotaResetRequest     *ProviderQuotaResetRequest   `protobuf:"bytes,24,opt,name=provider_quota_reset_request,json=providerQuotaResetRequest,proto3" json:"provider_quota_reset_request,omitempty"`
 	ProviderQuotaResetResult      *ProviderQuotaResetResult    `protobuf:"bytes,25,opt,name=provider_quota_reset_result,json=providerQuotaResetResult,proto3" json:"provider_quota_reset_result,omitempty"`
+	CompatibilityPolicy           *CompatibilityPolicy         `protobuf:"bytes,26,opt,name=compatibility_policy,json=compatibilityPolicy,proto3" json:"compatibility_policy,omitempty"`
+	Compatibility                 CompatibilityStatus          `protobuf:"varint,27,opt,name=compatibility,proto3,enum=dieter.gateway.v1.CompatibilityStatus" json:"compatibility,omitempty"`
 	unknownFields                 protoimpl.UnknownFields
 	sizeCache                     protoimpl.SizeCache
 }
 
 func (x *DaemonLinkFrame) Reset() {
 	*x = DaemonLinkFrame{}
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[48]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[51]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3825,7 +4123,7 @@ func (x *DaemonLinkFrame) String() string {
 func (*DaemonLinkFrame) ProtoMessage() {}
 
 func (x *DaemonLinkFrame) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[48]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[51]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3838,7 +4136,7 @@ func (x *DaemonLinkFrame) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DaemonLinkFrame.ProtoReflect.Descriptor instead.
 func (*DaemonLinkFrame) Descriptor() ([]byte, []int) {
-	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{48}
+	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{51}
 }
 
 func (x *DaemonLinkFrame) GetKind() DaemonLinkFrameKind {
@@ -3932,9 +4230,9 @@ func (x *DaemonLinkFrame) GetWindowBytes() uint32 {
 	return 0
 }
 
-func (x *DaemonLinkFrame) GetVersion() string {
+func (x *DaemonLinkFrame) GetReleaseVersion() string {
 	if x != nil {
-		return x.Version
+		return x.ReleaseVersion
 	}
 	return ""
 }
@@ -3958,13 +4256,6 @@ func (x *DaemonLinkFrame) GetRemoteDesktop() *RemoteDesktopPresence {
 		return x.RemoteDesktop
 	}
 	return nil
-}
-
-func (x *DaemonLinkFrame) GetApiVersion() string {
-	if x != nil {
-		return x.ApiVersion
-	}
-	return ""
 }
 
 func (x *DaemonLinkFrame) GetCapabilities() []string {
@@ -4016,6 +4307,20 @@ func (x *DaemonLinkFrame) GetProviderQuotaResetResult() *ProviderQuotaResetResul
 	return nil
 }
 
+func (x *DaemonLinkFrame) GetCompatibilityPolicy() *CompatibilityPolicy {
+	if x != nil {
+		return x.CompatibilityPolicy
+	}
+	return nil
+}
+
+func (x *DaemonLinkFrame) GetCompatibility() CompatibilityStatus {
+	if x != nil {
+		return x.Compatibility
+	}
+	return CompatibilityStatus_COMPATIBILITY_STATUS_UNSPECIFIED
+}
+
 var File_dieter_gateway_v1_gateway_proto protoreflect.FileDescriptor
 
 const file_dieter_gateway_v1_gateway_proto_rawDesc = "" +
@@ -4026,21 +4331,23 @@ const file_dieter_gateway_v1_gateway_proto_rawDesc = "" +
 	"\x05login\x18\x02 \x01(\tR\x05login\x126\n" +
 	"\x17signed_gateway_endpoint\x18\x03 \x01(\tR\x15signedGatewayEndpoint\"(\n" +
 	"\tDaemonRef\x12\x1b\n" +
-	"\tdaemon_id\x18\x01 \x01(\tR\bdaemonId\"\xe3\x02\n" +
+	"\tdaemon_id\x18\x01 \x01(\tR\bdaemonId\"\xea\x03\n" +
 	"\x06Daemon\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x16\n" +
 	"\x06online\x18\x03 \x01(\bR\x06online\x12 \n" +
 	"\flast_seen_at\x18\x04 \x01(\tR\n" +
-	"lastSeenAt\x12\x18\n" +
-	"\aversion\x18\x05 \x01(\tR\aversion\x12\x1e\n" +
+	"lastSeenAt\x12'\n" +
+	"\x0frelease_version\x18\x05 \x01(\tR\x0ereleaseVersion\x12\x1e\n" +
 	"\n" +
 	"generation\x18\x06 \x01(\x04R\n" +
 	"generation\x12O\n" +
 	"\x11direct_candidates\x18\a \x03(\v2\".dieter.gateway.v1.DirectCandidateR\x10directCandidates\x12O\n" +
-	"\x0eremote_desktop\x18\b \x01(\v2(.dieter.gateway.v1.RemoteDesktopPresenceR\rremoteDesktop\x12\x1f\n" +
-	"\vapi_version\x18\t \x01(\tR\n" +
-	"apiVersion\"\xaf\x01\n" +
+	"\x0eremote_desktop\x18\b \x01(\v2(.dieter.gateway.v1.RemoteDesktopPresenceR\rremoteDesktop\x12L\n" +
+	"\rcompatibility\x18\n" +
+	" \x01(\x0e2&.dieter.gateway.v1.CompatibilityStatusR\rcompatibility\x126\n" +
+	"\x17minimum_release_version\x18\v \x01(\tR\x15minimumReleaseVersionJ\x04\b\t\x10\n" +
+	"R\vapi_version\"\xaf\x01\n" +
 	"\x15RemoteDesktopPresence\x12\x1a\n" +
 	"\bplatform\x18\x01 \x01(\tR\bplatform\x12%\n" +
 	"\x0ehelper_version\x18\x02 \x01(\tR\rhelperVersion\x12\x14\n" +
@@ -4049,13 +4356,25 @@ const file_dieter_gateway_v1_gateway_proto_rawDesc = "" +
 	"\x0eactive_session\x18\x05 \x01(\bR\ractiveSession\"\xa2\x01\n" +
 	"\x13ListDaemonsResponse\x123\n" +
 	"\adaemons\x18\x01 \x03(\v2\x19.dieter.gateway.v1.DaemonR\adaemons\x12V\n" +
-	"\x13gateway_information\x18\x02 \x01(\v2%.dieter.gateway.v1.GatewayInformationR\x12gatewayInformation\"\xa2\x01\n" +
+	"\x13gateway_information\x18\x02 \x01(\v2%.dieter.gateway.v1.GatewayInformationR\x12gatewayInformation\"\xef\x01\n" +
 	"\x12GatewayInformation\x12'\n" +
-	"\x0frelease_version\x18\x01 \x01(\tR\x0ereleaseVersion\x12\x1f\n" +
-	"\vapi_version\x18\x02 \x01(\tR\n" +
-	"apiVersion\x12'\n" +
+	"\x0frelease_version\x18\x01 \x01(\tR\x0ereleaseVersion\x12'\n" +
 	"\x0fsource_revision\x18\x03 \x01(\tR\x0esourceRevision\x12\x19\n" +
-	"\bbuilt_at\x18\x04 \x01(\tR\abuiltAt\"B\n" +
+	"\bbuilt_at\x18\x04 \x01(\tR\abuiltAt\x12Y\n" +
+	"\x14compatibility_policy\x18\x05 \x01(\v2&.dieter.gateway.v1.CompatibilityPolicyR\x13compatibilityPolicyJ\x04\b\x02\x10\x03R\vapi_version\"\xd5\x01\n" +
+	"\x13CompatibilityPolicy\x126\n" +
+	"\x17gateway_release_version\x18\x01 \x01(\tR\x15gatewayReleaseVersion\x124\n" +
+	"\x16minimum_client_version\x18\x02 \x01(\tR\x14minimumClientVersion\x124\n" +
+	"\x16minimum_daemon_version\x18\x03 \x01(\tR\x14minimumDaemonVersion\x12\x1a\n" +
+	"\brevision\x18\x04 \x01(\tR\brevision\"\x88\x01\n" +
+	"\x14CompatibilityRequest\x12'\n" +
+	"\x0frelease_version\x18\x01 \x01(\tR\x0ereleaseVersion\x12G\n" +
+	"\tcomponent\x18\x02 \x01(\x0e2).dieter.gateway.v1.CompatibilityComponentR\tcomponent\"\x87\x02\n" +
+	"\x15CompatibilityResponse\x12>\n" +
+	"\x06policy\x18\x01 \x01(\v2&.dieter.gateway.v1.CompatibilityPolicyR\x06policy\x12>\n" +
+	"\x06status\x18\x02 \x01(\x0e2&.dieter.gateway.v1.CompatibilityStatusR\x06status\x126\n" +
+	"\x17current_release_version\x18\x03 \x01(\tR\x15currentReleaseVersion\x126\n" +
+	"\x17minimum_release_version\x18\x04 \x01(\tR\x15minimumReleaseVersion\"B\n" +
 	"\x13WatchDaemonsRequest\x12+\n" +
 	"\x11heartbeat_seconds\x18\x01 \x01(\rR\x10heartbeatSeconds\"\xbf\x01\n" +
 	"\x14DaemonPresenceUpdate\x123\n" +
@@ -4310,7 +4629,7 @@ const file_dieter_gateway_v1_gateway_proto_rawDesc = "" +
 	"\aoutcome\x18\x02 \x01(\tR\aoutcome\x12\x1d\n" +
 	"\n" +
 	"error_code\x18\x03 \x01(\tR\terrorCode\x12.\n" +
-	"\x13retry_after_seconds\x18\x04 \x01(\rR\x11retryAfterSeconds\"\xe0\v\n" +
+	"\x13retry_after_seconds\x18\x04 \x01(\rR\x11retryAfterSeconds\"\x8a\r\n" +
 	"\x0fDaemonLinkFrame\x12:\n" +
 	"\x04kind\x18\x01 \x01(\x0e2&.dieter.gateway.v1.DaemonLinkFrameKindR\x04kind\x12\x1b\n" +
 	"\tstream_id\x18\x02 \x01(\x04R\bstreamId\x12\x1b\n" +
@@ -4327,25 +4646,34 @@ const file_dieter_gateway_v1_gateway_proto_rawDesc = "" +
 	"statusCode\x12%\n" +
 	"\x0estatus_message\x18\v \x01(\tR\rstatusMessage\x12L\n" +
 	"\bmetadata\x18\f \x03(\v20.dieter.gateway.v1.DaemonLinkFrame.MetadataEntryR\bmetadata\x12!\n" +
-	"\fwindow_bytes\x18\r \x01(\rR\vwindowBytes\x12\x18\n" +
-	"\aversion\x18\x0e \x01(\tR\aversion\x12\x1e\n" +
+	"\fwindow_bytes\x18\r \x01(\rR\vwindowBytes\x12'\n" +
+	"\x0frelease_version\x18\x0e \x01(\tR\x0ereleaseVersion\x12\x1e\n" +
 	"\n" +
 	"generation\x18\x0f \x01(\x04R\n" +
 	"generation\x12O\n" +
 	"\x11direct_candidates\x18\x10 \x03(\v2\".dieter.gateway.v1.DirectCandidateR\x10directCandidates\x12O\n" +
-	"\x0eremote_desktop\x18\x11 \x01(\v2(.dieter.gateway.v1.RemoteDesktopPresenceR\rremoteDesktop\x12\x1f\n" +
-	"\vapi_version\x18\x12 \x01(\tR\n" +
-	"apiVersion\x12\"\n" +
+	"\x0eremote_desktop\x18\x11 \x01(\v2(.dieter.gateway.v1.RemoteDesktopPresenceR\rremoteDesktop\x12\"\n" +
 	"\fcapabilities\x18\x13 \x03(\tR\fcapabilities\x12G\n" +
 	" provider_account_correlation_key\x18\x14 \x01(\fR\x1dproviderAccountCorrelationKey\x12X\n" +
 	"\x11provider_accounts\x18\x15 \x01(\v2+.dieter.gateway.v1.ProviderAccountsPresenceR\x10providerAccounts\x12s\n" +
 	"\x1eprovider_quota_refresh_request\x18\x16 \x01(\v2..dieter.gateway.v1.ProviderQuotaRefreshRequestR\x1bproviderQuotaRefreshRequest\x12p\n" +
 	"\x1dprovider_quota_refresh_result\x18\x17 \x01(\v2-.dieter.gateway.v1.ProviderQuotaRefreshResultR\x1aproviderQuotaRefreshResult\x12m\n" +
 	"\x1cprovider_quota_reset_request\x18\x18 \x01(\v2,.dieter.gateway.v1.ProviderQuotaResetRequestR\x19providerQuotaResetRequest\x12j\n" +
-	"\x1bprovider_quota_reset_result\x18\x19 \x01(\v2+.dieter.gateway.v1.ProviderQuotaResetResultR\x18providerQuotaResetResult\x1a;\n" +
+	"\x1bprovider_quota_reset_result\x18\x19 \x01(\v2+.dieter.gateway.v1.ProviderQuotaResetResultR\x18providerQuotaResetResult\x12Y\n" +
+	"\x14compatibility_policy\x18\x1a \x01(\v2&.dieter.gateway.v1.CompatibilityPolicyR\x13compatibilityPolicy\x12L\n" +
+	"\rcompatibility\x18\x1b \x01(\x0e2&.dieter.gateway.v1.CompatibilityStatusR\rcompatibility\x1a;\n" +
 	"\rMetadataEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01*\x98\x01\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01J\x04\b\x12\x10\x13R\vapi_version*\x89\x01\n" +
+	"\x16CompatibilityComponent\x12'\n" +
+	"#COMPATIBILITY_COMPONENT_UNSPECIFIED\x10\x00\x12\"\n" +
+	"\x1eCOMPATIBILITY_COMPONENT_CLIENT\x10\x01\x12\"\n" +
+	"\x1eCOMPATIBILITY_COMPONENT_DAEMON\x10\x02*\xb4\x01\n" +
+	"\x13CompatibilityStatus\x12$\n" +
+	" COMPATIBILITY_STATUS_UNSPECIFIED\x10\x00\x12#\n" +
+	"\x1fCOMPATIBILITY_STATUS_COMPATIBLE\x10\x01\x12(\n" +
+	"$COMPATIBILITY_STATUS_UPDATE_REQUIRED\x10\x02\x12(\n" +
+	"$COMPATIBILITY_STATUS_INVALID_VERSION\x10\x03*\x98\x01\n" +
 	"\x15ProviderQuotaProvider\x12'\n" +
 	"#PROVIDER_QUOTA_PROVIDER_UNSPECIFIED\x10\x00\x12(\n" +
 	"$PROVIDER_QUOTA_PROVIDER_OPENAI_CODEX\x10\x01\x12,\n" +
@@ -4400,8 +4728,9 @@ const file_dieter_gateway_v1_gateway_proto_rawDesc = "" +
 	"5DAEMON_LINK_FRAME_KIND_PROVIDER_QUOTA_REFRESH_REQUEST\x10\x11\x128\n" +
 	"4DAEMON_LINK_FRAME_KIND_PROVIDER_QUOTA_REFRESH_RESULT\x10\x12\x127\n" +
 	"3DAEMON_LINK_FRAME_KIND_PROVIDER_QUOTA_RESET_REQUEST\x10\x13\x126\n" +
-	"2DAEMON_LINK_FRAME_KIND_PROVIDER_QUOTA_RESET_RESULT\x10\x142\xbb\x0e\n" +
-	"\x0eGatewayService\x12@\n" +
+	"2DAEMON_LINK_FRAME_KIND_PROVIDER_QUOTA_RESET_RESULT\x10\x142\xa2\x0f\n" +
+	"\x0eGatewayService\x12e\n" +
+	"\x10GetCompatibility\x12'.dieter.gateway.v1.CompatibilityRequest\x1a(.dieter.gateway.v1.CompatibilityResponse\x12@\n" +
 	"\n" +
 	"GetAccount\x12\x16.google.protobuf.Empty\x1a\x1a.dieter.gateway.v1.Account\x12M\n" +
 	"\vListDaemons\x12\x16.google.protobuf.Empty\x1a&.dieter.gateway.v1.ListDaemonsResponse\x12a\n" +
@@ -4437,165 +4766,179 @@ func file_dieter_gateway_v1_gateway_proto_rawDescGZIP() []byte {
 	return file_dieter_gateway_v1_gateway_proto_rawDescData
 }
 
-var file_dieter_gateway_v1_gateway_proto_enumTypes = make([]protoimpl.EnumInfo, 7)
-var file_dieter_gateway_v1_gateway_proto_msgTypes = make([]protoimpl.MessageInfo, 50)
+var file_dieter_gateway_v1_gateway_proto_enumTypes = make([]protoimpl.EnumInfo, 9)
+var file_dieter_gateway_v1_gateway_proto_msgTypes = make([]protoimpl.MessageInfo, 53)
 var file_dieter_gateway_v1_gateway_proto_goTypes = []any{
-	(ProviderQuotaProvider)(0),                       // 0: dieter.gateway.v1.ProviderQuotaProvider
-	(ProviderAccountKind)(0),                         // 1: dieter.gateway.v1.ProviderAccountKind
-	(ProviderQuotaAvailability)(0),                   // 2: dieter.gateway.v1.ProviderQuotaAvailability
-	(ProviderQuotaWindowKind)(0),                     // 3: dieter.gateway.v1.ProviderQuotaWindowKind
-	(ProviderQuotaRefreshState)(0),                   // 4: dieter.gateway.v1.ProviderQuotaRefreshState
-	(ProviderQuotaFreshness)(0),                      // 5: dieter.gateway.v1.ProviderQuotaFreshness
-	(DaemonLinkFrameKind)(0),                         // 6: dieter.gateway.v1.DaemonLinkFrameKind
-	(*Account)(nil),                                  // 7: dieter.gateway.v1.Account
-	(*DaemonRef)(nil),                                // 8: dieter.gateway.v1.DaemonRef
-	(*Daemon)(nil),                                   // 9: dieter.gateway.v1.Daemon
-	(*RemoteDesktopPresence)(nil),                    // 10: dieter.gateway.v1.RemoteDesktopPresence
-	(*ListDaemonsResponse)(nil),                      // 11: dieter.gateway.v1.ListDaemonsResponse
-	(*GatewayInformation)(nil),                       // 12: dieter.gateway.v1.GatewayInformation
-	(*WatchDaemonsRequest)(nil),                      // 13: dieter.gateway.v1.WatchDaemonsRequest
-	(*DaemonPresenceUpdate)(nil),                     // 14: dieter.gateway.v1.DaemonPresenceUpdate
-	(*BeginDaemonEnrollmentRequest)(nil),             // 15: dieter.gateway.v1.BeginDaemonEnrollmentRequest
-	(*DaemonEnrollment)(nil),                         // 16: dieter.gateway.v1.DaemonEnrollment
-	(*CompleteDaemonEnrollmentRequest)(nil),          // 17: dieter.gateway.v1.CompleteDaemonEnrollmentRequest
-	(*UnenrollDaemonRequest)(nil),                    // 18: dieter.gateway.v1.UnenrollDaemonRequest
-	(*DaemonRecoveryRef)(nil),                        // 19: dieter.gateway.v1.DaemonRecoveryRef
-	(*DaemonRecoveryState)(nil),                      // 20: dieter.gateway.v1.DaemonRecoveryState
-	(*RecoverDaemonRequest)(nil),                     // 21: dieter.gateway.v1.RecoverDaemonRequest
-	(*DaemonCredential)(nil),                         // 22: dieter.gateway.v1.DaemonCredential
-	(*RenameDaemonRequest)(nil),                      // 23: dieter.gateway.v1.RenameDaemonRequest
-	(*ExchangeDaemonTokenRequest)(nil),               // 24: dieter.gateway.v1.ExchangeDaemonTokenRequest
-	(*DaemonAccessToken)(nil),                        // 25: dieter.gateway.v1.DaemonAccessToken
-	(*DirectCandidate)(nil),                          // 26: dieter.gateway.v1.DirectCandidate
-	(*DaemonRoute)(nil),                              // 27: dieter.gateway.v1.DaemonRoute
-	(*RTCIceServer)(nil),                             // 28: dieter.gateway.v1.RTCIceServer
-	(*RTCConfiguration)(nil),                         // 29: dieter.gateway.v1.RTCConfiguration
-	(*ProviderQuotaWindow)(nil),                      // 30: dieter.gateway.v1.ProviderQuotaWindow
-	(*ProviderCreditBalance)(nil),                    // 31: dieter.gateway.v1.ProviderCreditBalance
-	(*ProviderSpendAllowance)(nil),                   // 32: dieter.gateway.v1.ProviderSpendAllowance
-	(*ProviderResetCredit)(nil),                      // 33: dieter.gateway.v1.ProviderResetCredit
-	(*ProviderResetCredits)(nil),                     // 34: dieter.gateway.v1.ProviderResetCredits
-	(*ProviderQuotaMachine)(nil),                     // 35: dieter.gateway.v1.ProviderQuotaMachine
-	(*ProviderQuotaSnapshot)(nil),                    // 36: dieter.gateway.v1.ProviderQuotaSnapshot
-	(*ProviderQuotaSummary)(nil),                     // 37: dieter.gateway.v1.ProviderQuotaSummary
-	(*ProviderQuotaGroup)(nil),                       // 38: dieter.gateway.v1.ProviderQuotaGroup
-	(*ListProviderQuotasRequest)(nil),                // 39: dieter.gateway.v1.ListProviderQuotasRequest
-	(*ListProviderQuotasResponse)(nil),               // 40: dieter.gateway.v1.ListProviderQuotasResponse
-	(*WatchProviderQuotasRequest)(nil),               // 41: dieter.gateway.v1.WatchProviderQuotasRequest
-	(*ProviderQuotaUpdate)(nil),                      // 42: dieter.gateway.v1.ProviderQuotaUpdate
-	(*RefreshProviderQuotasRequest)(nil),             // 43: dieter.gateway.v1.RefreshProviderQuotasRequest
-	(*RefreshProviderQuotasResponse)(nil),            // 44: dieter.gateway.v1.RefreshProviderQuotasResponse
-	(*SetProviderQuotaSummaryInclusionRequest)(nil),  // 45: dieter.gateway.v1.SetProviderQuotaSummaryInclusionRequest
-	(*SetProviderQuotaSummaryInclusionResponse)(nil), // 46: dieter.gateway.v1.SetProviderQuotaSummaryInclusionResponse
-	(*ConsumeProviderQuotaResetRequest)(nil),         // 47: dieter.gateway.v1.ConsumeProviderQuotaResetRequest
-	(*ConsumeProviderQuotaResetResponse)(nil),        // 48: dieter.gateway.v1.ConsumeProviderQuotaResetResponse
-	(*ProviderAccountPresence)(nil),                  // 49: dieter.gateway.v1.ProviderAccountPresence
-	(*ProviderAccountsPresence)(nil),                 // 50: dieter.gateway.v1.ProviderAccountsPresence
-	(*ProviderQuotaRefreshRequest)(nil),              // 51: dieter.gateway.v1.ProviderQuotaRefreshRequest
-	(*ProviderQuotaRefreshResult)(nil),               // 52: dieter.gateway.v1.ProviderQuotaRefreshResult
-	(*ProviderQuotaResetRequest)(nil),                // 53: dieter.gateway.v1.ProviderQuotaResetRequest
-	(*ProviderQuotaResetResult)(nil),                 // 54: dieter.gateway.v1.ProviderQuotaResetResult
-	(*DaemonLinkFrame)(nil),                          // 55: dieter.gateway.v1.DaemonLinkFrame
-	nil,                                              // 56: dieter.gateway.v1.DaemonLinkFrame.MetadataEntry
-	(*emptypb.Empty)(nil),                            // 57: google.protobuf.Empty
+	(CompatibilityComponent)(0),                      // 0: dieter.gateway.v1.CompatibilityComponent
+	(CompatibilityStatus)(0),                         // 1: dieter.gateway.v1.CompatibilityStatus
+	(ProviderQuotaProvider)(0),                       // 2: dieter.gateway.v1.ProviderQuotaProvider
+	(ProviderAccountKind)(0),                         // 3: dieter.gateway.v1.ProviderAccountKind
+	(ProviderQuotaAvailability)(0),                   // 4: dieter.gateway.v1.ProviderQuotaAvailability
+	(ProviderQuotaWindowKind)(0),                     // 5: dieter.gateway.v1.ProviderQuotaWindowKind
+	(ProviderQuotaRefreshState)(0),                   // 6: dieter.gateway.v1.ProviderQuotaRefreshState
+	(ProviderQuotaFreshness)(0),                      // 7: dieter.gateway.v1.ProviderQuotaFreshness
+	(DaemonLinkFrameKind)(0),                         // 8: dieter.gateway.v1.DaemonLinkFrameKind
+	(*Account)(nil),                                  // 9: dieter.gateway.v1.Account
+	(*DaemonRef)(nil),                                // 10: dieter.gateway.v1.DaemonRef
+	(*Daemon)(nil),                                   // 11: dieter.gateway.v1.Daemon
+	(*RemoteDesktopPresence)(nil),                    // 12: dieter.gateway.v1.RemoteDesktopPresence
+	(*ListDaemonsResponse)(nil),                      // 13: dieter.gateway.v1.ListDaemonsResponse
+	(*GatewayInformation)(nil),                       // 14: dieter.gateway.v1.GatewayInformation
+	(*CompatibilityPolicy)(nil),                      // 15: dieter.gateway.v1.CompatibilityPolicy
+	(*CompatibilityRequest)(nil),                     // 16: dieter.gateway.v1.CompatibilityRequest
+	(*CompatibilityResponse)(nil),                    // 17: dieter.gateway.v1.CompatibilityResponse
+	(*WatchDaemonsRequest)(nil),                      // 18: dieter.gateway.v1.WatchDaemonsRequest
+	(*DaemonPresenceUpdate)(nil),                     // 19: dieter.gateway.v1.DaemonPresenceUpdate
+	(*BeginDaemonEnrollmentRequest)(nil),             // 20: dieter.gateway.v1.BeginDaemonEnrollmentRequest
+	(*DaemonEnrollment)(nil),                         // 21: dieter.gateway.v1.DaemonEnrollment
+	(*CompleteDaemonEnrollmentRequest)(nil),          // 22: dieter.gateway.v1.CompleteDaemonEnrollmentRequest
+	(*UnenrollDaemonRequest)(nil),                    // 23: dieter.gateway.v1.UnenrollDaemonRequest
+	(*DaemonRecoveryRef)(nil),                        // 24: dieter.gateway.v1.DaemonRecoveryRef
+	(*DaemonRecoveryState)(nil),                      // 25: dieter.gateway.v1.DaemonRecoveryState
+	(*RecoverDaemonRequest)(nil),                     // 26: dieter.gateway.v1.RecoverDaemonRequest
+	(*DaemonCredential)(nil),                         // 27: dieter.gateway.v1.DaemonCredential
+	(*RenameDaemonRequest)(nil),                      // 28: dieter.gateway.v1.RenameDaemonRequest
+	(*ExchangeDaemonTokenRequest)(nil),               // 29: dieter.gateway.v1.ExchangeDaemonTokenRequest
+	(*DaemonAccessToken)(nil),                        // 30: dieter.gateway.v1.DaemonAccessToken
+	(*DirectCandidate)(nil),                          // 31: dieter.gateway.v1.DirectCandidate
+	(*DaemonRoute)(nil),                              // 32: dieter.gateway.v1.DaemonRoute
+	(*RTCIceServer)(nil),                             // 33: dieter.gateway.v1.RTCIceServer
+	(*RTCConfiguration)(nil),                         // 34: dieter.gateway.v1.RTCConfiguration
+	(*ProviderQuotaWindow)(nil),                      // 35: dieter.gateway.v1.ProviderQuotaWindow
+	(*ProviderCreditBalance)(nil),                    // 36: dieter.gateway.v1.ProviderCreditBalance
+	(*ProviderSpendAllowance)(nil),                   // 37: dieter.gateway.v1.ProviderSpendAllowance
+	(*ProviderResetCredit)(nil),                      // 38: dieter.gateway.v1.ProviderResetCredit
+	(*ProviderResetCredits)(nil),                     // 39: dieter.gateway.v1.ProviderResetCredits
+	(*ProviderQuotaMachine)(nil),                     // 40: dieter.gateway.v1.ProviderQuotaMachine
+	(*ProviderQuotaSnapshot)(nil),                    // 41: dieter.gateway.v1.ProviderQuotaSnapshot
+	(*ProviderQuotaSummary)(nil),                     // 42: dieter.gateway.v1.ProviderQuotaSummary
+	(*ProviderQuotaGroup)(nil),                       // 43: dieter.gateway.v1.ProviderQuotaGroup
+	(*ListProviderQuotasRequest)(nil),                // 44: dieter.gateway.v1.ListProviderQuotasRequest
+	(*ListProviderQuotasResponse)(nil),               // 45: dieter.gateway.v1.ListProviderQuotasResponse
+	(*WatchProviderQuotasRequest)(nil),               // 46: dieter.gateway.v1.WatchProviderQuotasRequest
+	(*ProviderQuotaUpdate)(nil),                      // 47: dieter.gateway.v1.ProviderQuotaUpdate
+	(*RefreshProviderQuotasRequest)(nil),             // 48: dieter.gateway.v1.RefreshProviderQuotasRequest
+	(*RefreshProviderQuotasResponse)(nil),            // 49: dieter.gateway.v1.RefreshProviderQuotasResponse
+	(*SetProviderQuotaSummaryInclusionRequest)(nil),  // 50: dieter.gateway.v1.SetProviderQuotaSummaryInclusionRequest
+	(*SetProviderQuotaSummaryInclusionResponse)(nil), // 51: dieter.gateway.v1.SetProviderQuotaSummaryInclusionResponse
+	(*ConsumeProviderQuotaResetRequest)(nil),         // 52: dieter.gateway.v1.ConsumeProviderQuotaResetRequest
+	(*ConsumeProviderQuotaResetResponse)(nil),        // 53: dieter.gateway.v1.ConsumeProviderQuotaResetResponse
+	(*ProviderAccountPresence)(nil),                  // 54: dieter.gateway.v1.ProviderAccountPresence
+	(*ProviderAccountsPresence)(nil),                 // 55: dieter.gateway.v1.ProviderAccountsPresence
+	(*ProviderQuotaRefreshRequest)(nil),              // 56: dieter.gateway.v1.ProviderQuotaRefreshRequest
+	(*ProviderQuotaRefreshResult)(nil),               // 57: dieter.gateway.v1.ProviderQuotaRefreshResult
+	(*ProviderQuotaResetRequest)(nil),                // 58: dieter.gateway.v1.ProviderQuotaResetRequest
+	(*ProviderQuotaResetResult)(nil),                 // 59: dieter.gateway.v1.ProviderQuotaResetResult
+	(*DaemonLinkFrame)(nil),                          // 60: dieter.gateway.v1.DaemonLinkFrame
+	nil,                                              // 61: dieter.gateway.v1.DaemonLinkFrame.MetadataEntry
+	(*emptypb.Empty)(nil),                            // 62: google.protobuf.Empty
 }
 var file_dieter_gateway_v1_gateway_proto_depIdxs = []int32{
-	26, // 0: dieter.gateway.v1.Daemon.direct_candidates:type_name -> dieter.gateway.v1.DirectCandidate
-	10, // 1: dieter.gateway.v1.Daemon.remote_desktop:type_name -> dieter.gateway.v1.RemoteDesktopPresence
-	9,  // 2: dieter.gateway.v1.ListDaemonsResponse.daemons:type_name -> dieter.gateway.v1.Daemon
-	12, // 3: dieter.gateway.v1.ListDaemonsResponse.gateway_information:type_name -> dieter.gateway.v1.GatewayInformation
-	9,  // 4: dieter.gateway.v1.DaemonPresenceUpdate.daemons:type_name -> dieter.gateway.v1.Daemon
-	12, // 5: dieter.gateway.v1.DaemonPresenceUpdate.gateway_information:type_name -> dieter.gateway.v1.GatewayInformation
-	26, // 6: dieter.gateway.v1.DaemonRoute.direct_candidates:type_name -> dieter.gateway.v1.DirectCandidate
-	28, // 7: dieter.gateway.v1.RTCConfiguration.ice_servers:type_name -> dieter.gateway.v1.RTCIceServer
-	3,  // 8: dieter.gateway.v1.ProviderQuotaWindow.kind:type_name -> dieter.gateway.v1.ProviderQuotaWindowKind
-	33, // 9: dieter.gateway.v1.ProviderResetCredits.details:type_name -> dieter.gateway.v1.ProviderResetCredit
-	2,  // 10: dieter.gateway.v1.ProviderQuotaMachine.availability:type_name -> dieter.gateway.v1.ProviderQuotaAvailability
-	0,  // 11: dieter.gateway.v1.ProviderQuotaSnapshot.provider:type_name -> dieter.gateway.v1.ProviderQuotaProvider
-	1,  // 12: dieter.gateway.v1.ProviderQuotaSnapshot.account_kind:type_name -> dieter.gateway.v1.ProviderAccountKind
-	2,  // 13: dieter.gateway.v1.ProviderQuotaSnapshot.availability:type_name -> dieter.gateway.v1.ProviderQuotaAvailability
-	30, // 14: dieter.gateway.v1.ProviderQuotaSnapshot.windows:type_name -> dieter.gateway.v1.ProviderQuotaWindow
-	31, // 15: dieter.gateway.v1.ProviderQuotaSnapshot.credits:type_name -> dieter.gateway.v1.ProviderCreditBalance
-	32, // 16: dieter.gateway.v1.ProviderQuotaSnapshot.spend_allowance:type_name -> dieter.gateway.v1.ProviderSpendAllowance
-	34, // 17: dieter.gateway.v1.ProviderQuotaSnapshot.reset_credits:type_name -> dieter.gateway.v1.ProviderResetCredits
-	4,  // 18: dieter.gateway.v1.ProviderQuotaSnapshot.refresh_state:type_name -> dieter.gateway.v1.ProviderQuotaRefreshState
-	35, // 19: dieter.gateway.v1.ProviderQuotaSnapshot.machines:type_name -> dieter.gateway.v1.ProviderQuotaMachine
-	3,  // 20: dieter.gateway.v1.ProviderQuotaSummary.summary_window_kind:type_name -> dieter.gateway.v1.ProviderQuotaWindowKind
-	5,  // 21: dieter.gateway.v1.ProviderQuotaSummary.freshness:type_name -> dieter.gateway.v1.ProviderQuotaFreshness
-	0,  // 22: dieter.gateway.v1.ProviderQuotaGroup.provider:type_name -> dieter.gateway.v1.ProviderQuotaProvider
-	36, // 23: dieter.gateway.v1.ProviderQuotaGroup.accounts:type_name -> dieter.gateway.v1.ProviderQuotaSnapshot
-	37, // 24: dieter.gateway.v1.ProviderQuotaGroup.summary:type_name -> dieter.gateway.v1.ProviderQuotaSummary
-	0,  // 25: dieter.gateway.v1.ListProviderQuotasRequest.provider:type_name -> dieter.gateway.v1.ProviderQuotaProvider
-	38, // 26: dieter.gateway.v1.ListProviderQuotasResponse.groups:type_name -> dieter.gateway.v1.ProviderQuotaGroup
-	12, // 27: dieter.gateway.v1.ListProviderQuotasResponse.gateway_information:type_name -> dieter.gateway.v1.GatewayInformation
-	0,  // 28: dieter.gateway.v1.WatchProviderQuotasRequest.provider:type_name -> dieter.gateway.v1.ProviderQuotaProvider
-	38, // 29: dieter.gateway.v1.ProviderQuotaUpdate.groups:type_name -> dieter.gateway.v1.ProviderQuotaGroup
-	0,  // 30: dieter.gateway.v1.RefreshProviderQuotasRequest.provider:type_name -> dieter.gateway.v1.ProviderQuotaProvider
-	38, // 31: dieter.gateway.v1.RefreshProviderQuotasResponse.groups:type_name -> dieter.gateway.v1.ProviderQuotaGroup
-	0,  // 32: dieter.gateway.v1.SetProviderQuotaSummaryInclusionRequest.provider:type_name -> dieter.gateway.v1.ProviderQuotaProvider
-	38, // 33: dieter.gateway.v1.SetProviderQuotaSummaryInclusionResponse.groups:type_name -> dieter.gateway.v1.ProviderQuotaGroup
-	0,  // 34: dieter.gateway.v1.ConsumeProviderQuotaResetRequest.provider:type_name -> dieter.gateway.v1.ProviderQuotaProvider
-	38, // 35: dieter.gateway.v1.ConsumeProviderQuotaResetResponse.groups:type_name -> dieter.gateway.v1.ProviderQuotaGroup
-	0,  // 36: dieter.gateway.v1.ProviderAccountPresence.provider:type_name -> dieter.gateway.v1.ProviderQuotaProvider
-	1,  // 37: dieter.gateway.v1.ProviderAccountPresence.account_kind:type_name -> dieter.gateway.v1.ProviderAccountKind
-	2,  // 38: dieter.gateway.v1.ProviderAccountPresence.availability:type_name -> dieter.gateway.v1.ProviderQuotaAvailability
-	49, // 39: dieter.gateway.v1.ProviderAccountsPresence.accounts:type_name -> dieter.gateway.v1.ProviderAccountPresence
-	0,  // 40: dieter.gateway.v1.ProviderQuotaRefreshRequest.provider:type_name -> dieter.gateway.v1.ProviderQuotaProvider
-	36, // 41: dieter.gateway.v1.ProviderQuotaRefreshResult.snapshot:type_name -> dieter.gateway.v1.ProviderQuotaSnapshot
-	0,  // 42: dieter.gateway.v1.ProviderQuotaResetRequest.provider:type_name -> dieter.gateway.v1.ProviderQuotaProvider
-	36, // 43: dieter.gateway.v1.ProviderQuotaResetResult.snapshot:type_name -> dieter.gateway.v1.ProviderQuotaSnapshot
-	6,  // 44: dieter.gateway.v1.DaemonLinkFrame.kind:type_name -> dieter.gateway.v1.DaemonLinkFrameKind
-	56, // 45: dieter.gateway.v1.DaemonLinkFrame.metadata:type_name -> dieter.gateway.v1.DaemonLinkFrame.MetadataEntry
-	26, // 46: dieter.gateway.v1.DaemonLinkFrame.direct_candidates:type_name -> dieter.gateway.v1.DirectCandidate
-	10, // 47: dieter.gateway.v1.DaemonLinkFrame.remote_desktop:type_name -> dieter.gateway.v1.RemoteDesktopPresence
-	50, // 48: dieter.gateway.v1.DaemonLinkFrame.provider_accounts:type_name -> dieter.gateway.v1.ProviderAccountsPresence
-	51, // 49: dieter.gateway.v1.DaemonLinkFrame.provider_quota_refresh_request:type_name -> dieter.gateway.v1.ProviderQuotaRefreshRequest
-	52, // 50: dieter.gateway.v1.DaemonLinkFrame.provider_quota_refresh_result:type_name -> dieter.gateway.v1.ProviderQuotaRefreshResult
-	53, // 51: dieter.gateway.v1.DaemonLinkFrame.provider_quota_reset_request:type_name -> dieter.gateway.v1.ProviderQuotaResetRequest
-	54, // 52: dieter.gateway.v1.DaemonLinkFrame.provider_quota_reset_result:type_name -> dieter.gateway.v1.ProviderQuotaResetResult
-	57, // 53: dieter.gateway.v1.GatewayService.GetAccount:input_type -> google.protobuf.Empty
-	57, // 54: dieter.gateway.v1.GatewayService.ListDaemons:input_type -> google.protobuf.Empty
-	13, // 55: dieter.gateway.v1.GatewayService.WatchDaemons:input_type -> dieter.gateway.v1.WatchDaemonsRequest
-	15, // 56: dieter.gateway.v1.GatewayService.BeginDaemonEnrollment:input_type -> dieter.gateway.v1.BeginDaemonEnrollmentRequest
-	17, // 57: dieter.gateway.v1.GatewayService.CompleteDaemonEnrollment:input_type -> dieter.gateway.v1.CompleteDaemonEnrollmentRequest
-	18, // 58: dieter.gateway.v1.GatewayService.UnenrollDaemon:input_type -> dieter.gateway.v1.UnenrollDaemonRequest
-	23, // 59: dieter.gateway.v1.GatewayService.RenameDaemon:input_type -> dieter.gateway.v1.RenameDaemonRequest
-	8,  // 60: dieter.gateway.v1.GatewayService.RevokeDaemon:input_type -> dieter.gateway.v1.DaemonRef
-	19, // 61: dieter.gateway.v1.GatewayService.InspectDaemonRecovery:input_type -> dieter.gateway.v1.DaemonRecoveryRef
-	21, // 62: dieter.gateway.v1.GatewayService.RecoverDaemon:input_type -> dieter.gateway.v1.RecoverDaemonRequest
-	24, // 63: dieter.gateway.v1.GatewayService.ExchangeDaemonToken:input_type -> dieter.gateway.v1.ExchangeDaemonTokenRequest
-	8,  // 64: dieter.gateway.v1.GatewayService.ResolveDaemonRoute:input_type -> dieter.gateway.v1.DaemonRef
-	8,  // 65: dieter.gateway.v1.GatewayService.GetRTCConfiguration:input_type -> dieter.gateway.v1.DaemonRef
-	39, // 66: dieter.gateway.v1.GatewayService.ListProviderQuotas:input_type -> dieter.gateway.v1.ListProviderQuotasRequest
-	41, // 67: dieter.gateway.v1.GatewayService.WatchProviderQuotas:input_type -> dieter.gateway.v1.WatchProviderQuotasRequest
-	43, // 68: dieter.gateway.v1.GatewayService.RefreshProviderQuotas:input_type -> dieter.gateway.v1.RefreshProviderQuotasRequest
-	45, // 69: dieter.gateway.v1.GatewayService.SetProviderQuotaSummaryInclusion:input_type -> dieter.gateway.v1.SetProviderQuotaSummaryInclusionRequest
-	47, // 70: dieter.gateway.v1.GatewayService.ConsumeProviderQuotaReset:input_type -> dieter.gateway.v1.ConsumeProviderQuotaResetRequest
-	55, // 71: dieter.gateway.v1.DaemonLinkService.Connect:input_type -> dieter.gateway.v1.DaemonLinkFrame
-	7,  // 72: dieter.gateway.v1.GatewayService.GetAccount:output_type -> dieter.gateway.v1.Account
-	11, // 73: dieter.gateway.v1.GatewayService.ListDaemons:output_type -> dieter.gateway.v1.ListDaemonsResponse
-	14, // 74: dieter.gateway.v1.GatewayService.WatchDaemons:output_type -> dieter.gateway.v1.DaemonPresenceUpdate
-	16, // 75: dieter.gateway.v1.GatewayService.BeginDaemonEnrollment:output_type -> dieter.gateway.v1.DaemonEnrollment
-	22, // 76: dieter.gateway.v1.GatewayService.CompleteDaemonEnrollment:output_type -> dieter.gateway.v1.DaemonCredential
-	57, // 77: dieter.gateway.v1.GatewayService.UnenrollDaemon:output_type -> google.protobuf.Empty
-	9,  // 78: dieter.gateway.v1.GatewayService.RenameDaemon:output_type -> dieter.gateway.v1.Daemon
-	57, // 79: dieter.gateway.v1.GatewayService.RevokeDaemon:output_type -> google.protobuf.Empty
-	20, // 80: dieter.gateway.v1.GatewayService.InspectDaemonRecovery:output_type -> dieter.gateway.v1.DaemonRecoveryState
-	22, // 81: dieter.gateway.v1.GatewayService.RecoverDaemon:output_type -> dieter.gateway.v1.DaemonCredential
-	25, // 82: dieter.gateway.v1.GatewayService.ExchangeDaemonToken:output_type -> dieter.gateway.v1.DaemonAccessToken
-	27, // 83: dieter.gateway.v1.GatewayService.ResolveDaemonRoute:output_type -> dieter.gateway.v1.DaemonRoute
-	29, // 84: dieter.gateway.v1.GatewayService.GetRTCConfiguration:output_type -> dieter.gateway.v1.RTCConfiguration
-	40, // 85: dieter.gateway.v1.GatewayService.ListProviderQuotas:output_type -> dieter.gateway.v1.ListProviderQuotasResponse
-	42, // 86: dieter.gateway.v1.GatewayService.WatchProviderQuotas:output_type -> dieter.gateway.v1.ProviderQuotaUpdate
-	44, // 87: dieter.gateway.v1.GatewayService.RefreshProviderQuotas:output_type -> dieter.gateway.v1.RefreshProviderQuotasResponse
-	46, // 88: dieter.gateway.v1.GatewayService.SetProviderQuotaSummaryInclusion:output_type -> dieter.gateway.v1.SetProviderQuotaSummaryInclusionResponse
-	48, // 89: dieter.gateway.v1.GatewayService.ConsumeProviderQuotaReset:output_type -> dieter.gateway.v1.ConsumeProviderQuotaResetResponse
-	55, // 90: dieter.gateway.v1.DaemonLinkService.Connect:output_type -> dieter.gateway.v1.DaemonLinkFrame
-	72, // [72:91] is the sub-list for method output_type
-	53, // [53:72] is the sub-list for method input_type
-	53, // [53:53] is the sub-list for extension type_name
-	53, // [53:53] is the sub-list for extension extendee
-	0,  // [0:53] is the sub-list for field type_name
+	31, // 0: dieter.gateway.v1.Daemon.direct_candidates:type_name -> dieter.gateway.v1.DirectCandidate
+	12, // 1: dieter.gateway.v1.Daemon.remote_desktop:type_name -> dieter.gateway.v1.RemoteDesktopPresence
+	1,  // 2: dieter.gateway.v1.Daemon.compatibility:type_name -> dieter.gateway.v1.CompatibilityStatus
+	11, // 3: dieter.gateway.v1.ListDaemonsResponse.daemons:type_name -> dieter.gateway.v1.Daemon
+	14, // 4: dieter.gateway.v1.ListDaemonsResponse.gateway_information:type_name -> dieter.gateway.v1.GatewayInformation
+	15, // 5: dieter.gateway.v1.GatewayInformation.compatibility_policy:type_name -> dieter.gateway.v1.CompatibilityPolicy
+	0,  // 6: dieter.gateway.v1.CompatibilityRequest.component:type_name -> dieter.gateway.v1.CompatibilityComponent
+	15, // 7: dieter.gateway.v1.CompatibilityResponse.policy:type_name -> dieter.gateway.v1.CompatibilityPolicy
+	1,  // 8: dieter.gateway.v1.CompatibilityResponse.status:type_name -> dieter.gateway.v1.CompatibilityStatus
+	11, // 9: dieter.gateway.v1.DaemonPresenceUpdate.daemons:type_name -> dieter.gateway.v1.Daemon
+	14, // 10: dieter.gateway.v1.DaemonPresenceUpdate.gateway_information:type_name -> dieter.gateway.v1.GatewayInformation
+	31, // 11: dieter.gateway.v1.DaemonRoute.direct_candidates:type_name -> dieter.gateway.v1.DirectCandidate
+	33, // 12: dieter.gateway.v1.RTCConfiguration.ice_servers:type_name -> dieter.gateway.v1.RTCIceServer
+	5,  // 13: dieter.gateway.v1.ProviderQuotaWindow.kind:type_name -> dieter.gateway.v1.ProviderQuotaWindowKind
+	38, // 14: dieter.gateway.v1.ProviderResetCredits.details:type_name -> dieter.gateway.v1.ProviderResetCredit
+	4,  // 15: dieter.gateway.v1.ProviderQuotaMachine.availability:type_name -> dieter.gateway.v1.ProviderQuotaAvailability
+	2,  // 16: dieter.gateway.v1.ProviderQuotaSnapshot.provider:type_name -> dieter.gateway.v1.ProviderQuotaProvider
+	3,  // 17: dieter.gateway.v1.ProviderQuotaSnapshot.account_kind:type_name -> dieter.gateway.v1.ProviderAccountKind
+	4,  // 18: dieter.gateway.v1.ProviderQuotaSnapshot.availability:type_name -> dieter.gateway.v1.ProviderQuotaAvailability
+	35, // 19: dieter.gateway.v1.ProviderQuotaSnapshot.windows:type_name -> dieter.gateway.v1.ProviderQuotaWindow
+	36, // 20: dieter.gateway.v1.ProviderQuotaSnapshot.credits:type_name -> dieter.gateway.v1.ProviderCreditBalance
+	37, // 21: dieter.gateway.v1.ProviderQuotaSnapshot.spend_allowance:type_name -> dieter.gateway.v1.ProviderSpendAllowance
+	39, // 22: dieter.gateway.v1.ProviderQuotaSnapshot.reset_credits:type_name -> dieter.gateway.v1.ProviderResetCredits
+	6,  // 23: dieter.gateway.v1.ProviderQuotaSnapshot.refresh_state:type_name -> dieter.gateway.v1.ProviderQuotaRefreshState
+	40, // 24: dieter.gateway.v1.ProviderQuotaSnapshot.machines:type_name -> dieter.gateway.v1.ProviderQuotaMachine
+	5,  // 25: dieter.gateway.v1.ProviderQuotaSummary.summary_window_kind:type_name -> dieter.gateway.v1.ProviderQuotaWindowKind
+	7,  // 26: dieter.gateway.v1.ProviderQuotaSummary.freshness:type_name -> dieter.gateway.v1.ProviderQuotaFreshness
+	2,  // 27: dieter.gateway.v1.ProviderQuotaGroup.provider:type_name -> dieter.gateway.v1.ProviderQuotaProvider
+	41, // 28: dieter.gateway.v1.ProviderQuotaGroup.accounts:type_name -> dieter.gateway.v1.ProviderQuotaSnapshot
+	42, // 29: dieter.gateway.v1.ProviderQuotaGroup.summary:type_name -> dieter.gateway.v1.ProviderQuotaSummary
+	2,  // 30: dieter.gateway.v1.ListProviderQuotasRequest.provider:type_name -> dieter.gateway.v1.ProviderQuotaProvider
+	43, // 31: dieter.gateway.v1.ListProviderQuotasResponse.groups:type_name -> dieter.gateway.v1.ProviderQuotaGroup
+	14, // 32: dieter.gateway.v1.ListProviderQuotasResponse.gateway_information:type_name -> dieter.gateway.v1.GatewayInformation
+	2,  // 33: dieter.gateway.v1.WatchProviderQuotasRequest.provider:type_name -> dieter.gateway.v1.ProviderQuotaProvider
+	43, // 34: dieter.gateway.v1.ProviderQuotaUpdate.groups:type_name -> dieter.gateway.v1.ProviderQuotaGroup
+	2,  // 35: dieter.gateway.v1.RefreshProviderQuotasRequest.provider:type_name -> dieter.gateway.v1.ProviderQuotaProvider
+	43, // 36: dieter.gateway.v1.RefreshProviderQuotasResponse.groups:type_name -> dieter.gateway.v1.ProviderQuotaGroup
+	2,  // 37: dieter.gateway.v1.SetProviderQuotaSummaryInclusionRequest.provider:type_name -> dieter.gateway.v1.ProviderQuotaProvider
+	43, // 38: dieter.gateway.v1.SetProviderQuotaSummaryInclusionResponse.groups:type_name -> dieter.gateway.v1.ProviderQuotaGroup
+	2,  // 39: dieter.gateway.v1.ConsumeProviderQuotaResetRequest.provider:type_name -> dieter.gateway.v1.ProviderQuotaProvider
+	43, // 40: dieter.gateway.v1.ConsumeProviderQuotaResetResponse.groups:type_name -> dieter.gateway.v1.ProviderQuotaGroup
+	2,  // 41: dieter.gateway.v1.ProviderAccountPresence.provider:type_name -> dieter.gateway.v1.ProviderQuotaProvider
+	3,  // 42: dieter.gateway.v1.ProviderAccountPresence.account_kind:type_name -> dieter.gateway.v1.ProviderAccountKind
+	4,  // 43: dieter.gateway.v1.ProviderAccountPresence.availability:type_name -> dieter.gateway.v1.ProviderQuotaAvailability
+	54, // 44: dieter.gateway.v1.ProviderAccountsPresence.accounts:type_name -> dieter.gateway.v1.ProviderAccountPresence
+	2,  // 45: dieter.gateway.v1.ProviderQuotaRefreshRequest.provider:type_name -> dieter.gateway.v1.ProviderQuotaProvider
+	41, // 46: dieter.gateway.v1.ProviderQuotaRefreshResult.snapshot:type_name -> dieter.gateway.v1.ProviderQuotaSnapshot
+	2,  // 47: dieter.gateway.v1.ProviderQuotaResetRequest.provider:type_name -> dieter.gateway.v1.ProviderQuotaProvider
+	41, // 48: dieter.gateway.v1.ProviderQuotaResetResult.snapshot:type_name -> dieter.gateway.v1.ProviderQuotaSnapshot
+	8,  // 49: dieter.gateway.v1.DaemonLinkFrame.kind:type_name -> dieter.gateway.v1.DaemonLinkFrameKind
+	61, // 50: dieter.gateway.v1.DaemonLinkFrame.metadata:type_name -> dieter.gateway.v1.DaemonLinkFrame.MetadataEntry
+	31, // 51: dieter.gateway.v1.DaemonLinkFrame.direct_candidates:type_name -> dieter.gateway.v1.DirectCandidate
+	12, // 52: dieter.gateway.v1.DaemonLinkFrame.remote_desktop:type_name -> dieter.gateway.v1.RemoteDesktopPresence
+	55, // 53: dieter.gateway.v1.DaemonLinkFrame.provider_accounts:type_name -> dieter.gateway.v1.ProviderAccountsPresence
+	56, // 54: dieter.gateway.v1.DaemonLinkFrame.provider_quota_refresh_request:type_name -> dieter.gateway.v1.ProviderQuotaRefreshRequest
+	57, // 55: dieter.gateway.v1.DaemonLinkFrame.provider_quota_refresh_result:type_name -> dieter.gateway.v1.ProviderQuotaRefreshResult
+	58, // 56: dieter.gateway.v1.DaemonLinkFrame.provider_quota_reset_request:type_name -> dieter.gateway.v1.ProviderQuotaResetRequest
+	59, // 57: dieter.gateway.v1.DaemonLinkFrame.provider_quota_reset_result:type_name -> dieter.gateway.v1.ProviderQuotaResetResult
+	15, // 58: dieter.gateway.v1.DaemonLinkFrame.compatibility_policy:type_name -> dieter.gateway.v1.CompatibilityPolicy
+	1,  // 59: dieter.gateway.v1.DaemonLinkFrame.compatibility:type_name -> dieter.gateway.v1.CompatibilityStatus
+	16, // 60: dieter.gateway.v1.GatewayService.GetCompatibility:input_type -> dieter.gateway.v1.CompatibilityRequest
+	62, // 61: dieter.gateway.v1.GatewayService.GetAccount:input_type -> google.protobuf.Empty
+	62, // 62: dieter.gateway.v1.GatewayService.ListDaemons:input_type -> google.protobuf.Empty
+	18, // 63: dieter.gateway.v1.GatewayService.WatchDaemons:input_type -> dieter.gateway.v1.WatchDaemonsRequest
+	20, // 64: dieter.gateway.v1.GatewayService.BeginDaemonEnrollment:input_type -> dieter.gateway.v1.BeginDaemonEnrollmentRequest
+	22, // 65: dieter.gateway.v1.GatewayService.CompleteDaemonEnrollment:input_type -> dieter.gateway.v1.CompleteDaemonEnrollmentRequest
+	23, // 66: dieter.gateway.v1.GatewayService.UnenrollDaemon:input_type -> dieter.gateway.v1.UnenrollDaemonRequest
+	28, // 67: dieter.gateway.v1.GatewayService.RenameDaemon:input_type -> dieter.gateway.v1.RenameDaemonRequest
+	10, // 68: dieter.gateway.v1.GatewayService.RevokeDaemon:input_type -> dieter.gateway.v1.DaemonRef
+	24, // 69: dieter.gateway.v1.GatewayService.InspectDaemonRecovery:input_type -> dieter.gateway.v1.DaemonRecoveryRef
+	26, // 70: dieter.gateway.v1.GatewayService.RecoverDaemon:input_type -> dieter.gateway.v1.RecoverDaemonRequest
+	29, // 71: dieter.gateway.v1.GatewayService.ExchangeDaemonToken:input_type -> dieter.gateway.v1.ExchangeDaemonTokenRequest
+	10, // 72: dieter.gateway.v1.GatewayService.ResolveDaemonRoute:input_type -> dieter.gateway.v1.DaemonRef
+	10, // 73: dieter.gateway.v1.GatewayService.GetRTCConfiguration:input_type -> dieter.gateway.v1.DaemonRef
+	44, // 74: dieter.gateway.v1.GatewayService.ListProviderQuotas:input_type -> dieter.gateway.v1.ListProviderQuotasRequest
+	46, // 75: dieter.gateway.v1.GatewayService.WatchProviderQuotas:input_type -> dieter.gateway.v1.WatchProviderQuotasRequest
+	48, // 76: dieter.gateway.v1.GatewayService.RefreshProviderQuotas:input_type -> dieter.gateway.v1.RefreshProviderQuotasRequest
+	50, // 77: dieter.gateway.v1.GatewayService.SetProviderQuotaSummaryInclusion:input_type -> dieter.gateway.v1.SetProviderQuotaSummaryInclusionRequest
+	52, // 78: dieter.gateway.v1.GatewayService.ConsumeProviderQuotaReset:input_type -> dieter.gateway.v1.ConsumeProviderQuotaResetRequest
+	60, // 79: dieter.gateway.v1.DaemonLinkService.Connect:input_type -> dieter.gateway.v1.DaemonLinkFrame
+	17, // 80: dieter.gateway.v1.GatewayService.GetCompatibility:output_type -> dieter.gateway.v1.CompatibilityResponse
+	9,  // 81: dieter.gateway.v1.GatewayService.GetAccount:output_type -> dieter.gateway.v1.Account
+	13, // 82: dieter.gateway.v1.GatewayService.ListDaemons:output_type -> dieter.gateway.v1.ListDaemonsResponse
+	19, // 83: dieter.gateway.v1.GatewayService.WatchDaemons:output_type -> dieter.gateway.v1.DaemonPresenceUpdate
+	21, // 84: dieter.gateway.v1.GatewayService.BeginDaemonEnrollment:output_type -> dieter.gateway.v1.DaemonEnrollment
+	27, // 85: dieter.gateway.v1.GatewayService.CompleteDaemonEnrollment:output_type -> dieter.gateway.v1.DaemonCredential
+	62, // 86: dieter.gateway.v1.GatewayService.UnenrollDaemon:output_type -> google.protobuf.Empty
+	11, // 87: dieter.gateway.v1.GatewayService.RenameDaemon:output_type -> dieter.gateway.v1.Daemon
+	62, // 88: dieter.gateway.v1.GatewayService.RevokeDaemon:output_type -> google.protobuf.Empty
+	25, // 89: dieter.gateway.v1.GatewayService.InspectDaemonRecovery:output_type -> dieter.gateway.v1.DaemonRecoveryState
+	27, // 90: dieter.gateway.v1.GatewayService.RecoverDaemon:output_type -> dieter.gateway.v1.DaemonCredential
+	30, // 91: dieter.gateway.v1.GatewayService.ExchangeDaemonToken:output_type -> dieter.gateway.v1.DaemonAccessToken
+	32, // 92: dieter.gateway.v1.GatewayService.ResolveDaemonRoute:output_type -> dieter.gateway.v1.DaemonRoute
+	34, // 93: dieter.gateway.v1.GatewayService.GetRTCConfiguration:output_type -> dieter.gateway.v1.RTCConfiguration
+	45, // 94: dieter.gateway.v1.GatewayService.ListProviderQuotas:output_type -> dieter.gateway.v1.ListProviderQuotasResponse
+	47, // 95: dieter.gateway.v1.GatewayService.WatchProviderQuotas:output_type -> dieter.gateway.v1.ProviderQuotaUpdate
+	49, // 96: dieter.gateway.v1.GatewayService.RefreshProviderQuotas:output_type -> dieter.gateway.v1.RefreshProviderQuotasResponse
+	51, // 97: dieter.gateway.v1.GatewayService.SetProviderQuotaSummaryInclusion:output_type -> dieter.gateway.v1.SetProviderQuotaSummaryInclusionResponse
+	53, // 98: dieter.gateway.v1.GatewayService.ConsumeProviderQuotaReset:output_type -> dieter.gateway.v1.ConsumeProviderQuotaResetResponse
+	60, // 99: dieter.gateway.v1.DaemonLinkService.Connect:output_type -> dieter.gateway.v1.DaemonLinkFrame
+	80, // [80:100] is the sub-list for method output_type
+	60, // [60:80] is the sub-list for method input_type
+	60, // [60:60] is the sub-list for extension type_name
+	60, // [60:60] is the sub-list for extension extendee
+	0,  // [0:60] is the sub-list for field type_name
 }
 
 func init() { file_dieter_gateway_v1_gateway_proto_init() }
@@ -4603,18 +4946,18 @@ func file_dieter_gateway_v1_gateway_proto_init() {
 	if File_dieter_gateway_v1_gateway_proto != nil {
 		return
 	}
-	file_dieter_gateway_v1_gateway_proto_msgTypes[23].OneofWrappers = []any{}
-	file_dieter_gateway_v1_gateway_proto_msgTypes[24].OneofWrappers = []any{}
-	file_dieter_gateway_v1_gateway_proto_msgTypes[25].OneofWrappers = []any{}
-	file_dieter_gateway_v1_gateway_proto_msgTypes[29].OneofWrappers = []any{}
-	file_dieter_gateway_v1_gateway_proto_msgTypes[30].OneofWrappers = []any{}
+	file_dieter_gateway_v1_gateway_proto_msgTypes[26].OneofWrappers = []any{}
+	file_dieter_gateway_v1_gateway_proto_msgTypes[27].OneofWrappers = []any{}
+	file_dieter_gateway_v1_gateway_proto_msgTypes[28].OneofWrappers = []any{}
+	file_dieter_gateway_v1_gateway_proto_msgTypes[32].OneofWrappers = []any{}
+	file_dieter_gateway_v1_gateway_proto_msgTypes[33].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_dieter_gateway_v1_gateway_proto_rawDesc), len(file_dieter_gateway_v1_gateway_proto_rawDesc)),
-			NumEnums:      7,
-			NumMessages:   50,
+			NumEnums:      9,
+			NumMessages:   53,
 			NumExtensions: 0,
 			NumServices:   2,
 		},

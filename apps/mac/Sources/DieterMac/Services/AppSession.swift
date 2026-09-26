@@ -218,7 +218,7 @@ final class AppSession {
     }
 
     func machineIsAvailable(_ machine: DieterEndpoint) -> Bool {
-        guard machine.online, machine.apiCompatibility != .incompatible else { return false }
+        guard machine.online, machine.compatibilityState != .incompatible else { return false }
         return machine.id != endpoint.id || phase.isConnected
     }
 

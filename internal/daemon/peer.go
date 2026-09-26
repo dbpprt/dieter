@@ -12,12 +12,12 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/dbpprt/dieter/internal/buildinfo"
 	"github.com/dbpprt/dieter/internal/controlrtc"
 	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
 	"github.com/dbpprt/dieter/internal/linkauth"
 	"github.com/dbpprt/dieter/internal/peerstore"
-	"github.com/dbpprt/dieter/internal/protocol"
 	"github.com/dbpprt/dieter/internal/store"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -38,6 +38,7 @@ func (c peerGatewayConn) auth(ctx context.Context) context.Context {
 	values, _ := metadata.FromOutgoingContext(ctx)
 	values = values.Copy()
 	values.Set("authorization", "Bearer "+linkauth.SignPeer(c.identity.PrivateKey, c.identity.ID, c.identity.Issuer(), c.identity.Generation, time.Now()))
+	values.Set("x-dieter-client-version", buildinfo.ReleaseVersion)
 	if c.target != "" {
 		values.Set("x-dieter-daemon-id", c.target)
 	}
@@ -94,12 +95,13 @@ func dialPeer(ctx context.Context, identity *Identity, gatewayConnection grpc.Cl
 		}
 		attempt, cancel := context.WithTimeout(ctx, time.Second)
 		connection, e := DialDirect(attempt, net.JoinHostPort(candidate.GetHost(), fmt.Sprint(candidate.GetPort())), target, route.GetDaemonCaPem(), token.GetAccessToken())
+		client := dieterv1.NewDieterServiceClient(connection)
 		if e == nil {
-			_, e = dieterv1.NewDieterServiceClient(connection).GetPeerStoreStatus(attempt, &emptypb.Empty{})
+			_, e = client.GetPeerStoreStatus(attempt, &emptypb.Empty{})
 		}
 		cancel()
 		if e == nil {
-			return &PeerConnection{Client: dieterv1.NewDieterServiceClient(connection), Route: "direct-tls", close: func() { _ = connection.Close() }}, nil
+			return &PeerConnection{Client: client, Route: "direct-tls", close: func() { _ = connection.Close() }}, nil
 		}
 		if connection != nil {
 			_ = connection.Close()
@@ -334,8 +336,8 @@ func (p *PeerSync) Round(ctx context.Context) error {
 	var lastErr error
 	for _, d := range directory.GetDaemons() {
 		if d.GetId() != p.Identity.ID && d.GetOnline() {
-			if d.GetApiVersion() != protocol.Version {
-				lastErr = fmt.Errorf("machine %s requires update to contract %s", d.GetName(), protocol.Version)
+			if d.GetCompatibility() != gatewayv1.CompatibilityStatus_COMPATIBILITY_STATUS_COMPATIBLE {
+				lastErr = fmt.Errorf("machine %s requires update to release %s", d.GetName(), d.GetMinimumReleaseVersion())
 				continue
 			}
 			peers = append(peers, d.GetId())

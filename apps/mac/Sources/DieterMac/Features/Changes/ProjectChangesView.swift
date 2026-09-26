@@ -24,6 +24,9 @@ struct ProjectChangesView: View {
     private var model: ProjectChangesModel { injectedModel ?? store.projectChanges }
     private var projectName: String { injectedProjectName ?? store.selectedProject?.name ?? "Project" }
     private var connected: Bool { injectedModel == nil ? store.phase.isConnected : isLive }
+    private var hasRemote: Bool {
+        injectedModel != nil || store.selectedProject?.baseRemote.isEmpty == false
+    }
 
     init() {}
     init(model: ProjectChangesModel, projectName: String, active: Bool, isLive: Bool, bindingRevision: Int) {
@@ -144,6 +147,7 @@ struct ProjectChangesView: View {
             if ready, model.changes != nil {
                 commitComposer.padding(.horizontal, 14)
                 branchStrip.padding(.horizontal, 16).padding(.top, 10).padding(.bottom, 8)
+                shipActions.padding(.horizontal, 14).padding(.bottom, 8)
                 HStack(spacing: 7) {
                     Image(systemName: "magnifyingglass").font(.system(size: 11)).foregroundStyle(DieterTheme.tertiary)
                     TextField(
@@ -256,6 +260,23 @@ struct ProjectChangesView: View {
                 Text("→ \(base)").lineLimit(1)
             }
         }.font(.system(size: 10, design: .monospaced)).foregroundStyle(DieterTheme.tertiary)
+    }
+
+    private var shipActions: some View {
+        HStack(spacing: 7) {
+            Button("Update") {
+                model.startOperation(kind: "update", parameters: ["fetch": "true", "validate": "false"])
+            }
+            .disabled(!canMutate || model.changes?.dirty == true)
+            .accessibilityIdentifier("project-changes.update").smokeTarget("project-changes.update")
+            Button("Validate") { model.startOperation(kind: "validate") }
+                .disabled(!canMutate)
+                .accessibilityIdentifier("project-changes.validate").smokeTarget("project-changes.validate")
+            Button("Push") { model.startOperation(kind: "push") }
+                .disabled(!canMutate || model.changes?.branch.isEmpty != false || !hasRemote)
+                .accessibilityIdentifier("project-changes.push").smokeTarget("project-changes.push")
+        }
+        .buttonStyle(ChangesActionButtonStyle(prominent: false))
     }
 
     private func fileSection(_ title: String, section: String, files: [Dieter_V1_ChangedFile]) -> some View {
@@ -460,12 +481,14 @@ struct ProjectChangesView: View {
                 }
                 Spacer(minLength: 0)
                 if geometry.size.width > 680, let file = selectedFile {
-                    HStack(spacing: 5) {
-                        Text("+\(staged ? file.stagedAdditions : file.unstagedAdditions)").foregroundStyle(
-                            DieterTheme.diffAddition)
-                        Text("−\(staged ? file.stagedDeletions : file.unstagedDeletions)").foregroundStyle(
-                            DieterTheme.coral)
-                    }.font(.system(size: 10, design: .monospaced)).fixedSize()
+                    let additions = staged ? file.stagedAdditions : file.unstagedAdditions
+                    let deletions = staged ? file.stagedDeletions : file.unstagedDeletions
+                    if additions != 0 || deletions != 0 {
+                        HStack(spacing: 5) {
+                            Text("+\(additions)").foregroundStyle(DieterTheme.diffAddition)
+                            Text("−\(deletions)").foregroundStyle(DieterTheme.coral)
+                        }.font(.system(size: 10, design: .monospaced)).fixedSize()
+                    }
                 }
                 HStack(spacing: 2) {
                     ForEach(["Inline", "Split"], id: \.self) { mode in

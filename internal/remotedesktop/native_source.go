@@ -19,7 +19,6 @@ import (
 	"time"
 
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
-	"github.com/dbpprt/dieter/internal/protocol"
 	"github.com/pion/webrtc/v4/pkg/media"
 )
 
@@ -207,7 +206,7 @@ func (s *nativeHelperSource) send(ctx context.Context, command nativeCommand, ac
 	}
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	command.Version, command.ID = protocol.Number, s.sequence.Add(1)
+	command.Version, command.ID = InputProtocolVersion, s.sequence.Add(1)
 	job := nativeWrite{command: command, done: make(chan error, 1)}
 	s.mu.Lock()
 	writes, stopped := s.writes, s.stopped
@@ -460,7 +459,7 @@ func (s *nativeHelperSource) Stream(ctx context.Context, emit func(media.Sample)
 		scanner.Buffer(make([]byte, 4096), 384<<10)
 		for scanner.Scan() {
 			var event nativeEvent
-			if json.Unmarshal(scanner.Bytes(), &event) != nil || event.Version != protocol.Number {
+			if json.Unmarshal(scanner.Bytes(), &event) != nil || event.Version != InputProtocolVersion {
 				cancelCause(errors.New("invalid native helper event"))
 				return
 			}

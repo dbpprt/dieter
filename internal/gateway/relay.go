@@ -41,6 +41,9 @@ func (r *relayHandler) handle(_ any, stream grpc.ServerStream) error {
 	if !ok || !strings.HasPrefix(method, "/dieter.v1.DieterService/") {
 		return status.Error(codes.Unimplemented, "only DieterService can be relayed")
 	}
+	if err := r.auth.requireCompatibleClient(ctx); err != nil {
+		return err
+	}
 	values, _ := metadata.FromIncomingContext(ctx)
 	authorization := values.Get("authorization")
 	daemonIDs := values.Get("x-dieter-daemon-id")
@@ -88,6 +91,10 @@ func (r *relayHandler) relayAuthenticated(stream grpc.ServerStream, method, daem
 		return status.Error(codes.NotFound, "daemon not found")
 	}
 	requestID := randomID("rpc_")
+	clientVersion := ""
+	if values, ok := metadata.FromIncomingContext(ctx); ok {
+		clientVersion = consistentMetadataValue(values.Get("x-dieter-client-version"))
+	}
 	digest := sha256.Sum256(request.Data)
 	now := time.Now().UTC()
 	// The short-lived delegation assertion authorizes opening this RPC. It is
@@ -105,6 +112,7 @@ func (r *relayHandler) relayAuthenticated(stream grpc.ServerStream, method, daem
 	relay, err := r.hub.Open(ctx, record.ID, &gatewayv1.DaemonLinkFrame{
 		Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_OPEN_RPC, RequestId: requestID, Method: method,
 		Payload: request.Data, PayloadSha256: digest[:], DelegationAssertion: assertion, DeadlineUnixMillis: deadlineUnixMillis, Generation: record.Generation,
+		Metadata: map[string]string{"x-dieter-client-version": clientVersion},
 	})
 	if err != nil {
 		return err

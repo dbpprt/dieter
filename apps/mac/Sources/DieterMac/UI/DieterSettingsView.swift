@@ -75,7 +75,7 @@ struct DieterSettingsView: View {
                 Divider().overlay(DieterTheme.border)
 
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("Dieter \(store.health.version)")
+                    Text("Dieter \(store.health.releaseVersion)")
                     Text(store.endpoint.address).lineLimit(1).help(store.endpoint.address)
                 }
                 .font(.caption2).foregroundStyle(DieterTheme.tertiary)
@@ -1007,7 +1007,7 @@ struct ConnectionSettings: View {
         if let status = store.connectionStatus(for: machine) {
             return "\(status.route.rawValue) · \(status.latencyMilliseconds) ms"
         }
-        return machine.version.isEmpty ? "Online" : "Online · Dieter \(machine.version)"
+        return machine.releaseVersion.isEmpty ? "Online" : "Online · Dieter \(machine.releaseVersion)"
     }
 }
 

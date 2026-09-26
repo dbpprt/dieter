@@ -2,6 +2,8 @@ import AppKit
 import CoreGraphics
 import Foundation
 
+enum CaptureInputProtocol { static let version = 3 }
+
 struct StreamConfiguration: Codable, Equatable {
     var displayId: String = "primary"
     var maxWidth: Int = 3840
@@ -88,7 +90,7 @@ struct NativeContent: Encodable {
 }
 
 struct NativeEvent: Encodable {
-    var version = CaptureContract.version
+    var version = CaptureInputProtocol.version
     var streamId: UInt64 = 0
     var ack: UInt64 = 0
     var error: String?

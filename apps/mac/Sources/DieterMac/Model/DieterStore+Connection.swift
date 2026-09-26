@@ -12,6 +12,18 @@ private struct InitialConnectionState {
     let state: Dieter_V1_State
 }
 
+private func compatibilityStatus(
+    _ value: Dieter_Gateway_V1_CompatibilityStatus
+) -> DieterCompatibility {
+    switch value {
+    case .compatible: .compatible
+    case .updateRequired: .updateRequired
+    case .invalidVersion: .invalidVersion
+    case .unspecified: .unknown
+    case .UNRECOGNIZED: .unknown
+    }
+}
+
 private enum ProviderQuotaClientError: LocalizedError {
     case noGateway
 
@@ -49,6 +61,11 @@ extension DieterStore {
             let control = try environment.clients.client(endpoint: origin, accessToken: accessToken)
             gatewayRPC = control
             gatewayTask = Task { try? await control.run() }
+            let clientCompatibility = try await control.compatibility()
+            guard clientCompatibility.status == .compatible else {
+                throw DieterStoreConnectionError.incompatible(
+                    found: clientCompatibility.minimumReleaseVersion)
+            }
             let daemonDirectory = try await control.daemons()
             guard
                 ConnectionAttemptOwnership.mayMutateSharedState(
@@ -73,8 +90,9 @@ extension DieterStore {
                     daemonID: $0.id,
                     online: MachinePresenceText.online(serverOnline: $0.online, lastSeenAt: $0.lastSeenAt),
                     lastSeenAt: $0.lastSeenAt,
-                    version: $0.version,
-                    apiVersion: $0.apiVersion,
+                    releaseVersion: $0.releaseVersion,
+                    compatibility: compatibilityStatus($0.compatibility),
+                    minimumReleaseVersion: $0.minimumReleaseVersion,
                     remoteDesktopReady: $0.remoteDesktop.ready,
                     remoteDesktopReason: $0.remoteDesktop.reason,
                     remoteDesktopPlatform: $0.remoteDesktop.platform
@@ -90,8 +108,8 @@ extension DieterStore {
                 let requestedTarget = discovered.first(where: { $0.daemonID == preferredDaemonID })
             {
                 attemptedTarget = requestedTarget
-                if requestedTarget.apiCompatibility == .incompatible {
-                    throw DieterStoreConnectionError.incompatible(found: requestedTarget.apiVersion)
+                if requestedTarget.compatibilityState == .incompatible {
+                    throw DieterStoreConnectionError.incompatible(found: requestedTarget.minimumReleaseVersion)
                 }
             }
             let targets = MachineRoutingPolicy.connectionTargets(
@@ -102,11 +120,11 @@ extension DieterStore {
             if !explicitMachineSelection,
                 targets.isEmpty,
                 let incompatible = discovered.first(where: {
-                    $0.online && $0.apiCompatibility == .incompatible
+                    $0.online && $0.compatibilityState == .incompatible
                 })
             {
                 attemptedTarget = incompatible
-                throw DieterStoreConnectionError.incompatible(found: incompatible.apiVersion)
+                throw DieterStoreConnectionError.incompatible(found: incompatible.minimumReleaseVersion)
             }
             guard !targets.isEmpty else {
                 throw NSError(
@@ -118,8 +136,8 @@ extension DieterStore {
             var lastTargetError: Error?
             for candidate in targets {
                 attemptedTarget = candidate
-                if candidate.apiCompatibility == .incompatible {
-                    lastTargetError = DieterStoreConnectionError.incompatible(found: candidate.apiVersion)
+                if candidate.compatibilityState == .incompatible {
+                    lastTargetError = DieterStoreConnectionError.incompatible(found: candidate.minimumReleaseVersion)
                     break
                 }
                 do {
@@ -131,7 +149,7 @@ extension DieterStore {
                     do {
                         let initial = try await loadInitialConnectionState(from: plane.rpc)
                         var connectedTarget = candidate
-                        connectedTarget.apiVersion = initial.health.version
+                        connectedTarget.releaseVersion = initial.health.releaseVersion
                         prepared = (connectedTarget, plane, initial)
                         break
                     } catch {
@@ -143,7 +161,8 @@ extension DieterStore {
                             discovered = discovered.map { machine in
                                 guard machine.id == candidate.id else { return machine }
                                 var machine = machine
-                                machine.apiVersion = found
+                                machine.compatibility = .updateRequired
+                                machine.minimumReleaseVersion = found
                                 return machine
                             }
                             discoveredDirectory = discovered
@@ -255,7 +274,7 @@ extension DieterStore {
             self.boardSettings = syncSnapshot?.settings ?? Dieter_V1_Settings()
             self.settingsOptions = Dieter_V1_SettingsOptions()
             errorMessage = nil
-            phase = .connected(version: prepared.initial.health.version)
+            phase = .connected(version: prepared.initial.health.releaseVersion)
             startGlobalSync()
             startSyncLivenessMonitor()
             startConnectionMetadata(client: prepared.plane.rpc, endpointID: prepared.target.id)
@@ -291,7 +310,8 @@ extension DieterStore {
                     endpoints = endpoints.map { machine in
                         guard machine.id == attemptedTarget.id else { return machine }
                         var machine = machine
-                        machine.apiVersion = found
+                        machine.compatibility = .updateRequired
+                        machine.minimumReleaseVersion = found
                         return machine
                     }
                 }
@@ -346,9 +366,6 @@ extension DieterStore {
             throw NSError(
                 domain: "DieterDaemon", code: 1,
                 userInfo: [NSLocalizedDescriptionKey: "Dieter reported an unhealthy data plane."])
-        }
-        guard health.version == dieterExpectedAPIVersion else {
-            throw DieterStoreConnectionError.incompatible(found: health.version)
         }
         return try await InitialConnectionState(
             health: health,
@@ -866,7 +883,7 @@ extension DieterStore {
     func ensureReplicaConnection(_ projectID: String, reportOffline: Bool = true) async -> Bool {
         guard !Task.isCancelled else { return false }
         guard let target = replica(forProjectID: projectID) else { return true }
-        guard target.apiCompatibility != .incompatible else {
+        guard target.compatibilityState != .incompatible else {
             machineConnectionErrors[target.id] = target.incompatibilityDescription
             return false
         }
@@ -961,7 +978,7 @@ extension DieterStore {
         // replace the live snapshot while retaining its cursor, so later
         // deltas could be reduced against state from a different point in time.
         let onlineMachines = machines.filter {
-            $0.online && $0.apiCompatibility != .incompatible && $0.id != endpoint.id
+            $0.online && $0.compatibilityState != .incompatible && $0.id != endpoint.id
         }
         guard !onlineMachines.isEmpty else { return }
 
@@ -1174,8 +1191,9 @@ extension DieterStore {
                 item.online = MachinePresenceText.online(
                     serverOnline: daemon.online, lastSeenAt: daemon.lastSeenAt)
                 item.lastSeenAt = daemon.lastSeenAt
-                item.version = daemon.version
-                item.apiVersion = daemon.apiVersion
+                item.releaseVersion = daemon.releaseVersion
+                item.compatibility = compatibilityStatus(daemon.compatibility)
+                item.minimumReleaseVersion = daemon.minimumReleaseVersion
                 item.remoteDesktopReady = daemon.remoteDesktop.ready
                 item.remoteDesktopReason = daemon.remoteDesktop.reason
                 item.remoteDesktopPlatform = daemon.remoteDesktop.platform
@@ -1364,8 +1382,8 @@ extension DieterStore {
                 domain: "DieterGateway", code: 5,
                 userInfo: [NSLocalizedDescriptionKey: "Machine endpoint is missing its daemon identity."])
         }
-        guard machine.apiCompatibility != .incompatible else {
-            throw DieterStoreConnectionError.incompatible(found: machine.apiVersion)
+        guard machine.compatibilityState != .incompatible else {
+            throw DieterStoreConnectionError.incompatible(found: machine.minimumReleaseVersion)
         }
         let origin =
             gatewayOrigins.first(where: { $0.credentialID == machine.credentialID })

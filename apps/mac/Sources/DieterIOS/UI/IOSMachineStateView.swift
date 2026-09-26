@@ -247,13 +247,11 @@
 
         private func software(_ information: Dieter_V1_MachineInformation, machine: DieterEndpoint) -> some View {
             let build = information.daemonBuild
-            let version = build.releaseVersion.isEmpty ? machine.version : build.releaseVersion
-            let api = build.apiVersion.isEmpty ? machine.apiVersion : build.apiVersion
+            let version = build.releaseVersion.isEmpty ? machine.releaseVersion : build.releaseVersion
             let revision = IOSMachineInformationPresentation.shortRevision(build.sourceRevision)
             return stateCard("Software", systemImage: "server.rack") {
                 detailRow("Dieter daemon", value: version.isEmpty ? "Unknown" : version)
                 Divider()
-                detailRow("API", value: api.isEmpty ? "Unknown" : api)
                 if let revision {
                     Divider()
                     detailRow("Revision", value: revision)

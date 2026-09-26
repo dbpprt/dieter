@@ -13,20 +13,19 @@ import (
 	"unicode/utf8"
 
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
-	"github.com/dbpprt/dieter/internal/protocol"
 	"github.com/pion/webrtc/v4"
 	"google.golang.org/protobuf/proto"
 )
 
 const (
-	inputProtocolVersion    uint32 = protocol.Number
-	hostChannelLabel               = "dieter-session-v" + protocol.Version
-	pointerChannelLabel            = "dieter-pointer-v" + protocol.Version
-	stateChannelLabel              = "dieter-input-state-v" + protocol.Version
-	maxInputMessageBytes           = 4 << 10
-	maxNormalizedCoordinate        = 1_000_000
-	maxScrollDelta                 = 100_000
-	maxInputModifiers              = 0x3f
+	inputProtocolVersion    = InputProtocolVersion
+	hostChannelLabel        = "dieter-session-v" + InputProtocolVersionString
+	pointerChannelLabel     = "dieter-pointer-v" + InputProtocolVersionString
+	stateChannelLabel       = "dieter-input-state-v" + InputProtocolVersionString
+	maxInputMessageBytes    = 4 << 10
+	maxNormalizedCoordinate = 1_000_000
+	maxScrollDelta          = 100_000
+	maxInputModifiers       = 0x3f
 )
 
 func (s *Session) installInputChannels() {

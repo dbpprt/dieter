@@ -8,7 +8,7 @@ from pathlib import Path
 import re
 import stat
 import sys
-from common import ROOT, IMAGE, NAME, atomic, keys, read_json, require
+from common import ROOT, IMAGE, NAME, atomic, keys, read_json, require, validate_compatibility_policy
 
 FIELDS = "interfaceVersion project gatewayHost turnHost publicIPv4 turnIPv4 topology tls acmeEmail allowedUserIDs stateVolume installRoot configRoot runtimeRoot caddyData caddyConfig legacyHosts turn limits".split()
 SECRET_FIELDS = "githubClientID githubClientSecret authSecret turnSharedSecret".split()
@@ -84,8 +84,9 @@ def secrets(path):
     return value
 
 
-def render(config, private, image, release, output, legacy=None):
+def render(config, private, image, release, output, compatibility_policy, legacy=None):
     s = settings(config)
+    compatibility_policy = validate_compatibility_policy(compatibility_policy)
     require(IMAGE.fullmatch(image), "gateway image must be pinned by digest")
     require(NAME.fullmatch(release), "invalid release ID")
     deps = read_json(ROOT / "dependencies.lock.json")
@@ -113,6 +114,8 @@ def render(config, private, image, release, output, legacy=None):
         "DIETER_GATEWAY_ISSUER": "https://" + s.get("gatewayIdentityHost", s["gatewayHost"]),
         "DIETER_GITHUB_CLIENT_ID": private["githubClientID"], "DIETER_GITHUB_CLIENT_SECRET": private["githubClientSecret"],
         "DIETER_AUTH_SECRET": private["authSecret"],
+        "DIETER_MINIMUM_CLIENT_VERSION": compatibility_policy["minimumClientVersion"],
+        "DIETER_MINIMUM_DAEMON_VERSION": compatibility_policy["minimumDaemonVersion"],
         "DIETER_GITHUB_ALLOWED_USER_IDS": ",".join(map(str, s["allowedUserIDs"])),
         "DIETER_NATIVE_REDIRECT_URIS": "dieter-mac://oauth/callback,dieter-android://oauth/callback",
         "DIETER_NATIVE_SESSION_TTL": "720h", "DIETER_RTC_TTL": "5m",
@@ -224,9 +227,11 @@ def main():
     parser.add_argument("--image", required=True)
     parser.add_argument("--release", required=True)
     parser.add_argument("--output", required=True)
+    parser.add_argument("--compatibility-policy", required=True)
     parser.add_argument("--legacy-caddy")
     a = parser.parse_args()
-    render(read_json(a.settings), secrets(a.secrets), a.image, a.release, a.output, a.legacy_caddy)
+    render(read_json(a.settings), secrets(a.secrets), a.image, a.release, a.output,
+           read_json(a.compatibility_policy), a.legacy_caddy)
     print(json.dumps({"rendered": a.release}))
 
 

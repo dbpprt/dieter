@@ -40,8 +40,10 @@ type Store struct {
 	syncJournal   syncJournalCache
 	notifications changeNotifications
 
-	usageMu    sync.Mutex
-	usageCache map[string]cardUsageCacheEntry
+	usageMu             sync.Mutex
+	usageCache          map[string]cardUsageCacheEntry
+	compatibilityMu     sync.RWMutex
+	compatibilityPolicy *GatewayCompatibilityPolicy
 
 	scheduleDBMu           sync.Mutex
 	scheduleDB             *sql.DB

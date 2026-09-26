@@ -125,10 +125,17 @@ struct IOSMutationIdentity {
 }
 
 enum IOSMachinePolicy {
-    static let apiVersion = DieterContract.version
-
     static func isCompatible(_ machine: DieterEndpoint) -> Bool {
-        machine.apiVersion == apiVersion
+        machine.compatibility == .compatible
+    }
+
+    static func compatibility(_ value: Dieter_Gateway_V1_CompatibilityStatus) -> DieterCompatibility {
+        switch value {
+        case .compatible: .compatible
+        case .updateRequired: .updateRequired
+        case .invalidVersion: .invalidVersion
+        case .unspecified, .UNRECOGNIZED: .unknown
+        }
     }
 
     static func preferred(in machines: [DieterEndpoint], preferredID: String?) -> DieterEndpoint? {

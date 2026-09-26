@@ -20,11 +20,9 @@ build version="":
     #!/usr/bin/env bash
     set -euo pipefail
     mkdir -p bin
-    if [[ -n "{{ version }}" ]]; then
-        go build -trimpath -ldflags "-X github.com/dbpprt/dieter/internal/buildinfo.ReleaseVersion={{ version }}" -o "{{ binary }}" "{{ target }}"
-    else
-        go build -trimpath -o "{{ binary }}" "{{ target }}"
-    fi
+    selected="{{ version }}"
+    [[ -n "$selected" ]] || selected="$(just release pseudo-version)"
+    go build -trimpath -ldflags "-X github.com/dbpprt/dieter/internal/buildinfo.ReleaseVersion=$selected" -o "{{ binary }}" "{{ target }}"
 
 # Test every Dieter package in the gateway command's dependency graph.
 test:
@@ -73,7 +71,9 @@ package-release:
     CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X github.com/dbpprt/dieter/internal/buildinfo.ReleaseVersion=$RELEASE_VERSION" \
         -o "$package/dieter-gateway" "{{ target }}"
     cp LICENSE "$package/LICENSE"
+    printf '%s\n' "$RELEASE_VERSION" >"$package/VERSION"
     tar -C stage -czf "$archive" "$ASSET"
+    printf '%s\n' "$RELEASE_VERSION" >"$archive.version"
     echo "$archive"
 
 # Build a local gateway container image.
@@ -88,7 +88,7 @@ image-publish:
     [[ "${GITHUB_ACTIONS:-}" == true ]] || { echo "Image publishing is CI-only." >&2; exit 1; }
     : "${GATEWAY_IMAGE_TAGS:?GATEWAY_IMAGE_TAGS is required}"
     arguments=(buildx build --file Dockerfile.gateway --platform linux/amd64,linux/arm64 --push
-        --build-arg "RELEASE_VERSION=${GATEWAY_RELEASE_VERSION:-main}"
+        --build-arg "RELEASE_VERSION=${GATEWAY_RELEASE_VERSION:-0.0.0-dev.0}"
         --build-arg "SOURCE_REVISION=${GITHUB_SHA:-unknown}")
     while IFS= read -r tag; do
         [[ -n "$tag" ]] && arguments+=(--tag "$tag")

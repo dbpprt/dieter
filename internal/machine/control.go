@@ -1,6 +1,7 @@
 package machine
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"flag"
@@ -12,6 +13,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/dbpprt/dieter/internal/compatibility"
 )
 
 type Operation string
@@ -85,7 +88,18 @@ func ExecuteOperationAtRoot(ctx context.Context, root string, operation Operatio
 	if operation != OperationRestart && operation != OperationShutdown && operation != OperationUpdate {
 		return errors.New("invalid machine operation")
 	}
-	return executeOperation(ctx, root, operation)
+	return executeOperation(ctx, root, operation, "")
+}
+
+// ExecuteRequiredUpdateAtRoot starts the platform updater with an authenticated
+// gateway floor. The detached worker rechecks the downloaded candidate before
+// it can stage or activate the service runtime.
+func ExecuteRequiredUpdateAtRoot(ctx context.Context, root, minimumVersion string) error {
+	minimumVersion, err := compatibility.Normalize(minimumVersion)
+	if err != nil {
+		return fmt.Errorf("invalid minimum daemon release: %w", err)
+	}
+	return executeOperation(ctx, root, OperationUpdate, minimumVersion)
 }
 
 func defaultRoot() string {
@@ -107,6 +121,7 @@ func RunDaemonUpdateWorker(args []string, output io.Writer) error {
 	set.SetOutput(output)
 	brew := set.String("brew", "", "absolute Homebrew executable")
 	root := set.String("root", "", "absolute DIETER_HOME directory")
+	minimumVersion := set.String("minimum-version", "", "minimum acceptable Dieter release")
 	if err := set.Parse(args); err != nil {
 		return err
 	}
@@ -143,7 +158,7 @@ func RunDaemonUpdateWorker(args []string, output io.Writer) error {
 			return fmt.Errorf("%s: %w", step.name, err)
 		}
 		if step.name == "upgrade Dieter" && *root != "" {
-			if err := prepareHomebrewHarnessRuntime(*root, *brew, output); err != nil {
+			if err := prepareHomebrewHarnessRuntime(*root, *brew, *minimumVersion, output); err != nil {
 				return err
 			}
 		}
@@ -152,7 +167,7 @@ func RunDaemonUpdateWorker(args []string, output io.Writer) error {
 	return err
 }
 
-func prepareHomebrewHarnessRuntime(root, brew string, output io.Writer) error {
+func prepareHomebrewHarnessRuntime(root, brew, minimumVersion string, output io.Writer) error {
 	if !filepath.IsAbs(root) || filepath.Clean(root) != root {
 		return errors.New("update worker requires an absolute --root directory")
 	}
@@ -170,11 +185,67 @@ func prepareHomebrewHarnessRuntime(root, brew string, output io.Writer) error {
 	if info, err := os.Stat(candidate); err != nil || !info.Mode().IsRegular() || info.Mode().Perm()&0111 == 0 {
 		return errors.New("staged Dieter candidate is unavailable")
 	}
+	if err := verifyUpdateCandidateVersion(candidate, minimumVersion); err != nil {
+		return err
+	}
 	if _, err := fmt.Fprintf(output, "%s: prepare candidate harness runtime\n", time.Now().UTC().Format(time.RFC3339)); err != nil {
 		return err
 	}
 	return prepareCandidateHarnessRuntime(root, candidate, output)
 }
+
+func verifyUpdateCandidateVersion(candidate, minimumVersion string) error {
+	if strings.TrimSpace(minimumVersion) == "" {
+		return nil
+	}
+	minimumVersion, err := compatibility.Normalize(minimumVersion)
+	if err != nil {
+		return fmt.Errorf("invalid minimum daemon release: %w", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	stdout, stderr := cappedBuffer{remaining: 1024}, cappedBuffer{remaining: 1024}
+	command := exec.CommandContext(ctx, candidate, "--version")
+	command.Stdin = nil
+	command.Stdout = &stdout
+	command.Stderr = &stderr
+	command.Env = homebrewUpdateEnvironment(true)
+	if err := command.Run(); err != nil {
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			return errors.New("candidate version check timed out")
+		}
+		return fmt.Errorf("read candidate release version: %w", err)
+	}
+	candidateVersion := strings.TrimSpace(stdout.String())
+	status, normalized := compatibility.Evaluate(candidateVersion, minimumVersion)
+	if status != compatibility.StatusCompatible {
+		if normalized == "" {
+			normalized = candidateVersion
+		}
+		return fmt.Errorf("candidate release %q does not meet required minimum %s", normalized, minimumVersion)
+	}
+	return nil
+}
+
+type cappedBuffer struct {
+	buffer    bytes.Buffer
+	remaining int
+}
+
+func (b *cappedBuffer) Write(value []byte) (int, error) {
+	written := len(value)
+	if b.remaining > 0 {
+		part := value
+		if len(part) > b.remaining {
+			part = part[:b.remaining]
+		}
+		_, _ = b.buffer.Write(part)
+		b.remaining -= len(part)
+	}
+	return written, nil
+}
+
+func (b *cappedBuffer) String() string { return b.buffer.String() }
 
 var prepareCandidateHarnessRuntime = func(root, candidate string, output io.Writer) error {
 	prepareCtx, prepareCancel := context.WithTimeout(context.Background(), 10*time.Minute)

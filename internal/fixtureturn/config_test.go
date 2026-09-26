@@ -23,6 +23,11 @@ func TestFixtureTURNExplicitProtectedConfiguration(t *testing.T) {
 	if err = os.WriteFile(path, data, 0o644); err != nil {
 		t.Fatal(err)
 	}
+	// The harness may run with a restrictive umask. Make the intentionally
+	// unsafe fixture precondition explicit before verifying it is rejected.
+	if err = os.Chmod(path, 0o644); err != nil {
+		t.Fatal(err)
+	}
 	t.Setenv("DIETER_TEST_TURN_CONFIG", path)
 	if _, err = Load(); err == nil || strings.Contains(err.Error(), config.SharedSecret) {
 		t.Fatal("public fixture secrets must be rejected without disclosure")

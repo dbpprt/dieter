@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net"
@@ -28,7 +29,6 @@ import (
 	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
 	"github.com/dbpprt/dieter/internal/harness"
-	"github.com/dbpprt/dieter/internal/protocol"
 	"github.com/dbpprt/dieter/internal/remotedesktop"
 	"github.com/dbpprt/dieter/internal/server"
 	"github.com/dbpprt/dieter/internal/store"
@@ -41,6 +41,75 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
+
+func TestGatewayRejectsOutdatedDaemonAndPublishesUpdatePolicy(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	publicURL, _ := url.Parse("http://" + listener.Addr().String())
+	config := gateway.Config{
+		Root: t.TempDir(), Address: listener.Addr().String(), PublicURL: publicURL,
+		GitHubClientID: "test", GitHubSecret: "test", AllowedUserIDs: map[int64]struct{}{42: {}},
+		AuthSecret: []byte("0123456789abcdef0123456789abcdef"), SessionTTL: time.Hour,
+		NativeRedirects: map[string]struct{}{}, GitHubBaseURL: "https://github.invalid", GitHubAPIURL: "https://api.github.invalid",
+		DevInsecure: true, MinimumClientVersion: "0.4.308", MinimumDaemonVersion: "0.4.309",
+	}
+	gatewayStore, err := gateway.OpenStore(config.Root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer gatewayStore.Close()
+	gatewayServer, err := gateway.NewServer(config, gatewayStore, logger)
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() { _ = gatewayServer.Serve(listener) }()
+
+	identity, err := daemon.LoadOrCreateEnrollmentIdentity(t.TempDir(), "outdated", publicURL.String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	enrollment, err := daemon.BeginEnrollment(ctx, identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := gatewayStore.ApproveEnrollment(enrollment.GetEnrollmentId(), enrollment.GetUserCode(), 42, "owner"); err != nil {
+		t.Fatal(err)
+	}
+	credential, err := daemon.CompleteEnrollment(ctx, identity, enrollment.GetEnrollmentId(), enrollment.GetEnrollmentSecret())
+	if err != nil {
+		t.Fatal(err)
+	}
+	identity.GatewayIssuer = credential.GetGatewayIssuer()
+	if err := identity.SaveCredential(credential.GetDaemonId(), credential.GetDaemonName(), credential.GetCertificatePem(), credential.GetDaemonCaPem(), credential.GetGatewaySigningPublicKey(), credential.GetExpiresAt(), credential.GetGeneration()); err != nil {
+		t.Fatal(err)
+	}
+
+	updates := 0
+	client := daemon.GatewayClient{
+		Identity: identity, LocalTarget: "127.0.0.1:1", Version: "0.4.308", Log: logger,
+		OnUpdateRequired: func(policy *gatewayv1.CompatibilityPolicy) error {
+			updates++
+			if policy.GetMinimumDaemonVersion() != "0.4.309" || policy.GetRevision() == "" {
+				t.Fatalf("policy=%#v", policy)
+			}
+			return nil
+		},
+	}
+	err = client.Run(ctx)
+	var updateRequired *daemon.UpdateRequiredError
+	if !errors.As(err, &updateRequired) || updates != 1 {
+		t.Fatalf("error=%v updates=%d", err, updates)
+	}
+	if gatewayServer.Hub.Online(identity.ID) {
+		t.Fatal("outdated daemon entered the online routing pool")
+	}
+}
 
 func TestGatewayAllowsMultipleAccountsAndIsolatesDaemons(t *testing.T) {
 	ctx := context.Background()
@@ -116,12 +185,12 @@ func TestGatewayAllowsMultipleAccountsAndIsolatesDaemons(t *testing.T) {
 
 	client := gatewayv1Client(connection)
 	for index, account := range accounts {
-		authorized := metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+account.session)
+		authorized := metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+account.session, "x-dieter-client-version", "0.4.1-dev")
 		list, err := client.ListDaemons(authorized, &emptypb.Empty{})
 		if err != nil || len(list.GetDaemons()) != 1 || list.GetDaemons()[0].GetId() != account.daemonID {
 			t.Fatalf("@%s daemon isolation=%#v err=%v", account.login, list, err)
 		}
-		if info := list.GetGatewayInformation(); info.GetReleaseVersion() == "" || info.GetApiVersion() != gateway.GatewayAPIVersion {
+		if info := list.GetGatewayInformation(); info.GetReleaseVersion() == "" || info.GetCompatibilityPolicy() == nil {
 			t.Fatalf("gateway build information=%#v", info)
 		}
 		other := accounts[(index+1)%len(accounts)]
@@ -236,7 +305,7 @@ func TestGatewayEnrollsDaemonAndRelaysDieterService(t *testing.T) {
 	defer runner.Release()
 
 	tunnel := &daemon.GatewayClient{
-		Identity: identity, LocalTarget: boardListener.Addr().String(), Version: "test", APIVersion: server.APIVersion, Log: logger,
+		Identity: identity, LocalTarget: boardListener.Addr().String(), Version: "0.4.1-dev", Log: logger,
 		Timing: daemon.GatewayTiming{
 			// The broad relay workload uses production liveness deadlines.
 			// Watchdog expiry is exercised separately without Git/WebRTC work
@@ -259,7 +328,7 @@ func TestGatewayEnrollsDaemonAndRelaysDieterService(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	authorized := metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+session)
+	authorized := metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+session, "x-dieter-client-version", "0.4.1-dev")
 
 	deadline := time.Now().Add(5 * time.Second)
 	for !gatewayServer.Hub.Online(identity.ID) && time.Now().Before(deadline) {
@@ -283,7 +352,7 @@ func TestGatewayEnrollsDaemonAndRelaysDieterService(t *testing.T) {
 	if err != nil {
 		t.Fatalf("relay DieterService.GetMachineInformation: %v", err)
 	}
-	if machineInformation.GetDaemonBuild().GetReleaseVersion() == "" || machineInformation.GetDaemonBuild().GetApiVersion() != server.APIVersion || machineInformation.GetGpu() == nil {
+	if machineInformation.GetDaemonBuild().GetReleaseVersion() == "" || machineInformation.GetGpu() == nil {
 		t.Fatalf("relayed machine build/GPU information=%#v", machineInformation)
 	}
 	terminalCtx, stopTerminal := context.WithTimeout(routed, 10*time.Second)
@@ -328,7 +397,7 @@ func TestGatewayEnrollsDaemonAndRelaysDieterService(t *testing.T) {
 		t.Fatalf("close relayed terminal: %v", err)
 	}
 
-	syncStream, err := dieterClient.WatchSync(routed, &dieterv1.SyncRequest{ConversationLimit: 0, HeartbeatMs: 1_000, ProtocolVersion: protocol.Number})
+	syncStream, err := dieterClient.WatchSync(routed, &dieterv1.SyncRequest{ConversationLimit: 0, HeartbeatMs: 1_000})
 	if err != nil {
 		t.Fatalf("open relayed global sync: %v", err)
 	}
@@ -477,8 +546,8 @@ func TestGatewayEnrollsDaemonAndRelaysDieterService(t *testing.T) {
 	if err != nil || len(list.GetDaemons()) != 1 || !list.GetDaemons()[0].GetOnline() {
 		t.Fatalf("list daemons=%#v err=%v", list, err)
 	}
-	if got := list.GetDaemons()[0].GetApiVersion(); got != server.APIVersion {
-		t.Fatalf("advertised API version=%q want %q", got, server.APIVersion)
+	if got := list.GetDaemons()[0].GetCompatibility(); got != gatewayv1.CompatibilityStatus_COMPATIBILITY_STATUS_COMPATIBLE {
+		t.Fatalf("advertised compatibility=%v", got)
 	}
 	if desktop := list.GetDaemons()[0].GetRemoteDesktop(); !desktop.GetReady() || desktop.GetPlatform() != runtime.GOOS {
 		t.Fatalf("remote desktop presence=%#v", desktop)
@@ -756,14 +825,14 @@ func TestGatewayDetectsBlackholedTunnelAndReconnects(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	routed := metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+session, "x-dieter-daemon-id", identity.ID)
+	routed := metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+session, "x-dieter-daemon-id", identity.ID, "x-dieter-client-version", "0.4.1-dev")
 	client := dieterv1.NewDieterServiceClient(connection)
 
 	// Only transport liveness runs under these accelerated deadlines. Allow
 	// seconds of scheduling/SQLite slack even here, then check exact failures
 	// with bounded event waits instead of retrying a failed relay operation.
 	tunnel := &daemon.GatewayClient{
-		Identity: identity, LocalTarget: boardListener.Addr().String(), Version: "test", APIVersion: server.APIVersion, Log: logger,
+		Identity: identity, LocalTarget: boardListener.Addr().String(), Version: "0.4.1-dev", Log: logger,
 		Timing: daemon.GatewayTiming{
 			HeartbeatActiveInterval: 100 * time.Millisecond, HeartbeatIdleMaxInterval: 100 * time.Millisecond,
 			HeartbeatAckTimeout: 3 * time.Second, HandshakeTimeout: 3 * time.Second,
@@ -888,7 +957,7 @@ func TestGatewayRoutesMultipleDaemonsAndTracksPresenceIndependently(t *testing.T
 	}); err != nil {
 		t.Fatal(err)
 	}
-	authorized := metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+session)
+	authorized := metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+session, "x-dieter-client-version", "0.4.1-dev")
 
 	type machine struct {
 		identity *daemon.Identity
@@ -932,7 +1001,7 @@ func TestGatewayRoutesMultipleDaemonsAndTracksPresenceIndependently(t *testing.T
 		})
 
 		machineCtx, stop := context.WithCancel(ctx)
-		tunnel := &daemon.GatewayClient{Identity: identity, LocalTarget: boardListener.Addr().String(), Version: "test", APIVersion: server.APIVersion, Log: logger}
+		tunnel := &daemon.GatewayClient{Identity: identity, LocalTarget: boardListener.Addr().String(), Version: "0.4.1-dev", Log: logger}
 		go func() { _ = tunnel.Run(machineCtx) }()
 		machines = append(machines, machine{identity: identity, store: boardStore, stop: stop})
 	}
@@ -963,8 +1032,8 @@ func TestGatewayRoutesMultipleDaemonsAndTracksPresenceIndependently(t *testing.T
 		if !item.GetOnline() {
 			t.Fatalf("expected both daemons online: %#v", list)
 		}
-		if item.GetApiVersion() != server.APIVersion {
-			t.Fatalf("machine %q API version=%q want %q", item.GetName(), item.GetApiVersion(), server.APIVersion)
+		if item.GetCompatibility() != gatewayv1.CompatibilityStatus_COMPATIBILITY_STATUS_COMPATIBLE {
+			t.Fatalf("machine %q compatibility=%v", item.GetName(), item.GetCompatibility())
 		}
 	}
 
@@ -1164,13 +1233,13 @@ func testRemoteDesktopThroughGateway(t *testing.T, routed context.Context, clien
 		t.Fatal(err)
 	}
 	ordered := true
-	stateChannel, err := viewer.CreateDataChannel("dieter-input-state-v"+protocol.Version, &webrtc.DataChannelInit{Ordered: &ordered})
+	stateChannel, err := viewer.CreateDataChannel("dieter-input-state-v"+remotedesktop.InputProtocolVersionString, &webrtc.DataChannelInit{Ordered: &ordered})
 	if err != nil {
 		t.Fatal(err)
 	}
 	unordered := false
 	zero := uint16(0)
-	if _, err := viewer.CreateDataChannel("dieter-pointer-v"+protocol.Version, &webrtc.DataChannelInit{Ordered: &unordered, MaxRetransmits: &zero}); err != nil {
+	if _, err := viewer.CreateDataChannel("dieter-pointer-v"+remotedesktop.InputProtocolVersionString, &webrtc.DataChannelInit{Ordered: &unordered, MaxRetransmits: &zero}); err != nil {
 		t.Fatal(err)
 	}
 	trackReceived := make(chan struct{}, 1)
@@ -1195,7 +1264,7 @@ func testRemoteDesktopThroughGateway(t *testing.T, routed context.Context, clien
 		t.Fatal("viewer ICE gathering timed out")
 	}
 	offer = *viewer.LocalDescription()
-	request := &dieterv1.StartRemoteDesktopRequest{InputProtocolVersion: protocol.Number,
+	request := &dieterv1.StartRemoteDesktopRequest{InputProtocolVersion: remotedesktop.InputProtocolVersion,
 		ClientNonce: "gateway-e2e-nonce", RtcConfiguration: rtc,
 		Offer:     &dieterv1.RemoteDesktopSessionDescription{Type: "offer", Sdp: offer.SDP},
 		DisplayId: "primary", Control: true, MaxFps: 10, MaxBitrateKbps: 500,

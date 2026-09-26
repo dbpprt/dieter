@@ -5,7 +5,7 @@ package buildinfo
 // recipes replace them with -ldflags so the running process reports itself,
 // rather than guessing a version from a client or deployment label.
 var (
-	ReleaseVersion = "0.4.1-dev"
+	ReleaseVersion = "0.0.0-dev.0"
 	SourceRevision = "unknown"
 	BuiltAt        = "unknown"
 )

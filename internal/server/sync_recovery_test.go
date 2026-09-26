@@ -13,7 +13,6 @@ import (
 
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
 	"github.com/dbpprt/dieter/internal/model"
-	"github.com/dbpprt/dieter/internal/protocol"
 	"github.com/dbpprt/dieter/internal/store"
 	"golang.org/x/sys/unix"
 	"google.golang.org/protobuf/proto"
@@ -40,7 +39,7 @@ func TestSyncBurstDoesNotSkipMetadataBeyondDiagnosticBatch(t *testing.T) {
 	initial := true
 	found := false
 	stop := errors.New("done")
-	err := api.watchSync(ctx, &dieterv1.SyncRequest{ProtocolVersion: protocol.Number, ConversationLimit: 30, RecentConversationLimit: 8}, func(frame *dieterv1.SyncFrame) error {
+	err := api.watchSync(ctx, &dieterv1.SyncRequest{ConversationLimit: 30, RecentConversationLimit: 8}, func(frame *dieterv1.SyncFrame) error {
 		if initial {
 			initial = false
 			for range 256 {
@@ -76,7 +75,7 @@ func TestSyncRecoveryFrameIncludesEventsThroughPublishedCursor(t *testing.T) {
 	defer cancel()
 	stop := errors.New("done")
 	var initialSequence uint64
-	err := api.watchSync(ctx, &dieterv1.SyncRequest{ProtocolVersion: protocol.Number}, func(frame *dieterv1.SyncFrame) error {
+	err := api.watchSync(ctx, &dieterv1.SyncRequest{}, func(frame *dieterv1.SyncFrame) error {
 		if initialSequence == 0 {
 			initialSequence = frame.GetCursor().GetSequence()
 			pending, err := json.Marshal(store.SyncEvent{
@@ -116,7 +115,7 @@ func TestSyncHeartbeatsSurviveBlockedProjectionAndCancellation(t *testing.T) {
 	done := make(chan error, 1)
 	frameReceived := make(chan *dieterv1.SyncFrame, 1)
 	go func() {
-		done <- api.watchSync(ctx, &dieterv1.SyncRequest{ProtocolVersion: protocol.Number, HeartbeatMs: 1000}, func(frame *dieterv1.SyncFrame) error { frameReceived <- frame; return nil })
+		done <- api.watchSync(ctx, &dieterv1.SyncRequest{HeartbeatMs: 1000}, func(frame *dieterv1.SyncFrame) error { frameReceived <- frame; return nil })
 	}()
 	select {
 	case frame := <-frameReceived:
@@ -148,7 +147,7 @@ func TestSyncResumesOnlyExactRetainedProjection(t *testing.T) {
 	data, api, card := syncRecoveryFixture(t)
 	stop := errors.New("done")
 	var after *dieterv1.SyncCursor
-	request := &dieterv1.SyncRequest{ProtocolVersion: protocol.Number}
+	request := &dieterv1.SyncRequest{}
 	if err := api.watchSync(context.Background(), request, func(frame *dieterv1.SyncFrame) error { after = frame.Cursor; return stop }); !errors.Is(err, stop) {
 		t.Fatal(err)
 	}
@@ -161,7 +160,7 @@ func TestSyncResumesOnlyExactRetainedProjection(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	frames := 0
-	err := api.watchSync(ctx, &dieterv1.SyncRequest{ProtocolVersion: protocol.Number, After: after}, func(frame *dieterv1.SyncFrame) error {
+	err := api.watchSync(ctx, &dieterv1.SyncRequest{After: after}, func(frame *dieterv1.SyncFrame) error {
 		if frame.Heartbeat {
 			return nil
 		}
@@ -179,7 +178,7 @@ func TestSyncResumesOnlyExactRetainedProjection(t *testing.T) {
 	}
 	after = proto.Clone(after).(*dieterv1.SyncCursor)
 	after.ProjectionId = "evicted"
-	err = api.watchSync(ctx, &dieterv1.SyncRequest{ProtocolVersion: protocol.Number, After: after}, func(frame *dieterv1.SyncFrame) error {
+	err = api.watchSync(ctx, &dieterv1.SyncRequest{After: after}, func(frame *dieterv1.SyncFrame) error {
 		if !frame.Reset_ || frame.Snapshot == nil {
 			t.Fatal("missing projection was not explicitly reset")
 		}
@@ -203,7 +202,7 @@ func TestSyncMetadataArrivesBeforeMalformedConversation(t *testing.T) {
 	defer cancel()
 	frames := 0
 	stop := errors.New("done")
-	err := api.watchSync(ctx, &dieterv1.SyncRequest{ProtocolVersion: protocol.Number, ConversationLimit: 30, RecentConversationLimit: 8}, func(frame *dieterv1.SyncFrame) error {
+	err := api.watchSync(ctx, &dieterv1.SyncRequest{ConversationLimit: 30, RecentConversationLimit: 8}, func(frame *dieterv1.SyncFrame) error {
 		if frame.Heartbeat {
 			return nil
 		}

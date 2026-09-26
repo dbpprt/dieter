@@ -157,7 +157,7 @@ func TestSelectionPreservesBroadFallbackAndDeletedPaths(t *testing.T) {
 	if got := affected(cases, []string{"apps/android/app/src/main/java/ui/MachinesScreen.kt"}); len(got) != 1 || got[0].ID != "machines" {
 		t.Fatal(got)
 	}
-	for _, p := range []string{"apps/android/app/src/main/java/Unknown.kt", "apps/android/app/build.gradle.kts", "api/contract-version", "tests/e2e/deleted.yaml"} {
+	for _, p := range []string{"apps/android/app/src/main/java/Unknown.kt", "apps/android/app/build.gradle.kts", "api/proto/dieter/v1/dieter.proto", "tests/e2e/deleted.yaml"} {
 		if len(affected(cases, []string{p})) != 2 {
 			t.Fatal("unsafe narrowing:", p)
 		}

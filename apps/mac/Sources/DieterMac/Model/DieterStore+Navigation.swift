@@ -249,7 +249,7 @@ extension DieterStore {
             machineInformationError = "\(machine.name) is offline."
             return
         }
-        guard machine.apiCompatibility != .incompatible else {
+        guard machine.compatibilityState != .incompatible else {
             machineInformationError = machine.incompatibilityDescription
             return
         }
@@ -317,7 +317,7 @@ extension DieterStore {
         guard !machineOperationInFlight else { return }
         machineOperationInFlight = true
         defer { machineOperationInFlight = false }
-        guard machine.apiCompatibility != .incompatible else {
+        guard machine.compatibilityState != .incompatible else {
             machineOperationMessage = machine.incompatibilityDescription
             return
         }
@@ -349,7 +349,7 @@ extension DieterStore {
                     userInfo: [NSLocalizedDescriptionKey: "\(machine.name) is offline."]))
             return
         }
-        guard machine.apiCompatibility != .incompatible else {
+        guard machine.compatibilityState != .incompatible else {
             machineConnectionErrors[machine.id] = machine.incompatibilityDescription
             return
         }

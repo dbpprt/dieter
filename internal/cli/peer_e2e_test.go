@@ -148,7 +148,7 @@ func testPeerMachines(t *testing.T, wantRoute string) {
 	tunnelDone := make(chan struct{})
 	go func() {
 		defer close(tunnelDone)
-		_ = (&daemon.GatewayClient{Identity: b, LocalTarget: localListener.Addr().String(), Version: "test", APIVersion: server.APIVersion, Routes: routes, ControlWebRTC: rtc, Log: logger}).Run(tunnelCtx)
+		_ = (&daemon.GatewayClient{Identity: b, LocalTarget: localListener.Addr().String(), Version: "0.4.1-dev", Routes: routes, ControlWebRTC: rtc, Log: logger}).Run(tunnelCtx)
 	}()
 	defer func() { stopTunnel(); <-tunnelDone }()
 	deadline := time.Now().Add(5 * time.Second)
@@ -396,7 +396,10 @@ func testPeerMachines(t *testing.T, wantRoute string) {
 	defer gatewayConn.Close()
 	gw := gatewayv1.NewGatewayServiceClient(gatewayConn)
 	auth := func(i *daemon.Identity) context.Context {
-		return metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+linkauth.SignPeer(i.PrivateKey, i.ID, i.Issuer(), i.Generation, time.Now()))
+		return metadata.AppendToOutgoingContext(ctx,
+			"authorization", "Bearer "+linkauth.SignPeer(i.PrivateKey, i.ID, i.Issuer(), i.Generation, time.Now()),
+			"x-dieter-client-version", "0.4.1-dev",
+		)
 	}
 	if _, err = gw.ResolveDaemonRoute(auth(other), &gatewayv1.DaemonRef{DaemonId: b.ID}); status.Code(err) != codes.NotFound {
 		t.Fatalf("cross-account route: %v", err)

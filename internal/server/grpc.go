@@ -18,14 +18,15 @@ import (
 	"unicode/utf8"
 
 	"github.com/dbpprt/dieter/internal/app"
+	"github.com/dbpprt/dieter/internal/buildinfo"
 	"github.com/dbpprt/dieter/internal/changeset"
+	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
 	"github.com/dbpprt/dieter/internal/gitops"
 	"github.com/dbpprt/dieter/internal/harness"
 	"github.com/dbpprt/dieter/internal/model"
 	"github.com/dbpprt/dieter/internal/peerstore"
 	dieterprompt "github.com/dbpprt/dieter/internal/prompt"
-	"github.com/dbpprt/dieter/internal/protocol"
 	"github.com/dbpprt/dieter/internal/store"
 	"github.com/dbpprt/dieter/internal/terminal"
 	"google.golang.org/grpc/codes"
@@ -43,12 +44,7 @@ type grpcAPI struct {
 	commandMu     sync.Mutex
 }
 
-const (
-	// APIVersion is advertised through Health and gateway presence. Native
-	// clients use it to avoid selecting an incompatible daemon in a mixed fleet.
-	APIVersion             = protocol.Version
-	maxCachedConversations = 12
-)
+const maxCachedConversations = 12
 
 type sequencedSnapshot struct {
 	seq      int64
@@ -63,7 +59,16 @@ type snapshotHistory struct {
 const maxSnapshotsPerConversation = 8
 
 func (api *grpcAPI) Health(context.Context, *emptypb.Empty) (*dieterv1.HealthResponse, error) {
-	return &dieterv1.HealthResponse{Status: "ok", Version: APIVersion, StorePath: api.server.store.Root}, nil
+	response := &dieterv1.HealthResponse{Status: "ok", ReleaseVersion: buildinfo.ReleaseVersion, StorePath: api.server.store.Root}
+	if policy, err := api.server.store.GatewayCompatibilityPolicy(); err == nil {
+		response.CompatibilityPolicy = &gatewayv1.CompatibilityPolicy{
+			GatewayReleaseVersion: policy.GatewayReleaseVersion,
+			MinimumClientVersion:  policy.MinimumClientVersion,
+			MinimumDaemonVersion:  policy.MinimumDaemonVersion,
+			Revision:              policy.Revision,
+		}
+	}
+	return response, nil
 }
 
 func (api *grpcAPI) GetRuntimeStatus(context.Context, *emptypb.Empty) (*dieterv1.RuntimeStatus, error) {
@@ -350,7 +355,7 @@ func (api *grpcAPI) CreateProject(ctx context.Context, request *dieterv1.CreateP
 		boardName = "Main"
 	}
 	project, err := api.server.app.RegisterProject(ctx, app.ProjectInput{
-		OperationID: request.GetOperationId(), InitialBoardName: boardName, InitialWorkflow: request.GetWorkflow(), InitialRemotePublishMode: request.GetRemotePublishMode(),
+		OperationID: request.GetOperationId(), InitialBoardName: boardName, InitialWorkflow: request.GetWorkflow(),
 		Path: request.GetPath(), Name: request.GetName(), Summary: request.GetSummary(), Prompt: request.GetPrompt(),
 		Create: mode == "create", BaseRemote: request.GetBaseRemote(), BaseBranch: request.GetBaseBranch(),
 		ValidationCommands: modelValidationCommands(request.GetValidationCommands()),
@@ -1439,6 +1444,7 @@ func (api *grpcAPI) SaveFile(ctx context.Context, request *dieterv1.SaveFileRequ
 	if err := atomicWriteProjectFile(target, content); err != nil {
 		return nil, grpcFailure(projectPathIOError(relative, err))
 	}
+	api.server.changesets.InvalidatePath(project.Path)
 	info, err := os.Stat(target)
 	if err != nil {
 		return nil, grpcFailure(projectPathIOError(relative, err))
@@ -1482,6 +1488,7 @@ func (api *grpcAPI) CreateFile(ctx context.Context, request *dieterv1.CreateFile
 	if err != nil {
 		return nil, grpcFailure(projectPathIOError(relative, err))
 	}
+	api.server.changesets.InvalidatePath(project.Path)
 	return &dieterv1.FileEntry{Name: path.Base(relative), Path: relative, Kind: kind, Size: int64(len(content))}, nil
 }
 
@@ -1519,6 +1526,7 @@ func (api *grpcAPI) MoveFile(ctx context.Context, request *dieterv1.MoveFileRequ
 	if err := os.Rename(source, destination); err != nil {
 		return nil, grpcFailure(projectPathIOError(sourceRelative, err))
 	}
+	api.server.changesets.InvalidatePath(project.Path)
 	return &dieterv1.MoveFileResponse{Source: sourceRelative, Destination: destinationRelative}, nil
 }
 
@@ -1553,6 +1561,7 @@ func (api *grpcAPI) DeleteFile(ctx context.Context, request *dieterv1.DeleteFile
 	if err != nil {
 		return nil, grpcFailure(projectPathIOError(relative, err))
 	}
+	api.server.changesets.InvalidatePath(project.Path)
 	return &emptypb.Empty{}, nil
 }
 

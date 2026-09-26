@@ -18,7 +18,7 @@ This directory holds implementation references and historical evidence.
 ## Technical references
 
 - [Native test catalog and runner](../tests/e2e/README.md)
-- [Application contract and compatibility](api-contract.md)
+- [Release compatibility](api-contract.md)
 - [Shared project identity, causal records, and ownership](peer-store.md)
 - [Portable navigation settings and offline synchronization](client-navigation-folders.md)
 - [Native document editing, presentation, and capture routing](conversation-workspace.md)
@@ -57,6 +57,7 @@ are retained. Paths are stable so existing issue and PR links continue to work.
 - [Linux screen-sharing assessment and implementation plan](linux-screen-sharing-plan-2026-09-18.md)
 - [Mac app performance and Changes assessment](mac-app-assessment-2026-09-07.md)
 - [Mac Changes implementation and validation](mac-app-changes-validation-2026-09-07.md)
+- [Changes and workspaces implementation plan](changes-workspaces-plan-2026-09-25.md)
 - [mac-board-performance-2026-09-08](mac-board-performance-2026-09-08.md)
 - [mac-code-quality-refactoring-proposal-2026-09-08](mac-code-quality-refactoring-proposal-2026-09-08.md)
 - [Mac navigation and action feedback audit — 8 September 2026](mac-navigation-responsiveness-2026-09-08.md)

@@ -16,7 +16,6 @@ import (
 	"time"
 
 	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
-	"github.com/dbpprt/dieter/internal/protocol"
 	"golang.org/x/net/http2"
 	"google.golang.org/grpc"
 )
@@ -34,11 +33,10 @@ type Server struct {
 	HTTPHandler http.Handler
 }
 
-// GatewayAPIVersion is the shared Dieter application contract, also used by
-// the daemon, CLI, native clients, and authenticated daemon link.
-const GatewayAPIVersion = protocol.Version
-
 func NewServer(config Config, store *Store, logger *slog.Logger) (*Server, error) {
+	if _, err := compatibilityPolicy(config); err != nil {
+		return nil, fmt.Errorf("gateway compatibility policy: %w", err)
+	}
 	keys, err := LoadOrCreateKeys(store.Root)
 	if err != nil {
 		return nil, err
@@ -97,7 +95,8 @@ func NewServer(config Config, store *Store, logger *slog.Logger) (*Server, error
 
 func gatewayMethodRequiresSession(path string) bool {
 	switch path {
-	case "/dieter.gateway.v1.GatewayService/BeginDaemonEnrollment",
+	case "/dieter.gateway.v1.GatewayService/GetCompatibility",
+		"/dieter.gateway.v1.GatewayService/BeginDaemonEnrollment",
 		"/dieter.gateway.v1.GatewayService/CompleteDaemonEnrollment",
 		"/dieter.gateway.v1.GatewayService/UnenrollDaemon",
 		"/dieter.gateway.v1.DaemonLinkService/Connect":
@@ -125,7 +124,8 @@ func gatewayHTTP2Config() *http2.Server {
 
 func publicGatewayUnaryMethod(path string) bool {
 	switch path {
-	case "/dieter.gateway.v1.GatewayService/BeginDaemonEnrollment",
+	case "/dieter.gateway.v1.GatewayService/GetCompatibility",
+		"/dieter.gateway.v1.GatewayService/BeginDaemonEnrollment",
 		"/dieter.gateway.v1.GatewayService/CompleteDaemonEnrollment",
 		"/dieter.gateway.v1.GatewayService/UnenrollDaemon":
 		return true

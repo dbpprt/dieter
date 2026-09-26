@@ -16,8 +16,8 @@ import com.dbpprt.dieter.connection.ProjectReplica
 import com.dbpprt.dieter.connection.isServerConversationId
 import com.dbpprt.dieter.connection.resolveConversationId
 import com.dbpprt.dieter.connection.rpcReadFailureIsTransient
+import com.dbpprt.dieter.connection.isCompatible
 import com.dbpprt.dieter.data.DIETER_ENDPOINTS
-import com.dbpprt.dieter.data.DIETER_API_VERSION
 import com.dbpprt.dieter.data.DIETER_LOCAL_ENDPOINT
 import com.dbpprt.dieter.data.DieterEndpoint
 import com.dbpprt.dieter.data.DieterRepository
@@ -451,6 +451,7 @@ class DieterViewModel internal constructor(
     private var schedulesRequestGeneration = 0L
     private var scheduleRunsRequestGeneration = 0L
     private var workspaceSurfaceJob: Job? = null
+    private var workspaceSurfaceRefreshAgain = false
     private var workspaceDiffJob: Job? = null
     private var gitOperationJob: Job? = null
     private var gitOperationWatchId: String? = null
@@ -458,6 +459,7 @@ class DieterViewModel internal constructor(
     private var mergeFlowJob: Job? = null
     private var workspaceToastJob: Job? = null
     private var projectChangesJob: Job? = null
+    private var projectChangesRefreshAgain = false
     private var projectDiffJob: Job? = null
     private var projectGitOperationJob: Job? = null
     private var projectGitOperationId: String? = null
@@ -592,9 +594,11 @@ class DieterViewModel internal constructor(
         // Backgrounding cancels only the local watch tasks; the durable Git
         // operation keeps running on the daemon and is resumed by sequence.
         workspaceSurfaceJob?.cancel()
+        workspaceSurfaceRefreshAgain = false
         workspaceDiffJob?.cancel()
         gitOperationJob?.cancel()
         projectChangesJob?.cancel()
+        projectChangesRefreshAgain = false
         projectDiffJob?.cancel()
         projectGitOperationJob?.cancel()
         spacesJob?.cancel()
@@ -1156,7 +1160,7 @@ class DieterViewModel internal constructor(
     fun refreshMachines() {
         connectionManager.refreshProjectDirectory()
         val machineIds = _state.value.presentedEndpointConnections
-            .filter { it.daemonId != null && it.online && it.apiVersion == DIETER_API_VERSION }
+            .filter { it.daemonId != null && it.online && it.isCompatible }
             .map(EndpointConnection::id)
         machineListRefreshJob?.cancel()
         if (machineIds.isEmpty()) return
@@ -1284,7 +1288,7 @@ class DieterViewModel internal constructor(
             while (_state.value.destination == Destination.MACHINES && _state.value.selectedMachineId == machineId) {
                 delay(2_000)
                 val machine = _state.value.presentedEndpointConnections.firstOrNull { it.id == machineId }
-                if (machine?.online == true && machine.apiVersion == DIETER_API_VERSION) {
+                if (machine?.online == true && machine.isCompatible) {
                     fetchMachineInformation(machineId)
                 }
             }
@@ -1298,8 +1302,8 @@ class DieterViewModel internal constructor(
 
     private fun machineUnavailableMessage(machine: EndpointConnection): String? = when {
         !machine.online -> "${machine.label} is offline."
-        machine.apiVersion != DIETER_API_VERSION ->
-            "Dieter API ${machine.apiVersion.ifBlank { "unknown" }} is incompatible; Android requires $DIETER_API_VERSION."
+        !machine.isCompatible ->
+            "Dieter ${machine.releaseVersion.ifBlank { "unknown" }} needs an update to ${machine.minimumReleaseVersion.ifBlank { "the required release" }}."
         else -> null
     }
 
@@ -1442,6 +1446,7 @@ class DieterViewModel internal constructor(
         cancelConversationStream()
         stopTerminalWatch()
         resetWorkspaceReview(null)
+        resetProjectChangesJobs()
         _state.update {
             it.copy(
                 selectedProjectId = id,
@@ -2572,6 +2577,7 @@ class DieterViewModel internal constructor(
         rememberConversation()
         cancelConversationStream()
         resetWorkspaceReview(null)
+        resetProjectChangesJobs()
         _state.update {
             it.copy(
                 destination = Destination.FILES,
@@ -2592,8 +2598,17 @@ class DieterViewModel internal constructor(
 
     fun loadProjectChanges() {
         val projectId = _state.value.selectedProjectId
-        if (projectId.isBlank() || projectChangesJob?.isActive == true) return
-        projectChangesJob = viewModelScope.launch { refreshProjectChanges(projectId) }
+        if (projectId.isBlank()) return
+        if (projectChangesJob?.isActive == true) {
+            projectChangesRefreshAgain = true
+            return
+        }
+        projectChangesJob = viewModelScope.launch {
+            do {
+                projectChangesRefreshAgain = false
+                refreshProjectChanges(projectId)
+            } while (projectChangesRefreshAgain && _state.value.selectedProjectId == projectId)
+        }
     }
 
     private suspend fun refreshProjectChanges(projectId: String) {
@@ -2724,7 +2739,7 @@ class DieterViewModel internal constructor(
         val current = _state.value
         val projectId = current.selectedProjectId
         val changes = current.projectChanges.changeset ?: return
-        if (projectId.isBlank() || current.projectChanges.operationActive || changes.volatile) return
+        if (projectId.isBlank() || current.projectChanges.operationActive) return
         viewModelScope.launch {
             try {
                 connectionManager.ensureCheckoutRoute(projectId)
@@ -3201,9 +3216,21 @@ class DieterViewModel internal constructor(
 
     // MARK: Conversation workspace review surface
 
+    private fun resetProjectChangesJobs() {
+        projectChangesJob?.cancel()
+        projectChangesJob = null
+        projectChangesRefreshAgain = false
+        projectDiffJob?.cancel()
+        projectDiffJob = null
+        projectGitOperationJob?.cancel()
+        projectGitOperationJob = null
+        projectGitOperationId = null
+    }
+
     private fun resetWorkspaceReview(cardId: String?) {
         workspaceSurfaceJob?.cancel()
         workspaceSurfaceJob = null
+        workspaceSurfaceRefreshAgain = false
         workspaceDiffJob?.cancel()
         workspaceDiffJob = null
         gitOperationJob?.cancel()
@@ -3233,8 +3260,16 @@ class DieterViewModel internal constructor(
     fun loadWorkspaceSurface() {
         val cardId = _state.value.selectedCardId ?: return
         if (!isServerConversationId(cardId)) return
-        if (workspaceSurfaceJob?.isActive == true) return
-        workspaceSurfaceJob = viewModelScope.launch { refreshWorkspaceSurface(cardId) }
+        if (workspaceSurfaceJob?.isActive == true) {
+            workspaceSurfaceRefreshAgain = true
+            return
+        }
+        workspaceSurfaceJob = viewModelScope.launch {
+            do {
+                workspaceSurfaceRefreshAgain = false
+                refreshWorkspaceSurface(cardId)
+            } while (workspaceSurfaceRefreshAgain && _state.value.selectedCardId == cardId)
+        }
     }
 
     private suspend fun refreshWorkspaceSurface(cardId: String) {
@@ -3749,7 +3784,6 @@ class DieterViewModel internal constructor(
         baseRemote: String,
         baseBranch: String,
         validationCommands: List<ValidationCommand>,
-        remotePublishMode: String,
     ) = action(ensureReplicaRoute = false) {
         check(endpointId.isNotBlank()) { "Choose an online machine first." }
         check(baseBranch.isNotBlank()) { "Enter a workspace base branch." }
@@ -3764,7 +3798,6 @@ class DieterViewModel internal constructor(
                 .setBaseRemote(baseRemote.trim())
                 .setBaseBranch(baseBranch.trim())
                 .addAllValidationCommands(validationCommands)
-                .setRemotePublishMode(remotePublishMode)
                 .build()
         val operationId = pendingProjectCreation?.takeIf { it.first == payload }?.second ?: java.util.UUID.randomUUID().toString()
         pendingProjectCreation = payload to operationId

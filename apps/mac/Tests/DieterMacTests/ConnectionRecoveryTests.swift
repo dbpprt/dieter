@@ -134,7 +134,7 @@ private final class RecoveryProbe: Sendable {
         restoreSync: false)
     let target = DieterEndpoint(
         name: "Fixture", host: "127.0.0.1", port: 1, daemonID: "fixture", online: true,
-        apiVersion: dieterExpectedAPIVersion)
+        releaseVersion: "0.4.309", compatibility: .compatible)
     store.endpoint = target
     store.endpoints = [target]
     store.gatewayOrigins = [target.gatewayEndpoint]
@@ -212,7 +212,7 @@ private final class RecoveryProbe: Sendable {
     let store = recoveryStore(probe: probe)
     defer { store.disconnect() }
     store.rpc = try DieterRPC(endpoint: store.endpoint)
-    store.phase = .connected(version: dieterExpectedAPIVersion)
+    store.phase = .connected(version: "0.4.309")
 
     #expect(await store.ensureReplicaConnection("project"))
     #expect(probe.attempts.withLock { $0 } == 0)
@@ -225,7 +225,7 @@ private final class RecoveryProbe: Sendable {
     let client = try DieterRPC(endpoint: store.endpoint)
     client.shutdown()
     store.rpc = client
-    store.phase = .connected(version: dieterExpectedAPIVersion)
+    store.phase = .connected(version: "0.4.309")
 
     // The retry reaches the fresh route factory instead of repeatedly using
     // the closed client. The fixture never opens a socket or starts an agent.
@@ -393,7 +393,8 @@ private final class RecoveryProbe: Sendable {
 @Test @MainActor func screenFeedbackContinuesWhileMainActorAndStatisticsAreBlocked() {
     let frames = Mutex<[Dieter_V1_RemoteDesktopReceiverFeedback]>([])
     let pump = RemoteDesktopFeedbackPump { value in frames.withLock { $0.append(value) } }
-    var initial = Dieter_V1_RemoteDesktopReceiverFeedback(); initial.protocolVersion = DieterContract.number
+    var initial = Dieter_V1_RemoteDesktopReceiverFeedback();
+    initial.protocolVersion = DieterRemoteDesktopProtocol.number
     pump.start(channel: nil, initial: initial)
     pump.input(active: true)
     // No statistics callback, lease renewal or main actor execution is needed.

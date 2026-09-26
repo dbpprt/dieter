@@ -245,7 +245,6 @@ extension DieterStore {
         request.conversationLimit = syncConversationMessageLimit
         request.recentConversationLimit = syncRecentConversationLimit
         request.heartbeatMs = 5_000
-        request.protocolVersion = Int32(DieterContract.number)
         if syncSnapshot != nil,
             let raw = syncProjection.cursor, let cursor = try? Dieter_V1_SyncCursor(serializedBytes: raw)
         {

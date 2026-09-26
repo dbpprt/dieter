@@ -19,7 +19,6 @@ import (
 
 	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
 	"github.com/dbpprt/dieter/internal/linkauth"
-	"github.com/dbpprt/dieter/internal/protocol"
 	"github.com/dbpprt/dieter/internal/rpcraw"
 	"github.com/dbpprt/dieter/internal/trust"
 	"google.golang.org/grpc"
@@ -36,18 +35,36 @@ type GatewayClient struct {
 	Identity              *Identity
 	LocalTarget           string
 	Version               string
-	APIVersion            string
 	Routes                []*gatewayv1.DirectCandidate
 	Log                   *slog.Logger
 	OnStatus              func(GatewayEvent)
 	OnAcknowledged        func(time.Time)
 	RemoteDesktopPresence func() *gatewayv1.RemoteDesktopPresence
 	ProviderQuotas        ProviderQuotaSource
+	OnCompatibilityPolicy func(*gatewayv1.CompatibilityPolicy) error
+	OnUpdateRequired      func(*gatewayv1.CompatibilityPolicy) error
 	Timing                GatewayTiming
 
 	replayMu    sync.Mutex
 	relayProofs map[string]int64
 }
+
+type UpdateRequiredError struct {
+	Installed string
+	Minimum   string
+	Policy    *gatewayv1.CompatibilityPolicy
+	Cause     error
+}
+
+func (e *UpdateRequiredError) Error() string {
+	message := fmt.Sprintf("daemon update required: installed %q, minimum %s", e.Installed, e.Minimum)
+	if e.Cause != nil {
+		return message + ": " + e.Cause.Error()
+	}
+	return message
+}
+
+func (e *UpdateRequiredError) Unwrap() error { return e.Cause }
 
 func (c *GatewayClient) remoteDesktopPresence() *gatewayv1.RemoteDesktopPresence {
 	if c.RemoteDesktopPresence == nil {
@@ -187,6 +204,16 @@ func (c *GatewayClient) Run(ctx context.Context) error {
 		if ctx.Err() != nil {
 			return nil
 		}
+		var updateRequired *UpdateRequiredError
+		if errors.As(err, &updateRequired) {
+			if c.OnUpdateRequired != nil {
+				if updateErr := c.OnUpdateRequired(updateRequired.Policy); updateErr != nil {
+					updateRequired.Cause = updateErr
+				}
+			}
+			c.report(GatewayIncompatible, updateRequired)
+			return updateRequired
+		}
 		delay, nextBackoff := gatewayReconnectBackoffWithin(backoff, connectedFor, timing.ReconnectInitialBackoff, timing.ReconnectMaximumBackoff, timing.ReconnectStableAfter)
 		c.report(GatewayDisconnected, err)
 		c.Log.Warn("gateway tunnel disconnected", "error", err, "retry", delay)
@@ -227,7 +254,7 @@ func (c *GatewayClient) runOnce(ctx context.Context) (time.Duration, error) {
 	if err != nil {
 		return 0, handshakeFailure(err)
 	}
-	if err := stream.Send(&gatewayv1.DaemonLinkFrame{Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_HELLO, DaemonId: c.Identity.ID, Version: c.Version, ApiVersion: c.APIVersion, Capabilities: c.controlCapabilities(), DirectCandidates: c.Routes, RemoteDesktop: c.remoteDesktopPresence()}); err != nil {
+	if err := stream.Send(&gatewayv1.DaemonLinkFrame{Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_HELLO, DaemonId: c.Identity.ID, ReleaseVersion: c.Version, Capabilities: c.controlCapabilities(), DirectCandidates: c.Routes, RemoteDesktop: c.remoteDesktopPresence()}); err != nil {
 		return 0, handshakeFailure(err)
 	}
 	challenge, err := stream.Recv()
@@ -245,8 +272,20 @@ func (c *GatewayClient) runOnce(ctx context.Context) (time.Duration, error) {
 	if err != nil {
 		return 0, handshakeFailure(err)
 	}
-	if first.GetKind() != gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_HELLO_ACK || first.GetDaemonId() != c.Identity.ID || first.GetGeneration() != c.Identity.Generation || first.GetApiVersion() != protocol.Version {
+	if first.GetKind() != gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_HELLO_ACK || first.GetDaemonId() != c.Identity.ID || first.GetGeneration() != c.Identity.Generation {
 		return 0, errors.New("gateway rejected the daemon hello")
+	}
+	if policy := first.GetCompatibilityPolicy(); policy != nil && c.OnCompatibilityPolicy != nil {
+		if err := c.OnCompatibilityPolicy(policy); err != nil {
+			return 0, fmt.Errorf("persist gateway compatibility policy: %w", err)
+		}
+	}
+	if first.GetCompatibility() != gatewayv1.CompatibilityStatus_COMPATIBILITY_STATUS_COMPATIBLE {
+		minimum := first.GetCompatibilityPolicy().GetMinimumDaemonVersion()
+		if minimum == "" {
+			minimum = "unknown"
+		}
+		return 0, &UpdateRequiredError{Installed: c.Version, Minimum: minimum, Policy: first.GetCompatibilityPolicy()}
 	}
 	handshakeTimer.Stop()
 	connectedAt := time.Now()
@@ -450,7 +489,7 @@ func (c *GatewayClient) runOnce(ctx context.Context) (time.Duration, error) {
 		case <-heartbeatWatchdog.C:
 			return finish(fmt.Errorf("gateway heartbeat acknowledgement timed out after %s", timing.HeartbeatAckTimeout))
 		case <-heartbeat.C:
-			frame := &gatewayv1.DaemonLinkFrame{Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_HEARTBEAT, DaemonId: c.Identity.ID, Version: c.Version, ApiVersion: c.APIVersion, Capabilities: c.controlCapabilities(), DirectCandidates: c.Routes, RemoteDesktop: c.remoteDesktopPresence()}
+			frame := &gatewayv1.DaemonLinkFrame{Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_HEARTBEAT, DaemonId: c.Identity.ID, ReleaseVersion: c.Version, Capabilities: c.controlCapabilities(), DirectCandidates: c.Routes, RemoteDesktop: c.remoteDesktopPresence()}
 			if outstandingHeartbeat == "" {
 				heartbeatSequence++
 				outstandingHeartbeat = fmt.Sprintf("hb_%d", heartbeatSequence)
@@ -671,7 +710,11 @@ func (c *GatewayClient) relayLocal(ctx context.Context, local *grpc.ClientConn, 
 		ctx, cancel = context.WithDeadline(ctx, time.UnixMilli(deadline))
 		defer cancel()
 	}
-	ctx = metadata.NewOutgoingContext(ctx, metadata.Pairs("x-dieter-operator-subject", operatorSubject))
+	clientVersion := frame.GetMetadata()["x-dieter-client-version"]
+	ctx = metadata.NewOutgoingContext(ctx, metadata.Pairs(
+		"x-dieter-operator-subject", operatorSubject,
+		"x-dieter-client-version", clientVersion,
+	))
 	description := &grpc.StreamDesc{ServerStreams: true, ClientStreams: false}
 	call, err := local.NewStream(ctx, description, frame.GetMethod(), grpc.ForceCodec(rpcraw.Codec{}))
 	if err != nil {

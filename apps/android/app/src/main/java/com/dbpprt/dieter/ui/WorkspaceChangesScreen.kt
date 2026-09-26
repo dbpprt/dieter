@@ -708,6 +708,7 @@ private fun WorkspaceSectionHeader(title: String, count: Int) {
 
 @Composable
 private fun WorkspaceDeltaLabel(additions: Int, deletions: Int) {
+    if (additions == 0 && deletions == 0) return
     Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
         Text("+$additions", color = diffAdditionText, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, fontFamily = MonoFont)
         Text("−$deletions", color = diffDeletionText, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, fontFamily = MonoFont)

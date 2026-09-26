@@ -233,7 +233,7 @@ func TestSharedProjectCreationReceiptAndAtomicBoard(t *testing.T) {
 		t.Fatalf("retry: %v %v", again, err)
 	}
 	boards, err := s.ListBoards(p.ID)
-	if err != nil || len(boards) != 1 {
+	if err != nil || len(boards) != 1 || boards[0].RemotePublishMode != model.RemotePublishManual {
 		t.Fatalf("boards: %v %v", boards, err)
 	}
 	if _, err = s.InitialBoard(p.ID); err != nil {
@@ -267,7 +267,7 @@ func TestCreateProjectRestoresArchivedPathAndAddsMissingInitialBoard(t *testing.
 		t.Fatalf("restored=%#v original=%#v", restored, original)
 	}
 	boards, err := s.ListBoards(original.ID)
-	if err != nil || len(boards) != 1 || boards[0].Name != "Main" {
+	if err != nil || len(boards) != 1 || boards[0].Name != "Main" || boards[0].RemotePublishMode != model.RemotePublishManual {
 		t.Fatalf("boards=%#v err=%v", boards, err)
 	}
 

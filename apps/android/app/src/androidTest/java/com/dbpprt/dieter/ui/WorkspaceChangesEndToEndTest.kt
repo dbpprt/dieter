@@ -268,6 +268,23 @@ class WorkspaceChangesEndToEndTest {
             }
             assertTrue("Project checkout must be clean after the staged commit", cleanProject.filesCount == 0 && !cleanProject.dirty)
 
+            // Shipping stays explicit. Update and validation execute through the
+            // same durable operation path; push is present but is not clicked
+            // because this isolated fixture intentionally has no publish remote.
+            composeRule.onNodeWithTag("project-changes-update").assertIsDisplayed().performClick()
+            composeRule.waitUntil(120_000) {
+                val operation = androidx.lifecycle.ViewModelProvider(composeRule.activity)[DieterViewModel::class.java]
+                    .state.value.projectChanges.operation
+                operation?.kind == GitOperationKinds.UPDATE && operation.status == "succeeded"
+            }
+            composeRule.onNodeWithTag("project-changes-validate").assertIsDisplayed().performClick()
+            composeRule.waitUntil(120_000) {
+                val operation = androidx.lifecycle.ViewModelProvider(composeRule.activity)[DieterViewModel::class.java]
+                    .state.value.projectChanges.operation
+                operation?.kind == GitOperationKinds.VALIDATE && operation.status == "succeeded"
+            }
+            composeRule.onNodeWithTag("project-changes-push").assertIsDisplayed()
+
             val discarded = "android-discard-${UUID.randomUUID().toString().take(8)}.txt"
             runBlocking {
                 retryTransient {

@@ -18,7 +18,6 @@ import (
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
 	"github.com/dbpprt/dieter/internal/model"
 	"github.com/dbpprt/dieter/internal/peerstore"
-	"github.com/dbpprt/dieter/internal/protocol"
 	"github.com/dbpprt/dieter/internal/store"
 	"github.com/shirou/gopsutil/v4/process"
 	"google.golang.org/protobuf/proto"
@@ -53,7 +52,7 @@ func TestIdleSubscriptionProcessCost(t *testing.T) {
 			defer group.Done()
 			active.Add(1)
 			defer active.Add(-1)
-			_ = api.watchSync(ctx, &dieterv1.SyncRequest{ProtocolVersion: protocol.Number}, func(frame *dieterv1.SyncFrame) error {
+			_ = api.watchSync(ctx, &dieterv1.SyncRequest{}, func(frame *dieterv1.SyncFrame) error {
 				if frame.GetSnapshot() != nil {
 					initial.Add(1)
 				}

@@ -1,6 +1,6 @@
 package com.dbpprt.dieter.screens
 
-import com.dbpprt.dieter.data.DIETER_PROTOCOL_VERSION
+import com.dbpprt.dieter.data.DIETER_INPUT_PROTOCOL_VERSION
 
 import com.dbpprt.dieter.v1.RemoteDesktopSessionBinding
 import com.google.protobuf.ByteString
@@ -17,7 +17,7 @@ class ScreenTrustTest {
         .setHelperDtlsFingerprint("sha-256 01:23:45").setExpiresAt("2100-01-01T00:00:00Z")
         .setOfferSha256(ByteString.copyFrom(MessageDigest.getInstance("SHA-256").digest("test offer".toByteArray())))
         .setDaemonSignature(ByteString.copyFrom(bytes("signature"))).setControlGranted(true).setDisplayId("primary")
-        .setInputProtocolVersion(DIETER_PROTOCOL_VERSION).setInputEpoch(ByteString.copyFrom(bytes("epoch"))).build()
+        .setInputProtocolVersion(DIETER_INPUT_PROTOCOL_VERSION).setInputEpoch(ByteString.copyFrom(bytes("epoch"))).build()
     private fun verify(value: RemoteDesktopSessionBinding = binding, offer: String = "test offer", answer: String = "a=fingerprint:sha-256 01:23:45\r\n") =
         ScreenTrust.verify(value, "session", "nonce", offer, answer, bytes("certificate"), true, "primary")
     @Test fun acceptsDaemonSignatureFromIndependentGoFixture() { verify() }

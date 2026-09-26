@@ -10,7 +10,6 @@ import (
 	"time"
 
 	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
-	"github.com/dbpprt/dieter/internal/protocol"
 	"github.com/dbpprt/dieter/internal/trust"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
@@ -51,7 +50,7 @@ func ResolveGatewayEndpoint(ctx context.Context, identity *Identity) (string, er
 		return identity.GatewayURL, nil
 	}
 	subject := fmt.Sprintf("github:%d", account.GetGithubId())
-	claims, err := trust.VerifyGatewayEndpoint(public, account.GetSignedGatewayEndpoint(), identity.Issuer(), subject, protocol.Version, time.Now())
+	claims, err := trust.VerifyGatewayEndpoint(public, account.GetSignedGatewayEndpoint(), identity.Issuer(), subject, time.Now())
 	if err != nil {
 		return "", err
 	}
@@ -67,7 +66,7 @@ func ResolveGatewayEndpoint(ctx context.Context, identity *Identity) (string, er
 	if next.GetGithubId() != account.GetGithubId() {
 		return "", errors.New("gateway destination belongs to another account")
 	}
-	verified, err := trust.VerifyGatewayEndpoint(public, next.GetSignedGatewayEndpoint(), identity.Issuer(), subject, protocol.Version, time.Now())
+	verified, err := trust.VerifyGatewayEndpoint(public, next.GetSignedGatewayEndpoint(), identity.Issuer(), subject, time.Now())
 	if err != nil {
 		return "", err
 	}

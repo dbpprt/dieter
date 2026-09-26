@@ -17,9 +17,9 @@ import (
 )
 
 type CreateProjectInput struct {
-	OperationID, InitialBoardName, InitialWorkflow, InitialRemotePublishMode string
-	ID, Name, Path, Summary, Prompt, BaseRemote, BaseBranch                  string
-	ValidationCommands                                                       []model.ValidationCommand
+	OperationID, InitialBoardName, InitialWorkflow          string
+	ID, Name, Path, Summary, Prompt, BaseRemote, BaseBranch string
+	ValidationCommands                                      []model.ValidationCommand
 }
 
 func validFileID(id string) bool {
@@ -119,11 +119,7 @@ func (s *Store) CreateProject(input CreateProjectInput) (model.Project, error) {
 		if err != nil {
 			return model.Project{}, err
 		}
-		mode, err := normalizeRemotePublishMode(input.InitialRemotePublishMode)
-		if err != nil {
-			return model.Project{}, err
-		}
-		board := model.Board{ID: initialBoardID(project.ID), ProjectID: project.ID, Name: input.InitialBoardName, Workflow: workflow, DoneArchivePolicy: model.DoneArchiveNever, BaseRemote: project.BaseRemote, RemotePublishMode: mode, CreatedAt: now, UpdatedAt: now}
+		board := model.Board{ID: initialBoardID(project.ID), ProjectID: project.ID, Name: input.InitialBoardName, Workflow: workflow, DoneArchivePolicy: model.DoneArchiveNever, BaseRemote: project.BaseRemote, RemotePublishMode: model.RemotePublishManual, CreatedAt: now, UpdatedAt: now}
 		fields := pickFields(board, "board")
 		fields["identity"] = rawValue(map[string]string{"id": board.ID, "projectId": project.ID, "createdAt": now})
 		if err = applyFields(&data, identity, "board", board.ID, nil, fields); err != nil {
@@ -170,16 +166,12 @@ func (s *Store) restoreProjectForCreation(
 		if normalizeErr != nil {
 			return model.Project{}, normalizeErr
 		}
-		mode, normalizeErr := normalizeRemotePublishMode(input.InitialRemotePublishMode)
-		if normalizeErr != nil {
-			return model.Project{}, normalizeErr
-		}
 		now := timestamp()
 		initialBoard = &model.Board{
 			ID: initialBoardID(project.ID), ProjectID: project.ID,
 			Name: strings.TrimSpace(input.InitialBoardName), Workflow: workflow,
 			DoneArchivePolicy: model.DoneArchiveNever, BaseRemote: project.BaseRemote,
-			RemotePublishMode: mode, CreatedAt: now, UpdatedAt: now,
+			RemotePublishMode: model.RemotePublishManual, CreatedAt: now, UpdatedAt: now,
 		}
 	}
 

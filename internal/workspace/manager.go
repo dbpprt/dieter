@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -17,6 +16,7 @@ import (
 	"time"
 
 	"github.com/dbpprt/dieter/internal/gitexec"
+	"github.com/dbpprt/dieter/internal/gitstatus"
 	"github.com/dbpprt/dieter/internal/model"
 	"github.com/dbpprt/dieter/internal/store"
 )
@@ -24,22 +24,25 @@ import (
 var branchUnsafe = regexp.MustCompile(`[^a-zA-Z0-9._-]+`)
 
 type Manager struct {
-	Store *store.Store
-	Git   gitexec.Runner
-	Log   *slog.Logger
+	Store  *store.Store
+	Git    gitexec.Runner
+	Status *gitstatus.Reader
+	Log    *slog.Logger
 }
 
 func New(data *store.Store, logger *slog.Logger) *Manager {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	manager := &Manager{Store: data, Git: gitexec.ExecRunner{}, Log: logger}
+	runner := gitexec.ExecRunner{}
+	manager := &Manager{Store: data, Git: runner, Status: gitstatus.NewReader(runner), Log: logger}
 	return manager
 }
 
 func (m *Manager) SetGitRunner(runner gitexec.Runner) {
 	if runner != nil {
 		m.Git = runner
+		m.Status.SetRunner(runner)
 	}
 }
 
@@ -133,7 +136,13 @@ func (m *Manager) Ensure(ctx context.Context, cardRef string) (model.Workspace, 
 	if _, err := m.Store.SaveWorkspace(value); err != nil {
 		return model.Workspace{}, err
 	}
-	return m.Refresh(ctx, value.CardID, false)
+	value, err = m.Refresh(ctx, value.CardID, false)
+	if err == nil {
+		// Provisioning callers commonly create their first edits immediately.
+		// Do not let the initial clean snapshot hide those edits from Changes.
+		m.Status.Invalidate(value.Path)
+	}
+	return value, err
 }
 
 func (m *Manager) provision(ctx context.Context, detail model.CardDetail, value model.Workspace) (model.Workspace, error) {
@@ -239,16 +248,7 @@ func (m *Manager) ProjectCheckout(ctx context.Context, projectRef string, includ
 	if _, err := os.Stat(project.Path); err != nil {
 		return model.Workspace{}, err
 	}
-	branch, _ := m.output(ctx, project.Path, "symbolic-ref", "--quiet", "--short", "HEAD")
 	baseBranch := strings.TrimSpace(project.BaseBranch)
-	if baseBranch == "" {
-		baseBranch = branch
-	}
-	baseRef := baseBranch
-	if baseRef == "" {
-		baseRef = "HEAD"
-	}
-	baseSHA, _ := m.output(ctx, project.Path, "rev-parse", "--verify", baseRef+"^{commit}")
 	checkoutID := ""
 	for _, c := range project.Checkouts {
 		if c.Path == project.Path && !c.Detached {
@@ -259,44 +259,51 @@ func (m *Manager) ProjectCheckout(ctx context.Context, projectRef string, includ
 	value := model.Workspace{
 		ProjectID: project.ID, CheckoutID: checkoutID, Mode: model.WorkspaceModeProject, Path: project.Path,
 		BaseRemote: strings.TrimSpace(project.BaseRemote), BaseBranch: baseBranch,
-		BaseSHA: baseSHA, CurrentBaseSHA: baseSHA, Branch: branch, State: model.WorkspaceStateReady,
+		State: model.WorkspaceStateReady,
 	}
 	return m.refreshGitState(ctx, value, includeSize), nil
 }
 
 func (m *Manager) refreshGitState(ctx context.Context, value model.Workspace, includeSize bool) model.Workspace {
-	currentBranch, _ := m.output(ctx, value.Path, "symbolic-ref", "--quiet", "--short", "HEAD")
-	head, headErr := m.output(ctx, value.Path, "rev-parse", "--verify", "HEAD^{commit}")
-	if headErr == nil {
-		value.HeadSHA = head
-	}
-	if currentBranch != "" || value.Mode == model.WorkspaceModeProject {
-		value.Branch = currentBranch
-	}
-	status, statusErr := m.Git.Run(ctx, value.Path, "status", "--porcelain=v1", "-z", "--untracked-files=all")
+	status, statusErr := m.Status.Read(ctx, value.Path, false)
 	if statusErr == nil {
-		value.Dirty = len(status.Output) > 0
-		if porcelainHasConflict(status.Output) {
+		value.Branch, value.HeadSHA, value.UpstreamRef = status.Branch, status.HeadSHA, status.Upstream
+		value.Dirty, value.Revision = status.Dirty, status.Revision
+		value.ChangedFiles, value.Additions, value.Deletions = len(status.Files), 0, 0
+		value.Ahead, value.Behind = status.Ahead, status.Behind
+		if status.Conflicted {
 			value.State = model.WorkspaceStateConflicted
+		}
+		if value.BaseBranch == "" {
+			value.BaseBranch = status.Branch
 		}
 	}
 	baseRef := value.BaseBranch
 	if baseRef != "" {
+		base := ""
 		if value.BaseRemote != "" {
 			remoteRef := value.BaseRemote + "/" + value.BaseBranch
-			if _, remoteErr := m.Git.Run(ctx, value.Path, "rev-parse", "--verify", remoteRef+"^{commit}"); remoteErr == nil {
+			if resolved, remoteErr := m.output(ctx, value.Path, "rev-parse", "--verify", remoteRef+"^{commit}"); remoteErr == nil {
 				baseRef = remoteRef
+				base = resolved
 			}
 		}
-		base, _ := m.output(ctx, value.Path, "rev-parse", "--verify", baseRef+"^{commit}")
+		if base == "" {
+			base, _ = m.output(ctx, value.Path, "rev-parse", "--verify", baseRef+"^{commit}")
+		}
 		if base != "" {
+			if value.BaseSHA == "" {
+				value.BaseSHA = base
+			}
 			value.CurrentBaseSHA = base
-			counts, countErr := m.output(ctx, value.Path, "rev-list", "--left-right", "--count", base+"...HEAD")
-			if countErr == nil {
-				fields := strings.Fields(counts)
-				if len(fields) == 2 {
-					value.Behind, _ = strconv.Atoi(fields[0])
-					value.Ahead, _ = strconv.Atoi(fields[1])
+			if status.Upstream != baseRef {
+				counts, countErr := m.output(ctx, value.Path, "rev-list", "--left-right", "--count", base+"...HEAD")
+				if countErr == nil {
+					fields := strings.Fields(counts)
+					if len(fields) == 2 {
+						value.Behind, _ = strconv.Atoi(fields[0])
+						value.Ahead, _ = strconv.Atoi(fields[1])
+					}
 				}
 			}
 		}
@@ -304,65 +311,11 @@ func (m *Manager) refreshGitState(ctx context.Context, value model.Workspace, in
 	if includeSize {
 		value.SizeBytes = directorySize(value.Path)
 	}
-	hash := sha256.New()
-	_, _ = hash.Write([]byte(value.BaseSHA))
-	_, _ = hash.Write([]byte{0})
-	_, _ = hash.Write([]byte(value.CurrentBaseSHA))
-	_, _ = hash.Write([]byte{0})
-	_, _ = hash.Write([]byte(value.HeadSHA))
-	_, _ = hash.Write([]byte{0})
-	_, _ = hash.Write(status.Output)
-	cachedArgs := []string{"diff", "--cached", "--no-ext-diff", "--binary"}
-	if value.HeadSHA != "" {
-		cachedArgs = append(cachedArgs, "HEAD")
-	}
-	cachedArgs = append(cachedArgs, "--")
-	if diff, diffErr := m.Git.Run(ctx, value.Path, cachedArgs...); diffErr == nil {
-		_, _ = hash.Write(diff.Output)
-	}
-	_, _ = hash.Write([]byte{0})
-	if diff, diffErr := m.Git.Run(ctx, value.Path, "diff", "--no-ext-diff", "--binary", "--"); diffErr == nil {
-		_, _ = hash.Write(diff.Output)
-	}
-	if untracked, untrackedErr := m.Git.Run(ctx, value.Path, "ls-files", "--others", "--exclude-standard", "-z"); untrackedErr == nil {
-		for _, relative := range bytesZeroFields(untracked.Output) {
-			_, _ = hash.Write([]byte(relative))
-			if file, readErr := os.Open(filepath.Join(value.Path, filepath.FromSlash(relative))); readErr == nil {
-				_, _ = io.Copy(hash, file)
-				_ = file.Close()
-			}
-		}
-	}
-	value.Revision = hex.EncodeToString(hash.Sum(nil)[:16])
 	if value.State != model.WorkspaceStateConflicted && value.State != model.WorkspaceStateRecoveryRequired && value.State != model.WorkspaceStateCleanupPending {
 		value.State = model.WorkspaceStateReady
 	}
 	value.LastActivityAt = time.Now().UTC().Format(time.RFC3339Nano)
 	return value
-}
-
-func bytesZeroFields(raw []byte) []string {
-	parts := strings.Split(string(raw), "\x00")
-	result := parts[:0]
-	for _, part := range parts {
-		if part != "" {
-			result = append(result, part)
-		}
-	}
-	return result
-}
-
-func porcelainHasConflict(raw []byte) bool {
-	for _, entry := range bytesZeroFields(raw) {
-		if len(entry) < 2 {
-			continue
-		}
-		status := entry[:2]
-		if strings.ContainsRune(status, 'U') || status == "AA" || status == "DD" {
-			return true
-		}
-	}
-	return false
 }
 
 func (m *Manager) ResolvePath(ctx context.Context, cardRef string) (model.Workspace, error) {

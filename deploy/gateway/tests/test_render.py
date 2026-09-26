@@ -24,13 +24,16 @@ class RenderTests(unittest.TestCase):
         self.secret_file.chmod(0o600)
 
     def rendered(self):
-        return render(self.settings, secrets(self.secret_file), "ghcr.io/dbpprt/dieter-gateway@sha256:" + "a" * 64, "test", self.root / "out")
+        return render(self.settings, secrets(self.secret_file), "ghcr.io/dbpprt/dieter-gateway@sha256:" + "a" * 64, "test", self.root / "out",
+                      {"minimumClientVersion": "0.4.20", "minimumDaemonVersion": "0.4.19"})
 
     def test_secret_bytes_and_public_separation(self):
         out = self.rendered()
         env = dict(line.split("=", 1) for line in (out / "private/gateway.env").read_text().splitlines())
         self.assertEqual(env["DIETER_GITHUB_CLIENT_SECRET"], self.private["githubClientSecret"])
         self.assertEqual(bytes.fromhex(env["DIETER_RTC_TURN_SECRET"]), self.private["turnSharedSecret"].encode())
+        self.assertEqual(env["DIETER_MINIMUM_CLIENT_VERSION"], "0.4.20")
+        self.assertEqual(env["DIETER_MINIMUM_DAEMON_VERSION"], "0.4.19")
         self.assertIn("static-auth-secret=" + self.private["turnSharedSecret"], (out / "private/turnserver.conf").read_text())
         for path in (out / "public").iterdir():
             for secret in self.private.values():
@@ -51,7 +54,7 @@ class RenderTests(unittest.TestCase):
         self.assertIn("gateway.new.example, gateway.old.example {", (out / "public/Caddyfile").read_text())
         self.assertIn("gateway.new.example gateway.old.example", (out / "public/haproxy.cfg").read_text())
 
-    def test_environment_contract(self):
+    def test_environment_policy(self):
         out = self.rendered()
         env = (out / "private/gateway.env").read_text()
         for field in ("DIETER_PUBLIC_URL", "DIETER_AUTH_SECRET", "DIETER_GITHUB_ALLOWED_USER_IDS"):

@@ -11,7 +11,8 @@
     /// then exercises the redesigned Changes tab: file list, inline and split
     /// diffs, the merge sheet, the full merge flow (commit → merge → cleanup
     /// → card to Done → toast), and the conflict experience. It also drives
-    /// project-checkout staging, staged-only commit, and safe discard semantics.
+    /// project-checkout staging, staged-only commit, update, validation, and
+    /// safe discard semantics.
     @MainActor
     enum WorkspaceUISmokeRunner {
         static let selectTabNotification = Notification.Name("dieter.smoke.select-tab")
@@ -448,6 +449,18 @@
                 committed && reconciled && head.output.contains("project checkout smoke")
                 ? "passed" : "failed: native staged-only commit did not converge"
             guard reconciled else { return }
+            let shipControls = [
+                "project-changes.update", "project-changes.validate", "project-changes.push",
+            ].allSatisfy { NativeUIAccessibility.find($0, in: window) != nil }
+            results["project-ship-controls"] =
+                shipControls ? "passed" : "failed: update, validate, or push is missing"
+
+            let validated = NativeUIAccessibility.click("project-changes.validate", in: window)
+            let validationFinished = await NativeUIAccessibility.wait {
+                model.operation?.kind == "validate" && model.operation?.status == "succeeded" && !model.busy
+            }
+            results["project-validate"] =
+                validated && validationFinished ? "passed" : "failed: project validation did not complete"
             _ = await NativeUIAccessibility.wait { window.attachedSheet == nil && !model.mutationsDisabled }
             _ = NativeUIAccessibility.click("project-changes.discard", in: window)
             _ = await NativeUIAccessibility.wait {
@@ -464,6 +477,12 @@
             results["project-discard"] =
                 discarded && clean ? "passed" : "failed: native discard did not render clean checkout"
             capture(window, to: output.appending(path: "09-project-changes-clean.png"))
+            let updated = NativeUIAccessibility.click("project-changes.update", in: window)
+            let updateFinished = await NativeUIAccessibility.wait {
+                model.operation?.kind == "update" && model.operation?.status == "succeeded" && !model.busy
+            }
+            results["project-update"] =
+                updated && updateFinished ? "passed" : "failed: project update did not complete"
             do {
                 let changes = try await rpc.changeset(projectID: project.id)
                 results["project-changes"] =

@@ -78,7 +78,7 @@ func (api *grpcAPI) GetMachineInformation(ctx context.Context, _ *emptypb.Empty)
 		SupportsRestart: supportsRestart, SupportsShutdown: supportsShutdown,
 		CpuCoreUsagePercent: append([]float64(nil), snapshot.CPUCorePercent...),
 		DaemonBuild: &dieterv1.BuildInformation{
-			ReleaseVersion: buildinfo.ReleaseVersion, ApiVersion: APIVersion,
+			ReleaseVersion: buildinfo.ReleaseVersion,
 			SourceRevision: buildinfo.SourceRevision, BuiltAt: buildinfo.BuiltAt,
 		},
 		Gpu: protoGPUTelemetry(snapshot.GPU), OperationCapabilities: operationCapabilities,

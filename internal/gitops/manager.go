@@ -96,7 +96,7 @@ func (m *Manager) Start(ctx context.Context, request Request) (model.GitOperatio
 	if m.BusyPath != nil && m.BusyPath(workspaceValue.Path) {
 		return model.GitOperation{}, fmt.Errorf("%w: active terminal or process in the checkout", ErrWorkspaceBusy)
 	}
-	if workspaceValue.Mode == model.WorkspaceModeProject || request.Kind == "merge_local" {
+	if (workspaceValue.Mode == model.WorkspaceModeProject && projectOperationRequiresIdle(request.Kind)) || request.Kind == "merge_local" {
 		if active, activeErr := m.Store.ProjectCheckoutHasRuntimeLease(workspaceValue.ProjectID, workspaceValue.CardID, workspaceValue.CheckoutID); activeErr != nil {
 			return model.GitOperation{}, activeErr
 		} else if active {
@@ -182,7 +182,16 @@ func supportedOperation(value string) bool {
 
 func projectCheckoutOperation(value string) bool {
 	switch value {
-	case "stage", "unstage", "discard_changes", "commit", "validate":
+	case "stage", "unstage", "discard_changes", "commit", "update", "validate", "push":
+		return true
+	default:
+		return false
+	}
+}
+
+func projectOperationRequiresIdle(value string) bool {
+	switch value {
+	case "discard_changes", "update":
 		return true
 	default:
 		return false
@@ -249,6 +258,7 @@ func (m *Manager) run(ctx context.Context, operation model.GitOperation) {
 		if err == nil {
 			defer release()
 			err = m.execute(ctx, &operation, workspaceValue)
+			m.Changesets.InvalidatePath(workspaceValue.Path)
 		}
 	}
 	switch {
@@ -280,20 +290,23 @@ func (m *Manager) run(ctx context.Context, operation model.GitOperation) {
 }
 
 func (m *Manager) execute(ctx context.Context, operation *model.GitOperation, value model.Workspace) error {
-	if operation.ExpectedRevision != "" {
-		changes, err := m.Changesets.GetTarget(ctx, operation.CardID, func() string {
-			if operation.CardID == "" {
-				return operation.ProjectID
-			}
-			return ""
-		}())
-		if err != nil {
-			return err
+	changes, err := m.Changesets.GetTargetFresh(ctx, operation.CardID, func() string {
+		if operation.CardID == "" {
+			return operation.ProjectID
 		}
-		if changes.Revision != operation.ExpectedRevision {
-			return changeset.ErrStaleRevision
-		}
+		return ""
+	}())
+	if err != nil {
+		return err
 	}
+	if operation.ExpectedRevision != "" && changes.Revision != operation.ExpectedRevision {
+		return changeset.ErrStaleRevision
+	}
+	// Start and execution are intentionally separate durable steps. Refresh the
+	// branch and HEAD under the operation lock so a push/update never acts on the
+	// short presentation snapshot captured when the request was admitted.
+	value.Branch, value.HeadSHA = changes.Branch, changes.HeadSHA
+	value.Ahead, value.Behind, value.Dirty = changes.Ahead, changes.Behind, changes.Dirty
 	switch operation.Kind {
 	case "stage":
 		return m.stage(ctx, operation, value)
@@ -476,6 +489,7 @@ func (m *Manager) discardChanges(ctx context.Context, operation *model.GitOperat
 }
 
 func (m *Manager) refreshTarget(ctx context.Context, value model.Workspace) {
+	m.Changesets.InvalidatePath(value.Path)
 	if value.CardID != "" {
 		_, _ = m.Workspaces.Refresh(ctx, value.CardID, false)
 	}
@@ -544,7 +558,7 @@ func (m *Manager) update(ctx context.Context, operation *model.GitOperation, val
 			return err
 		}
 		m.step(operation, "fast-forwarded project directory")
-		_, _ = m.Workspaces.Refresh(ctx, value.CardID, false)
+		m.refreshTarget(ctx, value)
 		return nil
 	}
 	if _, err := m.Git.Run(ctx, value.Path, "rebase", target); err != nil {
@@ -558,7 +572,7 @@ func (m *Manager) update(ctx context.Context, operation *model.GitOperation, val
 		return err
 	}
 	m.step(operation, "rebased workspace onto "+target)
-	_, _ = m.Workspaces.Refresh(ctx, value.CardID, false)
+	m.refreshTarget(ctx, value)
 	return m.validateIfRequested(ctx, operation, value.Path, value.ProjectID)
 }
 
@@ -572,7 +586,7 @@ func (m *Manager) abortConflict(ctx context.Context, operation *model.GitOperati
 	_, _ = m.Store.SaveWorkspace(value)
 	m.finishConflictedOperation(operation.Parameters["conflicted_operation_id"], model.GitOperationCanceled, "operation aborted")
 	m.step(operation, "aborted conflicted Git operation")
-	_, _ = m.Workspaces.Refresh(ctx, value.CardID, false)
+	m.refreshTarget(ctx, value)
 	return nil
 }
 
@@ -594,7 +608,7 @@ func (m *Manager) continueConflict(ctx context.Context, operation *model.GitOper
 	_, _ = m.Store.SaveWorkspace(value)
 	m.finishConflictedOperation(operation.Parameters["conflicted_operation_id"], model.GitOperationSucceeded, "conflict resolved")
 	m.step(operation, "continued conflicted rebase")
-	_, _ = m.Workspaces.Refresh(ctx, value.CardID, false)
+	m.refreshTarget(ctx, value)
 	return m.validateIfRequested(ctx, operation, value.Path, value.ProjectID)
 }
 
@@ -817,7 +831,7 @@ func (m *Manager) push(ctx context.Context, operation *model.GitOperation, value
 	if value.Branch == "" {
 		return errors.New("workspace is not on a branch")
 	}
-	if !hasReviewBranch(value) {
+	if value.Mode != model.WorkspaceModeProject && !hasReviewBranch(value) {
 		return errors.New("the project directory is on its base branch; switch branches or use a worktree before pushing a review branch")
 	}
 	args := []string{"push", "--set-upstream", value.BaseRemote, value.Branch + ":" + value.Branch}

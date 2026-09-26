@@ -444,16 +444,16 @@ final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
     // contract as ordinary state and never block capture on a diagnostic write.
     private func stateSnapshot() -> NativeState {
         NativeState(
-                width: outputWidth, height: outputHeight, fps: configuration.fps,
-                bitrateKbps: configuration.bitrateKbps,
-                displayId: options.synthetic ? "synthetic" : String(selectedDisplayID), displayGeneration: generation,
-                encoder: options.codec == "H265"
-                    ? "VideoToolbox HEVC Main"
-                    : options.profile == "high"
-                        ? "VideoToolbox H.264 High / low latency" : "VideoToolbox H.264 Baseline / low latency",
-                embeddedCursor: options.multiplex && !options.synthetic
-                    ? actualEmbeddedCursor : configuration.embeddedCursor,
-                encoderConfiguration: encoderConfiguration)
+            width: outputWidth, height: outputHeight, fps: configuration.fps,
+            bitrateKbps: configuration.bitrateKbps,
+            displayId: options.synthetic ? "synthetic" : String(selectedDisplayID), displayGeneration: generation,
+            encoder: options.codec == "H265"
+                ? "VideoToolbox HEVC Main"
+                : options.profile == "high"
+                    ? "VideoToolbox H.264 High / low latency" : "VideoToolbox H.264 Baseline / low latency",
+            embeddedCursor: options.multiplex && !options.synthetic
+                ? actualEmbeddedCursor : configuration.embeddedCursor,
+            encoderConfiguration: encoderConfiguration)
     }
 
     private func observeContent(_ frame: CapturedFrame) {
@@ -465,7 +465,8 @@ final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
         contentCount = 0; contentSum = 0; contentMeasuredAt = now; contentSequence &+= 1
         guard !contentPublishPending else { return }
         contentPublishPending = true
-        let content = NativeContent(generation: generation, sequence: contentSequence,
+        let content = NativeContent(
+            generation: generation, sequence: contentSequence,
             samples: contentSamples, changedFraction: contentFraction ?? 1)
         DispatchQueue.global(qos: .utility).async { [weak self] in
             guard let self else { return }
@@ -597,8 +598,9 @@ final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
         observeContent(frame)
         // A new/recovering encoder still needs an initial decodable frame even
         // on an unchanged display. Unknown damage always keeps the old path.
-        if frame.changedFraction == 0 && lastOutputGeneration == generation && lastFrame != nil && !forceKeyFrame && !forceLTR &&
-            !actualEmbeddedCursor && !configuration.embeddedCursor {
+        if frame.changedFraction == 0 && lastOutputGeneration == generation && lastFrame != nil && !forceKeyFrame
+            && !forceLTR && !actualEmbeddedCursor && !configuration.embeddedCursor
+        {
             lastFrame = frame
             return
         }
@@ -611,8 +613,13 @@ final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
     private func admitPendingFrame() {
         guard !paused, !encoding, !outputBusy, let next = pendingFrame else { return }
         let captureNow = Int64(CMClockGetTime(CMClockGetHostTimeClock()).seconds * 1_000_000_000)
-        if options.frameCredits && !credits.canEncode(generation: generation, now: DispatchTime.now().uptimeNanoseconds,
-            frameAge: UInt64(max(0, captureNow - next.capturedAtNanoseconds)), encodeEstimate: lastEncodeDuration) { return }
+        if options.frameCredits
+            && !credits.canEncode(
+                generation: generation, now: DispatchTime.now().uptimeNanoseconds,
+                frameAge: UInt64(max(0, captureNow - next.capturedAtNanoseconds)), encodeEstimate: lastEncodeDuration)
+        {
+            return
+        }
         pendingFrame = nil
         encode(next)
     }
@@ -826,7 +833,9 @@ final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
         do {
             let keyFrame = isKeyFrame(sampleBuffer)
             if traceRecovery && (keyFrame || context.recoveryReference != 0) {
-                writeDiagnostic("recovery output generation=\(generation) frame=\(frameID + 1) key=\(keyFrame) reference=\(context.recoveryReference)")
+                writeDiagnostic(
+                    "recovery output generation=\(generation) frame=\(frameID + 1) key=\(keyFrame) reference=\(context.recoveryReference)"
+                )
             }
             if context.recoveryReference != 0 && !keyFrame {
                 lastRecoveryFrame = frameID + 1
@@ -944,13 +953,17 @@ final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
         captureNanoseconds: Int64,
         encodeNanoseconds: UInt64, ltrToken: NSNumber?, recoveryReference: UInt64, overlapped: Bool
     ) {
-        guard payload.count <= CaptureFrameCredits.maxAccessUnitBytes else { stop(reason: "encoded frame exceeds bounds"); return }
+        guard payload.count <= CaptureFrameCredits.maxAccessUnitBytes else {
+            stop(reason: "encoded frame exceeds bounds"); return
+        }
         frameID += 1
         var header = Data()
         if options.multiplex { header.appendBigEndian(options.streamID) }
         header.appendBigEndian(UInt32(payload.count))
         header.appendBigEndian(
-            UInt32((keyFrame ? 1 : 0) | (ltrToken != nil ? 2 : 0) | (recoveryReference != 0 ? 4 : 0) | (overlapped ? 8 : 0)))
+            UInt32(
+                (keyFrame ? 1 : 0) | (ltrToken != nil ? 2 : 0) | (recoveryReference != 0 ? 4 : 0) | (overlapped ? 8 : 0)
+            ))
         header.appendBigEndian(frameID)
         header.appendBigEndian(generation)
         header.appendBigEndian(UInt64(bitPattern: captureNanoseconds))
@@ -999,7 +1012,9 @@ final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
                     let data = pending.prefix(upTo: end)
                     if data.count > 16384 { self.stop(); return }
                     pending.removeSubrange(...end)
-                    guard let command = try? decoder.decode(NativeCommand.self, from: data), command.version == CaptureContract.version else {
+                    guard let command = try? decoder.decode(NativeCommand.self, from: data),
+                        command.version == CaptureInputProtocol.version
+                    else {
                         self.stop(); return
                     }
                     self.daemonLiveness.receive(command.kind)
@@ -1071,8 +1086,11 @@ final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
             try await self.reconfigure(nil, force: true)
         case "frame_sending":
             stateQueue.sync {
-                guard options.frameCredits, let id = command.frameId, let frameGeneration = command.generation else { return }
-                credits.sending(id: id, generation: frameGeneration, now: DispatchTime.now().uptimeNanoseconds,
+                guard options.frameCredits, let id = command.frameId, let frameGeneration = command.generation else {
+                    return
+                }
+                credits.sending(
+                    id: id, generation: frameGeneration, now: DispatchTime.now().uptimeNanoseconds,
                     budgetMS: command.overlapBudgetMs ?? 0)
                 admitPendingFrame()
             }
@@ -1084,7 +1102,8 @@ final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
             }
             self.stateQueue.sync {
                 if let frameID = command.frameId, let generation = command.generation,
-                    self.credits.consumed(id: frameID, generation: generation) {
+                    self.credits.consumed(id: frameID, generation: generation)
+                {
                     self.admitPendingFrame()
                 }
             }
@@ -1092,7 +1111,10 @@ final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
             try self.stateQueue.sync {
                 guard command.generation == generation, command.frameId == lastRecoveryFrame, lastRecoveryFrame != 0
                 else {
-                    if traceRecovery { writeDiagnostic("recovery ACK retired frame=\(command.frameId ?? 0) active=\(lastRecoveryFrame)") }
+                    if traceRecovery {
+                        writeDiagnostic(
+                            "recovery ACK retired frame=\(command.frameId ?? 0) active=\(lastRecoveryFrame)")
+                    }
                     throw CaptureError.invalidArgument("recovery acknowledgment")
                 }
                 if traceRecovery { writeDiagnostic("recovery ACK accepted frame=\(lastRecoveryFrame)") }
@@ -1120,9 +1142,16 @@ final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
     private func refresh(recover: Bool = false, windowMS: Int = 200) {
         let now = DispatchTime.now().uptimeNanoseconds
         let referenceAvailable = recover && ltrEnabled && ltrAnchor.map { frameID - $0.frame < 8000 } == true
-        guard let useReference = recoverySchedule.request(now: now, windowMS: windowMS,
-            referenceAvailable: referenceAvailable, pending: ltrRecoveryPending) else { return }
-        if traceRecovery { writeDiagnostic("recovery request generation=\(generation) useReference=\(useReference) pending=\(ltrRecoveryPending) windowMs=\(windowMS)") }
+        guard
+            let useReference = recoverySchedule.request(
+                now: now, windowMS: windowMS,
+                referenceAvailable: referenceAvailable, pending: ltrRecoveryPending)
+        else { return }
+        if traceRecovery {
+            writeDiagnostic(
+                "recovery request generation=\(generation) useReference=\(useReference) pending=\(ltrRecoveryPending) windowMs=\(windowMS)"
+            )
+        }
         recoveryTimeout?.cancel(); recoveryTimeout = nil
         if useReference {
             forceLTR = true; ltrRecoveryPending = true
@@ -1202,7 +1231,8 @@ final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
                 allocator: nil, imageBuffer: pixel, formatDescription: format, sampleTiming: &timing,
                 sampleBufferOut: &sample) == noErr, let sample
         else { return }
-        let frame = CapturedFrame(sampleBuffer: sample, capturedAtNanoseconds: Int64(pts.seconds * 1_000_000_000), changedFraction: 1)
+        let frame = CapturedFrame(
+            sampleBuffer: sample, capturedAtNanoseconds: Int64(pts.seconds * 1_000_000_000), changedFraction: 1)
         offer(frame)
     }
 
@@ -1354,7 +1384,7 @@ func hardwareEncoderAvailable(_ codec: CMVideoCodecType = kCMVideoCodecType_H264
                     let granted = synthetic || CGPreflightScreenCaptureAccess()
                     let hevc = hardwareEncoderAvailable(kCMVideoCodecType_HEVC)
                     let value: [String: Any] = [
-                        "platform": "darwin", "helper_version": "native-v\(CaptureContract.version)",
+                        "platform": "darwin", "helper_version": "native-v\(CaptureInputProtocol.version)",
                         "graphical_session_active": synthetic || !displays.isEmpty,
                         "capture_permission": granted ? "granted" : "denied",
                         "control_permission": (synthetic || CGPreflightPostEventAccess()) ? "granted" : "denied",
@@ -1367,7 +1397,8 @@ func hardwareEncoderAvailable(_ codec: CMVideoCodecType = kCMVideoCodecType_H264
                                 ]
                             ] : [],
                         "encoder_available": hardwareEncoderAvailable(), "control_supported": true,
-                        "adaptive_supported": true, "cursor_supported": true, "input_protocol_version": CaptureContract.version,
+                        "adaptive_supported": true, "cursor_supported": true,
+                        "input_protocol_version": CaptureInputProtocol.version,
                         "display_mode_switching_supported": true,
                         "max_fps": 120, "encoder": "VideoToolbox H.264",
                     ]

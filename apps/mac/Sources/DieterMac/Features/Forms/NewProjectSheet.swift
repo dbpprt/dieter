@@ -70,7 +70,7 @@ struct NewProjectSheet: View {
                     Menu {
                         ForEach(availableMachines) { machine in
                             Button {
-                                if machine.online && machine.apiCompatibility != .incompatible {
+                                if machine.online && machine.compatibilityState != .incompatible {
                                     machineID = machine.id
                                 }
                             } label: {
@@ -80,7 +80,7 @@ struct NewProjectSheet: View {
                                     Text(machine.online ? machine.name : "\(machine.name) · Offline")
                                 }
                             }
-                            .disabled(!machine.online || machine.apiCompatibility == .incompatible)
+                            .disabled(!machine.online || machine.compatibilityState == .incompatible)
                         }
                     } label: {
                         HStack(spacing: 9) {
@@ -123,7 +123,7 @@ struct NewProjectSheet: View {
                         .smokeTarget("new-project.browse")
                         .disabled(
                             submitting || machineID.isEmpty || selectedMachine?.online != true
-                                || selectedMachine?.apiCompatibility == .incompatible)
+                                || selectedMachine?.compatibilityState == .incompatible)
                     }
                     Text(pathHelp)
                         .font(.caption2).foregroundStyle(DieterTheme.tertiary)
@@ -261,7 +261,7 @@ struct NewProjectSheet: View {
                 .buttonStyle(DieterPrimaryButtonStyle())
                 .disabled(
                     submitting || !canSubmit || selectedMachine?.online != true
-                        || selectedMachine?.apiCompatibility == .incompatible
+                        || selectedMachine?.compatibilityState == .incompatible
                 )
                 .accessibilityIdentifier("new-project.submit")
             }

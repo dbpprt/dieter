@@ -132,6 +132,10 @@ if [ ! -f "$BUNDLE_MANIFEST" ] || \
     ditto "$WEBRTC_FRAMEWORK" "$APP_BUNDLE/Contents/Frameworks/WebRTC.framework"
 fi
 
+if [ -n "${DIETER_RELEASE_VERSION:-}" ]; then
+    /usr/libexec/PlistBuddy -c "Set :DieterReleaseVersion $DIETER_RELEASE_VERSION" "$APP_BUNDLE/Contents/Info.plist"
+fi
+
 # Ad-hoc signatures identify each build by its cdhash, invalidating privacy
 # grants after source changes. Prefer one available development identity locally.
 SIGNING_IDENTITY=${DIETER_MAC_SIGNING_IDENTITY:-}

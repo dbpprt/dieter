@@ -129,19 +129,21 @@ jobs:
           GOARCH: ${{ matrix.goarch }}
           ASSET: ${{ matrix.asset }}
           COMPONENT: ${{ matrix.component }}
-          RELEASE_VERSION: ${{ needs.version.outputs.tag }}
+          RELEASE_VERSION: ${{ needs.version.outputs.number }}
         run: just "${COMPONENT}" package-release
       - name: Execute packaged Linux daemon
         if: matrix.component == 'daemon'
         env:
           GOARCH: ${{ matrix.goarch }}
           ASSET: ${{ matrix.asset }}
-          RELEASE_VERSION: ${{ needs.version.outputs.tag }}
+          RELEASE_VERSION: ${{ needs.version.outputs.number }}
         run: just daemon smoke-release
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.asset }}
-          path: dist/${{ matrix.asset }}.tar.gz
+          path: |
+            dist/${{ matrix.asset }}.tar.gz
+            dist/${{ matrix.asset }}.tar.gz.version
           if-no-files-found: error
           retention-days: 1
 
@@ -162,7 +164,7 @@ jobs:
           path: dist
       - name: Execute static daemon across Linux userlands
         env:
-          RELEASE_VERSION: ${{ needs.version.outputs.tag }}
+          RELEASE_VERSION: ${{ needs.version.outputs.number }}
         run: just daemon distro-smoke
 
   macos-daemon:
@@ -184,7 +186,7 @@ jobs:
         run: just release select-xcode
       - name: Build daemon package
         env:
-          RELEASE_VERSION: ${{ needs.version.outputs.tag }}
+          RELEASE_VERSION: ${{ needs.version.outputs.number }}
         run: just daemon package-macos
       - name: Check daemon vulnerabilities before signing
         run: just daemon vulncheck
@@ -230,14 +232,18 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: dieter-darwin-arm64
-          path: dist/dieter-darwin-arm64.tar.gz
+          path: |
+            dist/dieter-darwin-arm64.tar.gz
+            dist/dieter-darwin-arm64.tar.gz.version
           if-no-files-found: error
           retention-days: 1
       - uses: actions/upload-artifact@v4
         if: steps.signing.outputs.enabled == 'true'
         with:
           name: dieter-macos-installer
-          path: dist/dieter-darwin-arm64.pkg
+          path: |
+            dist/dieter-darwin-arm64.pkg
+            dist/dieter-darwin-arm64.pkg.version
           if-no-files-found: error
           retention-days: 1
 
@@ -281,13 +287,19 @@ jobs:
           DIETER_RELEASE_VERSION_CODE: ${{ needs.version.outputs.android_code }}
         run: just android build-release
       - name: Package APK
+        env:
+          DIETER_RELEASE_VERSION: ${{ needs.version.outputs.number }}
         run: just android package-release
       - name: Verify APK signature
+        env:
+          DIETER_RELEASE_VERSION: ${{ needs.version.outputs.number }}
         run: just android verify-release
       - uses: actions/upload-artifact@v4
         with:
           name: dieter-android
-          path: dist/Dieter-Android.apk
+          path: |
+            dist/Dieter-Android.apk
+            dist/Dieter-Android.apk.version
           if-no-files-found: error
           retention-days: 1
 
@@ -339,7 +351,9 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: dieter-macos-arm64
-          path: dist/Dieter-macOS-arm64.zip
+          path: |
+            dist/Dieter-macOS-arm64.zip
+            dist/Dieter-macOS-arm64.zip.version
           if-no-files-found: error
           retention-days: 1
 
@@ -354,7 +368,7 @@ jobs:
     uses: ./.github/workflows/gateway-image.yml
     with:
       source_revision: ${{ github.sha }}
-      release_version: ${{ needs.version.outputs.tag }}
+      release_version: ${{ needs.version.outputs.number }}
 
   release:
     name: Publish release
@@ -376,6 +390,8 @@ jobs:
           path: dist
           merge-multiple: true
       - name: Verify and assemble cross-platform release
+        env:
+          RELEASE_VERSION: ${{ needs.version.outputs.number }}
         run: just release assemble
       - name: Create checksums
         run: just release checksums

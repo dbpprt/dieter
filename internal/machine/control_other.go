@@ -12,4 +12,6 @@ func operationCapabilities(context.Context, string) []OperationCapability {
 	}
 }
 
-func executeOperation(context.Context, string, Operation) error { return ErrOperationUnsupported }
+func executeOperation(context.Context, string, Operation, string) error {
+	return ErrOperationUnsupported
+}

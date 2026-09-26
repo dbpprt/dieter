@@ -36,6 +36,9 @@ const (
 // reflection-formatted method names, remove the leading slash and convert the remaining slash to a
 // period.
 const (
+	// GatewayServiceGetCompatibilityProcedure is the fully-qualified name of the GatewayService's
+	// GetCompatibility RPC.
+	GatewayServiceGetCompatibilityProcedure = "/dieter.gateway.v1.GatewayService/GetCompatibility"
 	// GatewayServiceGetAccountProcedure is the fully-qualified name of the GatewayService's GetAccount
 	// RPC.
 	GatewayServiceGetAccountProcedure = "/dieter.gateway.v1.GatewayService/GetAccount"
@@ -97,6 +100,9 @@ const (
 
 // GatewayServiceClient is a client for the dieter.gateway.v1.GatewayService service.
 type GatewayServiceClient interface {
+	// GetCompatibility is the stable, unauthenticated bootstrap used before
+	// sign-in. It contains no account or machine data.
+	GetCompatibility(context.Context, *connect.Request[v1.CompatibilityRequest]) (*connect.Response[v1.CompatibilityResponse], error)
 	GetAccount(context.Context, *connect.Request[emptypb.Empty]) (*connect.Response[v1.Account], error)
 	ListDaemons(context.Context, *connect.Request[emptypb.Empty]) (*connect.Response[v1.ListDaemonsResponse], error)
 	WatchDaemons(context.Context, *connect.Request[v1.WatchDaemonsRequest]) (*connect.ServerStreamForClient[v1.DaemonPresenceUpdate], error)
@@ -135,6 +141,12 @@ func NewGatewayServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 	baseURL = strings.TrimRight(baseURL, "/")
 	gatewayServiceMethods := v1.File_dieter_gateway_v1_gateway_proto.Services().ByName("GatewayService").Methods()
 	return &gatewayServiceClient{
+		getCompatibility: connect.NewClient[v1.CompatibilityRequest, v1.CompatibilityResponse](
+			httpClient,
+			baseURL+GatewayServiceGetCompatibilityProcedure,
+			connect.WithSchema(gatewayServiceMethods.ByName("GetCompatibility")),
+			connect.WithClientOptions(opts...),
+		),
 		getAccount: connect.NewClient[emptypb.Empty, v1.Account](
 			httpClient,
 			baseURL+GatewayServiceGetAccountProcedure,
@@ -248,6 +260,7 @@ func NewGatewayServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 
 // gatewayServiceClient implements GatewayServiceClient.
 type gatewayServiceClient struct {
+	getCompatibility                 *connect.Client[v1.CompatibilityRequest, v1.CompatibilityResponse]
 	getAccount                       *connect.Client[emptypb.Empty, v1.Account]
 	listDaemons                      *connect.Client[emptypb.Empty, v1.ListDaemonsResponse]
 	watchDaemons                     *connect.Client[v1.WatchDaemonsRequest, v1.DaemonPresenceUpdate]
@@ -266,6 +279,11 @@ type gatewayServiceClient struct {
 	refreshProviderQuotas            *connect.Client[v1.RefreshProviderQuotasRequest, v1.RefreshProviderQuotasResponse]
 	setProviderQuotaSummaryInclusion *connect.Client[v1.SetProviderQuotaSummaryInclusionRequest, v1.SetProviderQuotaSummaryInclusionResponse]
 	consumeProviderQuotaReset        *connect.Client[v1.ConsumeProviderQuotaResetRequest, v1.ConsumeProviderQuotaResetResponse]
+}
+
+// GetCompatibility calls dieter.gateway.v1.GatewayService.GetCompatibility.
+func (c *gatewayServiceClient) GetCompatibility(ctx context.Context, req *connect.Request[v1.CompatibilityRequest]) (*connect.Response[v1.CompatibilityResponse], error) {
+	return c.getCompatibility.CallUnary(ctx, req)
 }
 
 // GetAccount calls dieter.gateway.v1.GatewayService.GetAccount.
@@ -361,6 +379,9 @@ func (c *gatewayServiceClient) ConsumeProviderQuotaReset(ctx context.Context, re
 
 // GatewayServiceHandler is an implementation of the dieter.gateway.v1.GatewayService service.
 type GatewayServiceHandler interface {
+	// GetCompatibility is the stable, unauthenticated bootstrap used before
+	// sign-in. It contains no account or machine data.
+	GetCompatibility(context.Context, *connect.Request[v1.CompatibilityRequest]) (*connect.Response[v1.CompatibilityResponse], error)
 	GetAccount(context.Context, *connect.Request[emptypb.Empty]) (*connect.Response[v1.Account], error)
 	ListDaemons(context.Context, *connect.Request[emptypb.Empty]) (*connect.Response[v1.ListDaemonsResponse], error)
 	WatchDaemons(context.Context, *connect.Request[v1.WatchDaemonsRequest], *connect.ServerStream[v1.DaemonPresenceUpdate]) error
@@ -395,6 +416,12 @@ type GatewayServiceHandler interface {
 // and JSON codecs. They also support gzip compression.
 func NewGatewayServiceHandler(svc GatewayServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
 	gatewayServiceMethods := v1.File_dieter_gateway_v1_gateway_proto.Services().ByName("GatewayService").Methods()
+	gatewayServiceGetCompatibilityHandler := connect.NewUnaryHandler(
+		GatewayServiceGetCompatibilityProcedure,
+		svc.GetCompatibility,
+		connect.WithSchema(gatewayServiceMethods.ByName("GetCompatibility")),
+		connect.WithHandlerOptions(opts...),
+	)
 	gatewayServiceGetAccountHandler := connect.NewUnaryHandler(
 		GatewayServiceGetAccountProcedure,
 		svc.GetAccount,
@@ -505,6 +532,8 @@ func NewGatewayServiceHandler(svc GatewayServiceHandler, opts ...connect.Handler
 	)
 	return "/dieter.gateway.v1.GatewayService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case GatewayServiceGetCompatibilityProcedure:
+			gatewayServiceGetCompatibilityHandler.ServeHTTP(w, r)
 		case GatewayServiceGetAccountProcedure:
 			gatewayServiceGetAccountHandler.ServeHTTP(w, r)
 		case GatewayServiceListDaemonsProcedure:
@@ -549,6 +578,10 @@ func NewGatewayServiceHandler(svc GatewayServiceHandler, opts ...connect.Handler
 
 // UnimplementedGatewayServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedGatewayServiceHandler struct{}
+
+func (UnimplementedGatewayServiceHandler) GetCompatibility(context.Context, *connect.Request[v1.CompatibilityRequest]) (*connect.Response[v1.CompatibilityResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.gateway.v1.GatewayService.GetCompatibility is not implemented"))
+}
 
 func (UnimplementedGatewayServiceHandler) GetAccount(context.Context, *connect.Request[emptypb.Empty]) (*connect.Response[v1.Account], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.gateway.v1.GatewayService.GetAccount is not implemented"))

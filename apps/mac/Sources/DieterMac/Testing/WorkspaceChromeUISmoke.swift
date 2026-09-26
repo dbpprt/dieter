@@ -34,7 +34,7 @@
                 store.endpoints = (0..<count).map { index in
                     DieterEndpoint(
                         name: "Machine \(index + 1)", host: "127.0.0.1", port: 4242 + index,
-                        daemonID: "chrome-machine-\(index)", online: false, version: "fixture")
+                        daemonID: "chrome-machine-\(index)", online: false, releaseVersion: "fixture")
                 }
                 window.setContentSize(NSSize(width: 1080, height: 680))
                 for appearance in [DieterAppearance.dark, .light] {

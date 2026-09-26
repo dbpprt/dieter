@@ -91,7 +91,6 @@ type DaemonRecord struct {
 	CreatedAt         time.Time
 	LastSeenAt        time.Time
 	Version           string
-	APIVersion        string
 	RoutesJSON        []byte
 	RemoteDesktopJSON []byte
 }
@@ -396,9 +395,10 @@ func (s *Store) Daemon(id string) (DaemonRecord, error) {
 	var record DaemonRecord
 	var generation int64
 	var revoked int
+	var legacyAPIVersion string
 	var created, lastSeen string
 	err := s.DB.QueryRow(`SELECT id, name, github_id, login, public_key, certificate, generation, revoked, created_at, last_seen_at, version, api_version, routes_json, remote_desktop_json FROM daemons WHERE id=?`, id).
-		Scan(&record.ID, &record.Name, &record.GitHubID, &record.Login, &record.PublicKey, &record.Certificate, &generation, &revoked, &created, &lastSeen, &record.Version, &record.APIVersion, &record.RoutesJSON, &record.RemoteDesktopJSON)
+		Scan(&record.ID, &record.Name, &record.GitHubID, &record.Login, &record.PublicKey, &record.Certificate, &generation, &revoked, &created, &lastSeen, &record.Version, &legacyAPIVersion, &record.RoutesJSON, &record.RemoteDesktopJSON)
 	if errors.Is(err, sql.ErrNoRows) {
 		return record, errors.New("daemon not found")
 	}
@@ -544,8 +544,8 @@ func (s *Store) RecoverDaemon(old, replacement DaemonRecord, githubID int64) (Da
 	return old, oldRevoked != 0, nil
 }
 
-func (s *Store) MarkDaemonSeen(id, version, apiVersion string, routes, remoteDesktop []byte) error {
-	result, err := s.DB.Exec(`UPDATE daemons SET last_seen_at=?, version=?, api_version=?, routes_json=?, remote_desktop_json=? WHERE id=? AND revoked=0`, time.Now().UTC().Format(time.RFC3339Nano), version, apiVersion, routes, remoteDesktop, id)
+func (s *Store) MarkDaemonSeen(id, version string, routes, remoteDesktop []byte) error {
+	result, err := s.DB.Exec(`UPDATE daemons SET last_seen_at=?, version=?, routes_json=?, remote_desktop_json=? WHERE id=? AND revoked=0`, time.Now().UTC().Format(time.RFC3339Nano), version, routes, remoteDesktop, id)
 	if err != nil {
 		return err
 	}

@@ -65,7 +65,7 @@ func execute(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	if _, err = os.Stat(filepath.Join(root, "api/contract-version")); err != nil {
+	if _, err = os.Stat(filepath.Join(root, "api/proto/dieter/v1/dieter.proto")); err != nil {
 		return fmt.Errorf("run from the repository root")
 	}
 	cases, err := catalog(root)

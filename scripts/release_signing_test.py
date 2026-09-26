@@ -100,9 +100,12 @@ class AndroidReleaseTests(unittest.TestCase):
                             'xmltree) printf "%s\\n" "$APK_MANIFEST" ;;\n'
                             '*) exit 1 ;;\nesac\n')
             aapt.chmod(0o755)
+            release_version = "0.4.309"
             env = dict(os.environ, ANDROID_HOME=str(sdk),
+                       DIETER_RELEASE_VERSION=release_version,
                        SIGNATURE_VALID=str(signed).lower(),
-                       APK_BADGING=f"package: name='{package}' versionCode='1'\n"
+                       APK_BADGING=f"package: name='{package}' versionCode='1' "
+                       f"versionName='{release_version}'\n"
                        + ("application-debuggable\n" if debuggable else ""),
                        APK_MANIFEST=manifest)
             return subprocess.run(["just", "android", "verify-release", str(sdk / "app.apk")],

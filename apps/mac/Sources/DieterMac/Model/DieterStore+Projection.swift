@@ -100,7 +100,7 @@ extension DieterStore {
     }
 
     var hasLoadedWorkspace: Bool {
-        !health.version.isEmpty || !state.projects.isEmpty || !projectDirectory.isEmpty
+        !health.releaseVersion.isEmpty || !state.projects.isEmpty || !projectDirectory.isEmpty
     }
 
     func isChatUnread(_ card: Dieter_V1_Card) -> Bool {
@@ -143,7 +143,7 @@ extension DieterStore {
     func replica(forProjectID projectID: String) -> DieterEndpoint? {
         // This selects a replica for shared metadata, never an execution owner.
         if endpoint.online, phase.isConnected { return endpoint }
-        return endpoints.first { $0.online && $0.daemonID != nil && $0.apiCompatibility == .compatible }
+        return endpoints.first { $0.online && $0.daemonID != nil && $0.compatibilityState == .compatible }
 
     }
 

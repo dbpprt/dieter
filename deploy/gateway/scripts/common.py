@@ -12,6 +12,12 @@ IDENTITY = "https://github.com/dbpprt/dieter/.github/workflows/gateway-image.yml
 ISSUER = "https://token.actions.githubusercontent.com"
 IMAGE = re.compile(r"[a-z0-9./_-]+@sha256:[a-f0-9]{64}\Z")
 NAME = re.compile(r"[a-zA-Z0-9][a-zA-Z0-9._-]{0,95}\Z")
+SEMVER = re.compile(
+    r"(?P<major>0|[1-9][0-9]*)\.(?P<minor>0|[1-9][0-9]*)\.(?P<patch>0|[1-9][0-9]*)"
+    r"(?:-(?P<prerelease>(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)"
+    r"(?:\.(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*))?"
+    r"(?:\+(?P<build>[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?\Z"
+)
 _log_path = None
 
 
@@ -47,14 +53,48 @@ def read_json(path):
     return json.loads(Path(path).read_text(), object_pairs_hook=pairs)
 
 
+def semantic_version(value):
+    require(isinstance(value, str), "release version is missing or invalid")
+    normalized = value[1:] if value.startswith("v") else value
+    require(SEMVER.fullmatch(normalized), "release version is missing or invalid")
+    return normalized
+
+
+def semver_key(value):
+    value = semantic_version(value)
+    match = SEMVER.fullmatch(value)
+    prerelease = match.group("prerelease")
+    identifiers = []
+    if prerelease is not None:
+        for item in prerelease.split("."):
+            identifiers.append((0, int(item)) if item.isdigit() else (1, item))
+    return (int(match.group("major")), int(match.group("minor")), int(match.group("patch")),
+            prerelease is None, tuple(identifiers))
+
+
+def validate_compatibility_policy(value, release_version=None):
+    keys(value, ("minimumClientVersion", "minimumDaemonVersion"), "compatibility policy")
+    result = {}
+    release = semantic_version(release_version) if release_version is not None else None
+    for field in ("minimumClientVersion", "minimumDaemonVersion"):
+        selected = semantic_version(value[field])
+        if release is not None:
+            require(semver_key(selected) <= semver_key(release), f"{field} is newer than the selected release")
+        result[field] = selected
+    return result
+
+
 def validate_gateway_health(health, manifest=None):
     require(health.get("service") == "dieter-gateway" and health.get("status") == "ok", "gateway is not healthy")
-    contract = health.get("apiVersion")
-    require(isinstance(contract, str) and re.fullmatch(r"[1-9][0-9]*", contract), "gateway contract is missing or invalid")
+    version = semantic_version(health.get("version"))
+    live_policy = validate_compatibility_policy({
+        "minimumClientVersion": health.get("minimumClientVersion"),
+        "minimumDaemonVersion": health.get("minimumDaemonVersion"),
+    })
     if manifest is not None:
-        require(type(manifest.get("applicationContract")) is int and manifest["applicationContract"] > 0,
-                "release application contract is missing or invalid")
-        require(contract == str(manifest["applicationContract"]), "gateway contract differs from signed release")
+        require(version == semantic_version(manifest.get("releaseVersion")), "gateway release differs from signed release")
+        require(live_policy == validate_compatibility_policy(manifest.get("compatibilityPolicy", {}), manifest.get("releaseVersion")),
+                "gateway compatibility policy differs from signed release")
         require(health.get("revision") == manifest["sourceRevision"], "unexpected live source revision")
 
 

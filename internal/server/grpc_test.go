@@ -131,7 +131,7 @@ func TestGRPCMachineListener(t *testing.T) {
 		Mode: "open", Path: secondRepo, Name: "Remote fixture", BoardName: "Main", Workflow: model.WorkflowReview,
 	})
 	canonicalSecondRepo, canonicalErr := filepath.EvalSymlinks(secondRepo)
-	if err != nil || canonicalErr != nil || createdWorkspace.GetProject().GetPath() != canonicalSecondRepo || createdWorkspace.GetBoard().GetProjectId() != createdWorkspace.GetProject().GetId() {
+	if err != nil || canonicalErr != nil || createdWorkspace.GetProject().GetPath() != canonicalSecondRepo || createdWorkspace.GetBoard().GetProjectId() != createdWorkspace.GetProject().GetId() || createdWorkspace.GetBoard().GetRemotePublishMode() != model.RemotePublishManual {
 		t.Fatalf("native project creation = %#v, %v", createdWorkspace, err)
 	}
 	if _, err = data.ArchiveProject(createdWorkspace.GetProject().GetId(), true); err != nil {
@@ -141,7 +141,7 @@ func TestGRPCMachineListener(t *testing.T) {
 		Mode: "open", Path: secondRepo, Name: "Remote fixture", BoardName: "Main", Workflow: model.WorkflowReview,
 	})
 	if err != nil || restoredWorkspace.GetProject().GetId() != createdWorkspace.GetProject().GetId() ||
-		restoredWorkspace.GetBoard().GetId() != createdWorkspace.GetBoard().GetId() {
+		restoredWorkspace.GetBoard().GetId() != createdWorkspace.GetBoard().GetId() || restoredWorkspace.GetBoard().GetRemotePublishMode() != model.RemotePublishManual {
 		t.Fatalf("native archived project restore = %#v, %v", restoredWorkspace, err)
 	}
 	card, err := client.CreateCard(ctx, &dieterv1.CreateConversationRequest{

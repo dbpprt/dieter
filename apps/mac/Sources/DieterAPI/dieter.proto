@@ -186,8 +186,9 @@ service DieterService {
 
 message HealthResponse {
   string status = 1;
-  string version = 2;
+  string release_version = 2;
   string store_path = 3;
+  dieter.gateway.v1.CompatibilityPolicy compatibility_policy = 4;
 }
 
 message RuntimeStatus {
@@ -236,7 +237,8 @@ message MachineInformation {
 
 message BuildInformation {
   string release_version = 1;
-  string api_version = 2;
+  reserved 2;
+  reserved "api_version";
   string source_revision = 3;
   string built_at = 4;
 }
@@ -389,9 +391,8 @@ message SyncRequest {
   // the most recently active conversations up to this count, and conversation
   // changes ride the delta frames instead of full snapshots.
   int32 recent_conversation_limit = 4;
-  // Version 1 separates transport liveness from applied data, supports bounded
-  // metadata-first frames, and resumes an exact retained projection identity.
-  int32 protocol_version = 5;
+  reserved 5;
+  reserved "protocol_version";
 }
 
 message SyncEvent {
@@ -917,6 +918,8 @@ message CreateProjectRequest {
   string operation_id = 16;
   reserved 8;
   reserved "default_workspace_mode";
+  reserved 12;
+  reserved "remote_publish_mode";
 
   string mode = 1;
   string path = 2;
@@ -928,7 +931,6 @@ message CreateProjectRequest {
   string base_remote = 9;
   string base_branch = 10;
   repeated ValidationCommand validation_commands = 11;
-  string remote_publish_mode = 12;
 }
 
 message CreateProjectResponse {
@@ -1865,7 +1867,7 @@ message StartRemoteDesktopRequest {
   int32 max_bitrate_kbps = 10;
   RemoteDesktopQuality quality = 11;
   bool embedded_cursor = 12;
-  // Must match the current Dieter application contract; ownership is revocable.
+  // Independent remote-desktop input revision; ownership is revocable.
   uint32 input_protocol_version = 13;
   string client_name = 14;
   bool clipboard = 15;

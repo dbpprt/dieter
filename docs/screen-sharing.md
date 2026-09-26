@@ -154,7 +154,7 @@ physical glass-to-glass measurement. The native fixture reports same-host captur
 to actual Metal presentation median/p95 and idle recovery using the shared host
 clock; measuring display scanout/photons still requires an external camera. `start`
 accepts a protobuf JSON WebRTC offer; media and input use the encrypted peer
-connection. Screen input uses the shared application contract, with signed session
+connection. Screen input uses its independent framing revision, with signed session
 bindings and machine-wide control grants required for every controlling viewer.
 
 Text, image and file clipboard sharing is available on Mac and Android viewers. Enable

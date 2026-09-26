@@ -37,7 +37,6 @@ import (
 	"github.com/dbpprt/dieter/internal/machine"
 	"github.com/dbpprt/dieter/internal/model"
 	"github.com/dbpprt/dieter/internal/peerstore"
-	"github.com/dbpprt/dieter/internal/protocol"
 	"github.com/dbpprt/dieter/internal/server"
 	boardstore "github.com/dbpprt/dieter/internal/store"
 )
@@ -313,7 +312,7 @@ func run(address, home, offlineTrigger, daemonRestartTrigger string, boardStress
 		secondTarget = secondListener.Addr().String()
 	}
 
-	tunnel := &daemon.GatewayClient{ControlWebRTC: control != nil, Identity: identity, LocalTarget: boardListener.Addr().String(), Version: "isolated-e2e", APIVersion: server.APIVersion, Log: logger}
+	tunnel := &daemon.GatewayClient{ControlWebRTC: control != nil, Identity: identity, LocalTarget: boardListener.Addr().String(), Version: "0.4.1-dev", Log: logger}
 	if offlineTrigger == "" {
 		go func() { _ = tunnel.Run(ctx) }()
 	} else {
@@ -384,7 +383,7 @@ func run(address, home, offlineTrigger, daemonRestartTrigger string, boardStress
 	if err = incompatibleIdentity.SaveCredential(incompatibleCredential.GetDaemonId(), incompatibleCredential.GetDaemonName(), incompatibleCredential.GetCertificatePem(), incompatibleCredential.GetDaemonCaPem(), incompatibleCredential.GetGatewaySigningPublicKey(), incompatibleCredential.GetExpiresAt(), incompatibleCredential.GetGeneration()); err != nil {
 		return err
 	}
-	if err = gatewayStore.MarkDaemonSeen(incompatibleIdentity.ID, "incompatible-e2e", fmt.Sprint(protocol.Number+1), []byte("[]"), []byte("{}")); err != nil {
+	if err = gatewayStore.MarkDaemonSeen(incompatibleIdentity.ID, "incompatible-e2e", []byte("[]"), []byte("{}")); err != nil {
 		return err
 	}
 
@@ -425,7 +424,7 @@ func run(address, home, offlineTrigger, daemonRestartTrigger string, boardStress
 		secondDaemonID = secondIdentity.ID
 		secondTunnel := &daemon.GatewayClient{
 			Identity: secondIdentity, LocalTarget: secondTarget, Version: "isolated-e2e-second",
-			APIVersion: server.APIVersion, Log: logger,
+			Log: logger,
 		}
 		acknowledged := make(chan struct{}, 1)
 		secondTunnel.OnAcknowledged = func(time.Time) {

@@ -104,7 +104,7 @@ final class NativeCaptureService: @unchecked Sendable {
             while let end = data.firstIndex(of: 10) {
                 let line = data.prefix(upTo: end)
                 guard line.count <= 16384, let command = try? decoder.decode(NativeCommand.self, from: line),
-                    command.version == CaptureContract.version
+                    command.version == CaptureInputProtocol.version
                 else { stop(reason: "native command decoding failed"); return }
                 data.removeSubrange(...end)
                 liveness.receive(command.kind)

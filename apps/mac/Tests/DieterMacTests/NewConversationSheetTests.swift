@@ -18,7 +18,7 @@ struct NewConversationSheetTests {
         store.projectDirectory[projectID] = project
         store.endpoint = DieterEndpoint(
             name: "Garuda", host: "127.0.0.1", port: 1, daemonID: "garuda", online: true,
-            apiVersion: dieterExpectedAPIVersion)
+            releaseVersion: "0.4.309", compatibility: .compatible)
 
         #expect(store.checkout(forProjectID: projectID)?.id == garuda.id)
         store.creationCheckoutIDs[projectID] = mini.id

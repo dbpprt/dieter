@@ -32,7 +32,7 @@ func (c *directCredential) GetRequestMetadata(ctx context.Context, _ ...string) 
 		if c.access.GetTokenType() == "Bearer" && c.access.GetAccessToken() != "" && expires.After(time.Now().Add(30*time.Second)) {
 			token := c.access.GetAccessToken()
 			c.mu.Unlock()
-			return map[string]string{"authorization": "Bearer " + token}, nil
+			return map[string]string{"authorization": "Bearer " + token, "x-dieter-client-version": Version}, nil
 		}
 		if pending := c.refreshing; pending != nil {
 			c.mu.Unlock()
@@ -63,6 +63,6 @@ func (c *directCredential) GetRequestMetadata(ctx context.Context, _ ...string) 
 		if err != nil {
 			return nil, err
 		}
-		return map[string]string{"authorization": "Bearer " + access.GetAccessToken()}, nil
+		return map[string]string{"authorization": "Bearer " + access.GetAccessToken(), "x-dieter-client-version": Version}, nil
 	}
 }

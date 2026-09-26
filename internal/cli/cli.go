@@ -28,6 +28,7 @@ import (
 	"github.com/dbpprt/dieter/internal/app"
 	"github.com/dbpprt/dieter/internal/attachments"
 	"github.com/dbpprt/dieter/internal/buildinfo"
+	"github.com/dbpprt/dieter/internal/compatibility"
 	"github.com/dbpprt/dieter/internal/controlrtc"
 	dieterdaemon "github.com/dbpprt/dieter/internal/daemon"
 	"github.com/dbpprt/dieter/internal/envfile"
@@ -559,13 +560,75 @@ its current address. Status reports the selected network endpoint.
 			serveDaemonDirectRoute(ctx, cancel, logger, direct)
 		}
 		go func() {
+			onCompatibilityPolicy := func(policy *gatewayv1.CompatibilityPolicy) error {
+				if policy == nil || policy.GetRevision() == "" || policy.GetMinimumClientVersion() == "" || policy.GetMinimumDaemonVersion() == "" {
+					return errors.New("gateway returned an incomplete compatibility policy")
+				}
+				if err := c.Store.SaveGatewayCompatibilityPolicy(store.GatewayCompatibilityPolicy{
+					GatewayReleaseVersion: policy.GetGatewayReleaseVersion(),
+					MinimumClientVersion:  policy.GetMinimumClientVersion(),
+					MinimumDaemonVersion:  policy.GetMinimumDaemonVersion(),
+					Revision:              policy.GetRevision(),
+				}); err != nil {
+					return err
+				}
+				return statusWriter.Update(func(value *dieterdaemon.RuntimeStatus) {
+					value.GatewayReleaseVersion = policy.GetGatewayReleaseVersion()
+					value.MinimumClientVersion = policy.GetMinimumClientVersion()
+					value.MinimumDaemonVersion = policy.GetMinimumDaemonVersion()
+					value.CompatibilityPolicyRevision = policy.GetRevision()
+				})
+			}
+			onUpdateRequired := func(policy *gatewayv1.CompatibilityPolicy) error {
+				if policy == nil || policy.GetRevision() == "" || policy.GetMinimumDaemonVersion() == "" {
+					return errors.New("gateway returned an incomplete compatibility policy")
+				}
+				key := compatibility.UpdateAttemptKey(identity.Issuer(), policy.GetRevision(), Version, policy.GetMinimumDaemonVersion())
+				receipt := store.CompatibilityUpdateReceipt{
+					Key: key, GatewayIssuer: identity.Issuer(), PolicyRevision: policy.GetRevision(),
+					InstalledVersion: Version, MinimumDaemonVersion: policy.GetMinimumDaemonVersion(),
+				}
+				admitted, err := c.Store.BeginCompatibilityUpdate(receipt)
+				if err != nil {
+					return fmt.Errorf("record automatic update attempt: %w", err)
+				}
+				if !admitted {
+					return errors.New("automatic update was already attempted for this gateway policy and installed release")
+				}
+				_ = statusWriter.Update(func(value *dieterdaemon.RuntimeStatus) {
+					value.GatewayReleaseVersion = policy.GetGatewayReleaseVersion()
+					value.MinimumClientVersion = policy.GetMinimumClientVersion()
+					value.MinimumDaemonVersion = policy.GetMinimumDaemonVersion()
+					value.CompatibilityPolicyRevision = policy.GetRevision()
+					value.AutomaticUpdateAttemptedAt = time.Now().UTC().Format(time.RFC3339Nano)
+					value.AutomaticUpdateOutcome = "admitted"
+				})
+				updateCtx, updateCancel := context.WithTimeout(context.Background(), 30*time.Second)
+				defer updateCancel()
+				err = machine.ExecuteRequiredUpdateAtRoot(updateCtx, c.Store.Root, policy.GetMinimumDaemonVersion())
+				outcome, message := "started", ""
+				if err != nil {
+					outcome, message = "failed", err.Error()
+				}
+				if finishErr := c.Store.FinishCompatibilityUpdate(key, outcome, message); finishErr != nil && err == nil {
+					err = finishErr
+				}
+				_ = statusWriter.Update(func(value *dieterdaemon.RuntimeStatus) { value.AutomaticUpdateOutcome = outcome })
+				return err
+			}
 			client := &dieterdaemon.GatewayClient{
-				Identity: identity, LocalTarget: *addr, Version: Version, APIVersion: server.APIVersion, Routes: routes,
+				Identity: identity, LocalTarget: *addr, Version: Version, Routes: routes,
 				Log: logger, OnStatus: statusWriter.Gateway, OnAcknowledged: statusWriter.GatewayAcknowledged,
+				OnCompatibilityPolicy: onCompatibilityPolicy, OnUpdateRequired: onUpdateRequired,
 				RemoteDesktopPresence: remoteDesktopPresence, ProviderQuotas: quotaSource,
 				ControlWebRTC: controlRTC != nil,
 			}
 			if tunnelErr := client.Run(ctx); tunnelErr != nil && ctx.Err() == nil {
+				var updateRequired *dieterdaemon.UpdateRequiredError
+				if errors.As(tunnelErr, &updateRequired) {
+					logger.Warn("gateway requires a daemon update", "error", tunnelErr)
+					return
+				}
 				logger.Error("gateway tunnel stopped", "error", tunnelErr)
 				cancel()
 			}

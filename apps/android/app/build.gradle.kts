@@ -12,7 +12,7 @@ val releaseKeystorePath = providers.environmentVariable("DIETER_ANDROID_KEYSTORE
 val releaseKeystorePassword = providers.environmentVariable("DIETER_ANDROID_KEYSTORE_PASSWORD")
 val releaseKeyAlias = providers.environmentVariable("DIETER_ANDROID_KEY_ALIAS")
 val releaseKeyPassword = providers.environmentVariable("DIETER_ANDROID_KEY_PASSWORD")
-val releaseVersionName = providers.environmentVariable("DIETER_RELEASE_VERSION").orElse("0.1.0")
+val releaseVersionName = providers.environmentVariable("DIETER_RELEASE_VERSION").orElse("0.0.0-dev.0")
 val releaseVersionCode = providers.environmentVariable("DIETER_RELEASE_VERSION_CODE").map { it.toInt() }.orElse(1)
 val releaseSigningConfigured = listOf(
     releaseKeystorePath,

@@ -74,7 +74,7 @@ import kotlin.random.Random
 import com.dbpprt.dieter.ui.theme.DieterAbyss
 import com.dbpprt.dieter.connection.EndpointConnection
 import com.dbpprt.dieter.connection.EndpointPhase
-import com.dbpprt.dieter.data.DIETER_API_VERSION
+import com.dbpprt.dieter.connection.isCompatible
 import com.dbpprt.dieter.v1.Workspace
 
 private enum class ManagementSection(val label: String) {
@@ -691,7 +691,7 @@ private fun ArchivesManagement(state: DieterUiState, model: DieterViewModel) {
 }
 
 internal fun EndpointConnection.usableForProjectCreation(): Boolean = online &&
-    daemonId != null && apiVersion == DIETER_API_VERSION
+    daemonId != null && isCompatible
 
 @Composable
 internal fun ProjectReplicaPicker(
@@ -712,8 +712,8 @@ internal fun ProjectReplicaPicker(
                     when {
                         selected == null -> "No machine selected"
                         !selected.online -> "Offline"
-                        selected.apiVersion != DIETER_API_VERSION ->
-                            "Requires API $DIETER_API_VERSION"
+                        !selected.isCompatible ->
+                            "Requires Dieter ${selected.minimumReleaseVersion.ifBlank { "update" }}"
                         else -> "Online · repository and agents run here"
                     },
                     color = DieterMuted,
@@ -731,8 +731,8 @@ internal fun ProjectReplicaPicker(
                             Text(
                                 when {
                                     !machine.online -> "Offline"
-                                    machine.apiVersion != DIETER_API_VERSION ->
-                                        "Incompatible API ${machine.apiVersion}"
+                                    !machine.isCompatible ->
+                                        "Update required · ${machine.minimumReleaseVersion.ifBlank { "newer Dieter release" }}"
                                     else -> machine.detail
                                 },
                                 color = DieterMuted,
@@ -761,7 +761,6 @@ private fun AddProjectManagement(state: DieterUiState, model: DieterViewModel) {
     var workflow by remember { mutableStateOf("review") }
     var baseRemote by remember { mutableStateOf("origin") }
     var baseBranch by remember { mutableStateOf("main") }
-    var remotePublishMode by remember { mutableStateOf("manual") }
     var validationCommands by remember { mutableStateOf(emptyList<ValidationCommandDraft>()) }
     var endpointId by remember { mutableStateOf("") }
     var workflowOpen by remember { mutableStateOf(false) }
@@ -893,16 +892,6 @@ private fun AddProjectManagement(state: DieterUiState, model: DieterViewModel) {
                 modifier = Modifier.weight(1f).testTag("new-project-base-branch"),
             )
         }
-        Text("First-board publishing", color = DieterMuted, modifier = Modifier.padding(top = 6.dp))
-        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            listOf("manual" to "Manual", "pull_request" to "Pull request", "push_base" to "Push base").forEach { option ->
-                FilterChip(
-                    selected = remotePublishMode == option.first,
-                    onClick = { remotePublishMode = option.first },
-                    label = { Text(option.second) },
-                )
-            }
-        }
         SectionTitle("Validation commands")
         ValidationCommandsEditor(validationCommands, onChange = { validationCommands = it }, enabled = !state.working)
         validationError?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
@@ -935,7 +924,6 @@ private fun AddProjectManagement(state: DieterUiState, model: DieterViewModel) {
                     baseRemote = baseRemote,
                     baseBranch = baseBranch,
                     validationCommands = validationCommands.map(ValidationCommandDraft::value),
-                    remotePublishMode = remotePublishMode,
                 )
             },
             enabled = selectedMachine?.usableForProjectCreation() == true && path.isNotBlank() &&

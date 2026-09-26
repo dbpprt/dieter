@@ -90,7 +90,8 @@ def main():
             config.update(publicIPv4="198.18.0.2", turnIPv4="198.18.0.2")
             private = {"githubClientID": "fixture", "githubClientSecret": "fixture", "authSecret": random.token_hex(32),
                        "turnSharedSecret": 'fixture-$"\\= café/' + random.token_hex(32)}
-            output = render(config, private, "ghcr.io/dbpprt/dieter-gateway@sha256:" + "a"*64, "fixture", temp / "rendered")
+            policy = {"minimumClientVersion": "0.0.0-dev.0", "minimumDaemonVersion": "0.0.0-dev.0"}
+            output = render(config, private, "ghcr.io/dbpprt/dieter-gateway@sha256:" + "a"*64, "fixture", temp / "rendered", policy)
             output.chmod(0o755)
             turn = (output / "private/turnserver.conf").read_text().replace("/certificates/turn/current/", "/fixture/")
             # The namespace's relay address is reserved for benchmarking, never a real host.
@@ -129,9 +130,8 @@ def main():
                 raise RuntimeError("gateway TLS/HTTP2 readiness failed")
             health = json.loads(run("docker", "exec", gateway, "wget", "-qO-", "http://127.0.0.1:4243/healthz"))
             validate_gateway_health(health)
-            manifest = pack(temp / "contract-bundle", "a" * 40, "fixture", "ghcr.io/dbpprt/dieter-gateway@sha256:" + "a" * 64, "fixture")
-            if str(manifest["applicationContract"]) != health["apiVersion"]:
-                raise RuntimeError("published manifest contract differs from the compiled gateway")
+            manifest = pack(temp / "compatibility-bundle", "a" * 40, "0.0.0-dev.0", "ghcr.io/dbpprt/dieter-gateway@sha256:" + "a" * 64, "fixture")
+            validate_gateway_health(health, manifest)
             for hostname in ("unknown.example.com", ""):
                 probe({"address":"198.18.0.2:443", "serverName":hostname, "transport":"reject-sni"})
             probe({"address":"198.18.0.2:443", "serverName":"gateway.example.com", "transport":"reject-tls12"})

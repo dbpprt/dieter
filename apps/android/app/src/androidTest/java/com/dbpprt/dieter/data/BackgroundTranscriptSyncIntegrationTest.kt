@@ -50,7 +50,7 @@ class BackgroundTranscriptSyncIntegrationTest {
             repository.setAccessToken(origin, token)
             repository.replaceEndpoints(listOf(origin))
             repository.selectEndpoint(origin)
-            val daemon = repository.daemons().daemonsList.single { it.apiVersion == DIETER_API_VERSION }
+            val daemon = repository.daemons().daemonsList.single { it.compatibility == com.dbpprt.dieter.gateway.v1.CompatibilityStatus.COMPATIBILITY_STATUS_COMPATIBLE }
             val endpoint = origin.copy(
                 id = "${origin.credentialId}#${daemon.id}",
                 label = daemon.name.ifBlank { daemon.id },
@@ -150,7 +150,7 @@ class BackgroundTranscriptSyncIntegrationTest {
             fixture.setAccessToken(origin, token)
             fixture.replaceEndpoints(listOf(origin))
             fixture.selectEndpoint(origin)
-            val daemon = fixture.daemons().daemonsList.single { it.apiVersion == DIETER_API_VERSION }
+            val daemon = fixture.daemons().daemonsList.single { it.compatibility == com.dbpprt.dieter.gateway.v1.CompatibilityStatus.COMPATIBILITY_STATUS_COMPATIBLE }
             val routed = origin.copy(
                 id = "${origin.credentialId}#${daemon.id}",
                 label = daemon.name.ifBlank { daemon.id },

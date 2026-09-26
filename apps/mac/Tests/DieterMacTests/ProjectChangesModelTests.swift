@@ -30,9 +30,10 @@ private actor ChangesFixtureRPC: ProjectChangesRPC {
 
     func configure(
         project: String = "project", revision: String = "r1", staged: Bool = false, holdDiffs: Bool = false,
-        holdChanges: Bool = false, failChanges: Bool = false
+        holdChanges: Bool = false, failChanges: Bool = false, volatile: Bool = false
     ) {
         snapshot = Self.makeSnapshot(project: project, revision: revision, staged: staged)
+        snapshot.volatile = volatile
         self.holdDiffs = holdDiffs; self.holdChanges = holdChanges
         self.failChanges = failChanges
     }
@@ -90,6 +91,16 @@ private actor ChangesFixtureRPC: ProjectChangesRPC {
     var startCount: Int { starts.count }
     var waitingForChanges: Bool { changesWaiter != nil }
     var waitingForOperation: Bool { operationWaiter != nil }
+}
+
+@Test @MainActor func projectChangesRemainMutableWhileSharedCheckoutAgentsAreActive() async {
+    let rpc = ChangesFixtureRPC()
+    await rpc.configure(volatile: true)
+    let model = ProjectChangesModel(); model.bind(projectID: "project", client: rpc)
+    await model.refresh(); await model.waitForDiff()
+    #expect(model.changes?.volatile == true)
+    #expect(!model.mutationsDisabled)
+    model.suspend()
 }
 
 @MainActor private func eventually(_ predicate: () async -> Bool) async throws {

@@ -3,6 +3,7 @@ set shell := ["bash", "-euo", "pipefail", "-c"]
 set working-directory := '..'
 
 platform_artifacts := "Dieter-Android.apk Dieter-macOS-arm64.zip dieter-darwin-arm64.pkg dieter-darwin-arm64.tar.gz dieter-gateway-linux-amd64.tar.gz dieter-gateway-linux-arm64.tar.gz dieter-linux-amd64.tar.gz dieter-linux-arm64.tar.gz dieter-gateway-deploy.tar.gz gateway-manifest.json gateway-manifest.sigstore.json gateway-release.lock.json"
+versioned_artifacts := "Dieter-Android.apk Dieter-macOS-arm64.zip dieter-darwin-arm64.pkg dieter-darwin-arm64.tar.gz dieter-gateway-linux-amd64.tar.gz dieter-gateway-linux-arm64.tar.gz dieter-linux-amd64.tar.gz dieter-linux-arm64.tar.gz dieter-gateway-deploy.tar.gz"
 
 # List the shared release commands.
 default:
@@ -43,6 +44,20 @@ version:
     printf 'tag=v%s\nnumber=%s\nandroid_code=%s\n' "$number" "$number" "$RUN_NUMBER" >>"$GITHUB_OUTPUT"
     echo "Releasing v$number from $GITHUB_SHA."
 
+# Print a deterministic SemVer identity for an unreleased source build.
+pseudo-version:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    latest="$(git tag --list 'v*' --sort=-version:refname | \
+        awk '/^v[0-9]+[.][0-9]+[.][0-9]+$/ { print; exit }')"
+    [[ -n "$latest" ]] || latest="v0.0.0"
+    IFS=. read -r major minor patch <<<"${latest#v}"
+    count="$(git rev-list --count HEAD)"
+    revision="$(git rev-parse --short=8 HEAD)"
+    dirty=""
+    git diff --quiet && git diff --cached --quiet || dirty=".dirty"
+    printf '%s.%s.%s-dev.%s+%s%s\n' "$major" "$minor" "$((patch + 1))" "$count" "$revision" "$dirty"
+
 # Select the pinned Xcode version on the GitHub macOS runner.
 select-xcode path="/Applications/Xcode_26.5.app/Contents/Developer":
     [[ "${GITHUB_ACTIONS:-}" == true ]] || { echo "Xcode selection is CI-only." >&2; exit 1; }
@@ -55,6 +70,8 @@ configure-apple-signing *args:
 
 # Test release packaging, signing configuration, and notarization validation.
 test:
+    just --justfile just/release.just pseudo-version | \
+        python3 -c 'import re,sys; value=sys.stdin.read().strip(); assert re.fullmatch(r"(0|[1-9][0-9]*)[.](0|[1-9][0-9]*)[.](0|[1-9][0-9]*)-dev[.](0|[1-9][0-9]*)[+][0-9a-f]{8}(?:[.]dirty)?", value), value'
     just --justfile just/release.just assembly-test
     python3 -m unittest discover -s scripts -p 'homebrew_*_test.py'
     python3 -m unittest discover -s scripts -p 'install_linux_test.py'
@@ -73,10 +90,17 @@ assembly-test:
     for artifact in "${expected[@]}"; do
         install -m 0644 /dev/null "$temporary_directory/$artifact"
     done
-    just --justfile just/release.just assemble "$temporary_directory"
+    read -r -a versioned <<<"{{ versioned_artifacts }}"
+    for artifact in "${versioned[@]}"; do
+        printf '0.4.999\n' >"$temporary_directory/$artifact.version"
+    done
+    RELEASE_VERSION=0.4.999 just --justfile just/release.just assemble "$temporary_directory"
     test -x "$temporary_directory/install.sh"
     rm -f "$temporary_directory/${expected[0]}"
-    if just --justfile just/release.just assemble "$temporary_directory" >/dev/null 2>&1; then
+    for artifact in "${versioned[@]}"; do
+        printf '0.4.999\n' >"$temporary_directory/$artifact.version"
+    done
+    if RELEASE_VERSION=0.4.999 just --justfile just/release.just assemble "$temporary_directory" >/dev/null 2>&1; then
         echo "Release assembly accepted an incomplete artifact set." >&2
         exit 1
     fi
@@ -86,11 +110,23 @@ assemble dist_directory="dist":
     #!/usr/bin/env bash
     set -euo pipefail
     dist_directory="{{ dist_directory }}"
+    : "${RELEASE_VERSION:?RELEASE_VERSION is required}"
     test -d "$dist_directory"
     read -r -a expected <<<"{{ platform_artifacts }}"
     for artifact in "${expected[@]}"; do
         [[ -f "$dist_directory/$artifact" ]] || { echo "Missing release artifact: $artifact" >&2; exit 1; }
     done
+    read -r -a versioned <<<"{{ versioned_artifacts }}"
+    for artifact in "${versioned[@]}"; do
+        identity="$dist_directory/$artifact.version"
+        [[ -f "$identity" ]] || { echo "Missing release identity: $artifact.version" >&2; exit 1; }
+        actual="$(tr -d '\r\n' <"$identity")"
+        [[ "$actual" == "$RELEASE_VERSION" ]] || {
+            echo "Release identity mismatch for $artifact: $actual (want $RELEASE_VERSION)" >&2
+            exit 1
+        }
+    done
+    rm -f "$dist_directory"/*.version
     install -m 0755 scripts/install.sh "$dist_directory/install.sh"
     echo "Assembled ${#expected[@]} platform artifacts and the portable installer."
 

@@ -98,6 +98,7 @@ class ProjectWorkspaceAdministrationEndToEndTest {
             composeRule.onAllNodesWithText("Workspace settings")[0].performClick()
             composeRule.onNodeWithTag("add-project").performClick()
             composeRule.onNodeWithTag("new-project-machine").assertIsDisplayed()
+            composeRule.onNodeWithText("First-board publishing").assertDoesNotExist()
             composeRule.onNodeWithTag("new-project-mode-create").performClick()
             composeRule.onNodeWithTag("new-project-path").performTextInput("/tmp/dieter-android-ui-$nonce")
             composeRule.onNodeWithTag("new-project-name").performTextInput(projectName)

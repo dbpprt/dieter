@@ -14,7 +14,6 @@ import (
 	"time"
 
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
-	"github.com/dbpprt/dieter/internal/protocol"
 	"github.com/pion/webrtc/v4/pkg/media"
 )
 
@@ -273,7 +272,7 @@ func TestLinuxNativeHelperCapabilities(t *testing.T) {
 	if capabilities.GetPlatform() != "linux" || len(capabilities.GetDisplays()) != 1 || capabilities.GetDisplays()[0].GetId() != "synthetic" {
 		t.Fatalf("capabilities = %#v", capabilities)
 	}
-	if len(capabilities.GetCodecs()) != 1 || capabilities.GetCodecs()[0] != "H264" || capabilities.GetHelperVersion() != "linux-native-v"+protocol.Version {
+	if len(capabilities.GetCodecs()) != 1 || capabilities.GetCodecs()[0] != "H264" || capabilities.GetHelperVersion() != "linux-native-v"+InputProtocolVersionString {
 		t.Fatalf("native codec capabilities = %#v", capabilities)
 	}
 	if !capabilities.GetControlSupported() || !capabilities.GetEncoderAvailable() {

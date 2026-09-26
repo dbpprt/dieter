@@ -251,8 +251,8 @@ class Host:
         require(status["state"] == "checking", "operation is not awaiting readiness")
         value = read_json(report)
         require(value.get("requestSHA256") == status["requestSHA256"] and value.get("sourceRevision") == status["sourceRevision"], "readiness evidence belongs to different inputs")
-        require(type(value.get("applicationContract")) is int and value["applicationContract"] == status.get("applicationContract"),
-                "readiness application contract differs from signed release")
+        require(value.get("compatibilityPolicy") == status.get("compatibilityPolicy"),
+                "readiness compatibility policy differs from signed release")
         require(value.get("gatewayAuthenticated") is True and value.get("daemonAuthenticated") is True,
                 "authenticated gateway and daemon checks are required")
         s = read_json(self.operation(operation) / "input" / "settings.json")
@@ -290,7 +290,7 @@ class Host:
                 source = self.volume(s)
                 secret_path = self.etc / "secrets.json"
                 private = secrets(secret_path)
-                self.transition(operation, "verified", sourceRevision=m["sourceRevision"], applicationContract=m["applicationContract"], previousRelease=str(previous),
+                self.transition(operation, "verified", sourceRevision=m["sourceRevision"], compatibilityPolicy=m["compatibilityPolicy"], previousRelease=str(previous),
                                 secretSHA256=digest(secret_path), gatewayCAFingerprint=digest(source / "signing" / "daemon-ca.pem"),
                                 previousController=str(Path(self.config["controllerLink"]).resolve()) if self.config.get("controllerLink") else None)
                 release = self.install / "releases" / operation
@@ -303,7 +303,8 @@ class Host:
                 rendered = op / "rendered"
                 if rendered.exists():
                     shutil.rmtree(rendered)
-                render(s, private, m["image"], operation, rendered, incoming / "legacy.caddy" if s["legacyHosts"] else None)
+                render(s, private, m["image"], operation, rendered, m["compatibilityPolicy"],
+                       incoming / "legacy.caddy" if s["legacyHosts"] else None)
                 shutil.copytree(rendered / "public", release / "public")
                 target_private = self.etc / "releases" / operation
                 if target_private.exists():

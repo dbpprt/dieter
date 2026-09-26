@@ -36,7 +36,7 @@ public enum RemoteDesktopSessionTrust {
         guard binding.clientNonce == clientNonce,
             binding.offerSha256 == offerHash,
             binding.helperDtlsFingerprint == fingerprint(in: answerSDP),
-            binding.inputProtocolVersion == DieterContract.number,
+            binding.inputProtocolVersion == DieterRemoteDesktopProtocol.number,
             binding.inputEpoch.count == 16,
             !sessionID.isEmpty
         else { throw Failure.invalidBinding }

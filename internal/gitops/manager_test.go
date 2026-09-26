@@ -2,6 +2,7 @@ package gitops_test
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -430,6 +431,102 @@ func TestProjectCheckoutStageCommitAndDiscardAreProjectScoped(t *testing.T) {
 	}
 	if info, err := os.Stat(filepath.Join(data.RecoveryDir(), discard.ID, "RESTORE.txt")); err != nil || !info.Mode().IsRegular() {
 		t.Fatalf("project discard did not create recovery instructions: %v", err)
+	}
+}
+
+func TestProjectCheckoutCanPushItsCurrentBranch(t *testing.T) {
+	repository := testRepository(t)
+	remote := filepath.Join(t.TempDir(), "remote.git")
+	runGit(t, "", "init", "--bare", remote)
+	runGit(t, repository, "remote", "add", "origin", remote)
+	runGit(t, repository, "push", "--set-upstream", "origin", "main")
+
+	data := store.New(filepath.Join(t.TempDir(), "dieter-home"))
+	if err := data.Ensure(); err != nil {
+		t.Fatal(err)
+	}
+	project, err := data.CreateProject(store.CreateProjectInput{
+		Name: "Fixture", Path: repository, BaseRemote: "origin", BaseBranch: "main",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repository, "README.md"), []byte("ship from project mode\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	workspaces := workspace.New(data, nil)
+	manager := gitops.New(data, workspaces, nil)
+	changes, err := manager.Changesets.GetProject(context.Background(), project.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	commit, err := manager.Start(context.Background(), gitops.Request{
+		ProjectID: project.ID, Kind: "commit", ExpectedRevision: changes.Revision,
+		Parameters: map[string]string{"subject": "ship project checkout", "stage_all": "true", "validate": "false"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if commit = waitOperation(t, manager, commit.ID); commit.Status != model.GitOperationSucceeded {
+		t.Fatalf("project commit failed: %#v", commit)
+	}
+	push, err := manager.Start(context.Background(), gitops.Request{ProjectID: project.ID, Kind: "push"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if push = waitOperation(t, manager, push.ID); push.Status != model.GitOperationSucceeded {
+		t.Fatalf("project push failed: %#v", push)
+	}
+	local := runGit(t, repository, "rev-parse", "HEAD")
+	remoteHead := runGit(t, repository, "--git-dir", remote, "rev-parse", "refs/heads/main")
+	if local != remoteHead {
+		t.Fatalf("remote head=%s local=%s", remoteHead, local)
+	}
+}
+
+func TestProjectCheckoutCanStageWhileAProjectModeAgentIsActive(t *testing.T) {
+	repository := testRepository(t)
+	data := store.New(filepath.Join(t.TempDir(), "dieter-home"))
+	if err := data.Ensure(); err != nil {
+		t.Fatal(err)
+	}
+	project, err := data.CreateProject(store.CreateProjectInput{Name: "Shared", Path: repository, BaseBranch: "main"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	card, err := data.CreateChat(store.CreateCardInput{
+		Project: project.ID, Title: "Active", Prompt: "work", WorkspaceMode: model.WorkspaceModeProject,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	lease, err := data.AcquireRuntimeLease(project.ID, card.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = data.ReleaseRuntimeLease(lease) }()
+	if err := os.WriteFile(filepath.Join(repository, "README.md"), []byte("agent edit\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	manager := gitops.New(data, workspace.New(data, nil), nil)
+	changes, err := manager.Changesets.GetProject(context.Background(), project.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stage, err := manager.Start(context.Background(), gitops.Request{
+		ProjectID: project.ID, Kind: "stage", ExpectedRevision: changes.Revision,
+		Parameters: map[string]string{"path": "README.md"},
+	})
+	if err != nil {
+		t.Fatalf("stage should remain available in a shared active checkout: %v", err)
+	}
+	if stage = waitOperation(t, manager, stage.ID); stage.Status != model.GitOperationSucceeded {
+		t.Fatalf("stage failed while project agent active: %#v", stage)
+	}
+	if _, err := manager.Start(context.Background(), gitops.Request{
+		ProjectID: project.ID, Kind: "update",
+	}); !errors.Is(err, gitops.ErrWorkspaceBusy) {
+		t.Fatalf("branch-moving update should remain blocked while an agent is active: %v", err)
 	}
 }
 

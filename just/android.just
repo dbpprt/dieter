@@ -281,21 +281,21 @@ emulator-stop:
 
 # Build the debug APK. Use test for JVM tests or check for the complete build gate.
 build:
-    ANDROID_HOME="{{ sdk }}" JAVA_HOME="{{ java }}" {{ app_root }}/gradlew --project-dir "{{ app_root }}" :app:assembleDebug
+    DIETER_RELEASE_VERSION="${DIETER_RELEASE_VERSION:-$(just release pseudo-version)}" ANDROID_HOME="{{ sdk }}" JAVA_HOME="{{ java }}" {{ app_root }}/gradlew --project-dir "{{ app_root }}" :app:assembleDebug
 
 # Run Android unit tests.
 test:
-    ANDROID_HOME="{{ sdk }}" JAVA_HOME="{{ java }}" {{ app_root }}/gradlew --project-dir "{{ app_root }}" :app:testDebugUnitTest
+    DIETER_RELEASE_VERSION="${DIETER_RELEASE_VERSION:-$(just release pseudo-version)}" ANDROID_HOME="{{ sdk }}" JAVA_HOME="{{ java }}" {{ app_root }}/gradlew --project-dir "{{ app_root }}" :app:testDebugUnitTest
 
 # Run Android lint against the debug application.
 lint:
-    ANDROID_HOME="{{ sdk }}" JAVA_HOME="{{ java }}" {{ app_root }}/gradlew --project-dir "{{ app_root }}" :app:lintDebug
+    DIETER_RELEASE_VERSION="${DIETER_RELEASE_VERSION:-$(just release pseudo-version)}" ANDROID_HOME="{{ sdk }}" JAVA_HOME="{{ java }}" {{ app_root }}/gradlew --project-dir "{{ app_root }}" :app:lintDebug
 
 # Run unit tests and lint; compile debug, E2E, and performance app/test APKs.
 check:
-    ANDROID_HOME="{{ sdk }}" JAVA_HOME="{{ java }}" {{ app_root }}/gradlew --project-dir "{{ app_root }}" :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
-    ANDROID_HOME="{{ sdk }}" JAVA_HOME="{{ java }}" {{ app_root }}/gradlew --project-dir "{{ app_root }}" -Pdieter.testBuildType=e2e :app:assembleE2e :app:assembleE2eAndroidTest
-    ANDROID_HOME="{{ sdk }}" JAVA_HOME="{{ java }}" {{ app_root }}/gradlew --project-dir "{{ app_root }}" -Pdieter.testBuildType=performance :app:assemblePerformance :app:assemblePerformanceAndroidTest
+    DIETER_RELEASE_VERSION="${DIETER_RELEASE_VERSION:-$(just release pseudo-version)}" ANDROID_HOME="{{ sdk }}" JAVA_HOME="{{ java }}" {{ app_root }}/gradlew --project-dir "{{ app_root }}" :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
+    DIETER_RELEASE_VERSION="${DIETER_RELEASE_VERSION:-$(just release pseudo-version)}" ANDROID_HOME="{{ sdk }}" JAVA_HOME="{{ java }}" {{ app_root }}/gradlew --project-dir "{{ app_root }}" -Pdieter.testBuildType=e2e :app:assembleE2e :app:assembleE2eAndroidTest
+    DIETER_RELEASE_VERSION="${DIETER_RELEASE_VERSION:-$(just release pseudo-version)}" ANDROID_HOME="{{ sdk }}" JAVA_HOME="{{ java }}" {{ app_root }}/gradlew --project-dir "{{ app_root }}" -Pdieter.testBuildType=performance :app:assemblePerformance :app:assemblePerformanceAndroidTest
 
 # Build the signed release APK using the release environment.
 build-release:
@@ -328,11 +328,13 @@ package-release archive="dist/Dieter-Android.apk":
     #!/usr/bin/env bash
     set -euo pipefail
     source_apk="{{ app_root }}/app/build/outputs/apk/release/app-release.apk"
+    : "${DIETER_RELEASE_VERSION:?DIETER_RELEASE_VERSION is required}"
     archive="$1"
     test -f "$source_apk"
     [[ ! -e "$archive" ]] || { echo "$archive already exists." >&2; exit 1; }
     mkdir -p "$(dirname "$archive")"
     cp "$source_apk" "$archive"
+    printf '%s\n' "$DIETER_RELEASE_VERSION" >"$archive.version"
     echo "$archive"
 
 # Require a signed production package without debugging or test instrumentation.
@@ -341,9 +343,11 @@ verify-release archive="dist/Dieter-Android.apk":
     #!/usr/bin/env bash
     set -euo pipefail
     archive="$1"
+    : "${DIETER_RELEASE_VERSION:?DIETER_RELEASE_VERSION is required}"
     "{{ sdk }}/build-tools/37.0.0/apksigner" verify --verbose --print-certs "$archive"
     badging="$("{{ sdk }}/build-tools/37.0.0/aapt2" dump badging "$archive")"
     [[ "$badging" == "package: name='com.dbpprt.dieter' "* ]] || { echo "Release APK must use the production application ID." >&2; exit 1; }
+    [[ "$badging" == *"versionName='$DIETER_RELEASE_VERSION'"* ]] || { echo "Release APK version does not match $DIETER_RELEASE_VERSION." >&2; exit 1; }
     if [[ "$badging" == *application-debuggable* ]]; then
         echo "Release APK must not be debuggable." >&2
         exit 1
@@ -357,7 +361,7 @@ verify-release archive="dist/Dieter-Android.apk":
 # Remove only the packaged Android release APK and temporary CI keystore.
 [confirm]
 clean-release:
-    rm -f dist/Dieter-Android.apk "${RUNNER_TEMP:-/tmp}/dieter-android-release.jks"
+    rm -f dist/Dieter-Android.apk dist/Dieter-Android.apk.version "${RUNNER_TEMP:-/tmp}/dieter-android-release.jks"
 
 # Install the current debug APK without clearing app data.
 install:

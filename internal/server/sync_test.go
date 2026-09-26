@@ -16,7 +16,6 @@ import (
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
 	"github.com/dbpprt/dieter/internal/gen/dieter/v1/dieterv1connect"
 	"github.com/dbpprt/dieter/internal/model"
-	"github.com/dbpprt/dieter/internal/protocol"
 	"github.com/dbpprt/dieter/internal/store"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/emptypb"
@@ -37,7 +36,7 @@ func TestGlobalSyncAndOutboxCommandsEndToEnd(t *testing.T) {
 	}
 	client, _ := newConnectTestClient(t, data, &fakeRunner{})
 
-	stream, err := client.WatchSync(ctx, connect.NewRequest(&dieterv1.SyncRequest{ProtocolVersion: protocol.Number, ConversationLimit: 20, HeartbeatMs: 1_000}))
+	stream, err := client.WatchSync(ctx, connect.NewRequest(&dieterv1.SyncRequest{ConversationLimit: 20, HeartbeatMs: 1_000}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -174,7 +173,7 @@ func TestMetadataDeltaAndIdempotentStartAdmission(t *testing.T) {
 	t.Cleanup(stopRunner)
 	client, _ := newConnectTestClient(t, data, gatedRunner{release: release})
 
-	stream, err := client.WatchSync(ctx, connect.NewRequest(&dieterv1.SyncRequest{ProtocolVersion: protocol.Number, ConversationLimit: 0, HeartbeatMs: 1_000}))
+	stream, err := client.WatchSync(ctx, connect.NewRequest(&dieterv1.SyncRequest{ConversationLimit: 0, HeartbeatMs: 1_000}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -228,7 +227,7 @@ func TestMetadataSyncSuppressesSemanticallyEmptyDelta(t *testing.T) {
 		t.Fatal(err)
 	}
 	client, _ := newConnectTestClient(t, data, &fakeRunner{})
-	stream, err := client.WatchSync(ctx, connect.NewRequest(&dieterv1.SyncRequest{ProtocolVersion: protocol.Number, ConversationLimit: 0, HeartbeatMs: 1_000}))
+	stream, err := client.WatchSync(ctx, connect.NewRequest(&dieterv1.SyncRequest{ConversationLimit: 0, HeartbeatMs: 1_000}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -308,7 +307,7 @@ func TestIdleDaemonReconciliationDoesNotPublishSyncEvents(t *testing.T) {
 	}
 
 	watchCtx, stopWatch := context.WithCancel(context.Background())
-	stream, err := client.WatchSync(watchCtx, connect.NewRequest(&dieterv1.SyncRequest{ProtocolVersion: protocol.Number,
+	stream, err := client.WatchSync(watchCtx, connect.NewRequest(&dieterv1.SyncRequest{
 		ConversationLimit: 0,
 		HeartbeatMs:       1_000,
 	}))
@@ -381,7 +380,7 @@ func TestBoundedConversationSyncStreamsTranscriptDeltas(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	stream, err := client.WatchSync(ctx, connect.NewRequest(&dieterv1.SyncRequest{ProtocolVersion: protocol.Number,
+	stream, err := client.WatchSync(ctx, connect.NewRequest(&dieterv1.SyncRequest{
 		ConversationLimit: 20, RecentConversationLimit: 5, HeartbeatMs: 1_000,
 	}))
 	if err != nil {
@@ -496,7 +495,7 @@ func TestGlobalSyncCoalescesJournalBurstToHighwater(t *testing.T) {
 	frames := make(chan *dieterv1.SyncFrame, 2)
 	done := make(chan error, 1)
 	go func() {
-		done <- api.watchSync(ctx, &dieterv1.SyncRequest{ProtocolVersion: protocol.Number, ConversationLimit: 0, HeartbeatMs: 10_000}, func(frame *dieterv1.SyncFrame) error {
+		done <- api.watchSync(ctx, &dieterv1.SyncRequest{ConversationLimit: 0, HeartbeatMs: 10_000}, func(frame *dieterv1.SyncFrame) error {
 			if frame.GetSnapshot() != nil {
 				initial <- frame
 				select {

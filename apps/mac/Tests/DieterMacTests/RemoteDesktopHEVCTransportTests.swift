@@ -107,7 +107,7 @@ private func envRecovery(_ name: String) -> [String]? {
     request.codecPreference = codec == "H265" ? .hevc : .h264; request.clientNonce = UUID().uuidString
     request.rtcConfiguration = try Dieter_Gateway_V1_RTCConfiguration(serializedBytes: connection.rtc)
     request.displayID = try #require(caps.displays.first).id
-    request.inputProtocolVersion = DieterContract.number
+    request.inputProtocolVersion = DieterRemoteDesktopProtocol.number
     request.maxWidth = 1920; request.maxHeight = 1080; request.maxFps = 60; request.maxBitrateKbps = 6000
     request.offer.type = "offer"; request.offer.sdp = try #require(peer.localDescription).sdp
     let signaling = HEVCTransportSignaling(
@@ -125,7 +125,7 @@ private func envRecovery(_ name: String) -> [String]? {
                     peer.statistics { continuation.resume(returning: $0) }
                 }
                 var feedback = Dieter_V1_RemoteDesktopReceiverFeedback()
-                feedback.protocolVersion = DieterContract.number; feedback.inputEpoch = binding.inputEpoch
+                feedback.protocolVersion = DieterRemoteDesktopProtocol.number; feedback.inputEpoch = binding.inputEpoch
                 for stat in report.statistics.values
                 where stat.type == "candidate-pair" && (stat.values["state"] as? String) == "succeeded" {
                     feedback.rttMs = ((stat.values["currentRoundTripTime"] as? NSNumber)?.doubleValue ?? 0) * 1000
@@ -273,8 +273,9 @@ private final class HEVCFrameCount: @unchecked Sendable {
                 offerSDP: request.offer.sdp, answerSDP: answer, daemonCertificatePEM: certificate)
             try #require(
                 !binding.controlGranted && binding.displayID == request.displayID
-                    && binding.inputProtocolVersion == DieterContract.number)
-            var initial = Dieter_V1_RemoteDesktopReceiverFeedback(); initial.protocolVersion = DieterContract.number;
+                    && binding.inputProtocolVersion == DieterRemoteDesktopProtocol.number)
+            var initial = Dieter_V1_RemoteDesktopReceiverFeedback();
+            initial.protocolVersion = DieterRemoteDesktopProtocol.number;
             initial.inputEpoch = binding.inputEpoch
             pump.start(channel: channel, initial: initial)
             try await peer.setRemoteDescription(RTCSessionDescription(type: .answer, sdp: answer))

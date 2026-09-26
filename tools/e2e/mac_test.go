@@ -75,8 +75,8 @@ func TestAffectedNativePlatforms(t *testing.T) {
 			t.Fatal(tc, got)
 		}
 	}
-	if len(affected(cases, []string{"api/contract-version"})) != 2 {
-		t.Fatal("shared contract must select both")
+	if len(affected(cases, []string{"api/proto/dieter/v1/dieter.proto"})) != 2 {
+		t.Fatal("shared schema must select both")
 	}
 }
 

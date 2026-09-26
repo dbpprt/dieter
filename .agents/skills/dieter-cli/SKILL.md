@@ -64,8 +64,9 @@ credential-free provider quota snapshots. It does not store projects,
 transcripts, files, schedules, provider credentials, or harness credentials. Use
 `dieter machine show <machine-id>` and `dieter machine route <machine-id>` to
 inspect presence and advertised routes. Directory output includes the daemon's
-release `version` and compatibility `apiVersion`; use the latter when deciding
-whether a native client can safely target a machine in a mixed-version fleet.
+release, gateway compatibility decision, and minimum required release. Route
+only to compatible machines; Update Required means the daemon must meet the
+published floor before it can re-enter the fleet.
 Gateway URLs require HTTPS. HTTP is allowed only for literal loopback addresses
 (for example, `http://127.0.0.1:8080`) used by isolated local gateways.
 Daemon enrollment requires explicit browser approval after GitHub sign-in.
@@ -358,13 +359,14 @@ dieter workspace run --kind stage --project <project-id-or-name> \
   --revision <revision> --param path=path/to/file.go --wait
 dieter workspace run --kind commit --project <project-id-or-name> \
   --revision <revision> --param subject="Focused change" --wait
+dieter workspace run --kind push --project <project-id-or-name> --wait
 dieter workspace run --kind validate --wait <worktree-card-id>
 dieter workspace operation <operation-id>
 dieter workspace watch <operation-id>
 ```
 
-Project targets support `stage`, `unstage`, `discard_changes`, `commit`, and
-`validate`. An empty stage/unstage path means all files; `discard_changes`
+Project targets support `stage`, `unstage`, `discard_changes`, `commit`,
+`update`, `validate`, and `push`. An empty stage/unstage path means all files; `discard_changes`
 requires one path and creates recovery artifacts first. `commit` commits only
 the staged index unless `--param stage_all=true` is explicitly supplied.
 Worktree targets additionally support `update`, `continue_conflict`,
@@ -508,8 +510,9 @@ Motion policy trades resolution before cadence under sustained congestion;
 automatic/detail policies retain their cadence-first behavior. Screen media uses native macOS
 capture with hardware H.264 or opt-in HEVC, or Linux X11/portal capture with H.264.
 Linux requires the documented GStreamer and desktop-session dependencies; Wayland
-source selection remains locally portal-mediated. Screen input uses the shared
-application contract, signed session bindings, and machine-wide control grants.
+source selection remains locally portal-mediated. Screen input uses its
+independent framing revision, signed session bindings, and machine-wide control
+grants.
 Adaptation preserves idle-screen geometry and recovery evidence across quiet
 intervals, reduces cadence before resolution, and requires fresh congestion
 evidence before shrinking pixels. Heartbeat and statistics freshness are separate.
@@ -893,10 +896,12 @@ transcripts, queues, and executable validation stay on the owner. There are no
 parallel-agent caps; one conversation still has one active turn. Transport and
 storage bounds remain. Never edit DIETER_HOME directly. See docs/peer-store.md.
 
-Application contract 1 is the only supported contract across gateway, daemon,
-CLI, native clients, sync, and screen input. Missing or mismatched versions are
-rejected. Unsupported development stores require a fresh `DIETER_HOME`; no
-import or migration command is provided. Never delete or convert existing data.
+Gateway, daemon/CLI, and native clients report one canonical SemVer release. The
+gateway publishes minimum client and daemon releases and rejects software below
+those floors. Managed daemons attempt one signed update for each installed
+release/policy tuple; clients show Update Required. Do not add historical API
+branches. Unsupported development stores require a fresh `DIETER_HOME`; no import
+or migration command is provided. Never delete or convert existing data.
 Never stop or replace the operator's daemon as part of testing or implementation.
 
 ### Shared navigation and portable KV
@@ -953,5 +958,5 @@ Card `stateFields` contain bounded causal placement/runtime projections used by
 native clients to merge observations across replicas. Treat `placementRevision`
 as an opaque daemon receipt, not a timestamp or ordinal position. A successful
 move is durable on that daemon; a delayed peer observation does not undo it.
-Application contract 2 requires matching gateways, daemons, and native clients;
-update them together rather than mixing this projection with older contracts.
+The gateway's compatibility floors protect this projection from software too
+old to interpret it; compatible releases may differ and still join observations.

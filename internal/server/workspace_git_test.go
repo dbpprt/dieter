@@ -159,8 +159,12 @@ func TestProjectCheckoutChangesAreProjectScopedAndMutable(t *testing.T) {
 	data := store.New(filepath.Join(t.TempDir(), "dieter-home"))
 	client, _ := newConnectTestClient(t, data, &fakeRunner{})
 	repository := realGitRepository(t)
+	remote := filepath.Join(t.TempDir(), "remote.git")
+	runServerGit(t, "", "init", "--bare", remote)
+	runServerGit(t, repository, "remote", "add", "origin", remote)
 	created, err := client.CreateProject(ctx, connect.NewRequest(&dieterv1.CreateProjectRequest{
-		Mode: "open", Path: repository, Name: "Project changes", BoardName: "Main", Workflow: model.WorkflowReview, BaseBranch: "main",
+		Mode: "open", Path: repository, Name: "Project changes", BoardName: "Main", Workflow: model.WorkflowReview,
+		BaseRemote: "origin", BaseBranch: "main",
 	}))
 	if err != nil {
 		t.Fatal(err)
@@ -210,6 +214,28 @@ func TestProjectCheckoutChangesAreProjectScopedAndMutable(t *testing.T) {
 	clean, err := client.GetChangeset(ctx, connect.NewRequest(&dieterv1.GetChangesetRequest{ProjectId: project.GetId()}))
 	if err != nil || len(clean.Msg.GetFiles()) != 0 || clean.Msg.GetDirty() {
 		t.Fatalf("project checkout was not clean after commit: %#v err=%v", clean, err)
+	}
+	operation, err = client.StartGitOperation(ctx, connect.NewRequest(&dieterv1.StartGitOperationRequest{
+		ProjectId: project.GetId(), Kind: "push",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitConnectGitOperation(t, ctx, client, operation.Msg.GetId())
+	localHead := runServerGit(t, repository, "rev-parse", "HEAD")
+	remoteHead := runServerGit(t, "", "--git-dir="+remote, "rev-parse", "refs/heads/main")
+	if localHead != remoteHead {
+		t.Fatalf("project push did not update the configured remote: local=%s remote=%s", localHead, remoteHead)
+	}
+	for _, request := range []*dieterv1.StartGitOperationRequest{
+		{ProjectId: project.GetId(), Kind: "update", Parameters: map[string]string{"fetch": "true", "validate": "false"}},
+		{ProjectId: project.GetId(), Kind: "validate"},
+	} {
+		operation, err = client.StartGitOperation(ctx, connect.NewRequest(request))
+		if err != nil {
+			t.Fatal(err)
+		}
+		waitConnectGitOperation(t, ctx, client, operation.Msg.GetId())
 	}
 }
 
@@ -275,4 +301,15 @@ func realGitRepository(t *testing.T) string {
 		}
 	}
 	return root
+}
+
+func runServerGit(t *testing.T, directory string, args ...string) string {
+	t.Helper()
+	command := exec.Command("git", args...)
+	command.Dir = directory
+	output, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %v: %s: %v", args, output, err)
+	}
+	return strings.TrimSpace(string(output))
 }
