@@ -16,6 +16,7 @@ default:
 doctor:
     test "$(uname -s)" = Darwin
     command -v swift
+    command -v python3
     command -v xcodebuild
     command -v codesign
     command -v osascript
@@ -37,8 +38,8 @@ status:
         ps -p "$pid" -o pid=,ppid=,lstart=,stat=,rss=,command=
     done < <(pgrep -x DieterMac || true)
     if [[ "$found" -eq 0 ]]; then echo "No DieterMac process is running."; fi
-    ps -axo pid=,ppid=,stat=,etime=,command= | \
-        rg 'swift-(frontend|driver)|swift (build|test)|(^|/)(clang|ld)( |$)' || true
+    ps -axo pid=,ppid=,stat=,etime=,comm= | \
+        rg 'swift-(frontend|driver|build|test|package)|swift (build|test)|(^|/)(clang|ld)( |$)' || true
 
 # Build and package Dieter.app with the canonical SwiftPM cache.
 build configuration="debug":
@@ -61,6 +62,7 @@ test filter="":
         --disable-index-store
         --no-parallel
     )
+    if [[ -n "${DIETER_SWIFT_JOBS:-}" ]]; then arguments+=(--jobs "$DIETER_SWIFT_JOBS"); fi
     if [[ -n "{{ filter }}" ]]; then arguments+=(--filter "{{ filter }}"); fi
     swift "${arguments[@]}"
 
@@ -80,75 +82,24 @@ markdown-check:
 
 # Verify generated clients, formatting, tests, and the debug bundle.
 check:
+    just mac lifecycle-test
     just mac format-check
     just mac proto-check
     just mac test
     just mac build
 
-# Launch or activate exactly one packaged debug app.
-run: build
-    #!/usr/bin/env bash
-    set -euo pipefail
-    expected="$PWD/{{ app_executable }}"
-    bundle="$PWD/{{ app_bundle }}"
-    exact=0
-    other=0
-    while IFS= read -r pid; do
-        [[ -n "$pid" ]] || continue
-        command="$(ps -p "$pid" -o command=)"
-        if [[ "$command" == "$expected"* ]]; then exact=$((exact + 1)); else other=$((other + 1)); fi
-    done < <(pgrep -x DieterMac || true)
-    if (( other > 0 || exact > 1 )); then
-        echo "Refusing to launch: DieterMac processes not owned by this bundle are present." >&2
-        just mac status >&2
-        exit 1
-    fi
-    open "$bundle"
-    for _ in {1..40}; do
-        count=0
-        while IFS= read -r pid; do
-            [[ -n "$pid" ]] || continue
-            [[ "$(ps -p "$pid" -o command=)" == "$expected"* ]] && count=$((count + 1))
-        done < <(pgrep -x DieterMac || true)
-        [[ "$count" -eq 1 ]] && { echo "$expected"; exit 0; }
-        sleep 0.25
-    done
-    echo "Dieter.app did not reach exactly one running process." >&2
-    just mac status >&2
-    exit 1
+# Build and launch when stopped, or activate the existing packaged app unchanged.
+run:
+    python3 scripts/mac_app_lifecycle.py run
 
 # Gracefully quit the packaged app and prove its process exited.
 quit:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    expected="$PWD/{{ app_executable }}"
-    bundle="$PWD/{{ app_bundle }}"
-    exact=0
-    other=0
-    while IFS= read -r pid; do
-        [[ -n "$pid" ]] || continue
-        command="$(ps -p "$pid" -o command=)"
-        if [[ "$command" == "$expected"* ]]; then exact=$((exact + 1)); else other=$((other + 1)); fi
-    done < <(pgrep -x DieterMac || true)
-    if (( other > 0 )); then
-        echo "Refusing the app-level quit event because another DieterMac bundle is running." >&2
-        just mac status >&2
-        exit 1
-    fi
-    if (( exact == 0 )); then echo "The packaged Dieter app is not running."; exit 0; fi
-    osascript -e "tell application \"$bundle\" to quit"
-    for _ in {1..40}; do
-        remaining=0
-        while IFS= read -r pid; do
-            [[ -n "$pid" ]] || continue
-            [[ "$(ps -p "$pid" -o command=)" == "$expected"* ]] && remaining=$((remaining + 1))
-        done < <(pgrep -x DieterMac || true)
-        [[ "$remaining" -eq 0 ]] && { echo "Dieter exited cleanly."; exit 0; }
-        sleep 0.25
-    done
-    echo "Dieter did not exit after its quit event; preserving the process for diagnosis." >&2
-    just mac status >&2
-    exit 1
+    python3 scripts/mac_app_lifecycle.py quit
+
+# Test app lifecycle guards without launching apps or using a compiler.
+lifecycle-test:
+    python3 -m unittest discover -s scripts -p 'mac_*test.py'
+    python3 -m unittest discover -s scripts -p 'sync_apple_proto_test.py'
 
 # Verify the packaged app bundle and its signature.
 verify:

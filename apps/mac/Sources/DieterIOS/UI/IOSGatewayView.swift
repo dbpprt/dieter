@@ -110,9 +110,9 @@
                     }
                     .disabled(store.busy)
                 }
-                if !store.providerQuotaGroups.isEmpty || store.providerQuotasLoading {
+                if !store.quotas.providerQuotaGroups.isEmpty || store.quotas.providerQuotasLoading {
                     Section("Provider quotas") {
-                        ForEach(store.providerQuotaGroups, id: \.provider.rawValue) { group in
+                        ForEach(store.quotas.providerQuotaGroups, id: \.provider.rawValue) { group in
                             HStack {
                                 Label(
                                     group.provider == .openaiCodex ? "OpenAI" : "Claude",
@@ -131,7 +131,7 @@
                         Button("Refresh quotas", systemImage: "arrow.clockwise") {
                             Task { await store.loadProviderQuotas(requestRefresh: true) }
                         }
-                        .disabled(store.providerQuotasLoading)
+                        .disabled(store.quotas.providerQuotasLoading)
                     }
                 }
                 Section {

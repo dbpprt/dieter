@@ -32,13 +32,13 @@ private enum ProviderQuotaClientError: LocalizedError {
 
 extension DieterStore {
     func connect(to newEndpoint: DieterEndpoint? = nil, automatic: Bool = false) async {
-        if let syncRestoreTask {
-            await syncRestoreTask.value
-            self.syncRestoreTask = nil
+        if let restore = connectionEffects.syncRestoreTask {
+            await restore.value
+            self.connectionEffects.syncRestoreTask = nil
         }
         if !automatic {
-            reconnectTask?.cancel()
-            reconnectTask = nil
+            connectionEffects.reconnectTask?.cancel()
+            connectionEffects.reconnectTask = nil
         }
         let requested = newEndpoint ?? endpoint
         let preferredDaemonID = MachineRoutingPolicy.preferredDaemonID(
@@ -234,26 +234,26 @@ extension DieterStore {
             // Commit the route switch only after the candidate has passed Health and
             // its initial state has loaded. Until this point the previous machine and
             // all of its streams remain fully usable.
-            stateTask?.cancel()
+            connectionEffects.stateTask?.cancel()
             conversationTask?.cancel()
             gitOperationTask?.cancel()
-            terminalWatchTask?.cancel()
-            syncTask?.cancel()
-            syncRecoveryEscalationTask?.cancel()
-            syncRecoveryEscalationTask = nil
-            syncLivenessTask?.cancel()
+            terminalsModel.terminalWatchTask?.cancel()
+            connectionEffects.syncTask?.cancel()
+            connectionEffects.syncRecoveryEscalationTask?.cancel()
+            connectionEffects.syncRecoveryEscalationTask = nil
+            connectionEffects.syncLivenessTask?.cancel()
             outboxTask?.cancel()
-            connectionTask?.cancel()
-            directRefreshTask?.cancel()
-            machineDirectoryTask?.cancel()
-            machinePresenceLeaseTask?.cancel()
-            machineTelemetryTask?.cancel()
-            connectionMetadataTask?.cancel()
-            terminalStreamConnected = false
+            connectionEffects.connectionTask?.cancel()
+            connectionEffects.directRefreshTask?.cancel()
+            connectionEffects.machineDirectoryTask?.cancel()
+            connectionEffects.machinePresenceLeaseTask?.cancel()
+            fleet.stopMachineTelemetry()
+            connectionEffects.connectionMetadataTask?.cancel()
+            terminalsModel.terminalStreamConnected = false
             rpc?.shutdown()
             rpc = prepared.plane.rpc
             directCredential = prepared.plane.directCredential
-            connectionTask = prepared.plane.task
+            connectionEffects.connectionTask = prepared.plane.task
             endpoint = prepared.target
             endpoints = (discoveredDirectory ?? []).map {
                 $0.id == prepared.target.id ? prepared.target : $0
@@ -319,8 +319,8 @@ extension DieterStore {
                 // healthy machine's workspace into a global offline state or modal.
                 return
             }
-            connectionTask?.cancel()
-            connectionTask = nil
+            connectionEffects.connectionTask?.cancel()
+            connectionEffects.connectionTask = nil
             rpc?.shutdown()
             rpc = nil
             directCredential = nil
@@ -374,8 +374,8 @@ extension DieterStore {
     }
 
     private func startConnectionMetadata(client: DieterRPC, endpointID: String) {
-        connectionMetadataTask?.cancel()
-        connectionMetadataTask = Task { [weak self] in
+        connectionEffects.connectionMetadataTask?.cancel()
+        connectionEffects.connectionMetadataTask = Task { [weak self] in
             while !Task.isCancelled, let self, self.rpc === client, self.endpoint.id == endpointID {
                 // Provider discovery is auxiliary: a slow or unavailable model
                 // catalog must never delay WatchSync or tear down its route.
@@ -475,23 +475,8 @@ extension DieterStore {
     }
 
     func startConnectionTask(for client: DieterRPC) -> Task<Void, Never> {
-        Task { [weak self] in
-            do {
-                try await client.run()
-                if !Task.isCancelled {
-                    self?.connectionStopped(
-                        NSError(
-                            domain: "DieterTransport", code: 1,
-                            userInfo: [NSLocalizedDescriptionKey: "The Dieter connection closed."]),
-                        client: client,
-                        source: "transport-ended"
-                    )
-                }
-            } catch {
-                // Only the owner cancelling this task is expected. A remote
-                // cancellation still means our active transport needs recovery.
-                self?.connectionStopped(error, client: client, source: "transport-runner")
-            }
+        connectionEffects.runTransport(client) { [weak self] error, source in
+            self?.connectionStopped(error, client: client, source: source)
         }
     }
 
@@ -519,14 +504,14 @@ extension DieterStore {
         client: DieterRPC,
         attempt: Int
     ) {
-        directRefreshTask?.cancel()
-        directRefreshTask = Task { [weak self] in
+        connectionEffects.directRefreshTask?.cancel()
+        connectionEffects.directRefreshTask = Task { [weak self] in
             try? await DieterTaskSleep.seconds(delay)
             guard !Task.isCancelled, let self,
                 self.rpc === client,
                 self.directCredential === credential
             else { return }
-            self.directRefreshTask = nil
+            self.connectionEffects.directRefreshTask = nil
             await self.refreshDirectCredential(
                 expiresAt: expiresAt,
                 target: target,
@@ -666,8 +651,8 @@ extension DieterStore {
     func connectionStopped(_ error: Error, client: DieterRPC, source: String = "rpc") {
         guard !Task.isCancelled else { return }
         guard rpc === client else { return }
-        syncRecoveryEscalationTask?.cancel()
-        syncRecoveryEscalationTask = nil
+        connectionEffects.syncRecoveryEscalationTask?.cancel()
+        connectionEffects.syncRecoveryEscalationTask = nil
         guard hasLoadedWorkspace else {
             phase = .failed(Self.connectionFailureDescription(error))
             return
@@ -688,13 +673,13 @@ extension DieterStore {
     }
 
     func scheduleReconnect(to target: DieterEndpoint) {
-        guard reconnectTask == nil else { return }
-        reconnectTask = Task { [weak self] in
+        guard connectionEffects.reconnectTask == nil else { return }
+        connectionEffects.reconnectTask = Task { [weak self] in
             var delay = 1.0
             while !Task.isCancelled, let self {
                 await self.connect(to: target, automatic: true)
                 if self.phase.isConnected {
-                    self.reconnectTask = nil
+                    self.connectionEffects.reconnectTask = nil
                     return
                 }
                 try? await DieterTaskSleep.seconds(delay)
@@ -707,25 +692,14 @@ extension DieterStore {
     func disconnect() {
         connections.invalidateTemporaryLeases()
         connectionGeneration &+= 1
-        stateTask?.cancel()
+        connectionEffects.cancelConnection()
         conversationTask?.cancel()
         gitOperationTask?.cancel()
-        terminalWatchTask?.cancel()
-        syncTask?.cancel()
-        syncLivenessTask?.cancel()
+        terminalsModel.terminalWatchTask?.cancel()
         outboxTask?.cancel()
-        connectionTask?.cancel()
-        directRefreshTask?.cancel()
-        syncRecoveryEscalationTask?.cancel()
-        syncRecoveryEscalationTask = nil
         directCredential = nil
-        machineDirectoryTask?.cancel()
-        machinePresenceLeaseTask?.cancel()
-        machineTelemetryTask?.cancel()
-        connectionMetadataTask?.cancel()
-        reconnectTask?.cancel()
-        reconnectTask = nil
-        terminalStreamConnected = false
+        fleet.stopMachineTelemetry()
+        terminalsModel.terminalStreamConnected = false
         rpc?.shutdown()
         rpc = nil
         lastSyncFrameAt = nil
@@ -813,19 +787,18 @@ extension DieterStore {
         chatsRead.cancel()
         terminalsRead.cancel()
         chatsRequestGeneration &+= 1
-        terminalRequestGeneration &+= 1
+        terminalsModel.terminalRequestGeneration &+= 1
         archiveRequestGeneration &+= 1
         chatsLoading = false
-        terminalLoading = false
+        terminalsModel.terminalLoading = false
         archiveLoading = false
         chatsError = nil
-        terminalError = nil
+        terminalsModel.terminalError = nil
         archiveError = nil
         schedulesError = nil
-        providerQuotaGroups.removeAll()
-        providerQuotasLoading = false
-        providerQuotaError = nil
-        providerQuotaMutatingAccounts.removeAll()
+        fleet.reset()
+        quotas.reset()
+        terminalOverview.reset()
         closeConversation()
         syncProjection = .empty
         syncSnapshot = nil
@@ -1072,40 +1045,27 @@ extension DieterStore {
     }
 
     func startMachineDirectoryRefresh(refreshImmediately: Bool = false) {
-        machineDirectoryTask?.cancel()
-        machineDirectoryTask = Task { [weak self] in
-            await MachineDirectoryRefreshLoop.run(
-                refreshImmediately: refreshImmediately,
-                refreshPresence: { [weak self] in await self?.refreshDaemonPresence() },
-                refreshDirectory: { [weak self] in
-                    guard let self else { return }
-                    await self.refreshMachineDirectory()
-                    guard !Task.isCancelled else { return }
-                    await self.loadProviderQuotas()
-                }
-            )
-        }
+        connectionEffects.startDirectory(
+            refreshImmediately: refreshImmediately,
+            presence: { [weak self] in await self?.refreshDaemonPresence() },
+            directory: { [weak self] in
+                guard let self else { return }
+                await self.refreshMachineDirectory()
+                guard !Task.isCancelled else { return }
+                await self.loadProviderQuotas()
+            })
     }
 
     func startMachinePresenceLeaseMonitor() {
-        machinePresenceLeaseTask?.cancel()
-        machinePresenceLeaseTask = Task { [weak self] in
-            while !Task.isCancelled {
-                guard !Task.isCancelled, let self else { return }
-                let now = Date()
-                let next = MachinePresenceText.applyingExpirations(to: self.endpoints, relativeTo: now)
-                if next != self.endpoints {
-                    self.endpoints = next
-                }
-                if let active = next.first(where: { $0.id == self.endpoint.id }), active != self.endpoint {
-                    self.endpoint = active
-                }
-                let delay =
-                    MachinePresenceText.nextExpiration(in: next, relativeTo: now)
-                    .map { max(0.05, min(5, $0.timeIntervalSince(now) + 0.05)) }
-                    ?? 5
-                try? await DieterTaskSleep.seconds(delay)
+        connectionEffects.startPresence { [weak self] now in
+            guard let self else { return 5 }
+            let next = MachinePresenceText.applyingExpirations(to: self.endpoints, relativeTo: now)
+            if next != self.endpoints { self.endpoints = next }
+            if let active = next.first(where: { $0.id == self.endpoint.id }), active != self.endpoint {
+                self.endpoint = active
             }
+            return MachinePresenceText.nextExpiration(in: next, relativeTo: now)
+                .map { max(0.05, min(5, $0.timeIntervalSince(now) + 0.05)) } ?? 5
         }
     }
 
@@ -1122,21 +1082,11 @@ extension DieterStore {
     }
 
     func startSyncLivenessMonitor() {
-        syncLivenessTask?.cancel()
-        syncLivenessTask = Task { [weak self] in
-            while !Task.isCancelled {
-                try? await DieterTaskSleep.seconds(5)
-                guard !Task.isCancelled, let self else { return }
-                guard self.phase.isConnected, let rpc = self.rpc else { continue }
-                guard self.syncTransportIsStale
-                else { continue }
-                self.connectionStopped(
-                    DieterStoreConnectionError.syncTimedOut,
-                    client: rpc,
-                    source: "watch-sync-liveness"
-                )
-                return
-            }
+        connectionEffects.startLiveness { [weak self] in
+            guard let self else { return true }
+            guard self.phase.isConnected, let rpc = self.rpc, self.syncTransportIsStale else { return false }
+            self.connectionStopped(DieterStoreConnectionError.syncTimedOut, client: rpc, source: "watch-sync-liveness")
+            return true
         }
     }
 
@@ -1152,7 +1102,7 @@ extension DieterStore {
             )
             return
         }
-        if syncTask == nil { startGlobalSync() }
+        if connectionEffects.syncTask == nil { startGlobalSync() }
         conversationModel.resumeSelectedConversation(client: rpc)
     }
 
@@ -1210,108 +1160,25 @@ extension DieterStore {
         }
     }
 
-    func loadProviderQuotas(requestRefresh: Bool = false) async {
-        guard !providerQuotasLoading else { return }
-        let generation = connectionGeneration
-        guard
-            let origin = gatewayOrigins.first(where: { $0.credentialID == activeGateway.credentialID })
-                ?? gatewayOrigins.first
-        else { return }
-        providerQuotasLoading = true
-        defer {
-            if origin.credentialID == activeGateway.credentialID { providerQuotasLoading = false }
-        }
-        do {
-            let client = try environment.clients.client(
-                endpoint: origin, accessToken: await accessToken(for: origin))
-            let runner = Task { try? await client.run() }
-            defer {
-                runner.cancel()
-                client.shutdown()
-            }
-            let groups =
-                if requestRefresh {
-                    try await client.refreshProviderQuotas().groups
-                } else {
-                    try await client.providerQuotas().groups
-                }
-            guard !Task.isCancelled, generation == connectionGeneration,
-                origin.credentialID == activeGateway.credentialID
-            else { return }
-            providerQuotaGroups = groups
-            providerQuotaError = nil
-        } catch {
-            guard generation == connectionGeneration,
-                origin.credentialID == activeGateway.credentialID
-            else { return }
-            providerQuotaError = DieterRPCFailure.message(for: error)
-        }
-    }
-
+    func loadProviderQuotas(requestRefresh: Bool = false) async { await quotas.load(requestRefresh: requestRefresh) }
     func setProviderQuotaSummaryInclusion(
-        provider: Dieter_Gateway_V1_ProviderQuotaProvider,
-        accountKey: String,
-        included: Bool
+        provider: Dieter_Gateway_V1_ProviderQuotaProvider, accountKey: String, included: Bool
     ) async {
-        guard providerQuotaMutatingAccounts.insert(accountKey).inserted else { return }
-        defer { providerQuotaMutatingAccounts.remove(accountKey) }
-        do {
-            let (client, origin, runner) = try await providerQuotaClient()
-            defer {
-                runner.cancel()
-                client.shutdown()
-            }
-            let response = try await client.setProviderQuotaSummaryInclusion(
-                provider: provider, accountKey: accountKey, included: included)
-            guard origin.credentialID == activeGateway.credentialID else { return }
-            replaceProviderQuotaGroups(response.groups, provider: provider)
-            providerQuotaError = nil
-        } catch {
-            providerQuotaError = DieterRPCFailure.message(for: error)
-        }
+        await quotas.setInclusion(provider: provider, accountKey: accountKey, included: included)
     }
-
-    func consumeProviderQuotaReset(accountKey: String) async {
-        guard providerQuotaMutatingAccounts.insert(accountKey).inserted else { return }
-        defer { providerQuotaMutatingAccounts.remove(accountKey) }
-        do {
-            let (client, origin, runner) = try await providerQuotaClient()
-            defer {
-                runner.cancel()
-                client.shutdown()
-            }
-            let response = try await client.consumeProviderQuotaReset(
-                accountKey: accountKey, idempotencyKey: UUID().uuidString.lowercased())
-            guard origin.credentialID == activeGateway.credentialID else { return }
-            replaceProviderQuotaGroups(response.groups, provider: .openaiCodex)
-            providerQuotaError =
-                response.accepted
-                ? nil : "No online machine with access to this OpenAI account accepted the reset."
-        } catch {
-            providerQuotaError = DieterRPCFailure.message(for: error)
-        }
-    }
-
-    private func providerQuotaClient() async throws -> (
-        DieterRPC, DieterEndpoint, Task<Void, Never>
-    ) {
+    func consumeProviderQuotaReset(accountKey: String) async { await quotas.consumeReset(accountKey: accountKey) }
+    func providerQuotaClient() async throws -> FeatureClientLease<any ProviderQuotaRPC> {
         guard
             let origin = gatewayOrigins.first(where: { $0.credentialID == activeGateway.credentialID })
                 ?? gatewayOrigins.first
         else { throw ProviderQuotaClientError.noGateway }
-        let client = try environment.clients.client(
-            endpoint: origin, accessToken: await accessToken(for: origin))
-        let runner = Task<Void, Never> { _ = try? await client.run() }
-        return (client, origin, runner)
-    }
-
-    private func replaceProviderQuotaGroups(
-        _ groups: [Dieter_Gateway_V1_ProviderQuotaGroup],
-        provider: Dieter_Gateway_V1_ProviderQuotaProvider
-    ) {
-        providerQuotaGroups.removeAll { $0.provider == provider }
-        providerQuotaGroups.append(contentsOf: groups)
-        providerQuotaGroups.sort { $0.provider.rawValue < $1.provider.rawValue }
+        let client = try environment.clients.client(endpoint: origin, accessToken: await accessToken(for: origin))
+        let runner = Task { try? await client.run() }
+        return FeatureClientLease(
+            client: client,
+            release: {
+                runner.cancel(); client.shutdown()
+            })
     }
 
     func loadMachine(_ machine: DieterEndpoint, includeArchivedChats: Bool) async throws

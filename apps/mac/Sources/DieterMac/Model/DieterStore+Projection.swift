@@ -171,10 +171,7 @@ extension DieterStore {
     var selectedSchedule: Dieter_V1_Schedule? { schedulesModel.selectedSchedule }
     var schedulesAreLoaded: Bool { schedulesModel.schedulesAreLoaded }
 
-    var selectedTerminal: Dieter_V1_Terminal? {
-        guard let selectedTerminalID else { return nil }
-        return terminals.first { $0.id == selectedTerminalID }
-    }
+    var selectedTerminal: Dieter_V1_Terminal? { terminalsModel.selectedTerminal }
 
     var displayedCards: [Dieter_V1_Card] {
         boardProjection.displayedCards

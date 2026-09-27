@@ -159,24 +159,24 @@ extension DieterStore {
     }
 
     func startGlobalSync() {
-        syncTask?.cancel()
+        connectionEffects.syncTask?.cancel()
         syncSubscriptionGeneration &+= 1
         let subscription = syncSubscriptionGeneration
         pendingSyncSnapshot = nil
-        syncRecoveryEscalationTask?.cancel()
-        syncRecoveryEscalationTask = nil
+        connectionEffects.syncRecoveryEscalationTask?.cancel()
+        connectionEffects.syncRecoveryEscalationTask = nil
         guard let rpc else { return }
         globalSyncing = true
         syncAttemptStartedAt = Date()
         syncLastActivity = ContinuousClock.now
         syncTransportTimeout = .seconds(45)
         let endpointID = endpoint.id
-        syncTask = Task { [weak self] in
+        connectionEffects.syncTask = Task { [weak self] in
             defer {
                 // A finished task must not suppress activation recovery, and an
                 // older subscription must never clear its replacement's task.
                 if let self, self.syncSubscriptionGeneration == subscription {
-                    self.syncTask = nil
+                    self.connectionEffects.syncTask = nil
                 }
             }
             var consecutiveFailures = 0
@@ -223,15 +223,15 @@ extension DieterStore {
     }
 
     private func scheduleSyncRecoveryEscalation(endpointID: String, client: DieterRPC) {
-        guard syncRecoveryEscalationTask == nil else { return }
-        syncRecoveryEscalationTask = Task { [weak self] in
+        guard connectionEffects.syncRecoveryEscalationTask == nil else { return }
+        connectionEffects.syncRecoveryEscalationTask = Task { [weak self] in
             try? await DieterTaskSleep.seconds(DieterStreamRecoveryPolicy.resubscriptionTimeout)
             guard !Task.isCancelled, let self,
                 self.rpc === client,
                 self.endpoint.id == endpointID,
                 self.globalSyncing
             else { return }
-            self.syncRecoveryEscalationTask = nil
+            self.connectionEffects.syncRecoveryEscalationTask = nil
             self.connectionStopped(
                 DieterStoreConnectionError.syncTimedOut,
                 client: client,
@@ -266,8 +266,8 @@ extension DieterStore {
         os_signpost(.begin, log: syncPerformanceLog, name: "Apply sync frame")
         defer { os_signpost(.end, log: syncPerformanceLog, name: "Apply sync frame") }
         let receivedAt = Date()
-        syncRecoveryEscalationTask?.cancel()
-        syncRecoveryEscalationTask = nil
+        connectionEffects.syncRecoveryEscalationTask?.cancel()
+        connectionEffects.syncRecoveryEscalationTask = nil
         lastSyncFrameAt = receivedAt
         syncLastActivity = ContinuousClock.now
         if frame.transportOnly || frame.cursor.projectionVersion >= 5 { syncTransportTimeout = .seconds(15) }

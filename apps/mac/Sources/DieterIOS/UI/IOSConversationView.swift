@@ -88,10 +88,12 @@
             }
             .toolbar {
                 ToolbarItemGroup(placement: .topBarTrailing) {
-                    if let card, !harnesses.isEmpty {
+                    if let card {
                         Button("Model settings", systemImage: "slider.horizontal.3") {
                             modelSettingsPresented = true
                         }
+                        // Preserve the Start button's position while the catalog loads.
+                        .disabled(harnesses.isEmpty)
                         .accessibilityIdentifier("ios.conversation.model-settings")
                         .accessibilityValue(selectionSummary(for: card))
                     }

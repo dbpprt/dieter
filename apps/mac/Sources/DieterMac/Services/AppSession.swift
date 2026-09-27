@@ -36,7 +36,7 @@ final class AppSession {
             window.section = newValue
             terminalsModel.active = newValue == .terminals
             if previous == .terminals, newValue != .terminals { stopTerminalWatch() }
-            if previous != newValue, selectedMachineID != nil { dismissMachinePopover() }
+            if previous != newValue, fleet.selectedMachineID != nil { fleet.dismissMachinePopover() }
         }
     }
     var phase: ConnectionPhase = .disconnected {
@@ -67,19 +67,24 @@ final class AppSession {
     var settingsOptions = Dieter_V1_SettingsOptions()
     var machineConnectionStatuses: [String: MachineConnectionStatus] = [:]
     var machineConnectionErrors: [String: String] = [:]
-    var selectedMachineID: String?
-    var machineInformation: [String: Dieter_V1_MachineInformation] = [:]
-    var machineCPUHistory: [String: [Double]] = [:]
-    var machineGPUHistory: [String: [String: [Double]]] = [:]
+    @ObservationIgnored lazy var fleet = FleetModel(
+        machines: { [weak self] in
+            guard let self else { return [] }
+            return self.machines.contains(where: { $0.id == self.endpoint.id })
+                ? self.machines : self.machines + [self.endpoint]
+        },
+        acquire: { [weak self] machine in
+            guard let self else { throw CancellationError() }
+            if machine.id == self.endpoint.id, let rpc = self.rpc { return FeatureClientLease(client: rpc) }
+            let lease = try await self.selectDirectoryDataPlane(for: machine)
+            self.machineConnectionStatuses[machine.id] = lease.connection
+            return FeatureClientLease(client: lease.rpc, release: { lease.release() })
+        }, reportError: { [weak self] in self?.show($0) })
     var gatewayInformation: [String: Dieter_Gateway_V1_GatewayInformation] = [:]
-    var providerQuotaGroups: [Dieter_Gateway_V1_ProviderQuotaGroup] = []
-    var providerQuotasLoading = false
-    var providerQuotaError: String?
-    var providerQuotaMutatingAccounts: Set<String> = []
-    var machineInformationLoading = false
-    var machineInformationError: String?
-    var machineOperationMessage: String?
-    var machineOperationInFlight = false
+    @ObservationIgnored lazy var quotas = ProviderQuotaModel { [weak self] in
+        guard let self else { throw CancellationError() }
+        return try await self.providerQuotaClient()
+    }
     var archivedProjects: [Dieter_V1_Project] = []
     var archivedCards: [Dieter_V1_Card] = []
     var sidebarProjectNavigation: SidebarProjectNavigationPreferences {
@@ -138,13 +143,17 @@ final class AppSession {
     let schedulesModel = SchedulesModel()
     let terminalsModel: TerminalsModel
     let screensModel: ScreensModel
-    var terminalOverviewEntries: [TerminalOverviewEntry] = []
-    var selectedTerminalOverviewID: String?
-    var terminalOverviewLoading = false
-    var terminalOverviewError: String?
-    var terminalOverviewPreferredMachineID: String?
-    @ObservationIgnored var terminalOverviewGeneration: UInt64 = 0
-    @ObservationIgnored var terminalOverviewLease: DataPlaneLease?
+    @ObservationIgnored lazy var terminalOverview = TerminalOverviewModel(
+        terminalsModel: terminalsModel,
+        machines: { [weak self] in self?.terminalOverviewMachines ?? [] },
+        available: { [weak self] in self?.machineIsAvailable($0) ?? false },
+        active: { [weak self] in self?.section == .terminals && self?.terminalsModel.terminalScopeCardID == nil },
+        acquire: { [weak self] machine in
+            guard let self else { throw CancellationError() }
+            if machine.id == self.endpoint.id, let rpc = self.rpc { return FeatureClientLease(client: rpc) }
+            let lease = try await self.selectDirectoryDataPlane(for: machine)
+            return FeatureClientLease(client: lease.rpc, release: { lease.release() })
+        }, reportError: { [weak self] in self?.show($0) })
     let filesModel = FilesModel()
     var fileListingGeneration: UInt64 { filesModel.fileListingGeneration }
     let worktreeChanges = WorktreeChangesModel()
@@ -253,23 +262,11 @@ final class AppSession {
     }
     let scheduleRPCOverride: (any DieterScheduleRPC)?
     let chatPinRPCOverride: (any DieterChatPinRPC)?
+    let connectionEffects = ConnectionEffects()
     let connections: ConnectionManager
-    var connectionTask: Task<Void, Never>?
-    var reconnectTask: Task<Void, Never>?
-    var directRefreshTask: Task<Void, Never>?
-    var syncRecoveryEscalationTask: Task<Void, Never>?
     var directCredential: DirectAccessCredential?
     var connectionRecoveryStartedAt: Date?
     var connectionRecoverySource = ""
-    var machineDirectoryTask: Task<Void, Never>?
-    var machinePresenceLeaseTask: Task<Void, Never>?
-    var machineTelemetryTask: Task<Void, Never>?
-    var connectionMetadataTask: Task<Void, Never>?
-    var machineInformationGeneration: UInt64 = 0
-    var syncRestoreTask: Task<Void, Never>?
-    var stateTask: Task<Void, Never>?
-    var syncTask: Task<Void, Never>?
-    var syncLivenessTask: Task<Void, Never>?
     var outboxTask: Task<Void, Never>? {
         get { outbox.workerTask }
         set { outbox.workerTask = newValue }
@@ -377,7 +374,7 @@ final class AppSession {
             gatewayOrigins = [override]
             persistConnectionSelection = false
             if restoreSync {
-                syncRestoreTask = Task { [weak self] in await self?.restorePersistentSync() }
+                connectionEffects.syncRestoreTask = Task { [weak self] in await self?.restorePersistentSync() }
             }
             bindSharedNavigation(); applySharedNavigation()
             return
@@ -406,7 +403,7 @@ final class AppSession {
         bindSharedNavigation(); applySharedNavigation()
         if loadedEndpoints != storedEndpoints || activeEndpointChanged { persistEndpoints() }
         if restoreSync {
-            syncRestoreTask = Task { [weak self] in await self?.restorePersistentSync() }
+            connectionEffects.syncRestoreTask = Task { [weak self] in await self?.restorePersistentSync() }
         }
     }
 

@@ -31,10 +31,11 @@
         private(set) var isAuthenticated = false
         private(set) var errorMessage: String?
         private(set) var machineRouteDescriptions: [String: String] = [:]
-        private(set) var providerQuotaGroups: [Dieter_Gateway_V1_ProviderQuotaGroup] = []
-        private(set) var providerQuotasLoading = false
-        private(set) var providerQuotaError: String?
-        private(set) var providerQuotaMutatingAccounts: Set<String> = []
+        @ObservationIgnored lazy var quotas = ProviderQuotaModel { [weak self] in
+            guard let self, self.foreground, let client = self.gateway else { throw CancellationError() }
+            // IOSStore owns the foreground gateway; the quota feature only borrows it.
+            return FeatureClientLease(client: client)
+        }
         private(set) var machineInformation: Dieter_V1_MachineInformation?
         private(set) var machineInformationLoading = false
         private(set) var machineInformationError: String?
@@ -504,7 +505,7 @@
             refreshTask?.cancel()
             refreshTask = Task { [weak self] in
                 while !Task.isCancelled {
-                    do { try await Task.sleep(for: .seconds(15)) } catch { return }
+                    do { try await DieterTaskSleep.duration(.seconds(15)) } catch { return }
                     guard let self, self.owns(attempt) else { return }
                     await self.refreshMachines()
                 }
@@ -517,7 +518,7 @@
                 guard let self else { return }
                 await self.loadProviderQuotas()
                 while !Task.isCancelled {
-                    do { try await Task.sleep(for: .seconds(60)) } catch { return }
+                    do { try await DieterTaskSleep.seconds(60) } catch { return }
                     guard self.owns(attempt) else { return }
                     await self.loadProviderQuotas()
                 }
@@ -525,76 +526,14 @@
         }
 
         func loadProviderQuotas(requestRefresh: Bool = false) async {
-            guard !providerQuotasLoading, let control = gateway else { return }
-            let attempt = connectionID
-            providerQuotasLoading = true
-            defer {
-                if connectionID == attempt { providerQuotasLoading = false }
-            }
-            do {
-                let groups =
-                    if requestRefresh {
-                        try await control.refreshProviderQuotas().groups
-                    } else {
-                        try await control.providerQuotas().groups
-                    }
-                guard owns(attempt) else { return }
-                providerQuotaGroups = groups
-                providerQuotaError = nil
-            } catch {
-                guard owns(attempt) else { return }
-                providerQuotaError = IOSUserError.message(error)
-            }
+            await quotas.load(requestRefresh: requestRefresh)
         }
-
         func setProviderQuotaSummaryInclusion(
-            provider: Dieter_Gateway_V1_ProviderQuotaProvider,
-            accountKey: String,
-            included: Bool
+            provider: Dieter_Gateway_V1_ProviderQuotaProvider, accountKey: String, included: Bool
         ) async {
-            guard let control = gateway else { return }
-            guard providerQuotaMutatingAccounts.insert(accountKey).inserted else { return }
-            defer { providerQuotaMutatingAccounts.remove(accountKey) }
-            let attempt = connectionID
-            do {
-                let response = try await control.setProviderQuotaSummaryInclusion(
-                    provider: provider, accountKey: accountKey, included: included)
-                guard owns(attempt) else { return }
-                replaceProviderQuotaGroups(response.groups, provider: provider)
-                providerQuotaError = nil
-            } catch {
-                guard owns(attempt) else { return }
-                providerQuotaError = IOSUserError.message(error)
-            }
+            await quotas.setInclusion(provider: provider, accountKey: accountKey, included: included)
         }
-
-        func consumeProviderQuotaReset(accountKey: String) async {
-            guard let control = gateway else { return }
-            guard providerQuotaMutatingAccounts.insert(accountKey).inserted else { return }
-            defer { providerQuotaMutatingAccounts.remove(accountKey) }
-            let attempt = connectionID
-            do {
-                let response = try await control.consumeProviderQuotaReset(
-                    accountKey: accountKey, idempotencyKey: UUID().uuidString.lowercased())
-                guard owns(attempt) else { return }
-                replaceProviderQuotaGroups(response.groups, provider: .openaiCodex)
-                providerQuotaError =
-                    response.accepted
-                    ? nil : "No online machine with access to this OpenAI account accepted the reset."
-            } catch {
-                guard owns(attempt) else { return }
-                providerQuotaError = IOSUserError.message(error)
-            }
-        }
-
-        private func replaceProviderQuotaGroups(
-            _ groups: [Dieter_Gateway_V1_ProviderQuotaGroup],
-            provider: Dieter_Gateway_V1_ProviderQuotaProvider
-        ) {
-            providerQuotaGroups.removeAll { $0.provider == provider }
-            providerQuotaGroups.append(contentsOf: groups)
-            providerQuotaGroups.sort { $0.provider.rawValue < $1.provider.rawValue }
-        }
+        func consumeProviderQuotaReset(accountKey: String) async { await quotas.consumeReset(accountKey: accountKey) }
 
         func selectCard(id: String) async {
             guard let card = (cards + chats).first(where: { $0.id == id }) else { return }
@@ -695,7 +634,7 @@
             }
             errorMessage = "Conversation interrupted. Reconnecting…"
             transcriptTask = Task { [weak self] in
-                do { try await Task.sleep(for: .seconds(2)) } catch { return }
+                do { try await DieterTaskSleep.duration(.seconds(2)) } catch { return }
                 guard let self, self.owns(scope) else { return }
                 self.transcriptTask = nil
                 self.watchConversation(id: id, scope: scope)
@@ -1099,6 +1038,7 @@
         }
 
         private func closeConnections(clearContent: Bool) {
+            quotas.pause()
             connectionID = UUID()
             selectionID = UUID()
             loadingOlder = false
@@ -1112,10 +1052,7 @@
             connections.invalidateTemporaryLeases()
             machineInformationLoading = false
             if clearContent {
-                providerQuotaGroups = []
-                providerQuotasLoading = false
-                providerQuotaError = nil
-                providerQuotaMutatingAccounts = []
+                quotas.reset()
                 clearNodeContent()
             }
         }
@@ -1135,6 +1072,7 @@
             guard owns(attempt) else { return }
             // Retire every response still owned by the failed transport. Keep the
             // last readable snapshot, but no old RPC may re-enable or replace it.
+            quotas.pause()
             connectionID = UUID()
             selectionID = UUID()
             loadingOlder = false
@@ -1163,7 +1101,7 @@
             if !requiresSignIn, gateway != nil {
                 reconnectTask?.cancel()
                 reconnectTask = Task { [weak self] in
-                    do { try await Task.sleep(for: .seconds(3)) } catch { return }
+                    do { try await DieterTaskSleep.duration(.seconds(3)) } catch { return }
                     guard let self, self.owns(retryAttempt) else { return }
                     self.reconnectTask = nil
                     await self.reconnect()

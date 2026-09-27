@@ -13,6 +13,16 @@ import sys
 MAC_SMOKE_SUITES = ("core", "board", "conversation", "machine", "sidebar", "terminal", "island", "workspace", "inbox")
 MAC_SOURCE_ROOT = "apps/mac/Sources/DieterMac/"
 CI_COMPONENTS = ("core", "macos", "ios", "android")
+IOS_POLICY_ROOTS = ("apps/mac/Sources/DieterIOS/", "apps/mac/Tests/DieterIOSTests/")
+IOS_ONLY_ROOTS = ("apps/ios/", *IOS_POLICY_ROOTS)
+SHARED_SWIFT_ROOTS = ("apps/mac/Sources/DieterCore/", "apps/mac/Sources/DieterClient/",
+                      "apps/mac/Sources/DieterAPI/", "apps/mac/Tests/DieterCoreTests/",
+                      "apps/mac/Tests/DieterClientTests/", "apps/mac/Vendor/")
+SWIFT_PACKAGE_FILES = {"apps/mac/Package.swift", "apps/mac/Package.resolved"}
+MAC_LIFECYCLE_FILES = {"scripts/mac_app_lifecycle.py", "scripts/mac_app_lifecycle_test.py", "scripts/mac_bundle.py", "scripts/mac_bundle_test.py", "scripts/sync_apple_proto.py", "scripts/sync_apple_proto_test.py"}
+# These SwiftPM sources are also compiled directly into the capture helper.
+CAPTURE_SHARED_FILES = {"apps/mac/Sources/DieterCore/RemoteDesktopKeyMap.swift",
+                        "apps/mac/Sources/DieterCore/ScreenClipboardContent.swift"}
 
 # This is a conservative component map, not a Swift dependency graph. Shared
 # app/store/navigation/theme code and unclassified paths always run every suite.
@@ -83,9 +93,9 @@ def affected_mac_smoke_suites(paths):
     selected = set()
     for path in paths:
         if path.startswith(("api/proto/", "scripts/isolated-gateway/", "assets/brand/")) \
-                or path in {"scripts/generate-proto.sh", "just/mac.just"}:
+                or path in {"scripts/generate-proto.sh", "just/mac.just"} | MAC_LIFECYCLE_FILES:
             return MAC_SMOKE_SUITES
-        if not path.startswith("apps/mac/") or path.startswith(("apps/mac/Tests/", "apps/mac/Sources/DieterIOS/")):
+        if not path.startswith("apps/mac/") or path.startswith(("apps/mac/Tests/", *IOS_ONLY_ROOTS)):
             continue
         relative = path.removeprefix(MAC_SOURCE_ROOT)
         suites = MAC_SMOKE_FILES.get(relative)
@@ -175,11 +185,13 @@ def plan_checks(root, paths, packages=None):
 
     # Documentation alone does not require compilers or devices.
     code = changed_code_paths(paths)
-    schema = any(p.startswith("api/proto/") or p == "scripts/generate-proto.sh" for p in code)
+    schema = any(p.startswith("api/proto/") or p in {"scripts/generate-proto.sh", "scripts/sync_apple_proto.py", "scripts/sync_apple_proto_test.py"} for p in code)
     fixture = any(p.startswith("scripts/isolated-gateway/") for p in code)
     brand = any(p.startswith("assets/brand/") for p in code)
-    mac = schema or fixture or brand or any((p.startswith("apps/mac/") and not p.startswith("apps/mac/Sources/DieterIOS/")) or p == "just/mac.just" for p in code)
-    ios = schema or fixture or brand or any(p.startswith(("apps/ios/", "apps/mac/Sources/DieterIOS/", "apps/mac/Sources/DieterCore/", "apps/mac/Sources/DieterClient/", "apps/mac/Sources/DieterAPI/")) or p in {"apps/mac/Package.swift", "just/ios.just"} for p in code)
+    mac = schema or fixture or brand or any((p.startswith("apps/mac/") and not p.startswith(IOS_ONLY_ROOTS))
+                                            or p in {"just/mac.just"} | MAC_LIFECYCLE_FILES for p in code)
+    ios = schema or fixture or brand or any(p.startswith(IOS_ONLY_ROOTS + SHARED_SWIFT_ROOTS)
+                                            or p in SWIFT_PACKAGE_FILES | {"just/ios.just"} for p in code)
     e2e = any(p.startswith(("tools/e2e/", "tests/e2e/")) or p == "just/e2e.just" for p in code)
     android = schema or fixture or brand or any(p.startswith(("apps/android/", "native/android-webrtc/")) or p == "just/android.just" for p in code)
     mac_suites = affected_mac_smoke_suites(code)
@@ -193,6 +205,8 @@ def plan_checks(root, paths, packages=None):
         add("just", "e2e", "check")
     if any(p.startswith("scripts/check_changed") or p in {"justfile", "just/mac.just", "just/ios.just"} for p in code):
         add("python3", "-m", "unittest", "discover", "-s", "scripts", "-p", "check_changed_test.py")
+    if any(p in MAC_LIFECYCLE_FILES | {"just/mac.just", "apps/mac/scripts/build.sh"} for p in code):
+        add("just", "mac", "lifecycle-test")
     if any(p.startswith("scripts/qualify_screens") or p == "docs/screenshare-qualification-local.json" for p in code):
         add("python3", "-m", "unittest", "discover", "-s", "scripts", "-p", "qualify_screens_test.py")
     if any(p.startswith(("deploy/gateway/", "scripts/gateway-turn-probe/"))
@@ -207,7 +221,9 @@ def plan_checks(root, paths, packages=None):
         add("just", "workflow-check")
     if any(p.startswith(("scripts/homebrew_", "scripts/macos_daemon_installer", "scripts/macos_notary_submit",
                          "scripts/configure_apple_signing", "scripts/release_signing", "scripts/ios_release"))
-           or p in {"just/release.just", "just/daemon.just", "just/ios.just", "just/android.just", ".github/workflows/ios-testflight.yml", ".github/workflows/release.yml"} for p in code):
+           or p in {"scripts/install.sh", "scripts/install_linux_test.py", "scripts/linux_service_e2e_test.py",
+                     "just/release.just", "just/daemon.just", "just/ios.just", "just/android.just",
+                     ".github/workflows/ios-testflight.yml", ".github/workflows/release.yml"} for p in code):
         add("just", "release", "test")
     if schema:
         add("just", "proto")
@@ -219,7 +235,7 @@ def plan_checks(root, paths, packages=None):
         if affected:
             add("go", "test", "-race", *affected)
             add("go", "vet", *affected)
-    screens = schema or any(p.startswith(("internal/remotedesktop/", "native/macos-capture/", "scripts/screens-fixture/"))
+    screens = schema or any(p in CAPTURE_SHARED_FILES or p.startswith(("internal/remotedesktop/", "native/macos-capture/", "scripts/screens-fixture/"))
                             or "RemoteDesktop" in p or "Features/Screens/" in p for p in code)
     if screens:
         add("just", "mac", "screens-native-test")
@@ -230,6 +246,10 @@ def plan_checks(root, paths, packages=None):
         add("just", "mac", "markdown-check")
     if mac:
         add("just", "mac", "test")
+    elif any(p.startswith(IOS_POLICY_ROOTS) for p in code):
+        # The portable iOS policies and their SwiftPM tests run on the Mac host;
+        # UIKit integration runs separately through the Xcode target below.
+        add("just", "mac", "test", "DieterIOSTests")
     if android:
         add("just", "android", "test")
     if ios:

@@ -227,7 +227,8 @@ func (m macDriver) run(ctx context.Context, c Case) (result Result) {
 			return
 		}
 		base = append(base, "--dieter-endpoint", "http://"+values["DIETER_ISOLATED_ADDR"], "--dieter-access-token-file", tokenFile,
-			"--ui-smoke-fixture-root", filepath.Join(state, "gateway"))
+			"--ui-smoke-fixture-root", filepath.Join(state, "gateway"),
+			"--ui-smoke-fixture-daemon", values["DIETER_ISOLATED_DAEMON"])
 	}
 	if suite == "island" {
 		if _, err = command(ctx, m.root, nil, "/usr/bin/defaults", "write", preferences, "DieterAppearance", "-string", "dark"); err != nil {
@@ -266,8 +267,14 @@ func (m macDriver) run(ctx context.Context, c Case) (result Result) {
 			result.Reason = err.Error()
 			return
 		}
-		app, err = startOwned(m.root, append([]string{m.app}, append(slices.Clone(base), phase.args...)...)...)
+		activationFile := filepath.Join(dir, "activation-"+phase.name+".pid")
+		launchArgs := append(slices.Clone(base), "--e2e-activation-ready", activationFile)
+		app, err = startOwned(m.root, append([]string{m.app}, append(launchArgs, phase.args...)...)...)
 		if err != nil {
+			result.Reason = err.Error()
+			return
+		}
+		if err = m.activate(ctx, app, activationFile); err != nil {
 			result.Reason = err.Error()
 			return
 		}
@@ -378,6 +385,39 @@ func requestMacRestart(ctx context.Context, dir string, p *ownedProcess) error {
 			return timeout.Err()
 		case <-p.done:
 			return fmt.Errorf("fixture exited during restart")
+		case <-tick.C:
+		}
+	}
+}
+
+// Activate only after the owned app has registered its scene; an early `open`
+// could launch a second process instead of foregrounding the direct child.
+func (m macDriver) activate(ctx context.Context, app *ownedProcess, ready string) error {
+	deadline, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	tick := time.NewTicker(50 * time.Millisecond)
+	defer tick.Stop()
+	for {
+		data, err := os.ReadFile(ready)
+		if err == nil {
+			if strings.TrimSpace(string(data)) != fmt.Sprint(app.cmd.Process.Pid) {
+				return fmt.Errorf("activation PID does not match owned app")
+			}
+			out, err := command(deadline, m.root, nil, "/usr/bin/pgrep", "-x", "DieterMac")
+			if err != nil || strings.TrimSpace(out) != fmt.Sprint(app.cmd.Process.Pid) {
+				return fmt.Errorf("activation requires exactly the owned DieterMac process")
+			}
+			_, err = command(deadline, m.root, nil, "/usr/bin/open", filepath.Dir(filepath.Dir(filepath.Dir(m.app))))
+			return err
+		}
+		if !os.IsNotExist(err) {
+			return err
+		}
+		select {
+		case <-deadline.Done():
+			return fmt.Errorf("owned app did not become ready for activation: %w", deadline.Err())
+		case <-app.done:
+			return fmt.Errorf("owned app exited before foreground activation: %s", app.out.String())
 		case <-tick.C:
 		}
 	}

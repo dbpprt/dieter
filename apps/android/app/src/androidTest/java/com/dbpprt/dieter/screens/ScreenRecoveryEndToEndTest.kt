@@ -92,6 +92,17 @@ class ScreenRecoveryEndToEndTest {
             }
             try {
                 compose.waitUntil(15_000) { controller.state.value.session.referenceAcks > 0 }
+                // First decoder output does not prove that its startup backlog
+                // has drained. Isolate loss recovery from initial adaptation,
+                // using the same actual-output continuity check as after loss.
+                compose.waitUntil(30_000) {
+                    synchronized(timestamps) {
+                        arrivals.size == 16 && arrivals.zipWithNext().all { (a, b) -> b - a <= 250 } &&
+                            android.os.SystemClock.elapsedRealtime() - arrivals.last() <= 250 &&
+                            controller.state.value.session.jitterBufferMs < 100
+                    }
+                }
+                android.util.Log.i("DieterRecovery", "$codec pre-loss decoder ready: ${controller.state.value.session}")
                 val before = controller.state.value.session.referenceRecoveries
                 fault("burst")
                 try { compose.waitUntil(15_000) { controller.state.value.session.referenceRecoveries > before } }
@@ -103,21 +114,14 @@ class ScreenRecoveryEndToEndTest {
                 fault("random")
                 compose.waitUntil(15_000) { controller.state.value.session.fecPercent > 0 && controller.state.value.session.fecPackets > 0 }
                 fault("none")
-                // Random loss can leave an earlier reference dependency unresolved.
-                // A fixed sleep cannot prove that the next protected frame is
-                // otherwise decodable. Require actual continuous decoder output
-                // before isolating a single FEC repair; retain the exact-RTP proof.
-                synchronized(timestamps) { arrivals.clear() }
-                val cleanStarted = android.os.SystemClock.elapsedRealtime()
-                compose.waitUntil(10_000) {
-                    synchronized(timestamps) {
-                        arrivals.size == 16 && arrivals.zipWithNext().all { (a, b) -> b - a <= 250 } &&
-                            android.os.SystemClock.elapsedRealtime() - arrivals.last() <= 250
-                    }
-                }
+                // Retire unresolved random-loss dependencies with a fresh,
+                // decoded anchor. The following packet is still dropped below
+                // FEC generation, including every retransmission: only parity
+                // can deliver its exact timestamp to the decoder.
+                val anchorBefore = controller.state.value.session.referenceAcks
+                compose.runOnIdle { controller.configure(refresh = true) }
+                compose.waitUntil(5_000) { controller.state.value.session.referenceAcks > anchorBefore }
                 assertTrue("Adaptive FEC must remain enabled for the isolated repair", controller.state.value.session.fecPercent > 0)
-                val cleanElapsed = android.os.SystemClock.elapsedRealtime() - cleanStarted
-                android.util.Log.i("DieterRecovery", "$codec continuous decode resumed after random loss in $cleanElapsed ms")
                 val proofStarted = android.os.SystemClock.elapsedRealtime()
                 fault("fec-proof")
                 var repaired = 0L
@@ -134,7 +138,21 @@ class ScreenRecoveryEndToEndTest {
                     android.util.Log.e("DieterRecovery", "Missing $repaired / $quantized; count=${observed.size} range=${observed.minOrNull()}..${observed.maxOrNull()} nativeDecoded=${controller.state.value.decodedFrames} observerCurrent=${controller.decodedOutputObserver === observer}; nearest=${observed.sortedBy { kotlin.math.abs(it - quantized) }.take(8)}; ${controller.state.value.session}")
                     throw failure
                 }
+                val proofElapsed = android.os.SystemClock.elapsedRealtime() - proofStarted
                 android.util.Log.i("DieterRecovery", "$codec FEC reconstructed RTP $repaired with original and retransmissions discarded")
+                // Continuity is a postcondition of exact-packet recovery. It
+                // must outlive the fault rather than require FEC to stay on
+                // after its intentional two-second clean-network expiry.
+                synchronized(timestamps) { arrivals.clear() }
+                val cleanStarted = android.os.SystemClock.elapsedRealtime()
+                compose.waitUntil(10_000) {
+                    synchronized(timestamps) {
+                        arrivals.size == 16 && arrivals.zipWithNext().all { (a, b) -> b - a <= 250 } &&
+                            android.os.SystemClock.elapsedRealtime() - arrivals.last() <= 250
+                    }
+                }
+                val cleanElapsed = android.os.SystemClock.elapsedRealtime() - cleanStarted
+                android.util.Log.i("DieterRecovery", "$codec continuous decode after FEC repair in $cleanElapsed ms")
                 results.put(JSONObject().apply {
                     put("codec", codec)
                     put("decoder", controller.decoderStatus?.implementation)
@@ -146,7 +164,7 @@ class ScreenRecoveryEndToEndTest {
                     // Includes the 16-frame continuity check / HTTP polling;
                     // neither value is an input-to-photon measurement.
                     put("postLossContinuityCheckMs", cleanElapsed)
-                    put("fecProbeToObservedDecodeMs", android.os.SystemClock.elapsedRealtime() - proofStarted)
+                    put("fecProbeToObservedDecodeMs", proofElapsed)
                     put("fault", fault())
                 })
                 fault("none")
@@ -160,6 +178,12 @@ class ScreenRecoveryEndToEndTest {
             compose.onNodeWithTag("screen-machine").performClick()
             compose.onNodeWithText("Codec test Mac").performClick()
             compose.onNodeWithTag("screen-connect").performClick()
+            waitVideo("H264")
+            // Keep loss qualification within the emulator decoder's sustained
+            // throughput. Codec/high-refresh qualification is separate; every
+            // frame here still uses native 1080p decoding for both codecs.
+            compose.runOnIdle { controller.configure(maxFPS = 15) }
+            compose.waitUntil(10_000) { controller.state.value.session.configuration.maxFps == 15 }
             exercise("H264")
             var hevc = false
             compose.runOnIdle { hevc = ScreenDecoderFactory(controller.egl.eglBaseContext, enableHEVC = true) {}.supportedCodecs.any { it.name == "H265" } }

@@ -10,3 +10,5 @@ extension DieterRPC: ProjectChangesRPC {}
 extension DieterRPC: ScreenSignalingRPC {}
 
 extension DieterRPC: OutboxRPC {}
+extension DieterRPC: MachineTelemetryRPC {}
+extension DieterRPC: ProviderQuotaRPC {}

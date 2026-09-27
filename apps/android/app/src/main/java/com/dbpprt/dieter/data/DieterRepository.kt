@@ -365,6 +365,9 @@ interface DieterRepository {
     suspend fun moveFile(projectId: String, source: String, destination: String): MoveFileResponse
     suspend fun deleteFile(projectId: String, path: String, recursive: Boolean = false)
 
+    fun captureScheduleClient(): ScheduleClient { error("Schedule route unavailable") }
+    fun captureAdministrationClient(): AdministrationClient { error("Administration route unavailable") }
+    fun captureTerminalClient(): TerminalClient { error("Terminal route unavailable") }
     suspend fun terminals(projectId: String = ""): TerminalsResponse
     suspend fun createTerminal(request: CreateTerminalRequest): Terminal
     fun watchTerminal(terminalId: String, afterSequence: Long = 0): Flow<TerminalFrame>
@@ -1330,6 +1333,14 @@ class GrpcDieterRepository(context: Context) : DieterRepository {
                 .setRecursive(recursive)
                 .build(),
         )
+    }
+
+    override fun captureScheduleClient(): ScheduleClient = GrpcScheduleClient(authenticated())
+    override fun captureAdministrationClient(): AdministrationClient = GrpcAdministrationClient(authenticated())
+
+    override fun captureTerminalClient(): TerminalClient {
+        val selections = checkoutSelections.toMap()
+        return GrpcTerminalClient(authenticated()) { selections[it].orEmpty() }
     }
 
     override suspend fun terminals(projectId: String): TerminalsResponse = unary().listTerminals(

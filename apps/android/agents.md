@@ -189,4 +189,5 @@ Use `just e2e` and `tests/e2e/cases/android/*.yaml` for device tests. Read
 per-device leases, fixtures, reverse mappings, builds, and result collection.
 Do not add bespoke orchestration scripts. `functional`, `sync`, `screens`, and
 non-debuggable `performance` are separate suites. Missing/skipped tests fail.
-Mac execution is disabled in this framework; iOS is prepared but not executable.
+The same runner executes Mac and iOS cases with explicit platform selection;
+see `tests/e2e/README.md` for their desktop and simulator prerequisites.

@@ -41,6 +41,7 @@ These are dated engineering records, not the current installation manual or a
 list of promised features. Their observations, benchmarks, and validation limits
 are retained. Paths are stable so existing issue and PR links continue to work.
 
+- [Code structure, native clients, helpers, and build audit](code-structure-audit-2026-09-26.md)
 - [Lean native test framework proposal](native-test-framework-plan-2026-09-25.md)
 - [Native test framework implementation](native-test-framework-implementation-2026-09-25.md) — Android runner, retired scripts, platform boundaries, and validation.
 - [Gateway domain migration and acceptance](gateway-domain-migration-2026-09-22.md)
@@ -86,3 +87,4 @@ are retained. Paths are stable so existing issue and PR links continue to work.
 
 - [Relay fallback investigation](investigations/2026-09-21-relay-fallback.md)
 - [Local screen qualification manifest](screenshare-qualification-local.json)
+- [Refactor implementation and qualification](refactor-implementation-2026-09-26.md)

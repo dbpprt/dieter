@@ -76,10 +76,13 @@ func TestBrandPackIsWiredIntoReleaseSurfaces(t *testing.T) {
 		"val DEFAULT = MONOCHROME",
 	)
 	assertContains(t, filepath.Join(root, "apps/mac/scripts/build.sh"),
-		`$APP_ROOT/Resources/DieterMonochrome.icns`,
-		`$PALETTE_ICON_ROOT/monochrome.png`,
-		`$APP_ROOT/Resources/DieterMonochromeFavicon.png`,
-		`$BRAND_ROOT/assets/fonts/Sora-Variable.ttf`,
+		`scripts/mac_bundle.py`,
+	)
+	assertContains(t, filepath.Join(root, "scripts/mac_bundle.py"),
+		`resources / "DieterMonochrome.icns"`,
+		`resources / "PaletteIcons/monochrome.png"`,
+		`resources / "DieterMonochromeFavicon.png"`,
+		`root / "assets/brand/assets/fonts/Sora-Variable.ttf"`,
 	)
 	assertContainsIgnoringWhitespace(t, filepath.Join(root, "apps/mac/Sources/DieterMac/UI/DieterTheme.swift"),
 		"PaletteSpec(0x0D1B24, 0x193A49, 0x8DD8E8, 0x3D6E85",

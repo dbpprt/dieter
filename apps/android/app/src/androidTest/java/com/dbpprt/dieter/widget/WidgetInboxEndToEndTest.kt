@@ -6,6 +6,7 @@ import android.appwidget.AppWidgetHostView
 import android.appwidget.AppWidgetManager
 import android.content.ComponentName
 import android.content.Intent
+import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.os.Bundle
 import android.view.Gravity
@@ -29,6 +30,7 @@ import com.dbpprt.dieter.R
 import com.dbpprt.dieter.connection.BackgroundSyncMode
 import com.dbpprt.dieter.connection.ConnectionPhase
 import com.dbpprt.dieter.data.DieterEndpoint
+import com.dbpprt.dieter.data.GrpcDieterRepository
 import com.dbpprt.dieter.settings.DieterPalette
 import com.dbpprt.dieter.v1.CreateConversationRequest
 import kotlinx.coroutines.flow.first
@@ -60,6 +62,7 @@ class WidgetInboxEndToEndTest {
         val container = (compose.activity.application as DieterApplication).container
         val manager = container.connectionManager
         val repository = container.repository
+        val otherDevice = GrpcDieterRepository(context)
         repository.setAccessToken(endpoint, requireNotNull(args.getString("isolatedGatewayToken")))
         manager.updateEndpoints(listOf(endpoint), selectedGatewayId = endpoint.id)
         manager.connect()
@@ -72,6 +75,11 @@ class WidgetInboxEndToEndTest {
                     it.endpointConnections.any { machine -> machine.daemonId == args.getString("isolatedMachineId") && machine.online }
             } } }
             val board = connected.boards.first { it.id == args.getString("isolatedBoardId") }
+            // This client remains connected when APP_ONLY intentionally closes the app's route.
+            val fixtureRoute = repository.activeEndpoint
+            otherDevice.setAccessToken(fixtureRoute, requireNotNull(args.getString("isolatedGatewayToken")))
+            otherDevice.replaceEndpoints(listOf(fixtureRoute))
+            otherDevice.selectEndpoint(fixtureRoute)
             fun create(title: String, chat: Boolean = false, prompt: String = "mock-activity-reply") = runBlocking {
                 repository.createConversation(CreateConversationRequest.newBuilder().setProjectId(board.projectId)
                     .setBoardId(if (chat) "" else board.id).setTitle(title).setLane("running").setPrompt(prompt)
@@ -111,8 +119,10 @@ class WidgetInboxEndToEndTest {
             awaitText(running.title)
             capture("widget-inbox-compact")
             container.appPreferences.setPalette(DieterPalette.MONOCHROME)
-            awaitHeaderColor(DieterPalette.MONOCHROME.tokens.darkBrandInt)
-            capture("widget-inbox-compact-light")
+            val nightMode = context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK ==
+                Configuration.UI_MODE_NIGHT_YES
+            awaitHeaderColor(if (nightMode) DieterPalette.MONOCHROME.tokens.lightInt else DieterPalette.MONOCHROME.tokens.darkBrandInt)
+            capture("widget-inbox-compact-monochrome")
             onView(withText(chat.title)).perform(click())
             compose.waitUntil(15_000) { compose.onAllNodesWithTag("message-input").fetchSemanticsNodes().isNotEmpty() }
             compose.waitUntil(15_000) { manager.state.value.chats.any { it.id == chat.id && it.seenResponseSeq >= it.responseSeq } }
@@ -134,7 +144,7 @@ class WidgetInboxEndToEndTest {
 
             manager.setBackgroundSyncMode(BackgroundSyncMode.APP_ONLY)
             runBlocking { withTimeout(10_000) { manager.state.first { it.phase == ConnectionPhase.STOPPED } } }
-            runBlocking { repository.renameCard(card.id, "Spacing approved from another device") }
+            runBlocking { otherDevice.renameCard(card.id, "Spacing approved from another device") }
             assertFalse(widgetTexts().contains("Spacing approved from another device"))
             onView(withId(R.id.widget_refresh)).perform(click())
             awaitText("Spacing approved from another device")
@@ -153,6 +163,7 @@ class WidgetInboxEndToEndTest {
             if (::widgetView.isInitialized) runCatching { capture("widget-failure") }.onFailure(failure::addSuppressed)
             throw failure
         } finally {
+            otherDevice.close()
             hostScreen?.close()
             if (::host.isInitialized) instrumentation.runOnMainSync {
                 host.stopListening()

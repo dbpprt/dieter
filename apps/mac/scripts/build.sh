@@ -4,25 +4,20 @@ set -eu
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 APP_ROOT=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
 REPO_ROOT=$(CDPATH= cd -- "$APP_ROOT/../.." && pwd)
-BRAND_ROOT="$REPO_ROOT/assets/brand"
-PALETTE_ICON_ROOT="$APP_ROOT/Resources/PaletteIcons"
 CONFIGURATION=${CONFIGURATION:-debug}
 SWIFT_SCRATCH_PATH=${DIETER_SWIFT_SCRATCH_PATH:-$APP_ROOT/.build/dieter-local}
-OUTPUT_ROOT="$APP_ROOT/build"
-APP_BUNDLE="$OUTPUT_ROOT/Dieter.app"
-BUNDLE_MANIFEST="$OUTPUT_ROOT/.Dieter.bundle-inputs"
-BUNDLE_OUTPUT_MANIFEST="$OUTPUT_ROOT/.Dieter.bundle-outputs"
 
-bundle_resource_root() {
-    if [ -d "$1/Contents/Resources" ]; then
-        printf '%s\n' "$1/Contents/Resources"
-    else
-        printf '%s\n' "$1"
-    fi
-}
+# Check before compilation and again before packaging: an operator can open
+# the app while SwiftPM is building. Direct script callers get the same guard.
+python3 "$REPO_ROOT/scripts/mac_app_lifecycle.py" assert-stopped
 
 "$SCRIPT_DIR/sync-proto.sh" >&2
+set --
+if [ -n "${DIETER_SWIFT_JOBS:-}" ]; then
+    set -- --jobs "$DIETER_SWIFT_JOBS"
+fi
 swift build \
+    "$@" \
     --package-path "$APP_ROOT" \
     --scratch-path "$SWIFT_SCRATCH_PATH" \
     --only-use-versions-from-resolved-file \
@@ -30,141 +25,4 @@ swift build \
     --disable-index-store \
     --product DieterMac \
     -c "$CONFIGURATION" >&2
-DIETER_BINARY="$SWIFT_SCRATCH_PATH/$CONFIGURATION/DieterMac"
-if [ ! -x "$DIETER_BINARY" ]; then
-    echo "DieterMac binary was not produced" >&2
-    exit 1
-fi
-WEBRTC_FRAMEWORK="$SWIFT_SCRATCH_PATH/$CONFIGURATION/WebRTC.framework"
-WEBRTC_BINARY="$WEBRTC_FRAMEWORK/Versions/A/WebRTC"
-WEBRTC_INFO_PLIST="$WEBRTC_FRAMEWORK/Versions/A/Resources/Info.plist"
-if [ ! -x "$WEBRTC_BINARY" ] || [ ! -f "$WEBRTC_INFO_PLIST" ]; then
-    echo "WebRTC.framework was not produced alongside DieterMac" >&2
-    exit 1
-fi
-MARKDOWN_BUNDLE="$SWIFT_SCRATCH_PATH/$CONFIGURATION/DieterMac_DieterMac.bundle"
-MARKDOWN_RESOURCES=$(bundle_resource_root "$MARKDOWN_BUNDLE")
-if [ ! -f "$MARKDOWN_RESOURCES/MarkdownPreview/index.html" ] || \
-    [ ! -f "$MARKDOWN_RESOURCES/MarkdownPreview/app.js" ] || \
-    [ ! -f "$MARKDOWN_RESOURCES/MarkdownPreview/app.css" ] || \
-    [ ! -f "$MARKDOWN_RESOURCES/MarkdownPreview/LICENSES.txt" ]; then
-    echo "The bundled Markdown renderer was not produced alongside DieterMac" >&2
-    exit 1
-fi
-
-HIGHLIGHTER_BUNDLE="$SWIFT_SCRATCH_PATH/$CONFIGURATION/Highlighter_Highlighter.bundle"
-HIGHLIGHTER_RESOURCES=$(bundle_resource_root "$HIGHLIGHTER_BUNDLE")
-if [ ! -f "$HIGHLIGHTER_RESOURCES/highlight.min.js" ]; then
-    echo "The native Markdown highlighter bundle was not produced" >&2
-    exit 1
-fi
-
-APP_MARKDOWN_BUNDLE="$APP_BUNDLE/Contents/Resources/DieterMac_DieterMac.bundle"
-APP_MARKDOWN_RESOURCES=$(bundle_resource_root "$APP_MARKDOWN_BUNDLE")
-APP_HIGHLIGHTER_BUNDLE="$APP_BUNDLE/Contents/Resources/Highlighter_Highlighter.bundle"
-APP_HIGHLIGHTER_RESOURCES=$(bundle_resource_root "$APP_HIGHLIGHTER_BUNDLE")
-
-mkdir -p "$OUTPUT_ROOT"
-NEW_BUNDLE_MANIFEST=$(mktemp "${TMPDIR:-/tmp}/dieter-mac-bundle.XXXXXX")
-NEW_BUNDLE_OUTPUT_MANIFEST=$(mktemp "${TMPDIR:-/tmp}/dieter-mac-bundle-output.XXXXXX")
-trap 'rm -f "$NEW_BUNDLE_MANIFEST" "$NEW_BUNDLE_OUTPUT_MANIFEST"' EXIT INT TERM
-stat -f '%N %Fm %z %i' \
-    "$APP_ROOT/Resources/Info.plist" \
-    "$APP_ROOT/Resources/DieterMonochrome.icns" \
-    "$PALETTE_ICON_ROOT/monochrome.png" \
-    "$APP_ROOT/Resources/DieterMonochromeFavicon.png" \
-    "$BRAND_ROOT/assets/fonts/Sora-Variable.ttf" \
-    "$DIETER_BINARY" \
-    "$WEBRTC_BINARY" \
-    "$WEBRTC_INFO_PLIST" >"$NEW_BUNDLE_MANIFEST"
-find "$PALETTE_ICON_ROOT" -type f | sort | xargs stat -f '%N %Fm %z %i' >>"$NEW_BUNDLE_MANIFEST"
-find "$MARKDOWN_BUNDLE" "$HIGHLIGHTER_BUNDLE" -type f | sort | xargs stat -f '%N %Fm %z %i' >>"$NEW_BUNDLE_MANIFEST"
-
-BUNDLE_OUTPUTS_MATCH=0
-if [ -f "$APP_BUNDLE/Contents/Info.plist" ] && \
-    [ -f "$APP_BUNDLE/Contents/Resources/Dieter.icns" ] && \
-    [ -f "$APP_BUNDLE/Contents/Resources/DieterAppIcon.png" ] && \
-    [ -f "$APP_BUNDLE/Contents/Resources/DieterFavicon.png" ] && \
-    [ -d "$APP_BUNDLE/Contents/Resources/PaletteIcons" ] && \
-    [ -f "$APP_BUNDLE/Contents/Resources/Fonts/Sora-Variable.ttf" ] && \
-    [ -f "$APP_MARKDOWN_RESOURCES/MarkdownPreview/index.html" ] && \
-    [ -f "$APP_MARKDOWN_RESOURCES/MarkdownPreview/app.js" ] && \
-    [ -f "$APP_MARKDOWN_RESOURCES/MarkdownPreview/app.css" ] && \
-    [ -f "$APP_MARKDOWN_RESOURCES/MarkdownPreview/LICENSES.txt" ] && \
-    [ -f "$APP_HIGHLIGHTER_RESOURCES/highlight.min.js" ] && \
-    [ -x "$APP_BUNDLE/Contents/MacOS/DieterMac" ] && \
-    [ -x "$APP_BUNDLE/Contents/Frameworks/WebRTC.framework/Versions/A/WebRTC" ] && \
-    [ -f "$APP_BUNDLE/Contents/Frameworks/WebRTC.framework/Versions/A/Resources/Info.plist" ]; then
-    stat -f '%N %Fm %z %i' \
-        "$APP_BUNDLE/Contents/Info.plist" \
-        "$APP_BUNDLE/Contents/Resources/Dieter.icns" \
-        "$APP_BUNDLE/Contents/Resources/DieterAppIcon.png" \
-        "$APP_BUNDLE/Contents/Resources/DieterFavicon.png" \
-        "$APP_BUNDLE/Contents/Resources/Fonts/Sora-Variable.ttf" \
-        "$APP_BUNDLE/Contents/MacOS/DieterMac" \
-        "$APP_BUNDLE/Contents/Frameworks/WebRTC.framework/Versions/A/WebRTC" \
-        "$APP_BUNDLE/Contents/Frameworks/WebRTC.framework/Versions/A/Resources/Info.plist" >"$NEW_BUNDLE_OUTPUT_MANIFEST"
-    find "$APP_BUNDLE/Contents/Resources/PaletteIcons" -type f | sort | xargs stat -f '%N %Fm %z %i' >>"$NEW_BUNDLE_OUTPUT_MANIFEST"
-    find "$APP_BUNDLE/Contents/Resources/DieterMac_DieterMac.bundle" "$APP_BUNDLE/Contents/Resources/Highlighter_Highlighter.bundle" -type f | sort | xargs stat -f '%N %Fm %z %i' >>"$NEW_BUNDLE_OUTPUT_MANIFEST"
-    if [ -f "$BUNDLE_OUTPUT_MANIFEST" ] && \
-        cmp -s "$NEW_BUNDLE_OUTPUT_MANIFEST" "$BUNDLE_OUTPUT_MANIFEST"; then
-        BUNDLE_OUTPUTS_MATCH=1
-    fi
-fi
-
-if [ ! -f "$BUNDLE_MANIFEST" ] || \
-    ! cmp -s "$NEW_BUNDLE_MANIFEST" "$BUNDLE_MANIFEST" || \
-    [ "$BUNDLE_OUTPUTS_MATCH" -ne 1 ]; then
-    mkdir -p "$APP_BUNDLE/Contents/MacOS" "$APP_BUNDLE/Contents/Frameworks" "$APP_BUNDLE/Contents/Resources/Fonts" "$APP_BUNDLE/Contents/Resources/PaletteIcons"
-    cp "$APP_ROOT/Resources/Info.plist" "$APP_BUNDLE/Contents/Info.plist"
-    cp "$APP_ROOT/Resources/DieterMonochrome.icns" "$APP_BUNDLE/Contents/Resources/Dieter.icns"
-    cp "$PALETTE_ICON_ROOT/monochrome.png" "$APP_BUNDLE/Contents/Resources/DieterAppIcon.png"
-    cp "$APP_ROOT/Resources/DieterMonochromeFavicon.png" "$APP_BUNDLE/Contents/Resources/DieterFavicon.png"
-    cp "$BRAND_ROOT/assets/fonts/Sora-Variable.ttf" "$APP_BUNDLE/Contents/Resources/Fonts/Sora-Variable.ttf"
-    cp "$PALETTE_ICON_ROOT"/*.png "$APP_BUNDLE/Contents/Resources/PaletteIcons/"
-    cp "$DIETER_BINARY" "$APP_BUNDLE/Contents/MacOS/DieterMac"
-    rm -rf "$APP_MARKDOWN_BUNDLE"
-    ditto "$MARKDOWN_BUNDLE" "$APP_MARKDOWN_BUNDLE"
-    rm -rf "$APP_HIGHLIGHTER_BUNDLE"
-    rm -rf "$APP_BUNDLE/Highlighter_Highlighter.bundle"
-    ditto "$HIGHLIGHTER_BUNDLE" "$APP_HIGHLIGHTER_BUNDLE"
-    rm -rf "$APP_BUNDLE/Contents/Frameworks/WebRTC.framework"
-    ditto "$WEBRTC_FRAMEWORK" "$APP_BUNDLE/Contents/Frameworks/WebRTC.framework"
-fi
-
-if [ -n "${DIETER_RELEASE_VERSION:-}" ]; then
-    /usr/libexec/PlistBuddy -c "Set :DieterReleaseVersion $DIETER_RELEASE_VERSION" "$APP_BUNDLE/Contents/Info.plist"
-fi
-
-# Ad-hoc signatures identify each build by its cdhash, invalidating privacy
-# grants after source changes. Prefer one available development identity locally.
-SIGNING_IDENTITY=${DIETER_MAC_SIGNING_IDENTITY:-}
-if [ -z "$SIGNING_IDENTITY" ] && [ "${CI:-}" != "true" ]; then
-    IDENTITIES=$(security find-identity -v -p codesigning | sed -n '/"Apple Development:/s/.*) \([0-9A-F]*\) .*/\1/p')
-    if [ "$(printf '%s\n' "$IDENTITIES" | awk 'NF { n++ } END { print n+0 }')" -eq 1 ]; then
-        SIGNING_IDENTITY=$IDENTITIES
-    fi
-fi
-SIGNING_IDENTITY=${SIGNING_IDENTITY:--}
-if [ "$SIGNING_IDENTITY" = "-" ]; then
-    echo "Ad-hoc signing: privacy permissions may require reapproval after rebuilds. Set DIETER_MAC_SIGNING_IDENTITY for a stable identity." >&2
-fi
-codesign --force --sign "$SIGNING_IDENTITY" "$APP_BUNDLE/Contents/Frameworks/WebRTC.framework" >&2
-codesign --force --deep --sign "$SIGNING_IDENTITY" "$APP_BUNDLE" >&2
-"$SCRIPT_DIR/verify-bundle.sh" "$APP_BUNDLE" >&2
-stat -f '%N %Fm %z %i' \
-    "$APP_BUNDLE/Contents/Info.plist" \
-    "$APP_BUNDLE/Contents/Resources/Dieter.icns" \
-    "$APP_BUNDLE/Contents/Resources/DieterAppIcon.png" \
-    "$APP_BUNDLE/Contents/Resources/DieterFavicon.png" \
-    "$APP_BUNDLE/Contents/Resources/Fonts/Sora-Variable.ttf" \
-    "$APP_BUNDLE/Contents/MacOS/DieterMac" \
-    "$APP_BUNDLE/Contents/Frameworks/WebRTC.framework/Versions/A/WebRTC" \
-    "$APP_BUNDLE/Contents/Frameworks/WebRTC.framework/Versions/A/Resources/Info.plist" >"$NEW_BUNDLE_OUTPUT_MANIFEST"
-find "$APP_BUNDLE/Contents/Resources/PaletteIcons" -type f | sort | xargs stat -f '%N %Fm %z %i' >>"$NEW_BUNDLE_OUTPUT_MANIFEST"
-find "$APP_BUNDLE/Contents/Resources/DieterMac_DieterMac.bundle" "$APP_BUNDLE/Contents/Resources/Highlighter_Highlighter.bundle" -type f | sort | xargs stat -f '%N %Fm %z %i' >>"$NEW_BUNDLE_OUTPUT_MANIFEST"
-mv "$NEW_BUNDLE_MANIFEST" "$BUNDLE_MANIFEST"
-mv "$NEW_BUNDLE_OUTPUT_MANIFEST" "$BUNDLE_OUTPUT_MANIFEST"
-trap - EXIT INT TERM
-
-echo "$APP_BUNDLE"
+python3 "$REPO_ROOT/scripts/mac_bundle.py" --products "$SWIFT_SCRATCH_PATH/$CONFIGURATION"

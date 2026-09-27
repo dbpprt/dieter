@@ -86,6 +86,32 @@ func newConnectTestClient(t *testing.T, data *store.Store, runner harness.Runner
 	return dieterv1connect.NewDieterServiceClient(server.Client(), server.URL), server.URL
 }
 
+func TestFixtureCatalogServesHarnessesAndSettingsWithoutDiscovery(t *testing.T) {
+	t.Setenv("DIETER_ENABLE_MOCK_HARNESS", "1")
+	application := NewWithOptions(store.New(t.TempDir()), slog.New(slog.NewTextHandler(io.Discard, nil)), Options{
+		Runner: &fakeRunner{},
+		HarnessCatalog: func(ctx context.Context, includeMock bool) []harness.Adapter {
+			if ctx.Err() != nil || !includeMock {
+				t.Error("catalog did not receive the live request context and mock policy")
+			}
+			return []harness.Adapter{{ID: "fixture", Name: "Fixture", Runtime: "mock"}}
+		},
+	})
+	httpServer := httptest.NewServer(application.Handler())
+	defer httpServer.Close()
+	client := dieterv1connect.NewDieterServiceClient(httpServer.Client(), httpServer.URL)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	catalog, err := client.GetHarnesses(ctx, connect.NewRequest(&emptypb.Empty{}))
+	if err != nil || len(catalog.Msg.GetHarnesses()) != 1 || catalog.Msg.GetHarnesses()[0].GetId() != "fixture" {
+		t.Fatalf("injected harness catalog: %v %v", catalog, err)
+	}
+	settings, err := client.GetSettingsOptions(ctx, connect.NewRequest(&emptypb.Empty{}))
+	if err != nil || len(settings.Msg.GetAgents().GetHarnesses()) != 1 || settings.Msg.GetAgents().GetHarnesses()[0].GetId() != "fixture" {
+		t.Fatalf("injected settings catalog: %v %v", settings, err)
+	}
+}
+
 func testRepository(t *testing.T) string {
 	t.Helper()
 	repo := filepath.Join(t.TempDir(), "repo")

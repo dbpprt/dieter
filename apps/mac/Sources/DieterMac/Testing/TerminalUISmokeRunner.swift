@@ -78,7 +78,7 @@
                 return
             }
 
-            store.createTerminalPresented = true
+            store.terminalsModel.createTerminalPresented = true
             let sheetPresented = await waitUntil(timeout: 10, condition: { window.attachedSheet != nil })
             let sheetSize = window.attachedSheet?.contentView?.bounds.size
             var projectPickerWorks = false
@@ -103,10 +103,10 @@
                 sheetSize.map { size in
                     size.width >= 480 && size.width <= 560 && size.height >= 400 && size.height <= 520
                 } ?? false
-            store.createTerminalPresented = false
+            store.terminalsModel.createTerminalPresented = false
             _ = await waitUntil(timeout: 10, condition: { window.attachedSheet == nil })
 
-            let originalIDs = Set(store.terminalOverviewEntries.map(\.id))
+            let originalIDs = Set(store.terminalOverview.terminalOverviewEntries.map(\.id))
             await store.createTerminal(
                 projectID: "",
                 machineID: destination.id,
@@ -119,13 +119,15 @@
                 await waitUntil(
                     timeout: 15,
                     condition: {
-                        guard let id = store.selectedTerminalOverviewID else { return false }
+                        guard let id = store.terminalOverview.selectedTerminalOverviewID else { return false }
                         return !originalIDs.contains(id)
-                            && store.terminalOverviewEntries.contains(where: {
+                            && store.terminalOverview.terminalOverviewEntries.contains(where: {
                                 $0.id == id && $0.machineID == destination.id
                             })
-                    }), let selectedOverviewID = store.selectedTerminalOverviewID,
-                let selectedEntry = store.terminalOverviewEntries.first(where: { $0.id == selectedOverviewID })
+                    }), let selectedOverviewID = store.terminalOverview.selectedTerminalOverviewID,
+                let selectedEntry = store.terminalOverview.terminalOverviewEntries.first(where: {
+                    $0.id == selectedOverviewID
+                })
             else {
                 writeReport(
                     ["terminal-create": "failed: terminal was not created"], named: "create-report.json", to: output)
@@ -260,22 +262,22 @@
                     named: "report.json", to: output)
                 return
             }
-            await store.loadTerminalOverview(preferredMachineID: machine.id)
+            await store.terminalOverview.loadTerminalOverview(preferredMachineID: machine.id)
             let overviewID = TerminalOverviewEntry.id(machineID: machineID, terminalID: terminalID)
-            if store.terminalOverviewEntries.contains(where: { $0.id == overviewID }) {
-                await store.selectTerminalOverviewEntry(overviewID)
+            if store.terminalOverview.terminalOverviewEntries.contains(where: { $0.id == overviewID }) {
+                await store.terminalOverview.selectTerminalOverviewEntry(overviewID)
             }
             let machineRestored = await waitUntil(timeout: 10) {
-                store.selectedTerminalOverviewID == overviewID
+                store.terminalOverview.selectedTerminalOverviewID == overviewID
                     && store.terminalsModel.target.endpointID == machineID
                     && store.endpoint.id == create["active-machine-id"]
             }
             let routingDetail =
-                "selection=\(store.selectedTerminalOverviewID ?? "none") expected=\(overviewID), target=\(store.terminalsModel.target.endpointID) expected=\(machineID), active=\(store.endpoint.id) expected=\(create["active-machine-id"] ?? "none")"
+                "selection=\(store.terminalOverview.selectedTerminalOverviewID ?? "none") expected=\(overviewID), target=\(store.terminalsModel.target.endpointID) expected=\(machineID), active=\(store.endpoint.id) expected=\(create["active-machine-id"] ?? "none")"
             let listed = await waitUntil(
                 timeout: 20,
                 condition: {
-                    store.terminalOverviewEntries.contains(where: {
+                    store.terminalOverview.terminalOverviewEntries.contains(where: {
                         $0.id == overviewID && $0.terminal.status == "running"
                     })
                 })
@@ -292,17 +294,17 @@
             try? await DieterTaskSleep.seconds(1)
             let restartPresentation = terminalPresentation(in: window)
             let restartGrid = terminalGrid(in: window)
-            let remoteGrid = store.terminals.first(where: { $0.id == terminalID }).map {
+            let remoteGrid = store.terminalsModel.terminals.first(where: { $0.id == terminalID }).map {
                 (columns: Int($0.columns), rows: Int($0.rows))
             }
             capture(window, to: output.appending(path: "02-after-client-restart.png"))
             let stayedRunning =
-                store.terminalOverviewEntries.first(where: { $0.id == overviewID })?.terminal.status
+                store.terminalOverview.terminalOverviewEntries.first(where: { $0.id == overviewID })?.terminal.status
                 == "running"
             await store.closeTerminalOverviewEntry(overviewID)
             let cleanedUp = await waitUntil(
                 timeout: 10,
-                condition: { !store.terminalOverviewEntries.contains(where: { $0.id == overviewID }) })
+                condition: { !store.terminalOverview.terminalOverviewEntries.contains(where: { $0.id == overviewID }) })
 
             writeReport(
                 [
@@ -509,7 +511,7 @@
         }
 
         private static func screen(_ store: DieterStore, _ terminalID: String) -> String {
-            String(decoding: store.terminalScreens[terminalID]?.data ?? Data(), as: UTF8.self)
+            String(decoding: store.terminalsModel.terminalScreens[terminalID]?.data ?? Data(), as: UTF8.self)
         }
 
         private static func waitUntil(timeout: Int, condition: @escaping @MainActor () -> Bool) async -> Bool {

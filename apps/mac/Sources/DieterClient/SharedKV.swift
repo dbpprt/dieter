@@ -213,7 +213,7 @@ package struct SharedPosition: Codable, Equatable, Sendable {
                     guard token == self.generation && !Task.isCancelled else { return }
                     self.error = String(describing: error); self.changed?()
                 }
-                try? await Task.sleep(for: .seconds(2))
+                try? await DieterTaskSleep.duration(.seconds(2))
             }
         }
     }
@@ -285,7 +285,7 @@ package struct SharedPosition: Codable, Equatable, Sendable {
                         }), !Self.covers(current, prior) {
                             self.error = "Waiting for this machine to receive earlier navigation edits.";
                             self.changed?()
-                            try await Task.sleep(for: .seconds(1)); continue
+                            try await DieterTaskSleep.duration(.seconds(1)); continue
                         }
                         if intent.requiresExisting && (current == nil || current?.deleted == true) {
                             self.cache.pending.removeFirst(); guard self.save() else { return }; self.changed?();
@@ -334,11 +334,11 @@ package struct SharedPosition: Codable, Equatable, Sendable {
                     guard token == self.generation else { return }
                     self.cache.pending[0].prepared = nil; self.cache.pending[0].daemonID = nil
                     self.cache.pending[0].id = UUID().uuidString; guard self.save() else { return }
-                    try? await Task.sleep(for: .milliseconds(250))
+                    try? await DieterTaskSleep.duration(.milliseconds(250))
                 } catch {
                     guard token == self.generation else { return }
                     self.error = String(describing: error); self.changed?()
-                    try? await Task.sleep(for: .seconds(2))
+                    try? await DieterTaskSleep.duration(.seconds(2))
                 }
             }
         }

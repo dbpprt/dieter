@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -34,18 +35,66 @@ func (b *tailBuffer) Write(p []byte) (int, error) {
 }
 func (b *tailBuffer) String() string { b.mu.Lock(); defer b.mu.Unlock(); return string(b.data) }
 
+// Build commands own a separate process group. Cancellation stops its descendants
+// before returning to the caller that releases a build/device lease. Shared workers
+// already running outside this group are never signalled.
+func buildCommand(ctx context.Context, executable string, args ...string) (*exec.Cmd, func(error) error) {
+	c := exec.CommandContext(ctx, executable, args...)
+	c.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	c.WaitDelay = 20 * time.Second
+	var cleanup chan error
+	c.Cancel = func() error {
+		cleanup = make(chan error, 1)
+		group := c.Process.Pid
+		_ = syscall.Kill(-group, syscall.SIGTERM)
+		go func() {
+			// Go's default WaitDelay kills only the immediate child. Escalation here is
+			// restricted to this command's group, including grandchildren retaining pipes.
+			deadline := time.Now().Add(15 * time.Second)
+			forced := false
+			for {
+				err := syscall.Kill(-group, 0)
+				if errors.Is(err, syscall.ESRCH) {
+					cleanup <- nil
+					return
+				}
+				if err != nil {
+					cleanup <- fmt.Errorf("inspect owned process group %d: %w", group, err)
+					return
+				}
+				if time.Now().After(deadline) {
+					if forced {
+						cleanup <- fmt.Errorf("owned process group %d did not exit", group)
+						return
+					}
+					_ = syscall.Kill(-group, syscall.SIGKILL)
+					forced = true
+					deadline = time.Now().Add(5 * time.Second)
+				}
+				time.Sleep(20 * time.Millisecond)
+			}
+		}()
+		return nil
+	}
+	return c, func(err error) error {
+		// Cmd.Wait synchronizes with Cancel, so cleanup is stable here.
+		if cleanup != nil {
+			err = errors.Join(err, <-cleanup)
+		}
+		return err
+	}
+}
+
 func command(ctx context.Context, root string, input []byte, args ...string) (string, error) {
-	c := exec.CommandContext(ctx, args[0], args[1:]...)
+	c, finish := buildCommand(ctx, args[0], args[1:]...)
 	c.Dir = root
-	c.Cancel = func() error { return c.Process.Signal(syscall.SIGTERM) }
-	c.WaitDelay = 15 * time.Second
 	if input != nil {
 		c.Stdin = bytes.NewReader(input)
 	}
 	out := &tailBuffer{limit: 4 << 20}
 	c.Stdout = out
 	c.Stderr = out
-	err := c.Run()
+	err := finish(c.Run())
 	return out.String(), err
 }
 func shellQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", "'\"'\"'") + "'" }
@@ -139,13 +188,11 @@ func digest(path string) (string, error) {
 
 // Binary evidence must never mix stderr into tar/PNG or silently keep a truncated tail.
 func binaryCommand(ctx context.Context, root string, args ...string) (string, error) {
-	c := exec.CommandContext(ctx, args[0], args[1:]...)
+	c, finish := buildCommand(ctx, args[0], args[1:]...)
 	c.Dir = root
-	c.Cancel = func() error { return c.Process.Signal(syscall.SIGTERM) }
-	c.WaitDelay = 15 * time.Second
 	out, diagnostic := &tailBuffer{limit: 32 << 20}, &tailBuffer{limit: 64 << 10}
 	c.Stdout, c.Stderr = out, diagnostic
-	err := c.Run()
+	err := finish(c.Run())
 	data := out.String()
 	if len(data) >= 32<<20 {
 		return "", fmt.Errorf("binary evidence exceeded 32 MiB")
@@ -167,10 +214,8 @@ func leasedCommand(ctx context.Context, args []string) error {
 		return err
 	}
 	defer unlock()
-	c := exec.CommandContext(ctx, args[1], args[2:]...)
+	c, finish := buildCommand(ctx, args[1], args[2:]...)
 	c.Env = append(os.Environ(), "DIETER_SCREEN_DEVICE_LEASE_V2="+serial)
 	c.Stdin, c.Stdout, c.Stderr = os.Stdin, os.Stdout, os.Stderr
-	c.Cancel = func() error { return c.Process.Signal(syscall.SIGTERM) }
-	c.WaitDelay = 15 * time.Second
-	return c.Run()
+	return finish(c.Run())
 }

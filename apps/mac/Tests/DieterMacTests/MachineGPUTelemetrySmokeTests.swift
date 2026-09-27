@@ -4,6 +4,31 @@
     @testable import DieterMac
 
     @Suite struct MachineGPUTelemetrySmokeTests {
+        @MainActor
+        @Test func powerControlRequiresExactOwnedFixtureIdentity() {
+            let machine = DieterEndpoint(
+                name: "Fixture", host: "127.0.0.1", port: 12345, daemonID: "owned-daemon")
+            #expect(
+                MachineUISmokeRunner.isOwnedFixture(
+                    machine: machine, expectedDaemonID: "owned-daemon", fixtureEndpoint: "http://127.0.0.1:12345"))
+            for daemonID in [nil, "", "operator-daemon"] as [String?] {
+                #expect(
+                    !MachineUISmokeRunner.isOwnedFixture(
+                        machine: machine, expectedDaemonID: daemonID, fixtureEndpoint: "http://127.0.0.1:12345"))
+            }
+            for endpoint in [nil, "", "http://127.0.0.1:54321", "https://127.0.0.1:12345", "http://example.com:12345"]
+                as [String?]
+            {
+                #expect(
+                    !MachineUISmokeRunner.isOwnedFixture(
+                        machine: machine, expectedDaemonID: "owned-daemon", fixtureEndpoint: endpoint))
+            }
+            let remote = DieterEndpoint(name: "Operator", host: "example.com", port: 12345, daemonID: "owned-daemon")
+            #expect(
+                !MachineUISmokeRunner.isOwnedFixture(
+                    machine: remote, expectedDaemonID: "owned-daemon", fixtureEndpoint: "http://example.com:12345"))
+        }
+
         @Test func virtualMacWithoutGPUPassthroughIsAnExplicitValidResult() {
             var information = Dieter_V1_MachineInformation()
             information.gpu.state = .noDevices

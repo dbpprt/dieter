@@ -3,6 +3,7 @@ set -eu
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 APP_ROOT=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
+REPO_ROOT=$(CDPATH= cd -- "$APP_ROOT/../.." && pwd)
 GENERATED_DIR="$APP_ROOT/Sources/DieterAPI/Generated"
 MANIFEST="$GENERATED_DIR/.inputs.sha256"
 SWIFT_SCRATCH_PATH=${DIETER_SWIFT_SCRATCH_PATH:-$APP_ROOT/.build/dieter-local}
@@ -20,6 +21,8 @@ write_manifest() {
         cd "$APP_ROOT"
         INPUT_DIGEST=$(shasum -a 256 \
             Package.resolved \
+            scripts/generate-swift-proto.sh \
+            ../../scripts/sync_apple_proto.py \
             Sources/DieterAPI/gateway.proto \
             Sources/DieterAPI/dieter.proto \
             Sources/DieterAPI/grpc-swift-proto-generator-config.json | shasum -a 256 | awk '{print $1}')
@@ -33,6 +36,7 @@ write_manifest() {
 }
 
 if [ "${1:-}" = "--check" ]; then
+    python3 "$REPO_ROOT/scripts/sync_apple_proto.py" --check
     if [ ! -f "$MANIFEST" ] || ! generated_files_exist; then
         exit 1
     fi
@@ -48,6 +52,7 @@ if [ "$#" -ne 0 ]; then
     exit 2
 fi
 
+python3 "$REPO_ROOT/scripts/sync_apple_proto.py"
 mkdir -p "$GENERATED_DIR"
 rm -f \
     "$GENERATED_DIR/Sources_DieterAPI_gateway.grpc.swift" \

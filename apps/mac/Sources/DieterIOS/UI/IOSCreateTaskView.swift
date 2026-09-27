@@ -176,6 +176,7 @@ import DieterCore
                         Section { Text("Reconnect to create this task.").foregroundStyle(.secondary) }
                     }
                 }
+                .accessibilityIdentifier("ios.create.form")
                 .scrollDismissesKeyboard(.interactively)
                 .disabled(submitting)
                 .navigationTitle(chat ? "New chat" : "New task")

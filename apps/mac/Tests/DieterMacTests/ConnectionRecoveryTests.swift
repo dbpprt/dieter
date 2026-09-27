@@ -431,7 +431,7 @@ private final class RecoveryProbe: Sendable {
     store.phase = .connected(version: "fixture")
     store.syncLastActivity = ContinuousClock.now
     let task = Task { try? await Task.sleep(for: .seconds(60)) }
-    store.syncTask = Task { await task.value }
+    store.connectionEffects.syncTask = Task { await task.value }
     defer { task.cancel() }
     let subscription = store.syncSubscriptionGeneration
 
@@ -439,6 +439,6 @@ private final class RecoveryProbe: Sendable {
     store.applicationDidBecomeActive()
 
     #expect(store.syncSubscriptionGeneration == subscription)
-    #expect(store.syncTask?.isCancelled == false)
+    #expect(store.connectionEffects.syncTask?.isCancelled == false)
     #expect(store.phase.isConnected)
 }

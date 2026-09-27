@@ -53,7 +53,7 @@ class CheckChangedTests(unittest.TestCase):
             ("internal/server/server.go",): {"core"},
             ("scripts/new_tool.py",): {"core"},
             ("apps/mac/Sources/DieterMac/UI/BoardView.swift",): {"macos"},
-            ("apps/mac/Sources/DieterIOS/UI/Root.swift",): {"ios"},
+            ("apps/mac/Sources/DieterIOS/UI/Root.swift",): {"macos", "ios"},
             ("apps/android/app/src/main/java/Conversation.kt",): {"android"},
             ("native/android-webrtc/build_sdk.py",): {"android"},
             ("apps/mac/Sources/DieterClient/DieterRPC.swift",): {"macos", "ios"},
@@ -75,7 +75,8 @@ class CheckChangedTests(unittest.TestCase):
         for path in ("scripts/macos_daemon_installer.py", "scripts/macos_daemon_installer_test.py",
                      "scripts/macos_notary_submit.py", "scripts/macos_notary_submit_test.py",
                      "scripts/configure_apple_signing.py", "scripts/configure_apple_signing_test.py",
-                     "scripts/release_signing_test.py", "scripts/ios_release.py", "scripts/ios_release_test.py"):
+                     "scripts/release_signing_test.py", "scripts/ios_release.py", "scripts/ios_release_test.py",
+                     "scripts/install.sh", "scripts/install_linux_test.py", "scripts/linux_service_e2e_test.py"):
             with self.subTest(path=path):
                 self.assertEqual(self.plan(path), [["just", "release", "test"]])
         for path in ("just/release.just", "just/daemon.just", "just/android.just", ".github/workflows/release.yml"):
@@ -95,8 +96,29 @@ class CheckChangedTests(unittest.TestCase):
             self.assertIn(["just", "mac", "test"], plan)
 
     def test_ios_changes_run_phone_and_tablet_without_mac_ui(self):
-        for path in ["apps/ios/DieterIOSApp/DieterIOSApp.swift", "apps/mac/Sources/DieterIOS/UI/Root.swift"]:
-            self.assertEqual(self.plan(path), [["just", "ios", "build"], ["just", "e2e", "run", "--platform", "ios", "--device", "iphone", "--suite", "smoke"], ["just", "e2e", "run", "--platform", "ios", "--device", "ipad", "--suite", "smoke"]])
+        for path in ["apps/ios/DieterIOSApp/DieterIOSApp.swift", "apps/mac/Sources/DieterIOS/UI/Root.swift",
+                     "apps/mac/Tests/DieterIOSTests/IOSStoreTests.swift"]:
+            unit = [["just", "mac", "test", "DieterIOSTests"]] if path.startswith("apps/mac/") else []
+            self.assertEqual(self.plan(path), unit + [["just", "ios", "build"], ["just", "e2e", "run", "--platform", "ios", "--device", "iphone", "--suite", "smoke"], ["just", "e2e", "run", "--platform", "ios", "--device", "ipad", "--suite", "smoke"]])
+            self.assertEqual(self.components(path), {"macos", "ios"} if unit else {"ios"})
+
+    def test_shared_swift_dependencies_and_tests_validate_both_apple_clients(self):
+        for path in ["apps/mac/Package.resolved", "apps/mac/Package.swift",
+                     "apps/mac/Vendor/grpc-swift-nio-transport/Package.swift",
+                     "apps/mac/Tests/DieterCoreTests/ReplicaTests.swift",
+                     "apps/mac/Tests/DieterClientTests/ConnectionTests.swift"]:
+            with self.subTest(path=path):
+                self.assertEqual(self.components(path), {"macos", "ios"})
+                self.assertIn(["just", "mac", "test"], self.plan(path))
+                self.assertIn(["just", "ios", "build"], self.plan(path))
+
+    def test_capture_helpers_shared_with_swiftpm_select_capture_tests(self):
+        for name in ["RemoteDesktopKeyMap.swift", "ScreenClipboardContent.swift"]:
+            with self.subTest(name=name):
+                plan = self.plan("apps/mac/Sources/DieterCore/" + name)
+                self.assertIn(["just", "mac", "screens-native-test"], plan)
+                self.assertIn(["just", "mac", "screens-test"], plan)
+                self.assertIn(["just", "e2e", "run", "--suite", "screens"], plan)
 
     def test_shared_swift_client_also_validates_ios(self):
         plan = self.plan("apps/mac/Sources/DieterClient/DieterRPC.swift")
@@ -140,7 +162,14 @@ class CheckChangedTests(unittest.TestCase):
     def test_mac_recipe_changes_run_selector_and_recipe_contract_tests(self):
         self.assertEqual(self.plan("just/mac.just"),
                          [["python3", "-m", "unittest", "discover", "-s", "scripts", "-p", "check_changed_test.py"],
-                          ["just", "justfile-check"], ["just", "mac", "test"], ["just", "e2e", "run", "--platform", "mac", "--suite", "smoke"]])
+                          ["just", "mac", "lifecycle-test"], ["just", "justfile-check"], ["just", "mac", "test"], ["just", "e2e", "run", "--platform", "mac", "--suite", "smoke"]])
+
+    def test_mac_lifecycle_changes_select_guards_and_packaged_smoke(self):
+        for path in ["scripts/mac_app_lifecycle.py", "scripts/mac_app_lifecycle_test.py", "apps/mac/scripts/build.sh"]:
+            with self.subTest(path=path):
+                plan = self.plan(path)
+                self.assertIn(["just", "mac", "lifecycle-test"], plan)
+                self.assertIn(["just", "e2e", "run", "--platform", "mac", "--suite", "smoke"], plan)
 
     def test_changed_smoke_runners_always_run_their_suite(self):
         for runner, suites in {

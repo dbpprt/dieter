@@ -119,7 +119,12 @@ func validateManagedBun(ctx context.Context, dir string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	relative, err := filepath.Rel(dir, resolved)
+	// Resolve both sides: macOS temporary roots commonly traverse /var -> /private/var.
+	installation, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		return "", err
+	}
+	relative, err := filepath.Rel(installation, resolved)
 	if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(os.PathSeparator)) || filepath.IsAbs(relative) {
 		return "", errors.New("managed Bun executable escapes its installation")
 	}

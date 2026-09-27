@@ -632,3 +632,33 @@ func TestScreenReadinessRecoversAfterPermissionProbeWithoutSettings(t *testing.T
 		t.Fatalf("unsupported = %v", got)
 	}
 }
+
+func TestResubscribeReplaysNegotiationWithOnlyCurrentState(t *testing.T) {
+	s := &Session{id: "renewed", manager: &Manager{options: Options{SessionLease: time.Minute, Now: time.Now}},
+		subscribers: make(map[uint64]chan *dieterv1.RemoteDesktopSignal),
+		status:      &dieterv1.RemoteDesktopSessionState{Phase: "connecting", DisplayGeneration: 1}}
+	s.emit(&dieterv1.RemoteDesktopSignal{Payload: &dieterv1.RemoteDesktopSignal_Binding{Binding: &dieterv1.RemoteDesktopSessionBinding{}}})
+	s.emit(&dieterv1.RemoteDesktopSignal{Payload: &dieterv1.RemoteDesktopSignal_State{State: proto.Clone(s.status).(*dieterv1.RemoteDesktopSessionState)}})
+	s.status.Width, s.status.Height, s.status.ControlGeneration = 1920, 1080, 3
+	s.emitState("streaming", "")
+	if state := s.history[len(s.history)-1].GetState(); state.Width != 1920 || state.DisplayGeneration != 1 {
+		t.Fatalf("phase transition discarded metadata: %v", state)
+	}
+	s.status.Width = 1280 // The native data channel advanced after the last signaling snapshot.
+	sub, err := s.subscribe(time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sub.Close()
+	if len(sub.Signals) != 2 {
+		t.Fatalf("replayed stale states: %d signals", len(sub.Signals))
+	}
+	binding, current := <-sub.Signals, <-sub.Signals
+	if binding.GetBinding() == nil || current.Sequence <= binding.Sequence || current.GetState().Width != 1280 || current.GetState().ControlGeneration != 3 {
+		t.Fatalf("resubscribe failed: %v %v", binding, current)
+	}
+	current.GetState().Width = 1
+	if s.status.Width != 1280 {
+		t.Fatal("subscriber owns live state")
+	}
+}

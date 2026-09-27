@@ -76,6 +76,7 @@ struct DieterMacApp: App {
                         // its scene. Every UI suite needs that real window; the
                         // island must never become an accidental fallback target.
                         openWindow(id: "workspace")
+                        guard await NativeUISmokeActivation.awaitForeground() else { return }
                         if arguments.contains("--island-ui-smoke") {
                             await IslandUISmokeRunner.run(store: store, controller: islandController)
                             return
@@ -152,7 +153,7 @@ struct DieterMacApp: App {
                     openWindow(id: "workspace")
                     Task {
                         await store.openTerminals()
-                        store.createTerminalPresented = true
+                        store.terminalsModel.createTerminalPresented = true
                     }
                 }
                 .keyboardShortcut("t", modifiers: [.command, .shift])

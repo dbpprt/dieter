@@ -13,7 +13,7 @@ class SchedulePaginationPolicyTest {
     fun `schedule pages append without duplicates and retain the server cursor`() {
         val first = Schedule.newBuilder().setId("s_first").build()
         val second = Schedule.newBuilder().setId("s_second").build()
-        val initial = DieterUiState(schedulesLoading = true).applyingSchedulePage(
+        val initial = ScheduleWorkspaceState(schedulesLoading = true).applyingSchedulePage(
             SchedulesResponse.newBuilder()
                 .addSchedules(first)
                 .setTotalCount(2)
@@ -41,7 +41,7 @@ class SchedulePaginationPolicyTest {
     fun `occurrence pages keep newest first and deduplicate page boundaries`() {
         val newest = ScheduleRun.newBuilder().setId("sr_new").build()
         val older = ScheduleRun.newBuilder().setId("sr_old").build()
-        val initial = DieterUiState(scheduleRunsLoading = true).applyingScheduleRunPage(
+        val initial = ScheduleWorkspaceState(scheduleRunsLoading = true).applyingScheduleRunPage(
             ScheduleRunsResponse.newBuilder().addRuns(newest).setNextPageToken("older").build(),
             appending = false,
         )

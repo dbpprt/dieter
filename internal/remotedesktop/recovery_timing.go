@@ -36,3 +36,29 @@ func (p *packetPacer) observeRecoveryRTT(now time.Time, rtt time.Duration, measu
 		p.recoveryRTT, p.recoveryMeasured = rtt, measured
 	}
 }
+
+// Packet retransmission must remain short-lived. A reference ACK instead waits
+// for actual decoder output, including the receiver's measured playout delay.
+// Keep this separate from packet history and retain the native 250 ms cap.
+func (p *packetPacer) observeRecoveryDecoder(measured time.Time, decodeMS, jitterMS float64) {
+	if !finiteBound(decodeMS, 10000) || !finiteBound(jitterMS, 10000) || decodeMS < 0 || jitterMS < 0 {
+		return
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if measured.After(p.recoveryDecodedAt) {
+		p.recoveryDecode = time.Duration(decodeMS * float64(time.Millisecond))
+		p.recoveryJitter = time.Duration(jitterMS * float64(time.Millisecond))
+		p.recoveryDecodedAt = measured
+	}
+}
+
+func (p *packetPacer) referenceRecoveryDeadline(now time.Time) time.Duration {
+	window, _ := p.RecoveryDeadline()
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if !p.recoveryDecodedAt.IsZero() && !now.Before(p.recoveryDecodedAt) && now.Sub(p.recoveryDecodedAt) < 2*time.Second {
+		window += p.recoveryDecode + p.recoveryJitter
+	}
+	return min(250*time.Millisecond, window)
+}

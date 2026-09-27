@@ -7,6 +7,7 @@ import GRPCCore
 import CryptoKit
 import Testing
 import SwiftUI
+import Synchronization
 @preconcurrency import WebRTC
 @testable import DieterMac
 
@@ -660,20 +661,32 @@ private final class NativeScreenPixelBufferProbe: RTCCVPixelBuffer, @unchecked S
     // Keep the window unchanged and block only UI processing. Actual hardware
     // presentation counters must keep advancing on the render thread.
     let decode = renderer.decodeHandler()
-    let producer = Task.detached {
-        for timestamp: Int32 in 10...40 {
-            if Task.isCancelled { return }
-            let frame = RTCVideoFrame(buffer: probe, rotation: ._0, timeStampNs: 0)
-            frame.timeStamp = timestamp
-            decode(frame)
-            try? await Task.sleep(for: .milliseconds(16))
+    // The producer models display cadence. A detached Task's coalescible
+    // sleeps and startup scheduling must not become the renderer's test input.
+    let producerQueue = DispatchQueue(label: "screen-test-frames", qos: .userInteractive)
+    let producer = DispatchSource.makeTimerSource(flags: .strict, queue: producerQueue)
+    let nextTimestamp = Mutex<Int32>(10)
+    producer.setEventHandler { @Sendable in
+        let timestamp = nextTimestamp.withLock { value in
+            defer { value += 1 }
+            return value
         }
+        let frame = RTCVideoFrame(buffer: probe, rotation: ._0, timeStampNs: 0)
+        frame.timeStamp = timestamp
+        decode(frame)
     }
+    let beforeProducer = renderer.framesPresented
+    producer.schedule(deadline: .now(), repeating: .milliseconds(16), leeway: .nanoseconds(0))
+    producer.activate()
+    defer { producer.cancel() }
+    try await screenWait("independent frame producer", timeout: 2) { renderer.framesPresented > beforeProducer }
     let beforeStall = renderer.framesPresented
+    let producedBeforeStall = nextTimestamp.withLock { $0 }
     blockScreenUIForSchedulingTest()
+    #expect(nextTimestamp.withLock { $0 } > producedBeforeStall + 2, "Frame producer stalled during UI work")
     #expect(renderer.framesPresented > beforeStall + 2, "UI work stalled actual Metal presentation")
     producer.cancel()
-    await producer.value
+    producerQueue.sync {}  // Drain the independent handler before resetting the renderer.
     #expect(probe.conversionCount == 0)
     renderer.reset()
 }

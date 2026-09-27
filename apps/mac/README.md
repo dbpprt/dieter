@@ -16,8 +16,11 @@ just mac build
 just mac run
 ```
 
-The canonical bundle is `apps/mac/build/Dieter.app`. `just mac run` reuses it and
-refuses conflicting processes. A closed window does not quit the menu-bar app;
+The canonical bundle is `apps/mac/build/Dieter.app`. `just mac run` builds and
+launches it when stopped, or activates the one running canonical app without
+rebuilding it. It refuses conflicting processes. `just mac build` (including a
+direct `scripts/build.sh` invocation) refuses to replace a running app bundle.
+A closed window does not quit the menu-bar app;
 use `just mac quit` when you own its lifecycle. Never launch repeated copies with
 `open -n`, `swift run DieterMac`, or a second scratch path.
 
@@ -31,6 +34,11 @@ App builds use `apps/mac/.build/dieter-local`; unit tests use
 are different, so sharing their scratch directory causes avoidable rebuilds.
 Do not run concurrent commands against the same cache or use `swift package clean`
 as a routine fix.
+
+On a busy or memory-constrained host, limit Swift compiler concurrency with
+`DIETER_SWIFT_JOBS=2 just mac build` or `DIETER_SWIFT_JOBS=2 just mac test`.
+The same variable is inherited by Mac E2E builds. When unset, SwiftPM chooses
+its normal job count. Run builds and tests sequentially when memory is tight.
 
 Local builds use the sole available Apple Development identity when possible.
 Set `DIETER_MAC_SIGNING_IDENTITY` to a certificate fingerprint when needed, or
@@ -84,6 +92,7 @@ solid surfaces. macOS Reduce Transparency also disables translucency.
 ```sh
 just check-changed --dry-run
 just check-changed
+just mac lifecycle-test
 just mac test
 just e2e run --platform mac --case mac.core
 ```

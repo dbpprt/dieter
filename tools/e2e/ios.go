@@ -282,7 +282,10 @@ func (d iosDriver) run(ctx context.Context, c Case) (result Result) {
 	}
 	result.SetupMS = time.Since(started).Milliseconds()
 	bundle := filepath.Join(state, "result.xcresult")
-	argv := []string{"xcodebuild", "test-without-building", "-xctestrun", testRun, "-destination", "platform=iOS Simulator,id=" + simulator, "-parallel-testing-enabled", "NO", "-resultBundlePath", bundle}
+	// Preserve XCTest results, console and attachments below. Whole-simulator
+	// sysdiagnose collection can outlive the case deadline after an assertion
+	// failure and prevent Xcode from finalizing the useful result bundle.
+	argv := []string{"xcodebuild", "test-without-building", "-xctestrun", testRun, "-destination", "platform=iOS Simulator,id=" + simulator, "-parallel-testing-enabled", "NO", "-collect-test-diagnostics", "never", "-resultBundlePath", bundle}
 	for _, method := range c.Native.Methods {
 		argv = append(argv, "-only-testing:"+c.Native.Target+"/"+c.Native.Class+"/"+method)
 	}

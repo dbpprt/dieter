@@ -1,0 +1,14 @@
+# yaml-language-server: $schema=../../schema.json
+version: 1
+id: terminal.input-end-to-end-test
+platform: android
+suites:
+- functional
+components:
+- terminals
+fixture: gateway
+timeout: 300s
+native:
+  class: com.dbpprt.dieter.ui.TerminalInputEndToEndTest
+  methods:
+  - visibleTerminalDeliversChunkedInputAndEditingBytes

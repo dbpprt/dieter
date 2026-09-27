@@ -15,7 +15,7 @@ struct ProviderQuotaCompactView: View {
     var embeddedInSidebar = false
 
     private var groups: [Dieter_Gateway_V1_ProviderQuotaGroup] {
-        store.providerQuotaGroups.filter { !$0.accounts.isEmpty }
+        store.quotas.providerQuotaGroups.filter { !$0.accounts.isEmpty }
     }
 
     private var accounts: [ProviderQuotaCompactAccount] {
@@ -28,7 +28,7 @@ struct ProviderQuotaCompactView: View {
     }
 
     var body: some View {
-        if !groups.isEmpty || store.providerQuotasLoading {
+        if !groups.isEmpty || store.quotas.providerQuotasLoading {
             Button {
                 presented.toggle()
             } label: {
@@ -95,7 +95,7 @@ struct ProviderQuotaSidebarBlock: View {
     @Environment(DieterStore.self) private var store
 
     private var visible: Bool {
-        store.providerQuotasLoading || store.providerQuotaGroups.contains { !$0.accounts.isEmpty }
+        store.quotas.providerQuotasLoading || store.quotas.providerQuotaGroups.contains { !$0.accounts.isEmpty }
     }
 
     var body: some View {
@@ -204,7 +204,7 @@ struct ConversationProviderQuotaView: View {
 
     private var selected: ProviderQuotaCompactAccount? {
         guard !card.providerAccountKey.isEmpty else { return nil }
-        for group in store.providerQuotaGroups {
+        for group in store.quotas.providerQuotaGroups {
             if let account = group.accounts.first(where: { $0.accountKey == card.providerAccountKey }) {
                 return ProviderQuotaCompactAccount(provider: group.provider, account: account)
             }
@@ -247,8 +247,8 @@ struct ProviderQuotaDetailsView: View {
     @State private var resetConfirmationAccountKey: String?
 
     private var groups: [Dieter_Gateway_V1_ProviderQuotaGroup] {
-        guard let accountKey else { return store.providerQuotaGroups }
-        return store.providerQuotaGroups.compactMap { group in
+        guard let accountKey else { return store.quotas.providerQuotaGroups }
+        return store.quotas.providerQuotaGroups.compactMap { group in
             var filtered = group
             filtered.accounts = group.accounts.filter { $0.accountKey == accountKey }
             return filtered.accounts.isEmpty ? nil : filtered
@@ -271,18 +271,18 @@ struct ProviderQuotaDetailsView: View {
                 Button {
                     Task { await store.loadProviderQuotas(requestRefresh: true) }
                 } label: {
-                    if store.providerQuotasLoading {
+                    if store.quotas.providerQuotasLoading {
                         ProgressView().controlSize(.small)
                     } else {
                         Label("Refresh", systemImage: "arrow.clockwise")
                     }
                 }
-                .disabled(store.providerQuotasLoading)
+                .disabled(store.quotas.providerQuotasLoading)
                 .accessibilityIdentifier("provider-quotas.refresh")
                 .smokeTarget("provider-quotas.refresh")
             }
 
-            if let error = store.providerQuotaError, !error.isEmpty {
+            if let error = store.quotas.providerQuotaError, !error.isEmpty {
                 Text(error).font(.caption).foregroundStyle(DieterTheme.coral)
             }
 
@@ -291,7 +291,8 @@ struct ProviderQuotaDetailsView: View {
                     "No provider accounts",
                     systemImage: "gauge.with.dots.needle.0percent",
                     description: Text(
-                        store.providerQuotaError ?? "Sign in to a supported provider on an online Dieter machine.")
+                        store.quotas.providerQuotaError
+                            ?? "Sign in to a supported provider on an online Dieter machine.")
                 )
                 .frame(minHeight: 150)
             } else {
@@ -306,7 +307,7 @@ struct ProviderQuotaDetailsView: View {
             }
         }
         .task {
-            if store.providerQuotaGroups.isEmpty { await store.loadProviderQuotas() }
+            if store.quotas.providerQuotaGroups.isEmpty { await store.loadProviderQuotas() }
         }
         .confirmationDialog(
             "Use one OpenAI reset credit?",
@@ -452,7 +453,7 @@ struct ProviderQuotaDetailsView: View {
             )
             .toggleStyle(.switch)
             .controlSize(.mini)
-            .disabled(store.providerQuotaMutatingAccounts.contains(account.accountKey))
+            .disabled(store.quotas.providerQuotaMutatingAccounts.contains(account.accountKey))
             .accessibilityIdentifier("provider-quotas.include.\(account.accountKey)")
             if provider == .openaiCodex, account.hasResetCredits,
                 account.resetCredits.availableCount > 0
@@ -460,7 +461,7 @@ struct ProviderQuotaDetailsView: View {
                 Button("Use reset credit…") { resetConfirmationAccountKey = account.accountKey }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
-                    .disabled(store.providerQuotaMutatingAccounts.contains(account.accountKey))
+                    .disabled(store.quotas.providerQuotaMutatingAccounts.contains(account.accountKey))
                     .accessibilityIdentifier("provider-quotas.reset.\(account.accountKey)")
             }
             if account.refreshState == .refreshing {

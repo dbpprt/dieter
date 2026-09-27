@@ -8,12 +8,6 @@ import Observation
 import UniformTypeIdentifiers
 import UserNotifications
 
-private struct TerminalOverviewMachineResult: Sendable {
-    let machineID: String
-    let entries: [TerminalOverviewEntry]
-    let error: String?
-}
-
 extension DieterStore {
     func selectProject(_ id: String) async {
         guard await ensureReplicaConnection(id) else { return }
@@ -136,7 +130,7 @@ extension DieterStore {
 
     func openTerminals() async {
         terminalScopeCardID = nil
-        terminalOverviewPreferredMachineID = nil
+        terminalOverview.terminalOverviewPreferredMachineID = nil
         closeConversation()
         section = .terminals
     }
@@ -172,173 +166,25 @@ extension DieterStore {
             let terminal = try await rpc.createTerminal(request)
             closeConversation()
             section = .terminals
-            terminals = try await rpc.terminals(projectID: card.projectID, cardID: card.id).terminals
+            terminalsModel.terminals = try await rpc.terminals(projectID: card.projectID, cardID: card.id).terminals
             upsertTerminal(terminal)
-            selectedTerminalID = terminal.id
-            terminalSequences[terminal.id] = 0
-            terminalScreens[terminal.id] = TerminalScreenState()
+            terminalsModel.selectedTerminalID = terminal.id
+            terminalsModel.terminalSequences[terminal.id] = 0
+            terminalsModel.terminalScreens[terminal.id] = TerminalScreenState()
             startTerminalWatch()
         } catch { show(error) }
     }
 
     func showAllTerminals() async {
         terminalScopeCardID = nil
-        terminalOverviewPreferredMachineID = nil
-        await loadTerminalOverview()
+        terminalOverview.terminalOverviewPreferredMachineID = nil
+        await terminalOverview.loadTerminalOverview()
     }
 
     func openScreens() {
         stopTerminalWatch()
         closeConversation()
         section = .screens
-    }
-
-    func openMachine(_ machine: DieterEndpoint) async {
-        if selectedMachineID == machine.id {
-            dismissMachinePopover()
-            return
-        }
-        stopMachineTelemetry()
-        selectedMachineID = machine.id
-        machineInformationError = nil
-        await refreshMachineInformation(machineID: machine.id)
-        guard selectedMachineID == machine.id else { return }
-        startMachineTelemetry(machineID: machine.id)
-    }
-
-    func dismissMachinePopover() {
-        stopMachineTelemetry()
-        selectedMachineID = nil
-        machineInformationError = nil
-    }
-
-    func refreshSelectedMachineInformation() async {
-        guard let selectedMachineID else { return }
-        await refreshMachineInformation(machineID: selectedMachineID)
-    }
-
-    func startMachineTelemetry(machineID: String) {
-        machineTelemetryTask?.cancel()
-        machineTelemetryTask = Task { [weak self] in
-            while !Task.isCancelled {
-                try? await DieterTaskSleep.seconds(2)
-                guard let self, !Task.isCancelled, self.selectedMachineID == machineID else { return }
-                await self.refreshMachineInformation(machineID: machineID)
-            }
-        }
-    }
-
-    func stopMachineTelemetry() {
-        machineTelemetryTask?.cancel()
-        machineTelemetryTask = nil
-        machineInformationLoading = false
-    }
-
-    func refreshMachineInformation(machineID: String) async {
-        guard selectedMachineID == machineID else { return }
-        machineInformationGeneration &+= 1
-        let generation = machineInformationGeneration
-        guard
-            let machine = machines.first(where: { $0.id == machineID })
-                ?? (endpoint.id == machineID ? endpoint : nil)
-        else {
-            machineInformationError = "This machine is no longer enrolled."
-            return
-        }
-        guard machine.online else {
-            machineInformationError = "\(machine.name) is offline."
-            return
-        }
-        guard machine.compatibilityState != .incompatible else {
-            machineInformationError = machine.incompatibilityDescription
-            return
-        }
-        machineInformationLoading = machineInformation[machineID] == nil
-        defer { if generation == machineInformationGeneration { machineInformationLoading = false } }
-
-        var borrowedPlane: DataPlaneLease?
-        do {
-            let client: DieterRPC
-            if machine.id == endpoint.id, let rpc {
-                client = rpc
-            } else {
-                let plane = try await selectDirectoryDataPlane(for: machine)
-                borrowedPlane = plane
-                client = plane.rpc
-                machineConnectionStatuses[machine.id] = plane.connection
-            }
-            defer {
-                borrowedPlane?.release()
-            }
-            let information = try await client.machineInformation()
-            guard selectedMachineID == machineID, generation == machineInformationGeneration else {
-                return
-            }
-            machineInformation[machineID] = information
-            var history = machineCPUHistory[machineID, default: []]
-            history.append(information.cpuUsagePercent)
-            if history.count > 12 { history.removeFirst(history.count - 12) }
-            machineCPUHistory[machineID] = history
-            var gpuHistory = machineGPUHistory[machineID, default: [:]]
-            let liveGPUIds = Set(information.gpu.devices.map(\.id))
-            gpuHistory = gpuHistory.filter { liveGPUIds.contains($0.key) }
-            for gpu in information.gpu.devices where gpu.hasUtilizationPercent {
-                var values = gpuHistory[gpu.id, default: []]
-                values.append(gpu.utilizationPercent)
-                if values.count > 12 { values.removeFirst(values.count - 12) }
-                gpuHistory[gpu.id] = values
-            }
-            machineGPUHistory[machineID] = gpuHistory
-            machineInformationError = nil
-        } catch is CancellationError {
-        } catch {
-            guard selectedMachineID == machineID, generation == machineInformationGeneration else {
-                return
-            }
-            machineInformationError = DieterRPCFailure.message(for: error)
-        }
-    }
-
-    func performMachineOperation(
-        _ action: Dieter_V1_MachineOperationAction,
-        confirmation: String
-    ) async {
-        guard let machineID = selectedMachineID,
-            let machine = machines.first(where: { $0.id == machineID })
-                ?? (endpoint.id == machineID ? endpoint : nil)
-        else { return }
-        guard machine.online else {
-            show(
-                NSError(
-                    domain: "DieterMachine", code: 2,
-                    userInfo: [NSLocalizedDescriptionKey: "\(machine.name) is offline."]))
-            return
-        }
-        guard !machineOperationInFlight else { return }
-        machineOperationInFlight = true
-        defer { machineOperationInFlight = false }
-        guard machine.compatibilityState != .incompatible else {
-            machineOperationMessage = machine.incompatibilityDescription
-            return
-        }
-        var borrowedPlane: DataPlaneLease?
-        do {
-            let client: DieterRPC
-            if machine.id == endpoint.id, let rpc {
-                client = rpc
-            } else {
-                let plane = try await selectDirectoryDataPlane(for: machine)
-                borrowedPlane = plane
-                client = plane.rpc
-            }
-            defer {
-                borrowedPlane?.release()
-            }
-            let response = try await client.performMachineOperation(action, confirmation: confirmation)
-            machineOperationMessage = response.message
-        } catch {
-            show(error)
-        }
     }
 
     func openTerminals(on machine: DieterEndpoint) async {
@@ -354,15 +200,16 @@ extension DieterStore {
             return
         }
         await openTerminals()
-        terminalOverviewPreferredMachineID = machine.id
-        await loadTerminalOverview(preferredMachineID: machine.id)
+        terminalOverview.terminalOverviewPreferredMachineID = machine.id
+        await terminalOverview.loadTerminalOverview(preferredMachineID: machine.id)
     }
 
     func bindTerminals() {
         terminalsModel.active = section == .terminals
         terminalsModel.onCreated = { [weak self] in self?.section = .terminals }
         terminalsModel.onTerminalChanged = { [weak self] machineID, terminalID, terminal in
-            self?.updateTerminalOverviewEntry(machineID: machineID, terminalID: terminalID, terminal: terminal)
+            self?.terminalOverview.updateTerminalOverviewEntry(
+                machineID: machineID, terminalID: terminalID, terminal: terminal)
         }
         guard terminalScopeCardID != nil else {
             terminalsModel.isLive = terminalOverviewMachines.contains(where: machineIsAvailable)
@@ -378,7 +225,8 @@ extension DieterStore {
     }
     func loadTerminals() async {
         if terminalScopeCardID == nil {
-            await loadTerminalOverview(preferredMachineID: terminalOverviewPreferredMachineID)
+            await terminalOverview.loadTerminalOverview(
+                preferredMachineID: terminalOverview.terminalOverviewPreferredMachineID)
             return
         }
         bindTerminals()
@@ -386,9 +234,9 @@ extension DieterStore {
     }
     func selectTerminal(_ id: String) {
         if terminalScopeCardID == nil,
-            let entry = terminalOverviewEntries.first(where: { $0.terminal.id == id })
+            let entry = terminalOverview.terminalOverviewEntries.first(where: { $0.terminal.id == id })
         {
-            Task { await selectTerminalOverviewEntry(entry.id) }
+            Task { await terminalOverview.selectTerminalOverviewEntry(entry.id) }
             return
         }
         bindTerminals()
@@ -399,7 +247,7 @@ extension DieterStore {
         name: String, shell: String, workingDirectory: String
     ) async {
         if terminalScopeCardID == nil {
-            await createOverviewTerminal(
+            await terminalOverview.createOverviewTerminal(
                 projectID: projectID, checkoutID: checkoutID, machineID: machineID, machineHome: machineHome,
                 name: name, shell: shell, workingDirectory: workingDirectory)
             return
@@ -450,11 +298,12 @@ extension DieterStore {
     }
     func closeTerminal(id: String) async { await terminalsModel.closeTerminal(id: id) }
     func closeTerminalOverviewEntry(_ id: String) async {
-        guard let entry = terminalOverviewEntries.first(where: { $0.id == id }) else { return }
-        if selectedTerminalOverviewID != id || terminalsModel.target.endpointID != entry.machineID {
-            await selectTerminalOverviewEntry(id)
+        guard let entry = terminalOverview.terminalOverviewEntries.first(where: { $0.id == id }) else { return }
+        if terminalOverview.selectedTerminalOverviewID != id || terminalsModel.target.endpointID != entry.machineID {
+            await terminalOverview.selectTerminalOverviewEntry(id)
         }
-        guard selectedTerminalOverviewID == id, terminalsModel.selectedTerminalID == entry.terminal.id else { return }
+        guard terminalOverview.selectedTerminalOverviewID == id, terminalsModel.selectedTerminalID == entry.terminal.id
+        else { return }
         await terminalsModel.closeTerminal(id: entry.terminal.id)
     }
     func startTerminalWatch() {
@@ -463,10 +312,7 @@ extension DieterStore {
     }
     func stopTerminalWatch() {
         terminalsModel.stopTerminalWatch()
-        terminalOverviewGeneration &+= 1
-        terminalOverviewLoading = false
-        terminalOverviewLease?.release()
-        terminalOverviewLease = nil
+        terminalOverview.stop()
     }
     func acceptTerminalFrame(_ frame: Dieter_V1_TerminalFrame, terminalID: String) async {
         await terminalsModel.acceptTerminalFrame(frame, terminalID: terminalID)
@@ -483,198 +329,6 @@ extension DieterStore {
                 if $0.online != $1.online { return $0.online && !$1.online }
                 return $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
             }
-    }
-
-    func loadTerminalOverview(preferredMachineID: String? = nil) async {
-        terminalOverviewGeneration &+= 1
-        let generation = terminalOverviewGeneration
-        terminalOverviewLoading = terminalOverviewEntries.isEmpty
-        terminalOverviewError = nil
-        defer {
-            if generation == terminalOverviewGeneration { terminalOverviewLoading = false }
-        }
-
-        let candidates = terminalOverviewMachines.filter(machineIsAvailable)
-        guard !candidates.isEmpty else {
-            terminalOverviewEntries = []
-            selectedTerminalOverviewID = nil
-            terminalOverviewError = "No compatible Dieter machines are online."
-            terminalsModel.stopTerminalWatch()
-            terminalsModel.installTerminals([], selectedID: nil)
-            return
-        }
-
-        var results: [TerminalOverviewMachineResult] = []
-        for machine in candidates {
-            let result = await fetchTerminalOverview(on: machine)
-            guard generation == terminalOverviewGeneration else { return }
-            results.append(result)
-            // Publish successful routes progressively so one slow machine does
-            // not hold the complete overview in its empty loading state.
-            terminalOverviewEntries = TerminalOverviewCatalog.sorted(results.flatMap(\.entries))
-        }
-        guard generation == terminalOverviewGeneration else { return }
-
-        terminalOverviewEntries = TerminalOverviewCatalog.sorted(results.flatMap(\.entries))
-        let failures = results.compactMap { result in result.error.map { "\(result.machineID): \($0)" } }
-        terminalOverviewError = failures.isEmpty ? nil : failures.joined(separator: "\n")
-        guard
-            let selected = TerminalOverviewCatalog.selection(
-                in: terminalOverviewEntries, currentID: selectedTerminalOverviewID,
-                preferredMachineID: preferredMachineID)
-        else {
-            selectedTerminalOverviewID = nil
-            terminalOverviewLease?.release()
-            terminalOverviewLease = nil
-            terminalsModel.stopTerminalWatch()
-            terminalsModel.installTerminals([], selectedID: nil)
-            return
-        }
-        await activateTerminalOverviewEntry(selected, generation: generation)
-    }
-
-    func selectTerminalOverviewEntry(_ id: String) async {
-        guard terminalScopeCardID == nil,
-            let entry = terminalOverviewEntries.first(where: { $0.id == id })
-        else { return }
-        terminalOverviewGeneration &+= 1
-        await activateTerminalOverviewEntry(entry, generation: terminalOverviewGeneration)
-    }
-
-    private func fetchTerminalOverview(on machine: DieterEndpoint) async -> TerminalOverviewMachineResult {
-        var lease: DataPlaneLease?
-        do {
-            let client: DieterRPC
-            if machine.id == endpoint.id, let rpc {
-                client = rpc
-            } else {
-                let borrowed = try await selectDirectoryDataPlane(for: machine)
-                lease = borrowed
-                client = borrowed.rpc
-            }
-            defer { lease?.release() }
-            let values = try await client.terminals(projectID: "", cardID: "").terminals
-            return TerminalOverviewMachineResult(
-                machineID: machine.id,
-                entries: values.map {
-                    TerminalOverviewEntry(machineID: machine.id, machineName: machine.name, terminal: $0)
-                }, error: nil)
-        } catch is CancellationError {
-            return TerminalOverviewMachineResult(machineID: machine.id, entries: [], error: nil)
-        } catch {
-            return TerminalOverviewMachineResult(
-                machineID: machine.id, entries: [], error: DieterRPCFailure.message(for: error))
-        }
-    }
-
-    private func activateTerminalOverviewEntry(_ entry: TerminalOverviewEntry, generation: UInt64) async {
-        guard terminalScopeCardID == nil,
-            let machine = terminalOverviewMachines.first(where: { $0.id == entry.machineID })
-        else { return }
-        terminalsModel.stopTerminalWatch()
-        terminalOverviewLease?.release()
-        terminalOverviewLease = nil
-        do {
-            let client: DieterRPC
-            var lease: DataPlaneLease?
-            if machine.id == endpoint.id, let rpc {
-                client = rpc
-            } else {
-                let borrowed = try await selectDirectoryDataPlane(for: machine)
-                lease = borrowed
-                client = borrowed.rpc
-            }
-            guard generation == terminalOverviewGeneration, section == .terminals, terminalScopeCardID == nil else {
-                lease?.release()
-                return
-            }
-            terminalOverviewLease = lease
-            selectedTerminalOverviewID = entry.id
-            terminalsModel.bind(
-                target: WorkspaceTarget(endpointID: machine.id, projectID: ""), client: client)
-            terminalsModel.machineName = machine.name
-            terminalsModel.isLive = true
-            terminalsModel.active = true
-            terminalsModel.installTerminals(
-                terminalOverviewEntries.filter { $0.machineID == machine.id }.map(\.terminal),
-                selectedID: entry.terminal.id)
-        } catch {
-            guard generation == terminalOverviewGeneration else { return }
-            terminalOverviewError = DieterRPCFailure.message(for: error)
-            terminalsModel.isLive = false
-        }
-    }
-
-    private func createOverviewTerminal(
-        projectID: String, checkoutID: String, machineID: String?, machineHome: Bool,
-        name: String, shell: String, workingDirectory: String
-    ) async {
-        let destination = machineID.flatMap { id in terminalOverviewMachines.first(where: { $0.id == id }) }
-        guard let machine = destination, machineIsAvailable(machine) else {
-            show(
-                NSError(
-                    domain: "DieterTerminal", code: 2,
-                    userInfo: [NSLocalizedDescriptionKey: "The selected machine is unavailable."]))
-            return
-        }
-        var lease: DataPlaneLease?
-        do {
-            let client: DieterRPC
-            if machine.id == endpoint.id, let rpc {
-                client = rpc
-            } else {
-                let borrowed = try await selectDirectoryDataPlane(for: machine)
-                lease = borrowed
-                client = borrowed.rpc
-            }
-            defer { lease?.release() }
-            var request = Dieter_V1_CreateTerminalRequest()
-            request.projectID = projectID
-            request.checkoutID = machineHome ? "" : checkoutID
-            request.name = name.trimmingCharacters(in: .whitespacesAndNewlines)
-            request.shell = shell
-            request.workingDirectory = workingDirectory.trimmingCharacters(in: .whitespacesAndNewlines)
-            request.columns = 120
-            request.rows = 36
-            request.machineHome = machineHome
-            let terminal = try await client.createTerminal(request)
-            let entry = TerminalOverviewEntry(machineID: machine.id, machineName: machine.name, terminal: terminal)
-            terminalOverviewEntries.removeAll { $0.id == entry.id }
-            terminalOverviewEntries.append(entry)
-            terminalOverviewEntries = TerminalOverviewCatalog.sorted(terminalOverviewEntries)
-            selectedTerminalOverviewID = entry.id
-            terminalsModel.createTerminalPresented = false
-            terminalOverviewGeneration &+= 1
-            await activateTerminalOverviewEntry(entry, generation: terminalOverviewGeneration)
-        } catch {
-            show(error)
-        }
-    }
-
-    private func updateTerminalOverviewEntry(
-        machineID: String, terminalID: String, terminal: Dieter_V1_Terminal?
-    ) {
-        guard terminalScopeCardID == nil else { return }
-        let id = TerminalOverviewEntry.id(machineID: machineID, terminalID: terminalID)
-        if let terminal,
-            let machine = terminalOverviewMachines.first(where: { $0.id == machineID })
-        {
-            let entry = TerminalOverviewEntry(machineID: machineID, machineName: machine.name, terminal: terminal)
-            if let index = terminalOverviewEntries.firstIndex(where: { $0.id == id }) {
-                terminalOverviewEntries[index] = entry
-            } else {
-                terminalOverviewEntries.append(entry)
-            }
-            terminalOverviewEntries = TerminalOverviewCatalog.sorted(terminalOverviewEntries)
-        } else {
-            terminalOverviewEntries.removeAll { $0.id == id }
-            if selectedTerminalOverviewID == id {
-                selectedTerminalOverviewID = nil
-                if let next = terminalOverviewEntries.first {
-                    Task { await selectTerminalOverviewEntry(next.id) }
-                }
-            }
-        }
     }
 
     func beginStandaloneChat(projectID: String? = nil) {

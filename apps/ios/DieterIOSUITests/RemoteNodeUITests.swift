@@ -107,7 +107,7 @@ final class RemoteNodeUITests: XCTestCase {
     private func fillTask(_ app: XCUIApplication, title: String, prompt: String) {
         // Configure the isolated provider while submission is still disabled.
         // A compact iPad sheet scrolls the Agent section beneath its fixed footer.
-        let form = app.collectionViews.firstMatch
+        let form = app.collectionViews.matching(identifier: "ios.create.form").firstMatch
         XCTAssertTrue(form.waitForExistence(timeout: 10), "The task form must appear.\n\(app.debugDescription)")
         let footer = element(app, "ios.create.run")
         var provider = element(app, "ios.create.provider")
@@ -121,7 +121,8 @@ final class RemoteNodeUITests: XCTestCase {
         for _ in 0..<6 {
             if provider.exists {
                 let candidateFrame = provider.frame
-                if hasUsableFrame(candidateFrame), candidateFrame.maxY < footer.frame.minY - 8,
+                if hasUsableFrame(candidateFrame), app.frame.contains(candidateFrame),
+                    candidateFrame.maxY < footer.frame.minY - 8,
                     candidateFrame.minY >= form.frame.minY
                 {
                     providerFrame = candidateFrame
@@ -373,6 +374,7 @@ final class RemoteNodeUITests: XCTestCase {
 
     func testFirstSignInLoadsWorkspaceWithoutRelaunch() throws {
         let environment = ProcessInfo.processInfo.environment
+        XCUIDevice.shared.orientation = environment["DIETER_IOS_TEST_LANDSCAPE"] == "1" ? .landscapeLeft : .portrait
         let gateway = try XCTUnwrap(environment["DIETER_IOS_TEST_GATEWAY"])
         let token = try XCTUnwrap(environment["DIETER_IOS_TEST_TOKEN"])
         let project = try XCTUnwrap(environment["DIETER_IOS_TEST_PROJECT"])
@@ -590,7 +592,17 @@ final class RemoteNodeUITests: XCTestCase {
             app.staticTexts.matching(identifier: "ios.message.text.assistant")
                 .matching(NSPredicate(format: "label CONTAINS 'Mock harness received: Start the saved iOS draft'"))
                 .firstMatch.exists)
-        tap(app, "ios.task.start")
+        let start = app.buttons.matching(identifier: "ios.task.start").firstMatch
+        let modelSettings = app.buttons.matching(identifier: "ios.conversation.model-settings").firstMatch
+        let draftReady = XCTNSPredicateExpectation(
+            predicate: NSPredicate { _, _ in
+                !app.collectionViews.matching(identifier: "ios.create.form").firstMatch.exists
+                    && modelSettings.exists && modelSettings.isEnabled && start.isHittable
+            }, object: app)
+        XCTAssertEqual(
+            XCTWaiter.wait(for: [draftReady], timeout: 20), .completed,
+            "Draft navigation and its toolbar must finish loading before Start.\n\(app.debugDescription)")
+        start.tap()
         assistantTextExists(app, "Mock harness received: Start the saved iOS draft")
         screenshot(app, "07-draft-started")
 

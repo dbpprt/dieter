@@ -40,10 +40,20 @@
     }
 
     /// Focused packaged-app verification for the authenticated machine path. Its
-    /// restart check is hard-gated to the isolated fixture's advertised version;
+    /// restart check requires the owned fixture's daemon ID and loopback gateway;
     /// it never invokes a power operation on an operator daemon.
     @MainActor
     enum MachineUISmokeRunner {
+        static func isOwnedFixture(
+            machine: DieterEndpoint, expectedDaemonID: String?, fixtureEndpoint: String?
+        ) -> Bool {
+            guard let expectedDaemonID, !expectedDaemonID.isEmpty,
+                let fixtureEndpoint, let gateway = DieterEndpoint.parse(fixtureEndpoint),
+                !gateway.secure, gateway.host == "127.0.0.1" || gateway.host == "::1"
+            else { return false }
+            return machine.daemonID == expectedDaemonID && machine.credentialID == gateway.credentialID
+        }
+
         static func run(store: DieterStore) async {
             let output = outputDirectory()
             try? FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
@@ -63,18 +73,18 @@
             }
 
             let sectionBeforeOpening = store.section
-            await store.openMachine(machine)
+            await store.fleet.openMachine(machine)
             guard
                 await waitUntil(
                     timeout: 15,
                     condition: {
-                        store.selectedMachineID == machine.id && store.machineInformation[machine.id] != nil
-                    }), let information = store.machineInformation[machine.id]
+                        store.fleet.selectedMachineID == machine.id && store.fleet.machineInformation[machine.id] != nil
+                    }), let information = store.fleet.machineInformation[machine.id]
             else {
                 writeReport(
                     [
                         "connection": "passed",
-                        "machine-rpc": "failed: \(store.machineInformationError ?? "telemetry unavailable")",
+                        "machine-rpc": "failed: \(store.fleet.machineInformationError ?? "telemetry unavailable")",
                     ], to: output)
                 return
             }
@@ -95,7 +105,7 @@
 
             var results: [String: String] = [
                 "connection": "passed",
-                "presentation": store.section == sectionBeforeOpening && store.selectedMachineID == machine.id
+                "presentation": store.section == sectionBeforeOpening && store.fleet.selectedMachineID == machine.id
                     ? "passed" : "failed: machine information replaced the current page",
                 "machine-rpc": information.hostname.isEmpty || information.osName.isEmpty
                     ? "failed: host identity was incomplete" : "passed",
@@ -125,20 +135,30 @@
             results["render"] =
                 capture(window: window, to: output.appendingPathComponent("machine-information.png"))
                 ? "passed" : "failed: could not capture machine popup"
-            if machine.releaseVersion == "isolated-e2e" {
-                await store.performMachineOperation(.updateDaemon, confirmation: "UPDATE")
+            if isOwnedFixture(
+                machine: machine,
+                expectedDaemonID: NativeTestSupport.argument("--ui-smoke-fixture-daemon"),
+                fixtureEndpoint: NativeTestSupport.argument("--dieter-endpoint")),
+                store.fleet.selectedMachineID == machine.id
+            {
+                await store.fleet.performMachineOperation(.updateDaemon, confirmation: "UPDATE")
                 results["daemon-update"] =
-                    store.machineOperationMessage?.contains("reconnect") == true
+                    store.fleet.machineOperationMessage?.contains("reconnect") == true
                     ? "passed" : "failed: isolated daemon update was not accepted"
-                store.machineOperationMessage = nil
+                store.fleet.machineOperationMessage = nil
                 try? await DieterTaskSleep.seconds(1)
-                await store.performMachineOperation(.restart, confirmation: "RESTART")
+                guard store.fleet.selectedMachineID == machine.id else {
+                    results["power-control"] = "failed: selected machine changed before isolated restart"
+                    writeReport(results, to: output)
+                    return
+                }
+                await store.fleet.performMachineOperation(.restart, confirmation: "RESTART")
                 results["power-control"] =
-                    store.machineOperationMessage?.isEmpty == false
+                    store.fleet.machineOperationMessage?.isEmpty == false
                     ? "passed" : "failed: isolated restart was not accepted"
-                store.machineOperationMessage = nil
+                store.fleet.machineOperationMessage = nil
             } else {
-                results["power-control"] = "failed: refused non-isolated target \(machine.releaseVersion)"
+                results["power-control"] = "failed: target does not match the owned isolated fixture"
             }
             writeReport(results, to: output)
         }

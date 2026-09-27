@@ -49,6 +49,7 @@ type Server struct {
 	executions              *remoteexec.Manager
 	remoteDesktop           *remotedesktop.Manager
 	machine                 *machine.Collector
+	harnessCatalog          func(context.Context, bool) []harness.Adapter
 	machineAction           func(context.Context, machine.Operation) error
 	machineCapabilities     func(context.Context) []machine.OperationCapability
 	machineDelay            time.Duration
@@ -61,10 +62,12 @@ type Server struct {
 // Options provides explicit seams for native end-to-end fixtures. Production
 // callers leave machine operations unset and receive the platform collector,
 // capability probe, and executor. Tests can substitute a no-op executor
-// without weakening the authenticated RPC or its validation.
+// without weakening the authenticated RPC or its validation. An isolated
+// catalog can retain release choices without running provider discovery.
 type Options struct {
 	ControlRTC          *controlrtc.Manager
 	Runner              harness.Runner
+	HarnessCatalog      func(context.Context, bool) []harness.Adapter
 	RemoteDesktop       *remotedesktop.Manager
 	MachineAction       func(context.Context, machine.Operation) error
 	MachineCapabilities func(context.Context) []machine.OperationCapability
@@ -81,6 +84,7 @@ func NewWithRunner(data *store.Store, logger *slog.Logger, runner harness.Runner
 
 func NewWithOptions(data *store.Store, logger *slog.Logger, options Options) *Server {
 	application := newServer(data, logger, options.Runner)
+	application.harnessCatalog = options.HarnessCatalog
 	application.controlRTC = options.ControlRTC
 	if options.RemoteDesktop != nil {
 		application.remoteDesktop = options.RemoteDesktop

@@ -5,13 +5,13 @@
     @MainActor enum WorkspaceChromeUISmoke {
         static func run(store: DieterStore, window: NSWindow, output: URL) async -> [String: String] {
             let endpoints = store.endpoints
-            let quotas = store.providerQuotaGroups
+            let quotas = store.quotas.providerQuotaGroups
             let section = store.section
             let theme = store.themeSelection
             let size = window.contentView?.bounds.size ?? NSSize(width: 1380, height: 870)
             defer {
                 store.endpoints = endpoints
-                store.providerQuotaGroups = quotas
+                store.quotas.install(quotas)
                 store.section = section
                 store.themeSelection = theme
                 window.setContentSize(size)
@@ -29,7 +29,7 @@
                 account.windows = [quota]
                 return account
             }
-            store.providerQuotaGroups = [group]
+            store.quotas.install([group])
             for count in [5, 20] {
                 store.endpoints = (0..<count).map { index in
                     DieterEndpoint(

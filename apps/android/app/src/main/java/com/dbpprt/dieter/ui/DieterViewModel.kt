@@ -83,7 +83,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.retryWhen
-import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.update as updateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
@@ -245,27 +245,9 @@ data class DieterUiState(
     val fileDirty: Boolean = false,
     val projectFilesMode: String = "browse",
     val projectChanges: ProjectChangesState = ProjectChangesState(),
-    val terminals: List<Terminal> = emptyList(),
-    val selectedTerminalId: String? = null,
-    val terminalScreens: Map<String, TerminalScreenState> = emptyMap(),
-    val terminalLoading: Boolean = false,
-    val terminalStreamConnected: Boolean = false,
-    val terminalCreateVisible: Boolean = false,
-    val schedules: List<Schedule> = emptyList(),
-    val schedulesTotalCount: Int = 0,
-    val schedulesNextPageToken: String = "",
-    val schedulesLoading: Boolean = false,
-    val schedulesLoadingMore: Boolean = false,
-    val selectedScheduleId: String? = null,
-    val scheduleRuns: List<ScheduleRun> = emptyList(),
-    val scheduleRunsNextPageToken: String = "",
-    val scheduleRunsLoading: Boolean = false,
-    val scheduleRunsLoadingMore: Boolean = false,
-    val schedulePreview: List<String> = emptyList(),
-    val settings: Settings? = null,
-    val settingsOptions: SettingsOptions? = null,
-    val archivedProjects: List<Project> = emptyList(),
-    val archivedCards: List<Card> = emptyList(),
+    val terminalWorkspace: TerminalWorkspaceState = TerminalWorkspaceState(),
+    val scheduleWorkspace: ScheduleWorkspaceState = ScheduleWorkspaceState(),
+    val administration: AdministrationState = AdministrationState(),
     val directoryListing: DirectoryListing? = null,
     val directoryListingEndpointId: String = "",
     val directoryListingLoading: Boolean = false,
@@ -337,7 +319,28 @@ data class DieterUiState(
             ?: cards.firstOrNull { it.id == selectedCardId }
             ?: chats.firstOrNull { it.id == selectedCardId }
             ?: spaceCards.firstOrNull { it.id == selectedCardId }
+    val schedules: List<Schedule> get() = scheduleWorkspace.schedules
+    val schedulesTotalCount: Int get() = scheduleWorkspace.schedulesTotalCount
+    val schedulesNextPageToken: String get() = scheduleWorkspace.schedulesNextPageToken
+    val schedulesLoading: Boolean get() = scheduleWorkspace.schedulesLoading
+    val schedulesLoadingMore: Boolean get() = scheduleWorkspace.schedulesLoadingMore
+    val selectedScheduleId: String? get() = scheduleWorkspace.selectedScheduleId
+    val scheduleRuns: List<ScheduleRun> get() = scheduleWorkspace.scheduleRuns
+    val scheduleRunsNextPageToken: String get() = scheduleWorkspace.scheduleRunsNextPageToken
+    val scheduleRunsLoading: Boolean get() = scheduleWorkspace.scheduleRunsLoading
+    val scheduleRunsLoadingMore: Boolean get() = scheduleWorkspace.scheduleRunsLoadingMore
+    val schedulePreview: List<String> get() = scheduleWorkspace.schedulePreview
+    val settings: Settings? get() = administration.settings
+    val settingsOptions: SettingsOptions? get() = administration.settingsOptions
+    val archivedProjects: List<Project> get() = administration.archivedProjects
+    val archivedCards: List<Card> get() = administration.archivedCards
     val selectedSchedule: Schedule? get() = schedules.firstOrNull { it.id == selectedScheduleId }
+    val terminals: List<Terminal> get() = terminalWorkspace.terminals
+    val selectedTerminalId: String? get() = terminalWorkspace.selectedTerminalId
+    val terminalScreens: Map<String, TerminalScreenState> get() = terminalWorkspace.terminalScreens
+    val terminalLoading: Boolean get() = terminalWorkspace.terminalLoading
+    val terminalStreamConnected: Boolean get() = terminalWorkspace.terminalStreamConnected
+    val terminalCreateVisible: Boolean get() = terminalWorkspace.terminalCreateVisible
     val selectedTerminal: Terminal? get() = terminals.firstOrNull { it.id == selectedTerminalId }
     val conversationMessages: List<UiMessage>
         get() = mergedConversationMessages(olderMessages, conversation?.conversation?.messagesList.orEmpty())
@@ -351,42 +354,6 @@ internal fun mergedConversationMessages(older: List<UiMessage>, live: List<UiMes
         val key = message.id.ifBlank { "anonymous:${message.hashCode()}" }
         seen.add(key)
     }
-}
-
-internal fun DieterUiState.applyingSchedulePage(response: SchedulesResponse, appending: Boolean): DieterUiState {
-    val nextSchedules = if (appending) {
-        val existing = schedules.mapTo(hashSetOf()) { it.id }
-        schedules + response.schedulesList.filter { it.id !in existing }
-    } else {
-        response.schedulesList
-    }
-    val nextSelection = if (appending) selectedScheduleId
-    else selectedScheduleId?.takeIf { id -> nextSchedules.any { it.id == id } }
-    return copy(
-        schedules = nextSchedules,
-        schedulesTotalCount = response.totalCount,
-        schedulesNextPageToken = response.nextPageToken,
-        schedulesLoading = false,
-        schedulesLoadingMore = false,
-        selectedScheduleId = nextSelection,
-        scheduleRuns = if (nextSelection == null) emptyList() else scheduleRuns,
-        scheduleRunsNextPageToken = if (nextSelection == null) "" else scheduleRunsNextPageToken,
-    )
-}
-
-internal fun DieterUiState.applyingScheduleRunPage(response: ScheduleRunsResponse, appending: Boolean): DieterUiState {
-    val nextRuns = if (appending) {
-        val existing = scheduleRuns.mapTo(hashSetOf()) { it.id }
-        scheduleRuns + response.runsList.filter { it.id !in existing }
-    } else {
-        response.runsList
-    }
-    return copy(
-        scheduleRuns = nextRuns,
-        scheduleRunsNextPageToken = response.nextPageToken,
-        scheduleRunsLoading = false,
-        scheduleRunsLoadingMore = false,
-    )
 }
 
 internal fun conversationStreamNeedsRestart(
@@ -423,6 +390,22 @@ class DieterViewModel internal constructor(
     private val repository: DieterRepository = connectionManager.repository
     private val _state = MutableStateFlow(DieterUiState())
     val state: StateFlow<DieterUiState> = _state.asStateFlow()
+    // All selection transitions (including daemon-driven ones) retire the same feature owners.
+    private fun MutableStateFlow<DieterUiState>.update(transform: (DieterUiState) -> DieterUiState) {
+        val before = value
+        updateFlow { current ->
+            var next = transform(current)
+            val projectChanged = current.activeGatewayId != next.activeGatewayId || current.selectedProjectId != next.selectedProjectId
+            val boardChanged = projectChanged || current.selectedBoardId != next.selectedBoardId
+            if (projectChanged) next = next.copy(scheduleWorkspace = ScheduleWorkspaceState())
+            if (boardChanged) next = next.copy(administration = AdministrationState())
+            next
+        }
+        val projectChanged = before.activeGatewayId != value.activeGatewayId || before.selectedProjectId != value.selectedProjectId
+        if (projectChanged) schedules.reset()
+        if (projectChanged || before.selectedBoardId != value.selectedBoardId) administration.reset()
+    }
+
     internal val conversationCreationPreferences: ConversationCreationPreferences
         get() = appPreferences.conversationCreation.value
 
@@ -438,18 +421,38 @@ class DieterViewModel internal constructor(
     private var postSendRefreshJob: Job? = null
     private var postSendRefreshCardId: String? = null
     private var postSendRefreshGeneration = 0L
-    private var terminalWatchJob: Job? = null
     private var machineListRefreshJob: Job? = null
     private var machineTelemetryJob: Job? = null
     private var conversationStreamCardId: String? = null
     private var terminalEndpointId: String? = null
-    private val terminalSequences = mutableMapOf<String, Long>()
-    private val terminalPendingInput = mutableMapOf<String, ByteArray>()
-    private val terminalInputJobs = mutableMapOf<String, Job>()
-    private val terminalResizeJobs = mutableMapOf<String, Job>()
+    private val terminals = TerminalController(
+        viewModelScope,
+        captureClient = {
+            check(repository.activeEndpoint.id == terminalEndpointId) { "The terminal machine changed. Refresh terminals." }
+            repository.captureTerminalClient()
+        },
+        canWatch = { foreground && _state.value.destination == Destination.TERMINALS },
+        publish = { snapshot -> _state.update { it.copy(terminalWorkspace = snapshot) } },
+        reportError = { message -> _state.update { it.copy(error = message) } },
+    )
+    private val schedules = ScheduleController(
+        viewModelScope, { _state.value.activeGatewayId to _state.value.selectedProjectId },
+        replica = { project -> connectionManager.ensureReplicaRoute(project); repository.captureScheduleClient() },
+        owner = { machine -> connectionManager.ensureScheduleRoute(machine); repository.captureScheduleClient() },
+        checkout = { draft ->
+            val checkout = connectionManager.ensureCheckoutRoute(draft.projectId, draft.checkoutId)
+            repository.captureScheduleClient() to checkout
+        },
+        publish = { snapshot -> _state.update { it.copy(scheduleWorkspace = snapshot) } },
+        reportError = { error -> _state.update { it.copy(error = readableError(error)) } },
+    )
+    private val administration = AdministrationController(
+        viewModelScope, { Triple(_state.value.activeGatewayId, _state.value.selectedProjectId, _state.value.selectedBoardId) },
+        route = { project -> connectionManager.ensureReplicaRoute(project); repository.captureAdministrationClient() },
+        publish = { snapshot -> _state.update { it.copy(administration = snapshot) } },
+        reportError = { error -> _state.update { it.copy(error = readableError(error)) } },
+    )
     private var conversationHistoryRequestGeneration = 0L
-    private var schedulesRequestGeneration = 0L
-    private var scheduleRunsRequestGeneration = 0L
     private var workspaceSurfaceJob: Job? = null
     private var workspaceSurfaceRefreshAgain = false
     private var workspaceDiffJob: Job? = null
@@ -582,6 +585,9 @@ class DieterViewModel internal constructor(
     fun stop() {
         rememberConversation()
         foreground = false
+        terminals.cancel()
+        schedules.cancel()
+        administration.cancel()
         stateJob?.cancel()
         providerQuotaWatchJob?.cancel()
         providerQuotaWatchJob = null
@@ -758,6 +764,8 @@ class DieterViewModel internal constructor(
         val wasConnected = _state.value.connected
         val gatewayChanged = connection.activeGatewayId != _state.value.activeGatewayId
         if (gatewayChanged) {
+            schedules.reset()
+            administration.reset()
             providerQuotaWatchJob?.cancel()
             providerQuotaWatchJob = null
             stopMachineTelemetry()
@@ -765,21 +773,9 @@ class DieterViewModel internal constructor(
             machineListRefreshJob = null
         }
         val connectedEndpointId = connection.endpoint?.id
-        val endpointChanged = connectedEndpointId != null && connectedEndpointId != terminalEndpointId
-        if (endpointChanged) {
-            terminalEndpointId = connectedEndpointId
-            stopTerminalWatch()
-            cancelTerminalIO()
-            terminalSequences.clear()
-            _state.update {
-                it.copy(
-                    terminals = emptyList(),
-                    selectedTerminalId = null,
-                    terminalScreens = emptyMap(),
-                    terminalStreamConnected = false,
-                )
-            }
-        }
+        val endpointChanged = connectedEndpointId != terminalEndpointId
+        terminalEndpointId = connectedEndpointId
+        terminals.bind(connection.activeGatewayId to connectedEndpointId)
         val remote = connection.selectedState
         _state.update { current ->
             val liveMachineIds = connection.endpointConnections.mapTo(hashSetOf(), EndpointConnection::id)
@@ -1465,16 +1461,6 @@ class DieterViewModel internal constructor(
                 projectWorkspacesLoading = false,
                 projectWorkspaceOperations = emptySet(),
                 projectWorkspaceErrors = emptyMap(),
-                schedules = emptyList(),
-                schedulesTotalCount = 0,
-                schedulesNextPageToken = "",
-                schedulesLoading = false,
-                schedulesLoadingMore = false,
-                selectedScheduleId = null,
-                scheduleRuns = emptyList(),
-                scheduleRunsNextPageToken = "",
-                scheduleRunsLoading = false,
-                scheduleRunsLoadingMore = false,
                 loading = true,
             )
         }
@@ -1524,12 +1510,6 @@ class DieterViewModel internal constructor(
                 historyLoading = false,
                 filePath = if (changingProject) "" else it.filePath,
                 fileDocument = null,
-                schedules = if (changingProject) emptyList() else it.schedules,
-                schedulesTotalCount = if (changingProject) 0 else it.schedulesTotalCount,
-                schedulesNextPageToken = if (changingProject) "" else it.schedulesNextPageToken,
-                selectedScheduleId = if (changingProject) null else it.selectedScheduleId,
-                scheduleRuns = if (changingProject) emptyList() else it.scheduleRuns,
-                scheduleRunsNextPageToken = if (changingProject) "" else it.scheduleRunsNextPageToken,
                 loading = changingProject,
             )
         }
@@ -1621,25 +1601,14 @@ class DieterViewModel internal constructor(
     fun selectDetailTab(index: Int) = _state.update { it.copy(detailTab = index) }
 
     fun openSurface(surface: AppSurface, schedule: Schedule? = null) {
+        schedules.clearPreview()
         if (schedule != null) {
-            viewModelScope.launch {
-                try {
-                    connectionManager.ensureScheduleRoute(schedule.ownerDaemonId)
-                    val detail = repository.schedule(schedule.id)
-                    upsertLoadedSchedule(detail)
-                    _state.update { it.copy(appSurface = surface, editingScheduleId = detail.id, schedulePreview = emptyList(), error = null) }
-                } catch (error: Throwable) { _state.update { it.copy(error = readableError(error)) } }
+            schedules.details(schedule) { detail ->
+                _state.update { it.copy(appSurface = surface, editingScheduleId = detail.id, error = null) }
             }
             return
         }
-        _state.update {
-            it.copy(
-                appSurface = surface,
-                editingScheduleId = schedule?.id,
-                schedulePreview = emptyList(),
-                error = null,
-            )
-        }
+        _state.update { it.copy(appSurface = surface, editingScheduleId = null, error = null) }
         when (surface) {
             AppSurface.WORKSPACE -> loadAdministration()
             AppSurface.NEW_CHAT -> connectionManager.refreshProjectDirectory()
@@ -1648,7 +1617,9 @@ class DieterViewModel internal constructor(
     }
 
     fun closeSurface() {
-        _state.update { it.copy(appSurface = null, editingScheduleId = null, schedulePreview = emptyList()) }
+        schedules.clearPreview()
+        administration.cancel()
+        _state.update { it.copy(appSurface = null, editingScheduleId = null) }
     }
 
     fun openCard(card: Card, destination: Destination = _state.value.destination) {
@@ -2798,420 +2769,48 @@ class DieterViewModel internal constructor(
     }
 
     fun loadTerminals() {
-        if (!foreground || _state.value.connectionPhase != ConnectionPhase.CONNECTED) return
+        if (foreground && _state.value.connectionPhase == ConnectionPhase.CONNECTED) terminals.load()
+    }
+
+    fun showTerminalCreate() = terminals.showCreate(true)
+    fun dismissTerminalCreate() = terminals.showCreate(false)
+    fun selectTerminal(terminalId: String) = terminals.select(terminalId)
+    fun sendTerminalInput(terminalId: String, data: ByteArray) = terminals.send(terminalId, data)
+    fun resizeTerminal(terminalId: String, columns: Int, rows: Int) = terminals.resize(terminalId, columns, rows)
+    fun renameTerminal(terminalId: String, name: String) = terminals.rename(terminalId, name)
+    fun closeTerminal(terminalId: String) { terminals.close(terminalId) }
+    private fun stopTerminalWatch() = terminals.stopWatch()
+    private fun cancelTerminalIO() = terminals.cancel()
+
+    fun createTerminal(projectId: String, name: String, shell: String, workingDirectory: String, onCreated: () -> Unit = {}) {
+        val surface = _state.value.appSurface
         viewModelScope.launch {
-            _state.update { it.copy(terminalLoading = true, error = null) }
-            try {
-                val terminals = repository.terminals().terminalsList.sortedWith(
-                    compareBy<Terminal> { it.createdAt }.thenBy { it.id },
-                )
-                _state.update { current ->
-                    val live = terminals.mapTo(mutableSetOf(), Terminal::getId)
-                    val selected = current.selectedTerminalId?.takeIf(live::contains) ?: terminals.firstOrNull()?.id
-                    current.copy(
-                        terminals = terminals,
-                        selectedTerminalId = selected,
-                        terminalScreens = current.terminalScreens.filterKeys(live::contains),
-                        terminalLoading = false,
-                    )
-                }
-                terminalSequences.keys.retainAll(terminals.mapTo(mutableSetOf(), Terminal::getId))
-                startTerminalWatch()
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (error: Throwable) {
-                _state.update { it.copy(terminalLoading = false, error = readableTerminalError(error)) }
-            }
-        }
-    }
-
-    fun showTerminalCreate() {
-        _state.update { it.copy(terminalCreateVisible = true, error = null) }
-    }
-
-    fun dismissTerminalCreate() {
-        _state.update { it.copy(terminalCreateVisible = false) }
-    }
-
-    fun selectTerminal(terminalId: String) {
-        if (_state.value.terminals.none { it.id == terminalId }) return
-        _state.update { it.copy(selectedTerminalId = terminalId) }
-        startTerminalWatch()
-    }
-
-    fun createTerminal(
-        projectId: String,
-        name: String,
-        shell: String,
-        workingDirectory: String,
-        onCreated: () -> Unit = {},
-    ) {
-        viewModelScope.launch {
-            _state.update { it.copy(terminalLoading = true, error = null) }
             try {
                 connectionManager.ensureCheckoutRoute(projectId)
-                val terminal = repository.createTerminal(
-                    CreateTerminalRequest.newBuilder()
-                        .setProjectId(projectId)
-                        .setName(name.trim())
-                        .setShell(shell)
-                        .setWorkingDirectory(workingDirectory.trim())
-                        .setColumns(80)
-                        .setRows(28)
-                        .build(),
-                )
-                terminalSequences[terminal.id] = 0
-                _state.update { current ->
-                    current.copy(
-                        destination = Destination.TERMINALS,
-                        terminals = upsertTerminal(current.terminals, terminal),
-                        selectedTerminalId = terminal.id,
-                        terminalScreens = current.terminalScreens + (terminal.id to TerminalScreenState()),
-                        terminalLoading = false,
-                        terminalCreateVisible = false,
-                    )
+                if (_state.value.appSurface != surface) return@launch
+                terminals.create(CreateTerminalRequest.newBuilder().setProjectId(projectId).setName(name.trim())
+                    .setShell(shell).setWorkingDirectory(workingDirectory.trim()).setColumns(80).setRows(28).build()) {
+                    _state.update { it.copy(destination = Destination.TERMINALS) }
+                    onCreated()
                 }
-                startTerminalWatch()
-                onCreated()
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (error: Throwable) {
-                _state.update { it.copy(terminalLoading = false, error = readableTerminalError(error)) }
-            }
+            } catch (cancelled: CancellationException) { throw cancelled
+            } catch (error: Throwable) { _state.update { it.copy(error = readableError(error)) } }
         }
     }
 
-    fun sendTerminalInput(terminalId: String, data: ByteArray) {
-        if (data.isEmpty() || _state.value.terminals.none { it.id == terminalId && it.status == "running" }) return
-        terminalPendingInput[terminalId] = terminalPendingInput[terminalId]?.plus(data) ?: data.copyOf()
-        if (terminalInputJobs[terminalId]?.isActive == true) return
-        terminalInputJobs[terminalId] = viewModelScope.launch {
-            try {
-                while (true) {
-                    delay(12)
-                    val pending = terminalPendingInput.remove(terminalId) ?: break
-                    terminalInputChunks(pending).forEach { repository.writeTerminal(terminalId, it) }
-                }
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (error: Throwable) {
-                _state.update { it.copy(terminalStreamConnected = false, error = "Terminal input paused: ${readableError(error)}") }
-            } finally {
-                terminalInputJobs.remove(terminalId)
-                if (terminalPendingInput[terminalId]?.isNotEmpty() == true) {
-                    terminalPendingInput.remove(terminalId)?.let { sendTerminalInput(terminalId, it) }
-                }
-            }
-        }
+    private suspend fun loadSchedules() { schedules.load(_state.value.selectedProjectId)?.join() }
+    fun refreshSchedules() { schedules.load(_state.value.selectedProjectId) }
+    fun loadMoreSchedules() { schedules.load(_state.value.selectedProjectId, more = true) }
+    fun previewSchedule(cron: String, timezone: String) { schedules.preview(_state.value.selectedProjectId, cron, timezone) }
+    fun selectSchedule(schedule: Schedule?) = schedules.select(schedule)
+    fun loadMoreScheduleRuns() = schedules.moreRuns()
+    fun saveSchedule(scheduleId: String, draft: ScheduleDraft) = action(ensureReplicaRoute = false) {
+        schedules.save(scheduleId, draft, ::closeSurface).join()
     }
-
-    fun resizeTerminal(terminalId: String, columns: Int, rows: Int) {
-        if (columns !in 2..500 || rows !in 2..500) return
-        terminalResizeJobs.remove(terminalId)?.cancel()
-        terminalResizeJobs[terminalId] = viewModelScope.launch {
-            delay(120)
-            try {
-                upsertTerminal(repository.resizeTerminal(terminalId, columns, rows))
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (error: Throwable) {
-                if (_state.value.terminals.any { it.id == terminalId }) {
-                    _state.update { it.copy(error = readableError(error)) }
-                }
-            }
-        }
-    }
-
-    fun renameTerminal(terminalId: String, name: String) {
-        val normalized = name.trim()
-        if (normalized.isEmpty()) return
-        viewModelScope.launch {
-            try {
-                upsertTerminal(repository.renameTerminal(terminalId, normalized))
-            } catch (error: Throwable) {
-                _state.update { it.copy(error = readableError(error)) }
-            }
-        }
-    }
-
-    fun closeTerminal(terminalId: String) {
-        viewModelScope.launch {
-            try {
-                repository.closeTerminal(terminalId)
-                terminalSequences.remove(terminalId)
-                terminalPendingInput.remove(terminalId)
-                terminalInputJobs.remove(terminalId)?.cancel()
-                terminalResizeJobs.remove(terminalId)?.cancel()
-                _state.update { current ->
-                    val terminals = current.terminals.filterNot { it.id == terminalId }
-                    current.copy(
-                        terminals = terminals,
-                        selectedTerminalId = if (current.selectedTerminalId == terminalId) terminals.firstOrNull()?.id else current.selectedTerminalId,
-                        terminalScreens = current.terminalScreens - terminalId,
-                    )
-                }
-                startTerminalWatch()
-            } catch (error: Throwable) {
-                _state.update { it.copy(error = readableError(error)) }
-            }
-        }
-    }
-
-    private fun startTerminalWatch() {
-        stopTerminalWatch()
-        val terminalId = _state.value.selectedTerminalId ?: return
-        if (!foreground || _state.value.destination != Destination.TERMINALS) return
-        terminalWatchJob = viewModelScope.launch {
-            var delayMs = 500L
-            while (_state.value.destination == Destination.TERMINALS && _state.value.selectedTerminalId == terminalId) {
-                try {
-                    _state.update { it.copy(terminalStreamConnected = true) }
-                    repository.watchTerminal(terminalId, terminalSequences[terminalId] ?: 0).collectLatest { frame ->
-                        acceptTerminalFrame(terminalId, frame)
-                    }
-                    _state.update { it.copy(terminalStreamConnected = false) }
-                } catch (cancelled: CancellationException) {
-                    throw cancelled
-                } catch (error: Throwable) {
-                    _state.update { it.copy(terminalStreamConnected = false) }
-                    if (Status.fromThrowable(error).code == Status.Code.NOT_FOUND) {
-                        _state.update { current ->
-                            val terminals = current.terminals.filterNot { it.id == terminalId }
-                            current.copy(
-                                terminals = terminals,
-                                selectedTerminalId = terminals.firstOrNull()?.id,
-                                terminalScreens = current.terminalScreens - terminalId,
-                            )
-                        }
-                        return@launch
-                    }
-                }
-                delay(delayMs)
-                delayMs = (delayMs * 1.8).toLong().coerceAtMost(5_000)
-            }
-        }
-    }
-
-    private fun stopTerminalWatch() {
-        terminalWatchJob?.cancel()
-        terminalWatchJob = null
-        _state.update { it.copy(terminalStreamConnected = false) }
-    }
-
-    private fun cancelTerminalIO() {
-        terminalInputJobs.values.forEach { it.cancel() }
-        terminalResizeJobs.values.forEach { it.cancel() }
-        terminalInputJobs.clear()
-        terminalResizeJobs.clear()
-        terminalPendingInput.clear()
-    }
-
-    private fun acceptTerminalFrame(terminalId: String, frame: TerminalFrame) {
-        if (frame.hasTerminal() && frame.terminal.id == terminalId) upsertTerminal(frame.terminal)
-        terminalSequences[terminalId] = maxOf(terminalSequences[terminalId] ?: 0, frame.sequence)
-        if (!frame.screenReset && frame.data.isEmpty) return
-        _state.update { current ->
-            current.copy(
-                terminalStreamConnected = true,
-                terminalScreens = current.terminalScreens + (
-                    terminalId to TerminalScreenReducer.apply(
-                        current = current.terminalScreens[terminalId] ?: TerminalScreenState(),
-                        data = frame.data.toByteArray(),
-                        screenReset = frame.screenReset,
-                    )
-                ),
-            )
-        }
-    }
-
-    private fun upsertTerminal(terminal: Terminal) {
-        _state.update { it.copy(terminals = upsertTerminal(it.terminals, terminal)) }
-    }
-
-    private fun upsertTerminal(terminals: List<Terminal>, terminal: Terminal): List<Terminal> =
-        (terminals.filterNot { it.id == terminal.id } + terminal).sortedWith(
-            compareBy<Terminal> { it.createdAt }.thenBy { it.id },
-        )
-
-    private suspend fun loadSchedules() {
-        val projectId = _state.value.selectedProjectId
-        if (projectId.isBlank()) return
-        val generation = ++schedulesRequestGeneration
-        _state.update {
-            it.copy(
-                schedulesLoading = true,
-                schedulesLoadingMore = false,
-                schedulesNextPageToken = "",
-                error = null,
-            )
-        }
-        try {
-            connectionManager.ensureReplicaRoute(projectId)
-            val response = repository.schedules(projectId, SCHEDULE_PAGE_SIZE)
-            if (generation != schedulesRequestGeneration || _state.value.selectedProjectId != projectId) return
-            _state.update { it.applyingSchedulePage(response, appending = false) }
-        } catch (cancelled: CancellationException) {
-            throw cancelled
-        } catch (error: Throwable) {
-            if (generation == schedulesRequestGeneration && _state.value.selectedProjectId == projectId) {
-                _state.update { it.copy(schedulesLoading = false, error = readableError(error)) }
-            }
-        }
-    }
-
-    fun refreshSchedules() {
-        viewModelScope.launch { loadSchedules() }
-    }
-
-    fun loadMoreSchedules() {
-        val current = _state.value
-        val projectId = current.selectedProjectId
-        val pageToken = current.schedulesNextPageToken
-        if (projectId.isBlank() || pageToken.isBlank() || current.schedulesLoading || current.schedulesLoadingMore) return
-        val generation = schedulesRequestGeneration
-        viewModelScope.launch {
-            _state.update { it.copy(schedulesLoadingMore = true, error = null) }
-            try {
-                connectionManager.ensureReplicaRoute(projectId)
-                val response = repository.schedules(projectId, SCHEDULE_PAGE_SIZE, pageToken)
-                if (generation != schedulesRequestGeneration || _state.value.selectedProjectId != projectId) return@launch
-                _state.update { it.applyingSchedulePage(response, appending = true) }
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (error: Throwable) {
-                if (generation == schedulesRequestGeneration && _state.value.selectedProjectId == projectId) {
-                    _state.update { it.copy(schedulesLoadingMore = false, error = readableError(error)) }
-                }
-            }
-        }
-    }
-
-    fun previewSchedule(cron: String, timezone: String) {
-        viewModelScope.launch {
-            try {
-                connectionManager.ensureReplicaRoute(_state.value.selectedProjectId)
-                val result = repository.previewSchedule(cron, timezone)
-                _state.update { it.copy(schedulePreview = result.timesList, error = null) }
-            } catch (error: Throwable) {
-                _state.update { it.copy(schedulePreview = emptyList(), error = readableError(error)) }
-            }
-        }
-    }
-
-    private fun upsertLoadedSchedule(schedule: Schedule, select: Boolean = false) {
-        _state.update { current ->
-            val existed = current.schedules.any { it.id == schedule.id }
-            val nextSchedules = (current.schedules.filterNot { it.id == schedule.id } + schedule)
-                .sortedWith(compareBy<Schedule> { it.name.lowercase() }.thenBy { it.id })
-            val selectionChanged = select && current.selectedScheduleId != schedule.id
-            current.copy(
-                schedules = nextSchedules,
-                schedulesTotalCount = if (existed) current.schedulesTotalCount else current.schedulesTotalCount + 1,
-                selectedScheduleId = if (select) schedule.id else current.selectedScheduleId,
-                scheduleRuns = if (selectionChanged) emptyList() else current.scheduleRuns,
-                scheduleRunsNextPageToken = if (selectionChanged) "" else current.scheduleRunsNextPageToken,
-            )
-        }
-    }
-
-    fun saveSchedule(scheduleId: String, draft: ScheduleDraft) = action {
-        val existing = _state.value.schedules.firstOrNull { it.id == scheduleId }
-        val checkoutId = if (existing == null) connectionManager.ensureCheckoutRoute(draft.projectId, draft.checkoutId) else {
-            connectionManager.ensureScheduleRoute(existing.ownerDaemonId)
-            existing.checkoutId
-        }
-        val saved = repository.saveSchedule(
-            scheduleId,
-            SaveScheduleRequest.newBuilder().setScheduleId(scheduleId).setSchedule(draft.toBuilder().setCheckoutId(checkoutId)).build(),
-        )
-        upsertLoadedSchedule(saved, select = true)
-        _state.update { it.copy(appSurface = null, editingScheduleId = null, schedulePreview = emptyList()) }
-    }
-
-    fun selectSchedule(schedule: Schedule?) {
-        val generation = ++scheduleRunsRequestGeneration
-        _state.update {
-            it.copy(
-                selectedScheduleId = schedule?.id,
-                scheduleRuns = emptyList(),
-                scheduleRunsNextPageToken = "",
-                scheduleRunsLoading = schedule != null,
-                scheduleRunsLoadingMore = false,
-                error = null,
-            )
-        }
-        if (schedule == null) return
-        val projectId = _state.value.selectedProjectId
-        viewModelScope.launch {
-            try {
-                connectionManager.ensureScheduleRoute(schedule.ownerDaemonId)
-                val response = repository.scheduleRuns(schedule.id, SCHEDULE_PAGE_SIZE)
-                if (generation != scheduleRunsRequestGeneration || _state.value.selectedScheduleId != schedule.id) return@launch
-                _state.update { it.applyingScheduleRunPage(response, appending = false) }
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (error: Throwable) {
-                if (generation == scheduleRunsRequestGeneration && _state.value.selectedScheduleId == schedule.id) {
-                    _state.update { it.copy(scheduleRunsLoading = false, error = readableError(error)) }
-                }
-            }
-        }
-    }
-
-    fun loadMoreScheduleRuns() {
-        val current = _state.value
-        val scheduleId = current.selectedScheduleId ?: return
-        val pageToken = current.scheduleRunsNextPageToken
-        if (pageToken.isBlank() || current.scheduleRunsLoading || current.scheduleRunsLoadingMore) return
-        val projectId = current.selectedProjectId
-        val generation = scheduleRunsRequestGeneration
-        viewModelScope.launch {
-            _state.update { it.copy(scheduleRunsLoadingMore = true, error = null) }
-            try {
-                connectionManager.ensureScheduleRoute(current.schedules.first { it.id == scheduleId }.ownerDaemonId)
-                val response = repository.scheduleRuns(scheduleId, SCHEDULE_PAGE_SIZE, pageToken)
-                if (generation != scheduleRunsRequestGeneration || _state.value.selectedScheduleId != scheduleId) return@launch
-                _state.update { it.applyingScheduleRunPage(response, appending = true) }
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (error: Throwable) {
-                if (generation == scheduleRunsRequestGeneration && _state.value.selectedScheduleId == scheduleId) {
-                    _state.update { it.copy(scheduleRunsLoadingMore = false, error = readableError(error)) }
-                }
-            }
-        }
-    }
-
-    fun toggleSchedule(schedule: Schedule) = action {
-        connectionManager.ensureScheduleRoute(schedule.ownerDaemonId)
-        upsertLoadedSchedule(repository.setScheduleEnabled(schedule.id, !schedule.enabled))
-    }
-
-    fun runSchedule(schedule: Schedule) = action {
-        connectionManager.ensureScheduleRoute(schedule.ownerDaemonId)
-        repository.runSchedule(schedule.id)
-        selectSchedule(schedule)
-    }
-
-    fun deleteSchedule(schedule: Schedule) = action {
-        connectionManager.ensureScheduleRoute(schedule.ownerDaemonId)
-        repository.deleteSchedule(schedule.id)
-        ++schedulesRequestGeneration
-        if (_state.value.selectedScheduleId == schedule.id) ++scheduleRunsRequestGeneration
-        _state.update { current ->
-            val removed = current.schedules.any { it.id == schedule.id }
-            val selected = current.selectedScheduleId == schedule.id
-            current.copy(
-                schedules = current.schedules.filterNot { it.id == schedule.id },
-                schedulesTotalCount = if (removed) maxOf(0, current.schedulesTotalCount - 1) else current.schedulesTotalCount,
-                selectedScheduleId = if (selected) null else current.selectedScheduleId,
-                scheduleRuns = if (selected) emptyList() else current.scheduleRuns,
-                scheduleRunsNextPageToken = if (selected) "" else current.scheduleRunsNextPageToken,
-                scheduleRunsLoading = if (selected) false else current.scheduleRunsLoading,
-                scheduleRunsLoadingMore = if (selected) false else current.scheduleRunsLoadingMore,
-            )
-        }
-        if (_state.value.schedules.isEmpty() && _state.value.schedulesNextPageToken.isNotBlank()) loadMoreSchedules()
+    fun toggleSchedule(schedule: Schedule) = action(ensureReplicaRoute = false) { schedules.toggle(schedule).join() }
+    fun runSchedule(schedule: Schedule) = action(ensureReplicaRoute = false) { schedules.run(schedule).join() }
+    fun deleteSchedule(schedule: Schedule) = action(ensureReplicaRoute = false) {
+        schedules.delete(schedule, _state.value.selectedProjectId).join()
     }
 
     // MARK: Conversation workspace review surface
@@ -3700,31 +3299,7 @@ class DieterViewModel internal constructor(
         }
     }
 
-    fun loadAdministration() {
-        viewModelScope.launch {
-            try {
-                connectionManager.ensureReplicaRoute(_state.value.selectedProjectId)
-                val (settings, options, archivedProjects) = coroutineScope {
-                    val settings = async { repository.settings() }
-                    val options = async { repository.settingsOptions() }
-                    val archived = async { repository.archivedProjects() }
-                    Triple(settings.await(), options.await(), archived.await())
-                }
-                val boardId = _state.value.selectedBoardId
-                val archivedCards = if (boardId.isBlank()) emptyList() else repository.archivedCards(boardId).cardsList
-                _state.update {
-                    it.copy(
-                        settings = settings,
-                        settingsOptions = options,
-                        archivedProjects = archivedProjects.projectsList,
-                        archivedCards = archivedCards,
-                    )
-                }
-            } catch (error: Throwable) {
-                _state.update { it.copy(error = readableError(error)) }
-            }
-        }
-    }
+    fun loadAdministration() { administration.load(_state.value.selectedProjectId, _state.value.selectedBoardId) }
 
     fun clearDirectoryListing() {
         directoryListingGeneration += 1
@@ -3990,7 +3565,7 @@ class DieterViewModel internal constructor(
     }
 
     fun updateSettings(settings: Settings) = action {
-        _state.update { it.copy(settings = repository.updateSettings(settings)) }
+        administration.update(_state.value.selectedProjectId, settings).join()
     }
 
     fun loadSharedConflicts(keys: List<String>) = action {
@@ -4084,6 +3659,8 @@ class DieterViewModel internal constructor(
     }
 
     override fun onCleared() {
+        schedules.cancel()
+        administration.cancel()
         stopTerminalWatch()
         cancelTerminalIO()
         connectionManager.onAppBackgrounded()

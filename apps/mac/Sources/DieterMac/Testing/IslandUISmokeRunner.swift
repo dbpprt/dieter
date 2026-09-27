@@ -11,9 +11,9 @@
             // This fixture bypasses connect(), which normally waits for disk
             // restoration before publishing state. Do not let restoration
             // replace the synthetic cards after the first layout begins.
-            if let syncRestoreTask = store.syncRestoreTask {
+            if let syncRestoreTask = store.connectionEffects.syncRestoreTask {
                 await syncRestoreTask.value
-                store.syncRestoreTask = nil
+                store.connectionEffects.syncRestoreTask = nil
             }
             installFixture(in: store)
 

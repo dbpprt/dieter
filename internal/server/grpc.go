@@ -170,7 +170,7 @@ func (api *grpcAPI) WatchState(request *dieterv1.WatchStateRequest, stream diete
 }
 
 func (api *grpcAPI) GetHarnesses(ctx context.Context, _ *emptypb.Empty) (*dieterv1.HarnessCatalog, error) {
-	return protoHarnessCatalog(harness.RefreshCatalog(ctx, os.Getenv("DIETER_ENABLE_MOCK_HARNESS") == "1")), nil
+	return protoHarnessCatalog(api.server.availableHarnesses(ctx)), nil
 }
 
 func (api *grpcAPI) GetSettings(context.Context, *emptypb.Empty) (*dieterv1.Settings, error) {
@@ -190,7 +190,7 @@ func (api *grpcAPI) GetSettingsOptions(ctx context.Context, _ *emptypb.Empty) (*
 	if err != nil {
 		return nil, grpcFailure(err)
 	}
-	result := &dieterv1.SettingsOptions{Agents: protoHarnessCatalog(harness.RefreshCatalog(ctx, os.Getenv("DIETER_ENABLE_MOCK_HARNESS") == "1"))}
+	result := &dieterv1.SettingsOptions{Agents: protoHarnessCatalog(api.server.availableHarnesses(ctx))}
 	for _, value := range projects {
 		result.Projects = append(result.Projects, protoProject(value))
 	}

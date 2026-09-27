@@ -261,7 +261,7 @@
                 window.setFrame(originalWindowFrame, display: true)
             }
             if ProcessInfo.processInfo.arguments.contains("--board-stress-ui-smoke") {
-                store.providerQuotaGroups = smokeProviderQuotaGroups()
+                store.quotas.install(smokeProviderQuotaGroups())
                 try? await DieterTaskSleep.milliseconds(300)
             }
             let appearanceDefaults = DieterAppearance.applicationDefaults()
@@ -1289,9 +1289,9 @@
             // The extra machine exists only in this renderer fixture. Pause the
             // gateway directory poll so its authoritative response cannot remove
             // the injected endpoint while the view settles or screenshots render.
-            let resumeMachineDirectoryRefresh = store.machineDirectoryTask != nil
-            store.machineDirectoryTask?.cancel()
-            store.machineDirectoryTask = nil
+            let resumeMachineDirectoryRefresh = store.connectionEffects.machineDirectoryTask != nil
+            store.connectionEffects.machineDirectoryTask?.cancel()
+            store.connectionEffects.machineDirectoryTask = nil
             let duplicateMachine = DieterEndpoint(
                 name: "Smoke remote Mac",
                 host: store.endpoint.host,

@@ -1,3 +1,4 @@
+import DieterCore
 import Foundation
 
 /// Select the first healthy transport, giving the preferred route a head start.
@@ -5,6 +6,7 @@ import Foundation
 @MainActor package enum HedgedRoute {
     package static func connect<Value: Sendable>(
         delay: Duration = .milliseconds(1_000),
+        clock: ClientClock = .live,
         preferred: @escaping @MainActor () async throws -> Value,
         fallback: @escaping @MainActor () async throws -> Value,
         dispose: @escaping @MainActor (Value) -> Void
@@ -13,7 +15,7 @@ import Foundation
         return try await withTaskCancellationHandler {
             try Task.checkCancellation()
             let value: Value = try await withCheckedThrowingContinuation { continuation in
-                race.start(continuation, delay: delay, preferred: preferred, fallback: fallback)
+                race.start(continuation, delay: delay, clock: clock, preferred: preferred, fallback: fallback)
             }
             if Task.isCancelled {
                 dispose(value)
@@ -38,7 +40,7 @@ import Foundation
     init(dispose: @escaping @MainActor (Value) -> Void) { self.dispose = dispose }
 
     func start(
-        _ continuation: CheckedContinuation<Value, Error>, delay: Duration,
+        _ continuation: CheckedContinuation<Value, Error>, delay: Duration, clock: ClientClock,
         preferred: @escaping @MainActor () async throws -> Value,
         fallback: @escaping @MainActor () async throws -> Value
     ) {
@@ -51,7 +53,7 @@ import Foundation
             }
         }
         timer = Task {
-            do { try await Task.sleep(for: delay) } catch { return }
+            do { try await clock.sleep(delay) } catch { return }
             startFallback(fallback)
         }
     }

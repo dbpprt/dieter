@@ -110,3 +110,19 @@ package protocol DieterChatPinRPC: Sendable {
 package protocol DieterCardStartRPC: Sendable {
     func startCard(_ request: Dieter_V1_StartCardRequest) async throws -> Dieter_V1_StartCardResponse
 }
+
+package protocol MachineTelemetryRPC: AnyObject, Sendable {
+    func machineInformation() async throws -> Dieter_V1_MachineInformation
+    func performMachineOperation(_ action: Dieter_V1_MachineOperationAction, confirmation: String) async throws
+        -> Dieter_V1_MachineOperationResponse
+}
+
+package protocol ProviderQuotaRPC: AnyObject, Sendable {
+    func providerQuotas() async throws -> Dieter_Gateway_V1_ListProviderQuotasResponse
+    func refreshProviderQuotas() async throws -> Dieter_Gateway_V1_RefreshProviderQuotasResponse
+    func setProviderQuotaSummaryInclusion(
+        provider: Dieter_Gateway_V1_ProviderQuotaProvider, accountKey: String, included: Bool
+    ) async throws -> Dieter_Gateway_V1_SetProviderQuotaSummaryInclusionResponse
+    func consumeProviderQuotaReset(accountKey: String, idempotencyKey: String) async throws
+        -> Dieter_Gateway_V1_ConsumeProviderQuotaResetResponse
+}

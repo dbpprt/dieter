@@ -273,14 +273,6 @@ extension AppSession {
         get { filesModel.selectedFilePath }
         set { filesModel.selectedFilePath = newValue }
     }
-    var terminalRequestGeneration: UInt64 {
-        get { terminalsModel.terminalRequestGeneration }
-        set { terminalsModel.terminalRequestGeneration = newValue }
-    }
-    var terminalError: String? {
-        get { terminalsModel.terminalError }
-        set { terminalsModel.terminalError = newValue }
-    }
     var schedulesError: String? {
         get { schedulesModel.schedulesError }
         set { schedulesModel.schedulesError = newValue }
@@ -308,30 +300,6 @@ extension AppSession {
     var showHiddenFiles: Bool {
         get { filesModel.showHiddenFiles }
         set { filesModel.showHiddenFiles = newValue }
-    }
-    var terminals: [Dieter_V1_Terminal] {
-        get { terminalsModel.terminals }
-        set { terminalsModel.terminals = newValue }
-    }
-    var selectedTerminalID: String? {
-        get { terminalsModel.selectedTerminalID }
-        set { terminalsModel.selectedTerminalID = newValue }
-    }
-    var terminalScreens: [String: TerminalScreenState] {
-        get { terminalsModel.terminalScreens }
-        set { terminalsModel.terminalScreens = newValue }
-    }
-    var terminalLoading: Bool {
-        get { terminalsModel.terminalLoading }
-        set { terminalsModel.terminalLoading = newValue }
-    }
-    var terminalStreamConnected: Bool {
-        get { terminalsModel.terminalStreamConnected }
-        set { terminalsModel.terminalStreamConnected = newValue }
-    }
-    var createTerminalPresented: Bool {
-        get { terminalsModel.createTerminalPresented }
-        set { terminalsModel.createTerminalPresented = newValue }
     }
     var schedules: [Dieter_V1_Schedule] {
         get { schedulesModel.schedules }
@@ -437,17 +405,9 @@ extension AppSession {
         get { worktreeChanges.workspaceToastTask }
         set { worktreeChanges.workspaceToastTask = newValue }
     }
-    var terminalWatchTask: Task<Void, Never>? {
-        get { terminalsModel.terminalWatchTask }
-        set { terminalsModel.terminalWatchTask = newValue }
-    }
     var conversationHistoryRequestID: UUID? {
         get { conversationModel.conversationHistoryRequestID }
         set { conversationModel.conversationHistoryRequestID = newValue }
-    }
-    var terminalSequences: [String: UInt64] {
-        get { terminalsModel.terminalSequences }
-        set { terminalsModel.terminalSequences = newValue }
     }
     var schedulesLoadedEndpointID: String {
         get { schedulesModel.schedulesLoadedEndpointID }

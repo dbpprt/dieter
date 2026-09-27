@@ -73,7 +73,8 @@ Explicit full validation remains available:
 just check
 just mac test
 just android test
-just ios smoke
+just e2e run --platform ios --device iphone --suite smoke
+just e2e run --platform ios --device ipad --suite smoke
 ```
 
 Use `just mac`, `just android`, `just daemon`, `just gateway`, `just harness`,

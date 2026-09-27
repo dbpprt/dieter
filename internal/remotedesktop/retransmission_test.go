@@ -233,3 +233,28 @@ func TestLateFrameRepairRequestsRefresh(t *testing.T) {
 		t.Fatal("no refresh after expired repair")
 	}
 }
+
+func TestReferenceDeadlineIncludesFreshDecodeWithoutExtendingPacketRepair(t *testing.T) {
+	p := newPacketPacer(4000000)
+	defer p.Close()
+	now := time.Now()
+	p.observeRecoveryRTT(now, 4*time.Millisecond, now, 60)
+	p.observeRecoveryDecoder(now, 120, 30)
+	if got := p.referenceRecoveryDeadline(now); got != 200*time.Millisecond {
+		t.Fatalf("decode ACK budget: %s", got)
+	}
+	if window, _ := p.RecoveryDeadline(); window != 50*time.Millisecond {
+		t.Fatalf("decoder extended packet retention: %s", window)
+	}
+	p.observeRecoveryDecoder(now.Add(-time.Second), 900, 900)
+	if got := p.referenceRecoveryDeadline(now); got != 200*time.Millisecond {
+		t.Fatalf("stale sample replaced timing: %s", got)
+	}
+	p.observeRecoveryDecoder(now.Add(time.Millisecond), 500, 500)
+	if got := p.referenceRecoveryDeadline(now.Add(time.Millisecond)); got != 250*time.Millisecond {
+		t.Fatalf("unbounded ACK budget: %s", got)
+	}
+	if got := p.referenceRecoveryDeadline(now.Add(3 * time.Second)); got != 50*time.Millisecond {
+		t.Fatalf("expired decode evidence: %s", got)
+	}
+}

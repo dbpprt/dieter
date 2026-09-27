@@ -171,11 +171,8 @@ internal fun TabletWorkspace(
                             TabletDetailPane(Modifier.weight(1f).fillMaxHeight()) {
                                 when {
                                     state.appSurface != null -> surfaceContent()
-                                    usage -> Column(Modifier.fillMaxSize()) {
-                                        SimpleScreenHeader("Usage", "Provider account limits and availability") {}
-                                        ProviderQuotaDetails(state, { model.refreshProviderQuotas() }, model::setProviderQuotaSummaryInclusion,
-                                            model::consumeProviderQuotaReset, Modifier.fillMaxSize().padding(20.dp))
-                                    }
+                                    usage -> ProviderQuotaDetails(state, { model.refreshProviderQuotas() }, model::setProviderQuotaSummaryInclusion,
+                                        model::consumeProviderQuotaReset, Modifier.fillMaxSize().padding(20.dp))
                                     else -> destinationContent(state)
                                 }
                             }

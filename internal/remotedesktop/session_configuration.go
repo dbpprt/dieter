@@ -180,7 +180,7 @@ func newMediaAPI(settings webrtc.SettingEngine, source FrameSource, instrumentat
 	registry.Add(transportFeedbackFactory{pacer: pacer})
 	var refresh func()
 	if controlled, ok := source.(ControlledFrameSource); ok {
-		refresh = func() { window, _ := pacer.RecoveryDeadline(); requestRecoveryWithin(controlled, window) }
+		refresh = func() { requestRecoveryWithin(controlled, pacer.referenceRecoveryDeadline(time.Now())) }
 	}
 	engine.RegisterFeedback(webrtc.RTCPFeedback{Type: "nack"}, webrtc.RTPCodecTypeVideo)
 	engine.RegisterFeedback(webrtc.RTCPFeedback{Type: "nack", Parameter: "pli"}, webrtc.RTPCodecTypeVideo)
@@ -325,7 +325,10 @@ func (s *Session) adapt() {
 			s.measurements = frameMeasurements{}
 			s.mu.Unlock()
 		}
-		fresh := feedback != nil && !measuredAt.IsZero() && now.Sub(measuredAt) < 2*time.Second
+		fresh := feedback != nil && !measuredAt.IsZero() && now.Sub(measuredAt) >= 0 && now.Sub(measuredAt) < 2*time.Second
+		if fresh {
+			s.pacer.observeRecoveryDecoder(measuredAt, feedback.DecodeMs, feedback.JitterBufferMs)
+		}
 		if fresh && feedback.RttMs > 0 {
 			s.pacer.observeRecoveryRTT(now, time.Duration(feedback.RttMs*float64(time.Millisecond)), measuredAt, current.FPS)
 		} else if !fastWake {

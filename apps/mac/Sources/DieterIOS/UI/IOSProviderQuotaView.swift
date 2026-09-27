@@ -8,14 +8,14 @@
         @State private var presented = false
 
         private var groups: [Dieter_Gateway_V1_ProviderQuotaGroup] {
-            store.providerQuotaGroups.filter { !$0.accounts.isEmpty }
+            store.quotas.providerQuotaGroups.filter { !$0.accounts.isEmpty }
         }
 
         var body: some View {
             Button {
                 presented = true
             } label: {
-                if groups.isEmpty, store.providerQuotasLoading {
+                if groups.isEmpty, store.quotas.providerQuotasLoading {
                     ProgressView().controlSize(.mini)
                 } else if groups.isEmpty {
                     Image(systemName: "chart.bar.xaxis")
@@ -85,7 +85,7 @@
         @State private var presented = false
 
         private var selection: IOSProviderQuotaAccountSelection? {
-            IOSProviderQuotaSelection.account(for: card, in: store.providerQuotaGroups)
+            IOSProviderQuotaSelection.account(for: card, in: store.quotas.providerQuotaGroups)
         }
 
         var body: some View {
@@ -157,8 +157,8 @@
         @State private var resetConfirmationAccountKey: String?
 
         private var groups: [Dieter_Gateway_V1_ProviderQuotaGroup] {
-            guard let accountKey else { return store.providerQuotaGroups }
-            return store.providerQuotaGroups.compactMap { group in
+            guard let accountKey else { return store.quotas.providerQuotaGroups }
+            return store.quotas.providerQuotaGroups.compactMap { group in
                 var filtered = group
                 filtered.accounts = group.accounts.filter { $0.accountKey == accountKey }
                 return filtered.accounts.isEmpty ? nil : filtered
@@ -170,9 +170,9 @@
                 IOSProviderQuotaDetailsContent(
                     groups: groups,
                     showsProviderSummary: accountKey == nil,
-                    loading: store.providerQuotasLoading,
-                    error: store.providerQuotaError,
-                    mutatingAccounts: store.providerQuotaMutatingAccounts,
+                    loading: store.quotas.providerQuotasLoading,
+                    error: store.quotas.providerQuotaError,
+                    mutatingAccounts: store.quotas.providerQuotaMutatingAccounts,
                     refresh: { Task { await store.loadProviderQuotas(requestRefresh: true) } },
                     setInclusion: { provider, accountKey, included in
                         Task {
@@ -193,7 +193,7 @@
             }
             .accessibilityIdentifier("ios.provider-quotas.details")
             .task {
-                if store.providerQuotaGroups.isEmpty { await store.loadProviderQuotas() }
+                if store.quotas.providerQuotaGroups.isEmpty { await store.loadProviderQuotas() }
             }
             .confirmationDialog(
                 "Use one OpenAI reset credit?",

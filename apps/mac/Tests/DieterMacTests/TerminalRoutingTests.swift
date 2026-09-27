@@ -9,7 +9,14 @@ private actor TerminalRoutingFixture: TerminalsRPC {
     private(set) var createRequests: [Dieter_V1_CreateTerminalRequest] = []
     private(set) var watchRequests: [UInt64] = []
     private let expireWatch: Bool
-    init(expireWatch: Bool = false) { self.expireWatch = expireWatch }
+    private let suspendCreate: Bool
+    private var creation: CheckedContinuation<Dieter_V1_Terminal, Error>?
+    init(expireWatch: Bool = false, suspendCreate: Bool = false) {
+        self.expireWatch = expireWatch
+        self.suspendCreate = suspendCreate
+    }
+
+    func failCreation() { creation?.resume(throwing: RPCError(code: .aborted, message: "retired creation")) }
 
     func terminals(projectID: String, cardID: String) async throws -> Dieter_V1_TerminalsResponse {
         var first = Dieter_V1_Terminal()
@@ -27,6 +34,7 @@ private actor TerminalRoutingFixture: TerminalsRPC {
 
     func createTerminal(_ request: Dieter_V1_CreateTerminalRequest) async throws -> Dieter_V1_Terminal {
         createRequests.append(request)
+        if suspendCreate { return try await withCheckedThrowingContinuation { creation = $0 } }
         var terminal = Dieter_V1_Terminal()
         terminal.id = "machine-home"
         terminal.name = request.name
@@ -55,6 +63,38 @@ private actor TerminalRoutingFixture: TerminalsRPC {
     func resizeTerminal(id: String, columns: Int, rows: Int) async throws -> Dieter_V1_Terminal { .init() }
     func renameTerminal(id: String, name: String) async throws -> Dieter_V1_Terminal { .init() }
     func closeTerminal(id: String) async throws {}
+}
+
+@Test(.timeLimit(.minutes(1)), arguments: [false, true]) @MainActor
+func retiredOverviewCreationReturnsLeaseAndIgnoresLateFailure(suspendAcquisition: Bool) async {
+    let machine = DieterEndpoint(name: "Fixture", host: "127.0.0.1", port: 4242)
+    let client = TerminalRoutingFixture(suspendCreate: true)
+    var acquisition: CheckedContinuation<Void, Never>?
+    var returned = 0
+    var errors = 0
+    let overview = TerminalOverviewModel(
+        terminalsModel: TerminalsModel(), machines: { [machine] }, available: { _ in true }, active: { true },
+        acquire: { _ in
+            if suspendAcquisition { await withCheckedContinuation { acquisition = $0 } }
+            return FeatureClientLease(client: client, release: { returned += 1 })
+        }, reportError: { _ in errors += 1 })
+    let creation = Task {
+        await overview.createOverviewTerminal(
+            projectID: "", checkoutID: "", machineID: machine.id, machineHome: true,
+            name: "Fixture", shell: "", workingDirectory: "")
+    }
+    if suspendAcquisition {
+        while acquisition == nil { await Task.yield() }
+    } else {
+        while await client.createRequests.isEmpty { await Task.yield() }
+    }
+    overview.reset()
+    if suspendAcquisition { acquisition?.resume() } else { await client.failCreation() }
+    await creation.value
+    #expect(await client.createRequests.count == (suspendAcquisition ? 0 : 1))
+    #expect(errors == 0)
+    #expect(returned == 1)
+    #expect(overview.terminalOverviewEntries.isEmpty)
 }
 
 @Test @MainActor func terminalWatchResumesDeliveredSequenceAfterCredentialExpiry() async throws {

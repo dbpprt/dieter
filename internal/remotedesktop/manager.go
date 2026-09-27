@@ -792,7 +792,16 @@ func (s *Session) subscribe(now time.Time) (*Subscription, error) {
 	id := s.nextSubscriber
 	channel := make(chan *dieterv1.RemoteDesktopSignal, maxSignalHistory+8)
 	for _, signal := range s.history {
-		channel <- proto.Clone(signal).(*dieterv1.RemoteDesktopSignal)
+		// Binding, SDP and ICE must survive credential renewal. Historical
+		// snapshots must not roll back dimensions or control on a live peer.
+		if signal.GetState() == nil {
+			channel <- proto.Clone(signal).(*dieterv1.RemoteDesktopSignal)
+		}
+	}
+	if s.status != nil {
+		s.sequence++
+		channel <- &dieterv1.RemoteDesktopSignal{SessionId: s.id, Sequence: s.sequence,
+			Payload: &dieterv1.RemoteDesktopSignal_State{State: proto.Clone(s.status).(*dieterv1.RemoteDesktopSessionState)}}
 	}
 	s.subscribers[id] = channel
 	s.detachedAt = time.Time{}
@@ -842,12 +851,14 @@ func (s *Session) emit(signal *dieterv1.RemoteDesktopSignal) {
 
 func (s *Session) emitState(phase, reason string) {
 	s.mu.Lock()
+	state := &dieterv1.RemoteDesktopSessionState{Phase: phase, Reason: reason, Codec: string(s.codec)}
 	if s.status != nil {
 		s.status.Phase = phase
 		s.status.Reason = reason
+		state = proto.Clone(s.status).(*dieterv1.RemoteDesktopSessionState)
 	}
 	s.mu.Unlock()
-	s.emit(&dieterv1.RemoteDesktopSignal{Payload: &dieterv1.RemoteDesktopSignal_State{State: &dieterv1.RemoteDesktopSessionState{Phase: phase, Reason: reason, Codec: string(s.codec)}}})
+	s.emit(&dieterv1.RemoteDesktopSignal{Payload: &dieterv1.RemoteDesktopSignal_State{State: state}})
 }
 
 func (s *Session) emitError(code, message string, recoverable bool) {
@@ -1031,8 +1042,7 @@ func (s *Session) handleRTCP(sender *webrtc.RTPSender) {
 			switch value := packet.(type) {
 			case *rtcp.PictureLossIndication, *rtcp.FullIntraRequest:
 				if controlled, ok := source.(ControlledFrameSource); ok {
-					window, _ := s.pacer.RecoveryDeadline()
-					requestRecoveryWithin(controlled, window)
+					requestRecoveryWithin(controlled, s.pacer.referenceRecoveryDeadline(time.Now()))
 				}
 				if logger != nil {
 					logger.Debug("remote desktop keyframe requested", "feedback", fmt.Sprintf("%T", packet))

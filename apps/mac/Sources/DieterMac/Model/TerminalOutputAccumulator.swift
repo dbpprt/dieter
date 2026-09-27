@@ -7,11 +7,16 @@ actor TerminalOutputAccumulator {
     typealias Publish = @MainActor @Sendable (String, TerminalScreenState) -> Void
 
     private let frameIntervalNanoseconds: UInt64
+    private let sleep: @Sendable (UInt64) async throws -> Void
     private var screens: [String: TerminalScreenState] = [:]
     private var scheduledFlushes: [String: Task<Void, Never>] = [:]
 
-    init(frameIntervalNanoseconds: UInt64 = 16_000_000) {
+    init(
+        frameIntervalNanoseconds: UInt64 = 16_000_000,
+        sleep: @escaping @Sendable (UInt64) async throws -> Void = { try await Task.sleep(nanoseconds: $0) }
+    ) {
         self.frameIntervalNanoseconds = frameIntervalNanoseconds
+        self.sleep = sleep
     }
 
     func enqueue(
@@ -37,7 +42,7 @@ actor TerminalOutputAccumulator {
         scheduledFlushes[terminalID] = Task { [weak self] in
             guard let self else { return }
             do {
-                try await Task.sleep(nanoseconds: self.frameIntervalNanoseconds)
+                try await self.sleep(self.frameIntervalNanoseconds)
             } catch {
                 return
             }
@@ -64,13 +69,6 @@ actor TerminalOutputAccumulator {
     func flushNow(terminalID: String) -> TerminalScreenState? {
         scheduledFlushes.removeValue(forKey: terminalID)?.cancel()
         return screens[terminalID]
-    }
-
-    func waitForPendingPublishes() async {
-        let pending = Array(scheduledFlushes.values)
-        for task in pending {
-            await task.value
-        }
     }
 
     private func flush(terminalID: String, publish: Publish) async {

@@ -81,12 +81,12 @@ struct MachinePopover: View {
     @State private var pendingAction: MachineAction?
 
     private var machine: DieterEndpoint? {
-        guard let id = store.selectedMachineID else { return store.machines.first }
+        guard let id = store.fleet.selectedMachineID else { return store.machines.first }
         return store.machines.first { $0.id == id }
     }
 
     private var information: Dieter_V1_MachineInformation? {
-        machine.flatMap { store.machineInformation[$0.id] }
+        machine.flatMap { store.fleet.machineInformation[$0.id] }
     }
 
     var body: some View {
@@ -106,7 +106,7 @@ struct MachinePopover: View {
         .dieterOverlayChrome()
         .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
         .accessibilityIdentifier("machine.popover")
-        .onExitCommand { store.dismissMachinePopover() }
+        .onExitCommand { store.fleet.dismissMachinePopover() }
         .confirmationDialog(
             pendingAction?.title ?? "Machine operation",
             isPresented: Binding(
@@ -119,7 +119,7 @@ struct MachinePopover: View {
                 Button(action.buttonTitle, role: action.role) {
                     pendingAction = nil
                     Task {
-                        await store.performMachineOperation(action.wireAction, confirmation: action.confirmation)
+                        await store.fleet.performMachineOperation(action.wireAction, confirmation: action.confirmation)
                     }
                 }
             }
@@ -130,13 +130,13 @@ struct MachinePopover: View {
         .alert(
             "Machine operation accepted",
             isPresented: Binding(
-                get: { store.machineOperationMessage != nil },
-                set: { if !$0 { store.machineOperationMessage = nil } }
+                get: { store.fleet.machineOperationMessage != nil },
+                set: { if !$0 { store.fleet.machineOperationMessage = nil } }
             )
         ) {
-            Button("OK") { store.machineOperationMessage = nil }
+            Button("OK") { store.fleet.machineOperationMessage = nil }
         } message: {
-            Text(store.machineOperationMessage ?? "")
+            Text(store.fleet.machineOperationMessage ?? "")
         }
     }
 
@@ -159,7 +159,7 @@ struct MachinePopover: View {
                     softwarePanel(information, machine: machine)
                     processPanel(information)
                     machineFooter(information, machine: machine)
-                } else if store.machineInformationLoading {
+                } else if store.fleet.machineInformationLoading {
                     HStack(spacing: 10) {
                         ProgressView().controlSize(.small)
                         Text("Reading machine information…")
@@ -213,12 +213,12 @@ struct MachinePopover: View {
             }
             Spacer()
             Button {
-                Task { await store.refreshSelectedMachineInformation() }
+                Task { await store.fleet.refreshSelectedMachineInformation() }
             } label: {
                 Image(systemName: "arrow.clockwise")
             }
             .buttonStyle(.plain)
-            .disabled(!machine.online || store.machineInformationLoading)
+            .disabled(!machine.online || store.fleet.machineInformationLoading)
             .help("Refresh machine information")
             .accessibilityIdentifier("machine.refresh")
 
@@ -238,11 +238,11 @@ struct MachinePopover: View {
             }
             .menuStyle(.borderlessButton)
             .fixedSize()
-            .disabled(store.machineOperationInFlight)
+            .disabled(store.fleet.machineOperationInFlight)
             .help("Machine operations")
 
             Button {
-                store.dismissMachinePopover()
+                store.fleet.dismissMachinePopover()
             } label: {
                 Image(systemName: "xmark")
             }
@@ -253,7 +253,7 @@ struct MachinePopover: View {
     }
 
     private func operationAvailable(_ action: Dieter_V1_MachineOperationAction, machine: DieterEndpoint) -> Bool {
-        guard machine.online, !store.machineOperationInFlight, let information else { return false }
+        guard machine.online, !store.fleet.machineOperationInFlight, let information else { return false }
         if let capability = information.operationCapabilities.first(where: { $0.action == action }) {
             return capability.supported && capability.authorized
         }
@@ -266,7 +266,7 @@ struct MachinePopover: View {
 
     private func machineSubtitle(_ machine: DieterEndpoint) -> String {
         guard let information else {
-            if store.machineInformationError != nil { return "Machine information unavailable" }
+            if store.fleet.machineInformationError != nil { return "Machine information unavailable" }
             return machine.online ? "Loading machine information…" : MachinePresenceText.lastSeen(machine.lastSeenAt)
         }
         var parts: [String] = []
@@ -291,7 +291,7 @@ struct MachinePopover: View {
             }
             MachineCPUHistory(
                 values: information.cpuCoreUsagePercent.isEmpty
-                    ? store.machineCPUHistory[machineID, default: [information.cpuUsagePercent]]
+                    ? store.fleet.machineCPUHistory[machineID, default: [information.cpuUsagePercent]]
                     : information.cpuCoreUsagePercent
             )
             .frame(height: 48)
@@ -361,7 +361,7 @@ struct MachinePopover: View {
                         DieterTheme.surface.opacity(0.45), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                 } else {
                     ForEach(information.gpu.devices, id: \.id) { device in
-                        gpuPanel(device, history: store.machineGPUHistory[machineID]?[device.id] ?? [])
+                        gpuPanel(device, history: store.fleet.machineGPUHistory[machineID]?[device.id] ?? [])
                     }
                 }
             }
@@ -546,11 +546,11 @@ struct MachinePopover: View {
                     ? "exclamationmark.triangle" : "desktopcomputer.trianglebadge.exclamationmark"
             )
             .font(.system(size: 24)).foregroundStyle(machine.online ? DieterTheme.amber : DieterTheme.tertiary)
-            Text(store.machineInformationError ?? "Machine information is unavailable.")
+            Text(store.fleet.machineInformationError ?? "Machine information is unavailable.")
                 .font(DieterFont.body).foregroundStyle(DieterTheme.subtle)
                 .multilineTextAlignment(.center)
             if machine.online {
-                Button("Try again") { Task { await store.refreshSelectedMachineInformation() } }
+                Button("Try again") { Task { await store.fleet.refreshSelectedMachineInformation() } }
                     .buttonStyle(.bordered).controlSize(.small)
             }
         }

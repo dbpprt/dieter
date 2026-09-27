@@ -280,8 +280,11 @@ import Testing
     #expect(plan.runs.contains { $0.style == .comment })
 }
 
-@Test @MainActor func terminalOutputAccumulatorCoalescesFrameBursts() async throws {
-    let accumulator = TerminalOutputAccumulator(frameIntervalNanoseconds: 20_000_000)
+@Test(.timeLimit(.minutes(1))) @MainActor func terminalOutputAccumulatorCoalescesFrameBursts() async throws {
+    let clock = TerminalFrameClock()
+    let accumulator = TerminalOutputAccumulator(sleep: { _ in await clock.wait() })
+    let (publishes, completion) = AsyncStream<Void>.makeStream(bufferingPolicy: .bufferingNewest(1))
+    defer { completion.finish() }
     let recorder = TerminalPublishRecorder()
     for _ in 0..<100 {
         await accumulator.enqueue(
@@ -291,9 +294,14 @@ import Testing
             current: TerminalScreenState()
         ) { id, screen in
             recorder.record(id: id, screen: screen)
+            completion.yield(())
         }
     }
-    await accumulator.waitForPendingPublishes()
+    // Actor hops may span multiple real display intervals on a busy host.
+    // Advance exactly one interval after all frames have been admitted.
+    #expect(recorder.publishCount == 0)
+    await clock.advance()
+    for await _ in publishes { break }
 
     #expect(recorder.publishCount == 1)
     #expect(recorder.terminalID == "terminal")
@@ -378,5 +386,21 @@ private final class TerminalPublishRecorder {
         publishCount += 1
         terminalID = id
         self.screen = screen
+    }
+}
+
+private actor TerminalFrameClock {
+    private var advanced = false
+    private var pending: CheckedContinuation<Void, Never>?
+
+    func wait() async {
+        guard !advanced else { return }
+        await withCheckedContinuation { pending = $0 }
+    }
+
+    func advance() {
+        advanced = true
+        pending?.resume()
+        pending = nil
     }
 }

@@ -50,3 +50,39 @@ ln -s ../bun/bin/bun.exe node_modules/.bin/bun
 		t.Fatalf("managed Bun installs=%d want 1", count)
 	}
 }
+
+func TestValidateManagedBunResolvesInstallationParentButRejectsEscape(t *testing.T) {
+	root := t.TempDir()
+	installation := filepath.Join(root, "installation")
+	bin := filepath.Join(installation, "node_modules", ".bin")
+	if err := os.MkdirAll(bin, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	alias := filepath.Join(root, "alias")
+	if err := os.Symlink(installation, alias); err != nil {
+		t.Fatal(err)
+	}
+	inside := filepath.Join(installation, "bun")
+	outside := filepath.Join(root, "bun")
+	for _, path := range []string{inside, outside} {
+		if err := os.WriteFile(path, []byte("#!/bin/sh\nprintf '"+managedBunVersion+"\\n'\n"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	executable := filepath.Join(bin, "bun")
+	if err := os.Symlink(inside, executable); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := validateManagedBun(context.Background(), alias); err != nil {
+		t.Fatalf("valid executable under a linked installation parent: %v", err)
+	}
+	if err := os.Remove(executable); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, executable); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := validateManagedBun(context.Background(), alias); err == nil || !strings.Contains(err.Error(), "escapes") {
+		t.Fatalf("escaping executable error = %v", err)
+	}
+}

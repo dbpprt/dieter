@@ -61,6 +61,9 @@ type packetPacer struct {
 	recoveryRTT            time.Duration
 	recoveryMeasured       time.Time
 	recoveryFPS            int
+	recoveryDecode         time.Duration
+	recoveryJitter         time.Duration
+	recoveryDecodedAt      time.Time
 }
 
 // One delayed feedback burst is jitter, not sustained queue growth. Loss

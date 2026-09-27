@@ -28,6 +28,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/dbpprt/dieter/internal/buildinfo"
 	"github.com/dbpprt/dieter/internal/controlrtc"
 	"github.com/dbpprt/dieter/internal/daemon"
 	"github.com/dbpprt/dieter/internal/fixtureturn"
@@ -250,6 +251,11 @@ func run(address, home, offlineTrigger, daemonRestartTrigger string, boardStress
 		runner.logger = logger
 		value := server.NewWithOptions(fixtureData, logger, server.Options{
 			Runner: runner,
+			// Keep the real release choices without triggering provider CLI/network
+			// discovery or runtime installation in each disposable fixture home.
+			HarnessCatalog: func(_ context.Context, includeMock bool) []harness.Adapter {
+				return harness.Catalog(includeMock)
+			},
 			ControlRTC: func() *controlrtc.Manager {
 				if fixtureData == data {
 					return control
@@ -312,7 +318,7 @@ func run(address, home, offlineTrigger, daemonRestartTrigger string, boardStress
 		secondTarget = secondListener.Addr().String()
 	}
 
-	tunnel := &daemon.GatewayClient{ControlWebRTC: control != nil, Identity: identity, LocalTarget: boardListener.Addr().String(), Version: "0.4.1-dev", Log: logger}
+	tunnel := &daemon.GatewayClient{ControlWebRTC: control != nil, Identity: identity, LocalTarget: boardListener.Addr().String(), Version: buildinfo.ReleaseVersion, Log: logger}
 	if offlineTrigger == "" {
 		go func() { _ = tunnel.Run(ctx) }()
 	} else {
@@ -423,7 +429,7 @@ func run(address, home, offlineTrigger, daemonRestartTrigger string, boardStress
 		}
 		secondDaemonID = secondIdentity.ID
 		secondTunnel := &daemon.GatewayClient{
-			Identity: secondIdentity, LocalTarget: secondTarget, Version: "isolated-e2e-second",
+			Identity: secondIdentity, LocalTarget: secondTarget, Version: buildinfo.ReleaseVersion,
 			Log: logger,
 		}
 		acknowledged := make(chan struct{}, 1)

@@ -248,13 +248,13 @@ struct DieterRootView: View {
         .background(WindowTitleBarDoubleClickHandler())
         .foregroundStyle(DieterTheme.text)
         .overlay {
-            if store.selectedMachineID != nil {
+            if store.fleet.selectedMachineID != nil {
                 GeometryReader { geometry in
                     let workspaceLeadingEdge = sidebarWidth + sidebarDividerWidth
                     let popupWidth = min(820, max(560, geometry.size.width - workspaceLeadingEdge - 32))
                     let processCount =
-                        store.selectedMachineID
-                        .flatMap { store.machineInformation[$0]?.processes.count } ?? 1
+                        store.fleet.selectedMachineID
+                        .flatMap { store.fleet.machineInformation[$0]?.processes.count } ?? 1
                     let desiredPopupHeight = 420 + CGFloat(min(max(processCount, 1), 4) * 54)
                     let popupHeight = min(max(460, desiredPopupHeight), geometry.size.height - 32)
                     let popupTop = max(16, geometry.size.height - popupHeight - 28)
@@ -262,7 +262,7 @@ struct DieterRootView: View {
                     ZStack(alignment: .topLeading) {
                         Color.black.opacity(DieterTheme.usesTransparency ? 0.16 : 0.08)
                             .contentShape(Rectangle())
-                            .onTapGesture { store.dismissMachinePopover() }
+                            .onTapGesture { store.fleet.dismissMachinePopover() }
                             .accessibilityHidden(true)
                         MachinePopover()
                             .frame(width: popupWidth, height: popupHeight)
@@ -561,7 +561,7 @@ struct AppSidebar: View {
             title: "Terminals",
             symbol: "terminal",
             selected: store.section == .terminals,
-            badge: store.terminals.filter { $0.status == "running" }.count
+            badge: store.terminalsModel.terminals.filter { $0.status == "running" }.count
         ) { Task { await store.openTerminals() } }
         .padding(.horizontal, 8)
         .accessibilityIdentifier("sidebar.terminals").smokeTarget("sidebar.terminals")
@@ -682,7 +682,7 @@ struct AppSidebar: View {
                 ForEach(visibleMachines) { machine in
                     VStack(alignment: .leading, spacing: 5) {
                         Button {
-                            Task { await store.openMachine(machine) }
+                            Task { await store.fleet.openMachine(machine) }
                         } label: {
                             HStack(spacing: 8) {
                                 Circle().fill(
@@ -697,7 +697,7 @@ struct AppSidebar: View {
                             }
                             .padding(.horizontal, 8).frame(height: 32)
                             .background(
-                                store.selectedMachineID == machine.id
+                                store.fleet.selectedMachineID == machine.id
                                     ? DieterTheme.selection : Color.clear,
                                 in: RoundedRectangle(cornerRadius: 7, style: .continuous)
                             )

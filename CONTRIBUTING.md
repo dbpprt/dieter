@@ -48,6 +48,11 @@ git diff --check
 The selector includes all uncommitted files by default. Run affected package and
 component tests. Native integration is needed for related app, shared schema,
 or fixture changes; a documentation correction does not require a device suite.
+Shared Swift package, dependency-lock, vendor, and core/client test changes
+also select iOS validation. iOS sources and tests select iOS; policies in the
+shared Swift package additionally run their portable unit tests on the Mac host.
+Installer changes select the release regression suite; Mac lifecycle changes
+select process-ownership tests before native qualification.
 The website has an explicit `just site check` for links and assets.
 
 Use `gofmt` on Go changes and the platform formatter commands. Tests should verify

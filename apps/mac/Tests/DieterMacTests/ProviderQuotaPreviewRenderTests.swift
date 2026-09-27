@@ -216,7 +216,7 @@ private func claudeQuotaPreviewGroup() -> Dieter_Gateway_V1_ProviderQuotaGroup {
     defer { DieterTheme.install(palette: .monochrome, colorScheme: .light) }
 
     let store = DieterStore(restoreSync: false)
-    store.providerQuotaGroups = [quotaPreviewGroup(), claudeQuotaPreviewGroup()]
+    store.quotas.install([quotaPreviewGroup(), claudeQuotaPreviewGroup()])
 
     var card = Dieter_V1_Card()
     card.provider = "codex"

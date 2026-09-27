@@ -115,18 +115,18 @@ struct TerminalsView: View {
     }
 
     private var visibleEntries: [TerminalOverviewEntry] {
-        if model.terminalScopeCardID == nil { return store.terminalOverviewEntries }
+        if model.terminalScopeCardID == nil { return store.terminalOverview.terminalOverviewEntries }
         return model.terminals.map {
             TerminalOverviewEntry(machineID: model.target.endpointID, machineName: model.machineName, terminal: $0)
         }
     }
 
     private var visibleLoading: Bool {
-        model.terminalScopeCardID == nil ? store.terminalOverviewLoading : model.terminalLoading
+        model.terminalScopeCardID == nil ? store.terminalOverview.terminalOverviewLoading : model.terminalLoading
     }
 
     private var visibleError: String? {
-        model.terminalScopeCardID == nil ? store.terminalOverviewError : model.terminalError
+        model.terminalScopeCardID == nil ? store.terminalOverview.terminalOverviewError : model.terminalError
     }
 
     private var terminalTabs: some View {
@@ -140,7 +140,7 @@ struct TerminalsView: View {
                         selected: entry.id == selectedEntryID,
                         select: {
                             if model.terminalScopeCardID == nil {
-                                Task { await store.selectTerminalOverviewEntry(entry.id) }
+                                Task { await store.terminalOverview.selectTerminalOverviewEntry(entry.id) }
                             } else {
                                 model.selectTerminal(entry.terminal.id)
                             }
@@ -165,7 +165,7 @@ struct TerminalsView: View {
     }
 
     private var selectedEntryID: String? {
-        if model.terminalScopeCardID == nil { return store.selectedTerminalOverviewID }
+        if model.terminalScopeCardID == nil { return store.terminalOverview.selectedTerminalOverviewID }
         guard let id = model.selectedTerminalID else { return nil }
         return TerminalOverviewEntry.id(machineID: model.target.endpointID, terminalID: id)
     }
@@ -607,7 +607,7 @@ private struct NewTerminalSheet: View {
                 workingDirectory = preferred.checkout?.path.isEmpty == false ? preferred.checkout!.path : "."
             } else {
                 machineID =
-                    store.terminalOverviewPreferredMachineID
+                    store.terminalOverview.terminalOverviewPreferredMachineID
                     ?? machines.first(where: { store.machineIsAvailable($0) })?.id
                     ?? store.endpoint.id
                 checkoutID = ""

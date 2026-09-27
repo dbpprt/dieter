@@ -12,9 +12,5 @@ package struct ClientClock: Sendable {
 
     package static let live = ClientClock(
         now: { Date() },
-        sleep: { duration in
-            let parts = duration.components
-            let nanos = max(0, Double(parts.seconds) * 1_000_000_000 + Double(parts.attoseconds) / 1_000_000_000)
-            try await Task.sleep(nanoseconds: UInt64(min(nanos, Double(UInt64.max - 1_000_000))))
-        })
+        sleep: { duration in try await DieterTaskSleep.duration(duration) })
 }

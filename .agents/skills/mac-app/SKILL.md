@@ -29,6 +29,11 @@ the canonical app cache, while `just mac test` uses the canonical test cache so
 their incompatible compiler flags cannot invalidate each other. Do not run two
 commands against the same cache concurrently.
 
+When compiler processes contend for memory, run builds and tests sequentially
+and set `DIETER_SWIFT_JOBS=2` on `just mac build`, `just mac test`, or the Mac
+E2E command. This limits compiler concurrency while preserving canonical caches;
+unset it to use SwiftPM's normal job count. Do not stop unrelated processes.
+
 ## Inventory first
 
 ```sh
@@ -60,8 +65,12 @@ be incremental. If it is not, compare the Xcode version, configuration,
 anything. Never point builds at `dieter-tests` or tests at `dieter-local`.
 
 `just mac run` refuses conflicting processes, launches without `open -n`, and
-requires exactly one canonical executable. For current code, quit before
-rebuilding. For observation only, reuse the already-running canonical app.
+requires exactly one canonical executable. If that app is already running, it
+activates it without building or signing. Builds check for running apps before
+compilation and again before packaging, including direct `build.sh` calls.
+For current code, quit a task-owned app before rebuilding. For observation only,
+reuse the already-running canonical app. `just mac lifecycle-test` verifies
+these guards with isolated fixtures, without launching an app.
 
 Release builds use `just mac build release`. Versioning, archive verification,
 and CI signing are exposed as `set-release-version`, `package-release`, and the
