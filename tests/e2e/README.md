@@ -73,7 +73,8 @@ credentials are transferred to the fixture app's private files and removed on
 exit. No credentials are put in instrumentation argv.
 
 Case format is version 1. One file declares a unique ID, platform, suites,
-components, fixture (`none`, `gateway`, `activity`, `screen`), timeout (1s–10m),
+components, fixture (`none`, `gateway`, `activity`, `screen`), timeout (1s–10m;
+iOS allows up to 20m including fresh simulator and XCTest setup),
 and either `steps`, an explicit native class/method list, or a Mac native
 `suite` with explicit phase-qualified `checks`. Missing or non-passing Mac
 assertions fail, including incomplete multi-launch suites. The host rejects

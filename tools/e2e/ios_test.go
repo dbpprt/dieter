@@ -101,6 +101,36 @@ func TestIOSConsoleRedactionAndBounds(t *testing.T) {
 		}
 	}
 }
+func TestIOSCaseDeadlineIncludesColdSimulatorSetup(t *testing.T) {
+	root, err := filepath.Abs("../..")
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(root, "tests/e2e/cases/ios/remote-node.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, err := decodeCase(data, "case.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, timeout := range []string{"1s", "10m", "20m"} {
+		c.Timeout = timeout
+		if err := c.validate(); err != nil {
+			t.Fatalf("rejected bounded iOS deadline %s: %v", timeout, err)
+		}
+	}
+	for _, timeout := range []string{"0s", "20m1s", "1h", "invalid"} {
+		c.Timeout = timeout
+		if err := c.validate(); err == nil {
+			t.Fatalf("accepted invalid iOS deadline %s", timeout)
+		}
+	}
+	if _, err := decodeCase([]byte(strings.Replace(validCase, "30s", "20m", 1)), "case.yaml"); err == nil {
+		t.Fatal("extended the Android deadline")
+	}
+}
+
 func TestIOSCatalogCoverageAndLayout(t *testing.T) {
 	root, err := filepath.Abs("../..")
 	if err != nil {

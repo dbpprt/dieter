@@ -183,8 +183,14 @@ func (c Case) validate() error {
 		return fmt.Errorf("unknown fixture %q", c.Fixture)
 	}
 	t, err := time.ParseDuration(c.Timeout)
-	if err != nil || t < time.Second || t > 10*time.Minute {
-		return fmt.Errorf("timeout must be between 1s and 10m")
+	limit := 10 * time.Minute
+	if c.Platform == "ios" {
+		// The case deadline includes a fresh simulator, XCTest bootstrap, and
+		// every selected method. Cold CI setup alone takes several minutes.
+		limit = 20 * time.Minute
+	}
+	if err != nil || t < time.Second || t > limit {
+		return fmt.Errorf("timeout must be between 1s and %s", limit)
 	}
 	if (c.Native == nil) == (len(c.Steps) == 0) {
 		return fmt.Errorf("exactly one of native or steps is required")

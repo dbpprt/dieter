@@ -49,7 +49,7 @@
     },
     "timeout": {
       "type": "string",
-      "description": "Go duration between 1 second and 10 minutes; validated by just e2e lint"
+      "description": "Overall case deadline including setup: Go duration between 1 second and 10 minutes (20 minutes for iOS); validated by just e2e lint"
     },
     "native": {
       "type": "object",
