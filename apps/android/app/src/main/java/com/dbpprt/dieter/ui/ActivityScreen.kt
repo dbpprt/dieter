@@ -396,7 +396,7 @@ private fun LazyListScope.activitySection(
 @Composable
 private fun ActivitySectionHeading(title: String, modifier: Modifier = Modifier) {
     Text(title.uppercase(), color = DieterMuted, fontFamily = FontFamily.Monospace,
-        style = MaterialTheme.typography.labelMedium, modifier = modifier.padding(top = 20.dp, bottom = 8.dp))
+        style = MaterialTheme.typography.labelMedium, modifier = modifier.padding(top = 12.dp, bottom = 4.dp))
 }
 
 @Composable

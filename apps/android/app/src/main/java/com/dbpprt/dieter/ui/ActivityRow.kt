@@ -46,27 +46,23 @@ internal fun ActivityRow(
     ActivityItem(
         card = entry.card, onOpen = { onClick() }, actions = actions,
         color = if (isSelected) DieterShellTint else DieterSurface,
-        shape = RoundedCornerShape(20.dp),
+        shape = RoundedCornerShape(14.dp),
         border = BorderStroke(1.dp, if (isSelected) DieterShell else DieterOutline.copy(alpha = .45f)),
         modifier = Modifier.fillMaxWidth().testTag("activity-row-${entry.card.id}")
             .semantics { selected = isSelected },
     ) {
         Column(
             Modifier.background(Brush.linearGradient(listOf(accent.copy(alpha = .08f), Color.Transparent)))
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Box(Modifier.size(7.dp).background(accent, CircleShape))
-                Text(
-                    listOfNotNull(project, board?.takeIf { entry.card.scope != "chat" },
-                        "Chat".takeIf { entry.card.scope == "chat" }).joinToString(" · "),
-                    color = DieterMuted, style = MaterialTheme.typography.labelSmall,
-                    maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f),
-                )
+            Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(entry.card.title.ifBlank { "Untitled" }, fontWeight = FontWeight.SemiBold,
+                    style = MaterialTheme.typography.titleSmall, color = DieterText,
+                    maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
                 Row(
                     verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp),
-                    modifier = Modifier.testTag("activity-age-${entry.card.id}").clearAndSetSemantics {
+                    modifier = Modifier.padding(top = 2.dp).testTag("activity-age-${entry.card.id}").clearAndSetSemantics {
                         contentDescription = if (entry.at == null) "Last activity time unavailable" else "Last activity: $age"
                     },
                 ) {
@@ -74,9 +70,28 @@ internal fun ActivityRow(
                     Text(age, style = MaterialTheme.typography.labelSmall, color = DieterMuted)
                 }
             }
-            Text(entry.card.title.ifBlank { "Untitled" }, fontWeight = FontWeight.SemiBold,
-                style = MaterialTheme.typography.titleMedium, color = DieterText,
-                maxLines = 3, overflow = TextOverflow.Ellipsis)
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Box(Modifier.size(6.dp).background(accent, CircleShape))
+                Text(
+                    listOfNotNull(project, board?.takeIf { entry.card.scope != "chat" },
+                        "Chat".takeIf { entry.card.scope == "chat" }).joinToString(" · "),
+                    color = DieterMuted, style = MaterialTheme.typography.labelSmall,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f),
+                )
+                Surface(
+                    color = DieterSurfaceHigh, shape = RoundedCornerShape(5.dp),
+                    border = BorderStroke(1.dp, DieterOutline.copy(alpha = .55f)),
+                    modifier = Modifier.widthIn(max = 150.dp).testTag("activity-machine-${entry.card.id}")
+                        .clearAndSetSemantics { contentDescription = "Machine: $machine" },
+                ) {
+                    Row(Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Outlined.Computer, null, Modifier.size(12.dp), tint = DieterMuted)
+                        Text(machine, color = DieterText, style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                }
+            }
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Icon(when {
                     entry.running -> Icons.Outlined.PlayCircleOutline
@@ -85,25 +100,6 @@ internal fun ActivityRow(
                 }, null, Modifier.size(15.dp), tint = statusColor)
                 Text(entry.detail, color = statusColor, style = MaterialTheme.typography.bodySmall,
                     maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-            }
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Surface(
-                    color = DieterSurfaceHigh, shape = RoundedCornerShape(8.dp),
-                    border = BorderStroke(1.dp, DieterOutline.copy(alpha = .55f)),
-                    modifier = Modifier.widthIn(max = 220.dp).testTag("activity-machine-${entry.card.id}")
-                        .clearAndSetSemantics { contentDescription = "Machine: $machine" },
-                ) {
-                    Row(Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Outlined.Computer, null, Modifier.size(14.dp), tint = DieterMuted)
-                        Text(machine, color = DieterText, style = MaterialTheme.typography.labelSmall,
-                            fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    }
-                }
-                if (entry.needsYou) Surface(shape = RoundedCornerShape(8.dp), color = DieterAmberTint) {
-                    Text(entry.kind.label, color = DieterAmber, style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp))
-                }
             }
         }
     }
