@@ -526,14 +526,19 @@
                     quickTaskToolbarUncovered
                     ? "passed" : "failed: conversation overlay still covers Quick Task"
                 let boardQuickTaskReady = await waitForBoardControl("board.quick-task", in: window)
+                recordNavigationTargetFailure(
+                    "board.quick-task", section: store.section, window: window,
+                    to: output.appending(path: "board-quick-task-target.txt"))
                 let boardQuickTaskClicked =
                     quickTaskToolbarUncovered && boardQuickTaskReady
                     && NativeUIAccessibility.click("board.quick-task", in: window)
-                _ = await waitUntil(timeout: 5) {
-                    NativeUIAccessibility.find("quick-task.story", in: window)?.recordedWindow?.isVisible == true
+                // Like the global Quick Task above, a board popover can mount
+                // its native editor before SwiftUI registers its geometry anchor.
+                let boardQuickTaskVisible = await waitUntil(timeout: 8, intervalMilliseconds: 50) {
+                    mountedQuickTaskWindow(from: window, expectedStory: "") != nil
                 }
-                if let target = NativeUIAccessibility.find("quick-task.story", in: window),
-                    let popover = target.recordedWindow
+                if boardQuickTaskVisible,
+                    let popover = mountedQuickTaskWindow(from: window, expectedStory: "")
                 {
                     results["board-quick-task-actions"] =
                         ["quick-task.create", "quick-task.run"].allSatisfy {
@@ -640,6 +645,9 @@
                 } else {
                     results["quick-task-paste-screenshot"] =
                         "failed: Quick Task popover was absent (section=\(store.section.rawValue), click=\(boardQuickTaskClicked))"
+                    capture(window, to: output.appending(path: "board-quick-task-missing.png"))
+                    try? quickTaskEditorDiagnostics().write(
+                        to: output.appending(path: "board-quick-task-missing.txt"), atomically: true, encoding: .utf8)
                 }
                 writeReport(results, to: output)
                 NSApp.terminate(nil)

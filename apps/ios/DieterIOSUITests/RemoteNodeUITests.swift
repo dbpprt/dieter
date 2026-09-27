@@ -313,14 +313,15 @@ final class RemoteNodeUITests: XCTestCase {
         // before returning. A freshly relaunched iPad can spend XCTest's whole
         // snapshot timeout on that first probe even though the board appears
         // moments later. The predicate expectation owns the bounded wait.
-        let boardButton = app.buttons.matching(identifier: "ios.board.\(board)").firstMatch
+        let sidebar = app.scrollViews.matching(identifier: "ios.sidebar").firstMatch
+        let boardButton = sidebar.buttons.matching(identifier: "ios.board.\(board)").firstMatch
         let ready = XCTNSPredicateExpectation(
             predicate: NSPredicate(format: predicate),
             object: boardButton)
         XCTAssertEqual(
             XCTWaiter.wait(for: [ready], timeout: 40), .completed,
             "The fixture board must be ready in the sidebar.\n\(app.debugDescription)")
-        let projectButton = app.buttons.matching(identifier: "ios.project.\(project)").firstMatch
+        let projectButton = sidebar.buttons.matching(identifier: "ios.project.\(project)").firstMatch
         XCTAssertTrue(
             projectButton.waitForExistence(timeout: 10), "The fixture project must be present.")
     }
@@ -420,8 +421,6 @@ final class RemoteNodeUITests: XCTestCase {
         let environment = ProcessInfo.processInfo.environment
         let gateway = try XCTUnwrap(environment["DIETER_IOS_TEST_GATEWAY"])
         let token = try XCTUnwrap(environment["DIETER_IOS_TEST_TOKEN"])
-        let project = try XCTUnwrap(environment["DIETER_IOS_TEST_PROJECT"])
-        let board = try XCTUnwrap(environment["DIETER_IOS_TEST_BOARD"])
         let daemon = try XCTUnwrap(environment["DIETER_IOS_TEST_DAEMON"])
         if environment["DIETER_IOS_TEST_LANDSCAPE"] == "1" {
             XCUIDevice.shared.orientation = .landscapeLeft
@@ -431,8 +430,12 @@ final class RemoteNodeUITests: XCTestCase {
         app.launchEnvironment["DIETER_IOS_TEST_TOKEN"] = token
         app.launch()
         XCTAssertTrue(app.wait(for: .runningForeground, timeout: 20))
-        waitForBoard(app, project: project, board: board)
-        tap(app, "ios.terminals.open")
+        // Terminals are machine-scoped. Wait for their actual navigation target,
+        // without snapshotting unrelated board links in the iPad split view.
+        let terminals = app.scrollViews.matching(identifier: "ios.sidebar").firstMatch
+            .buttons.matching(identifier: "ios.terminals.open").firstMatch
+        XCTAssertTrue(terminals.waitForExistence(timeout: 40))
+        terminals.tap()
         XCTAssertTrue(element(app, "ios.terminals.machine-picker-view").waitForExistence(timeout: 10))
         tap(app, "ios.terminals.machine-choice.\(daemon)")
         XCTAssertTrue(element(app, "ios.terminals.view").waitForExistence(timeout: 15))
@@ -451,8 +454,8 @@ final class RemoteNodeUITests: XCTestCase {
             "Creating a machine-home terminal must open its native terminal surface.\n\(app.debugDescription)")
         XCTAssertTrue(element(app, "ios.terminals.key.arrows").exists)
         surface.tap()
-        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 10))
         dismissKeyboardIntroduction(app)
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 10))
         app.typeText("printf 'ios-terminal-marker\\n'\n")
         let marker = XCTNSPredicateExpectation(
             predicate: NSPredicate(format: "value CONTAINS %@", "ios-terminal-marker"),
@@ -719,7 +722,10 @@ final class RemoteNodeUITests: XCTestCase {
         // device-scale coordinates and mark its controls non-hittable; the
         // directory's existence is the readiness signal needed here.
         waitForBoard(app, project: project, board: board, requireHittable: false)
-        XCUIDevice.shared.press(.home)
+        // Exercise the persisted cold-start handoff. Stop the primed host before
+        // Photos stages anything, so reopening never replaces a suspended app
+        // while it is receiving the same request.
+        app.terminate()
 
         let photos = XCUIApplication(bundleIdentifier: "com.apple.mobileslideshow")
         addTeardownBlock {
@@ -795,18 +801,19 @@ final class RemoteNodeUITests: XCTestCase {
         let done = photos.buttons.matching(identifier: "ios.share.done").firstMatch
         XCTAssertTrue(done.waitForExistence(timeout: 5))
         done.tap()
-        // Reopening the app is the user-facing handoff described by the share
-        // extension. `activate()` can leave an already-running host process in
-        // `Running Background` on a loaded CI simulator and then fail inside
-        // XCTest before its state can be retried. `launch()` replaces that
-        // background instance while preserving the app-group request that this
-        // assertion is intended to exercise.
+        // Reopening the stopped host must consume the persisted app-group request.
         app.launch()
         XCTAssertTrue(
             app.wait(for: .runningForeground, timeout: 20),
             "Opening Dieter after the handoff must resume the shared request.")
+        // Query the native form and its real attachment control directly. A
+        // whole-app `.any` query can stall SwiftUI's accessibility traversal
+        // while the form is being presented on Xcode 26.5.
+        let form = app.collectionViews.matching(identifier: "ios.create.form").firstMatch
+        XCTAssertTrue(form.waitForExistence(timeout: 45), "The shared request must open New Task.")
+        let attachment = form.buttons.matching(identifier: "ios.create.attachment.remove.0").firstMatch
         XCTAssertTrue(
-            element(app, "ios.create.attachment.0").waitForExistence(timeout: 45),
+            attachment.waitForExistence(timeout: 15),
             "The New Task form must contain the screenshot shared from Photos.\n\(app.debugDescription)")
         XCTAssertTrue(element(app, "ios.create.attach-photos").exists)
         XCTAssertTrue(element(app, "ios.create.attach-files").exists)

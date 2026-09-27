@@ -269,6 +269,15 @@ func (d iosDriver) run(ctx context.Context, c Case) (result Result) {
 		fail(fmt.Errorf("boot simulator: %w", err))
 		return
 	}
+	// First-use keyboard coaching is simulator setup, not a Dieter interaction.
+	// XCTest can spend repeated idle timeouts trying to tap its Continue button
+	// over a live terminal. Configure only this owned simulator before
+	// launching any app; the native tests still type through the real keyboard.
+	if _, err = command(ctx, d.root, nil, "xcrun", "simctl", "spawn", simulator,
+		"defaults", "write", "com.apple.keyboard.preferences", "DidShowContinuousPathIntroduction", "-bool", "true"); err != nil {
+		fail(fmt.Errorf("prepare simulator keyboard: %w", err))
+		return
+	}
 	if c.ID == "ios.share-extension" {
 		if _, err = command(ctx, d.root, nil, "xcrun", "simctl", "addmedia", simulator, filepath.Join(d.root, "apps/android/design/reference/phone-board.png")); err != nil {
 			fail(fmt.Errorf("load share fixture: %w", err))
@@ -299,10 +308,17 @@ func (d iosDriver) run(ctx context.Context, c Case) (result Result) {
 	if exportErr == nil {
 		_ = os.WriteFile(filepath.Join(dir, "test-results.json"), []byte(redact(nodes, values)), 0600)
 	}
-	if testErr != nil || exportErr != nil {
+	if exportErr != nil {
 		fail(fmt.Errorf("XCTest did not complete: test=%v result=%v", testErr, exportErr))
 	} else {
-		result.Status, result.Reason = iosTestResult([]byte(nodes), *c.Native)
+		result.Status, result.Reason = iosTestResult([]byte(redact(nodes, values)), *c.Native)
+		// Exit 65 also means an ordinary assertion failure. Keep the XCTest
+		// diagnosis when a complete result exists, instead of hiding it behind
+		// "did not complete". A failing process can never qualify as passed.
+		if result.Status == "passed" && testErr != nil {
+			result.Status = "failed"
+			fail(fmt.Errorf("XCTest process failed despite passing results: %w", testErr))
+		}
 	}
 	_, _ = command(evidence, d.root, nil, "xcrun", "xcresulttool", "export", "attachments", "--path", bundle, "--output-path", filepath.Join(dir, "attachments"))
 	if result.Status != "passed" {
@@ -395,9 +411,16 @@ func iosTestResult(data []byte, n Native) (string, string) {
 	}
 	seen := map[string]bool{}
 	reason := ""
+	detail := ""
 	var visit func([]iosTestNode)
 	visit = func(nodes []iosTestNode) {
 		for _, node := range nodes {
+			if node.Type == "Failure Message" && detail == "" {
+				// The remaining lines can include the entire accessibility tree.
+				line, _, _ := strings.Cut(node.Name, "\n")
+				runes := []rune(line)
+				detail = string(runes[:min(len(runes), 512)])
+			}
 			if node.Type == "Test Case" {
 				key := strings.TrimSuffix(strings.TrimPrefix(node.ID, n.Target+"/"), "()")
 				if !expected[key] || seen[key] {
@@ -415,6 +438,9 @@ func iosTestResult(data []byte, n Native) (string, string) {
 	}
 	visit(report.Nodes)
 	if reason != "" {
+		if detail != "" {
+			reason += ": " + detail
+		}
 		return "failed", reason
 	}
 	if len(seen) != len(expected) {

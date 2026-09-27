@@ -67,6 +67,17 @@ func TestIOSExactMethodQualification(t *testing.T) {
 		t.Fatal("invalid report passed")
 	}
 }
+func TestIOSFailureSummaryPreservesAssertionWithoutAccessibilityDump(t *testing.T) {
+	message := "RemoteNodeUITests.swift:320: The fixture board must be ready."
+	nodes := []iosTestNode{{Type: "Test Case", ID: "RemoteNodeUITests/testOne()", Result: "Failed",
+		Children: []iosTestNode{{Type: "Failure Message", Name: message + "\nAttributes: " + strings.Repeat("tree", 10000)}}}}
+	data, _ := json.Marshal(map[string]any{"testNodes": nodes})
+	status, reason := iosTestResult(data, Native{Target: "DieterIOSUITests", Class: "RemoteNodeUITests", Methods: []string{"testOne"}})
+	if status != "failed" || !strings.HasSuffix(reason, message) || strings.Contains(reason, "Attributes") {
+		t.Fatal(status, reason)
+	}
+}
+
 func TestIOSConsoleRedactionAndBounds(t *testing.T) {
 	token := "isolated_" + strings.Repeat("a", 48)
 	payload := map[string]any{"items": []map[string]string{{"content": "private command", "kind": "input"}, {"content": "launch environment", "adaptorType": "debugger"}, {"content": strings.Repeat("discarded\n", 600) + strings.Repeat("🙂", 20000) + token + " secret-token\nlast failure"}}}
@@ -136,7 +147,7 @@ func TestIOSCatalogCoverageAndLayout(t *testing.T) {
 // Exercise the actual driver lifecycle against stub tool executables. No Apple
 // tools, simulator, gateway or operator state is needed for failure-path tests.
 func TestIOSDriverCleansOnlyOwnedSimulatorOnEveryExit(t *testing.T) {
-	for _, mode := range []string{"success", "boot-failure", "test-failure", "delete-failure", "missing-result", "canceled"} {
+	for _, mode := range []string{"success", "boot-failure", "keyboard-failure", "test-failure", "assertion-failure", "delete-failure", "missing-result", "canceled"} {
 		t.Run(mode, func(t *testing.T) {
 			root := t.TempDir()
 			bin := filepath.Join(root, "bin")
@@ -158,9 +169,14 @@ case "$1 $2 $3" in
  'simctl bootstatus '*)
   if [ "$IOS_STUB_MODE" = canceled ]; then exec sleep 5; fi
   [ "$IOS_STUB_MODE" != boot-failure ] ;;
+ 'simctl spawn '*) [ "$IOS_STUB_MODE" != keyboard-failure ] ;;
  'simctl delete '*) [ "$IOS_STUB_MODE" != delete-failure ] ;;
  'xcresulttool get test-results')
   [ "$IOS_STUB_MODE" != missing-result ] || exit 1
+  if [ "$IOS_STUB_MODE" = assertion-failure ]; then
+   printf '%s\n' '{"testNodes":[{"nodeType":"Test Case","nodeIdentifier":"RemoteNodeUITests/testOne()","result":"Failed","children":[{"nodeType":"Failure Message","name":"The shared screenshot is absent.\nAttributes: large accessibility tree"}]}]}'
+   exit 0
+  fi
   echo '{"testNodes":[{"nodeType":"Test Case","nodeIdentifier":"RemoteNodeUITests/testOne()","result":"Passed"}]}' ;;
  'xcresulttool get log') echo '{"items":[{"content":"useful failure"}]}' ;;
 esac
@@ -170,7 +186,7 @@ if [ "$2" = json ]; then echo '{"DieterIOSUITests":{"BlueprintName":"DieterIOSUI
 `,
 				"xcodebuild": `#!/bin/sh
 printf '%s\n' "$*" >> "$IOS_STUB_LOG"
-[ "$IOS_STUB_MODE" != test-failure ]
+[ "$IOS_STUB_MODE" != test-failure ] && [ "$IOS_STUB_MODE" != assertion-failure ]
 `,
 			}
 			for name, script := range scripts {
@@ -192,6 +208,9 @@ printf '%s\n' "$*" >> "$IOS_STUB_LOG"
 			if (result.Status == "passed" && result.CleanupError == "") != (mode == "success") {
 				t.Fatalf("%+v", result)
 			}
+			if mode == "assertion-failure" && (!strings.Contains(result.Reason, "The shared screenshot is absent.") || strings.Contains(result.Reason, "Attributes:")) {
+				t.Fatalf("lost bounded XCTest assertion: %+v", result)
+			}
 			data, err := os.ReadFile(filepath.Join(root, "commands"))
 			if err != nil {
 				t.Fatal(err)
@@ -202,8 +221,12 @@ printf '%s\n' "$*" >> "$IOS_STUB_LOG"
 					t.Fatal(log)
 				}
 			}
-			if mode != "boot-failure" && mode != "canceled" && !strings.Contains(log, "-only-testing:DieterIOSUITests/RemoteNodeUITests/testOne") {
+			if mode != "boot-failure" && mode != "keyboard-failure" && mode != "canceled" && !strings.Contains(log, "-only-testing:DieterIOSUITests/RemoteNodeUITests/testOne") {
 				t.Fatal(log)
+			}
+			if mode != "boot-failure" && mode != "canceled" && !strings.Contains(log,
+				"simctl spawn AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE defaults write com.apple.keyboard.preferences DidShowContinuousPathIntroduction -bool true") {
+				t.Fatal("owned simulator keyboard was not prepared", log)
 			}
 			if strings.Contains(log, "simctl erase") || strings.Contains(log, " all") {
 				t.Fatal("touched unrelated simulators")

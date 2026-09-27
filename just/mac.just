@@ -2,6 +2,10 @@ set default-list
 set shell := ["bash", "-euo", "pipefail", "-c"]
 set working-directory := '..'
 
+# Fit native smoke windows and popovers on the disposable GitHub-hosted desktop.
+ci-desktop:
+    swift scripts/mac_ci_desktop.swift
+
 app_root := "apps/mac"
 app_bundle := app_root / "build/Dieter.app"
 app_executable := app_bundle / "Contents/MacOS/DieterMac"
