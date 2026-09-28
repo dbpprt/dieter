@@ -107,7 +107,8 @@
             else {
                 return DeletePromptResult(
                     presented: false,
-                    diagnostic: "target unavailable: \(NativeUIAccessibility.targetDiagnostics(identifier, in: window))")
+                    diagnostic: "target unavailable: \(NativeUIAccessibility.targetDiagnostics(identifier, in: window))"
+                )
             }
             let point = window.convertPoint(fromScreen: NSPoint(x: frame.midX, y: frame.midY))
             let localPoint = window.contentView?.convert(point, from: nil) ?? point
@@ -151,7 +152,8 @@
             return DeletePromptResult(
                 presented: false,
                 diagnostic:
-                    "hit=\(hitType); \(attempts.joined(separator: "; ")); \(NativeUIAccessibility.targetDiagnostics(identifier, in: window))")
+                    "hit=\(hitType); \(attempts.joined(separator: "; ")); \(NativeUIAccessibility.targetDiagnostics(identifier, in: window))"
+            )
         }
 
         private static func pressDialog(_ title: String, window: NSWindow) -> Bool {
