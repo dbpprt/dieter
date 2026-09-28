@@ -429,6 +429,65 @@ class TabletWorkspaceTest {
         capture("tablet-inbox-empty")
     }
 
+    @Test fun newTaskStaysInsideActivityPaneAcrossFoldTabletAndPhoneLayouts() {
+        var width by mutableFloatStateOf(760f)
+        var selected by mutableStateOf<String?>("review")
+        compose.setContent { TabletTestSurface(width = width, height = 840f) {
+            DieterTheme(darkTheme = true) {
+                Surface(Modifier.fillMaxSize()) {
+                    val state = fixture.copy(destination = Destination.ACTIVITY, selectedCardId = selected,
+                        conversation = selected?.let(::snapshot), activityPaneLeadingFraction = 0.5f)
+                    if (usesTabletWorkspace(width)) {
+                        TabletWorkspace(state, model,
+                            destinationContent = { ActivityScreen(it, model, true, PaddingValues()) }, surfaceContent = {})
+                    } else {
+                        ActivityScreen(state, model, width >= 600f, PaddingValues(top = 12.dp, bottom = 24.dp))
+                    }
+                }
+            }
+        } }
+        fun verifyButtonInList() {
+            val button = compose.onNodeWithTag("inbox-new-task").assertIsDisplayed().assertHasClickAction()
+                .assertContentDescriptionEquals("New task").fetchSemanticsNode().boundsInRoot
+            val feed = compose.onNodeWithTag("activity-feed").fetchSemanticsNode().boundsInRoot
+            assertTrue("New task stays inside the activity pane", button.left >= feed.left && button.right <= feed.right &&
+                button.top >= feed.top && button.bottom <= feed.bottom)
+            if (selected != null) {
+                val editor = visibleMessageEditor().fetchSemanticsNode().boundsInRoot
+                val sends = compose.onAllNodesWithTag("send-message")
+                val visible = sends.fetchSemanticsNodes().indices.filter { sends[it].isDisplayed() }
+                assertEquals("Expected one visible Send button", 1, visible.size)
+                val send = sends[visible.single()].fetchSemanticsNode().boundsInRoot
+                assertFalse("New task must not overlap the message editor", button.overlaps(editor))
+                assertFalse("New task must not overlap Send", button.overlaps(send))
+            }
+        }
+        verifyButtonInList()
+        capture("activity-fold-new-task")
+        compose.onNodeWithTag("activity-pane-divider").performTouchInput {
+            down(center)
+            moveBy(Offset(-40f, 0f), delayMillis = 500)
+            up()
+        }
+        verifyButtonInList()
+        compose.runOnIdle { selected = null }
+        verifyButtonInList()
+        compose.onNodeWithText("Your activity").assertIsDisplayed()
+        compose.runOnIdle { width = 1280f; selected = "review" }
+        verifyButtonInList()
+        compose.onNodeWithTag("tablet-inbox-timeline").performClick()
+        verifyButtonInList()
+        capture("activity-tablet-new-task")
+        compose.runOnIdle { width = 400f }
+        visibleMessageEditor().assertIsDisplayed()
+        compose.onNodeWithTag("inbox-new-task").assertDoesNotExist()
+        compose.runOnIdle { selected = null }
+        verifyButtonInList()
+        capture("activity-phone-new-task")
+        compose.onNodeWithTag("inbox-new-task").performClick()
+        compose.runOnIdle { assertTrue("New task opens the capture chooser", model.captureChooserVisible) }
+    }
+
     @Test fun sidebarDragsPersistIndependentlyAcrossRecreation() {
         var destination by mutableStateOf(Destination.ACTIVITY)
         var restoredPreferences by mutableStateOf<AppPreferences?>(null)

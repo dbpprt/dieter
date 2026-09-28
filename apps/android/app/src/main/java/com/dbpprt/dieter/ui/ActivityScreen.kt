@@ -58,27 +58,34 @@ internal fun ActivityScreen(state: DieterUiState, model: DieterViewModel, expand
     var timeline by rememberSaveable { mutableStateOf(false) }
     val content: @Composable (Modifier) -> Unit = { modifier ->
         feedState.SaveableStateProvider(state.activeGatewayId) {
-            ActivityFeed(
-                state = state, modifier = modifier,
-                onOpen = { timeline = false; model.openCard(it, Destination.ACTIVITY) },
-                onConnections = model::showConnectionDialog,
-                onAccount = { accountKey = it.accountKey },
-                onRefreshAccounts = { model.refreshProviderQuotas() },
-                tablet = tablet,
-                timelineOnly = tablet && timeline,
-                onTimelineToggle = { timeline = it },
-                actions = ActivityItemActions(
-                    onRename = model::renameConversation,
-                    onArchive = model::archiveConversation,
-                    onTogglePin = model::togglePin,
-                    onMoveToFolder = { folderChatId = it.id },
-                    enabled = state.connected && !state.working,
-                ),
-                onClearError = model::clearError,
-            )
+            Box(modifier) {
+                ActivityFeed(
+                    state = state, modifier = Modifier.fillMaxSize(),
+                    onOpen = { timeline = false; model.openCard(it, Destination.ACTIVITY) },
+                    onConnections = model::showConnectionDialog,
+                    onAccount = { accountKey = it.accountKey },
+                    onRefreshAccounts = { model.refreshProviderQuotas() },
+                    tablet = tablet,
+                    timelineOnly = tablet && timeline,
+                    onTimelineToggle = { timeline = it },
+                    actions = ActivityItemActions(
+                        onRename = model::renameConversation,
+                        onArchive = model::archiveConversation,
+                        onTogglePin = model::togglePin,
+                        onMoveToFolder = { folderChatId = it.id },
+                        enabled = state.connected && !state.working,
+                    ),
+                    onClearError = model::clearError,
+                )
+                ExtendedFloatingActionButton(
+                    onClick = { model.beginCapture() },
+                    modifier = Modifier.align(Alignment.BottomEnd).padding(20.dp).testTag("inbox-new-task"),
+                    icon = { Icon(Icons.Default.Add, "New task") },
+                    text = { Text("New task") },
+                )
+            }
         }
     }
-    Box(Modifier.fillMaxSize()) {
     if (tablet) {
         TabletListDetail(
             modifier = Modifier.padding(contentPadding),
@@ -105,11 +112,6 @@ internal fun ActivityScreen(state: DieterUiState, model: DieterViewModel, expand
         }
     } else {
         content(Modifier.fillMaxSize().padding(contentPadding))
-    }
-    if (state.selectedCardId == null || tablet || expanded) FloatingActionButton(
-        onClick = { model.beginCapture() },
-        modifier = Modifier.align(Alignment.BottomEnd).padding(contentPadding).padding(20.dp).testTag("inbox-new-task"),
-    ) { Icon(Icons.Default.Add, "New task") }
     }
     folderChatId?.let { id ->
         MoveToNavigationFolderDialog(id, NavigationFolderScope.CHATS, state.chatFolders,
