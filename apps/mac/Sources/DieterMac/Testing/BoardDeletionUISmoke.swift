@@ -8,10 +8,14 @@
         ) async {
             do {
                 guard let rpc = store.rpc,
+                    let canceledBoard = try await store.createBoard(
+                        projectID: board.projectID, name: "Cancel board deletion smoke", workflow: "review",
+                        doneArchivePolicy: "never"),
                     let empty = try await store.createBoard(
                         projectID: board.projectID, name: "Delete board smoke", workflow: "review",
                         doneArchivePolicy: "never")
                 else { throw CocoaError(.fileReadUnknown) }
+                store.acceptBoard(canceledBoard)
                 store.acceptBoard(empty)
                 let navigation = store.sidebarProjectNavigation
                 defer { store.sidebarProjectNavigation = navigation }
@@ -20,14 +24,21 @@
                     expanded.toggleExpanded(board.projectID)
                     store.sidebarProjectNavigation = expanded
                 }
+                await store.openBoard(board.id, projectID: board.projectID)
+                _ = await NativeUIAccessibility.wait { store.selectedBoardID == board.id }
 
-                let prompted = await chooseDelete(empty, window: window)
+                // Exercise cancellation and confirmation on different rows. A
+                // dismissed SwiftUI confirmationDialog can retain its first
+                // modifier host briefly even after AppKit detaches the sheet;
+                // immediately reopening that same host makes the second native
+                // context-menu action race the stale presentation state.
+                let prompted = await chooseDelete(canceledBoard, window: window)
                 if let sheet = window.attachedSheet {
                     NativeUISmokeRunner.capture(sheet, to: output.appending(path: "board-delete-confirmation.png"))
                 }
                 let canceled = prompted && pressDialog("Cancel", window: window)
                 let dismissed = await NativeUIAccessibility.wait { window.attachedSheet == nil }
-                let afterCancel = try await rpc.getBoard(empty.id)
+                let afterCancel = try await rpc.getBoard(canceledBoard.id)
                 results["board-delete-cancel"] =
                     canceled && dismissed && !afterCancel.retired && store.selectedBoardID == board.id
                     ? "passed" : "failed: cancel removed the board or changed selection"
@@ -42,6 +53,8 @@
                 results["board-delete-right-click-target"] =
                     confirmed && removed && afterDelete.retired && store.selectedBoardID == board.id
                     ? "passed" : "failed: confirmed=\(confirmed), removed=\(removed), retired=\(afterDelete.retired)"
+
+                await store.retireBoard(canceledBoard)
 
                 await store.restoreBoard(empty.id)
                 let restored = await NativeUIAccessibility.wait {
