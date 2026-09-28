@@ -896,6 +896,7 @@ func liveDirectRouteRejectsTheWrongDaemonIdentity() async throws {
     var project = Dieter_V1_Project()
     project.id = "project-other"
     project.name = "Other project"
+    project.boardCount = 1
     var board = Dieter_V1_Board()
     board.id = "board-other"
     board.projectID = project.id
