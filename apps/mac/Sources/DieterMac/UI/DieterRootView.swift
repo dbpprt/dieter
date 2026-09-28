@@ -789,6 +789,7 @@ struct AppSidebar: View {
     private func machineDetail(_ machine: DieterEndpoint) -> String {
         if let incompatibility = machine.incompatibilityDescription { return incompatibility }
         if let connectionError = store.machineConnectionErrors[machine.id] { return connectionError }
+        if let issue = store.machineSyncIssues[machine.id] { return issue }
         if machine.id == store.endpoint.id && !store.workspaceIsLive {
             if store.workspaceFreshness == .syncing { return "Waiting for live sync…" }
             return "Unavailable · \(MachinePresenceText.lastSeen(machine.lastSeenAt))"

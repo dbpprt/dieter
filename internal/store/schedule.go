@@ -324,6 +324,10 @@ func (s *Store) CreateSchedule(input ScheduleInput) (model.Schedule, error) {
 		return model.Schedule{}, err
 	}
 	defer release()
+	if _, err := s.ResolveBoard(project.ID, board.ID); err != nil {
+		return model.Schedule{}, err
+	}
+
 	database, err := s.scheduleDatabase()
 	if err != nil {
 		return model.Schedule{}, err
@@ -581,6 +585,10 @@ func (s *Store) UpdateSchedule(ref string, input ScheduleInput) (model.Schedule,
 		return model.Schedule{}, err
 	}
 	defer release()
+	if _, err := s.ResolveBoard(project.ID, board.ID); err != nil {
+		return model.Schedule{}, err
+	}
+
 	current.BoardID, current.Name, current.Description = board.ID, input.Name, strings.TrimSpace(input.Description)
 	current.Cron, current.Timezone, current.Enabled, current.Action = input.Cron, input.Timezone, input.Enabled, input.Action
 	current.TitleTemplate, current.PromptTemplate = input.TitleTemplate, input.PromptTemplate

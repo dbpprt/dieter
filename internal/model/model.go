@@ -116,22 +116,34 @@ type ValidationCommand struct {
 }
 
 type Board struct {
-	ConflictKeys      []string                   `json:"conflictKeys,omitempty" yaml:"-"`
-	SharedBase        map[string]json.RawMessage `json:"-" yaml:"-"`
-	Hostnames         []string                   `json:"hostnames,omitempty" yaml:"hostnames,omitempty"`
-	ID                string                     `json:"id" yaml:"id"`
-	ProjectID         string                     `json:"projectId" yaml:"project_id"`
-	Name              string                     `json:"name" yaml:"name"`
-	Workflow          string                     `json:"workflow" yaml:"workflow"`
-	Description       string                     `json:"description,omitempty" yaml:"-"`
-	PromptTemplate    string                     `json:"promptTemplate,omitempty" yaml:"prompt_template,omitempty"`
-	DoneArchivePolicy string                     `json:"doneArchivePolicy" yaml:"done_archive_policy,omitempty"`
-	BaseRemote        string                     `json:"baseRemote,omitempty" yaml:"base_remote,omitempty"`
-	RemotePublishMode string                     `json:"remotePublishMode" yaml:"remote_publish_mode,omitempty"`
-	CreatedAt         string                     `json:"createdAt" yaml:"created_at"`
-	UpdatedAt         string                     `json:"updatedAt" yaml:"updated_at"`
-	Labels            []Label                    `json:"labels,omitempty" yaml:"labels,omitempty"`
-	Lanes             []Lane                     `json:"lanes" yaml:"-"`
+	Retired              bool                       `json:"retired,omitempty" yaml:"-"`
+	RetirementRevision   string                     `json:"retirementRevision,omitempty" yaml:"-"`
+	RetirementVersions   []BoardRetirementVersion   `json:"retirementVersions,omitempty" yaml:"-"`
+	RetirementBlocked    bool                       `json:"retirementBlocked,omitempty" yaml:"-"`
+	RetirementReferences []string                   `json:"retirementReferences,omitempty" yaml:"-"`
+	ConflictKeys         []string                   `json:"conflictKeys,omitempty" yaml:"-"`
+	SharedBase           map[string]json.RawMessage `json:"-" yaml:"-"`
+	Hostnames            []string                   `json:"hostnames,omitempty" yaml:"hostnames,omitempty"`
+	ID                   string                     `json:"id" yaml:"id"`
+	ProjectID            string                     `json:"projectId" yaml:"project_id"`
+	Name                 string                     `json:"name" yaml:"name"`
+	Workflow             string                     `json:"workflow" yaml:"workflow"`
+	Description          string                     `json:"description,omitempty" yaml:"-"`
+	PromptTemplate       string                     `json:"promptTemplate,omitempty" yaml:"prompt_template,omitempty"`
+	DoneArchivePolicy    string                     `json:"doneArchivePolicy" yaml:"done_archive_policy,omitempty"`
+	BaseRemote           string                     `json:"baseRemote,omitempty" yaml:"base_remote,omitempty"`
+	RemotePublishMode    string                     `json:"remotePublishMode" yaml:"remote_publish_mode,omitempty"`
+	CreatedAt            string                     `json:"createdAt" yaml:"created_at"`
+	UpdatedAt            string                     `json:"updatedAt" yaml:"updated_at"`
+	Labels               []Label                    `json:"labels,omitempty" yaml:"labels,omitempty"`
+	Lanes                []Lane                     `json:"lanes" yaml:"-"`
+}
+
+type BoardRetirementVersion struct {
+	Clock   map[string]uint64 `json:"clock"`
+	Rank    string            `json:"rank"`
+	Retired bool              `json:"retired"`
+	Deleted bool              `json:"deleted,omitempty"`
 }
 
 type Label struct {
@@ -711,6 +723,7 @@ type CardDetail struct {
 }
 
 type State struct {
+	RetiredBoards      []Board   `json:"retiredBoards,omitempty"`
 	ArchivedProjectIDs []string  `json:"archivedProjectIds,omitempty"`
 	ArchivedItemIDs    []string  `json:"archivedItemIds,omitempty"`
 	StorePath          string    `json:"storePath"`

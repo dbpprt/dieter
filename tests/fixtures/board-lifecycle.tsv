@@ -1,0 +1,9 @@
+# name<TAB>observations (clock=value; - means absent)<TAB>reference<TAB>retired<TAB>blocked
+absent	-	false	false	false
+retire_then_stale	a:1=true;-	false	true	false
+stale_then_retire	-;a:1=true	false	true	false
+restore_then_stale	a:1=true;a:2=false;a:1=true;-	false	false	false
+concurrent_intents	a:1=true;b:1=false	false	false	true
+reverse_concurrent	b:1=false;a:1=true	false	false	true
+resolved_conflict	a:1=true;b:1=false;a:2,b:1=false;b:1=false	false	false	false
+late_reference	a:1=true;-	true	false	true

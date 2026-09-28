@@ -1003,6 +1003,7 @@ struct ConnectionSettings: View {
     private func machineSummary(_ machine: DieterEndpoint) -> String {
         if let incompatibility = machine.incompatibilityDescription { return incompatibility }
         if let connectionError = store.machineConnectionErrors[machine.id] { return connectionError }
+        if let issue = store.machineSyncIssues[machine.id] { return issue }
         guard machine.online else { return MachinePresenceText.lastSeen(machine.lastSeenAt) }
         if let status = store.connectionStatus(for: machine) {
             return "\(status.route.rawValue) · \(status.latencyMilliseconds) ms"

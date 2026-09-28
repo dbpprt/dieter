@@ -512,6 +512,14 @@ package final class DieterRPC: Sendable {
             request: .init(message: Google_Protobuf_Empty()), options: Self.boundedUnaryCallOptions())
     }
 
+    package func getBoard(_ id: String) async throws -> Dieter_V1_Board {
+        var request = Dieter_V1_BoardRef(); request.boardID = id
+        return try await service.getBoard(request: .init(message: request))
+    }
+    package func setBoardRetired(_ request: Dieter_V1_SetBoardRetiredRequest) async throws -> Dieter_V1_Board {
+        try await service.setBoardRetired(request: .init(message: request))
+    }
+
     package func createBoard(_ request: Dieter_V1_CreateBoardRequest) async throws -> Dieter_V1_Board {
         try await service.createBoard(request: .init(message: request))
     }

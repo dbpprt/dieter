@@ -54,3 +54,8 @@ Schema changes update authoritative protobufs, generated bindings, daemon core,
 CLI/help, native clients, deployment policy, and local/direct/WebRTC/relay tests
 in one change. Unsupported development stores are rejected without migration;
 preserve the old directory and use a fresh disposable home for development.
+
+The board-retirement storage/projection contract pins both floors at
+`0.4.324-dev.0`. Publish this policy only with the signed release's daemon and
+native artifacts available. Earlier daemons reject the new lifecycle field and
+earlier native directories cannot retain its causal removal evidence.

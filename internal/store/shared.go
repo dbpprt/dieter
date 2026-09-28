@@ -143,7 +143,7 @@ func pickFields(value any, kind string) map[string]json.RawMessage {
 	all := objectFields(value)
 	out := map[string]json.RawMessage{}
 	for field, shape := range peerstore.DomainFields[kind] {
-		if field == "deleted" || field == "consolidatedInto" {
+		if field == "deleted" || field == "consolidatedInto" || field == "retired" {
 			continue
 		}
 		if raw, ok := all[field]; ok {
@@ -279,6 +279,7 @@ func (s *Store) sharedBoards() ([]model.Board, error) {
 		return nil, err
 	}
 	result := []model.Board{}
+	references := boardReferenceIndex(data)
 	for _, id := range entityIDs(data, "board", "identity") {
 		fields, conflicts := sharedFields(data, "board", id)
 		var board model.Board
@@ -289,6 +290,7 @@ func (s *Store) sharedBoards() ([]model.Board, error) {
 		if !sharedEntityReady(data, "project", board.ProjectID) || len(fields["name"]) == 0 || len(fields["workflow"]) == 0 {
 			continue
 		}
+		projectBoardRetirement(&board, data.Records[peerstore.Key("board", id+".retired")], references[id])
 		for _, labelID := range entityIDs(data, "label", "identity") {
 			labelFields, lc := sharedFields(data, "label", labelID)
 			var label struct {

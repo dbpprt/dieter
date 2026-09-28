@@ -156,7 +156,7 @@ extension DieterStore {
     }
 
     var selectedBoard: Dieter_V1_Board? {
-        board(id: selectedBoardID)
+        board(id: selectedBoardID) ?? replica.retiredBoards[selectedBoardID]
     }
 
     var renameBoardTarget: Dieter_V1_Board? {

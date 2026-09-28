@@ -106,6 +106,10 @@ func (s *Store) CreateCard(input CreateCardInput) (model.Card, error) {
 		return model.Card{}, err
 	}
 	defer release()
+	if _, err := s.ResolveBoard(project.ID, board.ID); err != nil {
+		return model.Card{}, err
+	}
+
 	if s.cardExists(input.ID) {
 		return model.Card{}, fmt.Errorf("card already exists")
 	}

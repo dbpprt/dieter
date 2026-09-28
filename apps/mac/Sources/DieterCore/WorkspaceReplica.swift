@@ -51,6 +51,7 @@ package final class WorkspaceReplica {
     package var navigationCards: [String: [Dieter_V1_Card]] = [:] {
         didSet { if navigationCards != oldValue { commandSearchRevision &+= 1 } }
     }
+    package var retiredBoards: [String: Dieter_V1_Board] = [:]
     package var chats: [Dieter_V1_Card] = [] {
         didSet {
             if chats != oldValue {
@@ -95,10 +96,11 @@ package final class WorkspaceReplica {
     package var directory: MachineDirectoryProjection {
         MachineDirectoryProjection(
             projects: projectDirectory, projectReplicaEndpointIDs: projectReplicaEndpointIDs,
-            boards: navigationBoards, cards: navigationCards, chats: chats)
+            boards: navigationBoards, cards: navigationCards, chats: chats, retiredBoards: retiredBoards)
     }
 
     package func accept(_ projection: MachineDirectoryProjection) {
+        if retiredBoards != projection.retiredBoards { retiredBoards = projection.retiredBoards }
         if projectDirectory != projection.projects { projectDirectory = projection.projects }
         if projectReplicaEndpointIDs != projection.projectReplicaEndpointIDs {
             projectReplicaEndpointIDs = projection.projectReplicaEndpointIDs

@@ -203,6 +203,8 @@ data class DieterUiState(
     val sharedLaneSortDirections: Map<String, String> = emptyMap(),
     val navigationPendingCount: Int = 0,
     val navigationSyncError: String? = null,
+    val peerSyncWarnings: List<String> = emptyList(),
+    val retiredBoards: List<Board> = emptyList(),
     val projectFolders: NavigationFolderPreferences = NavigationFolderPreferences(),
     val chatFolders: NavigationFolderPreferences = NavigationFolderPreferences(),
     val collapsedChatProjectIds: Set<String> = emptySet(),
@@ -312,7 +314,7 @@ data class DieterUiState(
             return presented + queuedMachines
         }
     val project: Project? get() = projects.firstOrNull { it.id == selectedProjectId }
-    val board: Board? get() = boards.firstOrNull { it.id == selectedBoardId } ?: boards.firstOrNull()
+    val board: Board? get() = boards.firstOrNull { it.id == selectedBoardId } ?: retiredBoards.firstOrNull { it.id == selectedBoardId } ?: boards.firstOrNull()
     val boardNotificationsEnabled: Boolean get() = selectedBoardId in notificationBoardIds
     val selectedCard: Card?
         get() = conversation?.detail?.card
@@ -808,6 +810,7 @@ class DieterViewModel internal constructor(
                     else -> current.connectionDialogVisible
                 },
                 connectionError = connection.error,
+                peerSyncWarnings = connection.peerSyncWarnings.values.toList(),
                 desiredConnected = connection.desiredConnected,
                 backgroundSyncMode = connection.backgroundSyncMode,
                 configuredConnections = connection.configuredConnections,
@@ -1082,7 +1085,7 @@ class DieterViewModel internal constructor(
             previous.selectedProjectId.takeIf { id -> remote.projectsList.any { it.id == id } }
                 ?: remote.projectsList.firstOrNull()?.id.orEmpty()
         }
-        val boardId = previous.selectedBoardId.takeIf { id -> remote.boardsList.any { it.id == id } }
+        val boardId = previous.selectedBoardId.takeIf { id -> (remote.boardsList + remote.archives.retiredBoardsList).any { it.id == id && it.projectId == projectId } }
             ?: remote.boardsList.firstOrNull()?.id.orEmpty()
         val board = remote.boardsList.firstOrNull { it.id == boardId }
         val lane = previous.selectedLane.takeIf { id -> board?.lanesList?.any { it.id == id } == true }
@@ -1099,6 +1102,7 @@ class DieterViewModel internal constructor(
                 loading = false,
                 error = null,
                 boards = remote.boardsList,
+                retiredBoards = remote.archives.retiredBoardsList,
                 cards = cardProjection.cards,
                 selectedProjectId = projectId,
                 selectedBoardId = boardId,
@@ -3540,6 +3544,15 @@ class DieterViewModel internal constructor(
                 boardOverviewVisible = if (openAfterCreate) false else it.boardOverviewVisible,
             )
         }
+        refreshStateOnce()
+        refreshSpaces()
+    }
+
+    fun restoreBoard(id: String) = action {
+        val board = repository.board(id)
+        repository.setBoardRetired(com.dbpprt.dieter.v1.SetBoardRetiredRequest.newBuilder()
+            .setBoardId(id).setRetired(false).setExpectedRevision(board.retirementRevision)
+            .setOperationId(java.util.UUID.randomUUID().toString()).build())
         refreshStateOnce()
         refreshSpaces()
     }

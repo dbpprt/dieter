@@ -442,7 +442,10 @@ extension DieterStore {
         selected.cards = navigationCards[selectedProjectID] ?? []
         selected.chats = chats.filter { $0.projectID == selectedProjectID }
         if state != selected { state = selected }
-        if selectedBoardID.isEmpty || !selected.boards.contains(where: { $0.id == selectedBoardID }) {
+        if selectedBoardID.isEmpty
+            || (!selected.boards.contains(where: { $0.id == selectedBoardID })
+                && replica.retiredBoards[selectedBoardID]?.projectID != selectedProjectID)
+        {
             selectedBoardID = selected.boards.first?.id ?? ""
         }
     }

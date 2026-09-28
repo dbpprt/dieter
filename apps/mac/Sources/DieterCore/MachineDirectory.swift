@@ -41,16 +41,19 @@ package struct MachineSnapshot: Sendable {
 package struct MachineDirectoryProjection: Equatable {
     package init(
         projects: [String: Dieter_V1_Project], projectReplicaEndpointIDs: [String: String],
-        boards: [String: [Dieter_V1_Board]], cards: [String: [Dieter_V1_Card]], chats: [Dieter_V1_Card]
+        boards: [String: [Dieter_V1_Board]], cards: [String: [Dieter_V1_Card]], chats: [Dieter_V1_Card],
+        retiredBoards: [String: Dieter_V1_Board] = [:]
     ) {
         self.projects = projects; self.projectReplicaEndpointIDs = projectReplicaEndpointIDs; self.boards = boards;
         self.cards = cards; self.chats = chats
+        self.retiredBoards = retiredBoards
     }
     package var projects: [String: Dieter_V1_Project]
     package var projectReplicaEndpointIDs: [String: String]
     package var boards: [String: [Dieter_V1_Board]]
     package var cards: [String: [Dieter_V1_Card]]
     package var chats: [Dieter_V1_Card]
+    package var retiredBoards: [String: Dieter_V1_Board]
 
     package var sortedProjects: [Dieter_V1_Project] {
         projects.values.sorted {
@@ -90,19 +93,15 @@ package enum MachineDirectoryReducer {
         }
         var items = Dictionary(
             (current.cards.values.flatMap { $0 } + current.chats).map { ($0.id, $0) }, uniquingKeysWith: { _, b in b })
+        var allBoards = current.retiredBoards
+        for board in current.boards.values.flatMap({ $0 }) { allBoards[board.id] = board }
         for snapshot in changedSnapshots {
             for project in snapshot.projects {
                 next.projects[project.id] = mergeProject(next.projects[project.id], project)
                 next.projectReplicaEndpointIDs[project.id] = snapshot.replicaID
             }
-            for board in snapshot.boards {
-                var values = next.boards[board.projectID] ?? []
-                if let index = values.firstIndex(where: { $0.id == board.id }) {
-                    values[index] = board
-                } else {
-                    values.append(board)
-                }
-                next.boards[board.projectID] = values.sorted { $0.id < $1.id }
+            for board in snapshot.boards + snapshot.archives.retiredBoards {
+                allBoards[board.id] = BoardLifecycleProjection.merge(board, with: allBoards[board.id])
             }
             for item in snapshot.cards + snapshot.chats {
                 items[item.id] = retainingOwnerDetails(
@@ -117,6 +116,25 @@ package enum MachineDirectoryReducer {
             (!removed.contains($0.id) || $0.archived && $0.scope == "chat" && $0.boardID.isEmpty)
                 && next.projects[$0.projectID] != nil
         }
+        let referenced = Set(
+            items.values.flatMap { card in
+                [card.boardID]
+                    + card.stateFields.filter { $0.name == "placement" }
+                    .flatMap { $0.versions.filter { !$0.deleted }.map { $0.value.boardID } }
+            })
+        next.boards = [:]; next.retiredBoards = [:]
+        for var board in allBoards.values where next.projects[board.projectID] != nil {
+            if board.retired && referenced.contains(board.id) {
+                board.retired = false; board.retirementBlocked = true
+            }
+            if board.retired {
+                next.retiredBoards[board.id] = board
+            } else {
+                next.boards[board.projectID, default: []].append(board)
+            }
+        }
+        for id in next.boards.keys { next.boards[id]?.sort { $0.id < $1.id } }
+        for id in next.projects.keys { next.projects[id]?.boardCount = Int32(next.boards[id]?.count ?? 0) }
         next.cards = Dictionary(
             grouping: visible.filter { $0.scope != "chat" || !$0.boardID.isEmpty }.sorted { $0.id < $1.id },
             by: \.projectID)

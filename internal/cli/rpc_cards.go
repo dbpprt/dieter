@@ -343,6 +343,13 @@ func (c *CLI) rpcCardList(args []string, chat bool) error {
 		}
 		items = value.GetChats()
 	} else {
+		if *project == "" && *board != "" {
+			selected, _, err := c.boardState(ctx, *board)
+			if err != nil {
+				return err
+			}
+			*project, *board = selected.GetProjectId(), selected.GetId()
+		}
 		value, err := client.GetState(rpcCtx, &dieterv1.GetStateRequest{
 			ProjectId: *project, BoardId: *board, Lane: *lane, Runtime: *runtimeStatus,
 			Query: *query, LabelId: *label, Limit: int32(*limit),

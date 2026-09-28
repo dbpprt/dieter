@@ -195,6 +195,15 @@ func (c *CLI) projectState(ctx context.Context, reference string) (*dieterv1.Pro
 		return nil, nil, err
 	}
 	project, err := resolveProtoProject(state, reference)
+	if err != nil {
+		return nil, nil, err
+	}
+	// Projects is a global directory, but Boards/Cards belong to the selected
+	// project. Never return the daemon's default project's content to a caller
+	// that resolved a different project from that directory.
+	if state.GetProject().GetId() != project.GetId() {
+		state, err = client.GetState(rpcCtx, &dieterv1.GetStateRequest{ProjectId: project.GetId()})
+	}
 	return project, state, err
 }
 
@@ -420,6 +429,8 @@ Actions:
   create              Create a fixed direct or review workflow board
   list                List boards
   show BOARD           Show one board
+  retire BOARD         Retire an empty board without deleting its records
+  restore BOARD        Restore a retired board by exact ID
   rename BOARD         Rename a board
   retention BOARD      Configure automatic Done-card archiving
   git BOARD            Configure the default remote and publishing mode
@@ -441,6 +452,8 @@ func (c *CLI) rpcBoard(args []string) error {
 		return c.rpcBoardList(args[1:])
 	case "show":
 		return c.rpcBoardShow(args[1:])
+	case "retire", "restore":
+		return c.rpcBoardRetirement(args[1:], args[0] == "retire")
 	case "rename":
 		return c.rpcBoardRename(args[1:])
 	case "retention":
@@ -480,7 +493,11 @@ func (c *CLI) boardState(ctx context.Context, reference string) (*dieterv1.Board
 	if err != nil {
 		return nil, nil, err
 	}
-	state, err := client.GetState(rpcCtx, &dieterv1.GetStateRequest{})
+	if strings.HasPrefix(reference, "b_") {
+		board, err := client.GetBoard(rpcCtx, &dieterv1.BoardRef{BoardId: reference})
+		return board, nil, err
+	}
+	state, err := client.GetState(rpcCtx, &dieterv1.GetStateRequest{AllProjects: true})
 	if err != nil {
 		return nil, nil, err
 	}
@@ -564,9 +581,13 @@ func (c *CLI) rpcBoardGit(args []string) error {
 }
 
 func (c *CLI) rpcBoardList(args []string) error {
-	const usage = "Usage: dieter board list [--project PROJECT] [--format table|json|jsonl|ids]\n"
+	const usage = "Usage: dieter board list [--project PROJECT] [--retired] [--page-size N --after ID --snapshot REV] [--format table|json|jsonl|ids]\n\nActive boards are the default. --retired returns a bounded page; JSON includes nextId and snapshotRevision for continuation.\n"
 	set := flags("board list")
 	project := set.String("project", "", "project ID or name")
+	retired := set.Bool("retired", false, "show retired boards")
+	pageSize := set.Uint("page-size", 50, "retired page size (1-100)")
+	after := set.String("after", "", "retired board continuation ID")
+	snapshot := set.String("snapshot", "", "retired board snapshot revision")
 	format := set.String("format", "table", "table, json, jsonl, or ids")
 	help, err := parse(set, args, usage, c.Out)
 	if help || err != nil {
@@ -578,7 +599,12 @@ func (c *CLI) rpcBoardList(args []string) error {
 	if err != nil {
 		return err
 	}
-	state, err := client.GetState(rpcCtx, &dieterv1.GetStateRequest{})
+	var state *dieterv1.State
+	if strings.TrimSpace(*project) != "" {
+		_, state, err = c.projectState(ctx, *project)
+	} else {
+		state, err = client.GetState(rpcCtx, &dieterv1.GetStateRequest{AllProjects: true})
+	}
 	if err != nil {
 		return err
 	}
@@ -591,9 +617,29 @@ func (c *CLI) rpcBoardList(args []string) error {
 		projectID = value.GetId()
 	}
 	var items []*dieterv1.Board
-	for _, item := range state.GetBoards() {
-		if projectID == "" || item.GetProjectId() == projectID {
-			items = append(items, item)
+	if *retired {
+		if *pageSize < 1 || *pageSize > 100 {
+			return errors.New("--page-size must be between 1 and 100")
+		}
+		page, err := client.ListRetiredBoards(rpcCtx, &dieterv1.ListRetiredBoardsRequest{ProjectId: projectID, PageSize: uint32(*pageSize), AfterId: *after, SnapshotRevision: *snapshot})
+		if err != nil {
+			return err
+		}
+		if *format == "json" {
+			return protoJSONOut(c.Out, page)
+		}
+		items = page.GetBoards()
+		if page.GetNextId() != "" {
+			fmt.Fprintf(c.Err, "NEXT PAGE --after %s --snapshot %s\n", page.GetNextId(), page.GetSnapshotRevision())
+		}
+	} else {
+		if *after != "" || *snapshot != "" {
+			return errors.New("pagination requires --retired")
+		}
+		for _, item := range state.GetBoards() {
+			if projectID == "" || item.GetProjectId() == projectID {
+				items = append(items, item)
+			}
 		}
 	}
 	if *format == "json" {

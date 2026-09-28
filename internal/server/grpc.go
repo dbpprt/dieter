@@ -83,7 +83,25 @@ func (api *grpcAPI) RenameBoard(_ context.Context, request *dieterv1.RenameBoard
 	return protoBoard(value), nil
 }
 
-func (api *grpcAPI) GetState(ctx context.Context, request *dieterv1.GetStateRequest) (*dieterv1.State, error) {
+func (api *grpcAPI) GetState(ctx context.Context, request *dieterv1.GetStateRequest) (result *dieterv1.State, resultErr error) {
+	defer func() {
+		if result == nil || resultErr != nil {
+			return
+		}
+		identity, err := api.server.store.PeerIdentity()
+		if err != nil {
+			return
+		}
+		diagnostics, err := api.server.store.PeerSyncDiagnostics(identity.Account)
+		if err != nil {
+			return
+		}
+		for _, value := range diagnostics {
+			if value.FailureCode != "" {
+				result.PeerSyncIssues = append(result.PeerSyncIssues, protoPeerDiagnostic(value))
+			}
+		}
+	}()
 	if request.GetAllProjects() {
 		// Conditional peer-directory reads need no workspace clone when the
 		// durable commit boundary is unchanged. Pending mutations must still

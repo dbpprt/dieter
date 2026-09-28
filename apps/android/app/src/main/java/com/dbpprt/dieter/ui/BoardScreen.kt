@@ -1257,6 +1257,15 @@ internal fun BoardList(state: DieterUiState, model: DieterViewModel, modifier: M
                 (query.isBlank() || card.title.contains(query, ignoreCase = true) || card.summary.contains(query, ignoreCase = true))
         }
     }
+    val retiredBoard = state.board?.takeIf { it.retired }
+    if (retiredBoard != null) {
+        Column(modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text("Board retired", style = MaterialTheme.typography.headlineSmall)
+            Text("This empty board and its settings have been preserved.")
+            Button(onClick = { model.restoreBoard(retiredBoard.id) }) { Text("Restore board") }
+        }
+        return
+    }
     if (!state.loading && state.project != null && state.board == null) {
         BoardlessProjectState(state, model, modifier)
         return
@@ -1274,6 +1283,11 @@ internal fun BoardList(state: DieterUiState, model: DieterViewModel, modifier: M
     }
     Box(modifier.onGloballyPositioned { boardListOrigin = it.positionInRoot() }) {
         Column(Modifier.fillMaxSize()) {
+            NavigationSyncStatus(state)
+            if (state.board?.retirementBlocked == true) {
+                Text("This board remains available because it has references or a conflicting retirement change.",
+                    modifier = Modifier.padding(12.dp), style = MaterialTheme.typography.labelSmall)
+            }
             BoardDetailHeader(
                 state = state,
                 model = model,
