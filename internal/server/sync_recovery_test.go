@@ -273,3 +273,33 @@ func TestConversationByteBudgetPreservesPagingBoundaries(t *testing.T) {
 		t.Fatal("paging retained progress for messages outside the page")
 	}
 }
+
+func TestPeerIssuesRefreshWithoutWorkspaceMutation(t *testing.T) {
+	data, api, _ := syncRecoveryFixture(t)
+	identity, err := data.PeerIdentity()
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := &dieterv1.GetStateRequest{AllProjects: true}
+	initial, err := api.GetState(context.Background(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.IfNotModified = initial.Cursor
+	issue := store.PeerSyncDiagnostic{PeerID: "peer", LastAttemptAt: "2026-09-28T08:00:00Z", FailureCode: "invalid-record", RecordID: "b_example.retired"}
+	if err := data.RecordPeerSync(identity, issue); err != nil {
+		t.Fatal(err)
+	}
+	failed, err := api.GetState(context.Background(), request)
+	if err != nil || !failed.NotModified || len(failed.PeerSyncIssues) != 1 {
+		t.Fatalf("missing diagnostic: %+v %v", failed, err)
+	}
+	issue.FailureCode = ""
+	if err := data.RecordPeerSync(identity, issue); err != nil {
+		t.Fatal(err)
+	}
+	recovered, err := api.GetState(context.Background(), request)
+	if err != nil || !recovered.NotModified || len(recovered.PeerSyncIssues) != 0 {
+		t.Fatalf("stale diagnostic: %+v %v", recovered, err)
+	}
+}

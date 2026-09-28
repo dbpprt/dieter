@@ -67,6 +67,7 @@ final class AppSession {
     var settingsOptions = Dieter_V1_SettingsOptions()
     var machineConnectionStatuses: [String: MachineConnectionStatus] = [:]
     var machineConnectionErrors: [String: String] = [:]
+    var machineSyncIssues: [String: String] = [:]
     @ObservationIgnored lazy var fleet = FleetModel(
         machines: { [weak self] in
             guard let self else { return [] }

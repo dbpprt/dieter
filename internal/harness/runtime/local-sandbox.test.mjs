@@ -62,19 +62,26 @@ test('only trusts the bootstrap marker for the currently materialized recipe', a
 
 test('stopping a local session terminates the entire spawned process group', { skip: process.platform === 'win32' }, async () => {
   const base = await mkdtemp(join(tmpdir(), 'board-local-sandbox-'));
+  let provider;
   try {
     const projectPath = join(base, 'project');
     const childPIDFile = join(base, 'child.pid');
     await mkdir(projectPath);
-    const provider = await createLocalSandboxProvider({ root: join(base, 'runtime'), projectPath });
+    provider = await createLocalSandboxProvider({ root: join(base, 'runtime'), projectPath });
     const session = await provider.createSession();
     const processHandle = await session.spawn({
       command: `node -e "const{spawn}=require('child_process');const{writeFileSync}=require('fs');const c=spawn(process.execPath,['-e','process.on(\\\"SIGTERM\\\",()=>{});setInterval(()=>{},1000)'],{stdio:'ignore'});writeFileSync('${childPIDFile}',String(c.pid));process.on('SIGTERM',()=>{});setInterval(()=>{},1000)"`,
     });
-    for (let attempt = 0; attempt < 50; attempt++) {
+    // Cold Node startup can exceed one second while other suites compile.
+    // Observe readiness with a bounded deadline instead of racing startup.
+    const deadline = Date.now() + 10_000;
+    for (;;) {
       try {
         if ((await readFile(childPIDFile, 'utf8')).trim()) break;
-      } catch {}
+      } catch (error) {
+        if (error.code !== 'ENOENT') throw error;
+      }
+      assert(Date.now() < deadline, 'descendant did not publish its PID');
       await new Promise(resolve => setTimeout(resolve, 20));
     }
     const descendantPID = Number((await readFile(childPIDFile, 'utf8')).trim());
@@ -85,6 +92,7 @@ test('stopping a local session terminates the entire spawned process group', { s
     await assertProcessExited(processHandle.pid);
     await assertProcessExited(descendantPID);
   } finally {
+    await provider?.stopAll();
     await rm(base, { recursive: true, force: true });
   }
 });

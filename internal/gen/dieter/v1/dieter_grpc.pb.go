@@ -62,6 +62,9 @@ const (
 	DieterService_ArchiveProject_FullMethodName                  = "/dieter.v1.DieterService/ArchiveProject"
 	DieterService_ListArchivedProjects_FullMethodName            = "/dieter.v1.DieterService/ListArchivedProjects"
 	DieterService_CreateBoard_FullMethodName                     = "/dieter.v1.DieterService/CreateBoard"
+	DieterService_GetBoard_FullMethodName                        = "/dieter.v1.DieterService/GetBoard"
+	DieterService_ListRetiredBoards_FullMethodName               = "/dieter.v1.DieterService/ListRetiredBoards"
+	DieterService_SetBoardRetired_FullMethodName                 = "/dieter.v1.DieterService/SetBoardRetired"
 	DieterService_RenameBoard_FullMethodName                     = "/dieter.v1.DieterService/RenameBoard"
 	DieterService_SetBoardArchivePolicy_FullMethodName           = "/dieter.v1.DieterService/SetBoardArchivePolicy"
 	DieterService_UpdateBoardHostnames_FullMethodName            = "/dieter.v1.DieterService/UpdateBoardHostnames"
@@ -206,6 +209,9 @@ type DieterServiceClient interface {
 	ArchiveProject(ctx context.Context, in *ArchiveProjectRequest, opts ...grpc.CallOption) (*Project, error)
 	ListArchivedProjects(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*ProjectsResponse, error)
 	CreateBoard(ctx context.Context, in *CreateBoardRequest, opts ...grpc.CallOption) (*Board, error)
+	GetBoard(ctx context.Context, in *BoardRef, opts ...grpc.CallOption) (*Board, error)
+	ListRetiredBoards(ctx context.Context, in *ListRetiredBoardsRequest, opts ...grpc.CallOption) (*ListRetiredBoardsResponse, error)
+	SetBoardRetired(ctx context.Context, in *SetBoardRetiredRequest, opts ...grpc.CallOption) (*Board, error)
 	RenameBoard(ctx context.Context, in *RenameBoardRequest, opts ...grpc.CallOption) (*Board, error)
 	SetBoardArchivePolicy(ctx context.Context, in *SetBoardArchivePolicyRequest, opts ...grpc.CallOption) (*Board, error)
 	UpdateBoardHostnames(ctx context.Context, in *UpdateBoardHostnamesRequest, opts ...grpc.CallOption) (*Board, error)
@@ -764,6 +770,36 @@ func (c *dieterServiceClient) CreateBoard(ctx context.Context, in *CreateBoardRe
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(Board)
 	err := c.cc.Invoke(ctx, DieterService_CreateBoard_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dieterServiceClient) GetBoard(ctx context.Context, in *BoardRef, opts ...grpc.CallOption) (*Board, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Board)
+	err := c.cc.Invoke(ctx, DieterService_GetBoard_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dieterServiceClient) ListRetiredBoards(ctx context.Context, in *ListRetiredBoardsRequest, opts ...grpc.CallOption) (*ListRetiredBoardsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListRetiredBoardsResponse)
+	err := c.cc.Invoke(ctx, DieterService_ListRetiredBoards_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dieterServiceClient) SetBoardRetired(ctx context.Context, in *SetBoardRetiredRequest, opts ...grpc.CallOption) (*Board, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Board)
+	err := c.cc.Invoke(ctx, DieterService_SetBoardRetired_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -1740,6 +1776,9 @@ type DieterServiceServer interface {
 	ArchiveProject(context.Context, *ArchiveProjectRequest) (*Project, error)
 	ListArchivedProjects(context.Context, *emptypb.Empty) (*ProjectsResponse, error)
 	CreateBoard(context.Context, *CreateBoardRequest) (*Board, error)
+	GetBoard(context.Context, *BoardRef) (*Board, error)
+	ListRetiredBoards(context.Context, *ListRetiredBoardsRequest) (*ListRetiredBoardsResponse, error)
+	SetBoardRetired(context.Context, *SetBoardRetiredRequest) (*Board, error)
 	RenameBoard(context.Context, *RenameBoardRequest) (*Board, error)
 	SetBoardArchivePolicy(context.Context, *SetBoardArchivePolicyRequest) (*Board, error)
 	UpdateBoardHostnames(context.Context, *UpdateBoardHostnamesRequest) (*Board, error)
@@ -1982,6 +2021,15 @@ func (UnimplementedDieterServiceServer) ListArchivedProjects(context.Context, *e
 }
 func (UnimplementedDieterServiceServer) CreateBoard(context.Context, *CreateBoardRequest) (*Board, error) {
 	return nil, status.Error(codes.Unimplemented, "method CreateBoard not implemented")
+}
+func (UnimplementedDieterServiceServer) GetBoard(context.Context, *BoardRef) (*Board, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetBoard not implemented")
+}
+func (UnimplementedDieterServiceServer) ListRetiredBoards(context.Context, *ListRetiredBoardsRequest) (*ListRetiredBoardsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListRetiredBoards not implemented")
+}
+func (UnimplementedDieterServiceServer) SetBoardRetired(context.Context, *SetBoardRetiredRequest) (*Board, error) {
+	return nil, status.Error(codes.Unimplemented, "method SetBoardRetired not implemented")
 }
 func (UnimplementedDieterServiceServer) RenameBoard(context.Context, *RenameBoardRequest) (*Board, error) {
 	return nil, status.Error(codes.Unimplemented, "method RenameBoard not implemented")
@@ -2996,6 +3044,60 @@ func _DieterService_CreateBoard_Handler(srv interface{}, ctx context.Context, de
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(DieterServiceServer).CreateBoard(ctx, req.(*CreateBoardRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DieterService_GetBoard_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(BoardRef)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DieterServiceServer).GetBoard(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DieterService_GetBoard_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DieterServiceServer).GetBoard(ctx, req.(*BoardRef))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DieterService_ListRetiredBoards_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListRetiredBoardsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DieterServiceServer).ListRetiredBoards(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DieterService_ListRetiredBoards_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DieterServiceServer).ListRetiredBoards(ctx, req.(*ListRetiredBoardsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DieterService_SetBoardRetired_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SetBoardRetiredRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DieterServiceServer).SetBoardRetired(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DieterService_SetBoardRetired_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DieterServiceServer).SetBoardRetired(ctx, req.(*SetBoardRetiredRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -4693,6 +4795,18 @@ var DieterService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "CreateBoard",
 			Handler:    _DieterService_CreateBoard_Handler,
+		},
+		{
+			MethodName: "GetBoard",
+			Handler:    _DieterService_GetBoard_Handler,
+		},
+		{
+			MethodName: "ListRetiredBoards",
+			Handler:    _DieterService_ListRetiredBoards_Handler,
+		},
+		{
+			MethodName: "SetBoardRetired",
+			Handler:    _DieterService_SetBoardRetired_Handler,
 		},
 		{
 			MethodName: "RenameBoard",

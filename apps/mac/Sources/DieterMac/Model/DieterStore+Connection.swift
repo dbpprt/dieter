@@ -766,6 +766,8 @@ extension DieterStore {
         projectReplicaEndpointIDs.removeAll()
         harnessCatalogsByEndpoint.removeAll()
         navigationBoards.removeAll()
+        replica.retiredBoards.removeAll()
+        machineSyncIssues.removeAll()
         navigationCards.removeAll()
         chats.removeAll()
         chatProjects.removeAll()
@@ -1005,7 +1007,8 @@ extension DieterStore {
             projectReplicaEndpointIDs: projectReplicaEndpointIDs,
             boards: navigationBoards,
             cards: navigationCards,
-            chats: chats
+            chats: chats,
+            retiredBoards: replica.retiredBoards
         )
         let next = MachineDirectoryReducer.merging(current, snapshots: changedSnapshots)
         replica.accept(next)
@@ -1206,6 +1209,10 @@ extension DieterStore {
             request.ifNotModified = cursor
         }
         let root = try await client.state(request)
+        machineSyncIssues[machine.id] =
+            root.peerSyncIssues.isEmpty
+            ? nil
+            : "Shared updates are delayed with \(root.peerSyncIssues.count) peer(s). Boards and cards may be out of date."
         let connection = MachineConnectionStatus(
             route: selectedConnection?.route
                 ?? machineConnectionStatuses[machine.id]?.route

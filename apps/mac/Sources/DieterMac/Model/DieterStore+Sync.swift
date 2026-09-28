@@ -442,7 +442,10 @@ extension DieterStore {
         selected.cards = navigationCards[selectedProjectID] ?? []
         selected.chats = chats.filter { $0.projectID == selectedProjectID }
         if state != selected { state = selected }
-        if selectedBoardID.isEmpty || !selected.boards.contains(where: { $0.id == selectedBoardID }) {
+        if selectedBoardID.isEmpty
+            || (!selected.boards.contains(where: { $0.id == selectedBoardID })
+                && replica.retiredBoards[selectedBoardID]?.projectID != selectedProjectID)
+        {
             selectedBoardID = selected.boards.first?.id ?? ""
         }
     }
@@ -1000,12 +1003,15 @@ extension DieterStore {
         movingCardIDs = Set(pendingCardMoves.keys)
         labelUpdatingCardIDs = Set(pendingCardLabelUpdates.keys)
         notifyTransitions(next.cards + next.chats, endpointID: endpoint.id)
-        for board in next.boards { replica.upsert(board, selectedProjectID: selectedProjectID) }
         for card in next.cards + next.chats { replica.upsert(card) }
+        for board in next.boards + next.archives.retiredBoards {
+            replica.upsert(board, selectedProjectID: selectedProjectID)
+        }
         for project in next.projects {
             projectDirectory[project.id] = MachineDirectoryReducer.mergeProject(projectDirectory[project.id], project)
             projectReplicaEndpointIDs[project.id] = endpoint.id
         }
+        for id in projectDirectory.keys { projectDirectory[id]?.boardCount = Int32(navigationBoards[id]?.count ?? 0) }
         if selectedProjectID.isEmpty || projectDirectory[selectedProjectID] == nil {
             selectedProjectID =
                 next.project.id.isEmpty ? (next.projects.first?.id ?? "") : next.project.id

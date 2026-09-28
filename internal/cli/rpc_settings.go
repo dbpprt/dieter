@@ -253,7 +253,7 @@ func (c *CLI) rpcPromptScope(scope string, args []string) error {
 	if err != nil {
 		return err
 	}
-	state, err := client.GetState(rpcCtx, &dieterv1.GetStateRequest{})
+	state, err := client.GetState(rpcCtx, &dieterv1.GetStateRequest{AllProjects: scope == "board"})
 	if err != nil {
 		return err
 	}

@@ -190,3 +190,15 @@ accepting daemon's CAS receipt (a client-only
 concurrent join must first be observed by a daemon before moving again). Board
 ordering follows the shared placement key in either display direction; Inbox
 Recent is chronological and finishing a review does not change its activity time.
+
+On macOS, right-click a board in the sidebar or project quick navigation and choose
+**Delete board…**, then confirm. Only empty boards can be deleted; their identity,
+settings, and labels are preserved. A selected deleted board offers **Restore board**.
+`dieter board show BOARD_ID` resolves exact IDs across projects and
+includes retired boards. `dieter board list --project PROJECT_ID` lists active
+boards; add `--retired` for a bounded page of retired boards. After inspection,
+use `board retire --revision REV --operation ID BOARD_ID`, or `board restore`
+with the current lifecycle revision. Any surviving card (including archived or
+pending cards) or schedule blocks retirement. A late replicated reference makes
+the parent accessible again. Success acknowledges local durability; inspect
+`dieter peer status` for per-peer replication progress and blocking records.

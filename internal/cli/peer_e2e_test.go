@@ -6,6 +6,7 @@ import (
 	"crypto/hmac"
 	"crypto/sha1"
 	"encoding/base64"
+	"encoding/json"
 	"io"
 	"log/slog"
 	"net"
@@ -278,6 +279,9 @@ func testPeerMachines(t *testing.T, wantRoute string) {
 
 	// One logical project over real transports: attach a second machine, edit
 	// from its replica, and keep all execution/file operations on their owner.
+	if _, err := sa.CreateProject(store.CreateProjectInput{Name: "aaa-default", Path: initTestRepository(t, "default"), InitialBoardName: "Main"}); err != nil {
+		t.Fatal(err)
+	}
 	project, err := sa.CreateProject(store.CreateProjectInput{Name: "Shared repo", Path: initTestRepository(t, "owner-a"), InitialBoardName: "Main"})
 	if err != nil {
 		t.Fatal(err)
@@ -290,8 +294,32 @@ func testPeerMachines(t *testing.T, wantRoute string) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Persist a real owner-signed pre-removal summary. Sync must validate its
+	// original bytes and proof, including when the owner is later offline.
+	beforeLegacy, err := sa.PeerData(scope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldSummary := beforeLegacy.Records[peerstore.Key("item", ownedA.ID+".summary")]
+	var legacyFields map[string]json.RawMessage
+	if err := json.Unmarshal(oldSummary.Versions[0].Value, &legacyFields); err != nil {
+		t.Fatal(err)
+	}
+	for _, field := range []string{"responseSeq", "responseMessageId", "seenResponseSeq"} {
+		delete(legacyFields, field)
+	}
+	legacyFields["commentCount"] = json.RawMessage("0")
+	legacyJSON, _ := json.Marshal(legacyFields)
+	legacyRecord, err := sa.PutPeerRecord(ba, "item", oldSummary.ID, oldSummary.Revision(), legacyJSON, false)
+	if err != nil || len(legacyRecord.Versions[0].Provenance) == 0 {
+		t.Fatalf("signed legacy summary: %v", err)
+	}
 	if err = runner.Round(ctx); err != nil {
 		t.Fatal(err)
+	}
+	afterLegacy, err := sb.PeerData(scope)
+	if err != nil || afterLegacy.Records[peerstore.Key("item", oldSummary.ID)].Revision() != legacyRecord.Revision() {
+		t.Fatalf("legacy summary changed in transit: %v", err)
 	}
 	output.Reset()
 	pathB := initTestRepository(t, "owner-b")
@@ -302,6 +330,8 @@ func testPeerMachines(t *testing.T, wantRoute string) {
 	if err = protojson.Unmarshal(output.Bytes(), &checkout); err != nil {
 		t.Fatal(output.String(), err)
 	}
+	runDaemonCLI(t, client, &output, "board", "show", board.ID)
+	assertBoardRetirementCLI(t, client, &output, project.ID)
 	localAPIForProjects := dieterv1.NewDieterServiceClient(local)
 	created, err := localAPIForProjects.CreateCard(ctx, &dieterv1.CreateConversationRequest{ProjectId: project.ID, BoardId: board.ID, CheckoutId: checkout.Id, Title: "B conversation", Prompt: "Draft only", WorkspaceMode: "project", DeferStart: true, Provider: "mock", Model: "mock", CommandId: "shared-project-card", ClientId: "peer-test"})
 	if err != nil {

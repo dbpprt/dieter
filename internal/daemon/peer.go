@@ -19,6 +19,7 @@ import (
 	"github.com/dbpprt/dieter/internal/linkauth"
 	"github.com/dbpprt/dieter/internal/peerstore"
 	"github.com/dbpprt/dieter/internal/store"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -368,11 +369,13 @@ func (p *PeerSync) Round(ctx context.Context) error {
 			} else if len(connection.Route) >= len("webrtc-") && connection.Route[:len("webrtc-")] == "webrtc-" {
 				p.clearRTCFallback(target)
 			}
-			e = p.Exchange(attempt, binding, connection.Client)
+			e = p.exchange(attempt, binding, connection.Client, target, connection.Route)
 			if e == nil {
 				e = p.Store.PeerSynced(binding, target, connection.Route)
 			}
 			connection.Close()
+		} else {
+			_ = p.Store.RecordPeerSync(binding, store.PeerSyncDiagnostic{PeerID: target, LastAttemptAt: time.Now().UTC().Format(time.RFC3339Nano), Direction: "connect", FailureCode: sanitizedRTCReason(e)})
 		}
 		cancel()
 		if e != nil {
@@ -385,6 +388,36 @@ func (p *PeerSync) Round(ctx context.Context) error {
 // Exchange resumes each direction from a durable local transport checkpoint.
 // Merge commits before checkpoint advancement; lost replies only repeat joins.
 func (p *PeerSync) Exchange(ctx context.Context, binding store.PeerIdentity, client dieterv1.DieterServiceClient) error {
+	return p.exchange(ctx, binding, client, "", "")
+}
+
+func (p *PeerSync) exchange(ctx context.Context, binding store.PeerIdentity, client dieterv1.DieterServiceClient, target, route string) (resultErr error) {
+	diagnostic := store.PeerSyncDiagnostic{PeerID: target, LastAttemptAt: time.Now().UTC().Format(time.RFC3339Nano), Direction: "status", Route: route}
+	defer func() {
+		if diagnostic.PeerID == "" {
+			return
+		}
+		if resultErr != nil {
+			diagnostic.FailureCode = sanitizedRTCReason(resultErr)
+			var record *store.PeerRecordError
+			if errors.As(resultErr, &record) {
+				diagnostic.RecordKind, diagnostic.RecordID, diagnostic.Field, diagnostic.FailureCode = record.Kind, record.ID, record.Field, record.Code
+			}
+			for _, detail := range status.Convert(resultErr).Details() {
+				if info, ok := detail.(*errdetails.ErrorInfo); ok && info.Domain == "dieter.peer" {
+					// Only bounded identifiers/categories from an authenticated peer.
+					if peerstore.ValidID(info.Metadata["kind"]) && peerstore.ValidID(info.Metadata["id"]) && peerstore.ValidID(info.Metadata["field"]) && peerstore.ValidID(info.Reason) {
+						diagnostic.RecordKind, diagnostic.RecordID, diagnostic.Field, diagnostic.FailureCode = info.Metadata["kind"], info.Metadata["id"], info.Metadata["field"], info.Reason
+					}
+				}
+			}
+		} else {
+			diagnostic.Direction = "complete"
+		}
+		if err := p.Store.RecordPeerSync(binding, diagnostic); err != nil && resultErr == nil {
+			resultErr = err
+		}
+	}()
 	statusInfo, err := client.GetPeerStoreStatus(ctx, &emptypb.Empty{})
 	if err != nil {
 		return err
@@ -393,10 +426,16 @@ func (p *PeerSync) Exchange(ctx context.Context, binding store.PeerIdentity, cli
 		return fmt.Errorf("peer account mismatch")
 	}
 	peer := statusInfo.GetActor()
+	diagnostic.Actor = peer
+	if diagnostic.PeerID == "" {
+		diagnostic.PeerID = peer
+	}
+	diagnostic.Direction = "pull"
 	pull, err := p.Store.PeerCheckpoint(binding.Account, peer, "pull")
 	if err != nil {
 		return err
 	}
+	diagnostic.Pull = pull
 	for page := 0; page < peerstore.MaxRecords/peerstore.PageSize+1; page++ {
 		changes, e := client.GetPeerChanges(ctx, &dieterv1.PeerChangesRequest{Account: binding.Account, Epoch: pull.Epoch, AfterSequence: pull.Sequence})
 		if status.Code(e) == codes.Aborted && pull.Epoch != "" {
@@ -427,14 +466,17 @@ func (p *PeerSync) Exchange(ctx context.Context, binding store.PeerIdentity, cli
 		if err = p.Store.SavePeerCheckpoint(binding, peer, "pull", pull); err != nil {
 			return err
 		}
+		diagnostic.Pull = pull
 		if !changes.GetMore() {
 			break
 		}
 	}
+	diagnostic.Direction = "push"
 	push, err := p.Store.PeerCheckpoint(binding.Account, peer, "push")
 	if err != nil {
 		return err
 	}
+	diagnostic.Push = push
 	for page := 0; page < peerstore.MaxRecords/peerstore.PageSize+1; page++ {
 		changes, e := p.Store.PeerChanges(binding.Account, push.Epoch, push.Sequence)
 		if errors.Is(e, peerstore.ErrConflict) && push.Epoch != "" {
@@ -461,6 +503,7 @@ func (p *PeerSync) Exchange(ctx context.Context, binding store.PeerIdentity, cli
 		if err = p.Store.SavePeerCheckpoint(binding, peer, "push", push); err != nil {
 			return err
 		}
+		diagnostic.Push = push
 		if !changes.More {
 			break
 		}

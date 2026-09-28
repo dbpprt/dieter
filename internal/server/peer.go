@@ -10,6 +10,7 @@ import (
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
 	"github.com/dbpprt/dieter/internal/peerstore"
 	"github.com/dbpprt/dieter/internal/store"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
@@ -37,6 +38,13 @@ func peerFailure(err error) error {
 	if err == nil {
 		return nil
 	}
+	var record *store.PeerRecordError
+	if errors.As(err, &record) {
+		s, e := status.New(codes.InvalidArgument, record.Error()).WithDetails(&errdetails.ErrorInfo{Reason: record.Code, Domain: "dieter.peer", Metadata: map[string]string{"kind": record.Kind, "id": record.ID, "field": record.Field}})
+		if e == nil {
+			return s.Err()
+		}
+	}
 	if errors.Is(err, peerstore.ErrConflict) {
 		return status.Error(codes.Aborted, err.Error())
 	}
@@ -62,6 +70,13 @@ func (api *grpcAPI) GetPeerStoreStatus(ctx context.Context, _ *emptypb.Empty) (*
 		return nil, peerFailure(err)
 	}
 	out := &dieterv1.PeerStoreStatus{Account: identity.Account, Actor: identity.Actor, Records: uint32(len(data.Records)), LastSyncAt: data.LastSyncAt, LastPeerId: data.LastPeerID, LastRoute: data.LastRoute}
+	diagnostics, err := api.server.store.PeerSyncDiagnostics(identity.Account)
+	if err != nil {
+		return nil, peerFailure(err)
+	}
+	for _, d := range diagnostics {
+		out.Peers = append(out.Peers, protoPeerDiagnostic(d))
+	}
 	for _, r := range data.Records {
 		if len(r.Versions) > 1 {
 			out.Conflicts++
@@ -186,4 +201,8 @@ func (api *connectAPI) GetPeerRecord(ctx context.Context, r *connect.Request[die
 }
 func (api *connectAPI) GetPeerChanges(ctx context.Context, r *connect.Request[dieterv1.PeerChangesRequest]) (*connect.Response[dieterv1.PeerChangesResponse], error) {
 	return connectUnary(controlOperatorContext(ctx, r), r, api.core.GetPeerChanges)
+}
+
+func protoPeerDiagnostic(d store.PeerSyncDiagnostic) *dieterv1.PeerSyncDiagnostic {
+	return &dieterv1.PeerSyncDiagnostic{PeerId: d.PeerID, LastAttemptAt: d.LastAttemptAt, LastSuccessAt: d.LastSuccessAt, Route: d.Route, Direction: d.Direction, FailureCode: d.FailureCode, RecordKind: d.RecordKind, RecordId: d.RecordID, Field: d.Field, Actor: d.Actor, PullEpoch: d.Pull.Epoch, PullSequence: d.Pull.Sequence, PushEpoch: d.Push.Epoch, PushSequence: d.Push.Sequence}
 }

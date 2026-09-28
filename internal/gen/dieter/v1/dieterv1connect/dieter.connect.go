@@ -151,6 +151,14 @@ const (
 	// DieterServiceCreateBoardProcedure is the fully-qualified name of the DieterService's CreateBoard
 	// RPC.
 	DieterServiceCreateBoardProcedure = "/dieter.v1.DieterService/CreateBoard"
+	// DieterServiceGetBoardProcedure is the fully-qualified name of the DieterService's GetBoard RPC.
+	DieterServiceGetBoardProcedure = "/dieter.v1.DieterService/GetBoard"
+	// DieterServiceListRetiredBoardsProcedure is the fully-qualified name of the DieterService's
+	// ListRetiredBoards RPC.
+	DieterServiceListRetiredBoardsProcedure = "/dieter.v1.DieterService/ListRetiredBoards"
+	// DieterServiceSetBoardRetiredProcedure is the fully-qualified name of the DieterService's
+	// SetBoardRetired RPC.
+	DieterServiceSetBoardRetiredProcedure = "/dieter.v1.DieterService/SetBoardRetired"
 	// DieterServiceRenameBoardProcedure is the fully-qualified name of the DieterService's RenameBoard
 	// RPC.
 	DieterServiceRenameBoardProcedure = "/dieter.v1.DieterService/RenameBoard"
@@ -456,6 +464,9 @@ type DieterServiceClient interface {
 	ArchiveProject(context.Context, *connect.Request[v1.ArchiveProjectRequest]) (*connect.Response[v1.Project], error)
 	ListArchivedProjects(context.Context, *connect.Request[emptypb.Empty]) (*connect.Response[v1.ProjectsResponse], error)
 	CreateBoard(context.Context, *connect.Request[v1.CreateBoardRequest]) (*connect.Response[v1.Board], error)
+	GetBoard(context.Context, *connect.Request[v1.BoardRef]) (*connect.Response[v1.Board], error)
+	ListRetiredBoards(context.Context, *connect.Request[v1.ListRetiredBoardsRequest]) (*connect.Response[v1.ListRetiredBoardsResponse], error)
+	SetBoardRetired(context.Context, *connect.Request[v1.SetBoardRetiredRequest]) (*connect.Response[v1.Board], error)
 	RenameBoard(context.Context, *connect.Request[v1.RenameBoardRequest]) (*connect.Response[v1.Board], error)
 	SetBoardArchivePolicy(context.Context, *connect.Request[v1.SetBoardArchivePolicyRequest]) (*connect.Response[v1.Board], error)
 	UpdateBoardHostnames(context.Context, *connect.Request[v1.UpdateBoardHostnamesRequest]) (*connect.Response[v1.Board], error)
@@ -826,6 +837,24 @@ func NewDieterServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 			httpClient,
 			baseURL+DieterServiceCreateBoardProcedure,
 			connect.WithSchema(dieterServiceMethods.ByName("CreateBoard")),
+			connect.WithClientOptions(opts...),
+		),
+		getBoard: connect.NewClient[v1.BoardRef, v1.Board](
+			httpClient,
+			baseURL+DieterServiceGetBoardProcedure,
+			connect.WithSchema(dieterServiceMethods.ByName("GetBoard")),
+			connect.WithClientOptions(opts...),
+		),
+		listRetiredBoards: connect.NewClient[v1.ListRetiredBoardsRequest, v1.ListRetiredBoardsResponse](
+			httpClient,
+			baseURL+DieterServiceListRetiredBoardsProcedure,
+			connect.WithSchema(dieterServiceMethods.ByName("ListRetiredBoards")),
+			connect.WithClientOptions(opts...),
+		),
+		setBoardRetired: connect.NewClient[v1.SetBoardRetiredRequest, v1.Board](
+			httpClient,
+			baseURL+DieterServiceSetBoardRetiredProcedure,
+			connect.WithSchema(dieterServiceMethods.ByName("SetBoardRetired")),
 			connect.WithClientOptions(opts...),
 		),
 		renameBoard: connect.NewClient[v1.RenameBoardRequest, v1.Board](
@@ -1397,6 +1426,9 @@ type dieterServiceClient struct {
 	archiveProject                  *connect.Client[v1.ArchiveProjectRequest, v1.Project]
 	listArchivedProjects            *connect.Client[emptypb.Empty, v1.ProjectsResponse]
 	createBoard                     *connect.Client[v1.CreateBoardRequest, v1.Board]
+	getBoard                        *connect.Client[v1.BoardRef, v1.Board]
+	listRetiredBoards               *connect.Client[v1.ListRetiredBoardsRequest, v1.ListRetiredBoardsResponse]
+	setBoardRetired                 *connect.Client[v1.SetBoardRetiredRequest, v1.Board]
 	renameBoard                     *connect.Client[v1.RenameBoardRequest, v1.Board]
 	setBoardArchivePolicy           *connect.Client[v1.SetBoardArchivePolicyRequest, v1.Board]
 	updateBoardHostnames            *connect.Client[v1.UpdateBoardHostnamesRequest, v1.Board]
@@ -1694,6 +1726,21 @@ func (c *dieterServiceClient) ListArchivedProjects(ctx context.Context, req *con
 // CreateBoard calls dieter.v1.DieterService.CreateBoard.
 func (c *dieterServiceClient) CreateBoard(ctx context.Context, req *connect.Request[v1.CreateBoardRequest]) (*connect.Response[v1.Board], error) {
 	return c.createBoard.CallUnary(ctx, req)
+}
+
+// GetBoard calls dieter.v1.DieterService.GetBoard.
+func (c *dieterServiceClient) GetBoard(ctx context.Context, req *connect.Request[v1.BoardRef]) (*connect.Response[v1.Board], error) {
+	return c.getBoard.CallUnary(ctx, req)
+}
+
+// ListRetiredBoards calls dieter.v1.DieterService.ListRetiredBoards.
+func (c *dieterServiceClient) ListRetiredBoards(ctx context.Context, req *connect.Request[v1.ListRetiredBoardsRequest]) (*connect.Response[v1.ListRetiredBoardsResponse], error) {
+	return c.listRetiredBoards.CallUnary(ctx, req)
+}
+
+// SetBoardRetired calls dieter.v1.DieterService.SetBoardRetired.
+func (c *dieterServiceClient) SetBoardRetired(ctx context.Context, req *connect.Request[v1.SetBoardRetiredRequest]) (*connect.Response[v1.Board], error) {
+	return c.setBoardRetired.CallUnary(ctx, req)
 }
 
 // RenameBoard calls dieter.v1.DieterService.RenameBoard.
@@ -2184,6 +2231,9 @@ type DieterServiceHandler interface {
 	ArchiveProject(context.Context, *connect.Request[v1.ArchiveProjectRequest]) (*connect.Response[v1.Project], error)
 	ListArchivedProjects(context.Context, *connect.Request[emptypb.Empty]) (*connect.Response[v1.ProjectsResponse], error)
 	CreateBoard(context.Context, *connect.Request[v1.CreateBoardRequest]) (*connect.Response[v1.Board], error)
+	GetBoard(context.Context, *connect.Request[v1.BoardRef]) (*connect.Response[v1.Board], error)
+	ListRetiredBoards(context.Context, *connect.Request[v1.ListRetiredBoardsRequest]) (*connect.Response[v1.ListRetiredBoardsResponse], error)
+	SetBoardRetired(context.Context, *connect.Request[v1.SetBoardRetiredRequest]) (*connect.Response[v1.Board], error)
 	RenameBoard(context.Context, *connect.Request[v1.RenameBoardRequest]) (*connect.Response[v1.Board], error)
 	SetBoardArchivePolicy(context.Context, *connect.Request[v1.SetBoardArchivePolicyRequest]) (*connect.Response[v1.Board], error)
 	UpdateBoardHostnames(context.Context, *connect.Request[v1.UpdateBoardHostnamesRequest]) (*connect.Response[v1.Board], error)
@@ -2550,6 +2600,24 @@ func NewDieterServiceHandler(svc DieterServiceHandler, opts ...connect.HandlerOp
 		DieterServiceCreateBoardProcedure,
 		svc.CreateBoard,
 		connect.WithSchema(dieterServiceMethods.ByName("CreateBoard")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dieterServiceGetBoardHandler := connect.NewUnaryHandler(
+		DieterServiceGetBoardProcedure,
+		svc.GetBoard,
+		connect.WithSchema(dieterServiceMethods.ByName("GetBoard")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dieterServiceListRetiredBoardsHandler := connect.NewUnaryHandler(
+		DieterServiceListRetiredBoardsProcedure,
+		svc.ListRetiredBoards,
+		connect.WithSchema(dieterServiceMethods.ByName("ListRetiredBoards")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dieterServiceSetBoardRetiredHandler := connect.NewUnaryHandler(
+		DieterServiceSetBoardRetiredProcedure,
+		svc.SetBoardRetired,
+		connect.WithSchema(dieterServiceMethods.ByName("SetBoardRetired")),
 		connect.WithHandlerOptions(opts...),
 	)
 	dieterServiceRenameBoardHandler := connect.NewUnaryHandler(
@@ -3160,6 +3228,12 @@ func NewDieterServiceHandler(svc DieterServiceHandler, opts ...connect.HandlerOp
 			dieterServiceListArchivedProjectsHandler.ServeHTTP(w, r)
 		case DieterServiceCreateBoardProcedure:
 			dieterServiceCreateBoardHandler.ServeHTTP(w, r)
+		case DieterServiceGetBoardProcedure:
+			dieterServiceGetBoardHandler.ServeHTTP(w, r)
+		case DieterServiceListRetiredBoardsProcedure:
+			dieterServiceListRetiredBoardsHandler.ServeHTTP(w, r)
+		case DieterServiceSetBoardRetiredProcedure:
+			dieterServiceSetBoardRetiredHandler.ServeHTTP(w, r)
 		case DieterServiceRenameBoardProcedure:
 			dieterServiceRenameBoardHandler.ServeHTTP(w, r)
 		case DieterServiceSetBoardArchivePolicyProcedure:
@@ -3509,6 +3583,18 @@ func (UnimplementedDieterServiceHandler) ListArchivedProjects(context.Context, *
 
 func (UnimplementedDieterServiceHandler) CreateBoard(context.Context, *connect.Request[v1.CreateBoardRequest]) (*connect.Response[v1.Board], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.CreateBoard is not implemented"))
+}
+
+func (UnimplementedDieterServiceHandler) GetBoard(context.Context, *connect.Request[v1.BoardRef]) (*connect.Response[v1.Board], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.GetBoard is not implemented"))
+}
+
+func (UnimplementedDieterServiceHandler) ListRetiredBoards(context.Context, *connect.Request[v1.ListRetiredBoardsRequest]) (*connect.Response[v1.ListRetiredBoardsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.ListRetiredBoards is not implemented"))
+}
+
+func (UnimplementedDieterServiceHandler) SetBoardRetired(context.Context, *connect.Request[v1.SetBoardRetiredRequest]) (*connect.Response[v1.Board], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.SetBoardRetired is not implemented"))
 }
 
 func (UnimplementedDieterServiceHandler) RenameBoard(context.Context, *connect.Request[v1.RenameBoardRequest]) (*connect.Response[v1.Board], error) {

@@ -567,6 +567,45 @@ public enum Dieter_V1_DieterService: Sendable {
                 type: .unary
             )
         }
+        /// Namespace for "GetBoard" metadata.
+        public enum GetBoard: Sendable {
+            /// Request type for "GetBoard".
+            public typealias Input = Dieter_V1_BoardRef
+            /// Response type for "GetBoard".
+            public typealias Output = Dieter_V1_Board
+            /// Descriptor for "GetBoard".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.DieterService"),
+                method: "GetBoard",
+                type: .unary
+            )
+        }
+        /// Namespace for "ListRetiredBoards" metadata.
+        public enum ListRetiredBoards: Sendable {
+            /// Request type for "ListRetiredBoards".
+            public typealias Input = Dieter_V1_ListRetiredBoardsRequest
+            /// Response type for "ListRetiredBoards".
+            public typealias Output = Dieter_V1_ListRetiredBoardsResponse
+            /// Descriptor for "ListRetiredBoards".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.DieterService"),
+                method: "ListRetiredBoards",
+                type: .unary
+            )
+        }
+        /// Namespace for "SetBoardRetired" metadata.
+        public enum SetBoardRetired: Sendable {
+            /// Request type for "SetBoardRetired".
+            public typealias Input = Dieter_V1_SetBoardRetiredRequest
+            /// Response type for "SetBoardRetired".
+            public typealias Output = Dieter_V1_Board
+            /// Descriptor for "SetBoardRetired".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.DieterService"),
+                method: "SetBoardRetired",
+                type: .unary
+            )
+        }
         /// Namespace for "RenameBoard" metadata.
         public enum RenameBoard: Sendable {
             /// Request type for "RenameBoard".
@@ -1742,6 +1781,9 @@ public enum Dieter_V1_DieterService: Sendable {
             ArchiveProject.descriptor,
             ListArchivedProjects.descriptor,
             CreateBoard.descriptor,
+            GetBoard.descriptor,
+            ListRetiredBoards.descriptor,
+            SetBoardRetired.descriptor,
             RenameBoard.descriptor,
             SetBoardArchivePolicy.descriptor,
             UpdateBoardHostnames.descriptor,
@@ -2662,6 +2704,63 @@ extension Dieter_V1_DieterService {
         func createBoard<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_CreateBoardRequest>,
             serializer: some GRPCCore.MessageSerializer<Dieter_V1_CreateBoardRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_Board>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_Board>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "GetBoard" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_BoardRef` message.
+        ///   - serializer: A serializer for `Dieter_V1_BoardRef` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_Board` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func getBoard<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_BoardRef>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_BoardRef>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_Board>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_Board>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "ListRetiredBoards" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_ListRetiredBoardsRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_ListRetiredBoardsRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_ListRetiredBoardsResponse` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func listRetiredBoards<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_ListRetiredBoardsRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_ListRetiredBoardsRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_ListRetiredBoardsResponse>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_ListRetiredBoardsResponse>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "SetBoardRetired" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_SetBoardRetiredRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_SetBoardRetiredRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_Board` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func setBoardRetired<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_SetBoardRetiredRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_SetBoardRetiredRequest>,
             deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_Board>,
             options: GRPCCore.CallOptions,
             onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_Board>) async throws -> Result
@@ -5649,6 +5748,96 @@ extension Dieter_V1_DieterService {
             try await self.client.unary(
                 request: request,
                 descriptor: Dieter_V1_DieterService.Method.CreateBoard.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "GetBoard" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_BoardRef` message.
+        ///   - serializer: A serializer for `Dieter_V1_BoardRef` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_Board` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func getBoard<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_BoardRef>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_BoardRef>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_Board>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_Board>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Dieter_V1_DieterService.Method.GetBoard.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "ListRetiredBoards" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_ListRetiredBoardsRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_ListRetiredBoardsRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_ListRetiredBoardsResponse` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func listRetiredBoards<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_ListRetiredBoardsRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_ListRetiredBoardsRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_ListRetiredBoardsResponse>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_ListRetiredBoardsResponse>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Dieter_V1_DieterService.Method.ListRetiredBoards.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "SetBoardRetired" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_SetBoardRetiredRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_SetBoardRetiredRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_Board` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func setBoardRetired<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_SetBoardRetiredRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_SetBoardRetiredRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_Board>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_Board>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Dieter_V1_DieterService.Method.SetBoardRetired.descriptor,
                 serializer: serializer,
                 deserializer: deserializer,
                 options: options,
@@ -9370,6 +9559,81 @@ extension Dieter_V1_DieterService.ClientProtocol {
         )
     }
 
+    /// Call the "GetBoard" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Dieter_V1_BoardRef` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func getBoard<Result>(
+        request: GRPCCore.ClientRequest<Dieter_V1_BoardRef>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_Board>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.getBoard(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_V1_BoardRef>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_V1_Board>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "ListRetiredBoards" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Dieter_V1_ListRetiredBoardsRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func listRetiredBoards<Result>(
+        request: GRPCCore.ClientRequest<Dieter_V1_ListRetiredBoardsRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_ListRetiredBoardsResponse>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.listRetiredBoards(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_V1_ListRetiredBoardsRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_V1_ListRetiredBoardsResponse>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "SetBoardRetired" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Dieter_V1_SetBoardRetiredRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func setBoardRetired<Result>(
+        request: GRPCCore.ClientRequest<Dieter_V1_SetBoardRetiredRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_Board>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.setBoardRetired(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_V1_SetBoardRetiredRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_V1_Board>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
     /// Call the "RenameBoard" method.
     ///
     /// - Parameters:
@@ -12810,6 +13074,93 @@ extension Dieter_V1_DieterService.ClientProtocol {
             metadata: metadata
         )
         return try await self.createBoard(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "GetBoard" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func getBoard<Result>(
+        _ message: Dieter_V1_BoardRef,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_Board>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Dieter_V1_BoardRef>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.getBoard(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "ListRetiredBoards" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func listRetiredBoards<Result>(
+        _ message: Dieter_V1_ListRetiredBoardsRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_ListRetiredBoardsResponse>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Dieter_V1_ListRetiredBoardsRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.listRetiredBoards(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "SetBoardRetired" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func setBoardRetired<Result>(
+        _ message: Dieter_V1_SetBoardRetiredRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_Board>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Dieter_V1_SetBoardRetiredRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.setBoardRetired(
             request: request,
             options: options,
             onResponse: handleResponse

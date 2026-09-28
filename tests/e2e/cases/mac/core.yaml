@@ -9,6 +9,11 @@ timeout: 6m
 native:
   suite: core
   checks:
+  - "core.board-delete-cancel"
+  - "core.board-delete-in-use"
+  - "core.board-delete-restore"
+  - "core.board-delete-right-click-target"
+  - "core.board-delete-selected"
   - "core.01a-screen-cursor-leave"
   - "core.01a-screen-embedded-cursor"
   - "core.01a-screen-fullscreen-shortcut"

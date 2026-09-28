@@ -315,11 +315,7 @@ Options:
 	if err != nil {
 		return err
 	}
-	state, err := client.GetState(rpcCtx, &dieterv1.GetStateRequest{})
-	if err != nil {
-		return err
-	}
-	projectValue, err := resolveProtoProject(state, *project)
+	projectValue, state, err := c.projectState(ctx, *project)
 	if err != nil {
 		return err
 	}

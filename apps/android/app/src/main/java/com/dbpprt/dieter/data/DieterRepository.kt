@@ -303,6 +303,8 @@ interface DieterRepository {
     suspend fun updateProjectWorkspaceSettings(request: UpdateProjectWorkspaceSettingsRequest): Project
     suspend fun archiveProject(projectId: String, archived: Boolean): Project
     suspend fun archivedProjects(): ProjectsResponse
+    suspend fun board(id: String): Board { error("Board lookup unavailable") }
+    suspend fun setBoardRetired(request: com.dbpprt.dieter.v1.SetBoardRetiredRequest): Board { error("Board retirement unavailable") }
     suspend fun createBoard(request: CreateBoardRequest): Board
     suspend fun setBoardArchivePolicy(boardId: String, policy: String): Board
     suspend fun updateBoardGitSettings(boardId: String, baseRemote: String, remotePublishMode: String): Board
@@ -1048,6 +1050,9 @@ class GrpcDieterRepository(context: Context) : DieterRepository {
     )
 
     override suspend fun archivedProjects(): ProjectsResponse = unary().listArchivedProjects(Empty.getDefaultInstance())
+
+    override suspend fun board(id: String): Board = unary().getBoard(BoardRef.newBuilder().setBoardId(id).build())
+    override suspend fun setBoardRetired(request: com.dbpprt.dieter.v1.SetBoardRetiredRequest): Board = unary().setBoardRetired(request)
 
     override suspend fun createBoard(request: CreateBoardRequest): Board = unary().createBoard(request)
 

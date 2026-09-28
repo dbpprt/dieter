@@ -235,6 +235,12 @@ private fun FolderDestination(name: String, selected: Boolean, tag: String, onCl
 
 @androidx.compose.runtime.Composable
 internal fun NavigationSyncStatus(state: DieterUiState) {
+    state.peerSyncWarnings.forEach { warning ->
+        androidx.compose.material3.Text(warning,
+            modifier = androidx.compose.ui.Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
+            style = androidx.compose.material3.MaterialTheme.typography.labelSmall,
+            color = androidx.compose.material3.MaterialTheme.colorScheme.error)
+    }
     if (state.navigationPendingCount > 0 || state.navigationSyncError != null) {
         androidx.compose.material3.Text(
             text = if (state.navigationPendingCount > 0) "${state.navigationPendingCount} navigation edits pending sync" else "Navigation sync unavailable",

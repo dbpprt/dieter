@@ -18,7 +18,35 @@ internal fun sharedProjects(values: List<Project>): List<Project> = values.group
     selected.toBuilder().clearCheckouts().addAllCheckouts(checkouts).build()
 }.sortedBy { it.name.lowercase() }
 
-internal fun sharedBoards(values: List<Board>): List<Board> = values.groupBy { it.id }.values.map { it.last() }.sortedBy { it.id }
+internal fun mergeBoardLifecycle(incoming: Board, previous: Board): Board {
+    fun covers(a: Map<String, Long>, b: Map<String, Long>) = b.all { (actor, count) -> java.lang.Long.compareUnsigned(a[actor] ?: 0L, count) >= 0 }
+    val all = previous.retirementVersionsList + incoming.retirementVersionsList
+    val frontier = all.filterIndexed { i, version ->
+        all.withIndex().none { (j, other) -> i != j && covers(other.clockMap, version.clockMap) &&
+            (!covers(version.clockMap, other.clockMap) || other.rank > version.rank || other.rank == version.rank && j < i) }
+    }.sortedBy { it.rank }
+    if (frontier.size > 16 || previous.retirementRevision == "overflow") return previous.toBuilder().setRetirementRevision("overflow").setRetired(false).setRetirementBlocked(true).build()
+    fun same(board: Board) = board.retirementVersionsList.sortedBy { it.rank } == frontier
+    val requested = frontier.any { it.retired && !it.deleted }
+    val references = if (requested) (incoming.retirementReferencesList + previous.retirementReferencesList).distinct().sorted().take(64) else emptyList()
+    val blocked = requested && (frontier.size != 1 || references.isNotEmpty() || same(incoming) && incoming.retirementBlocked || same(previous) && previous.retirementBlocked)
+    return incoming.toBuilder().clearRetirementVersions().addAllRetirementVersions(frontier)
+        .setRetirementRevision(if (same(incoming)) incoming.retirementRevision else if (same(previous)) previous.retirementRevision else "unobserved-join")
+        .setRetired(requested && !blocked).setRetirementBlocked(blocked)
+        .clearRetirementReferences().addAllRetirementReferences(references).build()
+}
+
+internal data class BoardDirectory(val active: List<Board>, val retired: List<Board>)
+
+internal fun sharedBoardDirectory(values: List<Board>, items: List<Card> = emptyList()): BoardDirectory {
+    val references = items.flatMap { card -> listOf(card.boardId) + card.stateFieldsList.filter { it.name == "placement" }
+        .flatMap { field -> field.versionsList.filterNot { it.deleted }.map { it.value.boardId } } }.toSet()
+    val boards = values.groupBy { it.id }.values.map { copies -> copies.reduce { old, new -> mergeBoardLifecycle(new, old) } }
+        .map { if (it.retired && it.id in references) it.toBuilder().setRetired(false).setRetirementBlocked(true).build() else it }.sortedBy { it.id }
+    return BoardDirectory(boards.filterNot { it.retired }, boards.filter { it.retired })
+}
+
+internal fun sharedBoards(values: List<Board>): List<Board> = sharedBoardDirectory(values).active
 
 /**
  * Full card projections are available only from a conversation's immutable

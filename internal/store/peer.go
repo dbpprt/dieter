@@ -175,15 +175,15 @@ func (s *Store) MergePeerRecords(identity PeerIdentity, records []peerstore.Reco
 	changed := false
 	for _, record := range records {
 		if err = peerstore.ValidateSettings(record); err != nil {
-			return err
+			return peerRecordFailure(record, "invalid_record", err)
 		}
 		key := peerstore.Key(record.Kind, record.ID)
 		if err = s.validatePeerDomainMerge(data, data.Records[key], record); err != nil {
-			return err
+			return peerRecordFailure(record, "invalid_provenance", err)
 		}
 		merged, e := peerstore.Merge(data.Records[key], record)
 		if e != nil {
-			return e
+			return peerRecordFailure(record, "causal_conflict", e)
 		}
 		if data.Records[key].Revision() != merged.Revision() {
 			data.Records[key] = merged

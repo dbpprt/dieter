@@ -33,6 +33,15 @@ func (s *Store) State(projectRef string, filter CardFilter) (model.State, error)
 		return model.State{}, err
 	}
 	state.Project = &project
+	allBoards, err := s.sharedBoards()
+	if err != nil {
+		return model.State{}, err
+	}
+	for _, board := range allBoards {
+		if board.ProjectID == project.ID && board.Retired {
+			state.RetiredBoards = append(state.RetiredBoards, board)
+		}
+	}
 	state.Boards, err = s.ListBoards(project.ID)
 	if err != nil {
 		return model.State{}, err
@@ -123,7 +132,7 @@ func (s *Store) materializeGlobalStateContext(ctx context.Context) (model.State,
 	if err != nil {
 		return model.State{}, err
 	}
-	boards, err := s.listBoards()
+	boards, err := s.sharedBoards()
 	if err != nil {
 		return model.State{}, err
 	}
@@ -141,6 +150,10 @@ func (s *Store) materializeGlobalStateContext(ctx context.Context) (model.State,
 	}
 	boardsByProject := make(map[string][]model.Board, len(projects))
 	for _, board := range boards {
+		if board.Retired {
+			result.RetiredBoards = append(result.RetiredBoards, board)
+			continue
+		}
 		boardsByProject[board.ProjectID] = append(boardsByProject[board.ProjectID], board)
 	}
 	cardsByProject := make(map[string][]model.Card, len(projects))
@@ -193,6 +206,7 @@ func (s *Store) materializeGlobalStateContext(ctx context.Context) (model.State,
 
 func cloneState(value model.State) model.State {
 	result := value
+	result.RetiredBoards = append([]model.Board(nil), value.RetiredBoards...)
 	result.ArchivedProjectIDs = append([]string(nil), value.ArchivedProjectIDs...)
 	result.ArchivedItemIDs = append([]string(nil), value.ArchivedItemIDs...)
 	result.Projects = append([]model.Project(nil), value.Projects...)

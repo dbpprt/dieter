@@ -132,3 +132,41 @@ No offline import or migration command is provided. Storage schema 2 identifies
 the current disk format independently of product release compatibility. Tests use
 disposable stores and never stop or replace the operator's daemon. See
 [release compatibility](api-contract.md).
+
+## Board lifecycle and retained summary fields
+
+Board `retired` is a causal boolean register, separate from card/project archive
+and Done-card retention. Absence means active. The effective board is retired
+only with one unconflicted true version and no live placement or schedule
+siblings referencing it. Archived/incomplete items and paused schedules count.
+A late reference or concurrent lifecycle intent makes retirement blocked and
+keeps the parent visible; it never deletes/moves the dependent record.
+
+`GetBoard` includes retired identity/settings/labels. `SetBoardRetired` checks
+references under the central writer lock and commits the register with a durable,
+domain-separated operation receipt in one peer transaction. A stale revision or
+changed replay input fails. Restore covers the observed lifecycle siblings.
+`ListRetiredBoards` provides snapshot-bound keyset pages (default 50, max 100).
+Normal board saves omit lifecycle fields and cannot resolve these conflicts.
+Counts derive from the same active set as board listing.
+
+State archives carry full retired-board causal projections through the existing
+snapshot/delta transport. Native directories retain hidden lifecycle evidence;
+stale pre-retirement snapshots cannot resurrect a board and stale retirement
+cannot override a newer restore. Shared projection examples live in
+`tests/fixtures/board-lifecycle.tsv` and run in Go, Swift, and Kotlin.
+
+Removing a product feature must not invalidate retained signed records.
+`item.summary.commentCount` remains accepted as an optional nonnegative int64;
+other unknown fields, invalid types and forged provenance remain rejected.
+Validation preserves the exact signed bytes. Current writers/API projections
+omit the retired field. No data conversion or checkpoint reset is involved.
+
+Peer status retains at most 128 local per-peer diagnostics, independently of
+replicated state: attempt/success, direction, route, checkpoint progress, and
+sanitized record kind/ID/field/code. Invalid pages are atomic and cannot advance
+their checkpoint. Diagnostics use atomic writes and the central lock but do not
+advance workspace cursors or trigger peer exchanges. `GetState.peer_sync_issues`
+is refreshed even on a not-modified response so native warnings can recover
+without a domain mutation. Neither a successful peer exchange nor a local
+mutation receipt claims convergence of every enrolled replica.

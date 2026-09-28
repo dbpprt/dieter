@@ -2,6 +2,7 @@ package com.dbpprt.dieter.ui
 
 import com.dbpprt.dieter.connection.ConnectionPhase
 import com.dbpprt.dieter.connection.EndpointConnection
+import com.dbpprt.dieter.connection.ProjectReplica
 import com.dbpprt.dieter.v1.Checkout
 import com.dbpprt.dieter.v1.Project
 import org.junit.Assert.*
@@ -51,5 +52,35 @@ class CreationDestinationTest {
         val state = state(checkout("mac"), checkout("linux")).copy(creationCheckoutId = "removed")
         assertNull(state.creationCheckout)
         assertFalse(state.creationCatalogReady)
+    }
+
+    @Test fun projectLocationUsesCheckoutOwnersInsteadOfTheSyncReplica() {
+        val state = state(checkout("office"), checkout("laptop")).copy(
+            endpointConnections = listOf(
+                EndpointConnection("endpoint-home", "mini-home", "", daemonId = "home"),
+                EndpointConnection("endpoint-office", "mini-office", "", daemonId = "office"),
+                EndpointConnection("endpoint-laptop", "mbp-office", "", daemonId = "laptop", online = false),
+            ),
+            projectReplicas = mapOf("project" to ProjectReplica("endpoint-home", "home", "mini-home", true)),
+        )
+        val project = state.project!!
+        assertEquals("mini-office · mbp-office (offline)", state.projectCheckoutLabel(project))
+        assertEquals(state.projectCheckoutLabel(project), state.copy(
+            projectReplicas = mapOf("project" to ProjectReplica("endpoint-office", "office", "mini-office", true)),
+        ).projectCheckoutLabel(project))
+    }
+
+    @Test fun projectLocationDeduplicatesMachinesAndExcludesDetachedCheckouts() {
+        val state = state(checkout("one", "mac"), checkout("two", "mac"),
+            checkout("linux").toBuilder().setDetached(true).build())
+        assertEquals("mac", state.projectCheckoutLabel(state.project!!))
+        assertEquals("No checkouts", state.projectCheckoutLabel(state.project!!.toBuilder().clearCheckouts().build()))
+    }
+
+    @Test fun projectLocationRetainsUnknownAndDisconnectedOwners() {
+        val state = state(checkout("unknown"), checkout("mac"))
+        assertEquals("mac · unknown (unavailable)", state.projectCheckoutLabel(state.project!!))
+        assertEquals("mac (offline) · unknown (unavailable)",
+            state.copy(connectionPhase = ConnectionPhase.UNAVAILABLE).projectCheckoutLabel(state.project!!))
     }
 }

@@ -63,6 +63,9 @@ service DieterService {
   rpc ArchiveProject(ArchiveProjectRequest) returns (Project);
   rpc ListArchivedProjects(google.protobuf.Empty) returns (ProjectsResponse);
   rpc CreateBoard(CreateBoardRequest) returns (Board);
+  rpc GetBoard(BoardRef) returns (Board);
+  rpc ListRetiredBoards(ListRetiredBoardsRequest) returns (ListRetiredBoardsResponse);
+  rpc SetBoardRetired(SetBoardRetiredRequest) returns (Board);
   rpc RenameBoard(RenameBoardRequest) returns (Board);
   rpc SetBoardArchivePolicy(SetBoardArchivePolicyRequest) returns (Board);
   rpc UpdateBoardHostnames(UpdateBoardHostnamesRequest) returns (Board);
@@ -359,6 +362,8 @@ message WatchStateRequest {
 message SharedArchives {
   repeated string project_ids = 1;
   repeated string item_ids = 2;
+  // Full causal lifecycle evidence prevents stale replicas resurrecting boards.
+  repeated Board retired_boards = 3;
 }
 
 message State {
@@ -371,6 +376,9 @@ message State {
   SyncCursor cursor = 7;
   bool not_modified = 8;
   SharedArchives archives = 9;
+  // Operational diagnostics, outside the durable workspace cursor. Conditional
+  // GetState replies include them even when metadata is not_modified.
+  repeated PeerSyncDiagnostic peer_sync_issues = 10;
 }
 
 message SyncCursor {
@@ -507,6 +515,36 @@ message Board {
   string base_remote = 12;
   string remote_publish_mode = 13;
   repeated string hostnames = 14;
+  bool retired = 16;
+  string retirement_revision = 17;
+  repeated BoardRetirementVersion retirement_versions = 18;
+  bool retirement_blocked = 19;
+  repeated string retirement_references = 20;
+}
+
+message BoardRetirementVersion {
+  map<string, uint64> clock = 1;
+  string rank = 2;
+  bool retired = 3;
+  bool deleted = 4;
+}
+
+message ListRetiredBoardsRequest {
+  string project_id = 1;
+  uint32 page_size = 2;
+  string after_id = 3;
+  string snapshot_revision = 4;
+}
+message ListRetiredBoardsResponse {
+  repeated Board boards = 1;
+  string next_id = 2;
+  string snapshot_revision = 3;
+}
+message SetBoardRetiredRequest {
+  string board_id = 1;
+  bool retired = 2;
+  string expected_revision = 3;
+  string operation_id = 4;
 }
 
 message Label {
@@ -2420,6 +2458,23 @@ message PeerStoreStatus {
   string last_sync_at = 5;
   string last_peer_id = 6;
   string last_route = 7;
+  repeated PeerSyncDiagnostic peers = 8;
+}
+message PeerSyncDiagnostic {
+  string peer_id = 1;
+  string last_attempt_at = 2;
+  string last_success_at = 3;
+  string route = 4;
+  string direction = 5;
+  string failure_code = 6;
+  string record_kind = 7;
+  string record_id = 8;
+  string field = 9;
+  string actor = 10;
+  string pull_epoch = 11;
+  uint64 pull_sequence = 12;
+  string push_epoch = 13;
+  uint64 push_sequence = 14;
 }
 message PeerSnapshotRequest {
   string account = 1;

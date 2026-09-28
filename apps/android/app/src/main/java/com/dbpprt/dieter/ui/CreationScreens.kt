@@ -60,6 +60,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -106,8 +107,6 @@ fun NewConversationScreen(
     chat: Boolean,
     contentPadding: PaddingValues,
 ) {
-    var title by remember { mutableStateOf("") }
-    var prompt by remember { mutableStateOf("") }
     val chosenCheckout = state.creationCheckout
     val catalogReady = state.creationCatalogReady
     LaunchedEffect(chosenCheckout?.id, state.creationCheckoutId, state.harnessesEndpointId) {
@@ -119,19 +118,33 @@ fun NewConversationScreen(
     val creationDefaults = remember(destinationHarnesses) {
         resolveConversationCreationPreferences(model.conversationCreationPreferences, destinationHarnesses)
     }
-    var provider by remember(creationDefaults) { mutableStateOf(creationDefaults.provider) }
+    // Card editors share ViewModel state. Keep standalone chat's existing
+    // composition-local defaults and lifecycle unchanged.
+    val draft = if (chat) null else model.cardCreationDraft()
+    draft?.markFullEditorOpened()
+    val titleState: MutableState<String> = draft?.titleState ?: remember { mutableStateOf("") }
+    var title by titleState
+    val promptState: MutableState<String> = draft?.promptState ?: remember { mutableStateOf("") }
+    var prompt by promptState
+    val providerState: MutableState<String> = draft?.providerState ?: remember(creationDefaults) { mutableStateOf(creationDefaults.provider) }
+    var provider by providerState
     val harness = destinationHarnesses.firstOrNull { it.id == provider } ?: destinationHarnesses.firstOrNull()
-    var selectedModel by remember(creationDefaults) { mutableStateOf(creationDefaults.model) }
-    var effort by remember(creationDefaults) { mutableStateOf(creationDefaults.effort) }
-    var providerOptions by remember(provider, harness, creationDefaults, selectedModel) {
+    val modelState: MutableState<String> = draft?.modelState ?: remember(creationDefaults) { mutableStateOf(creationDefaults.model) }
+    var selectedModel by modelState
+    val effortState: MutableState<String> = draft?.effortState ?: remember(creationDefaults) { mutableStateOf(creationDefaults.effort) }
+    var effort by effortState
+    val optionsState: MutableState<Map<String, String>> = draft?.providerOptionsState ?: remember(provider, harness, creationDefaults, selectedModel) {
         mutableStateOf(providerOptionValues(harness, model = selectedModel))
     }
-    var lane by remember(state.selectedLane) {
+    var providerOptions by optionsState
+    val laneState: MutableState<String> = draft?.laneState ?: remember(state.selectedLane) {
         mutableStateOf(state.selectedLane.ifBlank { state.board?.lanesList?.firstOrNull()?.id.orEmpty() })
     }
-    var workspaceMode by remember(creationDefaults) { mutableStateOf(creationDefaults.workspaceMode) }
-    val labelIds = remember { mutableStateListOf<String>() }
-    val attachments = remember { mutableStateListOf<MessagePart>() }
+    var lane by laneState
+    val workspaceState: MutableState<ConversationWorkspaceMode> = draft?.workspaceModeState ?: remember(creationDefaults) { mutableStateOf(creationDefaults.workspaceMode) }
+    var workspaceMode by workspaceState
+    val labelIds = draft?.labelIds ?: remember { mutableStateListOf<String>() }
+    val attachments = draft?.attachments ?: remember { mutableStateListOf<MessagePart>() }
     var attachmentPickerVisible by remember { mutableStateOf(false) }
     var attachmentError by remember { mutableStateOf<String?>(null) }
     val context = LocalContext.current
@@ -192,6 +205,7 @@ fun NewConversationScreen(
                                 deferStart = shouldDeferConversationStart(chat = false, lane = lane),
                                 attachments = attachments.toList(),
                                 workspaceMode = workspaceMode.wire,
+                                onCreated = { draft?.let(model::acceptCardCreationDraft) },
                             )
                         },
                         enabled = canSubmit && !state.working,
@@ -257,10 +271,10 @@ fun NewConversationScreen(
                 prompt = prompt,
                 onPromptChange = { prompt = it },
                 provider = provider,
-                onProviderChange = { next -> provider = next; selectedModel = destinationHarnesses.firstOrNull { it.id == next }?.defaultModel.orEmpty(); effort = "" },
+                onProviderChange = { requireNotNull(draft).selectProvider(it, destinationHarnesses) },
                 harness = harness,
                 model = selectedModel,
-                onModelChange = { selectedModel = it; effort = "" },
+                onModelChange = { requireNotNull(draft).selectModel(it, destinationHarnesses) },
                 effort = effort,
                 onEffortChange = { effort = it },
                 providerOptions = providerOptions,
@@ -418,7 +432,7 @@ private fun NewChatBody(
 }
 
 @Composable
-private fun NewCardBody(
+internal fun NewCardBody(
     state: DieterUiState,
     title: String,
     onTitleChange: (String) -> Unit,
@@ -449,7 +463,7 @@ private fun NewCardBody(
     ) {
         OutlinedTextField(title, onTitleChange, label = { Text("Card title") }, singleLine = true, modifier = Modifier.fillMaxWidth().testTag("conversation-title"))
         OutlinedTextField(prompt, onPromptChange, label = { Text("Agent task") }, minLines = 6, modifier = Modifier.fillMaxWidth().testTag("conversation-prompt"))
-        FormSection(Icons.Outlined.AttachFile, "Attachments") {
+        FormSection(Icons.Outlined.AttachFile, "Attachments", modifier = Modifier.testTag("card-section-attachments")) {
             TextButton(onClick = onAttach, modifier = Modifier.testTag("create-attach")) {
                 Icon(Icons.Outlined.AttachFile, null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.size(8.dp))
@@ -467,7 +481,7 @@ private fun NewCardBody(
             }
             Text("Up to 4 attachments · 5 MB each · 6 MB total", color = DieterMuted, fontSize = 11.sp)
         }
-        FormSection(Icons.Outlined.ViewKanban, "Start in") {
+        FormSection(Icons.Outlined.ViewKanban, "Start in", modifier = Modifier.testTag("card-section-lane")) {
             Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 state.board?.lanesList.orEmpty().filter { it.id == "todo" || it.id == "running" }.forEach { boardLane ->
                     FilterChip(
@@ -480,7 +494,7 @@ private fun NewCardBody(
             }
         }
         if ((state.board?.labelsCount ?: 0) > 0) {
-            FormSection(Icons.Outlined.CreditCard, "Labels") {
+            FormSection(Icons.Outlined.CreditCard, "Labels", modifier = Modifier.testTag("card-section-labels")) {
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     state.board?.labelsList.orEmpty().forEach { label ->
                         FilterChip(
@@ -492,11 +506,11 @@ private fun NewCardBody(
                 }
             }
         }
-        FormSection(Icons.Outlined.AccountTree, "Workspace") {
+        FormSection(Icons.Outlined.AccountTree, "Workspace", modifier = Modifier.testTag("card-section-workspace")) {
             WorkspaceModeChips(workspaceMode, onWorkspaceModeChange)
             Text(workspaceMode.detail, color = DieterMuted, style = MaterialTheme.typography.bodySmall)
         }
-        FormSection(Icons.Outlined.Bolt, "Agent") {
+        FormSection(Icons.Outlined.Bolt, "Agent", modifier = Modifier.testTag("card-section-agent")) {
             ModelSelectors(
                 harnesses, provider, onProviderChange, harness, model, onModelChange, effort, onEffortChange,
                 providerOptions, onProviderOptionChange,
@@ -904,13 +918,14 @@ private fun FormSection(
     icon: ImageVector,
     title: String,
     trailing: (@Composable () -> Unit)? = null,
+    modifier: Modifier = Modifier,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     Card(
         colors = CardDefaults.cardColors(containerColor = Color.Transparent),
         shape = RoundedCornerShape(18.dp),
         border = androidx.compose.foundation.BorderStroke(1.dp, DieterOutline),
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth(),
     ) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {

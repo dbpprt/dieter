@@ -14,7 +14,7 @@ import (
 var DomainFields = map[string]map[string]string{
 	"schedule":   {"summary": "object"},
 	"project":    {"updatedAt": "string", "identity": "object", "name": "string", "summary": "string", "prompt": "string", "promptTemplate": "string", "hostnames": "strings", "baseRemote": "string", "baseBranch": "string", "archived": "bool", "consolidatedInto": "string"},
-	"board":      {"updatedAt": "string", "identity": "object", "name": "string", "description": "string", "promptTemplate": "string", "hostnames": "strings", "baseRemote": "string", "remotePublishMode": "string", "doneArchivePolicy": "string", "workflow": "string"},
+	"board":      {"retired": "bool", "updatedAt": "string", "identity": "object", "name": "string", "description": "string", "promptTemplate": "string", "hostnames": "strings", "baseRemote": "string", "remotePublishMode": "string", "doneArchivePolicy": "string", "workflow": "string"},
 	"label":      {"identity": "object", "name": "string", "color": "string", "instructions": "string", "deleted": "bool"},
 	"item":       {"identity": "object", "title": "string", "placement": "object", "archived": "bool", "pinned": "bool", "doneArchiveExempt": "bool", "summary": "object"},
 	"assignment": {"membership": "bool"},
@@ -95,7 +95,10 @@ func ValidateDomain(r Record) error {
 				case "item/placement":
 					names = "boardId lane position orderKey phaseChangedAt"
 				case "item/summary":
-					names = "runtime runtimeUpdatedAt lastActivityAt provider model effort initialPromptSentAt responseSeq responseMessageId seenResponseSeq mergedIntoCardId"
+					// Persisted owner-signed summaries outlive the comments feature.
+					// Accept its retired count without rewriting signed bytes; new
+					// summaries and the current API never emit or use this field.
+					names = "runtime runtimeUpdatedAt lastActivityAt provider model effort initialPromptSentAt responseSeq responseMessageId seenResponseSeq mergedIntoCardId commentCount"
 				case "checkout/registration":
 					names = "id projectId daemonId name detached"
 				}
@@ -115,7 +118,7 @@ func ValidateDomain(r Record) error {
 						if json.Unmarshal(raw, &v) != nil {
 							return errors.New("detached must be boolean")
 						}
-					case "position", "responseSeq", "seenResponseSeq":
+					case "position", "responseSeq", "seenResponseSeq", "commentCount":
 						var v int64
 						if json.Unmarshal(raw, &v) != nil || v < 0 {
 							return errors.New("invalid shared count")

@@ -22,7 +22,7 @@ Use global --machine ID|NAME to address another daemon over authenticated routes
 
   show     Read one shared record and all conflicting values
   changes  Read an incremental change page using a durable sequence cursor
-  status   Account, actor, record/conflict counts and last successful peer route
+  status   Account, actor, conflicts, and bounded per-peer sync progress/blockers
   list     One bounded snapshot page, including conflicts and tombstones
   put      Resolve a typed shared field from a JSON file
   delete   Write a causal deletion using the current record revision
@@ -42,9 +42,9 @@ func (c *CLI) rpcPeer(args []string) error {
 	case "changes":
 		usage += "  [--account HASH] [--epoch EPOCH] [--sequence N]\nRead a bounded incremental change page.\n"
 	case "status":
-		usage += "Show enrolled account, conflicts, and last successful peer synchronization.\n"
+		usage += "Show enrolled account, conflicts, and bounded per-peer attempts, successes, directions, checkpoints and sanitized record blockers. A successful exchange is not acknowledgement by every machine.\n"
 	case "list":
-		usage += "  [--account HASH] [--after KEY --snapshot REVISION]\nReturn up to eight records. Pass nextKey and snapshotRevision for the next page.\n"
+		usage += "  [--account HASH] [--after KEY --snapshot REVISION]\nReturn up to 64 records. Pass nextKey and snapshotRevision for the next page.\n"
 	case "put":
 		usage += "  --kind KIND --id ENTITY.FIELD --file FILE [--revision HASH]\nFILE contains the JSON value for the typed shared field. See docs/peer-store.md for the explicit field allowlist.\nOmit revision only for a new record. Resolve conflicts by supplying the current revision.\n"
 	case "delete":

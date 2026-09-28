@@ -16,6 +16,8 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.performTextInput
 import com.dbpprt.dieter.connection.ProjectReplica
 import com.dbpprt.dieter.ui.theme.DieterTheme
@@ -32,8 +34,11 @@ class QuickTaskAndTerminalCreationTest {
 
     @Test
     fun quickTaskDraftSurvivesClosingAndReopeningSheet() {
-        var story by mutableStateOf("")
-        var open by mutableStateOf(true)
+        val draft = CardCreationDraft()
+        var story by draft::prompt
+        var open by draft::quickTaskOpen
+        open = true
+        var options by mutableStateOf(false)
         val project = Project.newBuilder().setId("p1").setName("Dieter").setPath("/Users/me/Development/dieter").build()
         val board = Board.newBuilder()
             .setId("b1")
@@ -52,6 +57,19 @@ class QuickTaskAndTerminalCreationTest {
             DieterTheme {
                 Box(Modifier.fillMaxSize()) {
                     Button(onClick = { open = true }) { Text("Open quick task") }
+                    if (options) {
+                        NewCardBody(
+                            state = state, title = draft.title, onTitleChange = { draft.title = it },
+                            prompt = draft.prompt, onPromptChange = { draft.prompt = it },
+                            provider = draft.provider, onProviderChange = {}, harness = null,
+                            model = draft.model, onModelChange = {}, effort = draft.effort, onEffortChange = {},
+                            providerOptions = draft.providerOptions, onProviderOptionChange = { _, _ -> },
+                            harnesses = emptyList(), lane = draft.lane, onLaneChange = { draft.lane = it },
+                            labelIds = draft.labelIds, workspaceMode = draft.workspaceMode,
+                            onWorkspaceModeChange = { draft.workspaceMode = it }, attachments = draft.attachments,
+                            onAttach = {}, onRemoveAttachment = { draft.attachments.removeAt(it) },
+                        )
+                    }
                     if (open) {
                         QuickTaskPopover(
                             state = state,
@@ -64,7 +82,7 @@ class QuickTaskAndTerminalCreationTest {
                             story = story,
                             onStoryChange = { story = it },
                             onDismiss = { open = false },
-                            onOpenFull = {},
+                            onOpenFull = { draft.openOptions(); options = true },
                             onCreate = {},
                         )
                     }
@@ -78,6 +96,16 @@ class QuickTaskAndTerminalCreationTest {
         compose.onNodeWithTag("quick-task-story")
             .assertIsDisplayed()
             .assertTextContains("Keep this unfinished task")
+        compose.onNodeWithText("More options").performClick()
+        compose.onNodeWithTag("conversation-prompt").assertTextContains("Keep this unfinished task")
+        compose.onNodeWithTag("conversation-title").performTextReplacement("Keep this unfinished task edited")
+        compose.onNodeWithTag("workspace-mode-project").performScrollTo().performClick()
+        compose.runOnIdle { options = false; open = true }
+        compose.onNodeWithTag("quick-task-story").assertTextContains("Keep this unfinished task")
+        compose.onNodeWithText("More options").performClick()
+        compose.onNodeWithTag("conversation-title").assertTextContains("Keep this unfinished task edited")
+        compose.runOnIdle { assertEquals(ConversationWorkspaceMode.PROJECT, draft.workspaceMode) }
+
     }
 
     @Test

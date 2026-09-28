@@ -384,7 +384,8 @@ private fun TabletProjectRow(project: Project, boards: List<Board>, state: Diete
             }
             Column(Modifier.weight(1f)) {
                 Text(project.name, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text("${boards.size} ${plural(boards.size, "board")}", color = DieterMuted, style = MaterialTheme.typography.labelSmall)
+                Text("${boards.size} ${plural(boards.size, "board")} · ${state.projectCheckoutLabel(project)}",
+                    color = DieterMuted, style = MaterialTheme.typography.labelSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
             Icon(if (expanded) Icons.Outlined.ExpandMore else Icons.Outlined.ChevronRight, if (expanded) "Collapse ${project.name}" else "Expand ${project.name}", Modifier.size(18.dp))
         }

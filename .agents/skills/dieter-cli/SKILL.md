@@ -968,3 +968,37 @@ as an opaque daemon receipt, not a timestamp or ordinal position. A successful
 move is durable on that daemon; a delayed peer observation does not undo it.
 The gateway's compatibility floors protect this projection from software too
 old to interpret it; compatible releases may differ and still join observations.
+
+### Board identity, retirement, and replication recovery
+
+Exact `board show BOARD_ID` reads the board directly, including retired boards.
+`board list --project PROJECT_ID` resolves the requested project's content, even
+when another project is the daemon default. Names are discovery inputs and can
+be ambiguous; retain exact IDs for mutations.
+
+```sh
+dieter board show BOARD_ID
+dieter board list --project PROJECT_ID --retired --page-size 50
+dieter board list --project PROJECT_ID --retired --after BOARD_ID --snapshot REV
+dieter board retire --revision RETIREMENT_REV --operation UNIQUE_ID BOARD_ID
+dieter board restore --revision RETIREMENT_REV --operation UNIQUE_ID BOARD_ID
+```
+
+Retired listing returns a page containing `boards`, `nextId`, and
+`snapshotRevision`; restart pagination if the snapshot changes. The lifecycle
+revision comes from `board show`. Retirement retains the board, settings and
+labels; it refuses active, archived, incomplete card references and schedules,
+including paused schedules. An offline reference arriving later keeps the board
+accessible with `retirementBlocked`. Concurrent lifecycle intents also keep it
+visible until explicitly resolved. Inspect every sibling before resolving.
+An effectively retired board cannot admit a new card or schedule.
+
+Operation IDs provide durable local replay receipts. Retry identical input only
+on the admitting daemon; a changed input needs a new ID and observed revision.
+Success is local durability, not a global quorum. `peer status` includes bounded
+per-peer attempts, successful exchanges, route/direction, checkpoints, and
+sanitized blocking record identity. A successful exchange with one peer does
+not prove account-wide convergence. Native clients warn when shared updates are
+delayed. A warning alone is not permission to reset storage or checkpoints.
+Retained signed summaries containing the retired `commentCount` field remain
+valid; current writers and APIs omit it. Never rewrite foreign signed history.

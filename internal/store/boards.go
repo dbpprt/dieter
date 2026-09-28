@@ -82,10 +82,6 @@ func hydrateBoard(item model.Board) model.Board {
 }
 
 func (s *Store) CreateBoard(input CreateBoardInput) (model.Board, error) {
-	project, err := s.ResolveProject(input.Project)
-	if err != nil {
-		return model.Board{}, err
-	}
 	workflow, err := normalizeWorkflow(input.Workflow)
 	if err != nil {
 		return model.Board{}, err
@@ -106,6 +102,10 @@ func (s *Store) CreateBoard(input CreateBoardInput) (model.Board, error) {
 		return model.Board{}, err
 	}
 	defer release()
+	project, err := s.ResolveProject(input.Project)
+	if err != nil {
+		return model.Board{}, err
+	}
 	now := timestamp()
 	baseRemote := strings.TrimSpace(input.BaseRemote)
 	if baseRemote == "" {
@@ -195,7 +195,16 @@ func (s *Store) UpdateBoardPromptTemplate(ref, template string) (model.Board, er
 	return s.saveBoard(board)
 }
 
-func (s *Store) listBoards() ([]model.Board, error) { return s.sharedBoards() }
+func (s *Store) listBoards() ([]model.Board, error) {
+	boards, err := s.sharedBoards()
+	active := boards[:0]
+	for _, board := range boards {
+		if !board.Retired {
+			active = append(active, board)
+		}
+	}
+	return active, err
+}
 
 func (s *Store) ListBoards(projectRef string) ([]model.Board, error) {
 	projectID := ""

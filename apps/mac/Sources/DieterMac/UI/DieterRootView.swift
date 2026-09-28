@@ -789,6 +789,7 @@ struct AppSidebar: View {
     private func machineDetail(_ machine: DieterEndpoint) -> String {
         if let incompatibility = machine.incompatibilityDescription { return incompatibility }
         if let connectionError = store.machineConnectionErrors[machine.id] { return connectionError }
+        if let issue = store.machineSyncIssues[machine.id] { return issue }
         if machine.id == store.endpoint.id && !store.workspaceIsLive {
             if store.workspaceFreshness == .syncing { return "Waiting for live sync…" }
             return "Unavailable · \(MachinePresenceText.lastSeen(machine.lastSeenAt))"
@@ -1203,6 +1204,39 @@ private extension View {
     }
 }
 
+private struct BoardContextMenuModifier: ViewModifier {
+    @Environment(DieterStore.self) private var store
+    let board: Dieter_V1_Board
+    @State private var deleteConfirmationPresented = false
+
+    func body(content: Content) -> some View {
+        content
+            .contextMenu {
+                Button("Rename board…", systemImage: "pencil") { store.presentRenameBoard(boardID: board.id) }
+                Button("New board…", systemImage: "plus") { store.presentNewBoard(projectID: board.projectID) }
+                Divider()
+                Button("Delete board…", systemImage: "trash", role: .destructive) {
+                    deleteConfirmationPresented = true
+                }
+                .disabled(!store.projectIsAvailable(board.projectID))
+            }
+            .confirmationDialog(
+                "Delete \(board.name) from Dieter?",
+                isPresented: $deleteConfirmationPresented,
+                titleVisibility: .visible
+            ) {
+                Button("Delete board", role: .destructive) {
+                    Task { await store.retireBoard(board) }
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text(
+                    "Only empty boards can be deleted. Move or remove all cards, including archived cards, and schedules first. The board and its settings are preserved and can be restored."
+                )
+            }
+    }
+}
+
 /// Inline boards · files · schedules rows shown when a project row is expanded,
 /// and reused (without indentation) inside the quick-nav popover.
 private struct SidebarProjectDestinations: View {
@@ -1228,10 +1262,7 @@ private struct SidebarProjectDestinations: View {
                 }
                 .accessibilityIdentifier("sidebar.board.\(board.id)")
                 .smokeTarget("sidebar.board.\(board.id)")
-                .contextMenu {
-                    Button("Rename board…", systemImage: "pencil") { store.presentRenameBoard(boardID: board.id) }
-                    Button("New board…", systemImage: "plus") { store.presentNewBoard(projectID: project.id) }
-                }
+                .modifier(BoardContextMenuModifier(board: board))
             }
             if boards.isEmpty {
                 SidebarDestination(

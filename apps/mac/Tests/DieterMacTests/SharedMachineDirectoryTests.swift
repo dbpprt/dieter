@@ -81,7 +81,7 @@ import Testing
 
 @Test @MainActor func connectingToAnotherMachineDoesNotSelectItsDefaultBoard() {
     let store = DieterStore(restoreSync: false)
-    var selectedProject = Dieter_V1_Project(); selectedProject.id = "selected-project"
+    var selectedProject = Dieter_V1_Project(); selectedProject.id = "selected-project"; selectedProject.boardCount = 1
     var otherProject = Dieter_V1_Project(); otherProject.id = "daemon-default-project"
     var selectedBoard = Dieter_V1_Board(); selectedBoard.id = "selected-board";
     selectedBoard.projectID = selectedProject.id

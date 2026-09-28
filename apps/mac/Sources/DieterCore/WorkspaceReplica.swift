@@ -51,6 +51,7 @@ package final class WorkspaceReplica {
     package var navigationCards: [String: [Dieter_V1_Card]] = [:] {
         didSet { if navigationCards != oldValue { commandSearchRevision &+= 1 } }
     }
+    package var retiredBoards: [String: Dieter_V1_Board] = [:]
     package var chats: [Dieter_V1_Card] = [] {
         didSet {
             if chats != oldValue {
@@ -95,10 +96,11 @@ package final class WorkspaceReplica {
     package var directory: MachineDirectoryProjection {
         MachineDirectoryProjection(
             projects: projectDirectory, projectReplicaEndpointIDs: projectReplicaEndpointIDs,
-            boards: navigationBoards, cards: navigationCards, chats: chats)
+            boards: navigationBoards, cards: navigationCards, chats: chats, retiredBoards: retiredBoards)
     }
 
     package func accept(_ projection: MachineDirectoryProjection) {
+        if retiredBoards != projection.retiredBoards { retiredBoards = projection.retiredBoards }
         if projectDirectory != projection.projects { projectDirectory = projection.projects }
         if projectReplicaEndpointIDs != projection.projectReplicaEndpointIDs {
             projectReplicaEndpointIDs = projection.projectReplicaEndpointIDs
@@ -151,9 +153,30 @@ package final class WorkspaceReplica {
         }
     }
 
-    package func upsert(_ board: Dieter_V1_Board, selectedProjectID: String) {
-        Self.upsert(board, in: &navigationBoards[board.projectID, default: []], id: \.id)
-        if board.projectID == selectedProjectID { Self.upsert(board, in: &state.boards, id: \.id) }
+    package func upsert(_ incoming: Dieter_V1_Board, selectedProjectID: String) {
+        let previous =
+            navigationBoards[incoming.projectID]?.first { $0.id == incoming.id } ?? retiredBoards[incoming.id]
+        var board = BoardLifecycleProjection.merge(incoming, with: previous)
+        let references = (navigationCards.values.flatMap { $0 } + state.cards).filter { card in
+            card.boardID == board.id
+                || card.stateFields.contains { field in
+                    field.name == "placement" && field.versions.contains { !$0.deleted && $0.value.boardID == board.id }
+                }
+        }
+        if board.retired && !references.isEmpty {
+            board.retired = false; board.retirementBlocked = true
+            board.retirementReferences = Array(
+                Set(board.retirementReferences + references.map { "item/" + $0.id }).sorted().prefix(64))
+        }
+        if board.retired {
+            retiredBoards[board.id] = board
+            navigationBoards[board.projectID]?.removeAll { $0.id == board.id }
+            state.boards.removeAll { $0.id == board.id }
+        } else {
+            retiredBoards.removeValue(forKey: board.id)
+            Self.upsert(board, in: &navigationBoards[board.projectID, default: []], id: \.id)
+            if board.projectID == selectedProjectID { Self.upsert(board, in: &state.boards, id: \.id) }
+        }
     }
 
     package func upsert(_ project: Dieter_V1_Project) {

@@ -16,6 +16,9 @@ import (
 
 func protoState(value model.State) *dieterv1.State {
 	result := &dieterv1.State{StorePath: value.StorePath, Archives: &dieterv1.SharedArchives{ProjectIds: value.ArchivedProjectIDs, ItemIds: value.ArchivedItemIDs}}
+	for _, board := range value.RetiredBoards {
+		result.Archives.RetiredBoards = append(result.Archives.RetiredBoards, protoBoard(board))
+	}
 	for _, item := range value.Projects {
 		result.Projects = append(result.Projects, protoProject(item))
 	}
@@ -74,11 +77,15 @@ func modelValidationCommands(values []*dieterv1.ValidationCommand) []model.Valid
 
 func protoBoard(value model.Board) *dieterv1.Board {
 	result := &dieterv1.Board{
+		Retired: value.Retired, RetirementRevision: value.RetirementRevision, RetirementBlocked: value.RetirementBlocked, RetirementReferences: value.RetirementReferences,
 		Id: value.ID, ProjectId: value.ProjectID, Name: value.Name, ConflictKeys: value.ConflictKeys,
 		Workflow: value.Workflow, Description: value.Description,
 		DoneArchivePolicy: value.DoneArchivePolicy, CreatedAt: value.CreatedAt,
 		UpdatedAt: value.UpdatedAt, PromptTemplate: value.PromptTemplate,
 		BaseRemote: value.BaseRemote, RemotePublishMode: value.RemotePublishMode, Hostnames: append([]string(nil), value.Hostnames...),
+	}
+	for _, v := range value.RetirementVersions {
+		result.RetirementVersions = append(result.RetirementVersions, &dieterv1.BoardRetirementVersion{Clock: v.Clock, Rank: v.Rank, Retired: v.Retired, Deleted: v.Deleted})
 	}
 	for _, item := range value.Labels {
 		result.Labels = append(result.Labels, &dieterv1.Label{Id: item.ID, Name: item.Name, Color: item.Color, Instructions: item.Instructions})

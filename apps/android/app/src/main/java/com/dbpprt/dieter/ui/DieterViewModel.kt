@@ -203,6 +203,8 @@ data class DieterUiState(
     val sharedLaneSortDirections: Map<String, String> = emptyMap(),
     val navigationPendingCount: Int = 0,
     val navigationSyncError: String? = null,
+    val peerSyncWarnings: List<String> = emptyList(),
+    val retiredBoards: List<Board> = emptyList(),
     val projectFolders: NavigationFolderPreferences = NavigationFolderPreferences(),
     val chatFolders: NavigationFolderPreferences = NavigationFolderPreferences(),
     val collapsedChatProjectIds: Set<String> = emptySet(),
@@ -312,7 +314,7 @@ data class DieterUiState(
             return presented + queuedMachines
         }
     val project: Project? get() = projects.firstOrNull { it.id == selectedProjectId }
-    val board: Board? get() = boards.firstOrNull { it.id == selectedBoardId } ?: boards.firstOrNull()
+    val board: Board? get() = boards.firstOrNull { it.id == selectedBoardId } ?: retiredBoards.firstOrNull { it.id == selectedBoardId } ?: boards.firstOrNull()
     val boardNotificationsEnabled: Boolean get() = selectedBoardId in notificationBoardIds
     val selectedCard: Card?
         get() = conversation?.detail?.card
@@ -410,6 +412,29 @@ class DieterViewModel internal constructor(
         get() = appPreferences.conversationCreation.value
 
     internal val navigationFolders get() = appPreferences.navigationFolders
+
+    private val cardCreationDrafts = mutableMapOf<Triple<String, String, String>, CardCreationDraft>()
+
+    internal fun cardCreationDraft(quick: Boolean = false, initialize: Boolean = true): CardCreationDraft {
+        val current = _state.value
+        val key = Triple(current.activeGatewayId.orEmpty(), current.selectedProjectId, current.selectedBoardId)
+        return cardCreationDrafts.getOrPut(key) { CardCreationDraft() }.also { draft ->
+            if (initialize) {
+                val harnesses = if (current.creationCatalogReady) current.harnesses else emptyList()
+                draft.initialize(
+                    resolveConversationCreationPreferences(conversationCreationPreferences, harnesses),
+                    harnesses,
+                    (if (quick) "" else current.selectedLane).ifBlank {
+                        current.board?.lanesList?.firstOrNull()?.id.orEmpty().ifBlank { "todo" }
+                    },
+                )
+            }
+        }
+    }
+
+    internal fun acceptCardCreationDraft(draft: CardCreationDraft) {
+        cardCreationDrafts.entries.removeAll { it.value === draft }
+    }
 
     private val mutationMutex = Mutex()
     private val conversationCreationGate = ConversationCreationGate()
@@ -808,6 +833,7 @@ class DieterViewModel internal constructor(
                     else -> current.connectionDialogVisible
                 },
                 connectionError = connection.error,
+                peerSyncWarnings = connection.peerSyncWarnings.values.toList(),
                 desiredConnected = connection.desiredConnected,
                 backgroundSyncMode = connection.backgroundSyncMode,
                 configuredConnections = connection.configuredConnections,
@@ -1082,7 +1108,7 @@ class DieterViewModel internal constructor(
             previous.selectedProjectId.takeIf { id -> remote.projectsList.any { it.id == id } }
                 ?: remote.projectsList.firstOrNull()?.id.orEmpty()
         }
-        val boardId = previous.selectedBoardId.takeIf { id -> remote.boardsList.any { it.id == id } }
+        val boardId = previous.selectedBoardId.takeIf { id -> (remote.boardsList + remote.archives.retiredBoardsList).any { it.id == id && it.projectId == projectId } }
             ?: remote.boardsList.firstOrNull()?.id.orEmpty()
         val board = remote.boardsList.firstOrNull { it.id == boardId }
         val lane = previous.selectedLane.takeIf { id -> board?.lanesList?.any { it.id == id } == true }
@@ -1099,6 +1125,7 @@ class DieterViewModel internal constructor(
                 loading = false,
                 error = null,
                 boards = remote.boardsList,
+                retiredBoards = remote.archives.retiredBoardsList,
                 cards = cardProjection.cards,
                 selectedProjectId = projectId,
                 selectedBoardId = boardId,
@@ -2066,25 +2093,27 @@ class DieterViewModel internal constructor(
         if (cleanStory.isEmpty()) return
         val current = _state.value
         if (current.working || !current.creationCatalogReady) return
-        val defaults = resolveConversationCreationPreferences(conversationCreationPreferences, current.harnesses)
-        if (!harnessCatalogSupportsSelection(current.harnesses, defaults.provider, defaults.model)) return
-        val harness = current.harnesses.firstOrNull { it.id == defaults.provider }
-        val lane = current.board?.lanesList?.firstOrNull()?.id.orEmpty().ifBlank { "todo" }
+        val draft = cardCreationDraft(quick = true)
+        if (!harnessCatalogSupportsSelection(current.harnesses, draft.provider, draft.model)) return
         createConversation(
-            title = optimisticQuickTaskTitle(cleanStory),
+            title = draft.title.trim().ifBlank { optimisticQuickTaskTitle(cleanStory) },
             prompt = cleanStory,
             chat = false,
-            provider = defaults.provider,
-            model = defaults.model,
-            effort = defaults.effort,
-            providerOptions = providerOptionValues(harness, model = defaults.model),
-            lane = lane,
-            labelIds = emptyList(),
-            deferStart = !lane.equals("running", ignoreCase = true),
-            workspaceMode = defaults.workspaceMode.wire,
+            provider = draft.provider,
+            model = draft.model,
+            effort = draft.effort,
+            providerOptions = draft.providerOptions,
+            lane = draft.lane,
+            labelIds = draft.labelIds.toList(),
+            attachments = draft.attachments.toList(),
+            deferStart = shouldDeferConversationStart(chat = false, lane = draft.lane),
+            workspaceMode = draft.workspaceMode.wire,
             workspaceBaseBranch = current.project?.baseBranch.orEmpty(),
-            autoGenerateTitle = true,
-            onCreated = onCreated,
+            autoGenerateTitle = draft.title.isBlank(),
+            onCreated = {
+                acceptCardCreationDraft(draft)
+                onCreated()
+            },
         )
     }
 
@@ -3540,6 +3569,15 @@ class DieterViewModel internal constructor(
                 boardOverviewVisible = if (openAfterCreate) false else it.boardOverviewVisible,
             )
         }
+        refreshStateOnce()
+        refreshSpaces()
+    }
+
+    fun restoreBoard(id: String) = action {
+        val board = repository.board(id)
+        repository.setBoardRetired(com.dbpprt.dieter.v1.SetBoardRetiredRequest.newBuilder()
+            .setBoardId(id).setRetired(false).setExpectedRevision(board.retirementRevision)
+            .setOperationId(java.util.UUID.randomUUID().toString()).build())
         refreshStateOnce()
         refreshSpaces()
     }

@@ -160,6 +160,8 @@ data class DieterConnectionState(
     val projects: List<Project> = emptyList(),
     val projectReplicas: Map<String, ProjectReplica> = emptyMap(),
     val boards: List<Board> = emptyList(),
+    val retiredBoards: List<Board> = emptyList(),
+    val peerSyncWarnings: Map<String, String> = emptyMap(),
     val cards: List<Card> = emptyList(),
     val chats: List<Card> = emptyList(),
     val activeConversations: Map<String, ConversationSnapshot> = emptyMap(),
@@ -603,6 +605,8 @@ class DieterConnectionManager(
                     projects = emptyList(),
                     projectReplicas = emptyMap(),
                     boards = emptyList(),
+                retiredBoards = emptyList(),
+                peerSyncWarnings = emptyMap(),
                     cards = emptyList(),
                     chats = emptyList(),
                     activeConversations = emptyMap(),
@@ -709,6 +713,8 @@ class DieterConnectionManager(
                 projects = if (gatewayChanged) emptyList() else it.projects,
                 projectReplicas = if (gatewayChanged) emptyMap() else it.projectReplicas,
                 boards = if (gatewayChanged) emptyList() else it.boards,
+                retiredBoards = if (gatewayChanged) emptyList() else it.retiredBoards,
+                peerSyncWarnings = if (gatewayChanged) emptyMap() else it.peerSyncWarnings,
                 cards = if (gatewayChanged) emptyList() else it.cards,
                 chats = if (gatewayChanged) emptyList() else it.chats,
                 activeConversations = if (gatewayChanged) emptyMap() else it.activeConversations,
@@ -757,6 +763,8 @@ class DieterConnectionManager(
                 projects = emptyList(),
                 projectReplicas = emptyMap(),
                 boards = emptyList(),
+                retiredBoards = emptyList(),
+                peerSyncWarnings = emptyMap(),
                 cards = emptyList(),
                 chats = emptyList(),
                 activeConversations = emptyMap(),
@@ -802,6 +810,7 @@ class DieterConnectionManager(
                     ProjectReplica(host.endpointId, host.daemonId, host.hostname, online = false)
                 },
                 boards = directory.state.boardsList,
+                retiredBoards = directory.state.archives.retiredBoardsList,
                 cards = cards,
                 chats = chats,
             )
@@ -1343,6 +1352,14 @@ class DieterConnectionManager(
                             if (!force && !includeArchivedChats) synchronized(lock) { directoryCursors[machine.id] }?.let { request.setIfNotModified(it) }
                             repository.relayState(machine, request.build())
                         }
+                        if (directoryGeneration == synchronized(lock) { generation }) {
+                            _state.update { current ->
+                                val warnings = current.peerSyncWarnings.toMutableMap()
+                                if (root.peerSyncIssuesCount == 0) warnings.remove(machine.id)
+                                else warnings[machine.id] = "Shared updates on ${machine.label} are delayed; boards and cards may be out of date."
+                                current.copy(peerSyncWarnings = warnings)
+                            }
+                        }
                         if (root.notModified) return@runCatching null
                         val chats = if (includeArchivedChats) permits.withPermit {
                             repository.relayChats(machine, includeArchived = true).chatsList
@@ -1389,10 +1406,13 @@ class DieterConnectionManager(
                     )
                 }
             }
+            val boardDirectory = sharedBoardDirectory(
+                (current.boards + current.retiredBoards).filter { it.projectId in projects.map { p -> p.id } } + snapshots.flatMap { it.boards + it.archives.retiredBoardsList }, combinedItems)
             val combined = current.copy(
-                projects = projects,
+                projects = projects.map { it.toBuilder().setBoardCount(boardDirectory.active.count { b -> b.projectId == it.id }).build() },
                 projectReplicas = hosts,
-                boards = sharedBoards(current.boards.filter { it.projectId in retainedProjectIDs } + snapshots.flatMap { it.boards }),
+                boards = boardDirectory.active,
+                retiredBoards = boardDirectory.retired,
                 cards = combinedItems.filter { it.scope != "chat" || it.boardId.isNotEmpty() },
                 chats = combinedItems.filter { it.scope == "chat" && it.boardId.isEmpty() },
                 error = null,
@@ -1410,6 +1430,7 @@ class DieterConnectionManager(
         val directoryState = State.newBuilder()
             .addAllProjects(current.projects)
             .addAllBoards(current.boards)
+            .setArchives(com.dbpprt.dieter.v1.SharedArchives.newBuilder().addAllRetiredBoards(current.retiredBoards))
             .addAllCards(retainPendingOptimisticConversations(current.cards, entries))
             .addAllChats(retainPendingOptimisticConversations(current.chats, entries))
             .build()
@@ -1464,13 +1485,14 @@ class DieterConnectionManager(
             val retainedProjects = current.projects.filter { it.id in incomingProjectIds || it.id !in replacedProjectIds }
             val projects = sharedProjects(retainedProjects + incomingProjects).filter { it.id !in snapshot.state.archives.projectIdsList }
             val retainedProjectIds = projects.mapTo(hashSetOf()) { it.id }
-            val boards = sharedBoards(current.boards.filter { it.projectId in retainedProjectIds } + snapshot.state.boardsList)
             val incomingItems = snapshotItems
             val presentIDs = incomingItems.mapTo(hashSetOf()) { it.id }
             val retainedItems = retainPendingOptimisticConversations(current.cards + current.chats, entries).filter {
                 it.projectId in retainedProjectIds && !(it.ownerDaemonId == activeEndpoint?.daemonId && it.id !in presentIDs)
             }
             val items = sharedItems(retainedItems + incomingItems, ownerDetails).filter { it.id !in snapshot.state.archives.itemIdsList || it.archived && it.scope == "chat" && it.boardId.isEmpty() }
+            val boardDirectory = sharedBoardDirectory((current.boards + current.retiredBoards).filter { it.projectId in retainedProjectIds } + snapshot.state.boardsList + snapshot.state.archives.retiredBoardsList, items)
+            val boards = boardDirectory.active
             val cards = overlayPendingCardStarts(items.filter { it.scope != "chat" || it.boardId.isNotEmpty() }, boards, entries).toMutableList()
             val chats = items.filter { it.scope == "chat" && it.boardId.isEmpty() }.toMutableList()
             val hosts = current.projectReplicas
@@ -1586,9 +1608,10 @@ class DieterConnectionManager(
                 ?: projects.firstOrNull()?.id.orEmpty()
             synchronized(lock) { selectedProjectId = selectedProject }
             val combined = current.copy(
-                projects = projects,
+                projects = projects.map { project -> project.toBuilder().setBoardCount(boards.count { it.projectId == project.id }).build() },
                 projectReplicas = hosts,
                 boards = boards,
+                retiredBoards = boardDirectory.retired,
                 cards = cards,
                 chats = chats.sortedByDescending { it.lastActivityAt.ifBlank { it.updatedAt } },
                 activeConversations = conversations,
@@ -1619,6 +1642,7 @@ class DieterConnectionManager(
             .addAllProjects(connection.projects)
             .clearBoards()
             .addAllBoards(connection.boards.filter { it.projectId == selectedProject })
+            .setArchives(base.archives.toBuilder().clearRetiredBoards().addAllRetiredBoards(connection.retiredBoards))
             .clearCards()
             .addAllCards(connection.cards.filter { it.projectId == selectedProject })
             .clearChats()

@@ -56,7 +56,24 @@ const consoleToStderr = (...values) => process.stderr.write(`${values.map(value 
 console.log = consoleToStderr;
 console.info = consoleToStderr;
 console.debug = consoleToStderr;
-const send = value => protocolWrite(`${JSON.stringify(value)}\n`);
+let exitPromise;
+const send = value => {
+  if (!exitPromise) return protocolWrite(`${JSON.stringify(value)}\n`);
+};
+const exitWorker = exitCode => {
+  if (!exitPromise) {
+    clearInterval(heartbeatTimer);
+    // stdout is an asynchronous pipe. In particular, a suspended turn can
+    // enqueue a continuation larger than the pipe buffer. process.exit() must
+    // wait for every queued frame, or Go receives a truncated JSON checkpoint.
+    // Stop accepting frames before the barrier so late stream/heartbeat events
+    // cannot race it. The host retains its bounded shutdown/kill deadline.
+    exitPromise = new Promise(() => {
+      protocolWrite('', error => process.exit(error ? 1 : exitCode));
+    });
+  }
+  return exitPromise;
+};
 const extraHarnessEnv = (process.env.DIETER_HARNESS_ENV || '')
   .split(',')
   .map(name => name.trim())
@@ -156,7 +173,7 @@ if (request.harness === 'mock') {
   ] });
   capabilityCollector.finishTaskPlan('completed');
   send({ type: 'session', state: { type: 'resume-session', data: { mock: true } } });
-  process.exit(0);
+  await exitWorker(0);
 }
 
 let harness;
@@ -273,10 +290,10 @@ const interrupt = exitCode => {
   // leaves bridge-backed providers alive. The timer is only a final guard for
   // an adapter that never settles after abort.
   forcedExitTimer = setTimeout(() => {
-    void sandbox.stopAll().finally(() => process.exit(exitCode));
+    void sandbox.stopAll().finally(() => exitWorker(exitCode));
   }, 8_000);
   forcedExitTimer.unref?.();
-  void workerSettled.finally(() => process.exit(exitCode));
+  void workerSettled.finally(() => exitWorker(exitCode));
 };
 const suspend = async () => {
   if (session) {
@@ -295,7 +312,7 @@ process.once('SIGINT', () => interrupt(130));
 process.once('SIGUSR1', () => {
   suspending = true;
   suspendPromise = suspend();
-  void suspendPromise.finally(() => process.exit(process.exitCode || 0));
+  void suspendPromise.finally(() => exitWorker(process.exitCode || 0));
 });
 
 try {
@@ -467,7 +484,7 @@ try {
 } catch (error) {
   if (suspending) {
     await suspendPromise;
-    process.exit(0);
+    await exitWorker(process.exitCode || 0);
   }
   if (!controller.signal.aborted) {
     console.error(harnessDiagnosticErrorMessage(error));

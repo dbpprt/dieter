@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 @unittest.skipUnless(
-    os.uname().sysname == "Linux" and os.uname().machine == "x86_64",
+    os.uname().sysname in ("Linux", "Darwin"),
     "portable installer fixture host",
 )
 class ReleaseInstallerTest(unittest.TestCase):
@@ -83,6 +83,7 @@ cp "$DIETER_TEST_ASSETS/${url##*/}" "$destination"
             capture.write_text("#!/bin/sh\necho capture fixture\n", encoding="utf-8")
             capture.chmod(0o755)
         (package / "LICENSE").write_text("fixture\n", encoding="utf-8")
+        (package / "VERSION").write_text("1.2.3\n", encoding="utf-8")
         archive = self.assets / f"{package.name}.tar.gz"
         with tarfile.open(archive, "w:gz") as output:
             output.add(package, arcname=package.name)
@@ -201,6 +202,18 @@ cp "$DIETER_TEST_ASSETS/${url##*/}" "$destination"
         result = self.run_installer()
         self.assertNotEqual(result.returncode, 0, result.stdout)
         self.assertIn("Checksum verification failed", result.stdout)
+        self.assertFalse((self.install / "dieter").exists())
+
+    def test_unexpected_archive_member_is_rejected_before_install(self):
+        package = self.temporary / "dieter-linux-amd64"
+        (package / "VERSION.extra").write_text("unexpected\n", encoding="utf-8")
+        archive = self.assets / f"{package.name}.tar.gz"
+        with tarfile.open(archive, "w:gz") as output:
+            output.add(package, arcname=package.name)
+        self._write_manifest()
+        result = self.run_installer()
+        self.assertNotEqual(result.returncode, 0, result.stdout)
+        self.assertIn("unexpected path: dieter-linux-amd64/VERSION.extra", result.stdout)
         self.assertFalse((self.install / "dieter").exists())
 
 

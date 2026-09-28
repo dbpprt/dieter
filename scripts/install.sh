@@ -161,7 +161,7 @@ if [ "$actual_checksum" != "$expected_checksum" ]; then
 fi
 tar -tzf "$archive" | while IFS= read -r entry; do
     case "$entry" in
-        "$asset"|"$asset/"|"$asset/dieter"|"$asset/dieter-capture"|"$asset/LICENSE"|"$asset/install.sh") ;;
+        "$asset"|"$asset/"|"$asset/dieter"|"$asset/dieter-capture"|"$asset/LICENSE"|"$asset/VERSION"|"$asset/install.sh") ;;
         *) echo "Release archive contains an unexpected path: $entry" >&2; exit 1 ;;
     esac
 done
