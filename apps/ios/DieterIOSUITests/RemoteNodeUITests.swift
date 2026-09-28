@@ -198,12 +198,11 @@ final class RemoteNodeUITests: XCTestCase {
         }
         enter(app, "ios.create.title", title)
         enter(app, "ios.create.prompt", prompt)
-        let keyboardDone = app.buttons.matching(identifier: "ios.create.keyboard-done").firstMatch
-        if keyboardDone.waitForExistence(timeout: 3) {
-            keyboardDone.tap()
-        } else {
-            form.swipeDown()
-        }
+        // The prompt's UIKit accessory and SwiftUI keyboard toolbar can be
+        // rebuilt while XCTest resolves them, leaving a stale Done element.
+        // The form already opts into interactive keyboard dismissal, and this
+        // gesture is harmless if the keyboard disappeared while typing.
+        form.swipeDown()
         // On iPad, XCTest can spend its full animation-idle timeout trying to
         // snapshot the disappearing system keyboard. Observe the app-owned
         // footer instead; it is the user-visible state needed to submit.
