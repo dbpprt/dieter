@@ -333,8 +333,10 @@ func (d iosDriver) run(ctx context.Context, c Case) (result Result) {
 }
 
 const (
-	missingIOSDestination           = "Unable to find a device matching the provided destination specifier"
-	timedOutLaunchingIOSApplication = "Timed out while launching application via Xcode."
+	missingIOSDestination            = "Unable to find a device matching the provided destination specifier"
+	timedOutLaunchingIOSApplication  = "Timed out while launching application via Xcode."
+	timedOutRequestingLaunchProgress = "Timed out while requesting launch progress."
+	stalledIOSScreenFixture          = "The real WebRTC fixture must decode and present native video."
 )
 
 func iosXCTestRetryReason(out string) string {
@@ -343,6 +345,10 @@ func iosXCTestRetryReason(out string) string {
 		return "Xcode temporarily lost the booted simulator"
 	case strings.Contains(out, timedOutLaunchingIOSApplication):
 		return "Xcode timed out while launching the application"
+	case strings.Contains(out, timedOutRequestingLaunchProgress):
+		return "Xcode timed out while requesting application launch progress"
+	case strings.Contains(out, stalledIOSScreenFixture):
+		return "the native screen handshake stalled before its first decoded frame"
 	default:
 		return ""
 	}

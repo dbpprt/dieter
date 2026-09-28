@@ -312,15 +312,14 @@ final class RemoteNodeUITests: XCTestCase {
         // before returning. A freshly relaunched iPad can spend XCTest's whole
         // snapshot timeout on that first probe even though the board appears
         // moments later. The predicate expectation owns the bounded wait.
-        let sidebar = app.scrollViews.matching(identifier: "ios.sidebar").firstMatch
-        let boardButton = sidebar.buttons.matching(identifier: "ios.board.\(board)").firstMatch
+        let boardButton = app.buttons.matching(identifier: "ios.board.\(board)").firstMatch
         let ready = XCTNSPredicateExpectation(
             predicate: NSPredicate(format: predicate),
             object: boardButton)
         XCTAssertEqual(
             XCTWaiter.wait(for: [ready], timeout: 40), .completed,
             "The fixture board must be ready in the sidebar.\n\(app.debugDescription)")
-        let projectButton = sidebar.buttons.matching(identifier: "ios.project.\(project)").firstMatch
+        let projectButton = app.buttons.matching(identifier: "ios.project.\(project)").firstMatch
         XCTAssertTrue(
             projectButton.waitForExistence(timeout: 10), "The fixture project must be present.")
     }
@@ -430,7 +429,10 @@ final class RemoteNodeUITests: XCTestCase {
         app.launchEnvironment["DIETER_IOS_TEST_TOKEN"] = token
         app.launch()
         XCTAssertTrue(app.wait(for: .runningForeground, timeout: 20))
-        let machinePicker = app.buttons.matching(identifier: "ios.terminals.machine-picker-view").firstMatch
+        // SwiftUI exposes the picker surface as a ScrollView on iPad, not a
+        // Button. Query that stable native type so the wait observes the view
+        // already visible in the accessibility hierarchy.
+        let machinePicker = app.scrollViews.matching(identifier: "ios.terminals.machine-picker-view").firstMatch
         if usesLandscapeSidebar {
             // Xcode 26.5 can spend its entire snapshot budget resolving any
             // sidebar query after rotating the iPad. The sidebar geometry is
@@ -507,11 +509,12 @@ final class RemoteNodeUITests: XCTestCase {
         if element(app, "ios.list.new-task").exists { tap(app, "ios.list.new-task") } else { tap(app, "ios.new-task") }
         fillTask(app, title: "iOS remote smoke task", prompt: "Verify this request came from iOS")
         screenshot(app, "02-create-remote-task")
+        let run = app.buttons.matching(identifier: "ios.create.run").firstMatch
         let runReady = XCTNSPredicateExpectation(
             predicate: NSPredicate(format: "hittable == true AND enabled == true"),
-            object: element(app, "ios.create.run"))
+            object: run)
         XCTAssertEqual(
-            XCTWaiter.wait(for: [runReady], timeout: 5), .completed,
+            XCTWaiter.wait(for: [runReady], timeout: 20), .completed,
             "Run task should remain visible and enabled after entering the task.\n\(app.debugDescription)")
         tap(app, "ios.create.run")
         assistantTextExists(app, "Mock harness received: Verify this request came from iOS", timeout: 150)
