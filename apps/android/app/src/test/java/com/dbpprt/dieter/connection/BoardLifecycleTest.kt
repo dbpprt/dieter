@@ -20,7 +20,7 @@ class BoardLifecycleTest {
     }
 
     @Test fun sharedLifecycleFixture() {
-        val root = generateSequence(File(System.getProperty("user.dir"))) { it.parentFile }
+        val root = generateSequence(File(System.getProperty("user.dir") ?: ".")) { it.parentFile }
             .first { File(it, "tests/fixtures/board-lifecycle.tsv").exists() }
         File(root, "tests/fixtures/board-lifecycle.tsv").readLines().filterNot { it.startsWith("#") || it.isBlank() }.forEach { line ->
             val columns = line.split('\t')
@@ -30,7 +30,7 @@ class BoardLifecycleTest {
                     val pair = observation.split('=')
                     val version = BoardRetirementVersion.newBuilder().setRank(observation).setRetired(pair[1] == "true")
                     pair[0].split(',').forEach {
-                        val clock = it.split(':'); version.putClock(clock[0], clock[1].toLong())
+                        val clock = it.split(':'); version.putClock(clock[0], clock[1].toULong().toLong())
                     }
                     board.addRetirementVersions(version).setRetired(version.retired).setRetirementRevision(observation)
                 }

@@ -7,3 +7,4 @@ concurrent_intents	a:1=true;b:1=false	false	false	true
 reverse_concurrent	b:1=false;a:1=true	false	false	true
 resolved_conflict	a:1=true;b:1=false;a:2,b:1=false;b:1=false	false	false	false
 late_reference	a:1=true;-	true	false	true
+unsigned_clock	a:9223372036854775807=true;a:9223372036854775808=false;a:9223372036854775807=true	false	false	false

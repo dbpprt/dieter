@@ -19,7 +19,7 @@ internal fun sharedProjects(values: List<Project>): List<Project> = values.group
 }.sortedBy { it.name.lowercase() }
 
 internal fun mergeBoardLifecycle(incoming: Board, previous: Board): Board {
-    fun covers(a: Map<String, Long>, b: Map<String, Long>) = b.all { (actor, count) -> (a[actor] ?: 0) >= count }
+    fun covers(a: Map<String, Long>, b: Map<String, Long>) = b.all { (actor, count) -> java.lang.Long.compareUnsigned(a[actor] ?: 0L, count) >= 0 }
     val all = previous.retirementVersionsList + incoming.retirementVersionsList
     val frontier = all.filterIndexed { i, version ->
         all.withIndex().none { (j, other) -> i != j && covers(other.clockMap, version.clockMap) &&
