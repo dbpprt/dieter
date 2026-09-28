@@ -1207,7 +1207,7 @@ private extension View {
 private struct BoardContextMenuModifier: ViewModifier {
     @Environment(DieterStore.self) private var store
     let board: Dieter_V1_Board
-    let requestDelete: () -> Void
+    @State private var deleteConfirmationPresented = false
 
     func body(content: Content) -> some View {
         content
@@ -1216,9 +1216,23 @@ private struct BoardContextMenuModifier: ViewModifier {
                 Button("New board…", systemImage: "plus") { store.presentNewBoard(projectID: board.projectID) }
                 Divider()
                 Button("Delete board…", systemImage: "trash", role: .destructive) {
-                    requestDelete()
+                    deleteConfirmationPresented = true
                 }
                 .disabled(!store.projectIsAvailable(board.projectID))
+            }
+            .confirmationDialog(
+                "Delete \(board.name) from Dieter?",
+                isPresented: $deleteConfirmationPresented,
+                titleVisibility: .visible
+            ) {
+                Button("Delete board", role: .destructive) {
+                    Task { await store.retireBoard(board) }
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text(
+                    "Only empty boards can be deleted. Move or remove all cards, including archived cards, and schedules first. The board and its settings are preserved and can be restored."
+                )
             }
     }
 }
@@ -1229,7 +1243,6 @@ private struct SidebarProjectDestinations: View {
     @Environment(DieterStore.self) private var store
     let project: Dieter_V1_Project
     var onNavigate: (() -> Void)? = nil
-    @State private var pendingBoardDeletion: Dieter_V1_Board?
 
     private var projectIsUnavailable: Bool {
         !store.projectIsAvailable(project.id)
@@ -1249,10 +1262,7 @@ private struct SidebarProjectDestinations: View {
                 }
                 .accessibilityIdentifier("sidebar.board.\(board.id)")
                 .smokeTarget("sidebar.board.\(board.id)")
-                .modifier(
-                    BoardContextMenuModifier(
-                        board: board,
-                        requestDelete: { pendingBoardDeletion = board }))
+                .modifier(BoardContextMenuModifier(board: board))
             }
             if boards.isEmpty {
                 SidebarDestination(
@@ -1296,26 +1306,6 @@ private struct SidebarProjectDestinations: View {
             .opacity(projectIsUnavailable ? 0.42 : 1)
             .accessibilityIdentifier("sidebar.schedules.\(project.id)")
             .smokeTarget("sidebar.schedules.\(project.id)")
-        }
-        .confirmationDialog(
-            "Delete \(pendingBoardDeletion?.name ?? "board") from Dieter?",
-            isPresented: Binding(
-                get: { pendingBoardDeletion != nil },
-                set: { presented in
-                    if !presented { pendingBoardDeletion = nil }
-                }),
-            titleVisibility: .visible
-        ) {
-            Button("Delete board", role: .destructive) {
-                guard let board = pendingBoardDeletion else { return }
-                pendingBoardDeletion = nil
-                Task { await store.retireBoard(board) }
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text(
-                "Only empty boards can be deleted. Move or remove all cards, including archived cards, and schedules first. The board and its settings are preserved and can be restored."
-            )
         }
     }
 

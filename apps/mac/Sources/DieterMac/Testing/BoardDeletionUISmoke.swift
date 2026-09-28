@@ -17,6 +17,10 @@
                 else { throw CocoaError(.fileReadUnknown) }
                 store.acceptBoard(canceledBoard)
                 store.acceptBoard(empty)
+                // acceptBoard updates the selected-board replica, while the
+                // sidebar is rendered from the navigation projection. Refresh
+                // that projection before driving either new native row.
+                await store.refreshNavigation()
                 let navigation = store.sidebarProjectNavigation
                 defer { store.sidebarProjectNavigation = navigation }
                 if !navigation.isExpanded(board.projectID) {
