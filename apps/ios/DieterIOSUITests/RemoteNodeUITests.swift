@@ -405,11 +405,11 @@ final class RemoteNodeUITests: XCTestCase {
         app.launchEnvironment["DIETER_IOS_SCREEN_FIXTURE"] = fixture
         app.launch()
         XCTAssertTrue(app.wait(for: .runningForeground, timeout: 20))
-        let live = app.staticTexts.matching(identifier: "ios.screens.fixture.phase")
-            .matching(NSPredicate(format: "label == 'Live'"))
-            .firstMatch
-        XCTAssertTrue(
-            live.waitForExistence(timeout: 35),
+        let phase = app.staticTexts.matching(identifier: "ios.screens.fixture.phase").firstMatch
+        let live = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "exists == true AND label == 'Live'"), object: phase)
+        XCTAssertEqual(
+            XCTWaiter.wait(for: [live], timeout: 35), .completed,
             "The real WebRTC fixture must decode and present native video.\n\(app.debugDescription)")
         XCTAssertTrue(element(app, "ios.screens.fixture").exists)
         screenshot(app, "06-remote-screen-streaming")
@@ -421,7 +421,8 @@ final class RemoteNodeUITests: XCTestCase {
         let gateway = try XCTUnwrap(environment["DIETER_IOS_TEST_GATEWAY"])
         let token = try XCTUnwrap(environment["DIETER_IOS_TEST_TOKEN"])
         let daemon = try XCTUnwrap(environment["DIETER_IOS_TEST_DAEMON"])
-        if environment["DIETER_IOS_TEST_LANDSCAPE"] == "1" {
+        let usesLandscapeSidebar = environment["DIETER_IOS_TEST_LANDSCAPE"] == "1"
+        if usesLandscapeSidebar {
             XCUIDevice.shared.orientation = .landscapeLeft
         }
         let app = XCUIApplication()
@@ -429,15 +430,30 @@ final class RemoteNodeUITests: XCTestCase {
         app.launchEnvironment["DIETER_IOS_TEST_TOKEN"] = token
         app.launch()
         XCTAssertTrue(app.wait(for: .runningForeground, timeout: 20))
-        // Cold launch initially presents the Connecting form. Query the unique
-        // navigation button directly: resolving the whole landscape iPad
-        // ScrollView can consume XCTest's snapshot timeout before it appears.
-        let terminals = app.buttons.matching(identifier: "ios.terminals.open").firstMatch
-        XCTAssertTrue(
-            terminals.waitForExistence(timeout: 40),
-            "Connecting must finish and expose terminal navigation.")
-        terminals.tap()
-        XCTAssertTrue(element(app, "ios.terminals.machine-picker-view").waitForExistence(timeout: 10))
+        let machinePicker = app.buttons.matching(identifier: "ios.terminals.machine-picker-view").firstMatch
+        if usesLandscapeSidebar {
+            // Xcode 26.5 can spend its entire snapshot budget resolving any
+            // sidebar query after rotating the iPad. The sidebar geometry is
+            // fixed in this layout, so exercise the visible Terminals row by
+            // coordinate and retry only until its destination appears.
+            let terminals = app.coordinate(withNormalizedOffset: CGVector(dx: 0.12, dy: 0.29))
+            var opened = false
+            for _ in 0..<3 {
+                terminals.tap()
+                if machinePicker.waitForExistence(timeout: 10) {
+                    opened = true
+                    break
+                }
+            }
+            XCTAssertTrue(opened, "Connecting must finish and expose terminal navigation.")
+        } else {
+            let terminals = app.buttons.matching(identifier: "ios.terminals.open").firstMatch
+            XCTAssertTrue(
+                terminals.waitForExistence(timeout: 40),
+                "Connecting must finish and expose terminal navigation.")
+            terminals.tap()
+            XCTAssertTrue(machinePicker.waitForExistence(timeout: 10))
+        }
         tap(app, "ios.terminals.machine-choice.\(daemon)")
         XCTAssertTrue(element(app, "ios.terminals.view").waitForExistence(timeout: 15))
         let emptyNew = element(app, "ios.terminals.empty-new")
