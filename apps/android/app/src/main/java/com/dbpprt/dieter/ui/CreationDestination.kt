@@ -32,6 +32,9 @@ internal val DieterUiState.creationMachine
 internal val DieterUiState.creationCatalogReady: Boolean
     get() = creationMachine?.let { it.online && it.id == harnessesEndpointId } == true
 
+internal val DieterUiState.taskCatalogAvailableForQueue: Boolean
+    get() = creationMachine?.let { it.id == harnessesEndpointId } == true
+
 internal fun DieterUiState.machineLabel(daemonId: String): String =
     presentedEndpointConnections.firstOrNull { it.daemonId == daemonId }?.label?.takeIf { it.isNotBlank() }
         ?: projectReplicas.values.firstOrNull { it.daemonId == daemonId }?.hostname?.takeIf { it.isNotBlank() }

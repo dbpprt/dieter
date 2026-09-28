@@ -108,7 +108,7 @@ fun NewConversationScreen(
     contentPadding: PaddingValues,
 ) {
     val chosenCheckout = state.creationCheckout
-    val catalogReady = state.creationCatalogReady
+    val catalogReady = if (chat) state.creationCatalogReady else state.taskCatalogAvailableForQueue
     LaunchedEffect(chosenCheckout?.id, state.creationCheckoutId, state.harnessesEndpointId) {
         if (chosenCheckout != null && state.creationMachine?.online == true && !catalogReady) {
             model.prepareCreationCheckout(chosenCheckout.id)
@@ -181,7 +181,7 @@ fun NewConversationScreen(
     Column(Modifier.fillMaxSize().padding(contentPadding)) {
         CreationHeader(
             eyebrow = if (chat) null else state.board?.name ?: "Board",
-            title = if (chat) "New chat" else "New card",
+            title = if (chat) "New chat" else "New task",
             subtitle = if (chat) "${state.project?.name ?: "Project"} · Standalone chat" else state.project?.name,
             onClose = model::closeSurface,
             trailing = if (chat) {
@@ -190,31 +190,25 @@ fun NewConversationScreen(
                 {
                     Button(
                         onClick = {
-                            val cleanTitle = title.trim()
-                            val cleanPrompt = prompt.trim()
-                            model.createConversation(
-                                title = cleanTitle,
-                                prompt = cleanPrompt.ifBlank { cleanTitle },
-                                chat = false,
-                                provider = provider,
-                                model = selectedModel,
-                                effort = effort,
-                                providerOptions = providerOptions,
-                                lane = lane,
-                                labelIds = labelIds.toList(),
-                                deferStart = shouldDeferConversationStart(chat = false, lane = lane),
-                                attachments = attachments.toList(),
-                                workspaceMode = workspaceMode.wire,
-                                onCreated = { draft?.let(model::acceptCardCreationDraft) },
-                            )
+                            draft?.let { model.submitTask(it) }
                         },
-                        enabled = canSubmit && !state.working,
+                        enabled = draft?.let(model::canSubmitTask) == true,
                     ) { Text(if (lane == "running") "Create & run" else "Save") }
                 }
             },
         )
         SurfaceErrorBanner(state.error, model::clearError)
         CreationDestinationPicker(state, model::selectCreationCheckout, Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
+        if (draft != null && state.board != null && !state.board!!.labelsList.map { it.id }.containsAll(draft.labelIds)) {
+            TextButton(onClick = { draft.labelIds.retainAll(state.board!!.labelsList.map { it.id }.toSet()) }) {
+                Text("Remove labels unavailable on this board")
+            }
+        }
+        if (!chat && state.creationMachine?.online != true) Text(
+            if (state.taskCatalogAvailableForQueue) "Offline · saved tasks queue on this device until the destination reconnects."
+            else "Reconnect to validate the destination. Your draft is kept on this device.",
+            modifier = Modifier.padding(horizontal = 16.dp), style = MaterialTheme.typography.bodySmall,
+        )
         attachmentError?.let { message ->
             Text(
                 message,
@@ -263,7 +257,14 @@ fun NewConversationScreen(
                     )
                 },
             )
+        } else if (draft?.submittedRequest != null) {
+            Column(Modifier.verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(draft.submittedRequest!!.title, style = MaterialTheme.typography.titleMedium)
+                Text(draft.submittedRequest!!.prompt)
+                TaskAttachmentControls(draft, model.taskCaptures)
+            }
         } else {
+            TextButton(onClick = model::returnToQuickTask) { Text("Quick task") }
             NewCardBody(
                 state = state,
                 title = title,
@@ -288,6 +289,7 @@ fun NewConversationScreen(
                 attachments = attachments,
                 onAttach = { attachmentPickerVisible = true },
                 onRemoveAttachment = { attachments.removeAt(it) },
+                attachmentContent = { TaskAttachmentControls(requireNotNull(draft), model.taskCaptures) { model.discardTaskDraft(draft) } },
             )
         }
     }
@@ -456,14 +458,15 @@ internal fun NewCardBody(
     attachments: List<MessagePart>,
     onAttach: () -> Unit,
     onRemoveAttachment: (Int) -> Unit,
+    attachmentContent: (@Composable () -> Unit)? = null,
 ) {
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        OutlinedTextField(title, onTitleChange, label = { Text("Card title") }, singleLine = true, modifier = Modifier.fillMaxWidth().testTag("conversation-title"))
+        OutlinedTextField(title, onTitleChange, label = { Text("Title (optional)") }, singleLine = true, modifier = Modifier.fillMaxWidth().testTag("conversation-title"))
         OutlinedTextField(prompt, onPromptChange, label = { Text("Agent task") }, minLines = 6, modifier = Modifier.fillMaxWidth().testTag("conversation-prompt"))
-        FormSection(Icons.Outlined.AttachFile, "Attachments", modifier = Modifier.testTag("card-section-attachments")) {
+        if (attachmentContent != null) FormSection(Icons.Outlined.AttachFile, "Attachments", modifier = Modifier.testTag("card-section-attachments")) { attachmentContent() } else FormSection(Icons.Outlined.AttachFile, "Attachments", modifier = Modifier.testTag("card-section-attachments")) {
             TextButton(onClick = onAttach, modifier = Modifier.testTag("create-attach")) {
                 Icon(Icons.Outlined.AttachFile, null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.size(8.dp))

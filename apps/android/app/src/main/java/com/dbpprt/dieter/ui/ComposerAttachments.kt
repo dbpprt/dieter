@@ -17,6 +17,8 @@ internal const val MAX_COMPOSER_ATTACHMENT_BYTES = 5 * 1024 * 1024
 internal const val MAX_COMPOSER_TOTAL_BYTES = 6 * 1024 * 1024
 
 internal fun readAttachmentPart(context: Context, uri: Uri, imagesOnly: Boolean): MessagePart {
+    require(uri.scheme == "content") { "Choose a file shared by an Android content provider" }
+    val deadline = android.os.SystemClock.elapsedRealtime() + 30_000L
     val resolver = context.contentResolver
     var filename = ""
     var declaredSize = -1L
@@ -58,6 +60,7 @@ internal fun readAttachmentPart(context: Context, uri: Uri, imagesOnly: Boolean)
         val buffer = ByteArray(16 * 1024)
         var total = 0
         while (true) {
+            check(!Thread.currentThread().isInterrupted && android.os.SystemClock.elapsedRealtime() < deadline) { "Reading the file timed out. Choose it again." }
             val read = input.read(buffer)
             if (read < 0) break
             total += read

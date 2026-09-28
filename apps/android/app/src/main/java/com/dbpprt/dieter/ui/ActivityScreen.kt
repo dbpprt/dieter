@@ -13,6 +13,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Inbox
@@ -77,6 +78,7 @@ internal fun ActivityScreen(state: DieterUiState, model: DieterViewModel, expand
             )
         }
     }
+    Box(Modifier.fillMaxSize()) {
     if (tablet) {
         TabletListDetail(
             modifier = Modifier.padding(contentPadding),
@@ -103,6 +105,11 @@ internal fun ActivityScreen(state: DieterUiState, model: DieterViewModel, expand
         }
     } else {
         content(Modifier.fillMaxSize().padding(contentPadding))
+    }
+    if (state.selectedCardId == null || tablet || expanded) FloatingActionButton(
+        onClick = { model.beginCapture() },
+        modifier = Modifier.align(Alignment.BottomEnd).padding(contentPadding).padding(20.dp).testTag("inbox-new-task"),
+    ) { Icon(Icons.Default.Add, "New task") }
     }
     folderChatId?.let { id ->
         MoveToNavigationFolderDialog(id, NavigationFolderScope.CHATS, state.chatFolders,
@@ -170,7 +177,7 @@ internal fun ActivityFeed(
     Box(modifier, contentAlignment = Alignment.TopCenter) {
         LazyColumn(
             Modifier.widthIn(max = if (timelineOnly) 1800.dp else 900.dp).fillMaxSize().testTag("activity-feed"),
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 16.dp),
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 88.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             if (state.error != null) item("error") { SurfaceErrorBanner(state.error, onClearError) }

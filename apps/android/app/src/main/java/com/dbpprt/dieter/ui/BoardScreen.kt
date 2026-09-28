@@ -1316,7 +1316,7 @@ internal fun BoardList(state: DieterUiState, model: DieterViewModel, modifier: M
             }
         }
         FloatingActionButton(
-            onClick = { quickTaskOpen = !quickTaskOpen },
+            onClick = { model.activeCapture = draft; quickTaskOpen = !quickTaskOpen },
             modifier = Modifier.align(Alignment.BottomEnd).padding(20.dp).testTag("new-card"),
             containerColor = DieterPane,
             contentColor = DieterAbyss,
@@ -1371,6 +1371,9 @@ internal fun BoardList(state: DieterUiState, model: DieterViewModel, modifier: M
                 draft.openOptions()
                 model.openSurface(AppSurface.NEW_CARD)
             },
+            attachmentContent = { TaskAttachmentControls(draft, model.taskCaptures) { model.discardTaskDraft(draft) } },
+            canSubmit = model.canSubmitTask(draft),
+            readOnly = draft.submissionId.isNotBlank(),
             onCreate = { story ->
                 model.createQuickTask(story) {
                     quickTaskOpen = false
@@ -1423,6 +1426,9 @@ internal fun QuickTaskPopover(
     onCreate: (String) -> Unit,
     onSelectCheckout: (String) -> Unit = {},
     laneId: String = "",
+    attachmentContent: (@Composable () -> Unit)? = null,
+    canSubmit: Boolean? = null,
+    readOnly: Boolean = false,
 ) {
     val checkout = state.creationCheckout
     LaunchedEffect(checkout?.id) {
@@ -1501,20 +1507,22 @@ internal fun QuickTaskPopover(
             OutlinedTextField(
                 value = story,
                 onValueChange = onStoryChange,
+                readOnly = readOnly,
                 label = { Text("Task story") },
                 placeholder = { Text("What should the agent accomplish?") },
                 minLines = 3,
                 maxLines = 6,
                 modifier = Modifier.fillMaxWidth().testTag("quick-task-story"),
             )
+            attachmentContent?.invoke()
             Text(summary, color = DieterMuted, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Row(verticalAlignment = Alignment.CenterVertically) {
                 TextButton(onClick = onOpenFull) { Text("More options") }
                 Spacer(Modifier.weight(1f))
                 Button(
                     onClick = { onCreate(cleanStory) },
-                    enabled = cleanStory.isNotEmpty() && !state.working && state.creationCatalogReady &&
-                        harnessCatalogSupportsSelection(state.harnesses, defaults.provider, defaults.model) && state.board != null,
+                    enabled = canSubmit ?: (cleanStory.isNotEmpty() && !state.working && state.creationCatalogReady &&
+                        harnessCatalogSupportsSelection(state.harnesses, defaults.provider, defaults.model) && state.board != null),
                     modifier = Modifier.testTag("quick-task-create"),
                 ) {
                     Icon(Icons.Outlined.Bolt, contentDescription = null, modifier = Modifier.size(17.dp))

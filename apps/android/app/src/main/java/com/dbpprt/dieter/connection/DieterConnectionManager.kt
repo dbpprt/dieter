@@ -1906,16 +1906,19 @@ class DieterConnectionManager(
         optimisticInitialMessageId(entry)?.let(::add)
     }
 
-    suspend fun enqueueConversation(request: CreateConversationRequest, chat: Boolean): Card = withContext(Dispatchers.IO) {
-        val commandId = UUID.randomUUID().toString().lowercase()
+    suspend fun enqueueConversation(request: CreateConversationRequest, chat: Boolean, submissionId: String = ""): Card = withContext(Dispatchers.IO) {
+        val commandId = submissionId.ifBlank { UUID.randomUUID().toString().lowercase() }
         val stable = request.toBuilder().setClientId(syncStore.clientId).setCommandId(commandId).build()
-        val optimisticId = "local_${UUID.randomUUID().toString().replace("-", "").lowercase()}"
+        val optimisticId = "local_${commandId.replace("-", "")}"
         val checkout = _state.value.projects.firstOrNull { it.id == stable.projectId }?.checkoutsList
             ?.firstOrNull { it.id == stable.checkoutId }
         val targetEndpoint = checkout?.let { chosen -> discoveredEndpoints.firstOrNull { it.daemonId == chosen.daemonId }?.id }
-            ?: repository.activeEndpoint.id
+            ?: error("The checkout’s machine is unavailable; keep the draft and reconnect")
         synchronized(outbox) {
-            outbox += AndroidOutboxEntry(
+            outbox.firstOrNull { it.commandId == commandId }?.let {
+                check(it.request.contentEquals(stable.toByteArray())) { "An admitted task cannot be changed during retry" }
+            }
+            if (outbox.none { it.commandId == commandId }) outbox += AndroidOutboxEntry(
                 commandId = commandId,
                 clientId = syncStore.clientId,
                 endpointId = targetEndpoint,

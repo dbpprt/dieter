@@ -187,7 +187,7 @@ internal fun ComposerAttachmentPreview(
             IconButton(
                 onClick = onRemove,
                 enabled = enabled,
-                modifier = Modifier.align(Alignment.TopEnd).padding(4.dp).size(25.dp)
+                modifier = Modifier.align(Alignment.TopEnd).padding(4.dp).size(48.dp)
                     .clip(CircleShape).background(Color.Black.copy(alpha = 0.62f)),
             ) {
                 Icon(Icons.Outlined.Close, "Remove ${part.filename.ifBlank { "image" }}", tint = Color.White, modifier = Modifier.size(14.dp))
@@ -222,7 +222,7 @@ internal fun ComposerAttachmentPreview(
                 )
                 Text(attachmentDetails(part), color = DieterMuted, fontSize = 10.sp, maxLines = 1)
             }
-            IconButton(onClick = onRemove, enabled = enabled, modifier = Modifier.size(36.dp)) {
+            IconButton(onClick = onRemove, enabled = enabled, modifier = Modifier.size(48.dp)) {
                 Icon(Icons.Outlined.Close, "Remove ${part.filename.ifBlank { "attachment" }}", Modifier.size(16.dp))
             }
         }

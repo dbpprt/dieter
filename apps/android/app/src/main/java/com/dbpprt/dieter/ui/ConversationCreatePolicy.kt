@@ -11,8 +11,7 @@ internal fun canCreateConversation(
 ): Boolean = projectId.isNotBlank() &&
     provider.isNotBlank() &&
     model.isNotBlank() &&
-    (prompt.isNotBlank() || hasAttachments || (!chat && title.isNotBlank())) &&
-    (chat || title.isNotBlank())
+    (prompt.isNotBlank() || hasAttachments || (!chat && title.isNotBlank()))
 
 internal fun shouldOpenCreatedConversation(chat: Boolean, lane: String): Boolean =
     chat || lane != "todo"

@@ -17,6 +17,7 @@ This directory holds implementation references and historical evidence.
 
 ## Technical references
 
+- [Android task capture design and acceptance](android-task-capture-design-2026-09-28.md)
 - [Native test catalog and runner](../tests/e2e/README.md)
 - [Release compatibility](api-contract.md)
 - [Shared project identity, causal records, and ownership](peer-store.md)
@@ -41,6 +42,7 @@ These are dated engineering records, not the current installation manual or a
 list of promised features. Their observations, benchmarks, and validation limits
 are retained. Paths are stable so existing issue and PR links continue to work.
 
+- [Product assessment](product-assessment-2026-09-28.md) — commercial product review, prioritized gaps, Now/Next/Later roadmap, and research questions.
 - [Code structure, native clients, helpers, and build audit](code-structure-audit-2026-09-26.md)
 - [Lean native test framework proposal](native-test-framework-plan-2026-09-25.md)
 - [Native test framework implementation](native-test-framework-implementation-2026-09-25.md) — Android runner, retired scripts, platform boundaries, and validation.

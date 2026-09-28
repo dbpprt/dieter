@@ -168,9 +168,15 @@ fun DieterApp(container: DieterContainer) {
             container.connectionManager,
             container.appPreferences,
             container.conversationDrafts,
+            container.taskCaptures,
         ),
     )
     val state by model.state.collectAsStateWithLifecycle()
+    if (!container.taskCaptures.loaded) {
+        androidx.compose.material3.CircularProgressIndicator()
+        return
+    }
+    TaskCaptureHost(state, model, container.taskCaptures)
     val openRequest by container.openRequest.collectAsStateWithLifecycle()
     val context = LocalContext.current
     var notificationPermissionRequested by remember { mutableStateOf(false) }
@@ -183,7 +189,7 @@ fun DieterApp(container: DieterContainer) {
 
     LifecycleEventEffect(Lifecycle.Event.ON_START) { model.start() }
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { container.appUpdateManager.refreshInstallerPermission() }
-    LifecycleEventEffect(Lifecycle.Event.ON_STOP) { model.stop() }
+    LifecycleEventEffect(Lifecycle.Event.ON_STOP) { container.taskCaptures.flushAll(); model.stop() }
     LaunchedEffect(container.appUpdateManager) {
         if (container.appUpdateManager.automaticChecksEnabled) {
             container.appUpdateManager.checkForUpdates()

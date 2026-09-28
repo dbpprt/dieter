@@ -1,5 +1,7 @@
 package com.dbpprt.dieter.ui
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import android.util.Log
 import androidx.compose.runtime.Immutable
 import androidx.lifecycle.ViewModel
@@ -388,6 +390,7 @@ class DieterViewModel internal constructor(
     private val connectionManager: DieterConnectionManager,
     private val appPreferences: AppPreferences,
     private val conversationDrafts: ConversationDraftStore = ConversationDraftStore(),
+    internal val taskCaptures: TaskCaptureStore? = null,
 ) : ViewModel() {
     private val repository: DieterRepository = connectionManager.repository
     private val _state = MutableStateFlow(DieterUiState())
@@ -413,14 +416,65 @@ class DieterViewModel internal constructor(
 
     internal val navigationFolders get() = appPreferences.navigationFolders
 
+    internal var captureChooserVisible by androidx.compose.runtime.mutableStateOf(false)
+    internal var activeCapture by androidx.compose.runtime.mutableStateOf<CardCreationDraft?>(null)
+
+    internal fun beginCapture(draft: CardCreationDraft? = null) {
+        runCatching {
+            activeCapture = draft ?: taskCaptures?.drafts?.firstOrNull { it.accountId == _state.value.activeGatewayId && !it.hasContent } ?: taskCaptures?.drafts?.takeIf { it.size >= 20 }?.lastOrNull { it.accountId == _state.value.activeGatewayId } ?: taskCaptures?.create(_state.value.activeGatewayId.orEmpty()) ?: CardCreationDraft()
+            captureChooserVisible = true
+        }.onFailure { failure -> _state.update { it.copy(error = failure.message) } }
+    }
+
+    internal fun captureProject(id: String) {
+        activeCapture?.let {
+            if (it.projectId != id) { it.boardId = ""; it.checkoutId = "" }
+            it.projectId = id
+        }
+        selectProject(id)
+        val boards = (_state.value.spaceBoards + _state.value.boards).distinctBy { it.id }.filter { it.projectId == id && !it.retired }
+        if (boards.size == 1) openCaptureBoard(boards.single().id)
+    }
+
+    internal fun openCaptureBoard(id: String) {
+        val draft = activeCapture ?: return
+        selectBoard(id)
+        draft.boardId = id
+        if (draft.checkoutId.isNotBlank()) _state.update { it.copy(creationCheckoutId = draft.checkoutId) }
+        check(draft.accountId.isBlank() || draft.accountId == _state.value.activeGatewayId) { "This draft belongs to another account" }
+        draft.accountId = _state.value.activeGatewayId.orEmpty()
+        captureChooserVisible = false
+        openSurface(AppSurface.NEW_CARD)
+    }
+
+    internal fun discardTaskDraft(draft: CardCreationDraft) {
+        draft.quickTaskOpen = false
+        acceptCardCreationDraft(draft)
+        closeSurface()
+    }
+
+    internal fun returnToQuickTask() {
+        val draft = cardCreationDraft()
+        closeSurface()
+        openBoard(draft.projectId, draft.boardId)
+        draft.quickTaskOpen = true
+    }
+
     private val cardCreationDrafts = mutableMapOf<Triple<String, String, String>, CardCreationDraft>()
 
     internal fun cardCreationDraft(quick: Boolean = false, initialize: Boolean = true): CardCreationDraft {
         val current = _state.value
         val key = Triple(current.activeGatewayId.orEmpty(), current.selectedProjectId, current.selectedBoardId)
-        return cardCreationDrafts.getOrPut(key) { CardCreationDraft() }.also { draft ->
+        val active = activeCapture?.takeIf { it.accountId == key.first && it.projectId == key.second && it.boardId == key.third }
+        return (active ?: cardCreationDrafts.getOrPut(key) {
+            taskCaptures?.drafts?.firstOrNull { it.accountId == key.first && it.projectId == key.second && it.boardId == key.third }
+                ?: CardCreationDraft().also {
+                    it.accountId = key.first; it.projectId = key.second; it.boardId = key.third
+                }
+        }).also { draft ->
+            if (quick || draft.hasContent || current.appSurface == AppSurface.NEW_CARD) taskCaptures?.retain(draft)
             if (initialize) {
-                val harnesses = if (current.creationCatalogReady) current.harnesses else emptyList()
+                val harnesses = if (current.taskCatalogAvailableForQueue) current.harnesses else emptyList()
                 draft.initialize(
                     resolveConversationCreationPreferences(conversationCreationPreferences, harnesses),
                     harnesses,
@@ -434,6 +488,8 @@ class DieterViewModel internal constructor(
 
     internal fun acceptCardCreationDraft(draft: CardCreationDraft) {
         cardCreationDrafts.entries.removeAll { it.value === draft }
+        if (activeCapture === draft) activeCapture = null
+        taskCaptures?.discard(draft)
     }
 
     private val mutationMutex = Mutex()
@@ -1635,6 +1691,7 @@ class DieterViewModel internal constructor(
             }
             return
         }
+        if (surface == AppSurface.NEW_CARD) activeCapture = cardCreationDraft()
         _state.update { it.copy(appSurface = surface, editingScheduleId = null, error = null) }
         when (surface) {
             AppSurface.WORKSPACE -> loadAdministration()
@@ -1644,6 +1701,7 @@ class DieterViewModel internal constructor(
     }
 
     fun closeSurface() {
+        taskCaptures?.flushAll()
         schedules.clearPreview()
         administration.cancel()
         _state.update { it.copy(appSurface = null, editingScheduleId = null) }
@@ -1991,6 +2049,7 @@ class DieterViewModel internal constructor(
             ?: error("Machine is unavailable")
         connectionManager.ensureCheckoutRoute(checkout.projectId, checkout.id)
         _state.update { it.copy(creationCheckoutId = id, fileDocument = null, filePath = "") }
+        activeCapture?.takeIf { it.projectId == checkout.projectId }?.checkoutId = id
         refreshStateOnce()
         if (_state.value.destination == Destination.FILES) loadFiles("")
     }
@@ -2019,7 +2078,7 @@ class DieterViewModel internal constructor(
         selectProject(destination)
     }
 
-    fun createConversation(
+    internal fun createConversation(
         title: String,
         prompt: String,
         chat: Boolean,
@@ -2035,6 +2094,7 @@ class DieterViewModel internal constructor(
         workspaceBranch: String = "",
         workspaceBaseBranch: String = "",
         autoGenerateTitle: Boolean = false,
+        creationDraft: CardCreationDraft? = null,
         onCreated: () -> Unit = {},
     ) {
         // Compose does not publish working=true until the launched action gets
@@ -2046,10 +2106,15 @@ class DieterViewModel internal constructor(
             onFinished = conversationCreationGate::release,
         ) {
             val current = _state.value
+            if (creationDraft != null) {
+                check(creationDraft.ready) { "Finish importing or remove failed attachments before saving." }
+            }
             check(current.project != null) { "Select a project before creating a conversation." }
-            val checkoutId = connectionManager.ensureCheckoutRoute(
-                current.selectedProjectId,
-                current.creationCheckout?.id ?: current.creationCheckoutId,
+            val checkoutId = if (creationDraft != null && current.creationMachine?.online != true && current.taskCatalogAvailableForQueue) {
+                creationDraft.submittedRequest?.checkoutId ?: requireNotNull(current.creationCheckout).id
+            } else connectionManager.ensureCheckoutRoute(
+                creationDraft?.submittedRequest?.projectId ?: current.selectedProjectId,
+                creationDraft?.submittedRequest?.checkoutId ?: current.creationCheckout?.id ?: current.creationCheckoutId,
             )
             val selectedWorkspaceMode = ConversationWorkspaceMode.resolve(workspaceMode)
             val request = CreateConversationRequest.newBuilder()
@@ -2079,7 +2144,12 @@ class DieterViewModel internal constructor(
                     workspaceMode = selectedWorkspaceMode.wire,
                 ),
             )
-            val card = connectionManager.enqueueConversation(request, chat)
+            if (creationDraft != null && creationDraft.submittedRequest == null) {
+                creationDraft.submissionId = UUID.randomUUID().toString()
+                creationDraft.submittedRequest = request
+            }
+            if (creationDraft != null) taskCaptures?.flush(creationDraft)
+            val card = connectionManager.enqueueConversation(creationDraft?.submittedRequest ?: request, chat, creationDraft?.submissionId.orEmpty())
             onCreated()
             _state.update { it.copy(appSurface = null, editingScheduleId = null) }
             if (shouldOpenCreatedConversation(chat, lane)) {
@@ -2089,31 +2159,34 @@ class DieterViewModel internal constructor(
     }
 
     fun createQuickTask(story: String, onCreated: () -> Unit = {}) {
-        val cleanStory = story.trim()
-        if (cleanStory.isEmpty()) return
-        val current = _state.value
-        if (current.working || !current.creationCatalogReady) return
         val draft = cardCreationDraft(quick = true)
-        if (!harnessCatalogSupportsSelection(current.harnesses, draft.provider, draft.model)) return
+        draft.prompt = story
+        submitTask(draft, onCreated)
+    }
+
+    internal fun canSubmitTask(draft: CardCreationDraft): Boolean {
+        val current = _state.value
+        return draft.ready && !current.working && current.board?.retired == false && current.taskCatalogAvailableForQueue &&
+            harnessCatalogSupportsSelection(current.harnesses, draft.provider, draft.model) &&
+            canCreateConversation(current.selectedProjectId, draft.provider, draft.model, draft.prompt, false, draft.title, draft.attachments.isNotEmpty()) &&
+            attachmentLimitError(emptyList(), draft.attachments) == null &&
+            current.board?.lanesList?.any { it.id == draft.lane } == true &&
+            current.board?.labelsList.orEmpty().map { it.id }.containsAll(draft.labelIds)
+    }
+
+    internal fun submitTask(draft: CardCreationDraft, onCreated: () -> Unit = {}) {
+        if (!canSubmitTask(draft)) return
+        val current = _state.value
+        draft.checkoutId = current.creationCheckout?.id.orEmpty()
         createConversation(
-            title = draft.title.trim().ifBlank { optimisticQuickTaskTitle(cleanStory) },
-            prompt = cleanStory,
-            chat = false,
-            provider = draft.provider,
-            model = draft.model,
-            effort = draft.effort,
-            providerOptions = draft.providerOptions,
-            lane = draft.lane,
-            labelIds = draft.labelIds.toList(),
-            attachments = draft.attachments.toList(),
-            deferStart = shouldDeferConversationStart(chat = false, lane = draft.lane),
-            workspaceMode = draft.workspaceMode.wire,
-            workspaceBaseBranch = current.project?.baseBranch.orEmpty(),
-            autoGenerateTitle = draft.title.isBlank(),
-            onCreated = {
-                acceptCardCreationDraft(draft)
-                onCreated()
-            },
+            title = draft.creationTitle,
+            prompt = draft.prompt.trim().ifBlank { draft.title.trim() },
+            chat = false, provider = draft.provider, model = draft.model, effort = draft.effort,
+            providerOptions = draft.providerOptions, lane = draft.lane, labelIds = draft.labelIds.toList(),
+            attachments = draft.attachments.toList(), deferStart = shouldDeferConversationStart(false, draft.lane),
+            workspaceMode = draft.workspaceMode.wire, workspaceBaseBranch = current.project?.baseBranch.orEmpty(),
+            autoGenerateTitle = draft.generatesTitle, creationDraft = draft,
+            onCreated = { acceptCardCreationDraft(draft); onCreated() },
         )
     }
 
@@ -3723,10 +3796,11 @@ class DieterViewModel internal constructor(
         private val connectionManager: DieterConnectionManager,
         private val appPreferences: AppPreferences,
         private val conversationDrafts: ConversationDraftStore = ConversationDraftStore(),
+        private val taskCaptures: TaskCaptureStore? = null,
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            DieterViewModel(connectionManager, appPreferences, conversationDrafts) as T
+            DieterViewModel(connectionManager, appPreferences, conversationDrafts, taskCaptures) as T
     }
 
     companion object {

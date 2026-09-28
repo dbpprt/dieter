@@ -8,7 +8,36 @@ import com.dbpprt.dieter.v1.Harness
 import com.dbpprt.dieter.v1.MessagePart
 
 /** One board-scoped draft, owned by the Activity ViewModel, not either editor. */
-internal class CardCreationDraft {
+internal class CardCreationDraft(val id: String = java.util.UUID.randomUUID().toString()) {
+    var accountId by mutableStateOf("")
+    var projectId by mutableStateOf("")
+    var boardId by mutableStateOf("")
+    var checkoutId by mutableStateOf("")
+    var submittedRequest by mutableStateOf<com.dbpprt.dieter.v1.CreateConversationRequest?>(null)
+    var submissionId by mutableStateOf("")
+    var importing by mutableStateOf(false)
+    var persistenceError by mutableStateOf<String?>(null)
+    val importFailures = mutableStateListOf<TaskImportFailure>()
+    val creationTitle get() = title.trim().ifBlank {
+        optimisticQuickTaskTitle(prompt).ifBlank { attachments.firstOrNull()?.filename?.takeIf(String::isNotBlank) ?: "New task" }
+    }
+    val generatesTitle get() = title.isBlank() && prompt.isNotBlank()
+    val hasContent get() = prompt.isNotBlank() || title.isNotBlank() || attachments.isNotEmpty() || importFailures.isNotEmpty()
+    val ready get() = !importing && importFailures.isEmpty() && persistenceError == null
+
+    fun snapshot(): com.dbpprt.dieter.v1.CreateConversationRequest = submittedRequest ?: com.dbpprt.dieter.v1.CreateConversationRequest.newBuilder()
+        .setTitle(title).setPrompt(prompt).setProvider(provider).setModel(model).setEffort(effort)
+        .putAllProviderOptions(providerOptions).setLane(lane).setWorkspaceMode(workspaceMode.wire)
+        .addAllLabelIds(labelIds).addAllAttachments(attachments).build()
+
+    fun restore(request: com.dbpprt.dieter.v1.CreateConversationRequest) {
+        title = request.title; prompt = request.prompt; provider = request.provider; model = request.model
+        effort = request.effort; providerOptions = request.providerOptionsMap; lane = request.lane
+        workspaceMode = ConversationWorkspaceMode.resolve(request.workspaceMode)
+        labelIds.addAll(request.labelIdsList); attachments.addAll(request.attachmentsList)
+        initialized = provider.isNotBlank(); initializedDestination = lane.isNotBlank()
+    }
+
     val titleState = mutableStateOf("")
     var title by titleState
     val promptState = mutableStateOf("")
@@ -53,7 +82,6 @@ internal class CardCreationDraft {
     }
 
     fun openOptions() {
-        if (!expanded && title.isBlank()) title = optimisticQuickTaskTitle(prompt)
         expanded = true
         quickTaskOpen = false
     }

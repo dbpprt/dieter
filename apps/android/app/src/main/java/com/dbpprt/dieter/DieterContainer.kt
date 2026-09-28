@@ -29,6 +29,7 @@ class DieterContainer(context: Context) {
     internal val conversationDrafts = ConversationDraftStore(
         persistence = SharedPreferencesConversationDraftPersistence(context),
     )
+    internal val taskCaptures = com.dbpprt.dieter.ui.TaskCaptureStore(context.applicationContext)
     val appUpdateManager = AppUpdateManager(context)
     private val widgetScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
