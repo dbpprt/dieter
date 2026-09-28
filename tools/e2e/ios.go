@@ -31,6 +31,11 @@ type simulatorInventory struct {
 	} `json:"runtimes"`
 }
 
+// A freshly selected Xcode installation can spend well over 30 seconds
+// starting CoreSimulatorService on a hosted runner. Keep the inventory probe
+// bounded without treating that normal cold start as an unavailable platform.
+const iosSimulatorInventoryTimeout = 2 * time.Minute
+
 func iosDestination(data []byte, device string) (string, string, error) {
 	var inventory simulatorInventory
 	if err := json.Unmarshal(data, &inventory); err != nil {
@@ -97,7 +102,7 @@ func runIOS(ctx context.Context, root, output, device string, cases []Case) erro
 		return unavailable(err)
 	}
 	defer unlock()
-	preflight, cancel := context.WithTimeout(ctx, 30*time.Second)
+	preflight, cancel := context.WithTimeout(ctx, iosSimulatorInventoryTimeout)
 	out, err := binaryCommand(preflight, root, "xcrun", "simctl", "list", "-j")
 	cancel()
 	if err != nil {
