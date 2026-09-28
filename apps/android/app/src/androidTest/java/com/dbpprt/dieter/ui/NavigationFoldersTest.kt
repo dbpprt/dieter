@@ -6,11 +6,14 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Density
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.test.*
@@ -114,7 +117,8 @@ class NavigationFoldersTest {
         compose.onNodeWithText("Rename folder").performClick()
         compose.onNodeWithTag("folder-name").performTextReplacement("Reviews")
         compose.onNodeWithTag("save-folder").performClick()
-        compose.onNodeWithText("Reviews").assertIsDisplayed()
+        compose.onNodeWithTag("folder-$id").assertTextContains("Reviews")
+        compose.onAllNodesWithText("Reviews").assertCountEquals(2) // Header and pinned shortcut context.
         runBlocking { preferences.sharedNavigation.awaitPendingWrites() }
         val reloaded = newPreferences()
         compose.waitUntil(5_000) { reloaded.navigationFolders.layouts.value.getValue(NavigationFolderScope.CHATS).folders.singleOrNull()?.name == "Reviews" }
@@ -132,6 +136,84 @@ class NavigationFoldersTest {
         compose.onAllNodesWithTag("chat-c1").assertCountEquals(1)
         compose.onNodeWithTag("chat-c2").assertIsDisplayed()
         compose.onNodeWithText("Reviews").assertDoesNotExist()
+    }
+
+    @Test fun chatHierarchySearchRevealsCollapsedGroupsWithoutChangingPreferences() {
+        val otherProject = Project.newBuilder().setId("p2").setName("NewsOS").build()
+        fun chat(id: String, title: String, project: String = "p1", pinned: Boolean = false, running: Boolean = false) =
+            Card.newBuilder().setId(id).setTitle(title).setProjectId(project).setScope("chat")
+                .setOwnerDaemonId("mini-office").setPinned(pinned).setRuntime(if (running) "running" else "idle")
+                .setLastActivityAt("2026-09-23T10:00:00Z").build()
+        val fixtureChats = listOf(
+            chat("pin", "Release checklist", pinned = true),
+            chat("filed", "New Readerscore", "p2", running = true),
+            chat("filed-idle", "Erdbeerland", "p2"),
+            chat("project", "Refine Android navigation", running = true),
+            chat("project-2", "Review connection recovery"),
+            chat("project-3", "Write release notes"),
+            chat("project-4", "Check keyboard shortcuts"),
+        )
+        compose.runOnIdle {
+            model.navigationFolders.update(NavigationFolderScope.CHATS) {
+                it.adding("Newsroom", "news").moving("filed", "news").moving("filed-idle", "news")
+            }
+        }
+        var dark by mutableStateOf(true)
+        var fontScale by mutableStateOf(1f)
+        compose.setContent {
+            val state by model.state.collectAsState()
+            val density = LocalDensity.current
+            CompositionLocalProvider(LocalDensity provides Density(density.density, fontScale)) {
+                DieterTheme(darkTheme = dark) {
+                    Scaffold(bottomBar = { DieterBottomBar(Destination.CHATS, {}, {}) }) { padding ->
+                        ChatsScreen(state.copy(projects = projects + otherProject, chats = fixtureChats,
+                            navigationPendingCount = 0, navigationSyncError = null), model, false, padding)
+                    }
+                }
+            }
+        }
+        compose.onNodeWithText("Pinned").assertIsDisplayed()
+        compose.onNodeWithText("Folders").assertIsDisplayed()
+        compose.onNodeWithTag("folder-news").assertIsDisplayed()
+        compose.onNodeWithTag("chat-runtime-filed", useUnmergedTree = true).assertIsDisplayed()
+        compose.onNodeWithText("Not running").assertDoesNotExist()
+        capture("all-chats-dark.png")
+        compose.runOnIdle { dark = false }
+        capture("all-chats-light.png")
+        compose.runOnIdle { dark = true; fontScale = 1.5f }
+        capture("all-chats-large-text.png")
+        compose.onNodeWithTag("chat-actions-pin").performClick()
+        compose.onNodeWithText("Unpin").assertIsDisplayed()
+        compose.onNodeWithText("Move to folder").assertIsDisplayed()
+        androidx.test.espresso.Espresso.pressBack()
+        compose.runOnIdle { fontScale = 1f }
+        compose.onNodeWithTag("folder-news").performClick()
+        compose.onNodeWithTag("chats-list").performScrollToNode(hasTestTag("project-chat-toggle-p1"))
+        compose.onNodeWithTag("project-chat-toggle-p1").performClick()
+        compose.waitUntil { "p1" in model.state.value.collapsedChatProjectIds }
+        capture("all-chats-collapsed.png")
+        compose.onNode(hasSetTextAction()).performTextInput("Newsroom")
+        androidx.test.espresso.Espresso.closeSoftKeyboard()
+        compose.onNodeWithTag("chat-filed").assertIsDisplayed()
+        compose.onNodeWithTag("chat-filed-idle").assertIsDisplayed()
+        capture("all-chats-folder-search.png")
+        compose.onNode(hasSetTextAction()).performTextReplacement("Dieter")
+        androidx.test.espresso.Espresso.closeSoftKeyboard()
+        compose.onNodeWithTag("chat-project").assertIsDisplayed()
+        compose.onNodeWithTag("chats-list").performScrollToNode(hasTestTag("chat-project-4"))
+        compose.onNodeWithTag("chat-project-4").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Clear search").performClick()
+        androidx.test.espresso.Espresso.closeSoftKeyboard()
+        compose.onNodeWithTag("chat-project").assertDoesNotExist()
+        compose.onNodeWithTag("chat-filed").assertDoesNotExist()
+        compose.runOnIdle {
+            assertTrue("p1" in model.state.value.collapsedChatProjectIds)
+            assertFalse(model.navigationFolders.layouts.value.getValue(NavigationFolderScope.CHATS).folders.single().isExpanded)
+        }
+        compose.onNode(hasSetTextAction()).performTextInput("nothing-matches-this")
+        androidx.test.espresso.Espresso.closeSoftKeyboard()
+        compose.onNodeWithText("No matching chats").assertIsDisplayed()
+        capture("all-chats-no-results.png")
     }
 
     @Test fun projectFoldersMoveOutAndDeleteWithoutRemovingProjects() {

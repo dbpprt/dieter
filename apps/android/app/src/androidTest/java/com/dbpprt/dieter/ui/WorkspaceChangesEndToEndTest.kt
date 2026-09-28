@@ -137,7 +137,10 @@ class WorkspaceChangesEndToEndTest {
             composeRule.waitUntil(20_000) {
                 composeRule.onAllNodesWithTag("space-project-${project.id}").fetchSemanticsNodes().isNotEmpty()
             }
-            composeRule.onNode(androidx.compose.ui.test.hasText(project.name) and androidx.compose.ui.test.hasClickAction()).performScrollTo().performClick()
+            composeRule.onNode(
+                androidx.compose.ui.test.hasText(project.name) and androidx.compose.ui.test.hasClickAction() and
+                    androidx.compose.ui.test.hasAnyAncestor(androidx.compose.ui.test.hasTestTag("space-project-${project.id}")),
+            ).performScrollTo().performClick()
             composeRule.waitUntil(20_000) {
                 composeRule.onAllNodesWithText(fixture.title).fetchSemanticsNodes().isNotEmpty()
             }

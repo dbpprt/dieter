@@ -90,7 +90,10 @@ class ProjectWorkspaceAdministrationEndToEndTest {
             composeRule.waitUntil(20_000) {
                 composeRule.onAllNodesWithTag("space-project-${initialProject.id}").fetchSemanticsNodes().isNotEmpty()
             }
-            composeRule.onNode(androidx.compose.ui.test.hasText(initialProject.name) and androidx.compose.ui.test.hasClickAction()).performScrollTo().performClick()
+            composeRule.onNode(
+                androidx.compose.ui.test.hasText(initialProject.name) and androidx.compose.ui.test.hasClickAction() and
+                    androidx.compose.ui.test.hasAnyAncestor(androidx.compose.ui.test.hasTestTag("space-project-${initialProject.id}")),
+            ).performScrollTo().performClick()
             composeRule.waitUntil(10_000) {
                 composeRule.onAllNodesWithContentDescription("Board actions").fetchSemanticsNodes().isNotEmpty()
             }

@@ -63,9 +63,7 @@ class ChatRuntimeStatusIndicatorTest {
         composeRule.onNodeWithTag("chat-runtime-running").assertIsDisplayed()
             .assertContentDescriptionEquals("Chat is running")
             .assertTextEquals("Running")
-        composeRule.onNodeWithTag("chat-runtime-inactive").assertIsDisplayed()
-            .assertContentDescriptionEquals("Chat is not running")
-            .assertTextEquals("Not running")
+        composeRule.onNodeWithTag("chat-runtime-inactive").assertDoesNotExist()
         composeRule.onNodeWithTag("chat-title-running").assertIsDisplayed().assertTextEquals(runningTitle)
         composeRule.onNodeWithTag("chat-project-running").assertIsDisplayed().assertTextEquals("Dieter")
         composeRule.onNodeWithTag("chat-project-inactive").assertIsDisplayed().assertTextEquals("Dieter")
@@ -75,14 +73,14 @@ class ChatRuntimeStatusIndicatorTest {
         composeRule.waitForIdle()
         val compositionsBefore = Recomposer.runningRecomposers.value.associateWith { it.changeCount }
         val activeBefore = composeRule.onNodeWithTag("chat-runtime-running").captureToImage().asAndroidBitmap()
-        val inactiveBefore = composeRule.onNodeWithTag("chat-runtime-inactive").captureToImage().asAndroidBitmap()
+        val inactiveBefore = composeRule.onNodeWithTag("chat-title-inactive").captureToImage().asAndroidBitmap()
         capture("chat-runtime-status-before.png")
 
         composeRule.mainClock.advanceTimeBy(575)
         composeRule.waitForIdle()
 
         val activeAfter = composeRule.onNodeWithTag("chat-runtime-running").captureToImage().asAndroidBitmap()
-        val inactiveAfter = composeRule.onNodeWithTag("chat-runtime-inactive").captureToImage().asAndroidBitmap()
+        val inactiveAfter = composeRule.onNodeWithTag("chat-title-inactive").captureToImage().asAndroidBitmap()
         capture("chat-runtime-status-after.png")
 
         assertEquals("Badge animation must draw without recomposing text and layout",

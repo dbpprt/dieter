@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
@@ -39,6 +40,9 @@ import androidx.compose.material.icons.outlined.Cancel
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.DragHandle
 import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.MoreVert
+import androidx.compose.material.icons.outlined.Workspaces
+import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.PushPin
 import androidx.compose.material.icons.outlined.Search
@@ -60,6 +64,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -98,6 +103,8 @@ import com.dbpprt.dieter.connection.isActiveRuntime
 import com.dbpprt.dieter.ui.theme.DieterShell
 import com.dbpprt.dieter.ui.theme.DieterShellDeep
 import com.dbpprt.dieter.ui.theme.DieterMuted
+import com.dbpprt.dieter.ui.theme.DieterAmber
+import com.dbpprt.dieter.ui.theme.DieterDivider
 import com.dbpprt.dieter.ui.theme.DieterPane
 import com.dbpprt.dieter.ui.theme.DieterSurface
 import com.dbpprt.dieter.ui.theme.DieterSurfaceHigh
@@ -150,12 +157,12 @@ fun ChatsScreen(
 
 @Composable
 internal fun ChatsList(state: DieterUiState, model: DieterViewModel, modifier: Modifier = Modifier) {
-    var query by remember { mutableStateOf("") }
+    var query by rememberSaveable { mutableStateOf("") }
     val pinnedChatDragState = remember { PinnedChatDragState() }
     val haptic = LocalHapticFeedback.current
-    val chats = remember(state.chats, query) {
-        state.chats
-            .filter { query.isBlank() || it.title.contains(query, ignoreCase = true) }
+    val searchTerm = query.trim()
+    val chats = remember(state.chats, state.projects, state.chatFolders, searchTerm) {
+        chatsForQuery(state.chats, state.projects, state.chatFolders, searchTerm)
             .sortedWith(compareByDescending<BoardCard> { it.pinned }.thenByDescending { it.lastActivityAt })
     }
     val pinned = remember(chats, state.pinnedChatOrder) {
@@ -164,9 +171,15 @@ internal fun ChatsList(state: DieterUiState, model: DieterViewModel, modifier: M
     val filedIDs = remember(state.chatFolders) { state.chatFolders.folders.flatMap { it.itemIDs }.toSet() }
     val unfiledChats = remember(chats, filedIDs) { chats.filterNot { it.id in filedIDs } }
     val unpinnedByProject = remember(unfiledChats) { unfiledChats.filterNot { it.pinned }.groupBy(BoardCard::getProjectId) }
-    val chatProjects = remember(state.projects, unfiledChats, query, state.chatFolders) {
-        chatProjectsForQuery(state.projects, unfiledChats, query).filter {
+    val chatProjects = remember(state.projects, unfiledChats, searchTerm, state.chatFolders) {
+        chatProjectsForQuery(state.projects, unfiledChats, searchTerm).filter {
             state.chatFolders.folders.isEmpty() || unpinnedByProject[it.id].orEmpty().isNotEmpty()
+        }
+    }
+    val visibleFolders = remember(state.chatFolders, chats, searchTerm) {
+        val matchingIDs = chats.mapTo(hashSetOf()) { it.id }
+        state.chatFolders.folders.filter { folder ->
+            searchTerm.isBlank() || folder.name.contains(searchTerm, ignoreCase = true) || folder.itemIDs.any { it in matchingIDs }
         }
     }
     val chatsByID = remember(chats) { chats.associateBy { it.id } }
@@ -196,18 +209,20 @@ internal fun ChatsList(state: DieterUiState, model: DieterViewModel, modifier: M
             }
             NavigationSyncStatus(state)
             SurfaceErrorBanner(state.error, model::clearError)
-            CompactSearchField(query, { query = it }, "Search chats")
+            CompactSearchField(query, { query = it }, "Search chats, projects, folders", clearable = true)
             if (!state.connected && state.projects.isEmpty() && state.chatFolders.folders.isEmpty()) {
                 ConnectionEmptyState(state, model)
-            } else if (chats.isEmpty() && state.projects.isEmpty() && state.chatFolders.folders.isEmpty()) {
+            } else if (state.chats.isEmpty() && state.projects.isEmpty() && state.chatFolders.folders.isEmpty()) {
                 EmptyList("No chats yet", "Start a standalone conversation with a local agent.", Icons.Outlined.ChatBubbleOutline)
+            } else if (searchTerm.isNotEmpty() && chats.isEmpty() && chatProjects.isEmpty() && visibleFolders.isEmpty()) {
+                EmptyList("No matching chats", "Try a chat title, project, or folder name.", Icons.Outlined.Search)
             } else {
                 LazyColumn(
                     modifier = Modifier.testTag("chats-list"),
                     contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 96.dp),
                 ) {
                     if (pinned.isNotEmpty()) {
-                        item { ListSectionLabel("Pinned") }
+                        item(key = "pinned-heading") { ChatSectionHeading("Pinned", Icons.Outlined.PushPin, pinned.size, DieterAmber) }
                         items(pinned, key = { "pinned-${it.id}" }) { chat ->
                             val dragged = pinnedChatDragState.chatId == chat.id
                             var dragHandleOriginInRoot by remember(chat.id) { mutableStateOf(Offset.Zero) }
@@ -219,6 +234,7 @@ internal fun ChatsList(state: DieterUiState, model: DieterViewModel, modifier: M
                                 model = model,
                                 folderPreferences = state.chatFolders,
                                 showPinnedDragHandle = true,
+                                folderLabel = state.chatFolders.folderContaining(chat.id)?.name,
                                 projectLabel = projectLabels[chat.projectId] ?: "Project unavailable",
                                 dropTarget = pinnedChatDragState.targetChatId == chat.id,
                                 dragged = dragged,
@@ -251,71 +267,60 @@ internal fun ChatsList(state: DieterUiState, model: DieterViewModel, modifier: M
                             )
                         }
                     }
-                    state.chatFolders.folders.forEach { folder ->
+                    if (visibleFolders.isNotEmpty()) {
+                        item(key = "folders-heading") { ChatSectionHeading("Folders", Icons.Outlined.FolderOpen, visibleFolders.size, DieterAmber) }
+                    }
+                    visibleFolders.forEach { folder ->
                         val members = folder.itemIDs.mapNotNull(chatsByID::get)
-                        if (query.isBlank() || members.isNotEmpty()) {
+                        if (searchTerm.isBlank() || members.isNotEmpty() || folder.name.contains(searchTerm, ignoreCase = true)) {
                             item(key = "chat-folder-${folder.id}") {
                                 NavigationFolderHeader(folder, members.size, NavigationFolderScope.CHATS,
-                                    state.chatFolders, model.navigationFolders, revealSearchResults = query.isNotBlank())
+                                    state.chatFolders, model.navigationFolders, revealSearchResults = searchTerm.isNotBlank())
                             }
-                            if (folder.isExpanded || query.isNotBlank()) {
+                            if (folder.isExpanded || searchTerm.isNotBlank()) {
                                 if (members.isEmpty()) item(key = "chat-folder-empty-${folder.id}") {
                                     Text("No chats in this folder", color = DieterMuted,
-                                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
+                                        modifier = Modifier.chatGroupRail(DieterAmber.copy(alpha = 0.3f)).padding(12.dp))
                                 }
                                 items(members, key = { "folder-${folder.id}-${it.id}" }) { chat ->
                                     ChatRow(chat, model, projectLabels[chat.projectId] ?: "Project unavailable",
-                                        modifier = Modifier.padding(start = 12.dp), folderPreferences = state.chatFolders)
+                                        modifier = Modifier.chatGroupRail(DieterAmber.copy(alpha = 0.3f)), folderPreferences = state.chatFolders)
                                 }
                             }
                         }
                     }
+                    if (chatProjects.isNotEmpty()) {
+                        item(key = "projects-heading") { ChatSectionHeading("Projects", Icons.Outlined.Workspaces, chatProjects.size) }
+                    }
                     chatProjects.forEach { project ->
                         val projectChats = unpinnedByProject[project.id].orEmpty()
-                        val collapsed = project.id in state.collapsedChatProjectIds
-                        val expanded = project.id in state.expandedChatProjectIds
+                        val collapsed = searchTerm.isBlank() && project.id in state.collapsedChatProjectIds
+                        val expanded = searchTerm.isNotBlank() || project.id in state.expandedChatProjectIds
                         val visibleProjectChats = if (expanded) projectChats else projectChats.take(PROJECT_CHAT_PREVIEW_COUNT)
                         item(key = "project-chat-header-${project.id}") {
-                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                                IconButton(
-                                    onClick = { model.toggleChatProjectCollapsed(project.id) },
-                                    modifier = Modifier.size(36.dp).testTag("project-chat-toggle-${project.id}")
-                                        .semantics { stateDescription = if (collapsed) "Collapsed" else "Expanded" },
-                                ) {
-                                    Icon(
-                                        Icons.Outlined.KeyboardArrowDown,
-                                        if (collapsed) "Expand ${project.name} chats" else "Collapse ${project.name} chats",
-                                        tint = DieterMuted,
-                                        modifier = Modifier.size(18.dp).rotate(if (collapsed) -90f else 0f),
-                                    )
-                                }
-                                ListSectionLabel(
-                                    buildString {
-                                        append(project.name)
-                                        append(" · ").append(projectChats.size)
-                                    },
-                                    Modifier.weight(1f),
-                                )
-                                IconButton(onClick = { model.selectProject(project.id); model.openSurface(AppSurface.NEW_CHAT) }, modifier = Modifier.size(36.dp)) {
-                                    Icon(Icons.Default.Add, "New chat in ${project.name}", tint = DieterMuted, modifier = Modifier.size(18.dp))
-                                }
-                            }
+                            ChatProjectHeader(
+                                project, projectChats.size, collapsed,
+                                onToggle = { model.toggleChatProjectCollapsed(project.id) },
+                                onNewChat = { model.selectProject(project.id); model.openSurface(AppSurface.NEW_CHAT) },
+                            )
                         }
                         if (!collapsed) {
-                            if (projectChats.isEmpty() && query.isBlank()) {
+                            if (projectChats.isEmpty() && searchTerm.isBlank()) {
                                 item(key = "project-chat-empty-${project.id}") {
                                     Text(
                                         "No chats yet",
                                         color = DieterMuted,
                                         fontSize = 12.sp,
-                                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+                                        modifier = Modifier.fillMaxWidth().chatGroupRail(DieterDivider).padding(12.dp),
                                     )
                                 }
                             } else {
                                 items(visibleProjectChats, key = { it.id }) { chat ->
-                                    ChatRow(chat, model, projectLabels[chat.projectId] ?: project.name, folderPreferences = state.chatFolders)
+                                    ChatRow(chat, model, projectLabels[chat.projectId] ?: project.name,
+                                        modifier = Modifier.chatGroupRail(DieterDivider), showProjectLabel = false,
+                                        folderPreferences = state.chatFolders)
                                 }
-                                if (projectChats.size > PROJECT_CHAT_PREVIEW_COUNT) {
+                                if (searchTerm.isBlank() && projectChats.size > PROJECT_CHAT_PREVIEW_COUNT) {
                                     item(key = "project-chat-more-${project.id}") {
                                         TextButton(
                                             onClick = { model.toggleChatProjectExpanded(project.id) },
@@ -338,6 +343,9 @@ internal fun ChatsList(state: DieterUiState, model: DieterViewModel, modifier: M
                                 }
                             }
                         }
+                    }
+                    if (otherChats.isNotEmpty()) {
+                        item(key = "other-heading") { ChatSectionHeading("Other chats", Icons.Outlined.ChatBubbleOutline, otherChats.size) }
                     }
                     items(otherChats, key = { it.id }) { chat ->
                         ChatRow(chat, model, projectLabels[chat.projectId] ?: "Project unavailable", folderPreferences = state.chatFolders)
@@ -368,6 +376,8 @@ internal fun ChatRow(
     dragHandleModifier: Modifier = Modifier,
     folderPreferences: NavigationFolderPreferences = NavigationFolderPreferences(),
     showPinnedDragHandle: Boolean = false,
+    showProjectLabel: Boolean = true,
+    folderLabel: String? = null,
 ) {
     var moveOpen by remember(chat.id) { mutableStateOf(false) }
     var actionsOpen by remember(chat.id) { mutableStateOf(false) }
@@ -376,19 +386,18 @@ internal fun ChatRow(
     val running = isActiveRuntime(chat.runtime)
     Surface(
         color = when {
-            chat.pinned -> DieterSurface
+            chat.pinned && showPinnedDragHandle -> DieterSurface
             running -> DieterRunning.copy(alpha = 0.045f)
             else -> Color.Transparent
         },
         shape = RoundedCornerShape(16.dp),
         border = when {
             dropTarget -> androidx.compose.foundation.BorderStroke(2.dp, DieterShellDeep)
-            running -> androidx.compose.foundation.BorderStroke(1.dp, DieterRunning.copy(alpha = 0.28f))
+            chat.pinned && showPinnedDragHandle -> androidx.compose.foundation.BorderStroke(1.dp, DieterAmber.copy(alpha = 0.22f))
             else -> null
         },
         shadowElevation = when {
             dragged -> 8.dp
-            running -> 1.dp
             else -> 0.dp
         },
         modifier = modifier.fillMaxWidth().padding(vertical = 2.dp)
@@ -411,10 +420,18 @@ internal fun ChatRow(
                         onClick = { model.openCard(chat, Destination.CHATS) },
                         onLongClick = { actionsOpen = true },
                     )
-                    .padding(horizontal = 12.dp, vertical = 11.dp),
+                    .padding(start = 12.dp, end = 0.dp, top = 11.dp, bottom = 11.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                ChatRowContent(chat, running, projectLabel + " · " + (model.state.value.conversationHost(chat)?.hostname ?: chat.ownerDaemonId), dragHandleModifier, showPinnedDragHandle)
+                val host = model.state.value.conversationHost(chat)?.hostname ?: chat.ownerDaemonId
+                ChatRowContent(
+                    chat, running, projectLabel, dragHandleModifier, showPinnedDragHandle,
+                    hostLabel = host, showProjectLabel = showProjectLabel, folderLabel = folderLabel,
+                )
+                IconButton(onClick = { actionsOpen = true }, modifier = Modifier.size(48.dp).testTag("chat-actions-${chat.id}")) {
+                    Icon(Icons.Outlined.MoreVert, "Actions for ${chat.title.ifBlank { "Untitled chat" }}",
+                        tint = DieterMuted, modifier = Modifier.size(18.dp))
+                }
             }
             DropdownMenu(expanded = actionsOpen, onDismissRequest = { actionsOpen = false }) {
                 DropdownMenuItem(
@@ -485,45 +502,49 @@ internal fun RowScope.ChatRowContent(
     projectLabel: String,
     dragHandleModifier: Modifier = Modifier,
     showPinnedDragHandle: Boolean = true,
+    hostLabel: String = "",
+    showProjectLabel: Boolean = true,
+    folderLabel: String? = null,
 ) {
     Column(Modifier.weight(1f)) {
         Text(
             chat.title.ifBlank { "Untitled chat" },
             fontSize = 15.sp,
             lineHeight = 19.sp,
-            fontWeight = if (running) FontWeight.SemiBold else FontWeight.Normal,
+            fontWeight = FontWeight.Medium,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.testTag("chat-title-${chat.id}"),
         )
-        Spacer(Modifier.height(5.dp))
+        Spacer(Modifier.height(6.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
-            if (chat.pinned) {
-                Icon(
-                    Icons.Outlined.PushPin,
-                    contentDescription = null,
-                    tint = DieterMuted,
-                    modifier = Modifier.size(12.dp).testTag("chat-pinned-indicator-${chat.id}"),
-                )
+            if (chat.pinned && !showPinnedDragHandle) {
+                Icon(Icons.Outlined.PushPin, "Pinned chat", tint = DieterAmber,
+                    modifier = Modifier.size(12.dp).testTag("chat-pinned-indicator-${chat.id}"))
                 Spacer(Modifier.width(4.dp))
             }
-            Text(
-                projectLabel,
-                color = DieterShell,
-                fontSize = 10.sp,
-                lineHeight = 12.sp,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f, fill = false).testTag("chat-project-${chat.id}"),
-            )
-            Text(" · ${shortTimestamp(chat.lastActivityAt.ifBlank { chat.updatedAt })}", color = DieterMuted, fontSize = 10.sp)
+            val context = listOfNotNull(projectLabel.takeIf { showProjectLabel }, hostLabel.takeIf { it.isNotBlank() })
+                .joinToString(" · ")
+            if (context.isNotEmpty()) {
+                Text(context, color = DieterMuted, fontSize = 11.sp, lineHeight = 14.sp,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false).testTag("chat-project-${chat.id}"))
+                Text(" · ", color = DieterMuted, fontSize = 11.sp)
+            }
+            Text(shortTimestamp(chat.lastActivityAt.ifBlank { chat.updatedAt }), color = DieterMuted, fontSize = 11.sp)
         }
-        Spacer(Modifier.height(6.dp))
-        ChatRuntimeStatus(
-            running = running,
-            modifier = Modifier.testTag("chat-runtime-${chat.id}"),
-        )
+        if (running || folderLabel != null) {
+            Spacer(Modifier.height(6.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (running) ChatRuntimeStatus(true, Modifier.testTag("chat-runtime-${chat.id}"))
+                if (folderLabel != null) {
+                    if (running) Spacer(Modifier.width(8.dp))
+                    Icon(Icons.Outlined.Folder, null, tint = DieterAmber, modifier = Modifier.size(12.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text(folderLabel, color = DieterMuted, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
+        }
     }
     if (chat.pinned && showPinnedDragHandle) {
         Spacer(Modifier.width(6.dp))
@@ -531,7 +552,7 @@ internal fun RowScope.ChatRowContent(
             Icons.Outlined.DragHandle,
             contentDescription = "Drag pinned chat to reorder",
             tint = DieterMuted,
-            modifier = dragHandleModifier.size(28.dp).padding(5.dp),
+            modifier = dragHandleModifier.size(48.dp).padding(14.dp),
         )
     }
 }
@@ -610,7 +631,7 @@ internal fun ChatRuntimeStatus(
                         drawCircle(DieterRunning, radius = 2.2.dp.toPx())
                     }
                     Spacer(Modifier.width(4.dp))
-                    Text("Running", fontSize = 10.sp, lineHeight = 12.sp, fontWeight = FontWeight.SemiBold)
+                    Text("Running", color = DieterShell, fontSize = 10.sp, lineHeight = 12.sp, fontWeight = FontWeight.SemiBold)
                 }
             }
         } else {
@@ -662,10 +683,10 @@ internal fun SimpleScreenHeader(
 }
 
 @Composable
-internal fun CompactSearchField(value: String, onValueChange: (String) -> Unit, placeholder: String) {
+internal fun CompactSearchField(value: String, onValueChange: (String) -> Unit, placeholder: String, clearable: Boolean = false) {
     Row(
         Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp)
-            .height(42.dp).clip(RoundedCornerShape(22.dp)).background(DieterSurfaceHigh)
+            .heightIn(min = if (clearable) 48.dp else 42.dp).clip(RoundedCornerShape(24.dp)).background(DieterSurfaceHigh)
             .padding(horizontal = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -677,11 +698,16 @@ internal fun CompactSearchField(value: String, onValueChange: (String) -> Unit, 
             singleLine = true,
             textStyle = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onBackground),
             cursorBrush = SolidColor(DieterShell),
-            modifier = Modifier.weight(1f),
+            modifier = Modifier.weight(1f).semantics { contentDescription = placeholder },
             decorationBox = { inner ->
-                if (value.isBlank()) Text(placeholder, color = DieterMuted, fontSize = 13.sp)
+                if (value.isBlank()) Text(placeholder, color = DieterMuted, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 inner()
             }
         )
+        if (clearable && value.isNotEmpty()) {
+            IconButton(onClick = { onValueChange("") }, modifier = Modifier.size(48.dp)) {
+                Icon(Icons.Outlined.Cancel, "Clear search", tint = DieterMuted, modifier = Modifier.size(18.dp))
+            }
+        }
     }
 }

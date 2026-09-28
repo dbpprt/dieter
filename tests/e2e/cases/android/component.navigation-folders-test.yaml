@@ -13,6 +13,7 @@ native:
   class: com.dbpprt.dieter.ui.NavigationFoldersTest
   methods:
   - chatFoldersKeepPinsSupportSearchAndSurviveRecreation
+  - chatHierarchySearchRevealsCollapsedGroupsWithoutChangingPreferences
   - projectFoldersMoveOutAndDeleteWithoutRemovingProjects
   - projectPinsPersistInSharedNavigationAndCanBeRemovedFromThePinnedCard
   - boardlessProjectsExposeBoardCreationInsteadOfAnEmptyBoard

@@ -1,6 +1,8 @@
 package com.dbpprt.dieter.ui
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -38,6 +40,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -47,6 +50,7 @@ import com.dbpprt.dieter.settings.NavigationFolderPreferences
 import com.dbpprt.dieter.settings.NavigationFolderScope
 import com.dbpprt.dieter.settings.NavigationFolderStore
 import com.dbpprt.dieter.ui.theme.DieterMuted
+import com.dbpprt.dieter.ui.theme.DieterAmber
 import com.dbpprt.dieter.ui.theme.DieterShell
 
 @Composable
@@ -79,22 +83,34 @@ internal fun NavigationFolderHeader(
     var rename by rememberSaveable { mutableStateOf(false) }
     var delete by rememberSaveable { mutableStateOf(false) }
     val expanded = folder.isExpanded || revealSearchResults
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+    val chatFolder = scope == NavigationFolderScope.CHATS
+    val folderTint = if (chatFolder) DieterAmber else DieterShell
+    Row(Modifier.fillMaxWidth().then(if (chatFolder) Modifier.padding(top = 4.dp)
+        .background(folderTint.copy(alpha = 0.07f), RoundedCornerShape(12.dp)) else Modifier),
+        verticalAlignment = Alignment.CenterVertically) {
         Row(
             Modifier.weight(1f).heightIn(min = 48.dp)
                 .clickable { store.update(scope) { it.toggling(folder.id) } }
                 .testTag("folder-${folder.id}")
-                .semantics { stateDescription = if (expanded) "Expanded" else "Collapsed" }
+                .semantics { heading(); stateDescription = if (expanded) "Expanded" else "Collapsed" }
                 .padding(horizontal = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Icon(Icons.Outlined.KeyboardArrowDown, if (expanded) "Collapse ${folder.name}" else "Expand ${folder.name}",
                 tint = DieterMuted, modifier = Modifier.size(20.dp).rotate(if (expanded) 0f else -90f))
-            Icon(Icons.Outlined.Folder, null, tint = DieterShell, modifier = Modifier.size(20.dp))
+            Icon(Icons.Outlined.Folder, null, tint = folderTint, modifier = Modifier.size(20.dp))
             if (summary == null) {
-                Text(folder.name, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                Text("$count", color = DieterMuted)
+                if (chatFolder) {
+                    Column(Modifier.weight(1f).padding(vertical = 8.dp)) {
+                        Text(folder.name, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        Text("Folder · $count ${if (count == 1) "chat" else "chats"}", color = DieterMuted,
+                            style = androidx.compose.material3.MaterialTheme.typography.labelSmall)
+                    }
+                } else {
+                    Text(folder.name, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                    Text("$count", color = DieterMuted)
+                }
             } else {
                 Column(Modifier.weight(1f)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
