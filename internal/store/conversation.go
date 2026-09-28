@@ -17,7 +17,7 @@ import (
 	"github.com/dbpprt/dieter/internal/model"
 )
 
-const conversationProjectionVersion = 5
+const conversationProjectionVersion = 6
 
 const maxConversationEventBytes = 16 << 20
 
@@ -820,35 +820,46 @@ func reduceUIChunk(conversation *model.Conversation, raw json.RawMessage, create
 		message.Parts = append(message.Parts, model.UIMessagePart{Type: "text", Text: stringValue("errorText"), State: "error"})
 		conversation.Status = "failed"
 		conversation.ActiveTurn = nil
+		finishConversationCapabilities(conversation, "failed", "Failed", "failed", createdAt)
 	case "abort":
 		conversation.Status = "interrupted"
 		conversation.ActiveTurn = nil
-		for index := range conversation.Subagents {
-			if conversation.Subagents[index].Status == "running" || conversation.Subagents[index].Status == "pending" {
-				conversation.Subagents[index].Status = "aborted"
-				conversation.Subagents[index].Activity = "Stopped"
-				conversation.Subagents[index].EndedAt = createdAt
-				conversation.Subagents[index].UpdatedAt = createdAt
-			}
-		}
-		for planIndex := range conversation.TaskPlans {
-			if conversation.TaskPlans[planIndex].State != "active" {
-				continue
-			}
-			conversation.TaskPlans[planIndex].State = "interrupted"
-			conversation.TaskPlans[planIndex].UpdatedAt = createdAt
-			for phaseIndex := range conversation.TaskPlans[planIndex].Phases {
-				for taskIndex := range conversation.TaskPlans[planIndex].Phases[phaseIndex].Tasks {
-					if conversation.TaskPlans[planIndex].Phases[phaseIndex].Tasks[taskIndex].Status == "in_progress" {
-						conversation.TaskPlans[planIndex].Phases[phaseIndex].Tasks[taskIndex].Status = "abandoned"
-					}
-				}
-			}
-		}
+		finishConversationCapabilities(conversation, "aborted", "Stopped", "interrupted", createdAt)
 	case "finish":
 		applyMetadata(ensureAssistant())
 		conversation.Status = "idle"
 		conversation.ActiveTurn = nil
+	}
+}
+
+// A worker can die before sending terminal capability frames. Derive their
+// terminal state from the durable error/abort as well, including during replay
+// of histories written by older workers. Completed results remain available.
+func finishConversationCapabilities(conversation *model.Conversation, status, activity, planState, createdAt string) {
+	for index := range conversation.Subagents {
+		agent := &conversation.Subagents[index]
+		if agent.Status == "running" || agent.Status == "pending" {
+			agent.Status = status
+			agent.Activity = activity
+			agent.EndedAt = createdAt
+			agent.UpdatedAt = createdAt
+		}
+	}
+	for planIndex := range conversation.TaskPlans {
+		plan := &conversation.TaskPlans[planIndex]
+		if plan.State != "active" {
+			continue
+		}
+		plan.State = planState
+		plan.UpdatedAt = createdAt
+		for phaseIndex := range plan.Phases {
+			for taskIndex := range plan.Phases[phaseIndex].Tasks {
+				task := &plan.Phases[phaseIndex].Tasks[taskIndex]
+				if task.Status == "in_progress" {
+					task.Status = "abandoned"
+				}
+			}
+		}
 	}
 }
 
