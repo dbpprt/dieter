@@ -177,7 +177,7 @@ func TestIOSCatalogCoverageAndLayout(t *testing.T) {
 // Exercise the actual driver lifecycle against stub tool executables. No Apple
 // tools, simulator, gateway or operator state is needed for failure-path tests.
 func TestIOSDriverCleansOnlyOwnedSimulatorOnEveryExit(t *testing.T) {
-	for _, mode := range []string{"success", "boot-failure", "keyboard-failure", "test-failure", "assertion-failure", "delete-failure", "missing-result", "canceled"} {
+	for _, mode := range []string{"success", "destination-retry", "boot-failure", "keyboard-failure", "test-failure", "assertion-failure", "delete-failure", "missing-result", "canceled"} {
 		t.Run(mode, func(t *testing.T) {
 			root := t.TempDir()
 			bin := filepath.Join(root, "bin")
@@ -216,6 +216,11 @@ if [ "$2" = json ]; then echo '{"DieterIOSUITests":{"BlueprintName":"DieterIOSUI
 `,
 				"xcodebuild": `#!/bin/sh
 printf '%s\n' "$*" >> "$IOS_STUB_LOG"
+if [ "$IOS_STUB_MODE" = destination-retry ] && [ ! -e "$IOS_STUB_LOG.destination-retried" ]; then
+ touch "$IOS_STUB_LOG.destination-retried"
+ echo 'Unable to find a device matching the provided destination specifier'
+ exit 1
+fi
 [ "$IOS_STUB_MODE" != test-failure ] && [ "$IOS_STUB_MODE" != assertion-failure ]
 `,
 			}
@@ -235,8 +240,14 @@ printf '%s\n' "$*" >> "$IOS_STUB_LOG"
 			ctx, cancel := context.WithTimeout(context.Background(), timeout)
 			defer cancel()
 			result := d.run(ctx, Case{ID: "ios.stub", Fixture: "none", Native: &Native{Target: "DieterIOSUITests", Class: "RemoteNodeUITests", Methods: []string{"testOne"}}})
-			if (result.Status == "passed" && result.CleanupError == "") != (mode == "success") {
+			if (result.Status == "passed" && result.CleanupError == "") != (mode == "success" || mode == "destination-retry") {
 				t.Fatalf("%+v", result)
+			}
+			if mode == "destination-retry" {
+				data, err := os.ReadFile(filepath.Join(root, "commands"))
+				if err != nil || strings.Count(string(data), "test-without-building -xctestrun") != 2 {
+					t.Fatalf("destination failure was not retried exactly once: %v\n%s", err, data)
+				}
 			}
 			if mode == "assertion-failure" && (!strings.Contains(result.Reason, "The shared screenshot is absent.") || strings.Contains(result.Reason, "Attributes:")) {
 				t.Fatalf("lost bounded XCTest assertion: %+v", result)

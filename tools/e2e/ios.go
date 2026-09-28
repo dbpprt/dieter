@@ -299,7 +299,7 @@ func (d iosDriver) run(ctx context.Context, c Case) (result Result) {
 		argv = append(argv, "-only-testing:"+c.Native.Target+"/"+c.Native.Class+"/"+method)
 	}
 	execution := time.Now()
-	out, testErr := command(ctx, d.root, nil, argv...)
+	out, testErr := d.runXCTest(ctx, simulator, bundle, argv)
 	result.ExecutionMS = time.Since(execution).Milliseconds()
 	_ = os.WriteFile(filepath.Join(dir, "tests.log"), []byte(redact(out, values)), 0600)
 	evidence, cancel := context.WithTimeout(context.Background(), 60*time.Second)
@@ -325,6 +325,25 @@ func (d iosDriver) run(ctx context.Context, c Case) (result Result) {
 		retainIOSConsole(evidence, d.root, bundle, dir, values)
 	}
 	return
+}
+
+const missingIOSDestination = "Unable to find a device matching the provided destination specifier"
+
+func (d iosDriver) runXCTest(ctx context.Context, simulator, bundle string, argv []string) (string, error) {
+	out, err := command(ctx, d.root, nil, argv...)
+	if err == nil || ctx.Err() != nil || !strings.Contains(out, missingIOSDestination) {
+		return out, err
+	}
+	if removeErr := os.RemoveAll(bundle); removeErr != nil {
+		return out, fmt.Errorf("remove incomplete XCTest result before destination retry: %w", removeErr)
+	}
+	bootOut, bootErr := command(ctx, d.root, nil, "xcrun", "simctl", "bootstatus", simulator, "-b")
+	out += "\nRetrying XCTest once after Xcode temporarily lost the booted simulator.\n" + bootOut
+	if bootErr != nil {
+		return out, fmt.Errorf("verify simulator before destination retry: %w", bootErr)
+	}
+	retryOut, retryErr := command(ctx, d.root, nil, argv...)
+	return out + retryOut, retryErr
 }
 
 func (d iosDriver) testRun(ctx context.Context, state string, environment map[string]string, target string) (string, error) {
