@@ -456,7 +456,10 @@ final class RemoteNodeUITests: XCTestCase {
         XCTAssertTrue(element(app, "ios.terminals.key.arrows").exists)
         surface.tap()
         dismissKeyboardIntroduction(app)
-        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 10))
+        // XCTest can expose the landscape iPad keyboard in a rotated auxiliary
+        // window while `app.keyboards` still reports no match. The terminal
+        // surface itself is the focused responder, so type through the app
+        // without making keyboard-window geometry part of the contract.
         app.typeText("printf 'ios-terminal-marker\\n'\n")
         let marker = XCTNSPredicateExpectation(
             predicate: NSPredicate(format: "value CONTAINS %@", "ios-terminal-marker"),
