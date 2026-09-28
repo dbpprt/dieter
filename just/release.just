@@ -69,6 +69,7 @@ test:
     python3 -m unittest discover -s scripts -p '*signing_test.py'
     python3 -m unittest discover -s scripts -p 'macos_*_test.py'
     python3 -m unittest discover -s scripts -p 'ios_release_test.py'
+    python3 -m unittest discover -s scripts -p 'source_release_version_test.py'
 
 # Exercise release completeness and standalone-installer staging in isolation.
 assembly-test:

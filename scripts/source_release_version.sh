@@ -4,6 +4,9 @@ set -euo pipefail
 # Keep source-built clients and services on one deterministic SemVer identity.
 script_directory="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 repository_root="$(CDPATH= cd -- "$script_directory/.." && pwd)"
+if [[ "$(git -C "$repository_root" rev-parse --is-shallow-repository)" == "true" ]]; then
+    git -C "$repository_root" fetch --quiet --unshallow --tags
+fi
 latest="$(git -C "$repository_root" tag --list 'v*' --sort=-version:refname | \
     awk '/^v[0-9]+[.][0-9]+[.][0-9]+$/ { print; exit }')"
 [[ -n "$latest" ]] || latest="v0.0.0"

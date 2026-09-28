@@ -161,8 +161,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          # Source builds derive their canonical release from tags and the full commit count.
-          fetch-depth: 0
           persist-credentials: false
       - uses: extractions/setup-just@v3
         with:
