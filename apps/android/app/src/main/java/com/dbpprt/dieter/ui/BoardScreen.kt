@@ -1240,8 +1240,9 @@ internal fun plural(count: Int, word: String): String = if (count == 1) word els
 @Composable
 internal fun BoardList(state: DieterUiState, model: DieterViewModel, modifier: Modifier = Modifier, showAllLanes: Boolean = false) {
     var switcherOpen by remember { mutableStateOf(false) }
-    var quickTaskOpen by remember(state.selectedBoardId) { mutableStateOf(false) }
-    var quickTaskStory by rememberSaveable(state.selectedBoardId) { mutableStateOf("") }
+    val draft = model.cardCreationDraft(initialize = false)
+    var quickTaskOpen by draft::quickTaskOpen
+    var quickTaskStory by draft::prompt
     var searchOpen by remember { mutableStateOf(false) }
     var query by remember(state.selectedBoardId) { mutableStateOf("") }
     var selectedLabelId by remember(state.selectedBoardId) { mutableStateOf("") }
@@ -1357,15 +1358,17 @@ internal fun BoardList(state: DieterUiState, model: DieterViewModel, modifier: M
         )
     }
     if (quickTaskOpen) {
+        model.cardCreationDraft(quick = true)
         QuickTaskPopover(
             state = state,
-            defaults = resolveConversationCreationPreferences(model.conversationCreationPreferences, if (state.creationCatalogReady) state.harnesses else emptyList()),
+            defaults = draft.preferences(),
+            laneId = draft.lane,
             onSelectCheckout = model::selectCreationCheckout,
             story = quickTaskStory,
             onStoryChange = { quickTaskStory = it },
             onDismiss = { quickTaskOpen = false },
             onOpenFull = {
-                quickTaskOpen = false
+                draft.openOptions()
                 model.openSurface(AppSurface.NEW_CARD)
             },
             onCreate = { story ->
@@ -1419,6 +1422,7 @@ internal fun QuickTaskPopover(
     onOpenFull: () -> Unit,
     onCreate: (String) -> Unit,
     onSelectCheckout: (String) -> Unit = {},
+    laneId: String = "",
 ) {
     val checkout = state.creationCheckout
     LaunchedEffect(checkout?.id) {
@@ -1429,7 +1433,7 @@ internal fun QuickTaskPopover(
     val cleanStory = story.trim()
     val harness = state.harnesses.firstOrNull { it.id == defaults.provider }
     val selectedModel = harness?.modelsList?.firstOrNull { it.id == defaults.model }
-    val lane = state.board?.lanesList?.firstOrNull()
+    val lane = state.board?.lanesList?.firstOrNull { it.id == laneId } ?: state.board?.lanesList?.firstOrNull()
     val density = LocalDensity.current
     val focusManager = LocalFocusManager.current
     val keyboardController = LocalSoftwareKeyboardController.current

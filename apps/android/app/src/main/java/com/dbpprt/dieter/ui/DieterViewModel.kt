@@ -413,6 +413,29 @@ class DieterViewModel internal constructor(
 
     internal val navigationFolders get() = appPreferences.navigationFolders
 
+    private val cardCreationDrafts = mutableMapOf<Triple<String, String, String>, CardCreationDraft>()
+
+    internal fun cardCreationDraft(quick: Boolean = false, initialize: Boolean = true): CardCreationDraft {
+        val current = _state.value
+        val key = Triple(current.activeGatewayId.orEmpty(), current.selectedProjectId, current.selectedBoardId)
+        return cardCreationDrafts.getOrPut(key) { CardCreationDraft() }.also { draft ->
+            if (initialize) {
+                val harnesses = if (current.creationCatalogReady) current.harnesses else emptyList()
+                draft.initialize(
+                    resolveConversationCreationPreferences(conversationCreationPreferences, harnesses),
+                    harnesses,
+                    (if (quick) "" else current.selectedLane).ifBlank {
+                        current.board?.lanesList?.firstOrNull()?.id.orEmpty().ifBlank { "todo" }
+                    },
+                )
+            }
+        }
+    }
+
+    internal fun acceptCardCreationDraft(draft: CardCreationDraft) {
+        cardCreationDrafts.entries.removeAll { it.value === draft }
+    }
+
     private val mutationMutex = Mutex()
     private val conversationCreationGate = ConversationCreationGate()
     private var pendingProjectCreation: Pair<CreateProjectRequest, String>? = null
@@ -2070,25 +2093,27 @@ class DieterViewModel internal constructor(
         if (cleanStory.isEmpty()) return
         val current = _state.value
         if (current.working || !current.creationCatalogReady) return
-        val defaults = resolveConversationCreationPreferences(conversationCreationPreferences, current.harnesses)
-        if (!harnessCatalogSupportsSelection(current.harnesses, defaults.provider, defaults.model)) return
-        val harness = current.harnesses.firstOrNull { it.id == defaults.provider }
-        val lane = current.board?.lanesList?.firstOrNull()?.id.orEmpty().ifBlank { "todo" }
+        val draft = cardCreationDraft(quick = true)
+        if (!harnessCatalogSupportsSelection(current.harnesses, draft.provider, draft.model)) return
         createConversation(
-            title = optimisticQuickTaskTitle(cleanStory),
+            title = draft.title.trim().ifBlank { optimisticQuickTaskTitle(cleanStory) },
             prompt = cleanStory,
             chat = false,
-            provider = defaults.provider,
-            model = defaults.model,
-            effort = defaults.effort,
-            providerOptions = providerOptionValues(harness, model = defaults.model),
-            lane = lane,
-            labelIds = emptyList(),
-            deferStart = !lane.equals("running", ignoreCase = true),
-            workspaceMode = defaults.workspaceMode.wire,
+            provider = draft.provider,
+            model = draft.model,
+            effort = draft.effort,
+            providerOptions = draft.providerOptions,
+            lane = draft.lane,
+            labelIds = draft.labelIds.toList(),
+            attachments = draft.attachments.toList(),
+            deferStart = shouldDeferConversationStart(chat = false, lane = draft.lane),
+            workspaceMode = draft.workspaceMode.wire,
             workspaceBaseBranch = current.project?.baseBranch.orEmpty(),
-            autoGenerateTitle = true,
-            onCreated = onCreated,
+            autoGenerateTitle = draft.title.isBlank(),
+            onCreated = {
+                acceptCardCreationDraft(draft)
+                onCreated()
+            },
         )
     }
 
