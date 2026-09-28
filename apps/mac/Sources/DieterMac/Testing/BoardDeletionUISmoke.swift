@@ -30,13 +30,15 @@
                 }
                 await store.openBoard(board.id, projectID: board.projectID)
                 _ = await NativeUIAccessibility.wait { store.selectedBoardID == board.id }
+                NativeUISmokeRunner.capture(window, to: output.appending(path: "board-delete-before-context.png"))
 
                 // Exercise cancellation and confirmation on different rows. A
                 // dismissed SwiftUI confirmationDialog can retain its first
                 // modifier host briefly even after AppKit detaches the sheet;
                 // immediately reopening that same host makes the second native
                 // context-menu action race the stale presentation state.
-                let prompted = await chooseDelete(canceledBoard, window: window)
+                let cancelPrompt = await chooseDelete(canceledBoard, window: window)
+                let prompted = cancelPrompt.presented
                 if let sheet = window.attachedSheet {
                     NativeUISmokeRunner.capture(sheet, to: output.appending(path: "board-delete-confirmation.png"))
                 }
@@ -45,9 +47,11 @@
                 let afterCancel = try await rpc.getBoard(canceledBoard.id)
                 results["board-delete-cancel"] =
                     canceled && dismissed && !afterCancel.retired && store.selectedBoardID == board.id
-                    ? "passed" : "failed: cancel removed the board or changed selection"
+                    ? "passed"
+                    : "failed: prompted=\(prompted), canceled=\(canceled), dismissed=\(dismissed), retired=\(afterCancel.retired), selected=\(store.selectedBoardID), target=\(cancelPrompt.diagnostic)"
 
-                let confirmed = await chooseDelete(empty, window: window) && pressDialog("Delete board", window: window)
+                let deletePrompt = await chooseDelete(empty, window: window)
+                let confirmed = deletePrompt.presented && pressDialog("Delete board", window: window)
                 let removed = await NativeUIAccessibility.wait {
                     store.replica.retiredBoards[empty.id]?.retired == true
                         && !store.boards(for: board.projectID).contains { $0.id == empty.id }
@@ -56,7 +60,8 @@
                 let afterDelete = try await rpc.getBoard(empty.id)
                 results["board-delete-right-click-target"] =
                     confirmed && removed && afterDelete.retired && store.selectedBoardID == board.id
-                    ? "passed" : "failed: confirmed=\(confirmed), removed=\(removed), retired=\(afterDelete.retired)"
+                    ? "passed"
+                    : "failed: confirmed=\(confirmed), removed=\(removed), retired=\(afterDelete.retired), selected=\(store.selectedBoardID), target=\(deletePrompt.diagnostic)"
 
                 await store.retireBoard(canceledBoard)
 
@@ -90,32 +95,63 @@
             }
         }
 
-        private static func chooseDelete(_ board: Dieter_V1_Board, window: NSWindow) async -> Bool {
+        private struct DeletePromptResult {
+            let presented: Bool
+            let diagnostic: String
+        }
+
+        private static func chooseDelete(_ board: Dieter_V1_Board, window: NSWindow) async -> DeletePromptResult {
             let identifier = "sidebar.board.\(board.id)"
             guard await NativeUIAccessibility.waitForInteractiveTarget(identifier, in: window),
                 let frame = NativeUIAccessibility.find(identifier, in: window)?.recordedFrame
-            else { return false }
-            let point = window.convertPoint(fromScreen: NSPoint(x: frame.midX, y: frame.midY))
-            let tracker = NativeContentMenuTracker()
-            defer { tracker.menu?.cancelTrackingWithoutAnimation(); tracker.stop() }
-            for type in [NSEvent.EventType.rightMouseDown, .rightMouseUp] {
-                if let event = NSEvent.mouseEvent(
-                    with: type, location: point, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
-                    windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1,
-                    pressure: type == .rightMouseDown ? 1 : 0)
-                {
-                    NSApp.postEvent(event, atStart: false)
-                }
+            else {
+                return DeletePromptResult(
+                    presented: false,
+                    diagnostic: "target unavailable: \(NativeUIAccessibility.targetDiagnostics(identifier, in: window))")
             }
-            guard
-                await NativeUIAccessibility.wait(until: {
+            let point = window.convertPoint(fromScreen: NSPoint(x: frame.midX, y: frame.midY))
+            let localPoint = window.contentView?.convert(point, from: nil) ?? point
+            let hitType = window.contentView?.hitTest(localPoint).map { String(reflecting: type(of: $0)) } ?? "none"
+            var attempts: [String] = []
+            for attempt in 1...3 {
+                let tracker = NativeContentMenuTracker()
+                for type in [NSEvent.EventType.rightMouseDown, .rightMouseUp] {
+                    if let event = NSEvent.mouseEvent(
+                        with: type, location: point, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                        windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1,
+                        pressure: type == .rightMouseDown ? 1 : 0)
+                    {
+                        NSApp.postEvent(event, atStart: false)
+                    }
+                }
+                let menuReady = await NativeUIAccessibility.wait(until: {
                     tracker.menu?.items.contains { $0.title == "Delete board…" && $0.isEnabled } == true
-                }), let menu = tracker.menu,
-                let index = menu.items.firstIndex(where: { $0.title == "Delete board…" })
-            else { return false }
-            menu.cancelTrackingWithoutAnimation()
-            menu.performActionForItem(at: index)
-            return await NativeUIAccessibility.wait { window.attachedSheet != nil }
+                })
+                let titles = tracker.menu?.items.map { "\($0.title):\($0.isEnabled)" } ?? []
+                guard menuReady, let menu = tracker.menu,
+                    let index = menu.items.firstIndex(where: { $0.title == "Delete board…" && $0.isEnabled })
+                else {
+                    tracker.menu?.cancelTrackingWithoutAnimation()
+                    tracker.stop()
+                    attempts.append("attempt \(attempt) menu unavailable items=\(titles)")
+                    try? await DieterTaskSleep.milliseconds(200)
+                    continue
+                }
+                menu.cancelTrackingWithoutAnimation()
+                menu.performActionForItem(at: index)
+                tracker.stop()
+                if await NativeUIAccessibility.wait { window.attachedSheet != nil } {
+                    return DeletePromptResult(
+                        presented: true,
+                        diagnostic: "attempt \(attempt) presented; hit=\(hitType); items=\(titles)")
+                }
+                attempts.append("attempt \(attempt) action produced no sheet items=\(titles)")
+                try? await DieterTaskSleep.milliseconds(200)
+            }
+            return DeletePromptResult(
+                presented: false,
+                diagnostic:
+                    "hit=\(hitType); \(attempts.joined(separator: "; ")); \(NativeUIAccessibility.targetDiagnostics(identifier, in: window))")
         }
 
         private static func pressDialog(_ title: String, window: NSWindow) -> Bool {
