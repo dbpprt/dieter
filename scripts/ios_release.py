@@ -315,6 +315,7 @@ def archive_command(root, archive, version, build, bundle_id):
         "-configuration", "Release", "-destination", "generic/platform=iOS",
         "-derivedDataPath", root / "apps/ios/.build/DerivedData", "-archivePath", archive,
         "archive", f"MARKETING_VERSION={version}", f"CURRENT_PROJECT_VERSION={build}",
+        f"DIETER_RELEASE_VERSION={version}",
         f"DIETER_IOS_BUNDLE_ID={bundle_id}",
     ]
 
@@ -325,6 +326,8 @@ def validate_info(info, version, build, bundle_id, *, require_app_declarations=T
         ("CFBundleVersion", build),
     )):
         raise ReleaseError("The built app's bundle ID, version, or build number does not match the requested release.")
+    if require_app_declarations and info.get("DieterReleaseVersion") != version:
+        raise ReleaseError("The built app's Dieter release version does not match the requested release.")
     if require_app_declarations and info.get("NSCameraUsageDescription") != CAMERA_USAGE_DESCRIPTION:
         raise ReleaseError("The built app is missing its camera usage description.")
     if require_app_declarations and info.get("ITSAppUsesNonExemptEncryption") is not False:

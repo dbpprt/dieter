@@ -9,11 +9,17 @@ doctor:
 
 # Build the native iPhone/iPad app for Simulator without signing credentials.
 build:
-    xcodebuild -skipPackagePluginValidation -project apps/ios/DieterIOS.xcodeproj -scheme DieterIOS -configuration Debug -destination 'generic/platform=iOS Simulator' -derivedDataPath apps/ios/.build/DerivedData build-for-testing CODE_SIGN_IDENTITY=- CODE_SIGNING_ALLOWED=YES
+    #!/usr/bin/env bash
+    set -euo pipefail
+    release_version="${DIETER_RELEASE_VERSION:-$(just release pseudo-version)}"
+    xcodebuild -skipPackagePluginValidation -project apps/ios/DieterIOS.xcodeproj -scheme DieterIOS -configuration Debug -destination 'generic/platform=iOS Simulator' -derivedDataPath apps/ios/.build/DerivedData build-for-testing CODE_SIGN_IDENTITY=- CODE_SIGNING_ALLOWED=YES "DIETER_RELEASE_VERSION=$release_version"
 
 # Compile the native iPhone/iPad app for physical devices, without signing.
 build-device:
-    xcodebuild -skipPackagePluginValidation -project apps/ios/DieterIOS.xcodeproj -scheme DieterIOS -configuration Release -destination 'generic/platform=iOS' -derivedDataPath apps/ios/.build/DerivedData build CODE_SIGNING_ALLOWED=NO
+    #!/usr/bin/env bash
+    set -euo pipefail
+    release_version="${DIETER_RELEASE_VERSION:-$(just release pseudo-version)}"
+    xcodebuild -skipPackagePluginValidation -project apps/ios/DieterIOS.xcodeproj -scheme DieterIOS -configuration Release -destination 'generic/platform=iOS' -derivedDataPath apps/ios/.build/DerivedData build CODE_SIGNING_ALLOWED=NO "DIETER_RELEASE_VERSION=$release_version"
 
 # Validate the dedicated iOS signing inputs without importing or uploading them.
 signing-config:

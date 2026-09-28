@@ -18,6 +18,7 @@ just e2e run --platform ios --device ipad --suite smoke
 ```
 
 `build-device` compiles the device architecture without signing; installation on a device still requires Xcode signing. Build products stay under `apps/ios/.build/`; shared-runner reports and screenshots are in `tmp/e2e-<run>/`.
+Source builds embed `just release pseudo-version` as their gateway compatibility identity, including builds launched directly from the shared Xcode scheme. Versioned archives embed the requested marketing release instead. This identity is independent of the Apple build number.
 
 The SwiftUI screens and iOS store live in `apps/mac/Sources/DieterIOS/` so they can compose the existing package-scoped DieterCore, DieterClient, and DieterAPI modules. The small Xcode app wraps the package's public root view and embeds its shared DieterIOS framework. The Mac executable is not linked into the iOS app.
 

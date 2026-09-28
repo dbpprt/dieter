@@ -46,17 +46,7 @@ version:
 
 # Print a deterministic SemVer identity for an unreleased source build.
 pseudo-version:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    latest="$(git tag --list 'v*' --sort=-version:refname | \
-        awk '/^v[0-9]+[.][0-9]+[.][0-9]+$/ { print; exit }')"
-    [[ -n "$latest" ]] || latest="v0.0.0"
-    IFS=. read -r major minor patch <<<"${latest#v}"
-    count="$(git rev-list --count HEAD)"
-    revision="$(git rev-parse --short=8 HEAD)"
-    dirty=""
-    git diff --quiet && git diff --cached --quiet || dirty=".dirty"
-    printf '%s.%s.%s-dev.%s+%s%s\n' "$major" "$minor" "$((patch + 1))" "$count" "$revision" "$dirty"
+    @scripts/source_release_version.sh
 
 # Select the pinned Xcode version on the GitHub macOS runner.
 select-xcode path="/Applications/Xcode_26.5.app/Contents/Developer":
