@@ -96,6 +96,7 @@ struct BoardCanvas: View {
                         } actions: {
                             Button("Restore board") { Task { await store.restoreBoard(board.id) } }
                                 .accessibilityIdentifier("board.restore")
+                                .smokeTarget("board.restore")
                         }
                     } else {
                         BoardHeader()

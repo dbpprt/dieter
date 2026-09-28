@@ -495,6 +495,21 @@ extension DieterStore {
         do { acceptBoard(try await rpc.deleteBoardLabel(request)) } catch { show(error) }
     }
 
+    func retireBoard(_ board: Dieter_V1_Board) async {
+        guard await ensureReplicaConnection(board.projectID), let rpc else { return }
+        do {
+            let current = try await rpc.getBoard(board.id)
+            var request = Dieter_V1_SetBoardRetiredRequest()
+            request.boardID = board.id
+            request.retired = true
+            request.expectedRevision = current.retirementRevision
+            request.operationID = UUID().uuidString
+            acceptBoard(try await rpc.setBoardRetired(request))
+            await refreshState()
+            await refreshNavigation()
+        } catch { show(error) }
+    }
+
     func restoreBoard(_ id: String) async {
         guard let rpc else { return }
         do {
