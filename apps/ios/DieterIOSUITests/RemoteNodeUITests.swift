@@ -429,13 +429,13 @@ final class RemoteNodeUITests: XCTestCase {
         app.launchEnvironment["DIETER_IOS_TEST_TOKEN"] = token
         app.launch()
         XCTAssertTrue(app.wait(for: .runningForeground, timeout: 20))
-        // Cold launch initially presents the Connecting form. Resolve the
-        // sidebar first: asking XCTest for a descendant of an absent firstMatch
-        // can exhaust its snapshot timeout during the root-view transition.
-        let sidebar = app.scrollViews.matching(identifier: "ios.sidebar").firstMatch
-        XCTAssertTrue(sidebar.waitForExistence(timeout: 40), "Connecting must finish and mount the sidebar.")
-        let terminals = sidebar.buttons.matching(identifier: "ios.terminals.open").firstMatch
-        XCTAssertTrue(terminals.waitForExistence(timeout: 10))
+        // Cold launch initially presents the Connecting form. Query the unique
+        // navigation button directly: resolving the whole landscape iPad
+        // ScrollView can consume XCTest's snapshot timeout before it appears.
+        let terminals = app.buttons.matching(identifier: "ios.terminals.open").firstMatch
+        XCTAssertTrue(
+            terminals.waitForExistence(timeout: 40),
+            "Connecting must finish and expose terminal navigation.")
         terminals.tap()
         XCTAssertTrue(element(app, "ios.terminals.machine-picker-view").waitForExistence(timeout: 10))
         tap(app, "ios.terminals.machine-choice.\(daemon)")

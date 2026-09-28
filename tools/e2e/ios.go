@@ -332,20 +332,35 @@ func (d iosDriver) run(ctx context.Context, c Case) (result Result) {
 	return
 }
 
-const missingIOSDestination = "Unable to find a device matching the provided destination specifier"
+const (
+	missingIOSDestination           = "Unable to find a device matching the provided destination specifier"
+	timedOutLaunchingIOSApplication = "Timed out while launching application via Xcode."
+)
+
+func iosXCTestRetryReason(out string) string {
+	switch {
+	case strings.Contains(out, missingIOSDestination):
+		return "Xcode temporarily lost the booted simulator"
+	case strings.Contains(out, timedOutLaunchingIOSApplication):
+		return "Xcode timed out while launching the application"
+	default:
+		return ""
+	}
+}
 
 func (d iosDriver) runXCTest(ctx context.Context, simulator, bundle string, argv []string) (string, error) {
 	out, err := command(ctx, d.root, nil, argv...)
-	if err == nil || ctx.Err() != nil || !strings.Contains(out, missingIOSDestination) {
+	reason := iosXCTestRetryReason(out)
+	if err == nil || ctx.Err() != nil || reason == "" {
 		return out, err
 	}
 	if removeErr := os.RemoveAll(bundle); removeErr != nil {
-		return out, fmt.Errorf("remove incomplete XCTest result before destination retry: %w", removeErr)
+		return out, fmt.Errorf("remove incomplete XCTest result before retry: %w", removeErr)
 	}
 	bootOut, bootErr := command(ctx, d.root, nil, "xcrun", "simctl", "bootstatus", simulator, "-b")
-	out += "\nRetrying XCTest once after Xcode temporarily lost the booted simulator.\n" + bootOut
+	out += "\nRetrying XCTest once after " + reason + ".\n" + bootOut
 	if bootErr != nil {
-		return out, fmt.Errorf("verify simulator before destination retry: %w", bootErr)
+		return out, fmt.Errorf("verify simulator before XCTest retry: %w", bootErr)
 	}
 	retryOut, retryErr := command(ctx, d.root, nil, argv...)
 	return out + retryOut, retryErr
