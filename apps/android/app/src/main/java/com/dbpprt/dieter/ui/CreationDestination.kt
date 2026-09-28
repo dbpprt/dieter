@@ -17,6 +17,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.dbpprt.dieter.ui.theme.*
+import com.dbpprt.dieter.v1.Project
 
 internal val DieterUiState.creationCheckout
     get() = project?.checkoutsList.orEmpty().filterNot { it.detached }.let { checkouts ->
@@ -35,6 +36,21 @@ internal fun DieterUiState.machineLabel(daemonId: String): String =
     presentedEndpointConnections.firstOrNull { it.daemonId == daemonId }?.label?.takeIf { it.isNotBlank() }
         ?: projectReplicas.values.firstOrNull { it.daemonId == daemonId }?.hostname?.takeIf { it.isNotBlank() }
         ?: daemonId.ifBlank { "Unassigned" }
+
+internal fun DieterUiState.projectCheckoutLabel(project: Project): String {
+    val machines = presentedEndpointConnections.associateBy { it.daemonId }
+    // A project replica supplies shared metadata; only checkouts identify where
+    // the repository lives. Changing the sync route must not change this label.
+    return project.checkoutsList.filterNot { it.detached }.map { it.daemonId }.distinct()
+        .sortedWith(compareByDescending<String> { machines[it]?.online == true }.thenBy { machineLabel(it).lowercase() })
+        .joinToString(" · ") { daemonId ->
+            machineLabel(daemonId) + when (machines[daemonId]?.online) {
+                true -> ""
+                false -> " (offline)"
+                null -> " (unavailable)"
+            }
+        }.ifEmpty { "No checkouts" }
+}
 
 @Composable
 internal fun CreationDestinationPicker(

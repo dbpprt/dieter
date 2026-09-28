@@ -307,7 +307,7 @@ internal fun SpacesOverview(state: DieterUiState, model: DieterViewModel, modifi
                             items(pinnedProjects, key = { it.id }) { project ->
                                 PinnedProjectCard(
                                     project = project,
-                                    host = state.presentedProjectReplicas[project.id],
+                                    checkoutLabel = state.projectCheckoutLabel(project),
                                     boards = boardsByProject[project.id].orEmpty(),
                                     cards = cardsByProject[project.id].orEmpty(),
                                     chatCount = state.chats.count { it.projectId == project.id && !it.archived },
@@ -378,7 +378,7 @@ internal fun SpacesOverview(state: DieterUiState, model: DieterViewModel, modifi
                                 model.setProjectPinned(project.id, project.id !in state.pinnedProjectOrder)
                             },
                             onMoveToFolder = { moveProjectID = project.id },
-                            host = state.presentedProjectReplicas[project.id],
+                            checkoutLabel = state.projectCheckoutLabel(project),
                             boards = projectBoards,
                             cards = cardsByProject[project.id].orEmpty(),
                             dragged = dragged,
@@ -590,7 +590,7 @@ internal fun compactSyncAge(lastConnectedAtMillis: Long?, nowMillis: Long): Stri
 @Composable
 internal fun PinnedProjectCard(
     project: Project,
-    host: ProjectReplica?,
+    checkoutLabel: String,
     boards: List<Board>,
     cards: List<BoardCard>,
     chatCount: Int,
@@ -620,7 +620,7 @@ internal fun PinnedProjectCard(
                 Spacer(Modifier.width(10.dp))
                 Column(Modifier.weight(1f)) {
                     Text(project.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    ProjectHostLine(host, project.path)
+                    Text(checkoutLabel, color = DieterMuted, fontSize = 10.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 }
                 if (reviewCount > 0) {
                     Surface(shape = RoundedCornerShape(50), color = DieterAmber.copy(alpha = 0.14f)) {
@@ -676,7 +676,7 @@ internal fun CompactProjectRow(
     project: Project,
     pinned: Boolean,
     onTogglePinned: () -> Unit,
-    host: ProjectReplica?,
+    checkoutLabel: String,
     boards: List<Board>,
     cards: List<BoardCard>,
     dragged: Boolean,
@@ -733,15 +733,8 @@ internal fun CompactProjectRow(
                                 }
                             }
                         }
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("${boards.size} ${plural(boards.size, "board")}", color = DieterMuted, fontSize = 10.sp)
-                            host?.let {
-                                Text("  ·  ", color = DieterMuted, fontSize = 10.sp)
-                                Box(Modifier.size(4.dp).background(if (it.online) DieterEyes else DieterMuted, CircleShape))
-                                Spacer(Modifier.width(4.dp))
-                                Text(it.hostname, color = DieterMuted, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            }
-                        }
+                        Text("${boards.size} ${plural(boards.size, "board")} · $checkoutLabel",
+                            color = DieterMuted, fontSize = 10.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     }
                     ProjectActivityBars(cards)
                     Box {
@@ -786,19 +779,6 @@ internal fun CompactProjectRow(
                     }
                 }
             }
-        }
-    }
-}
-
-@Composable
-private fun ProjectHostLine(host: ProjectReplica?, fallback: String) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        if (host != null) {
-            Box(Modifier.size(5.dp).background(if (host.online) DieterEyes else DieterMuted, CircleShape))
-            Spacer(Modifier.width(5.dp))
-            Text(host.hostname, color = DieterMuted, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        } else {
-            Text(compactProjectPath(fallback), color = DieterMuted, fontSize = 10.sp, fontFamily = FontFamily.Monospace, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
 }
@@ -1099,8 +1079,7 @@ internal fun BoardQuickSwitcher(state: DieterUiState, model: DieterViewModel, on
                     Text(
                         buildString {
                             append(project.name)
-                            state.presentedProjectReplicas[project.id]?.let { append("  ·  ").append(it.hostname) }
-                            append("  ·  ").append(compactProjectPath(project.path))
+                            append("  ·  ").append(state.projectCheckoutLabel(project))
                         }.uppercase(),
                         color = DieterMuted,
                         fontSize = 10.sp,
@@ -1210,14 +1189,10 @@ internal fun ProjectPickerSheet(
                     Column(Modifier.weight(1f)) {
                         Text(project.name, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal)
                         Text(
-                            buildString {
-                                state.presentedProjectReplicas[project.id]?.let { append(it.hostname).append("  ·  ") }
-                                append(compactProjectPath(project.path))
-                                if (!projectOnline) append("  ·  Offline")
-                            },
+                            state.projectCheckoutLabel(project),
                             color = DieterMuted,
                             fontSize = 11.sp,
-                            maxLines = 1,
+                            maxLines = 2,
                             overflow = TextOverflow.Ellipsis,
                         )
                     }

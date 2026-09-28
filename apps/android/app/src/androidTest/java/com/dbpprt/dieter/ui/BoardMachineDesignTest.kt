@@ -12,6 +12,7 @@ import androidx.compose.ui.unit.dp
 import androidx.test.platform.app.InstrumentationRegistry
 import com.dbpprt.dieter.connection.ConnectionPhase
 import com.dbpprt.dieter.connection.EndpointConnection
+import com.dbpprt.dieter.connection.ProjectReplica
 import com.dbpprt.dieter.ui.theme.DieterTheme
 import com.dbpprt.dieter.v1.*
 import com.dbpprt.dieter.v1.Card
@@ -76,6 +77,47 @@ class BoardMachineDesignTest {
         compose.onNodeWithTag("board-machine-filter").performClick()
         compose.onNodeWithTag("board-machine-all").performClick()
         compose.runOnIdle { assertEquals(null, selected) }
+    }
+
+    @Test fun projectListAndRunOnUseCheckoutMachinesAcrossReplicaChanges() {
+        val project = Project.newBuilder().setId("project").setName("nmt-aigency")
+            .addCheckouts(Checkout.newBuilder().setId("office").setProjectId("project").setDaemonId("office").setName("nmt-aigency"))
+            .addCheckouts(Checkout.newBuilder().setId("laptop").setProjectId("project").setDaemonId("laptop").setName("nmt-aigency"))
+            .build()
+        var current by mutableStateOf(state.copy(
+            projects = listOf(project), creationCheckoutId = "office", harnessesEndpointId = "endpoint-office",
+            projectReplicas = mapOf(project.id to ProjectReplica("endpoint-home", "home", "mini-home", true)),
+            endpointConnections = listOf(
+                EndpointConnection("endpoint-home", "mini-home", "", daemonId = "home"),
+                EndpointConnection("endpoint-office", "mini-office", "", daemonId = "office"),
+                EndpointConnection("endpoint-laptop", "mbp-office", "", daemonId = "laptop", online = false),
+            ),
+        ))
+        var dark by mutableStateOf(true)
+        compose.setContent {
+            DieterTheme(darkTheme = dark) {
+                Surface(Modifier.fillMaxSize()) {
+                    Column(Modifier.safeDrawingPadding().widthIn(max = 420.dp).padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                        Text("Projects", style = MaterialTheme.typography.headlineMedium)
+                        CompactProjectRow(project, false, {}, current.projectCheckoutLabel(project), listOf(board), emptyList(),
+                            false, false, false, false, {}, {}, {}, {})
+                        Text("New card", style = MaterialTheme.typography.headlineMedium)
+                        CreationDestinationPicker(current, {})
+                    }
+                }
+            }
+        }
+        compose.onNodeWithText("1 board · mini-office · mbp-office (offline)").assertIsDisplayed()
+        compose.onNodeWithText("mini-office").assertIsDisplayed()
+        compose.onNodeWithText("mini-home", substring = true).assertDoesNotExist()
+        capture("project-checkouts-dark.png")
+        compose.runOnIdle {
+            current = current.copy(projectReplicas = mapOf(project.id to ProjectReplica("endpoint-office", "office", "mini-office", true)))
+            dark = false
+        }
+        compose.onNodeWithText("1 board · mini-office · mbp-office (offline)").assertIsDisplayed()
+        compose.onNodeWithText("mini-office").assertIsDisplayed()
+        capture("project-checkouts-light.png")
     }
 
     @Test fun compactCardsAndDestinationInDarkAndLightThemes() {
