@@ -191,10 +191,6 @@ fun BoardScreen(
     expanded: Boolean,
     contentPadding: PaddingValues,
 ) {
-    if (LocalTabletProjectWorkspaces.current) {
-        ProjectWorkspacesContent(state, model, Modifier.fillMaxSize().padding(contentPadding))
-        return
-    }
     if (state.boardOverviewVisible) {
         SpacesOverview(state, model, Modifier.fillMaxSize().padding(contentPadding))
         return

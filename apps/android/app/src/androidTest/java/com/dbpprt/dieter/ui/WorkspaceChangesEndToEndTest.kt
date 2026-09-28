@@ -230,7 +230,7 @@ class WorkspaceChangesEndToEndTest {
             composeRule.onAllNodesWithContentDescription("Back")[0].performClick()
             composeRule.onNodeWithTag("nav-tools").performClick()
             composeRule.onNodeWithTag("tool-files").performClick()
-            composeRule.waitUntil(20_000) { composeRule.onAllNodesWithText("Browse").fetchSemanticsNodes().isNotEmpty() }
+            composeRule.waitUntil(20_000) { composeRule.onAllNodesWithTag("project-files-browse").fetchSemanticsNodes().isNotEmpty() }
             composeRule.onNodeWithTag("project-files-changes").performClick()
             composeRule.waitUntil(30_000) { composeRule.onAllNodesWithText(projectNote).fetchSemanticsNodes().isNotEmpty() }
             capture(screenshotDirectory, "project-changes-list-e2e.png")
@@ -270,20 +270,20 @@ class WorkspaceChangesEndToEndTest {
             // Shipping stays explicit. Update and validation execute through the
             // same durable operation path; push is present but is not clicked
             // because this isolated fixture intentionally has no publish remote.
+            composeRule.onNodeWithTag("project-changes-actions").performClick()
             composeRule.onNodeWithTag("project-changes-update").assertIsDisplayed().performClick()
             composeRule.waitUntil(120_000) {
                 val operation = androidx.lifecycle.ViewModelProvider(composeRule.activity)[DieterViewModel::class.java]
                     .state.value.projectChanges.operation
                 operation?.kind == GitOperationKinds.UPDATE && operation.status == "succeeded"
             }
+            composeRule.onNodeWithTag("project-changes-actions").performClick()
             composeRule.onNodeWithTag("project-changes-validate").assertIsDisplayed().performClick()
             composeRule.waitUntil(120_000) {
                 val operation = androidx.lifecycle.ViewModelProvider(composeRule.activity)[DieterViewModel::class.java]
                     .state.value.projectChanges.operation
                 operation?.kind == GitOperationKinds.VALIDATE && operation.status == "succeeded"
             }
-            composeRule.onNodeWithTag("project-changes-push").assertIsDisplayed()
-
             val discarded = "android-discard-${UUID.randomUUID().toString().take(8)}.txt"
             runBlocking {
                 retryTransient {
@@ -293,7 +293,9 @@ class WorkspaceChangesEndToEndTest {
             }
             composeRule.onNodeWithContentDescription("Refresh project changes").performClick()
             composeRule.waitUntil(30_000) { composeRule.onAllNodesWithText(discarded).fetchSemanticsNodes().isNotEmpty() }
-            composeRule.onNodeWithContentDescription("Discard $discarded").performClick()
+            composeRule.onNodeWithContentDescription("Actions for $discarded").performClick()
+            composeRule.onNodeWithText("Discard").performClick()
+            composeRule.waitForIdle()
             composeRule.onNodeWithText("Discard").performClick()
             composeRule.waitUntil(120_000) { composeRule.onAllNodesWithTag("project-changes-clean").fetchSemanticsNodes().isNotEmpty() }
             assertTrue(
@@ -305,6 +307,8 @@ class WorkspaceChangesEndToEndTest {
                     }
                 }.filesCount == 0,
             )
+            composeRule.onNodeWithTag("project-changes-actions").performClick()
+            composeRule.onNodeWithTag("project-changes-push").assertIsDisplayed()
         } catch (error: Throwable) {
             runCatching { capture(requireNotNull(instrumentation.targetContext.getExternalFilesDir(null)), "workspace-before-cleanup-failure.png") }
             throw error

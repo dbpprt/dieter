@@ -197,6 +197,38 @@ class ScreenNavigationTest {
         compose.runOnIdle { assertTrue(settingsOpened) }
     }
 
+    @Test fun projectSourceUsesNativeFilesAndChangesTabs() {
+        var selected by mutableStateOf(ProjectFilesTab.FILES)
+        compose.setContent {
+            DieterTheme {
+                ProjectFilesTabs(
+                    selected = selected,
+                    changedFiles = 3,
+                    onSelect = { selected = it },
+                )
+            }
+        }
+
+        compose.onNodeWithTag("project-files-browse").assertIsDisplayed().assertIsSelected()
+        compose.onNodeWithText("Changes · 3").assertIsDisplayed()
+        compose.onNodeWithTag("project-files-changes").performClick()
+        compose.runOnIdle { assertEquals(ProjectFilesTab.CHANGES, selected) }
+        compose.onNodeWithTag("project-files-changes").assertIsSelected()
+    }
+
+    @Test fun tabletProjectNavigationOffersChangesInsteadOfWorktrees() {
+        var selected: TabletProjectTab? = null
+        compose.setContent {
+            DieterTheme {
+                TabletProjectTabs(TabletProjectTab.FILES) { selected = it }
+            }
+        }
+
+        compose.onNodeWithTag("tablet-project-changes").assertIsDisplayed().performClick()
+        compose.runOnIdle { assertEquals(TabletProjectTab.CHANGES, selected) }
+        compose.onNodeWithText("Worktrees").assertDoesNotExist()
+    }
+
     @Test fun sheetRetainsPrimaryNavigationAndCanBeClosed() {
         var selected: Destination? = null
         var dismissed = false

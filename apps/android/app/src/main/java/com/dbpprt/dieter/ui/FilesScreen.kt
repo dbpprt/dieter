@@ -2,6 +2,7 @@
 
 package com.dbpprt.dieter.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -16,6 +17,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -34,19 +37,24 @@ import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.PrimaryTabRow
+import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -60,8 +68,19 @@ import com.dbpprt.dieter.ui.theme.DieterShell
 import com.dbpprt.dieter.ui.theme.DieterMuted
 import com.dbpprt.dieter.ui.theme.DieterOutline
 import com.dbpprt.dieter.settings.DEFAULT_PANE_LEADING_FRACTION
-import com.dbpprt.dieter.v1.Project
 import com.dbpprt.dieter.ui.theme.DieterShellTint
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.launch
+
+internal enum class ProjectFilesTab(val wire: String, val label: String) {
+    FILES("browse", "Files"),
+    CHANGES("changes", "Changes"),
+    ;
+
+    companion object {
+        fun resolve(value: String): ProjectFilesTab = if (value == CHANGES.wire) CHANGES else FILES
+    }
+}
 
 @Composable
 fun FilesScreen(
@@ -70,47 +89,138 @@ fun FilesScreen(
     expanded: Boolean,
     contentPadding: PaddingValues,
 ) {
+    val tabs = ProjectFilesTab.entries
+    val selectedTab = ProjectFilesTab.resolve(state.projectFilesMode)
+    val selectedIndex = tabs.indexOf(selectedTab)
+    val pagerState = rememberPagerState(initialPage = selectedIndex, pageCount = { tabs.size })
+    val scope = rememberCoroutineScope()
+    val currentMode by rememberUpdatedState(state.projectFilesMode)
+    var pendingTab by remember { mutableStateOf<ProjectFilesTab?>(null) }
+
+    fun openTab(tab: ProjectFilesTab) {
+        if (tab == selectedTab) return
+        if (state.fileDirty && tab == ProjectFilesTab.CHANGES) {
+            pendingTab = tab
+            return
+        }
+        scope.launch { pagerState.animateScrollToPage(tabs.indexOf(tab)) }
+    }
+
+    LaunchedEffect(selectedIndex) {
+        if (pagerState.settledPage != selectedIndex) pagerState.animateScrollToPage(selectedIndex)
+    }
+    LaunchedEffect(pagerState) {
+        snapshotFlow { pagerState.settledPage }
+            .distinctUntilChanged()
+            .collect { page ->
+                val mode = tabs[page].wire
+                if (mode != currentMode) model.setProjectFilesMode(mode)
+            }
+    }
+    BackHandler(
+        enabled = state.projectFilesMode == ProjectFilesTab.CHANGES.wire && state.projectChanges.selectedPath.isNotEmpty() ||
+            state.projectFilesMode == ProjectFilesTab.FILES.wire && state.fileDocument == null && state.filePath.isNotBlank(),
+    ) {
+        if (state.projectFilesMode == ProjectFilesTab.CHANGES.wire) model.closeProjectDiff()
+        else model.openParentDirectory()
+    }
+
     Column(Modifier.fillMaxSize().padding(contentPadding)) {
         ProjectCheckoutSelector(state, model)
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
-            horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp),
-        ) {
-            FilterChip(
-                modifier = Modifier.testTag("project-files-browse"),
-                selected = state.projectFilesMode == "browse",
-                onClick = { model.setProjectFilesMode("browse") },
-                label = { Text("Browse") },
-            )
-            FilterChip(
-                modifier = Modifier.testTag("project-files-changes"),
-                selected = state.projectFilesMode == "changes",
-                onClick = { model.setProjectFilesMode("changes") },
-                label = { Text("Changes") },
-            )
-        }
-        HorizontalDivider(color = DieterOutline)
-        if (state.projectFilesMode == "changes") {
-            ProjectChangesScreen(state, model, expanded, Modifier.weight(1f))
-        } else if (!expanded && state.fileDocument != null) {
-            FilePreview(state, model, Modifier.weight(1f))
-        } else if (expanded) {
-            ResizableHorizontalSplitPane(
-                dividerTag = "files-pane-divider",
-                initialLeadingFraction = if (LocalTabletWorkspace.current) .28f else DEFAULT_PANE_LEADING_FRACTION,
-                modifier = Modifier.weight(1f).fillMaxWidth(),
-                leading = { paneModifier -> FileList(state, model, paneModifier) },
-            ) { paneModifier ->
-                val document = state.fileDocument
-                if (document == null) {
-                    EmptyDetail("Select a file", "Text files open in a revision-safe editor.", Icons.Outlined.Description, paneModifier)
-                } else {
-                    FilePreview(state, model, paneModifier, showBack = false)
-                }
-            }
+        if (LocalTabletWorkspace.current) {
+            ProjectFilesPage(selectedTab, state, model, expanded, Modifier.weight(1f))
         } else {
-            FileList(state, model, Modifier.weight(1f))
+            ProjectFilesTabs(
+                selected = selectedTab,
+                changedFiles = state.projectChanges.changeset?.filesCount ?: 0,
+                onSelect = ::openTab,
+            )
+            HorizontalPager(
+                state = pagerState,
+                modifier = Modifier.weight(1f).fillMaxWidth(),
+                userScrollEnabled = !state.fileDirty && state.fileDocument == null && state.projectChanges.selectedPath.isEmpty(),
+                beyondViewportPageCount = 1,
+                key = { tabs[it] },
+            ) { page ->
+                ProjectFilesPage(tabs[page], state, model, expanded, Modifier.fillMaxSize())
+            }
         }
+    }
+    pendingTab?.let { tab ->
+        ConfirmDialog(
+            title = "Discard unsaved file changes?",
+            body = state.fileDocument?.path.orEmpty(),
+            confirmLabel = "Discard",
+            onDismiss = { pendingTab = null },
+        ) {
+            pendingTab = null
+            model.closeFile(force = true)
+            scope.launch { pagerState.animateScrollToPage(tabs.indexOf(tab)) }
+        }
+    }
+}
+
+@Composable
+internal fun ProjectFilesTabs(
+    selected: ProjectFilesTab,
+    changedFiles: Int,
+    onSelect: (ProjectFilesTab) -> Unit,
+) {
+    PrimaryTabRow(
+        selectedTabIndex = ProjectFilesTab.entries.indexOf(selected),
+        containerColor = MaterialTheme.colorScheme.background,
+        contentColor = DieterShell,
+    ) {
+        ProjectFilesTab.entries.forEach { tab ->
+            Tab(
+                selected = selected == tab,
+                onClick = { onSelect(tab) },
+                text = {
+                    Text(
+                        if (tab == ProjectFilesTab.CHANGES && changedFiles > 0) "${tab.label} · $changedFiles" else tab.label,
+                        fontWeight = if (selected == tab) FontWeight.SemiBold else FontWeight.Normal,
+                    )
+                },
+                modifier = Modifier.testTag(if (tab == ProjectFilesTab.FILES) "project-files-browse" else "project-files-changes"),
+            )
+        }
+    }
+}
+
+@Composable
+private fun ProjectFilesPage(
+    tab: ProjectFilesTab,
+    state: DieterUiState,
+    model: DieterViewModel,
+    expanded: Boolean,
+    modifier: Modifier,
+) {
+    if (tab == ProjectFilesTab.CHANGES) {
+        ProjectChangesScreen(
+            state = state,
+            model = model,
+            expanded = expanded,
+            active = state.projectFilesMode == ProjectFilesTab.CHANGES.wire,
+            modifier = modifier,
+        )
+    } else if (!expanded && state.fileDocument != null) {
+        FilePreview(state, model, modifier)
+    } else if (expanded) {
+        ResizableHorizontalSplitPane(
+            dividerTag = "files-pane-divider",
+            initialLeadingFraction = if (LocalTabletWorkspace.current) .28f else DEFAULT_PANE_LEADING_FRACTION,
+            modifier = modifier.fillMaxWidth(),
+            leading = { paneModifier -> FileList(state, model, paneModifier) },
+        ) { paneModifier ->
+            val document = state.fileDocument
+            if (document == null) {
+                EmptyDetail("Select a file", "Text files open in a revision-safe editor.", Icons.Outlined.Description, paneModifier)
+            } else {
+                FilePreview(state, model, paneModifier, showBack = false)
+            }
+        }
+    } else {
+        FileList(state, model, modifier)
     }
 }
 

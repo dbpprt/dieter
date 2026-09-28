@@ -10,31 +10,29 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.outlined.AddTask
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.Description
+import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.Refresh
-import androidx.compose.material.icons.outlined.RemoveDone
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -70,13 +68,16 @@ internal fun ProjectChangesScreen(
     state: DieterUiState,
     model: DieterViewModel,
     expanded: Boolean,
+    active: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
     val review = state.projectChanges
     var discardPath by remember(state.selectedProjectId) { mutableStateOf<String?>(null) }
     var commitOpen by remember(state.selectedProjectId) { mutableStateOf(false) }
 
-    LaunchedEffect(state.selectedProjectId) { model.loadProjectChanges() }
+    LaunchedEffect(active, state.selectedProjectId) {
+        if (active) model.loadProjectChanges()
+    }
 
     Box(modifier) {
         when {
@@ -142,14 +143,48 @@ private fun ProjectChangeList(
     val unstaged = changes?.filesList?.filter { it.unstaged }.orEmpty()
     val disabled = review.operationActive
     val hasRemote = state.projects.firstOrNull { it.id == review.projectId }?.baseRemote?.isNotBlank() == true
+    var actionsOpen by remember { mutableStateOf(false) }
     Column(modifier.fillMaxSize()) {
         SimpleScreenHeader(
-            "Project changes",
+            "Changes",
             changes?.let { "${it.filesCount} local ${plural(it.filesCount, "file")} · ${it.branch.ifBlank { "current branch" }}" }
                 ?: "Registered checkout",
         ) {
             IconButton(onClick = model::loadProjectChanges, enabled = !review.loading) {
                 Icon(Icons.Outlined.Refresh, "Refresh project changes")
+            }
+            Box {
+                IconButton(
+                    onClick = { actionsOpen = true },
+                    enabled = changes != null && !disabled,
+                    modifier = Modifier.testTag("project-changes-actions"),
+                ) { Icon(Icons.Outlined.MoreVert, "More change actions") }
+                DropdownMenu(expanded = actionsOpen, onDismissRequest = { actionsOpen = false }) {
+                    DropdownMenuItem(
+                        text = { Text("Update from remote") },
+                        enabled = changes?.dirty == false,
+                        onClick = {
+                            actionsOpen = false
+                            model.startProjectGitOperation(
+                                GitOperationKinds.UPDATE,
+                                parameters = mapOf("fetch" to "true", "validate" to "false"),
+                            )
+                        },
+                        modifier = Modifier.testTag("project-changes-update"),
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Validate changes") },
+                        enabled = changes != null,
+                        onClick = { actionsOpen = false; model.startProjectGitOperation(GitOperationKinds.VALIDATE) },
+                        modifier = Modifier.testTag("project-changes-validate"),
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Push branch") },
+                        enabled = changes?.branch?.isNotEmpty() == true && hasRemote,
+                        onClick = { actionsOpen = false; model.startProjectGitOperation(GitOperationKinds.PUSH) },
+                        modifier = Modifier.testTag("project-changes-push"),
+                    )
+                }
             }
         }
         if (review.operationActive) {
@@ -180,66 +215,43 @@ private fun ProjectChangeList(
                 TextButton(onClick = model::clearProjectChangesError) { Text("Dismiss") }
             }
         }
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            if (unstaged.isNotEmpty()) {
-                OutlinedButton(
-                    onClick = { model.startProjectGitOperation(GitOperationKinds.STAGE) },
-                    enabled = !disabled,
-                    modifier = Modifier.testTag("project-changes-stage-all"),
-                ) { Text("Stage all") }
-            }
-            if (staged.isNotEmpty()) {
-                OutlinedButton(
-                    onClick = { model.startProjectGitOperation(GitOperationKinds.UNSTAGE) },
-                    enabled = !disabled,
-                    modifier = Modifier.testTag("project-changes-unstage-all"),
-                ) { Text("Unstage all") }
-                Button(
-                    onClick = onCommit,
-                    enabled = !disabled,
-                    modifier = Modifier.testTag("project-changes-commit"),
-                ) { Text("Commit") }
-            }
-        }
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            TextButton(
-                onClick = {
-                    model.startProjectGitOperation(
-                        GitOperationKinds.UPDATE,
-                        parameters = mapOf("fetch" to "true", "validate" to "false"),
-                    )
-                },
-                enabled = !disabled && changes?.dirty == false,
-                modifier = Modifier.testTag("project-changes-update"),
-            ) { Text("Update") }
-            TextButton(
-                onClick = { model.startProjectGitOperation(GitOperationKinds.VALIDATE) },
-                enabled = !disabled && changes != null,
-                modifier = Modifier.testTag("project-changes-validate"),
-            ) { Text("Validate") }
-            TextButton(
-                onClick = { model.startProjectGitOperation(GitOperationKinds.PUSH) },
-                enabled = !disabled && changes?.branch?.isNotEmpty() == true && hasRemote,
-                modifier = Modifier.testTag("project-changes-push"),
-            ) { Text("Push") }
+        if (staged.isNotEmpty()) {
+            Button(
+                onClick = onCommit,
+                enabled = !disabled,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp)
+                    .testTag("project-changes-commit"),
+            ) { Text("Commit ${staged.size} ${plural(staged.size, "file")}") }
         }
         LazyColumn(
             Modifier.weight(1f),
             contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
             verticalArrangement = Arrangement.spacedBy(5.dp),
         ) {
-            item("staged-header") { ProjectChangeSectionHeader("Staged", staged.size) }
+            item("staged-header") {
+                ProjectChangeSectionHeader(
+                    title = "Staged",
+                    count = staged.size,
+                    action = if (staged.isEmpty()) null else "Unstage all",
+                    actionTag = "project-changes-unstage-all",
+                    enabled = !disabled,
+                    onAction = { model.startProjectGitOperation(GitOperationKinds.UNSTAGE) },
+                )
+            }
             if (staged.isEmpty()) item("staged-empty") { Text("Nothing staged", color = DieterMuted, fontSize = 12.sp, modifier = Modifier.padding(10.dp)) }
             items(staged, key = { "staged:${it.path}" }) { file ->
                 ProjectChangeRow(file, "staged", review, disabled, model, onDiscard)
             }
-            item("changes-header") { ProjectChangeSectionHeader("Changes", unstaged.size) }
+            item("changes-header") {
+                ProjectChangeSectionHeader(
+                    title = "Changes",
+                    count = unstaged.size,
+                    action = if (unstaged.isEmpty()) null else "Stage all",
+                    actionTag = "project-changes-stage-all",
+                    enabled = !disabled,
+                    onAction = { model.startProjectGitOperation(GitOperationKinds.STAGE) },
+                )
+            }
             if (unstaged.isEmpty()) item("changes-empty") {
                 Text(
                     if (staged.isEmpty()) "Working tree is clean" else "No unstaged changes",
@@ -258,14 +270,31 @@ private fun ProjectChangeList(
 }
 
 @Composable
-private fun ProjectChangeSectionHeader(title: String, count: Int) {
-    Text(
-        "$title · $count",
-        color = DieterMuted,
-        fontSize = 11.sp,
-        fontWeight = FontWeight.SemiBold,
-        modifier = Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 4.dp),
-    )
+private fun ProjectChangeSectionHeader(
+    title: String,
+    count: Int,
+    action: String?,
+    actionTag: String,
+    enabled: Boolean,
+    onAction: () -> Unit,
+) {
+    Row(
+        Modifier.fillMaxWidth().padding(start = 10.dp, top = 5.dp, bottom = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            "$title · $count",
+            color = DieterMuted,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.weight(1f),
+        )
+        if (action != null) {
+            TextButton(onClick = onAction, enabled = enabled, modifier = Modifier.testTag(actionTag)) {
+                Text(action, fontSize = 11.sp)
+            }
+        }
+    }
 }
 
 @Composable
@@ -280,6 +309,7 @@ private fun ProjectChangeRow(
     val selected = review.selectedPath == file.path && review.selectedSection == section
     val additions = if (section == "staged") file.stagedAdditions else file.unstagedAdditions
     val deletions = if (section == "staged") file.stagedDeletions else file.unstagedDeletions
+    var menuOpen by remember(file.path, section) { mutableStateOf(false) }
     Surface(
         color = if (selected) DieterShell.copy(alpha = 0.12f) else Color.Transparent,
         shape = RoundedCornerShape(10.dp),
@@ -300,12 +330,27 @@ private fun ProjectChangeRow(
                     }
                 }
             }
-            TextButton(
-                onClick = { model.startProjectGitOperation(if (section == "staged") GitOperationKinds.UNSTAGE else GitOperationKinds.STAGE, file.path) },
-                enabled = !disabled,
-            ) { Text(if (section == "staged") "Unstage" else "Stage", fontSize = 11.sp) }
-            IconButton(onClick = { onDiscard(file.path) }, enabled = !disabled) {
-                Icon(Icons.Outlined.DeleteOutline, "Discard ${file.path}", tint = DieterCoral)
+            Box {
+                IconButton(onClick = { menuOpen = true }, enabled = !disabled) {
+                    Icon(Icons.Outlined.MoreVert, "Actions for ${file.path}")
+                }
+                DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                    DropdownMenuItem(
+                        text = { Text(if (section == "staged") "Unstage" else "Stage") },
+                        onClick = {
+                            menuOpen = false
+                            model.startProjectGitOperation(
+                                if (section == "staged") GitOperationKinds.UNSTAGE else GitOperationKinds.STAGE,
+                                file.path,
+                            )
+                        },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Discard", color = DieterCoral) },
+                        leadingIcon = { Icon(Icons.Outlined.DeleteOutline, null, tint = DieterCoral) },
+                        onClick = { menuOpen = false; onDiscard(file.path) },
+                    )
+                }
             }
         }
     }
@@ -357,7 +402,7 @@ private fun ProjectChangeDiff(
                         modifier = Modifier.padding(horizontal = 10.dp, vertical = 1.dp),
                     )
                 }
-                if (review.diff?.truncated == true) {
+                if (review.diff.truncated) {
                     item("load-more") { TextButton(onClick = model::loadMoreProjectDiff) { Text("Load more") } }
                 }
             }

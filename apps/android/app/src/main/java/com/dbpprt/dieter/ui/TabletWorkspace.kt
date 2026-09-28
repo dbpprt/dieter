@@ -34,11 +34,10 @@ import com.dbpprt.dieter.v1.Project
 internal const val TABLET_WORKSPACE_MIN_WIDTH_DP = 840
 internal fun usesTabletWorkspace(widthDp: Float) = widthDp >= TABLET_WORKSPACE_MIN_WIDTH_DP
 internal val LocalTabletWorkspace = staticCompositionLocalOf { false }
-internal val LocalTabletProjectWorkspaces = staticCompositionLocalOf { false }
 private val LocalTabletStatusContent = staticCompositionLocalOf<@Composable () -> Unit> { {} }
 
 internal enum class TabletProjectTab(val label: String) {
-    BOARD("Board"), CHATS("Chats"), FILES("Files"), SCHEDULES("Schedules"), WORKSPACES("Worktrees")
+    BOARD("Board"), CHATS("Chats"), FILES("Files"), CHANGES("Changes"), SCHEDULES("Schedules")
 }
 
 @Composable
@@ -50,7 +49,6 @@ internal fun TabletWorkspace(
     statusContent: @Composable () -> Unit = {},
 ) {
     var projectChats by rememberSaveable { mutableStateOf(false) }
-    var workspaces by rememberSaveable { mutableStateOf(false) }
     var usage by rememberSaveable { mutableStateOf(false) }
     var manageProjects by rememberSaveable { mutableStateOf(false) }
     val projects = state.destination in listOf(Destination.BOARD, Destination.FILES, Destination.SCHEDULES) ||
@@ -62,22 +60,20 @@ internal fun TabletWorkspace(
     val settings = state.appSurface == AppSurface.APP_SETTINGS
     val newChat = state.appSurface == AppSurface.NEW_CHAT
     val projectTab = when {
+        state.destination == Destination.FILES && state.projectFilesMode == "changes" -> TabletProjectTab.CHANGES
         state.destination == Destination.FILES -> TabletProjectTab.FILES
         state.destination == Destination.SCHEDULES -> TabletProjectTab.SCHEDULES
         state.destination == Destination.CHATS -> TabletProjectTab.CHATS
-        workspaces -> TabletProjectTab.WORKSPACES
         else -> TabletProjectTab.BOARD
     }
     val navigate: (Destination) -> Unit = { destination ->
         projectChats = false
-        workspaces = false
         usage = false
         manageProjects = false
         model.navigate(destination)
     }
     LaunchedEffect(state.destination) {
         if (state.destination != Destination.CHATS) projectChats = false
-        if (state.destination != Destination.BOARD) workspaces = false
         if (state.destination.isPrimaryDestination()) usage = false
     }
     CompositionLocalProvider(LocalTabletWorkspace provides true, LocalTabletStatusContent provides statusContent) {
@@ -118,7 +114,6 @@ internal fun TabletWorkspace(
                                     TabletProjectNavigator(state, model, paneModifier,
                                         onManage = { manageProjects = true; model.showBoardOverview() },
                                         onOpenBoard = { projectId, boardId ->
-                                            workspaces = false
                                             manageProjects = false
                                             model.closeSurface()
                                             model.openBoard(projectId, boardId)
@@ -132,23 +127,20 @@ internal fun TabletWorkspace(
                                             TabletProjectTabs(projectTab, projectScopedNavigationEnabled(state)) { tab ->
                                                 model.closeSurface()
                                                 usage = false
-                                                workspaces = tab == TabletProjectTab.WORKSPACES
                                                 projectChats = tab == TabletProjectTab.CHATS
                                                 when (tab) {
-                                                    TabletProjectTab.BOARD, TabletProjectTab.WORKSPACES ->
+                                                    TabletProjectTab.BOARD ->
                                                         model.openBoard(state.selectedProjectId, state.selectedBoardId)
                                                     TabletProjectTab.CHATS -> model.navigate(Destination.CHATS)
                                                     TabletProjectTab.FILES -> model.navigate(Destination.FILES)
+                                                    TabletProjectTab.CHANGES -> model.openProjectChanges()
                                                     TabletProjectTab.SCHEDULES -> model.navigate(Destination.SCHEDULES)
                                                 }
-                                                if (tab == TabletProjectTab.WORKSPACES) model.loadProjectWorkspaces()
                                             }
                                         }
                                         Box(Modifier.weight(1f).fillMaxWidth()) {
                                             when {
                                                 state.appSurface != null -> surfaceContent()
-                                                workspaces && state.destination == Destination.BOARD && !state.boardOverviewVisible ->
-                                                    CompositionLocalProvider(LocalTabletProjectWorkspaces provides true) { destinationContent(state) }
                                                 manageProjects && state.boardOverviewVisible -> SpacesOverview(state, model, Modifier.fillMaxSize())
                                                 state.destination == Destination.BOARD && state.boardOverviewVisible ->
                                                     EmptyDetail("Your projects, side by side", "Choose a board to see its workflow, conversations, and files.", Icons.Outlined.ViewKanban, Modifier.fillMaxSize())

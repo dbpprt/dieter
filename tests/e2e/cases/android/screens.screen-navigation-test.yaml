@@ -19,5 +19,7 @@ native:
   - navigationRailDisablesProjectDestinationsWithoutAnAvailableProject
   - toolsOfferExistingDestinationsAndSettings
   - projectToolsAreDisabledWithoutAnAvailableProject
+  - projectSourceUsesNativeFilesAndChangesTabs
+  - tabletProjectNavigationOffersChangesInsteadOfWorktrees
   - sheetRetainsPrimaryNavigationAndCanBeClosed
   - largeTextKeepsToolsReachableByScrolling
