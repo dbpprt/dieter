@@ -25,12 +25,11 @@ internal fun mergeBoardLifecycle(incoming: Board, previous: Board): Board {
         all.withIndex().none { (j, other) -> i != j && covers(other.clockMap, version.clockMap) &&
             (!covers(version.clockMap, other.clockMap) || other.rank > version.rank || other.rank == version.rank && j < i) }
     }.sortedBy { it.rank }
-    if (frontier.size > 16) return previous.toBuilder().setRetired(false).setRetirementBlocked(true).build()
+    if (frontier.size > 16 || previous.retirementRevision == "overflow") return previous.toBuilder().setRetirementRevision("overflow").setRetired(false).setRetirementBlocked(true).build()
     fun same(board: Board) = board.retirementVersionsList.sortedBy { it.rank } == frontier
     val requested = frontier.any { it.retired && !it.deleted }
-    val blocked = requested && (frontier.size != 1 || same(incoming) && incoming.retirementBlocked || same(previous) && previous.retirementBlocked)
-    val references = ((if (same(incoming)) incoming.retirementReferencesList else emptyList()) +
-        (if (same(previous)) previous.retirementReferencesList else emptyList())).distinct().sorted().take(64)
+    val references = if (requested) (incoming.retirementReferencesList + previous.retirementReferencesList).distinct().sorted().take(64) else emptyList()
+    val blocked = requested && (frontier.size != 1 || references.isNotEmpty() || same(incoming) && incoming.retirementBlocked || same(previous) && previous.retirementBlocked)
     return incoming.toBuilder().clearRetirementVersions().addAllRetirementVersions(frontier)
         .setRetirementRevision(if (same(incoming)) incoming.retirementRevision else if (same(previous)) previous.retirementRevision else "unobserved-join")
         .setRetired(requested && !blocked).setRetirementBlocked(blocked)

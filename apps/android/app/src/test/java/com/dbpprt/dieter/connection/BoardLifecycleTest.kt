@@ -8,6 +8,17 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class BoardLifecycleTest {
+    @Test fun laterRetirementPreservesKnownBlockingReferences() {
+        val version = BoardRetirementVersion.newBuilder().putClock("a", 1).setRank("a").setRetired(true)
+        val known = Board.newBuilder().setId("board").addRetirementVersions(version).setRetirementBlocked(true).addRetirementReferences("item/offline").build()
+        val later = known.toBuilder().clearRetirementVersions().addRetirementVersions(version.putClock("a", 2).setRank("b"))
+            .setRetirementBlocked(false).setRetired(true).clearRetirementReferences().build()
+        val merged = mergeBoardLifecycle(later, known)
+        assertEquals(false, merged.retired)
+        assertEquals(true, merged.retirementBlocked)
+        assertEquals(listOf("item/offline"), merged.retirementReferencesList)
+    }
+
     @Test fun sharedLifecycleFixture() {
         val root = generateSequence(File(System.getProperty("user.dir"))) { it.parentFile }
             .first { File(it, "tests/fixtures/board-lifecycle.tsv").exists() }

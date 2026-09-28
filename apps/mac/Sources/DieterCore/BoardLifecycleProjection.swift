@@ -18,8 +18,9 @@ package enum BoardLifecycleProjection {
                     || (other.rank == version.rank && j < i)
             }
         }.map(\.element).sorted { $0.rank < $1.rank }
-        guard frontier.count <= 16 else {
+        guard frontier.count <= 16, previous.retirementRevision != "overflow" else {
             result.retirementVersions = previous.retirementVersions
+            result.retirementRevision = "overflow"
             result.retired = false; result.retirementBlocked = true
             return result
         }
@@ -30,15 +31,12 @@ package enum BoardLifecycleProjection {
             ? incoming.retirementRevision
             : same(previous) ? previous.retirementRevision : "unobserved-join"
         let requested = frontier.contains { $0.retired && !$0.deleted }
+        let references = Array(Set(previous.retirementReferences + incoming.retirementReferences).sorted().prefix(64))
         result.retirementBlocked =
             requested
-            && (frontier.count != 1
+            && (frontier.count != 1 || !references.isEmpty
                 || same(incoming) && incoming.retirementBlocked || same(previous) && previous.retirementBlocked)
-        result.retirementReferences = Array(
-            Set(
-                (same(incoming) ? incoming.retirementReferences : [])
-                    + (same(previous) ? previous.retirementReferences : [])
-            ).sorted().prefix(64))
+        result.retirementReferences = requested ? references : []
         result.retired = requested && !result.retirementBlocked
         return result
     }

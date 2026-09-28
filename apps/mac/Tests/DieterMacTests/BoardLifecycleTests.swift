@@ -71,3 +71,15 @@ import Testing
     #expect(store.selectedBoard?.retired == false)
     #expect(store.navigationBoards[project.id]?.map(\.id) == [board.id])
 }
+
+@Test func laterRetirementCannotEraseKnownBlockingReferences() {
+    var known = Dieter_V1_Board(); known.id = "board"
+    var version = Dieter_V1_BoardRetirementVersion(); version.clock = ["a": 1]; version.rank = "a";
+    version.retired = true
+    known.retirementVersions = [version]; known.retirementBlocked = true; known.retirementReferences = ["item/offline"]
+    var later = known; later.retirementVersions[0].clock = ["a": 2]; later.retirementVersions[0].rank = "b"
+    later.retirementBlocked = false; later.retired = true; later.retirementReferences = []
+    let merged = BoardLifecycleProjection.merge(later, with: known)
+    #expect(!merged.retired && merged.retirementBlocked)
+    #expect(merged.retirementReferences == ["item/offline"])
+}
