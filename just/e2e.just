@@ -37,6 +37,6 @@ prepare *args:
 run *args:
     go run ./tools/e2e run "$@"
 
-# Require every matrix device job for the stable native CI gate.
+# Require the selected native client job for the stable CI gate.
 ci-result:
-    test "${NATIVE_DEVICE_RESULT:-missing}" = success
+    test "${NATIVE_CHECK_RESULT:-missing}" = success

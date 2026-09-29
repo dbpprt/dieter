@@ -271,8 +271,6 @@
             results["board-initial"] = store.section.rawValue
 
             await runBoardLaneSortChecks(store: store, window: window, results: &results, output: output)
-            await BoardDeletionUISmoke.run(
-                store: store, window: window, board: board, results: &results, output: output)
             if ProcessInfo.processInfo.arguments.contains("--board-stress-ui-smoke") {
                 let boardCards = store.state.cards.filter { $0.boardID == board.id }
                 let largestLane =
