@@ -312,14 +312,19 @@ final class RemoteNodeUITests: XCTestCase {
         // before returning. A freshly relaunched iPad can spend XCTest's whole
         // snapshot timeout on that first probe even though the board appears
         // moments later. The predicate expectation owns the bounded wait.
-        let boardButton = app.buttons.matching(identifier: "ios.board.\(board)").firstMatch
+        // SwiftUI may expose a sidebar NavigationLink as a button on iPhone
+        // and as another accessibility element type in the iPad split view.
+        // Match by the stable identifier instead of assuming its element type.
+        let boardButton = app.descendants(matching: .any)
+            .matching(identifier: "ios.board.\(board)").firstMatch
         let ready = XCTNSPredicateExpectation(
             predicate: NSPredicate(format: predicate),
             object: boardButton)
         XCTAssertEqual(
             XCTWaiter.wait(for: [ready], timeout: 40), .completed,
             "The fixture board must be ready in the sidebar.\n\(app.debugDescription)")
-        let projectButton = app.buttons.matching(identifier: "ios.project.\(project)").firstMatch
+        let projectButton = app.descendants(matching: .any)
+            .matching(identifier: "ios.project.\(project)").firstMatch
         XCTAssertTrue(
             projectButton.waitForExistence(timeout: 10), "The fixture project must be present.")
     }

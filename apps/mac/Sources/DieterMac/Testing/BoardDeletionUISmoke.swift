@@ -110,7 +110,25 @@
                     diagnostic: "target unavailable: \(NativeUIAccessibility.targetDiagnostics(identifier, in: window))"
                 )
             }
-            let point = window.convertPoint(fromScreen: NSPoint(x: frame.midX, y: frame.midY))
+            let screenPoint = NSPoint(x: frame.midX, y: frame.midY)
+            guard NativeUIAccessibility.movePointer(to: screenPoint) else {
+                return DeletePromptResult(
+                    presented: false,
+                    diagnostic:
+                        "pointer move failed; \(NativeUIAccessibility.targetDiagnostics(identifier, in: window))"
+                )
+            }
+            let pointerReady = await NativeUIAccessibility.wait(timeout: 2) {
+                hypot(NSEvent.mouseLocation.x - screenPoint.x, NSEvent.mouseLocation.y - screenPoint.y) <= 4
+            }
+            guard pointerReady else {
+                return DeletePromptResult(
+                    presented: false,
+                    diagnostic:
+                        "pointer did not settle at \(screenPoint); actual=\(NSEvent.mouseLocation); \(NativeUIAccessibility.targetDiagnostics(identifier, in: window))"
+                )
+            }
+            let point = window.convertPoint(fromScreen: screenPoint)
             let localPoint = window.contentView?.convert(point, from: nil) ?? point
             let hitType = window.contentView?.hitTest(localPoint).map { String(reflecting: type(of: $0)) } ?? "none"
             var attempts: [String] = []
