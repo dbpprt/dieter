@@ -1,6 +1,8 @@
 package com.dbpprt.dieter.ui
 
 import com.dbpprt.dieter.v1.Card
+import com.dbpprt.dieter.v1.CardStateField
+import com.dbpprt.dieter.v1.CardStateVersion
 import org.junit.Assert.*
 import org.junit.Test
 import java.time.Instant
@@ -85,15 +87,74 @@ class ActivityModelTest {
         assertEquals("Reset time unavailable", activityResetText("bad", now))
     }
 
-    @Test fun `latest message advances age and ordering without changing turn duration`() {
+    @Test fun `latest message advances age without changing turn duration`() {
         val running = card("running", "running", ago = 7200).toBuilder()
             .setLastActivityAt(now.minusSeconds(30).toString()).build()
         val entries = buildActivityEntries(listOf(card("recent", "idle", ago = 60), running))
-        assertEquals("running", entries.first().card.id)
-        assertEquals(now.minusSeconds(30), entries.first().at)
-        assertEquals("Just now", activityAge(entries.first().at, now))
-        assertEquals(now.minusSeconds(7200), entries.first().start)
-        assertEquals(0f, activityTimeline(entries, now, 1).first().from)
+        val entry = entries.single { it.running }
+        assertEquals(now.minusSeconds(30), entry.at)
+        assertEquals("Just now", activityAge(entry.at, now))
+        assertEquals(now.minusSeconds(7200), entry.start)
+        assertEquals(0f, activityTimeline(entries, now, 1).single { it.entry.running }.from)
+    }
+
+    @Test fun `interleaved model events cannot reorder running cards and chats`() {
+        val older = card("older", "running", ago = 7200)
+        val newer = card("newer", "running", "chat", ago = 3600)
+        for (index in 0..5) {
+            val oldUpdate = older.toBuilder().setLastActivityAt(now.plusSeconds(index * 2L).toString()).build()
+            val newUpdate = newer.toBuilder().setLastActivityAt(now.plusSeconds(index * 2L - 1).toString()).build()
+            for (cards in listOf(listOf(oldUpdate, newUpdate), listOf(newUpdate, oldUpdate))) {
+                val entries = buildActivityEntries(cards)
+                assertEquals(listOf("newer", "older"), entries.map { it.card.id })
+                assertEquals(now.plusSeconds(index * 2L), entries.last().at)
+                val cachedStart = ActivityDetail(oldUpdate.runtimeUpdatedAt, now.minusSeconds(7300), "Using a tool")
+                assertEquals(entries.map { it.card.id }, buildActivityEntries(cards, mapOf("older" to cachedStart)).map { it.card.id })
+            }
+        }
+        val restarted = older.toBuilder().setRuntimeUpdatedAt(now.toString()).build()
+        assertEquals(listOf("older", "newer"), buildActivityEntries(listOf(newer, restarted)).map { it.card.id })
+        val finished = restarted.toBuilder().setRuntime("idle").setRuntimeUpdatedAt(now.plusSeconds(1).toString()).build()
+        assertFalse(buildActivityEntries(listOf(finished)).single().running)
+        assertEquals(now.plusSeconds(1), buildActivityEntries(listOf(finished)).single().sortAt)
+    }
+
+    @Test fun `running rows with missing timestamps have stable fallback and tie order`() {
+        val a = card("a", "running").toBuilder().setRuntimeUpdatedAt("bad").build()
+        val b = a.toBuilder().setId("b").build()
+        for (cards in listOf(listOf(a, b), listOf(b, a))) {
+            for (updatedId in listOf("a", "b")) {
+                val updated = cards.map { if (it.id == updatedId) it.toBuilder().setLastActivityAt(now.toString()).build() else it }
+                assertEquals(listOf("a", "b"), buildActivityEntries(updated).map { it.card.id })
+            }
+        }
+    }
+
+    @Test fun `causal state beats later metadata timestamps in duplicate activity projections`() {
+        fun versioned(value: Card, sequence: Long): Card = value.toBuilder()
+            .addStateFields(CardStateField.newBuilder().setName("summary").setRevision("summary-$sequence")
+                .addVersions(CardStateVersion.newBuilder().putClock("owner", sequence)
+                    .setRank(sequence.toString()).setValue(value)))
+            .addStateFields(CardStateField.newBuilder().setName("placement").setRevision("placement-$sequence")
+                .addVersions(CardStateVersion.newBuilder().putClock("owner", sequence)
+                    .setRank(sequence.toString()).setValue(value)))
+            .build()
+        for (scope in listOf("card", "chat")) {
+            val running = versioned(card("one", "running", scope), 1)
+                .toBuilder().setUpdatedAt(now.plusSeconds(60).toString()).setTitle("Renamed").build()
+            val complete = versioned(card("one", "idle", scope, "review", ago = 30).toBuilder()
+                .setResponseSeq(20).setSeenResponseSeq(20).build(), 2)
+            for (copies in listOf(listOf(running, complete), listOf(complete, running), listOf(running, complete, running))) {
+                val entry = buildActivityEntries(copies).single()
+                assertFalse(entry.running)
+                assertFalse(entry.needsYou)
+                assertEquals("review", entry.card.lane)
+                assertEquals("Renamed", entry.card.title)
+                assertEquals(now.minusSeconds(30), entry.at)
+            }
+            val nextTurn = versioned(card("one", "running", scope, ago = 10), 3)
+            assertTrue(buildActivityEntries(listOf(complete, nextTurn, running)).single().running)
+        }
     }
 
     @Test fun `message and runtime timestamps compete but metadata edits never reset age`() {

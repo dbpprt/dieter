@@ -334,8 +334,10 @@ func (p *PeerSync) Round(ctx context.Context) error {
 		return err
 	}
 	peers := []string{}
+	online := make(map[string]bool, len(directory.GetDaemons()))
 	var lastErr error
 	for _, d := range directory.GetDaemons() {
+		online[d.GetId()] = d.GetOnline()
 		if d.GetId() != p.Identity.ID && d.GetOnline() {
 			if d.GetCompatibility() != gatewayv1.CompatibilityStatus_COMPATIBILITY_STATUS_COMPATIBLE {
 				lastErr = fmt.Errorf("machine %s requires update to release %s", d.GetName(), d.GetMinimumReleaseVersion())
@@ -343,6 +345,9 @@ func (p *PeerSync) Round(ctx context.Context) error {
 			}
 			peers = append(peers, d.GetId())
 		}
+	}
+	if err := p.Store.ObservePeerAvailability(binding, online); err != nil {
+		return err
 	}
 	sort.Strings(peers)
 	if len(peers) == 0 {

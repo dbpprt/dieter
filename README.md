@@ -202,3 +202,5 @@ with the current lifecycle revision. Any surviving card (including archived or
 pending cards) or schedule blocks retirement. A late replicated reference makes
 the parent accessible again. Success acknowledges local durability; inspect
 `dieter peer status` for per-peer replication progress and blocking records.
+It retains historical failures; workspace warnings suppress offline-peer and
+expired transport failures while keeping unresolved record rejections visible.

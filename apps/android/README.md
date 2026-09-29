@@ -67,6 +67,29 @@ and checkout choices route operations to the owning daemon. Terminals render
 ANSI/VT output with the bundled Apache-2.0 Termux modules; the local-process JNI
 bridge is excluded because the phone does not start a local shell.
 
+Android Sharesheet content and the Inbox **New task** button open a project chooser
+and the shared New Task editor. A project with several active boards requires a
+board choice; the editor identifies the checkout that will own the task. Board
+Quick Task uses the same draft, attachment controls and submission path as More
+Options. Switching views keeps text, attachments and agent settings.
+
+Task capture supports shared text/URLs and readable images or files: up to four
+attachments, 5 MiB each and 6 MiB combined. Photos use the Android picker; Files
+uses the document picker, with no broad storage permission. Images have a preview;
+other files show name/type/size. Failed imports can be retried, replaced or removed.
+Unsent task drafts and copied bytes are atomically stored in the app's private,
+non-backed-up storage, separately from the source URI. Importing blocks submission.
+Closing the editor keeps the draft; explicit discard removes it. Up to 20 drafts
+are retained, and saved drafts are accessible from the project chooser.
+
+Validated offline tasks use the durable creation outbox. Missing destination/model
+information requires reconnection while preserving the draft. Upload uses the
+existing authenticated creation request; the owning daemon persists attachments
+under DIETER_HOME. The gateway does not store file content. An admitted request
+retains its command identity and payload across retries and process recreation.
+Local draft copies are released after durable outbox admission; delivery errors
+remain visible in the existing outbox UI.
+
 Conversations retain per-conversation drafts and attachments. Editing a queued
 message atomically removes it from the host queue and restores its full payload
 and selection to that composer. Reasoning traces are hidden by default and can

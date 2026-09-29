@@ -34,6 +34,13 @@ class ConversationCreatePolicyTest {
     }
 
     @Test
+    fun `task accepts text or attachments without an explicit title`() {
+        assertTrue(canCreateConversation("p", "h", "m", "task", false, ""))
+        assertTrue(canCreateConversation("p", "h", "m", "", false, "", hasAttachments = true))
+        assertFalse(canCreateConversation("p", "h", "m", "  ", false, ""))
+    }
+
+    @Test
     fun `todo cards stay on the board after creation`() {
         assertFalse(shouldOpenCreatedConversation(chat = false, lane = "todo"))
     }

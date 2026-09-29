@@ -1,0 +1,14 @@
+version: 1
+id: conversation.task-capture
+platform: android
+suites:
+- functional
+components:
+- conversation
+- activity
+fixture: gateway
+timeout: 300s
+native:
+  class: com.dbpprt.dieter.ui.TaskCaptureEndToEndTest
+  methods:
+  - sharesheetAndInboxUseOneDurableComposer

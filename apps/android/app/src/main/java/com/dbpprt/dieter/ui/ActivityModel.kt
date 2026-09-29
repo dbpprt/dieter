@@ -2,6 +2,7 @@ package com.dbpprt.dieter.ui
 
 import com.dbpprt.dieter.connection.currentModelActivities
 import com.dbpprt.dieter.connection.isActiveRuntime
+import com.dbpprt.dieter.connection.mergeCardState
 import com.dbpprt.dieter.v1.Card
 import com.dbpprt.dieter.v1.ConversationSnapshot
 import java.time.Duration
@@ -52,6 +53,14 @@ internal data class ActivityEntry(
 ) {
     val running: Boolean get() = kind == ActivityKind.RUNNING
     val needsYou: Boolean get() = kind == ActivityKind.ANSWER || kind == ActivityKind.UNREAD
+
+    // Model events update the displayed age, but must not shuffle active rows.
+    // Use card metadata rather than the optional transcript-derived start so
+    // loading or evicting a cached conversation cannot change their order.
+    val sortAt: Instant? get() = if (running) {
+        activityInstant(card.runtimeUpdatedAt) ?: activityInstant(card.initialPromptSentAt)
+            ?: activityInstant(card.createdAt)
+    } else at
 }
 
 internal fun activityInstant(value: String): Instant? = runCatching { Instant.parse(value) }.getOrNull()
@@ -62,9 +71,15 @@ internal fun buildActivityEntries(
     details: Map<String, ActivityDetail> = emptyMap(),
 ): List<ActivityEntry> = cards.filter { it.id.isNotBlank() }
     .groupBy { it.id }
-    .values.map { copies -> copies.maxBy { card ->
-        listOf(card.updatedAt, card.runtimeUpdatedAt, card.lastActivityAt).mapNotNull(::activityInstant).maxOrNull() ?: Instant.MIN
-    } }
+    .values.map { copies ->
+        val latest = copies.maxBy { card ->
+            listOf(card.updatedAt, card.runtimeUpdatedAt, card.lastActivityAt).mapNotNull(::activityInstant).maxOrNull() ?: Instant.MIN
+        }
+        // Timestamps select unversioned presentation fields only. An older
+        // runtime/placement can arrive with a later title-edit timestamp from
+        // another projection; preserve the causal join already used by sync.
+        copies.fold(latest) { merged, copy -> mergeCardState(merged, copy) }
+    }
     .filterNot { it.archived }
     .mapNotNull { card ->
         val runtime = card.runtime.lowercase()
@@ -97,7 +112,7 @@ internal fun buildActivityEntries(
             card.scope == "chat" -> "Replied"
             else -> "Finished"
         })
-    }.sortedWith(compareByDescending<ActivityEntry> { it.at ?: Instant.MIN }.thenBy { it.card.id })
+    }.sortedWith(compareByDescending<ActivityEntry> { it.sortAt ?: Instant.MIN }.thenBy { it.card.id })
 
 internal fun filterActivityEntries(
     entries: List<ActivityEntry>, projectId: String, query: String,

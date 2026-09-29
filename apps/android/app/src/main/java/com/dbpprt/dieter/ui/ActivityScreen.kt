@@ -13,6 +13,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Inbox
@@ -57,24 +58,32 @@ internal fun ActivityScreen(state: DieterUiState, model: DieterViewModel, expand
     var timeline by rememberSaveable { mutableStateOf(false) }
     val content: @Composable (Modifier) -> Unit = { modifier ->
         feedState.SaveableStateProvider(state.activeGatewayId) {
-            ActivityFeed(
-                state = state, modifier = modifier,
-                onOpen = { timeline = false; model.openCard(it, Destination.ACTIVITY) },
-                onConnections = model::showConnectionDialog,
-                onAccount = { accountKey = it.accountKey },
-                onRefreshAccounts = { model.refreshProviderQuotas() },
-                tablet = tablet,
-                timelineOnly = tablet && timeline,
-                onTimelineToggle = { timeline = it },
-                actions = ActivityItemActions(
-                    onRename = model::renameConversation,
-                    onArchive = model::archiveConversation,
-                    onTogglePin = model::togglePin,
-                    onMoveToFolder = { folderChatId = it.id },
-                    enabled = state.connected && !state.working,
-                ),
-                onClearError = model::clearError,
-            )
+            Box(modifier) {
+                ActivityFeed(
+                    state = state, modifier = Modifier.fillMaxSize(),
+                    onOpen = { timeline = false; model.openCard(it, Destination.ACTIVITY) },
+                    onConnections = model::showConnectionDialog,
+                    onAccount = { accountKey = it.accountKey },
+                    onRefreshAccounts = { model.refreshProviderQuotas() },
+                    tablet = tablet,
+                    timelineOnly = tablet && timeline,
+                    onTimelineToggle = { timeline = it },
+                    actions = ActivityItemActions(
+                        onRename = model::renameConversation,
+                        onArchive = model::archiveConversation,
+                        onTogglePin = model::togglePin,
+                        onMoveToFolder = { folderChatId = it.id },
+                        enabled = state.connected && !state.working,
+                    ),
+                    onClearError = model::clearError,
+                )
+                ExtendedFloatingActionButton(
+                    onClick = { model.beginCapture() },
+                    modifier = Modifier.align(Alignment.BottomEnd).padding(20.dp).testTag("inbox-new-task"),
+                    icon = { Icon(Icons.Default.Add, "New task") },
+                    text = { Text("New task") },
+                )
+            }
         }
     }
     if (tablet) {
@@ -170,7 +179,7 @@ internal fun ActivityFeed(
     Box(modifier, contentAlignment = Alignment.TopCenter) {
         LazyColumn(
             Modifier.widthIn(max = if (timelineOnly) 1800.dp else 900.dp).fillMaxSize().testTag("activity-feed"),
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 16.dp),
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 88.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             if (state.error != null) item("error") { SurfaceErrorBanner(state.error, onClearError) }

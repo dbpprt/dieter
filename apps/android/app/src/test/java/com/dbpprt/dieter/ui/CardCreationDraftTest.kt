@@ -14,13 +14,37 @@ class CardCreationDraftTest {
     private val defaults = ResolvedConversationCreationPreferences("codex", "first", "low", ConversationWorkspaceMode.WORKTREE)
 
     @Test
+    fun attachmentOnlyTitleUsesFilenameWithoutRequiringAStoryGenerator() {
+        val draft = CardCreationDraft()
+        draft.attachments += MessagePart.newBuilder().setFilename("screenshot.png").build()
+        assertEquals("screenshot.png", draft.creationTitle)
+        assertFalse(draft.generatesTitle)
+    }
+
+    @Test
+    fun frozenSubmissionSurvivesDraftRestorationAndLateEdits() {
+        val draft = CardCreationDraft()
+        draft.prompt = "original"
+        draft.attachments += MessagePart.newBuilder().setType("file").setFilename("notes.txt")
+            .setData(com.google.protobuf.ByteString.copyFromUtf8("exact bytes")).build()
+        val snapshot = draft.snapshot()
+        draft.submittedRequest = snapshot
+        draft.prompt = "late edit"
+        assertEquals(snapshot, draft.snapshot())
+        val restored = CardCreationDraft()
+        restored.restore(snapshot)
+        assertEquals("original", restored.prompt)
+        assertEquals(draft.attachments.toList(), restored.attachments.toList())
+    }
+
+    @Test
     fun catalogRefreshAndOptionsRoundTripPreserveEveryEditedField() {
         val draft = CardCreationDraft()
         draft.initialize(defaults, harnesses, "todo")
         draft.prompt = "  First line\nSecond line  "
         draft.quickTaskOpen = true
         draft.openOptions()
-        assertEquals("First line", draft.title)
+        assertEquals("", draft.title)
         assertEquals("  First line\nSecond line  ", draft.prompt)
         assertFalse(draft.quickTaskOpen)
         draft.title = "Edited title"

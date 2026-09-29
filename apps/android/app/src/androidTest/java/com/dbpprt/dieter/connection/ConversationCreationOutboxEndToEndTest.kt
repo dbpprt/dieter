@@ -55,28 +55,32 @@ class ConversationCreationOutboxEndToEndTest {
                 project.id,
                 requireNotNull(project.checkoutsList.firstOrNull()).id,
             )
-            manager.enqueueConversation(
-                CreateConversationRequest.newBuilder()
-                    .setCheckoutId(checkoutId)
-                    .setProjectId(project.id)
-                    .setBoardId(board.id)
-                    .setLane(board.lanesList.first().id)
-                    .setTitle(title)
-                    .setPrompt(title)
-                    .setProvider(harness.id)
-                    .setModel(model.id)
-                    .setWorkspaceMode("project")
-                    .setDeferStart(true)
-                    .build(),
-                chat = false,
-            )
+            val attachment = com.dbpprt.dieter.v1.MessagePart.newBuilder()
+                .setType("file").setFilename("queued.txt").setMediaType("text/plain")
+                .setData(com.google.protobuf.ByteString.copyFromUtf8("Exact queued attachment bytes")).build()
+            val request = CreateConversationRequest.newBuilder()
+                .setCheckoutId(checkoutId).setProjectId(project.id).setBoardId(board.id)
+                .setLane(board.lanesList.first().id).setTitle(title).setPrompt(title)
+                .setProvider(harness.id).setModel(model.id).setWorkspaceMode("project")
+                .setDeferStart(true).addAttachments(attachment).build()
+            val submission = UUID.randomUUID().toString()
+            manager.disconnect(stopService = false)
+            manager.enqueueConversation(request, chat = false, submissionId = submission)
+            manager.enqueueConversation(request, chat = false, submissionId = submission)
+            assertEquals(1, manager.state.value.cards.count { it.title == title })
+            manager.connect()
+            manager.onAppForegrounded()
             withTimeout(30_000) {
                 manager.state.first { state ->
                     state.cards.count { it.title == title } == 1 &&
                         state.cards.single { it.title == title }.ownerDaemonId.isNotBlank()
                 }
             }
+            // Replaying after receipt/optimistic cleanup still targets the original task.
+            manager.enqueueConversation(request, chat = false, submissionId = submission)
             delay(1_000)
+            val card = manager.state.value.cards.single { it.title == title }
+            assertEquals(listOf(attachment), application.container.repository.conversation(card.id).conversation.draftAttachmentsList)
         }
 
         assertEquals(

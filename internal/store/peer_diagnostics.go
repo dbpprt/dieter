@@ -6,6 +6,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/dbpprt/dieter/internal/peerstore"
 )
@@ -50,6 +51,61 @@ type PeerSyncDiagnostic struct {
 	Actor         string         `json:"actor,omitempty"`
 	Pull          PeerCheckpoint `json:"pull"`
 	Push          PeerCheckpoint `json:"push"`
+	// Presence is advisory and never changes the retained failure or success.
+	Offline bool `json:"offline,omitempty"`
+}
+
+// Transport failures describe a recent attempt, not a durable data problem.
+// Cover the two-minute retry backoff and a bounded exchange, but do not keep
+// warning forever when discovery stops. Rejected records remain actionable.
+const PeerSyncIssueMaxAge = 5 * time.Minute
+
+func (d PeerSyncDiagnostic) IsCurrentIssue(now time.Time) bool {
+	if d.FailureCode == "" {
+		return false
+	}
+	if d.RecordID != "" || d.RecordKind != "" || d.Field != "" {
+		return true
+	}
+	switch d.FailureCode {
+	case "Canceled", "canceled":
+		return false
+	case "Unavailable", "unavailable", "DeadlineExceeded", "deadline", "ResourceExhausted", "Aborted":
+		attempt, err := time.Parse(time.RFC3339Nano, d.LastAttemptAt)
+		return !d.Offline && err == nil && !attempt.After(now) && now.Sub(attempt) < PeerSyncIssueMaxAge
+	default:
+		return true
+	}
+}
+
+// ObservePeerAvailability uses only an authenticated, successfully fetched
+// directory. Missing/offline peers keep their history without an active
+// transport warning. It must also run when no peer is online.
+func (s *Store) ObservePeerAvailability(identity PeerIdentity, online map[string]bool) error {
+	release, err := s.beginWriteLock()
+	if err != nil {
+		return err
+	}
+	defer release()
+	if err = s.checkPeerIdentity(identity); err != nil {
+		return err
+	}
+	values, err := s.PeerSyncDiagnostics(identity.Account)
+	if err != nil {
+		return err
+	}
+	changed := false
+	for i := range values {
+		offline := !online[values[i].PeerID]
+		if values[i].Offline != offline {
+			values[i].Offline = offline
+			changed = true
+		}
+	}
+	if !changed {
+		return nil
+	}
+	return writeJSON(s.peerPath(identity.Account)+".diagnostics", values)
 }
 
 func (s *Store) PeerSyncDiagnostics(account string) ([]PeerSyncDiagnostic, error) {

@@ -250,6 +250,29 @@ class NavigationFoldersTest {
         compose.runOnIdle { assertTrue(model.state.value.chatFolders.folders.isEmpty()) }
     }
 
+    @Test fun projectSyncStatusExplainsFailuresAndClearsAfterRecovery() {
+        var state by mutableStateOf(DieterUiState(projects = projects,
+            peerSyncWarnings = listOf("Shared updates between Desktop and Laptop are delayed."),
+            navigationPendingCount = 1,
+            navigationSyncError = "Sign in again to sync folders and order."))
+        compose.setContent {
+            DieterTheme {
+                Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                    SpacesOverview(state, model, Modifier.fillMaxSize())
+                }
+            }
+        }
+        compose.onNodeWithText("Shared updates between Desktop and Laptop are delayed.").assertIsDisplayed()
+        compose.onNodeWithText("1 navigation edits pending sync. Sign in again to sync folders and order.").assertIsDisplayed()
+        compose.onNodeWithText("Navigation sync unavailable").assertDoesNotExist()
+        capture("project-sync-needs-attention.png")
+        compose.runOnIdle { state = state.copy(peerSyncWarnings = emptyList(), navigationPendingCount = 0, navigationSyncError = null) }
+        compose.onNodeWithText("Shared updates between Desktop and Laptop are delayed.").assertDoesNotExist()
+        compose.onNodeWithText("Sign in again", substring = true).assertDoesNotExist()
+        compose.onNodeWithTag("space-project-p1").assertIsDisplayed()
+        capture("project-sync-recovered.png")
+    }
+
     @Test fun projectPinsPersistInSharedNavigationAndCanBeRemovedFromThePinnedCard() {
         compose.setContent {
             val state by model.state.collectAsState()

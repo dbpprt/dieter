@@ -26,6 +26,14 @@ class MainActivity : ComponentActivity() {
             ),
         )
         val container = (application as DieterApplication).container
+        val captureId = savedInstanceState?.getString(com.dbpprt.dieter.ui.TaskCaptureStore.CAPTURE_ID)
+        if (captureId != null) {
+            intent.putExtra(com.dbpprt.dieter.ui.TaskCaptureStore.CAPTURE_ID, captureId)
+            // The persisted draft is the source of truth after recreation. Never re-import.
+            intent.action = Intent.ACTION_MAIN
+        } else {
+            intent.removeExtra(com.dbpprt.dieter.ui.TaskCaptureStore.CAPTURE_ID)
+        }
         handleIntent(intent, container)
         setContent {
             val palette by container.appPreferences.palette.collectAsStateWithLifecycle()
@@ -37,11 +45,20 @@ class MainActivity : ComponentActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        intent.removeExtra(com.dbpprt.dieter.ui.TaskCaptureStore.CAPTURE_ID)
         setIntent(intent)
         handleIntent(intent, (application as DieterApplication).container)
     }
 
+    override fun onSaveInstanceState(outState: Bundle) {
+        intent?.getStringExtra(com.dbpprt.dieter.ui.TaskCaptureStore.CAPTURE_ID)?.let {
+            outState.putString(com.dbpprt.dieter.ui.TaskCaptureStore.CAPTURE_ID, it)
+        }
+        super.onSaveInstanceState(outState)
+    }
+
     private fun handleIntent(intent: Intent?, container: DieterContainer) {
+        intent?.let { container.taskCaptures.receive(it, container.connectionManager.state.value.activeGatewayId.orEmpty()) }
         intent?.data?.let(container.connectionManager::completeAuthentication)
         container.requestOpen(
             cardId = intent?.getStringExtra(DieterSyncService.EXTRA_CARD_ID).orEmpty(),

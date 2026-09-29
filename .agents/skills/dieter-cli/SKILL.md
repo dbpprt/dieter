@@ -998,7 +998,10 @@ on the admitting daemon; a changed input needs a new ID and observed revision.
 Success is local durability, not a global quorum. `peer status` includes bounded
 per-peer attempts, successful exchanges, route/direction, checkpoints, and
 sanitized blocking record identity. A successful exchange with one peer does
-not prove account-wide convergence. Native clients warn when shared updates are
-delayed. A warning alone is not permission to reset storage or checkpoints.
+not prove account-wide convergence. `peer status` retains historical failures;
+workspace warnings exclude offline/removed-peer transport failures, cancellations,
+and transport attempts older than five minutes. Record rejections are not aged
+out or suppressed because a peer is offline. Android names both machines and clears warnings on
+recovery, including when the selected machine returns unchanged workspace data. A warning alone is not permission to reset storage or checkpoints.
 Retained signed summaries containing the retired `commentCount` field remain
 valid; current writers and APIs omit it. Never rewrite foreign signed history.

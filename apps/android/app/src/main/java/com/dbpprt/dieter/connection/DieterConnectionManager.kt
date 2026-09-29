@@ -161,7 +161,7 @@ data class DieterConnectionState(
     val projectReplicas: Map<String, ProjectReplica> = emptyMap(),
     val boards: List<Board> = emptyList(),
     val retiredBoards: List<Board> = emptyList(),
-    val peerSyncWarnings: Map<String, String> = emptyMap(),
+    val peerSyncIssues: Map<String, List<com.dbpprt.dieter.v1.PeerSyncDiagnostic>> = emptyMap(),
     val cards: List<Card> = emptyList(),
     val chats: List<Card> = emptyList(),
     val activeConversations: Map<String, ConversationSnapshot> = emptyMap(),
@@ -606,7 +606,7 @@ class DieterConnectionManager(
                     projectReplicas = emptyMap(),
                     boards = emptyList(),
                 retiredBoards = emptyList(),
-                peerSyncWarnings = emptyMap(),
+                peerSyncIssues = emptyMap(),
                     cards = emptyList(),
                     chats = emptyList(),
                     activeConversations = emptyMap(),
@@ -714,7 +714,7 @@ class DieterConnectionManager(
                 projectReplicas = if (gatewayChanged) emptyMap() else it.projectReplicas,
                 boards = if (gatewayChanged) emptyList() else it.boards,
                 retiredBoards = if (gatewayChanged) emptyList() else it.retiredBoards,
-                peerSyncWarnings = if (gatewayChanged) emptyMap() else it.peerSyncWarnings,
+                peerSyncIssues = if (gatewayChanged) emptyMap() else it.peerSyncIssues,
                 cards = if (gatewayChanged) emptyList() else it.cards,
                 chats = if (gatewayChanged) emptyList() else it.chats,
                 activeConversations = if (gatewayChanged) emptyMap() else it.activeConversations,
@@ -764,7 +764,7 @@ class DieterConnectionManager(
                 projectReplicas = emptyMap(),
                 boards = emptyList(),
                 retiredBoards = emptyList(),
-                peerSyncWarnings = emptyMap(),
+                peerSyncIssues = emptyMap(),
                 cards = emptyList(),
                 chats = emptyList(),
                 activeConversations = emptyMap(),
@@ -1335,8 +1335,7 @@ class DieterConnectionManager(
         val directoryGeneration = synchronized(lock) { generation }
         val activeEndpointId = repository.activeEndpoint.id
         val machines = discoveredEndpoints.filter { machine ->
-            machine.online && machine.isCompatible &&
-                (force || includeArchivedChats || machine.id != activeEndpointId)
+            machine.online && machine.isCompatible
         }
         if (machines.isEmpty()) return@withLock false
         // Relay calls use independent channels, so fetch machines and their
@@ -1350,14 +1349,15 @@ class DieterConnectionManager(
                         val root = permits.withPermit {
                             val request = GetStateRequest.newBuilder().setAllProjects(true)
                             if (!force && !includeArchivedChats) synchronized(lock) { directoryCursors[machine.id] }?.let { request.setIfNotModified(it) }
-                            repository.relayState(machine, request.build())
+                            if (machine.id == activeEndpointId) repository.state(request.build())
+                            else repository.relayState(machine, request.build())
                         }
                         if (directoryGeneration == synchronized(lock) { generation }) {
                             _state.update { current ->
-                                val warnings = current.peerSyncWarnings.toMutableMap()
-                                if (root.peerSyncIssuesCount == 0) warnings.remove(machine.id)
-                                else warnings[machine.id] = "Shared updates on ${machine.label} are delayed; boards and cards may be out of date."
-                                current.copy(peerSyncWarnings = warnings)
+                                val issues = current.peerSyncIssues.toMutableMap()
+                                if (root.peerSyncIssuesCount == 0) issues.remove(machine.id)
+                                else issues[machine.id] = root.peerSyncIssuesList
+                                current.copy(peerSyncIssues = issues)
                             }
                         }
                         if (root.notModified) return@runCatching null
@@ -1906,16 +1906,19 @@ class DieterConnectionManager(
         optimisticInitialMessageId(entry)?.let(::add)
     }
 
-    suspend fun enqueueConversation(request: CreateConversationRequest, chat: Boolean): Card = withContext(Dispatchers.IO) {
-        val commandId = UUID.randomUUID().toString().lowercase()
+    suspend fun enqueueConversation(request: CreateConversationRequest, chat: Boolean, submissionId: String = ""): Card = withContext(Dispatchers.IO) {
+        val commandId = submissionId.ifBlank { UUID.randomUUID().toString().lowercase() }
         val stable = request.toBuilder().setClientId(syncStore.clientId).setCommandId(commandId).build()
-        val optimisticId = "local_${UUID.randomUUID().toString().replace("-", "").lowercase()}"
+        val optimisticId = "local_${commandId.replace("-", "")}"
         val checkout = _state.value.projects.firstOrNull { it.id == stable.projectId }?.checkoutsList
             ?.firstOrNull { it.id == stable.checkoutId }
         val targetEndpoint = checkout?.let { chosen -> discoveredEndpoints.firstOrNull { it.daemonId == chosen.daemonId }?.id }
-            ?: repository.activeEndpoint.id
+            ?: error("The checkout’s machine is unavailable; keep the draft and reconnect")
         synchronized(outbox) {
-            outbox += AndroidOutboxEntry(
+            outbox.firstOrNull { it.commandId == commandId }?.let {
+                check(it.request.contentEquals(stable.toByteArray())) { "An admitted task cannot be changed during retry" }
+            }
+            if (outbox.none { it.commandId == commandId }) outbox += AndroidOutboxEntry(
                 commandId = commandId,
                 clientId = syncStore.clientId,
                 endpointId = targetEndpoint,

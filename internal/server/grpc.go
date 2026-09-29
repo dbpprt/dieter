@@ -97,7 +97,7 @@ func (api *grpcAPI) GetState(ctx context.Context, request *dieterv1.GetStateRequ
 			return
 		}
 		for _, value := range diagnostics {
-			if value.FailureCode != "" {
+			if value.IsCurrentIssue(time.Now()) {
 				result.PeerSyncIssues = append(result.PeerSyncIssues, protoPeerDiagnostic(value))
 			}
 		}
