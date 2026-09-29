@@ -887,7 +887,12 @@ portable defaults; `--validation-file FILE --checkout ID` edits local validation
 neighbors; no anchors appends. The revision is the card's placementRevision.
 
 `peer status` shows account/actor, record/conflict counts and the last completed
-exchange. It is not acknowledgement by every machine. `peer list` returns a bounded
+exchange. `catchup` is durable page progress with work left for later rounds,
+not a completed exchange. A completed exchange does not prove acknowledgement
+by every machine. Retained records and exact replay receipts stay on disk
+without lifetime count/byte admission quotas; per-record and page bounds remain.
+Tombstones and actor history are retained for offline recovery. Do not delete
+records or receipts as a capacity workaround. `peer list` returns a bounded
 snapshot; follow nextKey and snapshotRevision with `--after` and `--snapshot`.
 `peer changes` uses an epoch/sequence checkpoint. All operations use the daemon API.
 

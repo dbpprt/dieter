@@ -62,16 +62,56 @@ is stored there. A transport disconnect never stops an agent.
 
 Each direction resumes from a durable epoch/sequence checkpoint. A page is joined
 before its checkpoint advances. Lost acknowledgements repeat idempotent joins;
-a replaced replica epoch triggers bootstrap. One connection at a time rotates
+a replaced replica epoch triggers bootstrap in both directions. Push receipts
+also retain the receiving replica epoch, so a replaced receiver cannot inherit
+an acknowledgement for data it no longer has. Each exchange processes at most
+64 pages per direction, persisting progress for the next round. `catchup` in
+peer diagnostics means durable progress with more pages pending; it does not
+advance the last completed-exchange timestamp. One connection at a time rotates
 through at most two online peers per round, with jitter/backoff and deadlines.
 Shared writes wake synchronization; periodic anti-entropy repairs missed wakeups.
 Gateway outage can prevent discovery/authentication/RTC bootstrap, but initialized
 replicas still accept local edits and execute their own conversations.
 
-Bounds: 262,144 records, 128 MiB of encoded records per account, 32 KiB per value,
-64 actors per register, 16 concurrent siblings, 64 records and 2 MiB per sync page.
-Capacity errors are explicit. The 10,000-item/three-persisted-replica fixture covers
-80,025 records, catch-up, restart projection, and equal replica hashes. Run with
+Retained records and exact mutation receipts live in SQLite; their lifetime
+count and aggregate bytes are not admission quotas. Operational reads use indexed
+point queries and pages, and writes load only their changed records/dependencies.
+A view caches at most 256 records and 4 MiB of encoded data; SQLite's page cache
+is configured for 4 MiB per connection. Domain readers pin one SQLite snapshot
+through their projection, so concurrent streaming writes cannot mix revisions
+or abort an ordinary read. These read-only transactions use a separate pool,
+with at most 64 active snapshots per process and a one-minute deadline; callers
+release them on every return. Admission above that storage bound fails explicitly
+instead of blocking nested reads. Writer views still reject stale baselines.
+Native workspace projections allocate their requested output; these bounds
+concern the peer storage working set.
+
+Bounds remain 32 KiB per value, 64 actors per register, 16 concurrent siblings,
+and 64 records/2 MiB per peer page. KV pages reserve space for the selected value
+as well as its causal versions. Individual replay receipts are at most 2 MiB.
+Record/receipt writes, local effects, counters and sequence changes still commit
+atomically with FULL synchronization. Receipts are looked up by operation ID;
+new mutations do not scan or expire old receipts. Disk exhaustion still returns
+an I/O failure. Deleting a few rows by age would not make an indefinitely growing
+account physically bounded, and is not a substitute for safe offline semantics.
+
+First-enrollment adoption streams pages with a durable adoption actor, so an
+interrupted retry produces identical owner versions. Existing persisted records,
+signatures and API schemas are unchanged. The bounded full-state helper used by
+in-process diagnostics/tests retains its old memory ceiling; normal operations
+never use it.
+
+`DIETER_PEER_CAPACITY=1 go test ./internal/store -run TestPeerCapacityHistoryDoesNotExhaustWrites -v`
+creates a disposable database beyond the former 262,144-record/128 MiB replica
+limits and 65,536-receipt/64 MiB receipt limits, then verifies cold reads, writes,
+deletions, stale-peer joins, exact replay and snapshot pagination. This large
+qualification is opt-in, like the directory-scale fixture below; cache, snapshot
+concurrency/admission, failure/restart and offline-history regressions always run.
+For a race-instrumented qualification, add `-race -timeout=25m` because fixture
+seeding executes SQLite's pure-Go implementation under the race detector.
+The optional
+10,000-item/three-replica fixture covers 80,025 records, catch-up, restart projection
+and equal replica hashes:
 `DIETER_PEER_SCALE=1 go test ./internal/store -run TestSharedScaleTenThousand -v`.
 
 Tombstones and causal actor history are retained; there is no TTL deletion or

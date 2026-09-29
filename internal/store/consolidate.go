@@ -28,7 +28,7 @@ func canonicalProjectID(data PeerData, id string) string {
 		}
 		seen[id] = len(path)
 		path = append(path, id)
-		record := data.Records[peerstore.Key("project", id+".consolidatedInto")]
+		record := data.record(peerstore.Key("project", id+".consolidatedInto"))
 		if len(record.Versions) != 1 {
 			return id
 		}
@@ -40,7 +40,7 @@ func canonicalProjectID(data PeerData, id string) string {
 		if json.Unmarshal(raw, &next) != nil || next == "" {
 			return id
 		}
-		if _, ok = peerstore.Selected(data.Records[peerstore.Key("project", next+".identity")]); !ok {
+		if _, ok = peerstore.Selected(data.record(peerstore.Key("project", next+".identity"))); !ok {
 			return original
 		}
 		id = next
@@ -49,6 +49,7 @@ func canonicalProjectID(data PeerData, id string) string {
 }
 func (s *Store) canonicalProjectRef(ref string) string {
 	_, data, err := s.sharedData()
+	defer data.Close()
 	if err != nil {
 		return ref
 	}
@@ -76,12 +77,13 @@ func (s *Store) ConsolidateProject(sourceRef, destinationRef string) (model.Proj
 		return model.Project{}, fmt.Errorf("%w: resolve project settings before consolidation", peerstore.ErrConflict)
 	}
 	identity, data, err := s.sharedData()
+	defer data.Close()
 	if err != nil {
 		return model.Project{}, err
 	}
 	data.State = clonePeerState(data.State)
 	key := peerstore.Key("project", source.ID+".consolidatedInto")
-	if len(data.Records[key].Versions) > 0 {
+	if len(data.record(key).Versions) > 0 {
 		return model.Project{}, errors.New("source already has a consolidation destination")
 	}
 	if err = applyFields(&data, identity, "project", source.ID, nil, map[string]json.RawMessage{"consolidatedInto": rawValue(destination.ID)}); err != nil {

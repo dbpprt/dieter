@@ -99,12 +99,22 @@ class RenderTests(unittest.TestCase):
         self.assertIn("protocols tls1.3", (out / "public/Caddyfile").read_text())
         self.assertIn("no-tcp-relay", (out / "private/turnserver.conf").read_text())
         self.assertNotIn("no-tcp\n", (out / "private/turnserver.conf").read_text())
+        self.assertNotIn("proxy_protocol", (out / "public/Caddyfile").read_text())
 
     def test_two_ip_does_not_need_haproxy(self):
         self.settings.update(topology="two-ip", turnIPv4="203.0.113.11")
         out = self.rendered()
         self.assertNotIn("haproxy", read_json(out / "public/compose.json")["services"])
         self.assertIn("tls-listening-port=443", (out / "private/turnserver.conf").read_text())
+        self.assertNotIn("proxy_protocol", (out / "public/Caddyfile").read_text())
+
+    def test_client_address_survives_both_proxy_hops(self):
+        out = self.rendered()
+        caddy = (out / "public/Caddyfile").read_text()
+        self.assertIn("servers 127.0.0.1:8443 {", caddy)
+        self.assertIn("fallback_policy require", caddy)
+        self.assertIn("header_up X-Forwarded-For {remote_host}", caddy)
+        self.assertIn("check send-proxy-v2", (out / "public/haproxy.cfg").read_text())
 
     def test_bandwidth_reservations_cover_declared_allocations(self):
         turn = self.settings["turn"]

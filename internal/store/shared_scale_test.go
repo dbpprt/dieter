@@ -33,7 +33,13 @@ func TestSharedScaleTenThousandItemsThreeReplicas(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	identity, data, err := a.sharedData()
+	identity, err := a.PeerIdentity()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// This fixture deliberately builds a complete replica, including its initial
+	// project/board/checkout records, before exercising operational paged joins.
+	data, err := a.PeerData(identity.Account)
 	if err != nil {
 		t.Fatal(err)
 	}

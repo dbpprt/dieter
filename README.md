@@ -204,3 +204,8 @@ the parent accessible again. Success acknowledges local durability; inspect
 `dieter peer status` for per-peer replication progress and blocking records.
 It retains historical failures; workspace warnings suppress offline-peer and
 expired transport failures while keeping unresolved record rejections visible.
+`catchup` means bounded page progress; the last completed exchange advances only
+when both directions finish. Retained shared records and replay receipts use
+paged SQLite access, so historical count does not exhaust a lifetime write quota.
+Tombstones remain available to protect against stale offline replicas. See
+[peer storage and retention](docs/peer-store.md).

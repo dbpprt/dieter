@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -56,7 +57,9 @@ func NewServer(config Config, store *Store, logger *slog.Logger) (*Server, error
 	relay := newRelayServer(store, auth, keys, hub, config)
 	httpMux := http.NewServeMux()
 	auth.RegisterHTTP(httpMux)
+	publicRequests := make(chan struct{}, 32)
 	var handler http.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r = r.WithContext(context.WithValue(r.Context(), gatewayClientAddressKey{}, gatewayClientAddress(r, config.ProxyMode)))
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Referrer-Policy", "no-referrer")
 		w.Header().Set("X-Frame-Options", "DENY")
@@ -66,6 +69,33 @@ func NewServer(config Config, store *Store, logger *slog.Logger) (*Server, error
 			w.Header().Set("Strict-Transport-Security", "max-age=31536000")
 		}
 		if strings.HasPrefix(r.URL.Path, "/dieter.gateway.v1.") {
+			if r.URL.Path == "/dieter.gateway.v1.DaemonLinkService/Connect" {
+				// Admit before ServeHTTP starts its independent body reader, and
+				// retain the slot until authentication succeeds or its reader stops.
+				select {
+				case hub.handshakes <- struct{}{}:
+				default:
+					gatewayResourceExhausted(w)
+					return
+				}
+				release := sync.OnceFunc(func() { <-hub.handshakes })
+				defer release()
+				r = r.WithContext(context.WithValue(r.Context(), gatewayLinkAdmittedKey{}, release))
+				authenticated := make(chan struct{})
+				r = r.WithContext(context.WithValue(r.Context(), gatewayLinkAuthenticatedKey{}, authenticated))
+				body := limitGatewayEnvelopes(r.Context(), r.Body, 2, maxDaemonPresenceBytes)
+				body.authenticated = authenticated
+				r.Body = body
+			} else if publicGatewayUnaryMethod(r.URL.Path) {
+				select {
+				case publicRequests <- struct{}{}:
+				default:
+					gatewayResourceExhausted(w)
+					return
+				}
+				defer func() { <-publicRequests }()
+				r.Body = limitGatewayEnvelopes(r.Context(), r.Body, 1, publicGatewayMessageBytes)
+			}
 			// Unary gRPC interceptors run after request decoding. Reject missing
 			// sessions here as well, before an unauthenticated caller can make
 			// the server read and decode a large or stalled protobuf body.
@@ -84,6 +114,15 @@ func NewServer(config Config, store *Store, logger *slog.Logger) (*Server, error
 			return
 		}
 		if strings.HasPrefix(r.URL.Path, "/dieter.v1.DieterService/") {
+			headers := r.Header.Values("Authorization")
+			if len(headers) != 1 {
+				gatewayAuthenticationRequired(w)
+				return
+			}
+			if _, ok := auth.AuthenticateBearer(headers[0]); !ok {
+				gatewayAuthenticationRequired(w)
+				return
+			}
 			relay.ServeHTTP(w, r)
 			return
 		}
@@ -114,9 +153,17 @@ func gatewayAuthenticationRequired(w http.ResponseWriter) {
 	w.WriteHeader(http.StatusOK)
 }
 
+func gatewayResourceExhausted(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "application/grpc")
+	w.Header().Set("Grpc-Status", "8")
+	w.Header().Set("Grpc-Message", "public gateway request concurrency is exhausted")
+	w.WriteHeader(http.StatusOK)
+}
+
 func gatewayHTTP2Config() *http2.Server {
 	return &http2.Server{
 		MaxConcurrentStreams: 128, IdleTimeout: 2 * time.Minute,
+		MaxUploadBufferPerStream: 64 << 10, MaxUploadBufferPerConnection: 1 << 20,
 		ReadIdleTimeout: 30 * time.Second, PingTimeout: 15 * time.Second,
 		WriteByteTimeout: 15 * time.Second,
 	}
@@ -153,7 +200,7 @@ func limitGatewayRequestBodies(next http.Handler, timeout time.Duration) http.Ha
 		if publicGatewayUnaryMethod(r.URL.Path) {
 			// Public enrollment RPCs carry short names, Ed25519 keys, secrets,
 			// and signatures, never relay payloads. Bound them before decoding.
-			limit = 8 << 10
+			limit = publicGatewayMessageBytes
 		}
 		if limit > 0 {
 			if r.ContentLength > limit {

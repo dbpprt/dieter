@@ -19,10 +19,10 @@ const absentBoardRetirement = "absent"
 // incomplete dependencies. The index is built once, without projecting cards.
 func boardReferenceIndex(data PeerData) map[string][]string {
 	refs := map[string][]string{}
-	for _, record := range data.Records {
+	visit := func(record peerstore.Record) error {
 		id, field := peerstore.SplitField(record.ID)
 		if !(record.Kind == "item" && field == "placement" || record.Kind == "schedule" && field == "summary") {
-			continue
+			return nil
 		}
 		for _, version := range record.Versions {
 			if version.Deleted {
@@ -35,9 +35,14 @@ func boardReferenceIndex(data PeerData) map[string][]string {
 			if json.Unmarshal(version.Value, &value) != nil || value.BoardID == "" || value.Deleted {
 				continue
 			}
-			refs[value.BoardID] = append(refs[value.BoardID], record.Kind+"/"+id)
+			if len(refs[value.BoardID]) < 64 && !containsString(refs[value.BoardID], record.Kind+"/"+id) {
+				refs[value.BoardID] = append(refs[value.BoardID], record.Kind+"/"+id)
+			}
 		}
+		return nil
 	}
+	data.fail(data.eachMatching("item/", ".placement", visit))
+	data.fail(data.eachMatching("schedule/", ".summary", visit))
 	for board, values := range refs {
 		sort.Strings(values)
 		unique := values[:0]
@@ -180,11 +185,14 @@ func (s *Store) SetBoardRetired(input BoardRetirementInput) (model.Board, error)
 	if board.RetirementRevision != input.ExpectedRevision {
 		return zero, peerstore.ErrConflict
 	}
-	data, err := s.PeerData(identity.Account)
+	data, err := s.openPeerView(identity.Account)
 	if err != nil {
 		return zero, err
 	}
 	refs := boardReferenceIndex(data)[board.ID]
+	if err := data.Err(); err != nil {
+		return zero, err
+	}
 	if input.Retired {
 		// Check raw owner files too: unresolved projection dependencies must not
 		// hide a surviving local card or a schedule awaiting outbox publication.
@@ -222,7 +230,7 @@ func (s *Store) SetBoardRetired(input BoardRetirementInput) (model.Board, error)
 	}
 	data.State = clonePeerState(data.State)
 	key := peerstore.Key("board", board.ID+".retired")
-	old := data.Records[key]
+	old := data.record(key)
 	next, err := peerstore.Put(old, "board", board.ID+".retired", identity.Actor, old.Revision(), rawValue(input.Retired), false)
 	if err != nil {
 		return zero, err

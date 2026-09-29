@@ -145,7 +145,10 @@ def render(config, private, image, release, output, compatibility_policy, legacy
     atomic(sec / "turnserver.conf", "\n".join(turn) + "\n")
     caddy = ["{", "  admin unix//run/dieter/caddy-admin.sock", f"  email {s['acmeEmail']}", "  servers {", "    protocols h1 h2", "  }"]
     if multiplex:
-        caddy += ["  https_port 8443", "  default_bind 127.0.0.1"]
+        caddy += ["  https_port 8443", "  default_bind 127.0.0.1",
+                  "  servers 127.0.0.1:8443 {", "    protocols h1 h2", "    listener_wrappers {",
+                  "      proxy_protocol {", "        timeout 5s", "        fallback_policy require", "      }",
+                  "      tls", "    }", "  }"]
     elif s["topology"] == "two-ip":
         caddy += [f"  default_bind {s['publicIPv4']}"]
     caddy += ["}", f"http://{', http://'.join([*hosts, s['turnHost']])} {{", f"  bind {s['publicIPv4']}",
@@ -155,7 +158,10 @@ def render(config, private, image, release, output, compatibility_policy, legacy
         caddy += ["  tls /certificates/gateway/current/fullchain.pem /certificates/gateway/current/privkey.pem {", "    protocols tls1.3", "  }"]
     else:
         caddy += ["  tls {", "    protocols tls1.3", "  }"]
-    caddy += ["  reverse_proxy h2c://127.0.0.1:4243", "}"]
+    # remote_host includes the required HAProxy PROXY address in mux mode.
+    # Overwrite rather than append a client-supplied forwarding chain.
+    caddy += ["  reverse_proxy h2c://127.0.0.1:4243 {",
+              "    header_up X-Forwarded-For {remote_host}", "  }", "}"]
     if legacy:
         caddy.append(Path(legacy).read_text())
     atomic(pub / "Caddyfile", "\n".join(caddy) + "\n", 0o644)
@@ -179,7 +185,7 @@ frontend tls
   use_backend turn if turn
   use_backend web if web
 backend web
-  server caddy 127.0.0.1:8443 check
+  server caddy 127.0.0.1:8443 check send-proxy-v2
 backend turn
   server coturn 127.0.0.1:5349 check
 """

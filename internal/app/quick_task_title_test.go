@@ -169,13 +169,21 @@ func TestQuickTaskTitleWorkersAreBoundedAndStopAtShutdown(t *testing.T) {
 	runner := &delayedQuickTitleRunner{actual: actual, entered: make(chan struct{}, quickTaskTitleJobLimit+1), release: make(chan struct{})}
 	service.Runner = runner
 	cleanupQuickTitleService(t, service)
+	// Seed durable cards before starting the jobs' real deadlines. Race-enabled
+	// SQLite setup can otherwise outlast the first job's 45-second timeout.
+	var cards []model.Card
 	for i := 0; i < quickTaskTitleJobLimit+1; i++ {
-		if _, err := service.CreateCard(context.Background(), CardInput{
+		card, err := service.CreateCard(context.Background(), CardInput{
 			Project: project.ID, Board: board.ID, Lane: model.LaneTodo,
-			Prompt: "Keep queued title work bounded", AutoGenerateTitle: true, DeferStart: true,
-		}); err != nil {
+			Title: "Pending title", Prompt: "Keep queued title work bounded", DeferStart: true,
+		})
+		if err != nil {
 			t.Fatal(err)
 		}
+		cards = append(cards, card)
+	}
+	for _, card := range cards {
+		service.scheduleQuickTaskTitle(card, "Keep queued title work bounded")
 	}
 	waitFor(t, func() bool { return len(runner.entered) == quickTaskTitleConcurrency })
 	service.mu.Lock()

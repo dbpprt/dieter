@@ -14,7 +14,6 @@ import (
 	"html/template"
 	"io"
 	"log/slog"
-	"net"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -655,10 +654,7 @@ func (a *Auth) githubUser(ctx context.Context, token string) (struct {
 }
 
 func (a *Auth) allow(r *http.Request) bool {
-	host := r.RemoteAddr
-	if parsed, _, err := net.SplitHostPort(host); err == nil {
-		host = parsed
-	}
+	host := gatewayClientAddress(r, a.config.ProxyMode)
 	now, cutoff := time.Now(), time.Now().Add(-10*time.Minute)
 	a.rateMu.Lock()
 	defer a.rateMu.Unlock()

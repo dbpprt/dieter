@@ -42,7 +42,7 @@ func (c *CLI) rpcPeer(args []string) error {
 	case "changes":
 		usage += "  [--account HASH] [--epoch EPOCH] [--sequence N]\nRead a bounded incremental change page.\n"
 	case "status":
-		usage += "Show enrolled account, conflicts, and bounded per-peer attempts, successes, directions, checkpoints and sanitized record blockers. A successful exchange is not acknowledgement by every machine.\n"
+		usage += "Show enrolled account, conflicts, and bounded per-peer attempts, successes, directions, checkpoints and sanitized record blockers. Catchup means durable page progress with more work pending. A successful exchange is not acknowledgement by every machine.\n"
 	case "list":
 		usage += "  [--account HASH] [--after KEY --snapshot REVISION]\nReturn up to 64 records. Pass nextKey and snapshotRevision for the next page.\n"
 	case "put":

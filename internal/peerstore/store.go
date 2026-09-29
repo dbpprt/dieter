@@ -94,7 +94,9 @@ func dominates(a, b Clock) bool {
 	}
 	return true
 }
-func validate(r Record) error {
+
+// ValidateRecord applies per-register bounds independently of replica history size.
+func ValidateRecord(r Record) error {
 	if !ValidID(r.Kind) || !ValidID(r.ID) || len(r.Versions) == 0 || len(r.Versions) > MaxVersions {
 		return errors.New("invalid peer record identity or version count")
 	}
@@ -127,11 +129,11 @@ func validate(r Record) error {
 // Merge is a join: discard only causally dominated versions, retaining concurrent
 // values and tombstones. Equal clocks with unequal contents are corruption.
 func Merge(a, b Record) (Record, error) {
-	if err := validate(b); err != nil {
+	if err := ValidateRecord(b); err != nil {
 		return Record{}, err
 	}
 	if len(a.Versions) > 0 {
-		if err := validate(a); err != nil {
+		if err := ValidateRecord(a); err != nil {
 			return Record{}, err
 		}
 		if a.Kind != b.Kind || a.ID != b.ID {
@@ -250,7 +252,7 @@ func (s State) Validate() error {
 		if k != Key(r.Kind, r.ID) {
 			return errors.New("invalid peer record key")
 		}
-		if err := validate(r); err != nil {
+		if err := ValidateRecord(r); err != nil {
 			return err
 		}
 	}

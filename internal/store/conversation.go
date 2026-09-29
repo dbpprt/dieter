@@ -157,10 +157,14 @@ func (s *Store) loadConversationView(cardID string, view func(model.Conversation
 		return model.Conversation{}, ErrRemoteConversation
 	}
 	identity, data, identityErr := s.sharedData()
+	defer data.Close()
 	if identityErr != nil {
 		return model.Conversation{}, identityErr
 	}
 	fields, _ := sharedFields(data, "item", cardID)
+	if err := data.Err(); err != nil {
+		return model.Conversation{}, err
+	}
 	var owner struct {
 		OwnerDaemonID string `json:"ownerDaemonId"`
 	}
@@ -287,21 +291,7 @@ func (s *Store) AppendConversationEvent(cardRef, eventType, turnID, messageID st
 	if err != nil {
 		return model.ConversationEvent{}, model.Conversation{}, err
 	}
-	writeKind := "store_changed"
-	if eventType == "ui-chunk" || eventType == "capability" || eventType == "present-content" {
-		writeKind = "conversation_changed"
-		if eventType == "ui-chunk" {
-			var chunk struct {
-				Type string `json:"type"`
-			}
-			_ = json.Unmarshal(raw, &chunk)
-			// Usage updates change the Kanban directory projection; text deltas
-			// continue using the inexpensive conversation-only sync route.
-			if chunk.Type == "message-metadata" || chunk.Type == "finish" {
-				writeKind = "store_changed"
-			}
-		}
-	}
+	writeKind := conversationEventWriteKind(eventType, raw)
 	release, err := s.beginWriteKind(writeKind)
 	if err != nil {
 		return model.ConversationEvent{}, model.Conversation{}, err
@@ -318,6 +308,25 @@ func (s *Store) AppendConversationEvent(cardRef, eventType, turnID, messageID st
 	return s.appendConversationEvent(card, conversation, eventType, turnID, messageID, data)
 }
 
+func conversationEventWriteKind(eventType string, raw json.RawMessage) string {
+	writeKind := "store_changed"
+	if eventType == "ui-chunk" || eventType == "capability" || eventType == "present-content" {
+		writeKind = "conversation_changed"
+		if eventType == "ui-chunk" {
+			var chunk struct {
+				Type string `json:"type"`
+			}
+			_ = json.Unmarshal(raw, &chunk)
+			// Usage updates change the Kanban directory projection; text deltas
+			// continue using the inexpensive conversation-only sync route.
+			if chunk.Type == "message-metadata" || chunk.Type == "finish" {
+				writeKind = "store_changed"
+			}
+		}
+	}
+	return writeKind
+}
+
 // appendConversationEvent persists an event while the caller holds Dieter's
 // cross-process write lock. Keeping the loaded projection and append in the
 // same critical section lets conditional queue operations avoid racing the
@@ -327,50 +336,53 @@ func (s *Store) appendConversationEvent(card model.Card, conversation model.Conv
 	if err != nil {
 		return model.ConversationEvent{}, model.Conversation{}, err
 	}
-	event := model.ConversationEvent{Seq: conversation.LastSeq + 1, Type: eventType, TurnID: turnID, MessageID: messageID, Data: raw, CreatedAt: timestamp()}
+	events, conversation, err := s.appendConversationEvents(card, conversation, []model.ConversationEvent{{Type: eventType, TurnID: turnID, MessageID: messageID, Data: raw}})
+	if err != nil {
+		return model.ConversationEvent{}, model.Conversation{}, err
+	}
+	return events[0], conversation, nil
+}
+
+// The caller holds the central writer lock. Validate the entire batch before
+// appending, then fsync its journal once before publishing any projection.
+func (s *Store) appendConversationEvents(card model.Card, conversation model.Conversation, events []model.ConversationEvent) ([]model.ConversationEvent, model.Conversation, error) {
+	var records bytes.Buffer
+	for i := range events {
+		event := &events[i]
+		event.Seq = conversation.LastSeq + int64(i) + 1
+		event.CreatedAt = timestamp()
+		line, err := json.Marshal(event)
+		if err != nil {
+			return nil, model.Conversation{}, err
+		}
+		if len(line)+1 >= maxConversationEventBytes {
+			return nil, model.Conversation{}, fmt.Errorf("conversation event exceeds %d bytes", maxConversationEventBytes)
+		}
+		records.Write(line)
+		records.WriteByte('\n')
+	}
 	dir := s.conversationPath(card.ID)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return model.ConversationEvent{}, model.Conversation{}, err
+		return nil, model.Conversation{}, err
 	}
-	line, _ := json.Marshal(event)
-	if len(line)+1 >= maxConversationEventBytes {
-		return model.ConversationEvent{}, model.Conversation{}, fmt.Errorf("conversation event exceeds %d bytes", maxConversationEventBytes)
+	if err := appendJournalRecords(filepath.Join(dir, "events.ndjson"), records.Bytes()); err != nil {
+		return nil, model.Conversation{}, err
 	}
-	if err := appendJournalRecord(filepath.Join(dir, "events.ndjson"), line); err != nil {
-		return model.ConversationEvent{}, model.Conversation{}, err
-	}
-	reduceConversation(&conversation, event)
-	// The fsynced journal is authoritative. Streaming deltas need no full
-	// transcript rewrite; checkpoints bound cold replay and retain every event.
-	checkpoint := event.Seq == 1 || event.Seq%128 == 0 || eventType != "ui-chunk"
-	if eventType == "ui-chunk" {
+	checkpoint, activity := false, false
+	for _, event := range events {
+		reduceConversation(&conversation, event)
+		// Checkpoint at the end even when a batch crosses the 128-event boundary.
+		checkpoint = checkpoint || event.Seq == 1 || event.Seq%128 == 0 || event.Type != "ui-chunk"
 		var chunk struct {
 			Type string `json:"type"`
 		}
-		_ = json.Unmarshal(raw, &chunk)
-		checkpoint = checkpoint || chunk.Type == "finish" || chunk.Type == "abort" || chunk.Type == "error"
-	}
-	if checkpoint {
-		s.queueConversationCheckpoint(card.ID, conversation)
-	}
-
-	snapshotInfo, _ := os.Stat(filepath.Join(dir, "snapshot.json"))
-	eventsInfo, _ := os.Stat(filepath.Join(dir, "events.ndjson"))
-	if eventsInfo != nil {
-		s.cacheConversation(card.ID, conversation, snapshotInfo, eventsInfo, eventsInfo.Size())
-	}
-	s.rememberTokenUsage(card.ID, conversation)
-	// Activity is a derived directory hint, not the event durability boundary.
-	// Publish it at most four times/second during token bursts. Every semantic
-	// event (including finish/error/abort, tools and runtime transitions) flushes
-	// immediately. A killed worker can leave the hint <250ms behind; replay of
-	// the fsynced journal still recovers every acknowledged token and timestamp.
-	if shouldPublishConversationActivity(card.LastActivityAt, event) {
 		if event.Type == "ui-chunk" {
-			var chunk struct {
-				Type string `json:"type"`
-			}
 			_ = json.Unmarshal(event.Data, &chunk)
+			checkpoint = checkpoint || chunk.Type == "finish" || chunk.Type == "abort" || chunk.Type == "error"
+		}
+		// Preserve semantic activity and response receipts while writing the
+		// derived card only once for the batch. Token activity remains throttled.
+		if shouldPublishConversationActivity(card.LastActivityAt, event) {
 			if chunk.Type == "finish" && len(conversation.Messages) > 0 {
 				message := conversation.Messages[len(conversation.Messages)-1]
 				if message.Role == "assistant" {
@@ -382,14 +394,27 @@ func (s *Store) appendConversationEvent(card model.Card, conversation model.Conv
 					}
 				}
 			}
-		}
-		card.LastActivityAt = event.CreatedAt
-		card.UpdatedAt = event.CreatedAt
-		if err := s.writeCard(card); err != nil {
-			return model.ConversationEvent{}, model.Conversation{}, err
+			card.LastActivityAt, card.UpdatedAt = event.CreatedAt, event.CreatedAt
+			activity = true
 		}
 	}
-	return event, conversation, nil
+	// The fsynced journal is authoritative. Checkpoints are optional and are
+	// encoded outside the writer lock; every individual event remains replayable.
+	if checkpoint {
+		s.queueConversationCheckpoint(card.ID, conversation)
+	}
+	snapshotInfo, _ := os.Stat(filepath.Join(dir, "snapshot.json"))
+	eventsInfo, _ := os.Stat(filepath.Join(dir, "events.ndjson"))
+	if eventsInfo != nil {
+		s.cacheConversation(card.ID, conversation, snapshotInfo, eventsInfo, eventsInfo.Size())
+	}
+	s.rememberTokenUsage(card.ID, conversation)
+	if activity {
+		if err := s.writeCard(card); err != nil {
+			return nil, model.Conversation{}, err
+		}
+	}
+	return events, conversation, nil
 }
 
 func shouldPublishConversationActivity(previous string, event model.ConversationEvent) bool {

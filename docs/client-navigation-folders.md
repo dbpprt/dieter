@@ -24,9 +24,10 @@ revision. Empty revision means create only. Compare-and-set is local to the
 accepting replica, not a globally linearizable lock. Retrying exactly the same
 request on that daemon returns its original durable receipt, even after a
 restart or subsequent writes. Reusing an operation ID with different input fails.
-Receipts commit atomically with records and are bounded to 65,536/64 MiB per
-account per daemon. Capacity errors are explicit; receipts are not silently aged
-out. A pending request with an uncertain outcome waits for its accepting daemon.
+Receipts commit atomically with records and remain on disk for exact replay.
+They are indexed by operation ID, bounded to 2 MiB individually, and have no
+lifetime count/byte admission quota. New writes do not scan or silently expire
+old receipts. Disk errors and per-record capacity errors remain explicit. A pending request with an uncertain outcome waits for its accepting daemon.
 
 The generic JSON store preserves causal siblings. Its deterministic projection
 selects the greatest canonical version hash, with concurrent deletion winning.

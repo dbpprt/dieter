@@ -242,6 +242,7 @@ func (s *Store) listCardsContext(ctx context.Context, includeArchived bool) ([]m
 		}
 	}
 	_, data, err := s.sharedData()
+	defer data.Close()
 	if err != nil {
 		return nil, err
 	}
@@ -261,7 +262,7 @@ func (s *Store) listCardsContext(ctx context.Context, includeArchived bool) ([]m
 		}
 	}
 	materializeCardPositions(result)
-	return result, nil
+	return result, data.Err()
 }
 
 func (s *Store) readCard(path string) (model.Card, error) {
@@ -379,6 +380,7 @@ func (s *Store) ResolveCard(ref string) (model.Card, error) {
 		}
 	}
 	_, data, err := s.sharedData()
+	defer data.Close()
 	if err != nil {
 		return model.Card{}, err
 	}
@@ -398,11 +400,11 @@ type CardCacheInput struct {
 }
 
 func (s *Store) UpdateCardCache(ref string, input CardCacheInput) (model.Card, error) {
-	release, err := s.beginWrite()
+	write, err := s.beginConditionalWrite()
 	if err != nil {
 		return model.Card{}, err
 	}
-	defer release()
+	defer write.finish()
 	item, err := s.ResolveCard(ref)
 	if err != nil {
 		return model.Card{}, err
@@ -440,6 +442,9 @@ func (s *Store) UpdateCardCache(ref string, input CardCacheInput) (model.Card, e
 	}
 	if title == item.Title && provider == item.Provider && providerAccountKey == item.ProviderAccountKey && modelName == item.Model && effort == item.Effort && stringMapsEqual(providerOptions, item.ProviderOptions) && runtime == item.Runtime && summary == item.Summary {
 		return item, nil
+	}
+	if err := write.prepare("store_changed"); err != nil {
+		return model.Card{}, err
 	}
 	if item.Title != title {
 		item.TitleRevision++

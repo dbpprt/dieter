@@ -13,7 +13,6 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
-	"net"
 	"strings"
 	"sync"
 	"time"
@@ -25,7 +24,6 @@ import (
 	"github.com/dbpprt/dieter/internal/trust"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/emptypb"
@@ -301,13 +299,7 @@ func (s *Service) BeginDaemonEnrollment(ctx context.Context, request *gatewayv1.
 }
 
 func (s *Service) allowEnrollment(ctx context.Context) bool {
-	host := "unknown"
-	if value, ok := peer.FromContext(ctx); ok && value.Addr != nil {
-		host = value.Addr.String()
-		if parsed, _, err := net.SplitHostPort(host); err == nil {
-			host = parsed
-		}
-	}
+	host := gatewayContextClientAddress(ctx)
 	now := time.Now().UTC()
 	cutoff := now.Add(-time.Minute)
 	s.enrollMu.Lock()

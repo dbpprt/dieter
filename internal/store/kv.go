@@ -63,13 +63,13 @@ func (s *Store) MutateKV(identity PeerIdentity, m KVMutation) (peerstore.Record,
 	if !errors.Is(err, sql.ErrNoRows) {
 		return zero, err
 	}
-	data, err := s.PeerData(identity.Account)
+	data, err := s.openPeerView(identity.Account)
 	if err != nil {
 		return zero, err
 	}
 	data.State = clonePeerState(data.State)
 	key := peerstore.Key(kind, m.Key)
-	old := data.Records[key]
+	old := data.record(key)
 	if old.Revision() != m.Revision {
 		return zero, peerstore.ErrConflict
 	}
@@ -83,7 +83,7 @@ func (s *Store) MutateKV(identity PeerIdentity, m KVMutation) (peerstore.Record,
 			if id == m.Key {
 				return "", errors.New("cannot move relative to itself")
 			}
-			v := peerstore.SelectedKV(data.Records[peerstore.Key(kind, id)])
+			v := peerstore.SelectedKV(data.record(peerstore.Key(kind, id)))
 			var p peerstore.KVPosition
 			if v.Deleted || json.Unmarshal(v.Value, &p) != nil || p.Parent != position.Parent || !peerstore.ValidPosition(p) {
 				return "", peerstore.ErrConflict
@@ -105,15 +105,19 @@ func (s *Store) MutateKV(identity PeerIdentity, m KVMutation) (peerstore.Record,
 			if index := strings.IndexByte(m.Key, '.'); index >= 0 {
 				prefix = m.Key[:index+1]
 			}
-			for _, r := range data.Records {
+			err = data.each(kind+"/"+prefix, func(r peerstore.Record) error {
 				if r.Kind != kind || r.ID == m.Key || !strings.HasPrefix(r.ID, prefix) {
-					continue
+					return nil
 				}
 				v := peerstore.SelectedKV(r)
 				var p peerstore.KVPosition
 				if !v.Deleted && json.Unmarshal(v.Value, &p) == nil && p.Parent == position.Parent && peerstore.ValidPosition(p) && p.Rank > left {
 					left = p.Rank
 				}
+				return nil
+			})
+			if err != nil {
+				return zero, err
 			}
 		}
 		if right != "" && left >= right {

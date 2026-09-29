@@ -155,15 +155,23 @@ func (h *Hub) handshake(stream grpc.BidiStreamingServer[gatewayv1.DaemonLinkFram
 	if err := linkauth.VerifyCertificate(record.Certificate, h.config.IdentityOrigin(), identity, challenge, proof.GetPayload()); err != nil {
 		return daemonHandshake{err: status.Error(codes.Unauthenticated, "daemon challenge response is invalid")}
 	}
+	if authenticated, ok := stream.Context().Value(gatewayLinkAuthenticatedKey{}).(chan struct{}); ok {
+		close(authenticated)
+	}
+	if release, ok := stream.Context().Value(gatewayLinkAdmittedKey{}).(func()); ok {
+		release()
+	}
 	return daemonHandshake{hello: hello, record: record}
 }
 
 func (h *Hub) authenticateLink(stream grpc.BidiStreamingServer[gatewayv1.DaemonLinkFrame, gatewayv1.DaemonLinkFrame], timeout time.Duration) daemonHandshake {
-	select {
-	case h.handshakes <- struct{}{}:
-		defer func() { <-h.handshakes }()
-	default:
-		return daemonHandshake{err: status.Error(codes.ResourceExhausted, "daemon handshake concurrency is exhausted")}
+	if release, _ := stream.Context().Value(gatewayLinkAdmittedKey{}).(func()); release == nil {
+		select {
+		case h.handshakes <- struct{}{}:
+			defer func() { <-h.handshakes }()
+		default:
+			return daemonHandshake{err: status.Error(codes.ResourceExhausted, "daemon handshake concurrency is exhausted")}
+		}
 	}
 	ctx, cancel := context.WithTimeout(stream.Context(), timeout)
 	defer cancel()

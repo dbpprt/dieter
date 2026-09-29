@@ -366,7 +366,8 @@ func (s *Store) scheduleByID(id string) (model.Schedule, error) {
 	if err != nil {
 		return item, err
 	}
-	identity, _, err := s.sharedData()
+	identity, data, err := s.sharedData()
+	defer data.Close()
 	if err != nil {
 		return model.Schedule{}, err
 	}
@@ -420,6 +421,7 @@ func (s *Store) ListSchedules(projectRef string) ([]model.Schedule, error) {
 		projectID = project.ID
 	}
 	identity, data, err := s.sharedData()
+	defer data.Close()
 	if err != nil {
 		return nil, err
 	}
@@ -441,7 +443,7 @@ func (s *Store) ListSchedules(projectRef string) ([]model.Schedule, error) {
 		}
 		result = append(result, item)
 	}
-	return result, nil
+	return result, data.Err()
 }
 
 func (s *Store) ListSchedulesPage(projectRef string, pageSize int, pageToken string) (SchedulePage, error) {

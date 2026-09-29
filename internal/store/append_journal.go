@@ -12,6 +12,13 @@ import (
 // so the next acknowledged event cannot be swallowed by a corrupt JSON line.
 // The caller owns the central cross-process lock.
 func appendJournalRecord(path string, line []byte) error {
+	return appendJournalRecords(path, append(line, '\n'))
+}
+
+// records contains complete newline-terminated records validated by the caller.
+// One fsync makes the whole successful append durable. A crash during Write may
+// retain a complete prefix; recovery discards only an unterminated final record.
+func appendJournalRecords(path string, records []byte) error {
 	file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR|os.O_APPEND, 0600)
 	if err != nil {
 		return err
@@ -47,7 +54,7 @@ func appendJournalRecord(path string, line []byte) error {
 			}
 		}
 	}
-	if _, err := file.Write(append(line, '\n')); err != nil {
+	if _, err := file.Write(records); err != nil {
 		return err
 	}
 	return file.Sync()

@@ -183,6 +183,7 @@ func (s *Store) AcquireRuntimeLeaseFor(projectID, boardID, cardID, agent string)
 	if detail, detailErr := s.CardDetail(cardID); detailErr == nil {
 		lease.Detail = &detail
 		_, data, e := s.sharedData()
+		defer data.Close()
 		if e != nil {
 			return RuntimeLease{}, e
 		}
@@ -190,14 +191,17 @@ func (s *Store) AcquireRuntimeLeaseFor(projectID, boardID, cardID, agent string)
 		for _, domain := range []struct{ kind, id string }{{"project", detail.Project.ID}, {"board", detail.Board.ID}, {"item", cardID}} {
 			for field := range peerstore.DomainFields[domain.kind] {
 				key := peerstore.Key(domain.kind, domain.id+"."+field)
-				if record, ok := data.Records[key]; ok {
+				if record := data.record(key); len(record.Versions) > 0 {
 					lease.SettingsRevisions[key] = record.Revision()
 				}
 			}
 		}
 		for _, label := range detail.Card.LabelIDs {
 			key := peerstore.Key("label", label+".instructions")
-			lease.SettingsRevisions[key] = data.Records[key].Revision()
+			lease.SettingsRevisions[key] = data.record(key).Revision()
+		}
+		if err := data.Err(); err != nil {
+			return RuntimeLease{}, err
 		}
 	}
 	raw, _ := json.MarshalIndent(lease, "", "  ")

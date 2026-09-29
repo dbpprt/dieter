@@ -27,6 +27,12 @@ import (
 	"google.golang.org/protobuf/types/known/emptypb"
 )
 
+// ErrPeerCatchUp reports durable progress with more pages left for a later round.
+// It is not a completed exchange or a transport failure.
+var ErrPeerCatchUp = errors.New("peer catch-up continues next round")
+
+const peerExchangePages = 64
+
 // peerGatewayConn authenticates autonomous peers with short-lived possession
 // proofs. The gateway resolves the account from current enrollment, never input.
 type peerGatewayConn struct {
@@ -377,6 +383,8 @@ func (p *PeerSync) Round(ctx context.Context) error {
 			e = p.exchange(attempt, binding, connection.Client, target, connection.Route)
 			if e == nil {
 				e = p.Store.PeerSynced(binding, target, connection.Route)
+			} else if errors.Is(e, ErrPeerCatchUp) {
+				e = nil
 			}
 			connection.Close()
 		} else {
@@ -402,7 +410,9 @@ func (p *PeerSync) exchange(ctx context.Context, binding store.PeerIdentity, cli
 		if diagnostic.PeerID == "" {
 			return
 		}
-		if resultErr != nil {
+		if errors.Is(resultErr, ErrPeerCatchUp) {
+			diagnostic.Direction = "catchup"
+		} else if resultErr != nil {
 			diagnostic.FailureCode = sanitizedRTCReason(resultErr)
 			var record *store.PeerRecordError
 			if errors.As(resultErr, &record) {
@@ -419,7 +429,7 @@ func (p *PeerSync) exchange(ctx context.Context, binding store.PeerIdentity, cli
 		} else {
 			diagnostic.Direction = "complete"
 		}
-		if err := p.Store.RecordPeerSync(binding, diagnostic); err != nil && resultErr == nil {
+		if err := p.Store.RecordPeerSync(binding, diagnostic); err != nil && (resultErr == nil || errors.Is(resultErr, ErrPeerCatchUp)) {
 			resultErr = err
 		}
 	}()
@@ -441,7 +451,8 @@ func (p *PeerSync) exchange(ctx context.Context, binding store.PeerIdentity, cli
 		return err
 	}
 	diagnostic.Pull = pull
-	for page := 0; page < peerstore.MaxRecords/peerstore.PageSize+1; page++ {
+	pullComplete, pushComplete := false, false
+	for page := 0; page < peerExchangePages; page++ {
 		changes, e := client.GetPeerChanges(ctx, &dieterv1.PeerChangesRequest{Account: binding.Account, Epoch: pull.Epoch, AfterSequence: pull.Sequence})
 		if status.Code(e) == codes.Aborted && pull.Epoch != "" {
 			pull = store.PeerCheckpoint{}
@@ -473,6 +484,7 @@ func (p *PeerSync) exchange(ctx context.Context, binding store.PeerIdentity, cli
 		}
 		diagnostic.Pull = pull
 		if !changes.GetMore() {
+			pullComplete = true
 			break
 		}
 	}
@@ -481,11 +493,15 @@ func (p *PeerSync) exchange(ctx context.Context, binding store.PeerIdentity, cli
 	if err != nil {
 		return err
 	}
+	// A replaced receiving replica has lost earlier acknowledgements too.
+	if push.RemoteEpoch != pull.Epoch {
+		push = store.PeerCheckpoint{RemoteEpoch: pull.Epoch}
+	}
 	diagnostic.Push = push
-	for page := 0; page < peerstore.MaxRecords/peerstore.PageSize+1; page++ {
+	for page := 0; page < peerExchangePages; page++ {
 		changes, e := p.Store.PeerChanges(binding.Account, push.Epoch, push.Sequence)
 		if errors.Is(e, peerstore.ErrConflict) && push.Epoch != "" {
-			push = store.PeerCheckpoint{}
+			push = store.PeerCheckpoint{RemoteEpoch: pull.Epoch}
 			continue
 		}
 		if e != nil {
@@ -504,14 +520,18 @@ func (p *PeerSync) exchange(ctx context.Context, binding store.PeerIdentity, cli
 				return err
 			}
 		}
-		push = store.PeerCheckpoint{Epoch: changes.Epoch, Sequence: changes.After}
+		push = store.PeerCheckpoint{Epoch: changes.Epoch, Sequence: changes.After, RemoteEpoch: pull.Epoch}
 		if err = p.Store.SavePeerCheckpoint(binding, peer, "push", push); err != nil {
 			return err
 		}
 		diagnostic.Push = push
 		if !changes.More {
+			pushComplete = true
 			break
 		}
+	}
+	if !pullComplete || !pushComplete {
+		return ErrPeerCatchUp
 	}
 	return nil
 }

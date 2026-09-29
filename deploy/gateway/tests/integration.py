@@ -23,7 +23,7 @@ def run(*args, input=None, timeout=180):
     result = subprocess.run(list(map(str, args)), input=input, capture_output=True, timeout=timeout)
     if result.returncode:
         # The fixture only contains disposable credentials, but keep output bounded.
-        raise RuntimeError(f"{args[0]} failed: {result.stderr.decode()[-2000:]}")
+        raise RuntimeError(f"{args[0]} failed: {result.stderr.decode()[-6000:]}")
     return result.stdout
 
 
@@ -79,7 +79,7 @@ def main():
             env = dict(os.environ, CGO_ENABLED="0", GOOS="linux", GOARCH=goarch)
             for target, binary in (("./scripts/gateway-turn-probe", "probe"),):
                 subprocess.run(["go", "build", "-trimpath", "-o", str(temp / binary), target], cwd=ROOT, env=env, check=True, timeout=300)
-            run("docker", "build", "-q", "-f", ROOT / "Dockerfile.gateway",
+            run("docker", "build", "--progress=plain", "-f", ROOT / "Dockerfile.gateway",
                 "--build-arg", "RELEASE_VERSION=" + release_version,
                 "--build-arg", "SOURCE_REVISION=" + source_revision,
                 "-t", image, ROOT, timeout=600)
@@ -109,6 +109,7 @@ def main():
             run("docker", "cp", str(temp) + "/.", anchor + ":/fixture")
             gateway = prefix + "-gateway"
             run("docker", "run", "-d", "--name", gateway, "--network", "container:" + anchor,
+                "--memory", "192m", "--memory-swap", "192m", "--pids-limit", "128",
                 "--read-only", "--cap-drop", "ALL", "--security-opt", "no-new-privileges:true",
                 "--env-file", output / "private/gateway.env", "-v", volume + ":/var/lib/dieter-gateway", image)
             containers.append(gateway)
@@ -122,8 +123,9 @@ def main():
                         "serverName": "gateway.example.com" if transport == "https" else "turn.example.com",
                         "transport": transport, "username": username, "password": password, "expectedRelayIP": "198.18.0.2",
                         "caFile": "/fixture/ca.pem", "expectedCertificateSHA256": fingerprint, "holdSeconds": hold}
-            def probe(req):
-                return json.loads(run("docker", "run", "--rm", "-i", "--network", network, "-v", fixture_volume + ":/fixture:ro",
+            def probe(req, source_ip=None):
+                source = ["--ip", source_ip] if source_ip else []
+                return json.loads(run("docker", "run", "--rm", "-i", "--network", network, *source, "-v", fixture_volume + ":/fixture:ro",
                     alpine, "/fixture/probe", input=json.dumps(req).encode(), timeout=75))
             for attempt in range(20):
                 try:
@@ -133,6 +135,20 @@ def main():
                     time.sleep(1)
             else:
                 raise RuntimeError("gateway TLS/HTTP2 readiness failed")
+            print("Testing separate client limits through HAProxy and Caddy", flush=True)
+            # Exhaust one source, then prove another still has its own bucket.
+            # Each probe also tries a different spoofed X-Forwarded-For per call.
+            for source_ip in ("198.18.0.10", "198.18.0.11"):
+                probe(dict(request("https", fingerprint), checkRateLimits=True), source_ip)
+            print("Testing 512 oversized envelopes at concurrency 64 with a 192 MiB gateway limit", flush=True)
+            probe(dict(request("https", fingerprint), checkIngressBounds=True))
+            measured = json.loads(run("docker", "inspect", gateway))[0]
+            assert measured["State"]["Running"] and not measured["State"]["OOMKilled"]
+            assert measured["RestartCount"] == 0 and measured["HostConfig"]["Memory"] == 192 * 1024 * 1024
+            # cgroup v2 reports the peak including allocations between samples.
+            peak = subprocess.run(["docker", "exec", gateway, "cat", "/sys/fs/cgroup/memory.peak"], capture_output=True)
+            if peak.returncode == 0:
+                print(json.dumps({"gatewayMemoryPeakBytes": int(peak.stdout), "gatewayMemoryLimitBytes": 192 * 1024 * 1024}), flush=True)
             health = json.loads(run("docker", "exec", gateway, "wget", "-qO-", "http://127.0.0.1:4243/healthz"))
             validate_gateway_health(health)
             manifest = pack(temp / "compatibility-bundle", source_revision, release_version,

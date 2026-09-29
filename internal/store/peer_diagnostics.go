@@ -142,7 +142,7 @@ func (s *Store) RecordPeerSync(identity PeerIdentity, value PeerSyncDiagnostic) 
 		values = append(values[:index], values[index+1:]...)
 		break
 	}
-	if value.FailureCode == "" {
+	if value.FailureCode == "" && value.Direction != "catchup" {
 		value.LastSuccessAt = value.LastAttemptAt
 	}
 	values = append(values, value)

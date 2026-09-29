@@ -50,13 +50,12 @@ func (api *grpcAPI) GetKV(ctx context.Context, r *dieterv1.KVRef) (*dieterv1.KVE
 	if err != nil {
 		return nil, peerFailure(err)
 	}
-	data, err := api.server.store.PeerData(identity.Account)
+	record, err := api.server.store.ReadPeerRecord(ctx, identity.Account, kind, r.GetKey())
+	if errors.Is(err, store.ErrNotFound) {
+		return nil, status.Error(codes.NotFound, "KV key not found")
+	}
 	if err != nil {
 		return nil, peerFailure(err)
-	}
-	record, ok := data.Records[peerstore.Key(kind, r.GetKey())]
-	if !ok {
-		return nil, status.Error(codes.NotFound, "KV key not found")
 	}
 	return kvEntry(record), nil
 }
@@ -68,30 +67,21 @@ func (api *grpcAPI) ListKV(ctx context.Context, r *dieterv1.KVListRequest) (*die
 	if err = kvFilter(r.GetNamespace(), r.GetPrefix()); err != nil {
 		return nil, err
 	}
-	data, err := api.server.store.PeerData(identity.Account)
+	var cursor *store.PeerCheckpoint
+	if r.GetSnapshot() != nil {
+		cursor = &store.PeerCheckpoint{Epoch: r.Snapshot.Epoch, Sequence: r.Snapshot.Sequence}
+	}
+	kind := peerstore.KVKindPrefix
+	if r.GetNamespace() != "" {
+		kind += r.GetNamespace()
+	}
+	page, err := api.server.store.ListPeerRecordPage(ctx, identity.Account, kind, r.GetPrefix(), r.GetAfterKey(), "", cursor)
 	if err != nil {
 		return nil, peerFailure(err)
 	}
-	if r.GetSnapshot() != nil && (r.Snapshot.Epoch != data.Epoch || r.Snapshot.Sequence != data.Sequence) {
-		return nil, peerFailure(peerstore.ErrConflict)
-	}
-	out := &dieterv1.KVPage{Account: identity.Account, DaemonId: identity.DaemonID, Cursor: &dieterv1.KVCursor{Epoch: data.Epoch, Sequence: data.Sequence}}
-	size := 0
-	for _, record := range data.Sorted() {
-		key := peerstore.Key(record.Kind, record.ID)
-		if key <= r.GetAfterKey() || !kvMatches(record, r.GetNamespace(), r.GetPrefix()) {
-			continue
-		}
-		entry := kvEntry(record)
-		if len(out.Entries) >= peerstore.PageSize || (len(out.Entries) > 0 && size+len(entry.ValueJson) > peerstore.MaxPageBytes/2) {
-			last := out.Entries[len(out.Entries)-1]
-			out.NextKey = peerstore.Key(peerstore.KVKindPrefix+last.Namespace, last.Key)
-			break
-		}
-		out.Entries = append(out.Entries, entry)
-		for _, v := range entry.Versions {
-			size += len(v.ValueJson) + 4096
-		}
+	out := &dieterv1.KVPage{Account: identity.Account, DaemonId: identity.DaemonID, Cursor: &dieterv1.KVCursor{Epoch: page.Epoch, Sequence: page.Sequence}, NextKey: page.NextKey}
+	for _, record := range page.Records {
+		out.Entries = append(out.Entries, kvEntry(record))
 	}
 	return out, nil
 }

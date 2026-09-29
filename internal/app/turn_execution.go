@@ -102,7 +102,44 @@ func (s *Service) runTurn(ctx context.Context, detail model.CardDetail, turnID s
 	streamFailed := false
 	var reportedFailure error
 	capabilityFilter := newCapabilityProgressFilter()
-	err := s.Runner.Run(ctx, request, func(output harness.Output) error {
+	persistChunks := func(chunks []json.RawMessage) error {
+		if !s.noteTurnProgress(detail.Card.ID, turnID) {
+			return context.Canceled
+		}
+		var conversation model.Conversation
+		var err error
+		if len(chunks) == 1 {
+			_, conversation, err = s.Store.AppendUIChunk(detail.Card.ID, turnID, chunks[0])
+		} else {
+			_, conversation, err = s.Store.AppendUIChunks(detail.Card.ID, turnID, chunks)
+		}
+		if err != nil {
+			return err
+		}
+		if conversation.Status == "failed" {
+			streamFailed = true
+		}
+		runtimeStatus := conversation.Status
+		if runtimeStatus == "idle" {
+			// Session/capability outputs can follow the terminal UI chunk. The
+			// active-turn barrier stays up until those outputs and Run complete.
+			runtimeStatus = "running"
+		}
+		if _, err := s.Store.UpdateCardCache(detail.Card.ID, store.CardCacheInput{Provider: request.Harness, Model: request.ConfiguredModel, Runtime: runtimeStatus}); err != nil {
+			return err
+		}
+		for _, chunk := range chunks {
+			select {
+			case updates <- TurnUpdate{Chunk: chunk}:
+			case <-ctx.Done():
+				// Persist accepted deltas on cancellation too. Continue consuming
+				// the runner's final session state without waiting on a client.
+				return nil
+			}
+		}
+		return nil
+	}
+	err := runBatchedTurnOutputs(ctx, s.Runner, request, persistChunks, func(output harness.Output) error {
 		if !s.noteTurnProgress(detail.Card.ID, turnID) {
 			return context.Canceled
 		}
@@ -110,28 +147,7 @@ func (s *Service) runTurn(ctx context.Context, detail model.CardDetail, turnID s
 		case "heartbeat":
 			return nil
 		case "chunk":
-			_, conversation, err := s.Store.AppendUIChunk(detail.Card.ID, turnID, output.Chunk)
-			if err != nil {
-				return err
-			}
-			if conversation.Status == "failed" {
-				streamFailed = true
-			}
-			runtimeStatus := conversation.Status
-			if runtimeStatus == "idle" {
-				// A harness may emit its durable session and capability state after
-				// the terminal UI chunk. Keep the card active until Runner.Run has
-				// returned so clients cannot observe an idle card before those
-				// trailing outputs are persisted.
-				runtimeStatus = "running"
-			}
-			_, _ = s.Store.UpdateCardCache(detail.Card.ID, store.CardCacheInput{Provider: request.Harness, Model: request.ConfiguredModel, Runtime: runtimeStatus})
-			select {
-			case updates <- TurnUpdate{Chunk: output.Chunk}:
-				return nil
-			case <-ctx.Done():
-				return ctx.Err()
-			}
+			return persistChunks([]json.RawMessage{output.Chunk})
 		case "session":
 			_, err := s.Store.SetConversationSession(detail.Card.ID, turnID, output.State)
 			return err

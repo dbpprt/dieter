@@ -101,7 +101,7 @@ func (s *Store) CreateProject(input CreateProjectInput) (model.Project, error) {
 		ValidationCommands: validation, CreatedAt: now, UpdatedAt: now,
 	}
 	checkout := model.Checkout{ID: newID("co_"), ProjectID: project.ID, DaemonID: identity.DaemonID, Name: filepath.Base(path), Path: path, ValidationCommands: validation}
-	data, err := s.PeerData(identity.Account)
+	data, err := s.openPeerView(identity.Account)
 	if err != nil {
 		return model.Project{}, err
 	}
@@ -179,7 +179,7 @@ func (s *Store) restoreProjectForCreation(
 	if err != nil {
 		return model.Project{}, err
 	}
-	data, err := s.PeerData(identity.Account)
+	data, err := s.openPeerView(identity.Account)
 	if err != nil {
 		return model.Project{}, err
 	}

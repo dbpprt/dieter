@@ -389,6 +389,27 @@ func testPeerMachines(t *testing.T, wantRoute string) {
 	if err != nil || first.GetNextKey() == "" {
 		t.Fatal(first, err)
 	}
+	// CLI pagination uses the same bounded SQL snapshots over every routed
+	// transport. The native clients use this core through the Connect adapter.
+	output.Reset()
+	if err = client.Run([]string{"peer", "list"}); err != nil {
+		t.Fatal(err)
+	}
+	var routedFirst dieterv1.PeerSnapshot
+	if err = protojson.Unmarshal(output.Bytes(), &routedFirst); err != nil || len(routedFirst.Records) != peerstore.PageSize || routedFirst.NextKey == "" {
+		t.Fatalf("routed first page: %v", err)
+	}
+	output.Reset()
+	if err = client.Run([]string{"peer", "list", "--after", routedFirst.NextKey, "--snapshot", routedFirst.SnapshotRevision}); err != nil {
+		t.Fatal(err)
+	}
+	var routedNext dieterv1.PeerSnapshot
+	if err = protojson.Unmarshal(output.Bytes(), &routedNext); err != nil || len(routedNext.Records) == 0 {
+		t.Fatalf("routed continuation: %v", err)
+	}
+	if peerstore.Key(routedNext.Records[0].Kind, routedNext.Records[0].Id) <= routedFirst.NextKey {
+		t.Fatal("routed continuation repeated a record")
+	}
 	if _, err = sb.PutPeerRecord(bb, "project-settings", "changed_page", "", []byte(`{}`), false); err != nil {
 		t.Fatal(err)
 	}

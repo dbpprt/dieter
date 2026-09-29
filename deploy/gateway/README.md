@@ -73,6 +73,33 @@ passes TLS through by an explicit SNI allowlist: HTTPS to loopback Caddy 8443,
 TURN TLS to coturn 5349. Missing/unknown SNI is rejected after bounded inspection.
 The two-IP profile binds each service's public 443 directly.
 
+In the single-IP profile, HAProxy sends PROXY v2 to Caddy, and Caddy requires
+that header on its loopback 8443 listener before TLS. Caddy overwrites
+`X-Forwarded-For` with the resulting client IP. The gateway uses that single
+address for OAuth and enrollment rate limits only in explicit proxy mode and
+only when the immediate peer is loopback. Direct callers, duplicate headers,
+forwarding chains, and malformed addresses cannot select a rate-limit bucket.
+Keep the gateway and Caddy backend listeners private to the trusted proxy host.
+
+Public gRPC envelopes are checked before gRPC allocates their advertised
+payload: 64 KiB for each daemon HELLO and challenge proof, and 8 KiB for public
+unary messages (whose complete HTTP body is also limited to 8 KiB). Public
+messages cannot use compression. Up to 64 daemon handshakes and 32 public unary
+requests are admitted before body readers start. A daemon cannot pipeline later
+frames into the gateway until its key proof succeeds; authenticated relay frames
+retain the 16 MiB limit. HTTP/2 receive windows are 64 KiB per stream and 1 MiB per
+connection. These are ingress bounds, not a total-process memory guarantee.
+
+The deployment integration suite exhausts one client's enrollment bucket through
+both proxy hops, then checks another source IP still has its own allowance. It
+also tries spoofed forwarding headers and sends 512 oversized handshake envelopes
+at concurrency 64 with the gateway limited to 192 MiB and no extra swap. It checks
+that the gateway remains running without an OOM or restart and reports the cgroup
+memory peak where available. This is a bounded allocation regression, not a
+long-running memory soak. Deploy the gateway and rendered proxy configuration
+together; changing the gateway alone cannot restore client IPs already discarded
+by HAProxy.
+
 Caddy serves TLS 1.3 and HTTP/2, disables HTTP/3, and proxies h2c only over loopback.
 Coturn explicitly advertises its public IPv4 relay address and retains UDP/TCP
 3478 while adding TLS/TCP 443. Client TCP transport is distinct from disabled

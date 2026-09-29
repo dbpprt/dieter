@@ -175,8 +175,6 @@ func TestScheduleRejectsCodexFastModeForUnsupportedModel(t *testing.T) {
 
 func TestTickArchivesDoneCardsUsingBoardPolicy(t *testing.T) {
 	manager, data, project, board := setup(t)
-	fixed := time.Now().UTC().Add(time.Second)
-	manager.now = func() time.Time { return fixed }
 	if _, err := data.UpdateBoardDoneArchivePolicy(board.ID, model.DoneArchiveImmediately); err != nil {
 		t.Fatal(err)
 	}
@@ -188,6 +186,9 @@ func TestTickArchivesDoneCardsUsingBoardPolicy(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// Freeze after fixture writes; they can take over a second under -race.
+	fixed := time.Now().UTC().Add(time.Second)
+	manager.now = func() time.Time { return fixed }
 	manager.Tick()
 	card, err = data.ResolveCard(card.ID)
 	if err != nil || !card.Archived {

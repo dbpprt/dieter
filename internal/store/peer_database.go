@@ -37,12 +37,13 @@ func (s *Store) peerDatabase(account string) (*sql.DB, error) {
 	}
 	db.SetMaxOpenConns(1)
 	db.SetMaxIdleConns(1)
-	_, err = db.Exec(`PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA busy_timeout=10000;
+	_, err = db.Exec(`PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA busy_timeout=10000; PRAGMA cache_size=-4096; PRAGMA wal_autocheckpoint=256;
  CREATE TABLE IF NOT EXISTS peer_metadata (id INTEGER PRIMARY KEY CHECK(id=1), epoch TEXT NOT NULL, sequence INTEGER NOT NULL, record_count INTEGER NOT NULL DEFAULT 0, record_bytes INTEGER NOT NULL DEFAULT 0);
  CREATE TABLE IF NOT EXISTS kv_receipts (id TEXT PRIMARY KEY, fingerprint TEXT NOT NULL, value BLOB NOT NULL);
  CREATE TABLE IF NOT EXISTS peer_effects (path TEXT PRIMARY KEY, value BLOB, remove_file INTEGER NOT NULL);
  CREATE TABLE IF NOT EXISTS peer_records (key TEXT PRIMARY KEY, revision TEXT NOT NULL, sequence INTEGER NOT NULL, value BLOB NOT NULL);
- CREATE INDEX IF NOT EXISTS peer_records_sequence ON peer_records(sequence);`)
+ CREATE INDEX IF NOT EXISTS peer_records_sequence ON peer_records(sequence);
+ CREATE INDEX IF NOT EXISTS peer_records_conflicts ON peer_records(key) WHERE json_array_length(value,'$.versions')>1;`)
 	if err == nil {
 		_, err = db.Exec("INSERT OR IGNORE INTO peer_metadata(id,epoch,sequence) VALUES(1,?,0)", newID("replica_"))
 	}
@@ -53,6 +54,9 @@ func (s *Store) peerDatabase(account string) (*sql.DB, error) {
 	s.peerDBs[account] = db
 	return db, nil
 }
+
+// readPeerState is a bounded diagnostic materialization used by in-process
+// fixtures. Operational reads and writes use openPeerView or SQL pages instead.
 func (s *Store) readPeerState(account string) (PeerData, error) {
 	if _, err := os.Stat(s.peerPath(account)); errors.Is(err, os.ErrNotExist) {
 		return PeerData{State: peerstore.State{Records: map[string]peerstore.Record{}}}, nil
@@ -65,8 +69,12 @@ func (s *Store) readPeerState(account string) (PeerData, error) {
 	}
 	var epoch string
 	var seq uint64
-	if err = db.QueryRow("SELECT epoch,sequence FROM peer_metadata WHERE id=1").Scan(&epoch, &seq); err != nil {
+	var count, size int64
+	if err = db.QueryRow("SELECT epoch,sequence,record_count,record_bytes FROM peer_metadata WHERE id=1").Scan(&epoch, &seq, &count, &size); err != nil {
 		return PeerData{}, err
+	}
+	if count > peerstore.MaxRecords || size > peerstore.MaxStateBytes {
+		return PeerData{}, peerstore.ErrCapacity
 	}
 	s.peerCacheMu.Lock()
 	defer s.peerCacheMu.Unlock()
@@ -78,8 +86,11 @@ func (s *Store) readPeerState(account string) (PeerData, error) {
 		return PeerData{}, err
 	}
 	defer tx.Rollback()
-	if err = tx.QueryRow("SELECT epoch,sequence FROM peer_metadata WHERE id=1").Scan(&epoch, &seq); err != nil {
+	if err = tx.QueryRow("SELECT epoch,sequence,record_count,record_bytes FROM peer_metadata WHERE id=1").Scan(&epoch, &seq, &count, &size); err != nil {
 		return PeerData{}, err
+	}
+	if count > peerstore.MaxRecords || size > peerstore.MaxStateBytes {
+		return PeerData{}, peerstore.ErrCapacity
 	}
 	rows, err := tx.Query("SELECT key,value FROM peer_records ORDER BY key")
 	if err != nil {
@@ -120,6 +131,42 @@ func (s *Store) writePeerState(account string, data PeerData, effects ...localEf
 	return s.writePeerStateReceipt(account, data, nil, effects...)
 }
 func (s *Store) writePeerStateReceipt(account string, data PeerData, receipt *kvReceipt, effects ...localEffect) error {
+	if err := data.Err(); err != nil {
+		return err
+	}
+	keys := make([]string, 0, len(data.Dirty))
+	if data.Dirty == nil {
+		for key := range data.Records {
+			keys = append(keys, key)
+		}
+	} else {
+		for key := range data.Dirty {
+			keys = append(keys, key)
+		}
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		record, err := s.signOwnerRecord(account, data, data.Records[key])
+		if err != nil {
+			return err
+		}
+		if key != peerstore.Key(record.Kind, record.ID) {
+			return errors.New("invalid peer record key")
+		}
+		if err = peerstore.ValidateRecord(record); err != nil {
+			return err
+		}
+		if err = peerstore.ValidateSettings(record); err != nil {
+			return err
+		}
+		data.Records[key] = record
+	}
+	if err := data.Err(); err != nil {
+		return err
+	}
+	if receipt != nil && len(receipt.Value) > peerstore.MaxPageBytes {
+		return peerstore.ErrCapacity
+	}
 	db, err := s.peerDatabase(account)
 	if err != nil {
 		return err
@@ -136,12 +183,10 @@ func (s *Store) writePeerStateReceipt(account string, data PeerData, receipt *kv
 		return err
 	}
 	previousSequence := seq
-	keys := make([]string, 0, len(data.Dirty))
+	if data.Epoch != "" && (data.Epoch != epoch || data.Sequence != seq) {
+		return peerstore.ErrConflict
+	}
 	if data.Dirty == nil {
-		for key := range data.Records {
-			keys = append(keys, key)
-		}
-		// Full writes are used only for import/bootstrap. Causal rows cannot vanish.
 		rows, err := tx.Query("SELECT key FROM peer_records")
 		if err != nil {
 			return err
@@ -164,28 +209,9 @@ func (s *Store) writePeerStateReceipt(account string, data PeerData, receipt *kv
 		if rowErr != nil {
 			return rowErr
 		}
-	} else {
-		if data.Epoch != "" && (data.Epoch != epoch || data.Sequence != seq) {
-			return peerstore.ErrConflict
-		}
-		for key := range data.Dirty {
-			keys = append(keys, key)
-		}
 	}
-	sort.Strings(keys)
 	for _, key := range keys {
 		record := data.Records[key]
-		record, err = s.signOwnerRecord(account, data, record)
-		if err != nil {
-			return err
-		}
-		data.Records[key] = record
-		if err = (peerstore.State{Records: map[string]peerstore.Record{key: record}}).Validate(); err != nil {
-			return err
-		}
-		if err = peerstore.ValidateSettings(record); err != nil {
-			return err
-		}
 		revision := record.Revision()
 		var previous string
 		var previousSize int64
@@ -207,9 +233,6 @@ func (s *Store) writePeerStateReceipt(account string, data PeerData, receipt *kv
 			return e
 		}
 		size += int64(len(raw)) - previousSize
-		if count > peerstore.MaxRecords || size > peerstore.MaxStateBytes {
-			return peerstore.ErrCapacity
-		}
 		if _, err = tx.Exec("INSERT INTO peer_records(key,revision,sequence,value) VALUES(?,?,?,?) ON CONFLICT(key) DO UPDATE SET revision=excluded.revision, sequence=excluded.sequence, value=excluded.value", key, revision, seq, raw); err != nil {
 			return err
 		}
@@ -223,13 +246,6 @@ func (s *Store) writePeerStateReceipt(account string, data PeerData, receipt *kv
 		}
 	}
 	if receipt != nil {
-		var count, size int
-		if err = tx.QueryRow("SELECT count(*),coalesce(sum(length(value)),0) FROM kv_receipts").Scan(&count, &size); err != nil {
-			return err
-		}
-		if count >= 65536 || size+len(receipt.Value) > 64<<20 {
-			return peerstore.ErrCapacity
-		}
 		if _, err = tx.Exec("INSERT INTO kv_receipts(id,fingerprint,value) VALUES(?,?,?)", receipt.ID, receipt.Fingerprint, receipt.Value); err != nil {
 			return err
 		}
@@ -240,10 +256,9 @@ func (s *Store) writePeerStateReceipt(account string, data PeerData, receipt *kv
 	if seq != previousSequence {
 		s.notifyPeerChanges()
 	}
-	data.Epoch, data.Sequence, data.Dirty = epoch, seq, nil
-	indexPeerData(&data)
+	// Invalidate the optional bounded diagnostic snapshot; never publish a partial view.
 	s.peerCacheMu.Lock()
-	s.peerCacheAccount, s.peerCacheData = account, data
+	s.peerCacheAccount, s.peerCacheData = "", PeerData{}
 	s.peerCacheMu.Unlock()
 	return s.applyPeerEffects(db)
 }
@@ -315,8 +330,10 @@ func (s *Store) PeerChanges(account, epoch string, after uint64) (PeerChanges, e
 }
 
 type PeerCheckpoint struct {
-	Epoch    string `json:"epoch"`
-	Sequence uint64 `json:"sequence"`
+	// Push receipts are valid only for the receiving replica incarnation.
+	RemoteEpoch string `json:"remoteEpoch,omitempty"`
+	Epoch       string `json:"epoch"`
+	Sequence    uint64 `json:"sequence"`
 }
 
 func (s *Store) PeerCheckpoint(account, peer, direction string) (PeerCheckpoint, error) {

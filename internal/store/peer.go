@@ -27,6 +27,7 @@ type peerProgress struct {
 }
 
 type PeerData struct {
+	view       *peerView
 	Epoch      string              `json:"-"`
 	Sequence   uint64              `json:"-"`
 	EntityIDs  map[string][]string `json:"-"`
@@ -66,6 +67,20 @@ func (s *Store) BindPeerAccount(account, subject, daemon, gateway string) (PeerI
 		return next, err
 	}
 	if old.Account == "local" {
+		// Adoption is paged. Persist its actor before the first page so an
+		// interrupted retry generates identical owner versions, not siblings.
+		marker := s.peerPath(account) + ".adoption"
+		var pending PeerIdentity
+		if e := readPeerJSON(marker, &pending); e == nil {
+			if pending.Account != next.Account || pending.Subject != next.Subject || pending.DaemonID != next.DaemonID || pending.Gateway != next.Gateway || !peerstore.ValidID(pending.Actor) {
+				return next, errors.New("unfinished peer adoption belongs to a different enrollment")
+			}
+			next = pending
+		} else if !errors.Is(e, os.ErrNotExist) {
+			return next, e
+		} else if e = writeJSON(marker, next); e != nil {
+			return next, e
+		}
 		if err = s.adoptLocalReplica(old, next); err != nil {
 			return next, err
 		}
@@ -128,7 +143,7 @@ func (s *Store) PutPeerRecord(identity PeerIdentity, kind, id, expected string, 
 	if err = s.checkPeerIdentity(identity); err != nil {
 		return peerstore.Record{}, err
 	}
-	data, err := s.PeerData(identity.Account)
+	data, err := s.openPeerView(identity.Account)
 	data.State = clonePeerState(data.State)
 	if err != nil {
 		return peerstore.Record{}, err
@@ -136,7 +151,7 @@ func (s *Store) PutPeerRecord(identity PeerIdentity, kind, id, expected string, 
 	if err := s.validateDomainWrite(identity, data, kind, id, value, deleted); err != nil {
 		return peerstore.Record{}, err
 	}
-	record, err := peerstore.Put(data.Records[peerstore.Key(kind, id)], kind, id, identity.Actor, expected, value, deleted)
+	record, err := peerstore.Put(data.record(peerstore.Key(kind, id)), kind, id, identity.Actor, expected, value, deleted)
 	if err != nil {
 		return record, err
 	}
@@ -148,15 +163,22 @@ func (s *Store) PutPeerRecord(identity PeerIdentity, kind, id, expected string, 
 	if err = s.savePeerData(identity.Account, data); err != nil {
 		return peerstore.Record{}, err
 	}
-	committed, err := s.PeerData(identity.Account)
-	return committed.Records[peerstore.Key(kind, id)], err
+	committed, err := s.openPeerView(identity.Account)
+	if err != nil {
+		return peerstore.Record{}, err
+	}
+	record = committed.record(peerstore.Key(kind, id))
+	return record, committed.Err()
 }
 func (s *Store) MergePeerRecords(identity PeerIdentity, records []peerstore.Record) error {
+	if len(records) > peerstore.PageSize {
+		return peerstore.ErrCapacity
+	}
 	page, err := json.Marshal(records)
 	if err != nil {
 		return err
 	}
-	if len(records) > peerstore.PageSize || len(page) > peerstore.MaxPageBytes {
+	if len(page) > peerstore.MaxPageBytes {
 		return peerstore.ErrCapacity
 	}
 	release, err := s.beginWrite()
@@ -167,7 +189,7 @@ func (s *Store) MergePeerRecords(identity PeerIdentity, records []peerstore.Reco
 	if err = s.checkPeerIdentity(identity); err != nil {
 		return err
 	}
-	data, err := s.PeerData(identity.Account)
+	data, err := s.openPeerView(identity.Account)
 	data.State = clonePeerState(data.State)
 	if err != nil {
 		return err
@@ -178,21 +200,21 @@ func (s *Store) MergePeerRecords(identity PeerIdentity, records []peerstore.Reco
 			return peerRecordFailure(record, "invalid_record", err)
 		}
 		key := peerstore.Key(record.Kind, record.ID)
-		if err = s.validatePeerDomainMerge(data, data.Records[key], record); err != nil {
+		if err = s.validatePeerDomainMerge(data, data.record(key), record); err != nil {
 			return peerRecordFailure(record, "invalid_provenance", err)
 		}
-		merged, e := peerstore.Merge(data.Records[key], record)
+		merged, e := peerstore.Merge(data.record(key), record)
 		if e != nil {
 			return peerRecordFailure(record, "causal_conflict", e)
 		}
-		if data.Records[key].Revision() != merged.Revision() {
+		if data.record(key).Revision() != merged.Revision() {
 			data.Records[key] = merged
 			data.Dirty[key] = true
 			changed = true
 		}
 	}
 	if !changed {
-		return nil
+		return data.Err()
 	}
 	return s.savePeerData(identity.Account, data)
 }

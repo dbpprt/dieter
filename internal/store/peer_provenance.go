@@ -39,7 +39,7 @@ func recordOwner(data PeerData, r peerstore.Record, v peerstore.Version) string 
 	}
 	entity, suffix := peerstore.SplitField(r.ID)
 	if r.Kind == "item" && suffix == "summary" {
-		raw, _ = peerstore.Selected(data.Records[peerstore.Key("item", entity+".identity")])
+		raw, _ = peerstore.Selected(data.record(peerstore.Key("item", entity+".identity")))
 	}
 	var fields map[string]json.RawMessage
 	_ = json.Unmarshal(raw, &fields)
@@ -134,8 +134,8 @@ func (s *Store) validatePeerDomainMerge(data PeerData, old, incoming peerstore.R
 			return errors.New("owner provenance does not match directory identity")
 		}
 		if incoming.Kind == "item" && field == "identity" {
-			for _, summary := range data.Records[peerstore.Key("item", entity+".summary")].Versions {
-				proofOwner, err := peerstore.VerifyOwnerVersion(identity.Account, data.Records[peerstore.Key("item", entity+".summary")], summary, roots)
+			for _, summary := range data.record(peerstore.Key("item", entity+".summary")).Versions {
+				proofOwner, err := peerstore.VerifyOwnerVersion(identity.Account, data.record(peerstore.Key("item", entity+".summary")), summary, roots)
 				if err != nil || proofOwner != owner {
 					return errors.New("pending summary does not belong to item owner")
 				}

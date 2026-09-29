@@ -296,6 +296,12 @@ func securityTLSProxy(t *testing.T, config Config) (*Server, *httptest.Server) {
 	t.Cleanup(func() { _ = backend.Close() })
 	backendURL, _ := url.Parse("http://" + listener.Addr().String())
 	proxy := httputil.NewSingleHostReverseProxy(backendURL)
+	proxy.Director = nil
+	proxy.Rewrite = func(request *httputil.ProxyRequest) {
+		request.SetURL(backendURL)
+		request.Out.Host = request.In.Host
+		request.SetXForwarded()
+	}
 	transport := &http2.Transport{AllowHTTP: true, DialTLSContext: func(ctx context.Context, network, address string, _ *tls.Config) (net.Conn, error) {
 		return (&net.Dialer{}).DialContext(ctx, network, address)
 	}}

@@ -31,6 +31,7 @@ type Store struct {
 	peerCacheAccount string
 	peerDBMu         sync.Mutex
 	peerDBs          map[string]*sql.DB
+	peerReadDBs      map[string]*sql.DB
 	peerCacheData    PeerData
 	Root             string
 
@@ -83,6 +84,8 @@ func (s *Store) Close() error {
 	s.peerDBMu.Lock()
 	peerDBs := s.peerDBs
 	s.peerDBs = nil
+	peerReadDBs := s.peerReadDBs
+	s.peerReadDBs = nil
 	s.peerDBMu.Unlock()
 
 	s.scheduleDBMu.Lock()
@@ -92,6 +95,11 @@ func (s *Store) Close() error {
 
 	errs := make([]error, 0, len(peerDBs)+1)
 	for _, database := range peerDBs {
+		if err := database.Close(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	for _, database := range peerReadDBs {
 		if err := database.Close(); err != nil {
 			errs = append(errs, err)
 		}
@@ -194,6 +202,26 @@ func (s *Store) beginWrite() (func(), error) {
 }
 
 func (s *Store) beginWriteKind(kind string) (func(), error) {
+	write, err := s.beginConditionalWrite()
+	if err != nil {
+		return nil, err
+	}
+	if err := write.prepare(kind); err != nil {
+		write.release()
+		return nil, err
+	}
+	return write.finish, nil
+}
+
+// Conditional writers compare under the same lock and recovery lifecycle as
+// ordinary writers, but publish a new mutation only when domain data changes.
+type storeWrite struct {
+	store   *Store
+	release func()
+	event   *SyncEvent
+}
+
+func (s *Store) beginConditionalWrite() (*storeWrite, error) {
 	release, err := s.beginWriteLock()
 	if err != nil {
 		return nil, err
@@ -206,24 +234,34 @@ func (s *Store) beginWriteKind(kind string) (func(), error) {
 		release()
 		return nil, err
 	}
-	event, err := s.prepareSyncMutation(kind)
-	if err != nil {
+	if err := s.recoverSyncMutation(); err != nil {
 		release()
 		return nil, err
 	}
-	return func() {
-		if err := s.flushScheduleOutbox(); err != nil {
-			slog.Error("schedule publication deferred to recovery", "error", err)
-		}
-		// A failed publication leaves the durable pending marker for reader/next
-		// writer recovery. Domain data is already durable; never hide a partial write.
-		if err := s.commitSyncMutation(event); err != nil {
-			slog.Error("sync commit deferred to recovery", "error", err)
-		}
-		release()
-		s.notifyChanges()
-		s.flushConversationCheckpoints()
-	}, nil
+	return &storeWrite{store: s, release: release}, nil
+}
+
+func (w *storeWrite) prepare(kind string) error {
+	var err error
+	w.event, err = w.store.prepareSyncMutation(kind)
+	return err
+}
+
+func (w *storeWrite) finish() {
+	s := w.store
+	if err := s.flushScheduleOutbox(); err != nil {
+		slog.Error("schedule publication deferred to recovery", "error", err)
+	}
+	// A failed publication leaves the durable pending marker for reader/next
+	// writer recovery. Domain data is already durable; never hide a partial write.
+	if err := s.commitSyncMutation(w.event); err != nil {
+		slog.Error("sync commit deferred to recovery", "error", err)
+	}
+	w.release()
+	// Recovery may have changed domain data even when the requested update was
+	// a no-op. Wake readers; their unchanged cursor avoids a projection rebuild.
+	s.notifyChanges()
+	s.flushConversationCheckpoints()
 }
 
 func (s *Store) cardDir() string              { return filepath.Join(s.Root, "cards") }

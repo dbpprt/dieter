@@ -73,7 +73,7 @@ func (s *Store) flushScheduleOutbox() error {
 	if len(values) == 0 {
 		return nil
 	}
-	data, err := s.PeerData(identity.Account)
+	data, err := s.openPeerView(identity.Account)
 	if err != nil {
 		return err
 	}
@@ -84,7 +84,7 @@ func (s *Store) flushScheduleOutbox() error {
 			continue
 		}
 		// Keep the immutable registration project after consolidation.
-		if raw, ok := peerstore.Selected(data.Records[peerstore.Key("schedule", item.ID+".summary")]); ok {
+		if raw, ok := peerstore.Selected(data.record(peerstore.Key("schedule", item.ID+".summary"))); ok {
 			var previous model.Schedule
 			if json.Unmarshal(raw, &previous) == nil {
 				item.ProjectID = previous.ProjectID
@@ -112,6 +112,7 @@ func (s *Store) ListSharedSchedulesPage(projectRef string, pageSize int, pageTok
 		return SchedulePage{}, err
 	}
 	identity, data, err := s.sharedData()
+	defer data.Close()
 	if err != nil {
 		return SchedulePage{}, err
 	}
@@ -183,6 +184,9 @@ func (s *Store) ListSharedSchedulesPage(projectRef string, pageSize int, pageTok
 		last := result.Items[pageSize-1]
 		result.NextPageToken, err = encodeScheduleCursor(schedulePageCursor{ProjectID: projectID, Name: last.Name, ID: last.ID})
 	}
+	if err == nil {
+		err = data.Err()
+	}
 	return result, err
 }
 
@@ -190,12 +194,13 @@ func (s *Store) ListSharedSchedulesPage(projectRef string, pageSize int, pageTok
 // remains visible to its account without exposing another account's local rows.
 func (s *Store) localScheduleIDs() ([]string, error) {
 	identity, data, err := s.sharedData()
+	defer data.Close()
 	if err != nil {
 		return nil, err
 	}
 	var ids []string
 	for _, id := range entityIDs(data, "schedule", "summary") {
-		raw, ok := peerstore.Selected(data.Records[peerstore.Key("schedule", id+".summary")])
+		raw, ok := peerstore.Selected(data.record(peerstore.Key("schedule", id+".summary")))
 		if !ok {
 			continue
 		}
@@ -204,7 +209,7 @@ func (s *Store) localScheduleIDs() ([]string, error) {
 			ids = append(ids, id)
 		}
 	}
-	return ids, nil
+	return ids, data.Err()
 }
 func (s *Store) requireLocalScheduleHistory(id string) error {
 	ids, err := s.localScheduleIDs()

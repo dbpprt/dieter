@@ -16,6 +16,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/pion/logging"
@@ -34,6 +35,8 @@ type request struct {
 	CAFile                    string `json:"caFile,omitempty"`
 	HoldSeconds               int    `json:"holdSeconds,omitempty"`
 	SingleAllocation          bool   `json:"singleAllocation,omitempty"`
+	CheckRateLimits           bool   `json:"checkRateLimits,omitempty"`
+	CheckIngressBounds        bool   `json:"checkIngressBounds,omitempty"`
 }
 
 type allocation struct {
@@ -287,6 +290,98 @@ func edge(r request) error {
 		if method == "POST" && response.Header.Get("Grpc-Status") != "16" && response.Trailer.Get("Grpc-Status") != "16" {
 			return errors.New("unauthenticated RPC was not rejected")
 		}
+	}
+	if r.CheckRateLimits {
+		for attempt := range 11 {
+			request, err := http.NewRequest(http.MethodPost, "https://"+r.ServerName+"/dieter.gateway.v1.GatewayService/BeginDaemonEnrollment", bytes.NewReader(make([]byte, 5)))
+			if err != nil {
+				return err
+			}
+			request.Header.Set("Content-Type", "application/grpc")
+			request.Header.Set("TE", "trailers")
+			// The edge must overwrite these rather than letting callers create
+			// new buckets. An empty enrollment request never creates a record.
+			request.Header.Set("X-Forwarded-For", fmt.Sprintf("192.0.2.%d", attempt+1))
+			response, err := client.Do(request)
+			if err != nil {
+				return err
+			}
+			_, readErr := io.Copy(io.Discard, io.LimitReader(response.Body, 32768))
+			_ = response.Body.Close()
+			if readErr != nil {
+				return readErr
+			}
+			code := response.Trailer.Get("Grpc-Status")
+			if code == "" {
+				code = response.Header.Get("Grpc-Status")
+			}
+			want := "3" // InvalidArgument until this address exhausts its bucket.
+			if attempt == 10 {
+				want = "8"
+			}
+			if response.ProtoMajor != 2 || code != want {
+				return fmt.Errorf("edge per-client rate limit: attempt %d status %s, want %s", attempt+1, code, want)
+			}
+		}
+	}
+	if r.CheckIngressBounds {
+		if err := edgeIngressBounds(client, "https://"+r.ServerName); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// Exercise the real proxy chain with the 64-way allocation attack. A five-byte
+// envelope advertises 16 MiB without supplying that payload. The server must
+// reject the envelope itself, not allocate it and then report a truncated body.
+func edgeIngressBounds(client *http.Client, origin string) error {
+	for range 8 {
+		results := make(chan error, 64)
+		start := make(chan struct{})
+		for range cap(results) {
+			go func() {
+				<-start
+				results <- rejectOversizedEnvelope(client, origin)
+			}()
+		}
+		close(start)
+		var failures []error
+		for range cap(results) {
+			if err := <-results; err != nil {
+				failures = append(failures, err)
+			}
+		}
+		if len(failures) != 0 {
+			return fmt.Errorf("gateway rejected %d/64 allocation probes incorrectly: %w", len(failures), failures[0])
+		}
+	}
+	return nil
+}
+
+func rejectOversizedEnvelope(client *http.Client, origin string) error {
+	request, err := http.NewRequest(http.MethodPost, origin+"/dieter.gateway.v1.DaemonLinkService/Connect", bytes.NewReader([]byte{0, 1, 0, 0, 0}))
+	if err != nil {
+		return err
+	}
+	request.Header.Set("Content-Type", "application/grpc")
+	request.Header.Set("TE", "trailers")
+	response, err := client.Do(request)
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+	if _, err := io.Copy(io.Discard, io.LimitReader(response.Body, 32768)); err != nil {
+		return err
+	}
+	code, message := response.Trailer.Get("Grpc-Status"), response.Trailer.Get("Grpc-Message")
+	if code == "" {
+		code, message = response.Header.Get("Grpc-Status"), response.Header.Get("Grpc-Message")
+	}
+	// grpc-go wraps a streaming Body read error as Unavailable, preserving
+	// the ResourceExhausted cause. Admission errors retain ResourceExhausted.
+	if response.ProtoMajor != 2 || code != "8" && !(code == "14" && strings.Contains(message, "ResourceExhausted")) {
+		return fmt.Errorf("oversized gateway envelope returned status %q", code)
 	}
 	return nil
 }

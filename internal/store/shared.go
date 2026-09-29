@@ -41,7 +41,7 @@ func (s *Store) sharedData() (PeerIdentity, PeerData, error) {
 	if err != nil {
 		return identity, PeerData{}, err
 	}
-	data, err := s.PeerData(identity.Account)
+	data, err := s.openPeerSnapshot(identity.Account)
 	return identity, data, err
 }
 func rawValue(value any) json.RawMessage { raw, _ := json.Marshal(value); return raw }
@@ -51,10 +51,11 @@ func objectFields(value any) map[string]json.RawMessage {
 	return fields
 }
 func sharedFields(data PeerData, kind, id string) (map[string]json.RawMessage, []string) {
+	data.primeEntity(kind, id)
 	fields := map[string]json.RawMessage{}
 	var conflicts []string
 	for field := range peerstore.DomainFields[kind] {
-		record := data.Records[peerstore.Key(kind, id+"."+field)]
+		record := data.record(peerstore.Key(kind, id+"."+field))
 		if len(record.Versions) > 1 && field != "updatedAt" {
 			conflicts = append(conflicts, peerstore.Key(kind, record.ID))
 		}
@@ -90,10 +91,24 @@ func decodeFields(fields map[string]json.RawMessage, value any) error {
 	return json.Unmarshal(rawValue(flattened), value)
 }
 func entityIDs(data PeerData, kind, field string) []string {
-	if data.EntityIDs == nil {
-		indexPeerData(&data)
+	if data.view == nil {
+		if data.EntityIDs == nil {
+			indexPeerData(&data)
+		}
+		return data.EntityIDs[kind+"/"+field]
 	}
-	return data.EntityIDs[kind+"/"+field]
+	var ids []string
+	err := data.eachMatching(kind+"/", "."+field, func(record peerstore.Record) error {
+		entity, suffix := peerstore.SplitField(record.ID)
+		if suffix == field {
+			if _, ok := peerstore.Selected(record); ok {
+				ids = append(ids, entity)
+			}
+		}
+		return nil
+	})
+	data.fail(err)
+	return ids
 }
 
 func applyFields(data *PeerData, identity PeerIdentity, kind, id string, before, next map[string]json.RawMessage) error {
@@ -102,7 +117,7 @@ func applyFields(data *PeerData, identity PeerIdentity, kind, id string, before,
 			continue
 		}
 		key := peerstore.Key(kind, id+"."+field)
-		old := data.Records[key]
+		old := data.record(key)
 		// A normal form save cannot discard concurrent siblings. The explicit peer
 		// resolution endpoint requires the current revision and covers all siblings.
 		if len(old.Versions) > 1 && field != "updatedAt" && !(kind == "item" && (field == "placement" || field == "pinned") || kind == "assignment" && field == "membership") {
@@ -166,7 +181,7 @@ func (s *Store) writeProject(project model.Project, effects ...localEffect) erro
 	if err != nil {
 		return err
 	}
-	data, err := s.PeerData(identity.Account)
+	data, err := s.openPeerView(identity.Account)
 	data.State = clonePeerState(data.State)
 	if err != nil {
 		return err
@@ -180,6 +195,7 @@ func (s *Store) writeProject(project model.Project, effects ...localEffect) erro
 }
 func (s *Store) sharedProjects() ([]model.Project, error) {
 	_, data, err := s.sharedData()
+	defer data.Close()
 	if err != nil {
 		return nil, err
 	}
@@ -227,14 +243,14 @@ func (s *Store) sharedProjects() ([]model.Project, error) {
 		}
 		return strings.ToLower(projects[i].Name) < strings.ToLower(projects[j].Name)
 	})
-	return projects, nil
+	return projects, data.Err()
 }
 func (s *Store) writeBoard(board model.Board) error {
 	identity, err := s.sharedIdentity()
 	if err != nil {
 		return err
 	}
-	data, err := s.PeerData(identity.Account)
+	data, err := s.openPeerView(identity.Account)
 	data.State = clonePeerState(data.State)
 	if err != nil {
 		return err
@@ -275,11 +291,13 @@ func (s *Store) writeBoard(board model.Board) error {
 }
 func (s *Store) sharedBoards() ([]model.Board, error) {
 	_, data, err := s.sharedData()
+	defer data.Close()
 	if err != nil {
 		return nil, err
 	}
 	result := []model.Board{}
 	references := boardReferenceIndex(data)
+	labelIDs := entityIDs(data, "label", "identity")
 	for _, id := range entityIDs(data, "board", "identity") {
 		fields, conflicts := sharedFields(data, "board", id)
 		var board model.Board
@@ -290,8 +308,8 @@ func (s *Store) sharedBoards() ([]model.Board, error) {
 		if !sharedEntityReady(data, "project", board.ProjectID) || len(fields["name"]) == 0 || len(fields["workflow"]) == 0 {
 			continue
 		}
-		projectBoardRetirement(&board, data.Records[peerstore.Key("board", id+".retired")], references[id])
-		for _, labelID := range entityIDs(data, "label", "identity") {
+		projectBoardRetirement(&board, data.record(peerstore.Key("board", id+".retired")), references[id])
+		for _, labelID := range labelIDs {
 			labelFields, lc := sharedFields(data, "label", labelID)
 			var label struct {
 				model.Label
@@ -319,7 +337,7 @@ func (s *Store) sharedBoards() ([]model.Board, error) {
 		}
 		return result[i].Name < result[j].Name
 	})
-	return result, nil
+	return result, data.Err()
 }
 
 func (s *Store) checkoutsFrom(data PeerData) ([]model.Checkout, error) {
@@ -338,10 +356,11 @@ func (s *Store) checkoutsFrom(data PeerData) ([]model.Checkout, error) {
 		checkout.ProjectID = canonicalProjectID(data, checkout.ProjectID)
 		result = append(result, checkout)
 	}
-	return result, nil
+	return result, data.Err()
 }
 func (s *Store) ListCheckouts(projectID string) ([]model.Checkout, error) {
 	_, data, err := s.sharedData()
+	defer data.Close()
 	if err != nil {
 		return nil, err
 	}
@@ -355,7 +374,7 @@ func (s *Store) ListCheckouts(projectID string) ([]model.Checkout, error) {
 			result = append(result, c)
 		}
 	}
-	return result, nil
+	return result, data.Err()
 }
 func (s *Store) localCheckout(projectID, checkoutID string) (model.Checkout, error) {
 	values, err := s.ListCheckouts(projectID)
@@ -431,12 +450,12 @@ func (s *Store) publishCheckout(checkout model.Checkout) error {
 	if err != nil {
 		return err
 	}
-	data, err := s.PeerData(identity.Account)
+	data, err := s.openPeerView(identity.Account)
 	data.State = clonePeerState(data.State)
 	if err != nil {
 		return err
 	}
-	if raw, ok := peerstore.Selected(data.Records[peerstore.Key("checkout", checkout.ID+".registration")]); ok {
+	if raw, ok := peerstore.Selected(data.record(peerstore.Key("checkout", checkout.ID+".registration"))); ok {
 		var original model.Checkout
 		if err = json.Unmarshal(raw, &original); err != nil {
 			return err
@@ -500,7 +519,7 @@ func (s *Store) publishCard(card model.Card, effects ...localEffect) error {
 	if err != nil {
 		return err
 	}
-	data, err := s.PeerData(identity.Account)
+	data, err := s.openPeerView(identity.Account)
 	data.State = clonePeerState(data.State)
 	if err != nil {
 		return err
@@ -534,26 +553,29 @@ func (s *Store) publishCard(card model.Card, effects ...localEffect) error {
 }
 func sharedCard(data PeerData, id string, local model.Card) (model.Card, bool, error) {
 	fields, conflicts := sharedFields(data, "item", id)
+	if err := data.Err(); err != nil {
+		return local, false, err
+	}
 	if len(fields["identity"]) == 0 {
-		return local, false, nil
+		return local, false, data.Err()
 	}
 	if err := decodeFields(fields, &local); err != nil {
 		return local, false, err
 	}
 	local.ProjectID = canonicalProjectID(data, local.ProjectID)
 	if !sharedEntityReady(data, "project", local.ProjectID) || !sharedEntityReady(data, "checkout", local.CheckoutID) || len(fields["title"]) == 0 || len(fields["placement"]) == 0 || len(fields["archived"]) == 0 {
-		return local, false, nil
+		return local, false, data.Err()
 	}
 	if local.Scope == model.ConversationScopeBoard && !sharedEntityReady(data, "board", local.BoardID) {
-		return local, false, nil
+		return local, false, data.Err()
 	}
 	local.LabelIDs = nil
-	for _, assignment := range data.Membership[id] {
+	for _, assignment := range data.assignmentIDs(id) {
 		cardID, labelID, ok := strings.Cut(assignment, ".")
 		if !ok || cardID != id {
 			continue
 		}
-		record := data.Records[peerstore.Key("assignment", assignment+".membership")]
+		record := data.record(peerstore.Key("assignment", assignment+".membership"))
 		// An observed removal wins a simultaneous add; new later assignments remain possible.
 		member := false
 		removed := false
@@ -572,12 +594,12 @@ func sharedCard(data PeerData, id string, local model.Card) (model.Card, bool, e
 	sort.Strings(local.LabelIDs)
 	fields["labelIds"] = rawValue(local.LabelIDs)
 	local.SharedBase, local.ConflictKeys = fields, conflicts
-	local.PlacementRevision = data.Records[peerstore.Key("item", id+".placement")].ValueRevision()
+	local.PlacementRevision = data.record(peerstore.Key("item", id+".placement")).ValueRevision()
 	local.StateFields = nil
 	// These independent registers must never be compared using card timestamps
 	// or the arrival order of snapshots from different replicas.
 	for _, name := range []string{"placement", "summary"} {
-		record := data.Records[peerstore.Key("item", id+"."+name)]
+		record := data.record(peerstore.Key("item", id+"."+name))
 		field := model.CardStateField{Name: name, Revision: record.ValueRevision()}
 		for _, version := range record.Versions {
 			value := model.Card{}
@@ -595,10 +617,11 @@ func sharedCard(data PeerData, id string, local model.Card) (model.Card, bool, e
 		sort.Slice(field.Versions, func(i, j int) bool { return field.Versions[i].Rank < field.Versions[j].Rank })
 		local.StateFields = append(local.StateFields, field)
 	}
-	return local, true, nil
+	return local, true, data.Err()
 }
 func (s *Store) overlayCard(local model.Card) (model.Card, error) {
 	_, data, err := s.sharedData()
+	defer data.Close()
 	if err != nil {
 		return local, err
 	}
@@ -610,21 +633,33 @@ func (s *Store) overlayCard(local model.Card) (model.Card, error) {
 }
 
 func (s *Store) adoptLocalReplica(old, next PeerIdentity) error {
-	source, err := s.PeerData(old.Account)
+	source, err := s.openPeerView(old.Account)
 	if err != nil {
 		return err
 	}
-	target, err := s.PeerData(next.Account)
+	target, err := s.openPeerView(next.Account)
 	target.State = clonePeerState(target.State)
 	if err != nil {
 		return err
 	}
-	for key, record := range source.Records {
+	flush := func() error {
+		if len(target.Dirty) == 0 {
+			return target.Err()
+		}
+		if err := s.savePeerData(next.Account, target); err != nil {
+			return err
+		}
+		var err error
+		target, err = s.openPeerView(next.Account)
+		return err
+	}
+	err = source.each("", func(record peerstore.Record) error {
+		key := peerstore.Key(record.Kind, record.ID)
 		entity, field := peerstore.SplitField(record.ID)
 		if (record.Kind == "item" && field == "identity") || (record.Kind == "checkout" && field == "registration") || record.Kind == "schedule" {
 			raw, ok := peerstore.Selected(record)
 			if !ok {
-				continue
+				return nil
 			}
 			var value map[string]any
 			if err = json.Unmarshal(raw, &value); err != nil {
@@ -653,12 +688,22 @@ func (s *Store) adoptLocalReplica(old, next PeerIdentity) error {
 				}
 			}
 		}
-		merged, e := peerstore.Merge(target.Records[key], record)
+		merged, e := peerstore.Merge(target.record(key), record)
 		if e != nil {
 			return e
 		}
 		target.Records[key] = merged
 		target.Dirty[key] = true
+		if len(target.Dirty) >= peerstore.PageSize {
+			return flush()
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	if err = flush(); err != nil {
+		return err
 	}
 	if _, err := os.Stat(s.scheduleDatabasePath()); err == nil {
 		db, err := s.scheduleDatabase()
@@ -678,7 +723,7 @@ func (s *Store) adoptLocalReplica(old, next PeerIdentity) error {
 			}
 		}
 	}
-	return s.savePeerData(next.Account, target)
+	return source.Err()
 }
 
 // Returned models carry the newly committed causal baseline, allowing another
@@ -719,7 +764,7 @@ func (s *Store) validateDomainWrite(identity PeerIdentity, data PeerData, kind, 
 		return nil
 	}
 	entity, field := peerstore.SplitField(id)
-	old := data.Records[peerstore.Key(kind, id)]
+	old := data.record(peerstore.Key(kind, id))
 	if kind == "project" && field == "consolidatedInto" {
 		var destination string
 		if deleted || json.Unmarshal(value, &destination) != nil || !peerstore.ValidID(destination) || destination == entity {

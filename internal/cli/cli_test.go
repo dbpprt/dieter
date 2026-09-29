@@ -40,6 +40,9 @@ func (f *fakeRunner) Run(_ context.Context, request harness.Request, emit func(h
 	f.mu.Lock()
 	f.requests = append(f.requests, request)
 	f.mu.Unlock()
+	if strings.Contains(request.Prompt, cliBatchPrompt) {
+		return emitCLIBatch(request, emit)
+	}
 	response := "done"
 	if request.ConfiguredModel == "gpt-5.3-codex-spark" {
 		response = "Add Keyboard Board Navigation"

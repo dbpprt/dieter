@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 
 	"connectrpc.com/connect"
@@ -65,22 +64,17 @@ func (api *grpcAPI) GetPeerStoreStatus(ctx context.Context, _ *emptypb.Empty) (*
 	if err != nil {
 		return nil, err
 	}
-	data, err := api.server.store.PeerData(identity.Account)
+	data, err := api.server.store.PeerStoreInfo(ctx, identity.Account)
 	if err != nil {
 		return nil, peerFailure(err)
 	}
-	out := &dieterv1.PeerStoreStatus{Account: identity.Account, Actor: identity.Actor, Records: uint32(len(data.Records)), LastSyncAt: data.LastSyncAt, LastPeerId: data.LastPeerID, LastRoute: data.LastRoute}
+	out := &dieterv1.PeerStoreStatus{Account: identity.Account, Actor: identity.Actor, Records: data.Records, Conflicts: data.Conflicts, LastSyncAt: data.LastSyncAt, LastPeerId: data.LastPeerID, LastRoute: data.LastRoute}
 	diagnostics, err := api.server.store.PeerSyncDiagnostics(identity.Account)
 	if err != nil {
 		return nil, peerFailure(err)
 	}
 	for _, d := range diagnostics {
 		out.Peers = append(out.Peers, protoPeerDiagnostic(d))
-	}
-	for _, r := range data.Records {
-		if len(r.Versions) > 1 {
-			out.Conflicts++
-		}
 	}
 	return out, nil
 }
@@ -89,35 +83,16 @@ func (api *grpcAPI) ListPeerRecords(ctx context.Context, r *dieterv1.PeerSnapsho
 	if err != nil {
 		return nil, err
 	}
-	data, err := api.server.store.PeerData(identity.Account)
-	if err != nil {
-		return nil, peerFailure(err)
-	}
-	revision := peerstore.Revision(data.State)
-	if r.GetSnapshotRevision() != "" && r.GetSnapshotRevision() != revision {
-		return nil, status.Error(codes.Aborted, "peer snapshot changed; restart pagination")
-	}
 	if r.GetAfterKey() != "" && r.GetSnapshotRevision() == "" {
 		return nil, status.Error(codes.InvalidArgument, "continuation requires snapshot revision")
 	}
-	out := &dieterv1.PeerSnapshot{Account: identity.Account, SnapshotRevision: revision}
-	pageBytes := 2
-	for _, v := range data.Sorted() {
-		key := peerstore.Key(v.Kind, v.ID)
-		if key <= r.GetAfterKey() {
-			continue
-		}
-		raw, err := json.Marshal(v)
-		if err != nil {
-			return nil, peerFailure(err)
-		}
-		if len(out.Records) == peerstore.PageSize || len(out.Records) > 0 && pageBytes+len(raw)+1 > peerstore.MaxPageBytes {
-			last := out.Records[len(out.Records)-1]
-			out.NextKey = peerstore.Key(last.Kind, last.Id)
-			break
-		}
-		out.Records = append(out.Records, peerRecord(v))
-		pageBytes += len(raw) + 1
+	page, err := api.server.store.ListPeerRecordPage(ctx, identity.Account, "", "", r.GetAfterKey(), r.GetSnapshotRevision(), nil)
+	if err != nil {
+		return nil, peerFailure(err)
+	}
+	out := &dieterv1.PeerSnapshot{Account: identity.Account, SnapshotRevision: page.Revision, NextKey: page.NextKey}
+	for _, record := range page.Records {
+		out.Records = append(out.Records, peerRecord(record))
 	}
 	return out, nil
 }
@@ -171,13 +146,12 @@ func (api *grpcAPI) GetPeerRecord(ctx context.Context, r *dieterv1.PeerRecordRef
 	if err != nil {
 		return nil, err
 	}
-	data, err := api.server.store.PeerData(identity.Account)
+	record, err := api.server.store.ReadPeerRecord(ctx, identity.Account, r.GetKind(), r.GetId())
+	if errors.Is(err, store.ErrNotFound) {
+		return nil, status.Error(codes.NotFound, "shared record not found")
+	}
 	if err != nil {
 		return nil, peerFailure(err)
-	}
-	record, ok := data.Records[peerstore.Key(r.GetKind(), r.GetId())]
-	if !ok {
-		return nil, status.Error(codes.NotFound, "shared record not found")
 	}
 	return peerRecord(record), nil
 }
