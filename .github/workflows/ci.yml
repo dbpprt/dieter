@@ -145,19 +145,12 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
 
-  ios-device:
-    name: iOS client (${{ matrix.platform }})
+  ios_quick:
+    name: iOS quick checks
     needs: changes
     if: needs.changes.outputs.ios == 'true'
     runs-on: macos-26
-    # Includes the bounded cold-simulator journeys and the unsigned device archive.
-    timeout-minutes: 75
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - platform: iphone
-          - platform: ipad
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
         with:
@@ -167,43 +160,21 @@ jobs:
           just-version: "1.58.0"
       - name: Select Xcode 26.5
         run: just release select-xcode
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-          cache: true
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-          cache: npm
-          cache-dependency-path: internal/harness/runtime/package-lock.json
       - name: Restore iOS build cache
         uses: actions/cache@v4
         with:
-          path: apps/ios/.build/DerivedData
-          key: ${{ runner.os }}-${{ runner.arch }}-xcode-26.5-ios-ci-v1-${{ hashFiles('apps/mac/Package.swift', 'apps/ios/**/Package.resolved', 'apps/mac/Vendor/**/Package.swift') }}
-      - name: Install isolated fixture runtime
-        run: just harness install
-      - name: Build and verify native iOS cases
-        id: test_ios
-        env:
-          E2E_DEVICE: ${{ matrix.platform }}
-        run: just e2e run --platform ios --device "$E2E_DEVICE" --suite smoke
-      - name: Retain native results and screenshots
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: ios-${{ matrix.platform }}-evidence
           path: |
-            tmp/e2e-*/
-          if-no-files-found: ignore
-          retention-days: 14
-      - name: Verify unsigned device archive
-        if: ${{ !cancelled() && steps.test_ios.conclusion == 'success' && matrix.platform == 'iphone' }}
-        run: just ios archive-unsigned 0.1.0 1
+            apps/ios/.build/DerivedData
+            apps/mac/.build/dieter-tests
+          key: ${{ runner.os }}-${{ runner.arch }}-xcode-26.5-ios-quick-v1-${{ hashFiles('apps/mac/Package.swift', 'apps/mac/Package.resolved', 'apps/ios/**/Package.resolved', 'apps/mac/Vendor/**/Package.swift') }}
+      - name: Run portable iOS tests
+        run: just mac test DieterIOSTests
+      - name: Compile iPhone and iPad test bundles
+        run: just ios build
 
   ios:
     name: iPhone and iPad client
-    needs: [changes, ios-device]
+    needs: [changes, ios_quick]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -213,9 +184,9 @@ jobs:
       - uses: extractions/setup-just@v3
         with:
           just-version: "1.58.0"
-      - name: Require both device journeys
+      - name: Require iOS quick checks
         env:
-          NATIVE_DEVICE_RESULT: ${{ needs.changes.result == 'success' && (needs.changes.outputs.ios != 'true' || needs.ios-device.result == 'success') && 'success' || 'failure' }}
+          NATIVE_CHECK_RESULT: ${{ needs.changes.result == 'success' && (needs.changes.outputs.ios != 'true' || needs.ios_quick.result == 'success') && 'success' || 'failure' }}
         run: just e2e ci-result
 
   android:

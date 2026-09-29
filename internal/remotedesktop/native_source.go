@@ -37,6 +37,11 @@ var nativeStartupTimeout = func() time.Duration {
 		// bounded time after the portal's two-minute limit for encoder fallback.
 		return 150 * time.Second
 	}
+	if runtime.GOOS == "darwin" {
+		// A cold hardware encoder can take longer than ten seconds to emit its
+		// first access unit on otherwise responsive Macs, especially on CI hosts.
+		return 20 * time.Second
+	}
 	return 10 * time.Second
 }()
 

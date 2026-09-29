@@ -9,7 +9,7 @@ suites:
 components:
 - ios
 fixture: screen
-timeout: 10m
+timeout: 20m
 native:
   target: DieterIOSUITests
   class: RemoteNodeUITests

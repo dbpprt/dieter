@@ -128,6 +128,7 @@
 				"PROVISIONING_PROFILE_SPECIFIER" = "$(DIETER_IOS_PROFILE_SPECIFIER)";
 				"MARKETING_VERSION" = "0.1.0";
 				"CURRENT_PROJECT_VERSION" = "1";
+				"ENABLE_USER_SCRIPT_SANDBOXING" = "NO";
 				"SKIP_INSTALL" = "NO";
 				"ASSETCATALOG_COMPILER_APPICON_NAME" = "DieterAppIcon";
 				"SUPPORTS_MACCATALYST" = "NO";
@@ -373,7 +374,7 @@
 			"packageProductDependencies" = ( "00299A408DC3498A3CD7BAE6" );
 			"productName" = "Dieter";
 			"isa" = "PBXNativeTarget";
-			"buildPhases" = ( "971ED9D05B25DB6C4D7680D4", "7561BFB015D8F536760CB671", "0189424A5A60FED329FA868E", "ED4532435BE271CD30EB3CD9", "A1000000000000000000000C" );
+			"buildPhases" = ( "971ED9D05B25DB6C4D7680D4", "7561BFB015D8F536760CB671", "0189424A5A60FED329FA868E", "ED4532435BE271CD30EB3CD9", "A1000000000000000000000C", "A20000000000000000000001" );
 			"dependencies" = ( "A1000000000000000000000D" );
 			"name" = "DieterIOSApp";
 			"buildRules" = (  );
@@ -448,6 +449,7 @@
 				"PROVISIONING_PROFILE_SPECIFIER" = "$(DIETER_IOS_PROFILE_SPECIFIER)";
 				"MARKETING_VERSION" = "0.1.0";
 				"CURRENT_PROJECT_VERSION" = "1";
+				"ENABLE_USER_SCRIPT_SANDBOXING" = "NO";
 				"SKIP_INSTALL" = "NO";
 				"ASSETCATALOG_COMPILER_APPICON_NAME" = "DieterAppIcon";
 				"SUPPORTS_MACCATALYST" = "NO";
@@ -510,6 +512,19 @@
 			files = ( "A10000000000000000000008" );
 			name = "Embed App Extensions";
 			runOnlyForDeploymentPostprocessing = "0";
+		};
+		"A20000000000000000000001" = {
+			isa = "PBXShellScriptBuildPhase";
+			alwaysOutOfDate = "1";
+			buildActionMask = "2147483647";
+			files = (  );
+			inputPaths = ( "$(TARGET_BUILD_DIR)/$(INFOPLIST_PATH)", "$(SRCROOT)/../../scripts/source_release_version.sh" );
+			name = "Embed Dieter release version";
+			outputPaths = (  );
+			runOnlyForDeploymentPostprocessing = "0";
+			shellPath = "/bin/bash";
+			shellScript = "set -euo pipefail\nrelease_version=\"${DIETER_RELEASE_VERSION:-}\"\nif [[ -z \"$release_version\" ]]; then\n    release_version=\"$(\"$SRCROOT/../../scripts/source_release_version.sh\")\"\nfi\n/usr/libexec/PlistBuddy -c \"Set :DieterReleaseVersion $release_version\" \"$TARGET_BUILD_DIR/$INFOPLIST_PATH\"\n";
+			showEnvVarsInLog = "0";
 		};
 		"A1000000000000000000000E" = {
 			isa = "PBXContainerItemProxy";

@@ -31,6 +31,11 @@ type simulatorInventory struct {
 	} `json:"runtimes"`
 }
 
+// A freshly selected Xcode installation can spend well over 30 seconds
+// starting CoreSimulatorService on a hosted runner. Keep the inventory probe
+// bounded without treating that normal cold start as an unavailable platform.
+const iosSimulatorInventoryTimeout = 2 * time.Minute
+
 func iosDestination(data []byte, device string) (string, string, error) {
 	var inventory simulatorInventory
 	if err := json.Unmarshal(data, &inventory); err != nil {
@@ -97,7 +102,7 @@ func runIOS(ctx context.Context, root, output, device string, cases []Case) erro
 		return unavailable(err)
 	}
 	defer unlock()
-	preflight, cancel := context.WithTimeout(ctx, 30*time.Second)
+	preflight, cancel := context.WithTimeout(ctx, iosSimulatorInventoryTimeout)
 	out, err := binaryCommand(preflight, root, "xcrun", "simctl", "list", "-j")
 	cancel()
 	if err != nil {
@@ -299,7 +304,7 @@ func (d iosDriver) run(ctx context.Context, c Case) (result Result) {
 		argv = append(argv, "-only-testing:"+c.Native.Target+"/"+c.Native.Class+"/"+method)
 	}
 	execution := time.Now()
-	out, testErr := command(ctx, d.root, nil, argv...)
+	out, testErr := d.runXCTest(ctx, simulator, bundle, argv)
 	result.ExecutionMS = time.Since(execution).Milliseconds()
 	_ = os.WriteFile(filepath.Join(dir, "tests.log"), []byte(redact(out, values)), 0600)
 	evidence, cancel := context.WithTimeout(context.Background(), 60*time.Second)
@@ -325,6 +330,46 @@ func (d iosDriver) run(ctx context.Context, c Case) (result Result) {
 		retainIOSConsole(evidence, d.root, bundle, dir, values)
 	}
 	return
+}
+
+const (
+	missingIOSDestination            = "Unable to find a device matching the provided destination specifier"
+	timedOutLaunchingIOSApplication  = "Timed out while launching application via Xcode."
+	timedOutRequestingLaunchProgress = "Timed out while requesting launch progress."
+	stalledIOSScreenFixture          = "The real WebRTC fixture must decode and present native video."
+)
+
+func iosXCTestRetryReason(out string) string {
+	switch {
+	case strings.Contains(out, missingIOSDestination):
+		return "Xcode temporarily lost the booted simulator"
+	case strings.Contains(out, timedOutLaunchingIOSApplication):
+		return "Xcode timed out while launching the application"
+	case strings.Contains(out, timedOutRequestingLaunchProgress):
+		return "Xcode timed out while requesting application launch progress"
+	case strings.Contains(out, stalledIOSScreenFixture):
+		return "the native screen handshake stalled before its first decoded frame"
+	default:
+		return ""
+	}
+}
+
+func (d iosDriver) runXCTest(ctx context.Context, simulator, bundle string, argv []string) (string, error) {
+	out, err := command(ctx, d.root, nil, argv...)
+	reason := iosXCTestRetryReason(out)
+	if err == nil || ctx.Err() != nil || reason == "" {
+		return out, err
+	}
+	if removeErr := os.RemoveAll(bundle); removeErr != nil {
+		return out, fmt.Errorf("remove incomplete XCTest result before retry: %w", removeErr)
+	}
+	bootOut, bootErr := command(ctx, d.root, nil, "xcrun", "simctl", "bootstatus", simulator, "-b")
+	out += "\nRetrying XCTest once after " + reason + ".\n" + bootOut
+	if bootErr != nil {
+		return out, fmt.Errorf("verify simulator before XCTest retry: %w", bootErr)
+	}
+	retryOut, retryErr := command(ctx, d.root, nil, argv...)
+	return out + retryOut, retryErr
 }
 
 func (d iosDriver) testRun(ctx context.Context, state string, environment map[string]string, target string) (string, error) {

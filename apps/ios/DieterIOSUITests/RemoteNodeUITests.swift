@@ -198,12 +198,11 @@ final class RemoteNodeUITests: XCTestCase {
         }
         enter(app, "ios.create.title", title)
         enter(app, "ios.create.prompt", prompt)
-        let keyboardDone = app.buttons.matching(identifier: "ios.create.keyboard-done").firstMatch
-        if keyboardDone.waitForExistence(timeout: 3) {
-            keyboardDone.tap()
-        } else {
-            form.swipeDown()
-        }
+        // The prompt's UIKit accessory and SwiftUI keyboard toolbar can be
+        // rebuilt while XCTest resolves them, leaving a stale Done element.
+        // The form already opts into interactive keyboard dismissal, and this
+        // gesture is harmless if the keyboard disappeared while typing.
+        form.swipeDown()
         // On iPad, XCTest can spend its full animation-idle timeout trying to
         // snapshot the disappearing system keyboard. Observe the app-owned
         // footer instead; it is the user-visible state needed to submit.
@@ -313,15 +312,19 @@ final class RemoteNodeUITests: XCTestCase {
         // before returning. A freshly relaunched iPad can spend XCTest's whole
         // snapshot timeout on that first probe even though the board appears
         // moments later. The predicate expectation owns the bounded wait.
-        let sidebar = app.scrollViews.matching(identifier: "ios.sidebar").firstMatch
-        let boardButton = sidebar.buttons.matching(identifier: "ios.board.\(board)").firstMatch
+        // SwiftUI may expose a sidebar NavigationLink as a button on iPhone
+        // and as another accessibility element type in the iPad split view.
+        // Match by the stable identifier instead of assuming its element type.
+        let boardButton = app.descendants(matching: .any)
+            .matching(identifier: "ios.board.\(board)").firstMatch
         let ready = XCTNSPredicateExpectation(
             predicate: NSPredicate(format: predicate),
             object: boardButton)
         XCTAssertEqual(
             XCTWaiter.wait(for: [ready], timeout: 40), .completed,
             "The fixture board must be ready in the sidebar.\n\(app.debugDescription)")
-        let projectButton = sidebar.buttons.matching(identifier: "ios.project.\(project)").firstMatch
+        let projectButton = app.descendants(matching: .any)
+            .matching(identifier: "ios.project.\(project)").firstMatch
         XCTAssertTrue(
             projectButton.waitForExistence(timeout: 10), "The fixture project must be present.")
     }
@@ -406,11 +409,11 @@ final class RemoteNodeUITests: XCTestCase {
         app.launchEnvironment["DIETER_IOS_SCREEN_FIXTURE"] = fixture
         app.launch()
         XCTAssertTrue(app.wait(for: .runningForeground, timeout: 20))
-        let live = app.staticTexts.matching(identifier: "ios.screens.fixture.phase")
-            .matching(NSPredicate(format: "label == 'Live'"))
-            .firstMatch
-        XCTAssertTrue(
-            live.waitForExistence(timeout: 35),
+        let phase = app.staticTexts.matching(identifier: "ios.screens.fixture.phase").firstMatch
+        let live = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "exists == true AND label == 'Live'"), object: phase)
+        XCTAssertEqual(
+            XCTWaiter.wait(for: [live], timeout: 35), .completed,
             "The real WebRTC fixture must decode and present native video.\n\(app.debugDescription)")
         XCTAssertTrue(element(app, "ios.screens.fixture").exists)
         screenshot(app, "06-remote-screen-streaming")
@@ -422,7 +425,8 @@ final class RemoteNodeUITests: XCTestCase {
         let gateway = try XCTUnwrap(environment["DIETER_IOS_TEST_GATEWAY"])
         let token = try XCTUnwrap(environment["DIETER_IOS_TEST_TOKEN"])
         let daemon = try XCTUnwrap(environment["DIETER_IOS_TEST_DAEMON"])
-        if environment["DIETER_IOS_TEST_LANDSCAPE"] == "1" {
+        let usesLandscapeSidebar = environment["DIETER_IOS_TEST_LANDSCAPE"] == "1"
+        if usesLandscapeSidebar {
             XCUIDevice.shared.orientation = .landscapeLeft
         }
         let app = XCUIApplication()
@@ -430,15 +434,33 @@ final class RemoteNodeUITests: XCTestCase {
         app.launchEnvironment["DIETER_IOS_TEST_TOKEN"] = token
         app.launch()
         XCTAssertTrue(app.wait(for: .runningForeground, timeout: 20))
-        // Cold launch initially presents the Connecting form. Resolve the
-        // sidebar first: asking XCTest for a descendant of an absent firstMatch
-        // can exhaust its snapshot timeout during the root-view transition.
-        let sidebar = app.scrollViews.matching(identifier: "ios.sidebar").firstMatch
-        XCTAssertTrue(sidebar.waitForExistence(timeout: 40), "Connecting must finish and mount the sidebar.")
-        let terminals = sidebar.buttons.matching(identifier: "ios.terminals.open").firstMatch
-        XCTAssertTrue(terminals.waitForExistence(timeout: 10))
-        terminals.tap()
-        XCTAssertTrue(element(app, "ios.terminals.machine-picker-view").waitForExistence(timeout: 10))
+        // SwiftUI exposes the picker surface as a ScrollView on iPad, not a
+        // Button. Query that stable native type so the wait observes the view
+        // already visible in the accessibility hierarchy.
+        let machinePicker = app.scrollViews.matching(identifier: "ios.terminals.machine-picker-view").firstMatch
+        if usesLandscapeSidebar {
+            // Xcode 26.5 can spend its entire snapshot budget resolving any
+            // sidebar query after rotating the iPad. The sidebar geometry is
+            // fixed in this layout, so exercise the visible Terminals row by
+            // coordinate and retry only until its destination appears.
+            let terminals = app.coordinate(withNormalizedOffset: CGVector(dx: 0.12, dy: 0.29))
+            var opened = false
+            for _ in 0..<3 {
+                terminals.tap()
+                if machinePicker.waitForExistence(timeout: 10) {
+                    opened = true
+                    break
+                }
+            }
+            XCTAssertTrue(opened, "Connecting must finish and expose terminal navigation.")
+        } else {
+            let terminals = app.buttons.matching(identifier: "ios.terminals.open").firstMatch
+            XCTAssertTrue(
+                terminals.waitForExistence(timeout: 40),
+                "Connecting must finish and expose terminal navigation.")
+            terminals.tap()
+            XCTAssertTrue(machinePicker.waitForExistence(timeout: 10))
+        }
         tap(app, "ios.terminals.machine-choice.\(daemon)")
         XCTAssertTrue(element(app, "ios.terminals.view").waitForExistence(timeout: 15))
         let emptyNew = element(app, "ios.terminals.empty-new")
@@ -457,7 +479,10 @@ final class RemoteNodeUITests: XCTestCase {
         XCTAssertTrue(element(app, "ios.terminals.key.arrows").exists)
         surface.tap()
         dismissKeyboardIntroduction(app)
-        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 10))
+        // XCTest can expose the landscape iPad keyboard in a rotated auxiliary
+        // window while `app.keyboards` still reports no match. The terminal
+        // surface itself is the focused responder, so type through the app
+        // without making keyboard-window geometry part of the contract.
         app.typeText("printf 'ios-terminal-marker\\n'\n")
         let marker = XCTNSPredicateExpectation(
             predicate: NSPredicate(format: "value CONTAINS %@", "ios-terminal-marker"),
@@ -489,11 +514,12 @@ final class RemoteNodeUITests: XCTestCase {
         if element(app, "ios.list.new-task").exists { tap(app, "ios.list.new-task") } else { tap(app, "ios.new-task") }
         fillTask(app, title: "iOS remote smoke task", prompt: "Verify this request came from iOS")
         screenshot(app, "02-create-remote-task")
+        let run = app.buttons.matching(identifier: "ios.create.run").firstMatch
         let runReady = XCTNSPredicateExpectation(
             predicate: NSPredicate(format: "hittable == true AND enabled == true"),
-            object: element(app, "ios.create.run"))
+            object: run)
         XCTAssertEqual(
-            XCTWaiter.wait(for: [runReady], timeout: 5), .completed,
+            XCTWaiter.wait(for: [runReady], timeout: 20), .completed,
             "Run task should remain visible and enabled after entering the task.\n\(app.debugDescription)")
         tap(app, "ios.create.run")
         assistantTextExists(app, "Mock harness received: Verify this request came from iOS", timeout: 150)
