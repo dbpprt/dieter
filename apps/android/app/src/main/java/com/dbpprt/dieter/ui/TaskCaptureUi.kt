@@ -9,7 +9,6 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -90,7 +89,6 @@ internal fun TaskAttachmentControls(draft: CardCreationDraft, store: TaskCapture
 @Composable
 internal fun TaskCaptureHost(state: DieterUiState, model: DieterViewModel, store: TaskCaptureStore) {
     val scope = rememberCoroutineScope()
-    var query by remember { mutableStateOf("") }
     var pendingShare by remember { mutableStateOf<CardCreationDraft?>(null) }
     var discardSaved by remember { mutableStateOf<CardCreationDraft?>(null) }
     var restoredAccount by remember { mutableStateOf<String?>(null) }
@@ -138,35 +136,14 @@ internal fun TaskCaptureHost(state: DieterUiState, model: DieterViewModel, store
     }
     if (!model.captureChooserVisible) return
     val draft = model.activeCapture ?: return
-    ModalBottomSheet(onDismissRequest = { model.captureChooserVisible = false }) {
-        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(20.dp).navigationBarsPadding(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("Choose project", style = MaterialTheme.typography.titleLarge)
-            store.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-            OutlinedTextField(query, { query = it }, label = { Text("Search projects") }, modifier = Modifier.fillMaxWidth())
-            if (state.projects.isEmpty()) Text("Connect to a machine and add a project to create a task. Your draft is kept on this device.")
-            state.projects.filter { it.name.contains(query, ignoreCase = true) }.forEach { project ->
-                TextButton(onClick = { model.captureProject(project.id) }, enabled = draft.submittedRequest?.let { it.projectId == project.id } != false, modifier = Modifier.fillMaxWidth().testTag("capture-project-${project.id}")) {
-                    Text(project.name + (if (state.presentedProjectReplicas[project.id]?.online == false) " · Offline" else "") + if (draft.projectId == project.id) " ✓" else "")
-                }
-            }
-            if (draft.projectId.isNotBlank()) {
-                val boards = (state.spaceBoards + state.boards).distinctBy { it.id }.filter { it.projectId == draft.projectId && !it.retired }
-                Text("Choose board", style = MaterialTheme.typography.titleMedium)
-                if (boards.isEmpty()) Text("No active board is available. Connect or create a board in this project; your draft is kept.")
-                boards.forEach { board ->
-                    Button(onClick = { model.openCaptureBoard(board.id) }, enabled = draft.submittedRequest?.let { it.boardId == board.id } != false, modifier = Modifier.testTag("capture-board-${board.id}")) { Text(board.name) }
-                }
-            }
-            val retained = store.drafts.filter { it !== draft && it.accountId == state.activeGatewayId && it.hasContent }
-            if (retained.isNotEmpty()) Text("Saved drafts", style = MaterialTheme.typography.titleMedium)
-            retained.forEach { saved ->
-                Row {
-                    TextButton(onClick = { model.beginCapture(saved); if (saved.projectId.isNotBlank()) model.selectProject(saved.projectId) }, modifier = Modifier.weight(1f)) {
-                        Text(saved.title.ifBlank { saved.prompt.take(70).ifBlank { "Task with attachments" } })
-                    }
-                    TextButton(onClick = { discardSaved = saved }, enabled = saved.submissionId.isBlank()) { Text("Discard") }
-                }
-            }
-        }
-    }
+    CaptureDestinationSheet(
+        state = state,
+        draft = draft,
+        savedDrafts = store.drafts.filter { it !== draft && it.accountId == state.activeGatewayId && it.hasContent },
+        onDismiss = { model.captureChooserVisible = false },
+        onProject = model::captureProject,
+        onBoard = model::openCaptureBoard,
+        onResumeDraft = { saved -> model.beginCapture(saved); if (saved.projectId.isNotBlank()) model.selectProject(saved.projectId) },
+        onDiscardDraft = { discardSaved = it },
+    )
 }
