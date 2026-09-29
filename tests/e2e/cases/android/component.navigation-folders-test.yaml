@@ -15,6 +15,7 @@ native:
   - chatFoldersKeepPinsSupportSearchAndSurviveRecreation
   - chatHierarchySearchRevealsCollapsedGroupsWithoutChangingPreferences
   - projectFoldersMoveOutAndDeleteWithoutRemovingProjects
+  - projectSyncStatusExplainsFailuresAndClearsAfterRecovery
   - projectPinsPersistInSharedNavigationAndCanBeRemovedFromThePinnedCard
   - boardlessProjectsExposeBoardCreationInsteadOfAnEmptyBoard
   - sharedRecordsPreserveBothScopesAndCollapsedMembership

@@ -19,6 +19,8 @@ import com.dbpprt.dieter.gateway.v1.*
 import com.dbpprt.dieter.ui.theme.DieterTheme
 import com.dbpprt.dieter.v1.Board
 import com.dbpprt.dieter.v1.Card
+import com.dbpprt.dieter.v1.CardStateField
+import com.dbpprt.dieter.v1.CardStateVersion
 import com.dbpprt.dieter.v1.Project
 import org.junit.Assert.*
 import org.junit.Rule
@@ -192,6 +194,50 @@ class ActivityScreenTest {
         compose.onNodeWithTag("activity-age-answer", useUnmergedTree = true).assertIsDisplayed()
         compose.onNodeWithTag("activity-machine-answer", useUnmergedTree = true)
             .assertContentDescriptionEquals("Machine: MacBook Pro").assertIsDisplayed()
+    }
+
+    @Test fun streamingRowsKeepTheirOrderAndStaleCopiesCannotRestoreRunning() {
+        val older = card("older", "Earlier turn", "running").toBuilder()
+            .setRuntimeUpdatedAt(now.minusSeconds(7200).toString()).build()
+        val newer = card("newer", "Later turn", "running", chat = true).toBuilder()
+            .setRuntimeUpdatedAt(now.minusSeconds(3600).toString()).build()
+        var current by mutableStateOf(state.copy(spaceCards = listOf(older), chats = listOf(newer), providerQuotaGroups = emptyList()))
+        compose.setContent { DieterTheme {
+            ActivityFeed(current, onOpen = {}, onConnections = {}, onAccount = {}, onRefreshAccounts = {}, clock = now)
+        } }
+        fun assertOrder() {
+            compose.onNodeWithTag("activity-feed").performScrollToNode(hasTestTag("activity-row-newer"))
+            val first = compose.onNodeWithTag("activity-row-newer").fetchSemanticsNode().boundsInRoot.top
+            val second = compose.onNodeWithTag("activity-row-older").fetchSemanticsNode().boundsInRoot.top
+            assertTrue("Streaming updates moved the earlier turn ahead of the later turn", first < second)
+        }
+        assertOrder()
+        for (id in listOf("older", "newer", "older")) {
+            compose.runOnIdle {
+                current = current.copy(
+                    spaceCards = listOf(older.toBuilder().setLastActivityAt(now.minusSeconds(if (id == "older") 0 else 60).toString()).build()),
+                    chats = listOf(newer.toBuilder().setLastActivityAt(now.minusSeconds(if (id == "newer") 0 else 60).toString()).build()),
+                )
+            }
+            assertOrder()
+            compose.onNodeWithTag("activity-age-$id", useUnmergedTree = true)
+                .assertContentDescriptionEquals("Last activity: Just now")
+        }
+        fun versioned(value: Card, sequence: Long) = value.toBuilder().apply {
+            for (name in listOf("summary", "placement")) {
+                addStateFields(CardStateField.newBuilder().setName(name).setRevision("$name-$sequence")
+                    .addVersions(CardStateVersion.newBuilder().putClock("owner", sequence)
+                        .setRank(sequence.toString()).setValue(value)))
+            }
+        }.build()
+        val complete = versioned(older.toBuilder().setRuntime("idle").setLane("review")
+            .setRuntimeUpdatedAt(now.toString()).build(), 2)
+        val stale = versioned(older, 1).toBuilder().setUpdatedAt(now.plusSeconds(60).toString()).build()
+        for (copies in listOf(listOf(complete, stale), listOf(stale, complete), listOf(complete, stale))) {
+            compose.runOnIdle { current = current.copy(spaceCards = listOf(copies[0]), cards = listOf(copies[1])) }
+            compose.onNodeWithTag("activity-feed").performScrollToNode(hasTestTag("activity-row-older"))
+            compose.onNodeWithTag("activity-row-older").assertTextContains("Ready for review")
+        }
     }
 
     @Test fun narrowCardKeepsTimeAndMachineAccessibleWithLargeText() {

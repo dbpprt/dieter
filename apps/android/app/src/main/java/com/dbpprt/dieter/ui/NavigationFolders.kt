@@ -243,7 +243,10 @@ internal fun NavigationSyncStatus(state: DieterUiState) {
     }
     if (state.navigationPendingCount > 0 || state.navigationSyncError != null) {
         androidx.compose.material3.Text(
-            text = if (state.navigationPendingCount > 0) "${state.navigationPendingCount} navigation edits pending sync" else "Navigation sync unavailable",
+            text = listOfNotNull(
+                "${state.navigationPendingCount} navigation edits pending sync".takeIf { state.navigationPendingCount > 0 },
+                state.navigationSyncError,
+            ).joinToString(". "),
             modifier = androidx.compose.ui.Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
             style = androidx.compose.material3.MaterialTheme.typography.labelSmall,
             color = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant,

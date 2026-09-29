@@ -303,3 +303,55 @@ func TestPeerIssuesRefreshWithoutWorkspaceMutation(t *testing.T) {
 		t.Fatalf("stale diagnostic: %+v %v", recovered, err)
 	}
 }
+
+func TestPeerIssuesExcludeOfflineAndHistoricalTimeouts(t *testing.T) {
+	data, api, _ := syncRecoveryFixture(t)
+	identity, err := data.PeerIdentity()
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := &dieterv1.GetStateRequest{AllProjects: true}
+	initial, err := api.GetState(context.Background(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.IfNotModified = initial.Cursor
+	now := time.Now().UTC()
+	for _, issue := range []store.PeerSyncDiagnostic{
+		{PeerID: "online", LastAttemptAt: now.Format(time.RFC3339Nano), FailureCode: "Unavailable"},
+		{PeerID: "asleep", LastAttemptAt: now.Format(time.RFC3339Nano), FailureCode: "DeadlineExceeded"},
+		{PeerID: "old", LastAttemptAt: now.Add(-time.Hour).Format(time.RFC3339Nano), FailureCode: "Unavailable"},
+		{PeerID: "rejected", LastAttemptAt: now.Add(-time.Hour).Format(time.RFC3339Nano), FailureCode: "invalid-record", RecordID: "b_one.retired"},
+	} {
+		if err := data.RecordPeerSync(identity, issue); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := data.ObservePeerAvailability(identity, map[string]bool{"online": true, "old": true}); err != nil {
+		t.Fatal(err)
+	}
+	state, err := api.GetState(context.Background(), request)
+	if err != nil || !state.GetNotModified() || len(state.GetPeerSyncIssues()) != 2 {
+		t.Fatalf("issues: %v %v", state, err)
+	}
+	for _, issue := range state.PeerSyncIssues {
+		if issue.PeerId != "online" && issue.PeerId != "rejected" {
+			t.Fatalf("historical issue leaked: %v", issue)
+		}
+	}
+	history, err := data.PeerSyncDiagnostics(identity.Account)
+	if err != nil || len(history) != 4 {
+		t.Fatalf("diagnostic history lost: %v %v", history, err)
+	}
+	// Successful exchanges clear both transport and durable record failures,
+	// including conditional state reads with no workspace changes.
+	for _, peer := range []string{"online", "rejected"} {
+		if err := data.RecordPeerSync(identity, store.PeerSyncDiagnostic{PeerID: peer, LastAttemptAt: now.Format(time.RFC3339Nano)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	state, err = api.GetState(context.Background(), request)
+	if err != nil || !state.GetNotModified() || len(state.GetPeerSyncIssues()) != 0 {
+		t.Fatalf("recovery: %v %v", state, err)
+	}
+}

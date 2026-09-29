@@ -19,4 +19,5 @@ native:
   - longPressRenamesArchivesAndPinsWithoutOpeningTheConversation
   - timelineSupportsLongPressAndOfflineActionsStayDisabled
   - cardsShowLatestActivityAndOwningMachineAcrossUpdatesAndOffline
+  - streamingRowsKeepTheirOrderAndStaleCopiesCannotRestoreRunning
   - narrowCardKeepsTimeAndMachineAccessibleWithLargeText

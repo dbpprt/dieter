@@ -168,5 +168,10 @@ sanitized record kind/ID/field/code. Invalid pages are atomic and cannot advance
 their checkpoint. Diagnostics use atomic writes and the central lock but do not
 advance workspace cursors or trigger peer exchanges. `GetState.peer_sync_issues`
 is refreshed even on a not-modified response so native warnings can recover
-without a domain mutation. Neither a successful peer exchange nor a local
+without a domain mutation. This warning projection excludes transport failures
+for offline or removed peers, cancellations, and transport attempts older than
+five minutes. Authenticated directory observations update availability without
+inventing a successful exchange. Record rejections and other non-transport
+failures are not suppressed by age or presence. `peer status` retains the underlying
+history, including excluded timeouts. Neither a successful peer exchange nor a local
 mutation receipt claims convergence of every enrolled replica.

@@ -889,7 +889,7 @@ class DieterViewModel internal constructor(
                     else -> current.connectionDialogVisible
                 },
                 connectionError = connection.error,
-                peerSyncWarnings = connection.peerSyncWarnings.values.toList(),
+                peerSyncWarnings = com.dbpprt.dieter.connection.peerSyncWarnings(connection),
                 desiredConnected = connection.desiredConnected,
                 backgroundSyncMode = connection.backgroundSyncMode,
                 configuredConnections = connection.configuredConnections,
@@ -948,8 +948,12 @@ class DieterViewModel internal constructor(
         resolvedSelectedCardId?.let(::ensureConversationRecovery)
         if (gatewayChanged && foreground) startProviderQuotaWatch()
         if (gatewayChanged) appPreferences.sharedNavigation.clearAccount()
-        if ((gatewayChanged || endpointChanged || !wasConnected) && connection.phase == ConnectionPhase.CONNECTED) {
-            appPreferences.sharedNavigation.bind(repository)
+        if (connection.phase == ConnectionPhase.CONNECTED) {
+            if (gatewayChanged || endpointChanged || !wasConnected) appPreferences.sharedNavigation.bind(repository)
+        } else if (wasConnected || gatewayChanged || endpointChanged) {
+            // Route replacement and deliberate background pauses cancel this
+            // subscription too; they are not independent navigation failures.
+            appPreferences.sharedNavigation.bind(null)
         }
         if (connection.phase == ConnectionPhase.AUTH_REQUIRED) appPreferences.sharedNavigation.clearAccount()
         if ((gatewayChanged || !wasConnected) && connection.phase == ConnectionPhase.CONNECTED) {

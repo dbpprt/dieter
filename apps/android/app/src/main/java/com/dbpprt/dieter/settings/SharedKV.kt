@@ -24,6 +24,9 @@ class SharedKV(private val preferences: SharedPreferences, private val namespace
     private var repository: DieterRepository? = null
     private var watch: Job? = null
     private var delivery: Job? = null
+    private var watchError: String? = null
+    private var deliveryError: String? = null
+    private var localError: String? = null
     private var generation = 0
     private var account = ""
     private var daemon = ""
@@ -53,7 +56,7 @@ class SharedKV(private val preferences: SharedPreferences, private val namespace
             if (account.isNotEmpty()) restore()
             for (command in commands) {
                 try { command() }
-                catch (error: Exception) { _status.value = _status.value.copy(error = error.message) }
+                catch (error: Exception) { localError = "Could not save navigation changes."; publishStatus() }
             }
         }
     }
@@ -86,13 +89,17 @@ class SharedKV(private val preferences: SharedPreferences, private val namespace
     private fun bindNow(connection: DieterRepository?) {
         generation++; val token = generation
         watch?.cancel(); delivery?.cancel(); delivery = null; repository = connection
+        watchError = null
+        publishStatus()
         if (connection == null) return
         watch = scope.launch(start = CoroutineStart.LAZY) {
+            var failedSince: Long? = null
             while (isActive && token == generation) {
                 try {
                     val info = connection.listKV(KVListRequest.newBuilder().setNamespace(namespace).build())
                     if (token != generation) return@launch
                     if (account != info.account || (account == "local" && daemon != info.daemonId)) {
+                        deliveryError = null; localError = null
                         account = info.account; daemon = info.daemonId; restore()
                         // A transport can survive an enrollment/account change.
                         // Invalidate old admissions before consuming another cache.
@@ -111,11 +118,23 @@ class SharedKV(private val preferences: SharedPreferences, private val namespace
                                 } ?: true
                                 if (covers) entries[key] = incoming
                             }
-                            if (save()) { publish(); flush() }
+                            if (save()) {
+                                failedSince = null
+                                watchError = null
+                                publish(); flush()
+                            }
                         }
                     }
+                    throw Status.UNAVAILABLE.withDescription("Navigation subscription ended").asRuntimeException()
                 } catch (e: CancellationException) { throw e }
-                catch (e: Exception) { if (token == generation) _status.value = SharedKVStatus(pending.size, e.message) }
+                catch (e: Exception) {
+                    if (token != generation) return@launch
+                    val now = android.os.SystemClock.elapsedRealtime()
+                    val since = failedSince ?: now.also { failedSince = it }
+                    watchError = navigationSyncFailure(e, now - since)
+                    publishStatus()
+                    android.util.Log.w("DieterNavigation", "watch failed: ${Status.fromThrowable(e).code}")
+                }
                 delay(2_000)
             }
         }
@@ -127,13 +146,14 @@ class SharedKV(private val preferences: SharedPreferences, private val namespace
             account = ""; daemon = ""; entries.clear(); pending.clear()
             preferences.edit().remove("activeAccount").remove("activeDaemon").commit()
         }
+        watchError = null; deliveryError = null; localError = null
         publish()
     }
     fun put(key: String, value: Any, requiresExisting: Boolean = false) = submit { putNow(key, value, requiresExisting) }
     private fun putNow(key: String, value: Any, requiresExisting: Boolean) {
         val encoded = JSONArray().put(value).toString().let { it.substring(1, it.length - 1) }
         if (encoded.toByteArray(Charsets.UTF_8).size > 32 * 1024) {
-            _status.value = SharedKVStatus(pending.size, "Shared values must be at most 32 KiB."); return
+            localError = "Shared values must be at most 32 KiB."; publishStatus(); return
         }
         enqueue(JSONObject().put("key", key).put("value", encoded).put("requiresExisting", requiresExisting))
     }
@@ -141,8 +161,8 @@ class SharedKV(private val preferences: SharedPreferences, private val namespace
     fun move(key: String, parent: String = "", after: String = "", before: String = "") = submit { enqueue(JSONObject()
         .put("key", key).put("parent", parent).put("after", after).put("before", before)) }
     private fun enqueue(intent: JSONObject) {
-        if (account.isEmpty()) { _status.value = SharedKVStatus(pending.size, "Connect to an account before organizing navigation."); return }
-        if (pending.size >= 1024) { _status.value = SharedKVStatus(pending.size, "Reconnect to deliver pending navigation edits."); return }
+        if (account.isEmpty()) { localError = "Connect to an account before organizing navigation."; publishStatus(); return }
+        if (pending.size >= 1024) { localError = "Reconnect to deliver pending navigation edits."; publishStatus(); return }
         intent.put("id", UUID.randomUUID().toString()); pending.add(intent)
         if (!save()) { pending.removeAt(pending.lastIndex); return }
         publish(); flush()
@@ -153,9 +173,11 @@ class SharedKV(private val preferences: SharedPreferences, private val namespace
             val records = JSONObject(); entries.forEach { (key, entry) -> records.put(key, encode(entry.toByteArray())) }
             check(preferences.edit().putString("activeAccount", account).putString("activeDaemon", daemon).putString(cacheKey,
                 JSONObject().put("entries", records).put("pending", JSONArray(pending)).toString()).commit()) { "Could not persist shared navigation" }
+            localError = null
             true
         } catch (e: Exception) {
-            _status.value = SharedKVStatus(pending.size, e.message); delivery?.cancel(); repository = null; false
+            localError = "Could not save navigation changes on this device."
+            publishStatus(); delivery?.cancel(); repository = null; false
         }
     }
     private fun publish() {
@@ -177,8 +199,12 @@ class SharedKV(private val preferences: SharedPreferences, private val namespace
                 !intent.optBoolean("requiresExisting") || entries[key]?.deleted != true -> values[key] = intent.getString("value")
             }
         }
-        _values.value = values; _status.value = SharedKVStatus(pending.size)
+        _values.value = values; publishStatus()
     }
+    private fun publishStatus() {
+        _status.value = SharedKVStatus(pending.size, localError ?: deliveryError ?: watchError)
+    }
+    private fun deliveryFailed(message: String?) { deliveryError = message; publishStatus() }
     private fun flush() {
         val connection = repository ?: return
         if (delivery?.isActive == true || pending.isEmpty()) return
@@ -188,7 +214,7 @@ class SharedKV(private val preferences: SharedPreferences, private val namespace
                 try {
                     val intent = pending.first()
                     if (intent.has("daemon") && intent.getString("daemon") != daemon) {
-                        _status.value = SharedKVStatus(pending.size, "A pending navigation edit awaits its accepting machine."); return@launch
+                        deliveryFailed("A pending navigation edit awaits its accepting machine."); return@launch
                     }
                     if (!intent.has("prepared")) {
                         val ref = KVRef.newBuilder().setNamespace(namespace).setKey(intent.getString("key")).setAccount(account).build()
@@ -197,11 +223,11 @@ class SharedKV(private val preferences: SharedPreferences, private val namespace
                         }
                         if (token != generation) return@launch
                         if (entries[ref.key]?.let { !covers(current, it) } == true) {
-                            _status.value = SharedKVStatus(pending.size, "Waiting for this machine to receive earlier navigation edits.")
+                            deliveryFailed("Waiting for this machine to receive earlier navigation edits.")
                             delay(1_000); continue
                         }
                         if (intent.optBoolean("requiresExisting") && (current == null || current.deleted)) {
-                            pending.removeAt(0); if (!save()) return@launch; publish(); continue
+                            pending.removeAt(0); if (!save()) return@launch; deliveryError = null; publish(); continue
                         }
                         val revision = current?.revision.orEmpty(); val id = intent.getString("id")
                         var after = intent.optString("after"); var before = intent.optString("before")
@@ -237,13 +263,13 @@ class SharedKV(private val preferences: SharedPreferences, private val namespace
                     }
                     if (token != generation) return@launch
                     if (entries[result.key]?.let { covers(result,it) } != false) entries[result.key] = result
-                    pending.removeAt(0); if (!save()) return@launch; publish()
+                    pending.removeAt(0); if (!save()) return@launch; deliveryError = null; publish()
                 } catch (e: CancellationException) { throw e }
                 catch (e: Exception) {
                     if (token != generation) return@launch
                     if (Status.fromThrowable(e).code == Status.Code.ABORTED) {
                         pending.first().apply { remove("prepared"); remove("daemon"); put("id", UUID.randomUUID().toString()) }; if (!save()) return@launch
-                    } else _status.value = SharedKVStatus(pending.size, e.message)
+                    } else deliveryFailed(navigationSyncFailure(e, 10_000))
                     delay(2_000)
                 }
             }
