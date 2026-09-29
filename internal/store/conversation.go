@@ -694,6 +694,7 @@ func reduceConversation(conversation *model.Conversation, event model.Conversati
 		var turn model.ConversationTurn
 		if json.Unmarshal(event.Data, &turn) == nil && turn.ID != "" {
 			conversation.ActiveTurn = &turn
+			conversation.ProviderStatus = nil
 		}
 	case "status":
 		var status string
@@ -711,16 +712,25 @@ func reduceConversation(conversation *model.Conversation, event model.Conversati
 			reduceCapability(conversation, raw)
 		}
 	}
+	// Provider connectivity only describes a running turn.
+	if conversation.Status != "running" {
+		conversation.ProviderStatus = nil
+	}
 }
 
 func reduceCapability(conversation *model.Conversation, raw json.RawMessage) {
 	var envelope struct {
-		ID        string         `json:"id"`
-		Operation string         `json:"operation"`
-		Subagent  model.Subagent `json:"subagent"`
-		Plan      model.TaskPlan `json:"plan"`
+		ID        string               `json:"id"`
+		Operation string               `json:"operation"`
+		Subagent  model.Subagent       `json:"subagent"`
+		Plan      model.TaskPlan       `json:"plan"`
+		Status    model.ProviderStatus `json:"status"`
 	}
 	if json.Unmarshal(raw, &envelope) != nil {
+		return
+	}
+	if envelope.ID == "provider-status" {
+		reduceProviderStatus(conversation, envelope.Operation, envelope.Status)
 		return
 	}
 	if envelope.ID == "task-plan" && envelope.Operation == "replace" && envelope.Plan.ID != "" && envelope.Plan.MessageID != "" {
@@ -747,6 +757,21 @@ func reduceCapability(conversation *model.Conversation, raw json.RawMessage) {
 		}
 	}
 	conversation.Subagents = append(conversation.Subagents, envelope.Subagent)
+}
+
+// A worker tails provider notices beside its stream, so a report can arrive
+// after the turn settled. Accept replacements only for the running response.
+func reduceProviderStatus(conversation *model.Conversation, operation string, status model.ProviderStatus) {
+	if operation == "clear" {
+		conversation.ProviderStatus = nil
+		return
+	}
+	turn := conversation.ActiveTurn
+	if operation != "replace" || status.State == "" || conversation.Status != "running" || turn == nil ||
+		(status.MessageID != "" && status.MessageID != turn.ResponseMessageID) {
+		return
+	}
+	conversation.ProviderStatus = &status
 }
 
 func reduceUIChunk(conversation *model.Conversation, raw json.RawMessage, createdAt string) {

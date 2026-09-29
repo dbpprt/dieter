@@ -544,6 +544,7 @@ final class ConversationModel {
         value.lastSeq = update.lastSeq; value.updatedAt = update.updatedAt
         value.subagents = update.subagents; value.taskPlans = update.taskPlans
         if update.hasPresentedContent { value.presentedContent = update.presentedContent }
+        value.applyProviderStatus(from: update)
         snapshot.conversation = value
         if update.hasDetail { snapshot.detail = update.detail; selectedDetail = update.detail }
         if update.hasPage {

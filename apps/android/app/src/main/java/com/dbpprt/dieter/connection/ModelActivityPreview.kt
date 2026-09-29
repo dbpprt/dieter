@@ -1,5 +1,6 @@
 package com.dbpprt.dieter.connection
 
+import com.dbpprt.dieter.ui.ConversationActivityPresentation
 import com.dbpprt.dieter.v1.Card
 import com.dbpprt.dieter.v1.ConversationSnapshot
 import com.dbpprt.dieter.v1.Subagent
@@ -48,7 +49,9 @@ internal fun currentModelActivities(card: Card, snapshot: ConversationSnapshot?)
         ?.let { task -> task.activeForm.ifBlank { task.content } }
         .orEmpty()
     val currentTool = conversation?.pendingToolsList?.lastOrNull()?.toolName.orEmpty()
-    val mainDetail = listOfNotNull(
+    val providerStatus = ConversationActivityPresentation.activeProviderStatus(conversation)
+        ?.let(ConversationActivityPresentation::providerStatusLabel)
+    val mainDetail = providerStatus ?: listOfNotNull(
         activeTask.takeIf(String::isNotBlank),
         currentTool.takeIf(String::isNotBlank)?.let(::toolActivity),
     ).joinToString(" · ").ifBlank {

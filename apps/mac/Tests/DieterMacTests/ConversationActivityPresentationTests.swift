@@ -186,4 +186,26 @@ struct ConversationActivityPresentationTests {
             ConversationActivityPresentation.turnStart(messages: live, runtimeUpdatedAt: "2026-09-10T10:05:00Z")
                 == DieterTimestamp.date(from: "2026-09-10T10:00:00Z"))
     }
+
+    @Test func retryingProviderStreamDescribesTheTurnUntilItRecovers() {
+        var status = Dieter_V1_ProviderStatus()
+        status.state = "reconnecting"
+        status.attempt = 1
+        status.maxAttempts = 5
+        let messages = [
+            message("user", role: "user"), message("assistant", parts: [tool("bash", preview: "go test ./...")]),
+        ]
+        #expect(
+            ConversationActivityPresentation.liveLabel(
+                messages: messages, pendingTools: [], plans: [], conversationStatus: "running", providerStatus: status)
+                == "Reconnecting to provider (1/5)…")
+        // A user stop still wins, and no status falls back to reported activity.
+        #expect(
+            ConversationActivityPresentation.liveLabel(
+                messages: messages, pendingTools: [], plans: [], conversationStatus: "running",
+                cardRuntime: "cancelling", providerStatus: status) == "Stopping…")
+        #expect(
+            ConversationActivityPresentation.liveLabel(messages: messages, pendingTools: [], plans: [])
+                == "Running go test ./...")
+    }
 }

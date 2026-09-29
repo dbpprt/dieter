@@ -562,6 +562,7 @@ type Conversation struct {
 	Subagents        []Subagent           `json:"subagents,omitempty"`
 	TaskPlans        []TaskPlan           `json:"taskPlans,omitempty"`
 	PresentedContent *ContentPresentation `json:"presentedContent,omitempty"`
+	ProviderStatus   *ProviderStatus      `json:"providerStatus,omitempty"`
 	Queue            []QueuedMessage      `json:"queue,omitempty"`
 	Session          json.RawMessage      `json:"session,omitempty"`
 	ActiveTurn       *ConversationTurn    `json:"activeTurn,omitempty"`
@@ -577,6 +578,19 @@ type ContentPresentation struct {
 	URL   string `json:"url,omitempty"`
 	Line  int    `json:"line,omitempty"`
 	Title string `json:"title,omitempty"`
+}
+
+// ProviderStatus is the latest transient provider connectivity report for the
+// active turn, such as a harness retrying its provider stream. The reducer
+// drops it when the stream recovers or the turn ends; it is never transcript.
+type ProviderStatus struct {
+	State       string `json:"state"`
+	Attempt     int32  `json:"attempt,omitempty"`
+	MaxAttempts int32  `json:"maxAttempts,omitempty"`
+	Message     string `json:"message,omitempty"`
+	Provider    string `json:"provider,omitempty"`
+	MessageID   string `json:"messageId,omitempty"`
+	UpdatedAt   string `json:"updatedAt,omitempty"`
 }
 
 // ConversationTurn identifies the one in-flight response. Persisting the

@@ -389,6 +389,23 @@ struct IOSModelTests {
         #expect(transcript.conversation?.status == "running")
     }
 
+    @Test func liveDeltaTracksProviderReconnectUntilTheStreamRecovers() {
+        var transcript = IOSTranscript()
+        transcript.reset(snapshot(range: 0..<3, sequence: 4, total: 3))
+        var reconnecting = Dieter_V1_ConversationUpdate()
+        reconnecting.lastSeq = 5
+        reconnecting.status = "running"
+        reconnecting.providerStatus.state = "waiting-for-network"
+        transcript.apply(reconnecting)
+        #expect(transcript.conversation?.activeProviderStatus?.state == "waiting-for-network")
+        var recovered = Dieter_V1_ConversationUpdate()
+        recovered.lastSeq = 6
+        recovered.status = "running"
+        transcript.apply(recovered)
+        #expect(transcript.conversation?.hasProviderStatus == false)
+        #expect(transcript.conversation?.activeProviderStatus == nil)
+    }
+
     @Test func reconnectSnapshotDropsStaleMessagesAndBoundsRetainedHistory() {
         var transcript = IOSTranscript()
         transcript.reset(snapshot(range: 0..<400, sequence: 9, total: 400))

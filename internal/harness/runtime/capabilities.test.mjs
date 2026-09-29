@@ -3,7 +3,8 @@ import { appendFile, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { createNDJSONTailer, createSubagentCapabilityCollector, observeHarnessCapabilities } from './capabilities.mjs';
+import { createCodex } from '@ai-sdk/harness-codex';
+import { createNDJSONTailer, createSubagentCapabilityCollector, observeHarnessCapabilities, parseProviderRetryNotice } from './capabilities.mjs';
 
 test('normalizes Claude Agent tool lifecycle', () => {
   const events = [];
@@ -129,10 +130,11 @@ test('observes Codex todo_list before UI conversion and patches its bootstrap br
   const capabilities = [];
   const forwarded = [];
   const collector = createSubagentCapabilityCollector({ provider: 'custom-codex', adapter: 'codex', messageId: 'm5', emit: event => capabilities.push(event), now: () => '2026-08-15T10:00:00Z' });
+  const bridge = (await createCodex().getBootstrap()).files.find(file => file.path.endsWith('/bridge.mjs'));
   const harness = observeHarnessCapabilities({
     harnessId: 'codex',
     builtinTools: {},
-    async getBootstrap() { return { harnessId: 'codex', bootstrapDir: '.x', commands: [], files: [{ path: '.x/bridge.mjs', content: '    if (item.type === "agent_message" && typeof item.text === "string") {' }] }; },
+    async getBootstrap() { return { harnessId: 'codex', bootstrapDir: '.x', commands: [], files: [{ path: '.x/bridge.mjs', content: bridge.content }] }; },
     async doStart() {
       return {
         doPromptTurn(options) {
@@ -149,6 +151,57 @@ test('observes Codex todo_list before UI conversion and patches its bootstrap br
   assert.equal(forwarded.length, 1);
   assert.equal(capabilities[0].plan.phases[0].tasks[0].status, 'in_progress');
   assert.equal(capabilities[0].plan.phases[0].tasks[1].status, 'pending');
+});
+
+test('patches Codex stream errors into non-terminal notices with a terminal guard', async () => {
+  const original = (await createCodex().getBootstrap()).files.find(file => file.path.endsWith('/bridge.mjs')).content;
+  const harness = observeHarnessCapabilities({
+    harnessId: 'codex',
+    async getBootstrap() { return { files: [{ path: '.x/bridge.mjs', content: original }] }; },
+  }, createSubagentCapabilityCollector({ provider: 'codex', messageId: 'm', emit: () => {} }));
+  const patched = (await harness.getBootstrap()).files[0].content;
+  assert.doesNotMatch(patched, /message: "codex stream error"/);
+  assert.match(patched, /if \(event\.type === "error"\) \{\s+send\(\{ type: "raw", rawValue: event \}\);\s+emitWarning/);
+  assert.match(patched, /if \(!dieterTurnSettled && !turn\.abortSignal\.aborted\)/);
+  // turn.failed remains the terminal provider failure.
+  assert.match(patched, /if \(event\.type === "turn\.failed"\) \{\s+emitError/);
+  // Patching is idempotent and fails closed when upstream moves the handler.
+  const again = observeHarnessCapabilities({ harnessId: 'codex', async getBootstrap() { return { files: [{ path: '.x/bridge.mjs', content: patched }] }; } }, undefined);
+  assert.equal((await again.getBootstrap()).files[0].content, patched);
+  const moved = observeHarnessCapabilities({ harnessId: 'codex', async getBootstrap() { return { files: [{ path: '.x/bridge.mjs', content: original.replace('message: "codex stream error"', 'message: "renamed"') }] }; } }, undefined);
+  await assert.rejects(moved.getBootstrap(), /Codex stream error handler/);
+});
+
+test('parses Codex provider retry notices', () => {
+  assert.deepEqual(parseProviderRetryNotice('Reconnecting... 2/5 (stream disconnected before completion)'), {
+    state: 'reconnecting', attempt: 2, maxAttempts: 5, message: 'Reconnecting... 2/5 (stream disconnected before completion)',
+  });
+  assert.deepEqual(parseProviderRetryNotice('Reconnecting... waiting for network (Connection failed: error sending request)'), {
+    state: 'waiting-for-network', message: 'Reconnecting... waiting for network (Connection failed: error sending request)',
+  });
+  assert.equal(parseProviderRetryNotice('HTTP 401: authentication_failed'), undefined);
+  assert.equal(parseProviderRetryNotice(undefined), undefined);
+  assert.equal(parseProviderRetryNotice(`Reconnecting... 1/5 (${'x'.repeat(4000)})`).message.length, 1024);
+});
+
+test('reports Codex provider reconnects until the stream recovers', () => {
+  const capabilities = [];
+  const collector = createSubagentCapabilityCollector({ provider: 'codex', adapter: 'codex', messageId: 'm6', emit: event => capabilities.push(event), now: () => '2026-09-29T13:08:05Z' });
+  const notice = message => ({ type: 'raw', rawValue: { type: 'error', message } });
+  collector.consumeHarnessEvent({ type: 'stream-start' });
+  assert.deepEqual(capabilities, []);
+  collector.consumeHarnessEvent(notice('Reconnecting... 1/5 (stream disconnected before completion)'));
+  collector.consumeHarnessEvent(notice('Reconnecting... 1/5 (stream disconnected before completion)'));
+  collector.consumeHarnessEvent(notice('Reconnecting... 2/5 (stream disconnected before completion)'));
+  // A non-retry stream error is only a warning; it neither sets nor clears status.
+  collector.consumeHarnessEvent(notice('Model metadata for gpt-6-astra not found'));
+  collector.consumeHarnessEvent({ type: 'reasoning-start', id: 'r1' });
+  collector.consumeHarnessEvent({ type: 'reasoning-delta', id: 'r1', delta: 'Back online' });
+  assert.deepEqual(capabilities, [
+    { id: 'provider-status', operation: 'replace', status: { state: 'reconnecting', attempt: 1, maxAttempts: 5, message: 'Reconnecting... 1/5 (stream disconnected before completion)', provider: 'codex', messageId: 'm6', updatedAt: '2026-09-29T13:08:05Z' } },
+    { id: 'provider-status', operation: 'replace', status: { state: 'reconnecting', attempt: 2, maxAttempts: 5, message: 'Reconnecting... 2/5 (stream disconnected before completion)', provider: 'codex', messageId: 'm6', updatedAt: '2026-09-29T13:08:05Z' } },
+    { id: 'provider-status', operation: 'clear' },
+  ]);
 });
 
 test('makes bridge replay persistence fail closed and rejects sequence gaps', async () => {
@@ -180,6 +233,18 @@ test('makes bridge replay persistence fail closed and rejects sequence gaps', as
     });
   }
     if (item.type === "agent_message" && typeof item.text === "string") {
+    if (event.type === "error") {
+      emitError({
+        error: event.message ?? "codex error",
+        message: "codex stream error"
+      });
+      return;
+    }
+    for await (const event of events) {
+      if (turn.abortSignal.aborted) break;
+      emitStreamEvent(event);
+    }
+  } catch (err) {
   `;
   const harness = observeHarnessCapabilities({
     harnessId: 'codex',

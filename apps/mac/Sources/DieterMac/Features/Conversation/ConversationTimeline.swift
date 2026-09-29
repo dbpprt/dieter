@@ -1,5 +1,6 @@
 import AppKit
 import DieterAPI
+import DieterCore
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -244,7 +245,8 @@ struct ConversationTimeline: View {
                             messages: liveMessages, pendingTools: pendingTools, plans: plans,
                             showReasoning: context.showReasoning,
                             conversationStatus: context.conversation?.conversation.status ?? "",
-                            cardRuntime: (context.selectedCard ?? context.selectedDetail?.card)?.runtime ?? ""),
+                            cardRuntime: (context.selectedCard ?? context.selectedDetail?.card)?.runtime ?? "",
+                            providerStatus: context.conversation?.conversation.activeProviderStatus),
                         startedAt: ConversationActivityPresentation.turnStart(
                             messages: liveMessages,
                             runtimeUpdatedAt: (context.selectedCard ?? context.selectedDetail?.card)?

@@ -52,6 +52,10 @@
                 conversationStatus: store.conversation?.status ?? "", cardRuntime: card?.runtime ?? "")
         }
 
+        private var providerStatus: Dieter_V1_ProviderStatus? {
+            store.conversation?.cardID == cardID ? store.conversation?.activeProviderStatus : nil
+        }
+
         var body: some View {
             Group {
                 if let card, store.conversation?.cardID == cardID {
@@ -275,7 +279,8 @@
                                 IOSConversationTurnIndicator(
                                     startedAt: IOSConversationPresentation.turnStart(
                                         messages: messages, runtimeUpdatedAt: card.runtimeUpdatedAt),
-                                    stopping: card.runtime.lowercased() == "cancelling"
+                                    stopping: card.runtime.lowercased() == "cancelling",
+                                    providerStatus: providerStatus
                                 )
                                 .id("ios.conversation.agent-working")
                             }
@@ -1085,10 +1090,14 @@
     private struct IOSConversationTurnIndicator: View {
         let startedAt: Date?
         let stopping: Bool
+        let providerStatus: Dieter_V1_ProviderStatus?
         @Environment(\.accessibilityReduceMotion) private var reduceMotion
         @State private var shimmer = false
 
-        private var label: String { stopping ? "Dieter is stopping…" : "Dieter is working…" }
+        private var label: String {
+            if stopping { return "Dieter is stopping…" }
+            return providerStatus.flatMap(ProviderStatusPresentation.label) ?? "Dieter is working…"
+        }
 
         var body: some View {
             HStack(spacing: 9) {

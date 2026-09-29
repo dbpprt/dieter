@@ -5,10 +5,12 @@ import com.dbpprt.dieter.v1.Conversation
 import com.dbpprt.dieter.v1.ConversationSnapshot
 import com.dbpprt.dieter.v1.ConversationUpdate
 import com.dbpprt.dieter.v1.MessagePart
+import com.dbpprt.dieter.v1.ProviderStatus
 import com.dbpprt.dieter.v1.Subagent
 import com.dbpprt.dieter.v1.TaskPlan
 import com.dbpprt.dieter.v1.UiMessage
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertThrows
 import org.junit.Test
@@ -87,6 +89,24 @@ class ConversationReducerTest {
         for (custom in listOf(old.copy(port = 8443), old.copy(secure = false), old.copy(host = "private.example"))) {
             assertEquals(custom, custom.currentPublicGateway)
         }
+    }
+
+    @Test
+    fun providerStatusFollowsEachLiveUpdate() {
+        val reconnecting = ConversationUpdate.newBuilder()
+            .setStatus("running")
+            .setProviderStatus(ProviderStatus.newBuilder().setState("reconnecting").setAttempt(1).setMaxAttempts(5))
+            .setLastSeq(2)
+            .build()
+        val retrying = ConversationReducer.apply(snapshot(message("one", "working")), reconnecting)
+        assertEquals(1, retrying.conversation.providerStatus.attempt)
+
+        // The stream recovered: the next update omits the status.
+        val recovered = ConversationReducer.apply(
+            retrying,
+            ConversationUpdate.newBuilder().setStatus("running").setLastSeq(3).build(),
+        )
+        assertFalse(recovered.conversation.hasProviderStatus())
     }
 
     private fun snapshot(vararg messages: UiMessage): ConversationSnapshot = ConversationSnapshot.newBuilder()

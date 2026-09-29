@@ -39,6 +39,7 @@ struct IOSTranscript {
         current.taskPlans = update.taskPlans
         current.draftAttachments = update.draftAttachments
         current.presentedContent = update.presentedContent
+        current.applyProviderStatus(from: update)
         conversation = current
         if update.hasPage {
             page = update.page

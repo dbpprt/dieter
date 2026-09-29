@@ -1048,6 +1048,7 @@ func conversationDelta(previous, current *dieterv1.ConversationSnapshot) *dieter
 		TaskPlans:        current.GetConversation().GetTaskPlans(),
 		DraftAttachments: current.GetConversation().GetDraftAttachments(),
 		PresentedContent: current.GetConversation().GetPresentedContent(),
+		ProviderStatus:   current.GetConversation().GetProviderStatus(),
 	}
 	before := make(map[string]*dieterv1.UiMessage, len(previous.GetConversation().GetMessages()))
 	for _, message := range previous.GetConversation().GetMessages() {

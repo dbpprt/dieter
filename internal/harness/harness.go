@@ -16,6 +16,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -840,26 +841,45 @@ func (r *SubprocessRunner) Run(ctx context.Context, request Request, emit func(O
 	if scanErr != nil {
 		return scanErr
 	}
-	if workerError != "" {
-		if diagnostic := strings.TrimSpace(stderr.String() + "\n" + stdoutDiagnostics.String()); diagnostic != "" {
-			return fmt.Errorf("%s: %s", workerError, diagnostic)
+	diagnostic := workerDiagnostics(stderr.String() + "\n" + stdoutDiagnostics.String())
+	for _, failure := range []string{workerError, streamError} {
+		if failure == "" {
+			continue
 		}
-		return errors.New(workerError)
-	}
-	if streamError != "" {
-		if diagnostic := strings.TrimSpace(stderr.String() + "\n" + stdoutDiagnostics.String()); diagnostic != "" {
-			return fmt.Errorf("%s: %s", streamError, diagnostic)
+		if diagnostic != "" {
+			// Clients summarize a failure by its first line and keep the rest as
+			// the log, so the harness's own error must stand alone on that line.
+			return fmt.Errorf("%s\n\n%s", failure, diagnostic)
 		}
-		return errors.New(streamError)
+		return errors.New(failure)
 	}
 	if waitErr != nil {
-		message := strings.TrimSpace(stderr.String() + "\n" + stdoutDiagnostics.String())
+		message := diagnostic
 		if message == "" {
 			message = waitErr.Error()
 		}
 		return fmt.Errorf("harness worker: %s", message)
 	}
 	return nil
+}
+
+// benignWorkerDiagnostics are expected on every run of the unsandboxed local
+// provider and never explain a failure: the harness warns that it forwards
+// credentials because the host has no request-transformation sandbox.
+var benignWorkerDiagnostics = []string{
+	"The sandbox implementation does not support configuring request transformations",
+}
+
+func workerDiagnostics(output string) string {
+	lines := strings.Split(output, "\n")
+	kept := lines[:0]
+	for _, line := range lines {
+		if slices.ContainsFunc(benignWorkerDiagnostics, func(notice string) bool { return strings.Contains(line, notice) }) {
+			continue
+		}
+		kept = append(kept, line)
+	}
+	return strings.TrimSpace(strings.Join(kept, "\n"))
 }
 
 func (r *SubprocessRunner) Cancel(sessionID, runtimeRoot string) error {

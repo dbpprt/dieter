@@ -4,6 +4,7 @@ import com.dbpprt.dieter.v1.Card
 import com.dbpprt.dieter.v1.Conversation
 import com.dbpprt.dieter.v1.ConversationSnapshot
 import com.dbpprt.dieter.v1.PendingTool
+import com.dbpprt.dieter.v1.ProviderStatus
 import com.dbpprt.dieter.v1.Subagent
 import com.dbpprt.dieter.v1.TaskPlan
 import com.dbpprt.dieter.v1.TaskPlanItem
@@ -85,6 +86,18 @@ class ModelActivityPreviewTest {
         assertEquals(false, detail.contains('\n'))
         assertEquals(96, detail.length)
         assertEquals('…', detail.last())
+    }
+
+    @Test
+    fun providerReconnectReplacesTheMainActivity() {
+        val snapshot = snapshot(
+            Conversation.newBuilder()
+                .addPendingTools(PendingTool.newBuilder().setToolName("bash"))
+                .setProviderStatus(ProviderStatus.newBuilder().setState("waiting-for-network"))
+                .build(),
+        )
+        val main = currentModelActivities(card(), snapshot).first()
+        assertEquals("Reconnecting to provider (waiting for network)…", main.detail)
     }
 
     private fun card(id: String = "one"): Card = Card.newBuilder()

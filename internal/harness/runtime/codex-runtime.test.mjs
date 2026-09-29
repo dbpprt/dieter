@@ -104,6 +104,93 @@ test('bundled Codex streams Astra Ultra and resumes the same session with the ne
   assert(turns.some(turn => turn.model === 'gpt-5.6-sol' && turn.effort === 'medium'));
 });
 
+// Codex reports provider stream retries as top-level `error` events and keeps
+// running. These turns must not fail on the notice itself.
+async function runFlakyProviderTurn(t, respond) {
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'dieter-codex-retry-')));
+  const projectPath = join(root, 'project');
+  const codexHome = join(root, 'codex');
+  await Promise.all([mkdir(projectPath), mkdir(codexHome)]);
+  t.after(() => rm(root, { recursive: true, force: true }));
+  let requests = 0;
+  const server = createServer(async (request, response) => {
+    for await (const _ of request);
+    if (request.url !== '/v1/responses') {
+      response.writeHead(404).end('{}');
+      return;
+    }
+    requests += 1;
+    respond(requests, response);
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => { server.closeAllConnections(); server.close(); });
+  const result = await runWorker({
+    harness: 'codex', adapter: 'codex', sessionId: 'retry-session', projectPath,
+    runtimeRoot: join(root, 'runtime'), model: 'gpt-6-astra', prompt: 'Retry fixture turn.', responseMessageId: 'retry',
+  }, {
+    PATH: process.env.PATH, HOME: root, TMPDIR: root, CODEX_HOME: codexHome,
+    OPENAI_BASE_URL: `http://127.0.0.1:${server.address().port}/v1`,
+    CODEX_API_KEY: 'dieter-loopback-fixture',
+  });
+  const chunks = result.frames.filter(frame => frame.type === 'chunk').map(frame => frame.chunk);
+  const statuses = result.frames.filter(frame => frame.type === 'capability' && frame.capability.id === 'provider-status')
+    .map(frame => frame.capability);
+  return { ...result, chunks, statuses, requests };
+}
+
+function dropStreamAfterStart(response, index) {
+  const [created] = responseEvents(index);
+  response.writeHead(200, { 'content-type': 'text/event-stream' });
+  response.write(`event: ${created.type}\ndata: ${JSON.stringify(created)}\n\n`);
+  setTimeout(() => response.socket.destroy(), 20);
+}
+
+function completeStream(response, index) {
+  response.writeHead(200, { 'content-type': 'text/event-stream' });
+  for (const event of responseEvents(index)) response.write(`event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`);
+  response.end();
+}
+
+test('bundled Codex completes a turn after a transient provider stream drop', { timeout: 90000 }, async t => {
+  const turn = await runFlakyProviderTurn(t, (index, response) => index === 1 ? dropStreamAfterStart(response, index) : completeStream(response, index));
+  assert.equal(turn.code, 0, turn.stderr);
+  assert.equal(turn.requests, 2);
+  assert(!turn.chunks.some(chunk => chunk.type === 'error'), JSON.stringify(turn.chunks));
+  assert(!turn.frames.some(frame => frame.type === 'error'), JSON.stringify(turn.frames));
+  assert(turn.chunks.some(chunk => chunk.type === 'text-delta' && chunk.delta === 'Fixture response 2.'));
+  assert.equal(turn.chunks.at(-1).type, 'finish');
+  assert.deepEqual(turn.statuses.map(status => [status.operation, status.status?.state, status.status?.attempt, status.status?.maxAttempts]), [
+    ['replace', 'reconnecting', 1, 5],
+    ['clear', undefined, undefined, undefined],
+  ]);
+  assert.equal(turn.statuses[0].status.messageId, 'retry');
+  assert.match(turn.statuses[0].status.message, /^Reconnecting\.\.\. 1\/5 \(stream disconnected before completion/);
+  // The notice remains diagnosable in the worker log.
+  assert.match(turn.stderr, /\[harness:codex:warn\] Reconnecting\.\.\. 1\/5/);
+});
+
+test('bundled Codex fails with its final provider error after exhausting stream retries', { timeout: 120000 }, async t => {
+  const turn = await runFlakyProviderTurn(t, (index, response) => dropStreamAfterStart(response, index));
+  const errors = turn.chunks.filter(chunk => chunk.type === 'error');
+  assert.equal(errors.length, 1, JSON.stringify(turn.chunks));
+  assert.match(errors[0].errorText, /stream disconnected before completion/);
+  assert.doesNotMatch(errors[0].errorText, /^Reconnecting\.\.\./);
+  assert.equal(turn.requests, 6);
+  assert.deepEqual(turn.statuses.map(status => status.status?.attempt ?? status.operation), [1, 2, 3, 4, 5, 'clear']);
+});
+
+test('bundled Codex fails promptly on a permanent provider error', { timeout: 90000 }, async t => {
+  const turn = await runFlakyProviderTurn(t, (_index, response) => {
+    response.writeHead(400, { 'content-type': 'application/json' });
+    response.end(JSON.stringify({ error: { message: 'Fixture rejects this request.', type: 'invalid_request_error', code: 'fixture_rejected' } }));
+  });
+  const errors = turn.chunks.filter(chunk => chunk.type === 'error');
+  assert.equal(errors.length, 1, JSON.stringify(turn.chunks));
+  assert.match(errors[0].errorText, /Fixture rejects this request/);
+  assert.equal(turn.requests, 1);
+  assert.deepEqual(turn.statuses, []);
+});
+
 async function runWorker(request, env) {
   const child = spawn(process.execPath, [join(runtimeRoot, 'runner.mjs')], {
     env, stdio: ['pipe', 'pipe', 'pipe'], timeout: 40000, killSignal: 'SIGTERM',

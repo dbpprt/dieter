@@ -798,6 +798,28 @@ func TestSubprocessRunnerRetainsDiagnosticsAfterStructuredError(t *testing.T) {
 	}
 }
 
+// Clients summarize a failed turn by the first line of its error text. A
+// retry notice or unrelated stderr must never replace the harness's own error.
+func TestSubprocessRunnerKeepsFailureOnItsOwnSummaryLine(t *testing.T) {
+	runtimeDir := t.TempDir()
+	script := `process.stdin.once('data', () => {
+  process.stderr.write('The sandbox implementation does not support configuring request transformations, so credential brokering does not work. Falling back to less secure credential forwarding.\n');
+  process.stderr.write('[harness:codex:stderr] [harness:codex:warn] Reconnecting... 5/5 (stream disconnected before completion)\n');
+  process.stdout.write(JSON.stringify({type:'chunk', chunk:{type:'error', errorText:'stream disconnected before completion: Transport error'}}) + '\n');
+});`
+	if err := os.WriteFile(filepath.Join(runtimeDir, "runner.mjs"), []byte(script), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("DIETER_HARNESS_RUNTIME_DIR", runtimeDir)
+	err := NewSubprocessRunner(t.TempDir()).Run(context.Background(), Request{
+		Harness: "codex", Prompt: "fail", SessionID: "card", ProjectPath: t.TempDir(), RuntimeRoot: t.TempDir(),
+	}, func(Output) error { return nil })
+	want := "stream disconnected before completion: Transport error\n\n[harness:codex:stderr] [harness:codex:warn] Reconnecting... 5/5 (stream disconnected before completion)"
+	if err == nil || err.Error() != want {
+		t.Fatalf("err=%q, want %q", err, want)
+	}
+}
+
 func TestSubprocessRunnerRetainsDiagnosticsAfterUIError(t *testing.T) {
 	runtimeDir := t.TempDir()
 	script := `process.stdin.once('data', () => {

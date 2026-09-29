@@ -160,7 +160,7 @@ func (s *Store) beginWriteLock() (func(), error) {
 func (s *Store) beginWriteLockContext(ctx context.Context) (func(), error) {
 	requestedAt := time.Now()
 	if err := writeMu.LockContext(ctx); err != nil {
-		return nil, err
+		return nil, writerBusy(err)
 	}
 	releaseProcess := true
 	defer func() {
@@ -173,7 +173,7 @@ func (s *Store) beginWriteLockContext(ctx context.Context) (func(), error) {
 	}
 	unlockAdmission, err := s.writerAdmission(ctx)
 	if err != nil {
-		return nil, err
+		return nil, writerBusy(err)
 	}
 	defer func() {
 		if releaseProcess {

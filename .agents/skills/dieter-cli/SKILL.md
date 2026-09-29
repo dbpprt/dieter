@@ -192,6 +192,14 @@ Use `card poll` for one bounded update and `card watch` for JSON Lines streaming
 Fetch a large tool payload separately with `card tool-output` when the transcript
 contains only its bounded preview.
 
+While a running turn's provider stream retries (for example Codex
+`Reconnecting... 2/5`), poll and watch output carries `providerStatus` with
+`state` `reconnecting` or `waiting-for-network`, plus `attempt`/`maxAttempts`
+when the provider counts them. It is transient and not a failure: the daemon
+removes it when the stream recovers or the turn ends. Keep waiting on the same
+turn; do not resend the message. A failed turn's `errorText` starts with the
+provider's final error on its own line, followed by worker diagnostics.
+
 To show a deliverable in the conversation's native workspace pane, call the
 `present_content` harness tool or the explicit daemon command:
 

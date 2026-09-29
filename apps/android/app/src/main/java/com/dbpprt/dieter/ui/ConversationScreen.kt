@@ -218,6 +218,7 @@ internal fun ConversationBody(state: DieterUiState, model: DieterViewModel, modi
         state.showReasoningTraces,
         conversation?.status,
         card?.runtime,
+        ConversationActivityPresentation.activeProviderStatus(conversation),
     ) {
         ConversationActivityPresentation.liveLabel(
             messages = liveActivityMessages,
@@ -226,6 +227,7 @@ internal fun ConversationBody(state: DieterUiState, model: DieterViewModel, modi
             showReasoning = state.showReasoningTraces,
             conversationStatus = conversation?.status.orEmpty(),
             cardRuntime = card?.runtime.orEmpty(),
+            providerStatus = ConversationActivityPresentation.activeProviderStatus(conversation),
         )
     }
     val turnStartedAtMillis = remember(liveActivityMessages, card?.runtimeUpdatedAt) {

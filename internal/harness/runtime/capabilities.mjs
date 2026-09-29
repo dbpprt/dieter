@@ -15,6 +15,26 @@ function clean(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
+const maxProviderNoticeLength = 1024;
+
+/**
+ * Parse Codex's transient provider retry notice. Codex formats these as
+ * "Reconnecting... 2/5" or "Reconnecting... waiting for network", and codex
+ * exec appends " (details)". Other stream errors are not retry notices.
+ */
+export function parseProviderRetryNotice(message) {
+  if (typeof message !== 'string') return undefined;
+  const text = message.trim();
+  const match = text.match(/^Reconnecting\.\.\.(?:\s+(\d+)\/(\d+))?/);
+  if (!match) return undefined;
+  return clean({
+    state: /^Reconnecting\.\.\.\s+waiting for network/.test(text) ? 'waiting-for-network' : 'reconnecting',
+    attempt: match[1] ? Number(match[1]) : undefined,
+    maxAttempts: match[2] ? Number(match[2]) : undefined,
+    message: text.length <= maxProviderNoticeLength ? text : `${text.slice(0, maxProviderNoticeLength - 1)}…`,
+  });
+}
+
 export function createSubagentCapabilityCollector({ provider, adapter = provider, messageId, emit, now = () => new Date().toISOString() }) {
   const subagents = new Map();
   const emittedSubagents = new Map();
@@ -25,6 +45,7 @@ export function createSubagentCapabilityCollector({ provider, adapter = provider
   let taskPlan;
   let taskPlanFingerprint = '';
   let taskPlanRevision = 0;
+  let providerStatusFingerprint = '';
 
   function normalizeTaskStatus(status) {
     if (status === 'in_progress' || status === 'inProgress' || status === 'in-progress' || status === 'running') return 'in_progress';
@@ -297,7 +318,27 @@ export function createSubagentCapabilityCollector({ provider, adapter = provider
     replaceTaskPlan({ tasks: toolCall.rawInput?.todos, source: 'todo_write' });
   }
 
+  function setProviderStatus(notice) {
+    if (!notice) {
+      if (providerStatusFingerprint) emit({ id: 'provider-status', operation: 'clear' });
+      providerStatusFingerprint = '';
+      return;
+    }
+    const status = clean({ ...notice, provider, messageId });
+    const fingerprint = JSON.stringify(status);
+    if (fingerprint === providerStatusFingerprint) return;
+    providerStatusFingerprint = fingerprint;
+    emit({ id: 'provider-status', operation: 'replace', status: { ...status, updatedAt: now() } });
+  }
+
   function consumeHarnessEvent(event) {
+    if (adapter === 'codex' && event?.type === 'raw' && event.rawValue?.type === 'error') {
+      const notice = parseProviderRetryNotice(event.rawValue.message);
+      if (notice) setProviderStatus(notice);
+      return;
+    }
+    // Any other provider event after a retry notice means the stream is back.
+    if (event) setProviderStatus(undefined);
     if (!event || event.type !== 'raw' || !event.rawValue || typeof event.rawValue !== 'object') return;
     const raw = event.rawValue;
     if ((adapter === 'omp-acp' || provider === 'omp') && raw.sessionUpdate === 'plan') {
@@ -345,10 +386,61 @@ const codexTodoForwarder = `    if (item.type === "todo_list") {
     }
 ${codexTodoNeedle}`;
 
+// codex exec emits a top-level `error` for provider retry notices
+// ("Reconnecting... 2/5 (...)", "Reconnecting... waiting for network (...)")
+// and keeps running the turn; it drops app-server's will_retry flag. Only
+// turn.failed or a failed process is terminal. Forward the notice as a
+// structured raw event instead of settling the turn as failed.
+const codexStreamErrorNeedle = `    if (event.type === "error") {
+      emitError({
+        error: event.message ?? "codex error",
+        message: "codex stream error"
+      });
+      return;
+    }`;
+const codexStreamErrorForwarder = `    if (event.type === "error") {
+      send({ type: "raw", rawValue: event });
+      emitWarning({ message: event.message ?? "codex error" });
+      return;
+    }`;
+// With stream errors no longer terminal, a Codex process that exits cleanly
+// without turn.completed or turn.failed must still fail with its last error.
+const codexTurnLoopNeedle = `    for await (const event of events) {
+      if (turn.abortSignal.aborted) break;`;
+const codexTurnLoopTracker = `    let dieterTurnSettled = false;
+    let dieterLastStreamError;
+    for await (const event of events) {
+      if (turn.abortSignal.aborted) break;
+      if (event.type === "turn.completed" || event.type === "turn.failed") dieterTurnSettled = true;
+      if (event.type === "error") dieterLastStreamError = event.message;`;
+const codexTurnEndNeedle = `      emitStreamEvent(event);
+    }
+  } catch (err) {`;
+const codexTurnEndGuard = `      emitStreamEvent(event);
+    }
+    if (!dieterTurnSettled && !turn.abortSignal.aborted) {
+      turn.emitError({
+        error: dieterLastStreamError ?? "codex exited without completing the turn",
+        message: "codex turn ended without a result"
+      });
+      return;
+    }
+  } catch (err) {`;
+
 function patchCodexBridge(content) {
   if (!content.includes('send({ type: "raw", rawValue: event });')) {
     if (!content.includes(codexTodoNeedle)) throw new Error('Dieter could not find the Codex todo bridge insertion point');
     content = content.replace(codexTodoNeedle, codexTodoForwarder);
+  }
+  if (!content.includes(codexStreamErrorForwarder)) {
+    if (!content.includes(codexStreamErrorNeedle)) throw new Error('Dieter could not find the Codex stream error handler');
+    content = content.replace(codexStreamErrorNeedle, codexStreamErrorForwarder);
+  }
+  if (!content.includes('dieterTurnSettled')) {
+    if (!content.includes(codexTurnLoopNeedle) || !content.includes(codexTurnEndNeedle)) {
+      throw new Error('Dieter could not find the Codex turn loop');
+    }
+    content = content.replace(codexTurnLoopNeedle, codexTurnLoopTracker).replace(codexTurnEndNeedle, codexTurnEndGuard);
   }
   return patchDurableBridge(content);
 }

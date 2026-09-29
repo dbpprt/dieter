@@ -486,18 +486,6 @@ func (s *Service) SuspendActiveTurns(ctx context.Context) error {
 	return errors.Join(suspensionErrors...)
 }
 
-func (s *Service) noteTurnProgress(cardID, turnID string) bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	current := s.active[cardID]
-	if current == nil || current.turnID != turnID || current.recoveryErr != nil {
-		return false
-	}
-	current.workerObserved = true
-	current.lastProgress = time.Now()
-	return true
-}
-
 func (s *Service) turnRecoveryFailure(cardID, turnID string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -519,7 +507,7 @@ func (s *Service) ReconcileStalledTurns(now time.Time) []string {
 	s.mu.Lock()
 	stalled := make([]*activeTurn, 0)
 	for _, turn := range s.active {
-		if turn.suspend || turn.recoveryErr != nil {
+		if turn.suspend || turn.recoveryErr != nil || turn.hostWork > 0 {
 			continue
 		}
 		limit := workerStartupTimeout

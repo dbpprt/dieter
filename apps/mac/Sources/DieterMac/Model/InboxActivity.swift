@@ -1,4 +1,5 @@
 import DieterAPI
+import DieterCore
 import Foundation
 
 /// Mirrors Android ActivityModel: one latest activity per conversation, not a run history.
@@ -179,7 +180,7 @@ final class InboxActivityProjection {
                 label: ConversationActivityPresentation.liveLabel(
                     messages: messages, pendingTools: conversation.pendingTools, plans: conversation.taskPlans,
                     showReasoning: nextShowReasoning, conversationStatus: conversation.status,
-                    cardRuntime: snapshot.detail.card.runtime))
+                    cardRuntime: snapshot.detail.card.runtime, providerStatus: conversation.activeProviderStatus))
         }
         snapshots = nextSnapshots
         omittedMessageIDs = nextOmittedMessageIDs

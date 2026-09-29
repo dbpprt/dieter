@@ -262,6 +262,7 @@ func protoConversation(value model.Conversation) *dieterv1.Conversation {
 		ProjectionVersion: int32(value.ProjectionVersion), CardId: value.CardID,
 		Status: value.Status, LastSeq: value.LastSeq, UpdatedAt: value.UpdatedAt,
 		PresentedContent: protoContentPresentation(value.PresentedContent),
+		ProviderStatus:   protoProviderStatus(value.ProviderStatus),
 	}
 	for _, item := range value.Messages {
 		message := &dieterv1.UiMessage{Id: item.ID, Role: item.Role, MetadataJson: append([]byte(nil), item.Metadata...)}
@@ -291,6 +292,16 @@ func protoConversation(value model.Conversation) *dieterv1.Conversation {
 		result.Queue = append(result.Queue, protoQueuedMessage(item))
 	}
 	return result
+}
+
+func protoProviderStatus(value *model.ProviderStatus) *dieterv1.ProviderStatus {
+	if value == nil {
+		return nil
+	}
+	return &dieterv1.ProviderStatus{
+		State: value.State, Attempt: value.Attempt, MaxAttempts: value.MaxAttempts, Message: value.Message,
+		Provider: value.Provider, MessageId: value.MessageID, UpdatedAt: value.UpdatedAt,
+	}
 }
 
 func protoContentPresentation(value *model.ContentPresentation) *dieterv1.ContentPresentation {

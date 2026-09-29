@@ -84,6 +84,10 @@ func cloneConversation(c model.Conversation) model.Conversation {
 		v := *c.PresentedContent
 		c.PresentedContent = &v
 	}
+	if c.ProviderStatus != nil {
+		v := *c.ProviderStatus
+		c.ProviderStatus = &v
+	}
 	c.Subagents = slices.Clone(c.Subagents)
 	for i := range c.Subagents {
 		c.Subagents[i].RecentOutput = slices.Clone(c.Subagents[i].RecentOutput)

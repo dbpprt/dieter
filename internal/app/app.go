@@ -45,6 +45,7 @@ type activeTurn struct {
 	suspend        bool
 	startedAt      time.Time
 	lastProgress   time.Time
+	hostWork       int
 	workerObserved bool
 	recoveryErr    error
 	finishing      bool

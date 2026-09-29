@@ -1,4 +1,5 @@
 import DieterAPI
+import DieterCore
 import Foundation
 
 /// Describes activity the provider actually reported. It never fetches tool
@@ -24,10 +25,15 @@ enum ConversationActivityPresentation {
 
     static func liveLabel(
         messages: [Dieter_V1_UiMessage], pendingTools: [Dieter_V1_PendingTool], plans: [Dieter_V1_TaskPlan],
-        showReasoning: Bool = true, conversationStatus: String = "", cardRuntime: String = ""
+        showReasoning: Bool = true, conversationStatus: String = "", cardRuntime: String = "",
+        providerStatus: Dieter_V1_ProviderStatus? = nil
     ) -> String {
         if [conversationStatus, cardRuntime].contains(where: { normalized($0) == "cancelling" }) {
             return "Stopping…"
+        }
+        // A retrying provider stream is the most current fact about the turn.
+        if let providerStatus, let label = ProviderStatusPresentation.label(providerStatus) {
+            return label
         }
 
         // The caller supplies the live snapshot, never an earlier history page

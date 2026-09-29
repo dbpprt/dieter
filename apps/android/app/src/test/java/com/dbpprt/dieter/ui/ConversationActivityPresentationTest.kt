@@ -1,8 +1,10 @@
 package com.dbpprt.dieter.ui
 
 import com.google.protobuf.ByteString
+import com.dbpprt.dieter.v1.Conversation
 import com.dbpprt.dieter.v1.MessagePart
 import com.dbpprt.dieter.v1.PendingTool
+import com.dbpprt.dieter.v1.ProviderStatus
 import com.dbpprt.dieter.v1.TaskPlan
 import com.dbpprt.dieter.v1.TaskPlanItem
 import com.dbpprt.dieter.v1.TaskPlanPhase
@@ -97,6 +99,34 @@ class ConversationActivityPresentationTest {
         assertEquals("1:05", elapsedActivityLabel(requireNotNull(start), start + 65_000L))
         assertEquals("1:01:01", elapsedActivityLabel(start, start + 3_661_000L))
         assertNull(ConversationActivityPresentation.turnStartMillis(emptyList(), "invalid"))
+    }
+
+    @Test
+    fun retryingProviderStreamDescribesTheTurnUntilItRecovers() {
+        val messages = listOf(
+            message("user", role = "user"),
+            message("assistant", parts = listOf(tool("bash", "go test ./..."))),
+        )
+        val reconnecting = ProviderStatus.newBuilder().setState("reconnecting").setAttempt(2).setMaxAttempts(5).build()
+        val waiting = ProviderStatus.newBuilder().setState("waiting-for-network").build()
+        fun live(status: ProviderStatus?, runtime: String = "running") = ConversationActivityPresentation.liveLabel(
+            messages = messages,
+            pendingTools = emptyList(),
+            plans = emptyList(),
+            conversationStatus = "running",
+            cardRuntime = runtime,
+            providerStatus = status,
+        )
+        assertEquals("Reconnecting to provider (2/5)…", live(reconnecting))
+        assertEquals("Reconnecting to provider (waiting for network)…", live(waiting))
+        assertEquals("Reconnecting to provider…", live(reconnecting.toBuilder().clearAttempt().build()))
+        assertEquals("Stopping…", live(reconnecting, runtime = "cancelling"))
+        assertEquals("Running go test ./...", live(null))
+        val future = ProviderStatus.newBuilder().setState("future").build()
+        assertNull(ConversationActivityPresentation.providerStatusLabel(future))
+        assertNull(ConversationActivityPresentation.activeProviderStatus(Conversation.getDefaultInstance()))
+        val retrying = Conversation.newBuilder().setProviderStatus(reconnecting).build()
+        assertEquals(reconnecting, ConversationActivityPresentation.activeProviderStatus(retrying))
     }
 
     private fun label(vararg parts: MessagePart): String = ConversationActivityPresentation.liveLabel(

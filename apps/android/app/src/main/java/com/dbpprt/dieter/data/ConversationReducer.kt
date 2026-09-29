@@ -37,6 +37,10 @@ object ConversationReducer {
             .addAllQueue(update.queueList)
             .clearDraftAttachments()
             .addAllDraftAttachments(update.draftAttachmentsList)
+            // Updates carry the current provider status; absence means recovered.
+            .apply {
+                if (update.hasProviderStatus()) setProviderStatus(update.providerStatus) else clearProviderStatus()
+            }
             .setLastSeq(update.lastSeq)
             .setUpdatedAt(update.updatedAt)
             .build()

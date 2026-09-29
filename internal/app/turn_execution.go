@@ -70,6 +70,8 @@ func (s *Service) runTurn(ctx context.Context, detail model.CardDetail, turnID s
 	if s.BackgroundProcesses != nil {
 		request.BackgroundProcessesEnabled = true
 		request.BackgroundProcess = func(ctx context.Context, call harness.ProcessCall) (json.RawMessage, error) {
+			endHostWork, _ := s.beginTurnHostWork(detail.Card.ID, turnID)
+			defer endHostWork()
 			return s.BackgroundProcesses(ctx, detail.Card.ID, call)
 		}
 	}
@@ -103,16 +105,20 @@ func (s *Service) runTurn(ctx context.Context, detail model.CardDetail, turnID s
 	var reportedFailure error
 	capabilityFilter := newCapabilityProgressFilter()
 	persistChunks := func(chunks []json.RawMessage) error {
-		if !s.noteTurnProgress(detail.Card.ID, turnID) {
+		endHostWork, ok := s.beginTurnHostWork(detail.Card.ID, turnID)
+		if !ok {
 			return context.Canceled
 		}
+		defer endHostWork()
 		var conversation model.Conversation
-		var err error
-		if len(chunks) == 1 {
-			_, conversation, err = s.Store.AppendUIChunk(detail.Card.ID, turnID, chunks[0])
-		} else {
-			_, conversation, err = s.Store.AppendUIChunks(detail.Card.ID, turnID, chunks)
-		}
+		err := retryWhileStoreBusy(ctx, func() (err error) {
+			if len(chunks) == 1 {
+				_, conversation, err = s.Store.AppendUIChunk(detail.Card.ID, turnID, chunks[0])
+			} else {
+				_, conversation, err = s.Store.AppendUIChunks(detail.Card.ID, turnID, chunks)
+			}
+			return err
+		})
 		if err != nil {
 			return err
 		}
@@ -125,7 +131,10 @@ func (s *Service) runTurn(ctx context.Context, detail model.CardDetail, turnID s
 			// active-turn barrier stays up until those outputs and Run complete.
 			runtimeStatus = "running"
 		}
-		if _, err := s.Store.UpdateCardCache(detail.Card.ID, store.CardCacheInput{Provider: request.Harness, Model: request.ConfiguredModel, Runtime: runtimeStatus}); err != nil {
+		if err := retryWhileStoreBusy(ctx, func() error {
+			_, err := s.Store.UpdateCardCache(detail.Card.ID, store.CardCacheInput{Provider: request.Harness, Model: request.ConfiguredModel, Runtime: runtimeStatus})
+			return err
+		}); err != nil {
 			return err
 		}
 		for _, chunk := range chunks {
@@ -140,23 +149,29 @@ func (s *Service) runTurn(ctx context.Context, detail model.CardDetail, turnID s
 		return nil
 	}
 	err := runBatchedTurnOutputs(ctx, s.Runner, request, persistChunks, func(output harness.Output) error {
-		if !s.noteTurnProgress(detail.Card.ID, turnID) {
+		endHostWork, ok := s.beginTurnHostWork(detail.Card.ID, turnID)
+		if !ok {
 			return context.Canceled
 		}
+		defer endHostWork()
 		switch output.Type {
 		case "heartbeat":
 			return nil
 		case "chunk":
 			return persistChunks([]json.RawMessage{output.Chunk})
 		case "session":
-			_, err := s.Store.SetConversationSession(detail.Card.ID, turnID, output.State)
-			return err
+			return retryWhileStoreBusy(ctx, func() error {
+				_, err := s.Store.SetConversationSession(detail.Card.ID, turnID, output.State)
+				return err
+			})
 		case "capability":
 			if !capabilityFilter.shouldPersist(output.Capability) {
 				return nil
 			}
-			_, _, err := s.Store.AppendCapability(detail.Card.ID, turnID, output.Capability)
-			return err
+			return retryWhileStoreBusy(ctx, func() error {
+				_, _, err := s.Store.AppendCapability(detail.Card.ID, turnID, output.Capability)
+				return err
+			})
 		case "present-content":
 			var presentation model.ContentPresentation
 			if err := json.Unmarshal(output.Presentation, &presentation); err != nil {

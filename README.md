@@ -175,6 +175,16 @@ replies that have not been viewed and for questions waiting for an answer.
 Viewing the latest transcript in the foreground acknowledges that reply across
 clients. A Review lane alone does not imply an unread reply.
 
+### Provider reconnects
+
+A provider stream that drops mid-turn is retried by the harness, not failed.
+While it retries, the Mac, iOS, and Android working indicators show
+**Reconnecting to provider (2/5)…** (or **(waiting for network)…**), and
+`card poll`/`card watch` output carries a transient `providerStatus`. The daemon
+clears it when the stream recovers or the turn ends. A turn fails only on the
+provider's final error, which leads the failure text; worker diagnostics follow
+it in the log.
+
 Card/chat metadata includes `responseSeq`, `responseMessageId`, and
 `seenResponseSeq`. Automation can acknowledge a displayed response using
 `dieter card read --response-seq SEQ CARD` (also `chat read`). The command supports

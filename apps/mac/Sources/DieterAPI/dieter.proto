@@ -672,6 +672,23 @@ message Conversation {
   repeated TaskPlan task_plans = 10;
   repeated MessagePart draft_attachments = 11;
   ContentPresentation presented_content = 12;
+  ProviderStatus provider_status = 13;
+}
+
+// Transient provider connectivity for the active turn. A harness reports it
+// while its provider stream retries; the daemon clears it when the stream
+// recovers or the turn ends. It is never part of the transcript.
+message ProviderStatus {
+  // "reconnecting" or "waiting-for-network".
+  string state = 1;
+  // 1-based retry attempt and its limit; zero when the provider does not count.
+  int32 attempt = 2;
+  int32 max_attempts = 3;
+  // The provider's own notice, for logs and accessibility.
+  string message = 4;
+  string provider = 5;
+  string message_id = 6;
+  string updated_at = 7;
 }
 
 // Latest explicit presentation request, separate from transcript text. Paths
@@ -1148,6 +1165,7 @@ message ConversationUpdate {
   repeated TaskPlan task_plans = 12;
   repeated MessagePart draft_attachments = 13;
   ContentPresentation presented_content = 14;
+  ProviderStatus provider_status = 15;
 }
 
 message GetToolOutputRequest {

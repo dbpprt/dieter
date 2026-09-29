@@ -1,7 +1,9 @@
 package com.dbpprt.dieter.ui
 
+import com.dbpprt.dieter.v1.Conversation
 import com.dbpprt.dieter.v1.MessagePart
 import com.dbpprt.dieter.v1.PendingTool
+import com.dbpprt.dieter.v1.ProviderStatus
 import com.dbpprt.dieter.v1.TaskPlan
 import com.dbpprt.dieter.v1.UiMessage
 import java.time.Instant
@@ -35,10 +37,13 @@ internal object ConversationActivityPresentation {
         showReasoning: Boolean = true,
         conversationStatus: String = "",
         cardRuntime: String = "",
+        providerStatus: ProviderStatus? = null,
     ): String {
         if (listOf(conversationStatus, cardRuntime).any { normalized(it) == "cancelling" }) {
             return "Stopping…"
         }
+        // A retrying provider stream is the most current fact about the turn.
+        providerStatus?.let(::providerStatusLabel)?.let { return it }
 
         val turnStart = messages.indexOfLast(::isUser).let { if (it < 0) 0 else it + 1 }
         val assistants = messages.drop(turnStart).filter { normalized(it.role) == "assistant" }
@@ -87,6 +92,20 @@ internal object ConversationActivityPresentation {
             return "Starting agent…"
         }
         return "Thinking…"
+    }
+
+    /** The daemon keeps this only while the active turn's provider stream retries. */
+    fun activeProviderStatus(conversation: Conversation?): ProviderStatus? =
+        conversation?.takeIf { it.hasProviderStatus() && it.providerStatus.state.isNotBlank() }?.providerStatus
+
+    fun providerStatusLabel(status: ProviderStatus): String? = when (normalized(status.state)) {
+        "waiting-for-network" -> "Reconnecting to provider (waiting for network)…"
+        "reconnecting" -> if (status.attempt > 0 && status.maxAttempts > 0) {
+            "Reconnecting to provider (${status.attempt}/${status.maxAttempts})…"
+        } else {
+            "Reconnecting to provider…"
+        }
+        else -> null
     }
 
     private fun toolLabel(name: String, inputJson: String, preview: String): String {
