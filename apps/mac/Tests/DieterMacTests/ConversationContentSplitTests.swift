@@ -129,6 +129,44 @@ import Testing
     #expect(controller.workspaceColumn.contentHost === workspaceHost)
 }
 
+@Test @MainActor func paneOwnedSplitIgnoresTransientPreWindowWidthWhenRestoringWorkspace() async throws {
+    let controller = ConversationPaneOwnedSplitController()
+    controller.chatColumn.titlebarHost.rootView = AnyView(Text("Conversation controls"))
+    controller.chatColumn.contentHost.rootView = AnyView(Text("Conversation"))
+    controller.workspaceColumn.titlebarHost.rootView = AnyView(Text("Workspace controls"))
+    controller.workspaceColumn.contentHost.rootView = AnyView(Text("Workspace"))
+
+    // SwiftUI can propose a one-point representable before the restored window
+    // frame is attached. That provisional pass must not consume divider restore.
+    controller.view.frame = NSRect(x: 0, y: 0, width: 1, height: 640)
+    controller.view.layoutSubtreeIfNeeded()
+    controller.setPresented(true)
+    controller.view.layoutSubtreeIfNeeded()
+    try? await Task.sleep(for: .milliseconds(100))
+
+    let window = NSWindow(
+        contentRect: NSRect(x: -3_000, y: -3_000, width: 1_000, height: 640),
+        styleMask: [.titled, .resizable, .fullSizeContentView], backing: .buffered, defer: false)
+    window.isReleasedWhenClosed = false
+    window.contentViewController = controller
+    window.setContentSize(NSSize(width: 1_000, height: 640))
+    window.orderBack(nil)
+    defer { window.close() }
+
+    let restored = await waitForContentSplit {
+        controller.view.layoutSubtreeIfNeeded()
+        let split = controller.splitView
+        let available = split.bounds.width - split.dividerThickness
+        return split.bounds.width > 980
+            && abs(
+                split.arrangedSubviews[0].frame.width
+                    - available * ConversationContentSizing.conversationFraction) < 2
+    }
+    #expect(restored)
+    #expect(controller.chatItem.minimumThickness >= 359)
+    #expect(controller.workspaceItem.minimumThickness >= 319)
+}
+
 @Test @MainActor func paneOwnedTitlebarControlsStayLeadingAlignedWhenPaneResizes() async throws {
     let host = NSHostingView(
         rootView: ConversationPaneTitlebar {

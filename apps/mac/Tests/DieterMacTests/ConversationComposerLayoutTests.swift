@@ -80,6 +80,93 @@ import Testing
     [root] + root.subviews.flatMap { composerLayoutViews(in: $0) }
 }
 
+@Test @MainActor func composerTracksTheResizableConversationColumn() async throws {
+    let store = DieterStore(restoreSync: false)
+    var card = Dieter_V1_Card()
+    card.id = "composer-resize"
+    card.scope = "chat"
+    card.title = "Resizable composer"
+    card.runtime = "idle"
+    var snapshot = Dieter_V1_ConversationSnapshot()
+    snapshot.detail.card = card
+    snapshot.conversation.cardID = card.id
+    store.state.chats = [card]
+    store.chats = [card]
+    store.selectedChatID = card.id
+    store.conversation = snapshot
+    store.selectedDetail = snapshot.detail
+
+    let content = store.conversationContext.content
+    content.currentEndpointID = { _ in "composer-resize-endpoint" }
+    content.showEmpty(conversationID: card.id)
+    #expect(await waitForComposerLayout { content.isPresented(for: card.id) })
+
+    let root = NSHostingView(
+        rootView: ConversationView(compact: true).environment(store).environment(store.conversationContext))
+    root.sizingOptions = []
+    let window = NSWindow(
+        contentRect: NSRect(x: -3_000, y: -3_000, width: 1_000, height: 680),
+        styleMask: [.borderless], backing: .buffered, defer: false)
+    window.isReleasedWhenClosed = false
+    window.contentView = root
+    window.orderBack(nil)
+    defer { window.close() }
+
+    let mounted = await waitForComposerLayout {
+        root.layoutSubtreeIfNeeded()
+        guard let split = composerWorkspaceSplit(in: root), composerTextField(in: root) != nil else { return false }
+        let available = split.bounds.width - split.dividerThickness
+        return abs(
+            split.arrangedSubviews[0].frame.width
+                - available * ConversationContentSizing.conversationFraction) < 2
+    }
+    #expect(mounted)
+    let split = try #require(composerWorkspaceSplit(in: root))
+    let field = try #require(composerTextField(in: root))
+
+    split.setPosition(520, ofDividerAt: 0)
+    split.layoutSubtreeIfNeeded()
+    let wide = await waitForComposerLayout {
+        root.layoutSubtreeIfNeeded()
+        return abs(split.arrangedSubviews[0].frame.width - 520) < 2
+            && field.convert(field.bounds, to: root).width > 450
+    }
+    #expect(wide)
+    let wideFieldWidth = field.convert(field.bounds, to: root).width
+
+    split.setPosition(380, ofDividerAt: 0)
+    split.layoutSubtreeIfNeeded()
+    let narrow = await waitForComposerLayout {
+        root.layoutSubtreeIfNeeded()
+        let fieldFrame = field.convert(field.bounds, to: root)
+        let chatFrame = split.arrangedSubviews[0].convert(split.arrangedSubviews[0].bounds, to: root)
+        return abs(split.arrangedSubviews[0].frame.width - 380) < 2
+            && fieldFrame.width < wideFieldWidth - 100
+            && chatFrame.insetBy(dx: -1, dy: -1).contains(fieldFrame)
+    }
+    #expect(narrow)
+}
+
+@MainActor private func composerWorkspaceSplit(in root: NSView) -> NSSplitView? {
+    composerLayoutViews(in: root).compactMap { $0 as? NSSplitView }.first {
+        $0.accessibilityIdentifier() == "conversation.workspace-split"
+    }
+}
+
+@MainActor private func composerTextField(in root: NSView) -> NSTextField? {
+    composerLayoutViews(in: root).compactMap { $0 as? NSTextField }.first {
+        $0.isEditable && $0.placeholderString == "Message the local agent…"
+    }
+}
+
+@MainActor private func waitForComposerLayout(_ predicate: () -> Bool) async -> Bool {
+    for _ in 0..<100 {
+        if predicate() { return true }
+        try? await Task.sleep(for: .milliseconds(20))
+    }
+    return false
+}
+
 @Test @MainActor func allChatsKeepsComposerInsideWindowBelowTheTitlebar() async throws {
     let store = DieterStore(restoreSync: false)
     var project = Dieter_V1_Project()
