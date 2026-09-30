@@ -17,7 +17,8 @@ test('keeps a usable OMP catalog when role discovery is unavailable', () => {
   const normalized = normalizeOMPDiscovery({ models: [model] });
   assert.deepEqual(normalized.models.map(item => item.selector), ompVisibleModelSelectors);
   assert.equal(normalized.models[3], model);
-  assert.throws(() => normalizeOMPDiscovery({ models: [] }), /catalog is empty/);
+  assert.deepEqual(normalizeOMPDiscovery({ models: [] }).models.map(item => item.selector), ompVisibleModelSelectors);
+  assert.throws(() => normalizeOMPDiscovery({}), /catalog is invalid/);
 });
 
 test('publishes only the curated selectors in stable order', () => {

@@ -41,7 +41,7 @@ export function acpImplementationIdentity({ settings, acpPackageVersion }) {
     source,
     executable: settings.executable,
     args: settings.args ?? [],
-    clientApp: settings.clientApp ?? { name: 'ai-sdk/harness-acp', version: acpPackageVersion },
+    clientApp: settings.clientApp ?? { name: 'ai-sdk-harness-acp', version: acpPackageVersion },
     clientCapabilities: settings.clientCapabilities ?? null,
     modelMapping: settings.modelMapping,
     environment: { forwarded, credential, literal },

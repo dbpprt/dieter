@@ -955,8 +955,8 @@ func (r *SubprocessRunner) cleanupProviderBridge(sessionID, runtimeRoot string) 
 }
 
 // ProviderBridgeStateDirs returns every supported bridge-state location for a
-// Dieter conversation. ACP adapters keep their state in the sandbox home,
-// while older non-ACP adapters used the per-project runtime root.
+// Dieter conversation. Current adapters share the sandbox-home harness state;
+// older adapters used the ACP-specific home or per-project runtime root.
 func ProviderBridgeStateDirs(sessionID, runtimeRoot string) ([]string, error) {
 	if strings.ContainsAny(sessionID, `/\\`) {
 		return nil, errors.New("invalid harness session ID")
@@ -971,6 +971,7 @@ func ProviderBridgeStateDirs(sessionID, runtimeRoot string) ([]string, error) {
 		filepath.Join(runtimeRoot, ".agent-runs", sessionID, "bridge"),
 		filepath.Join(home, ".ai-sdk", "harness-acp", "omp", key, "bridge"),
 		filepath.Join(home, ".ai-sdk", "harness-acp", "dsh", key, "bridge"),
+		filepath.Join(home, ".ai-sdk-harness", ".agent-runs", sessionID, "bridge"),
 	}, nil
 }
 

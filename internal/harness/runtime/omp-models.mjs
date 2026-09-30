@@ -15,8 +15,8 @@ function modelSelector(model) {
 }
 
 export function normalizeOMPDiscovery(modelsDocument, rolesDocument) {
-  if (!modelsDocument || !Array.isArray(modelsDocument.models) || modelsDocument.models.length === 0) {
-    throw new Error('OMP model catalog is empty');
+  if (!modelsDocument || !Array.isArray(modelsDocument.models)) {
+    throw new Error('OMP model catalog is invalid');
   }
   const bySelector = new Map(modelsDocument.models.map(model => [modelSelector(model), model]));
   const models = ompVisibleModels.map(model => bySelector.get(model.selector) ?? { ...model });

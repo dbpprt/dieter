@@ -180,7 +180,11 @@ func TestLiveProviderDiscovery(t *testing.T) {
 	}
 	for _, provider := range []string{"codex", "claude-code", "pi", "omp", "dsh"} {
 		t.Run(provider, func(t *testing.T) {
-			ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+			timeout := 45 * time.Second
+			if provider == "omp" {
+				timeout = 4 * time.Minute
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), timeout)
 			defer cancel()
 			models, err := discoverModels(ctx, provider)
 			if err != nil {
@@ -214,11 +218,23 @@ func TestLiveProviderDiscovery(t *testing.T) {
 	}
 }
 
-func TestDiscoverCodexModelsIncludesVisibleAstra(t *testing.T) {
+func TestDiscoverCodexModelsIncludesVisibleGPT61(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("CODEX_HOME", root)
 	cache := `{
   "models": [
+    {
+      "slug": "gpt-6.1-sol",
+      "display_name": "GPT-6.1-Sol",
+      "visibility": "list",
+      "supported_in_api": true,
+      "context_window": 272000,
+      "default_reasoning_level": "low",
+      "supported_reasoning_levels": [
+        {"effort": "low"}, {"effort": "medium"}, {"effort": "high"},
+        {"effort": "xhigh"}, {"effort": "max"}, {"effort": "ultra"}
+      ]
+    },
     {
       "slug": "gpt-6-astra",
       "display_name": "GPT-6-Astra",
@@ -251,10 +267,14 @@ func TestDiscoverCodexModelsIncludesVisibleAstra(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(models) != 1 {
-		t.Fatalf("models=%#v, want only visible Astra", models)
+	if len(models) != 2 {
+		t.Fatalf("models=%#v, want visible Sol and Astra", models)
 	}
-	astra := models[0]
+	sol := models[0]
+	if sol.ID != "gpt-6.1-sol" || sol.Name != "GPT-6.1-Sol" || sol.DefaultEffort != "low" {
+		t.Fatalf("Sol=%#v", sol)
+	}
+	astra := models[1]
 	if astra.ID != "gpt-6-astra" || astra.Name != "GPT-6-Astra" || astra.ContextWindow != 272000 || astra.DefaultEffort != "medium" {
 		t.Fatalf("Astra=%#v", astra)
 	}

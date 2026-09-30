@@ -7,8 +7,8 @@ function nativeClaudePackage() {
   return `@anthropic-ai/claude-code-${platform}-${arch}${libc}`;
 }
 
-export const CLAUDE_AGENT_SDK_VERSION = '0.3.280';
-export const CLAUDE_CODE_VERSION = '2.1.280';
+export const CLAUDE_AGENT_SDK_VERSION = '0.3.285';
+export const CLAUDE_CODE_VERSION = '2.1.285';
 
 // The adapter ships a version-locked bridge recipe independently of Dieter's
 // lockfile. Keep the adapter transport and bridge, but move its Anthropic

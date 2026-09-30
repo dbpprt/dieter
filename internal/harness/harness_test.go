@@ -139,23 +139,23 @@ func TestCatalogIncludesCurrentCodexRegistry(t *testing.T) {
 	if !found {
 		t.Fatal("codex harness is missing")
 	}
-	if codex.DefaultModel != "gpt-5.6-sol" || len(codex.Models) != 8 {
+	if codex.DefaultModel != "gpt-5.6-sol" || len(codex.Models) != 9 {
 		t.Fatalf("codex catalog=%#v", codex)
 	}
-	want := []string{"gpt-6-astra", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.5", "gpt-5.4", "gpt-5.3-codex", "gpt-5.3-codex-spark"}
+	want := []string{"gpt-6.1-sol", "gpt-6-astra", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.5", "gpt-5.4", "gpt-5.3-codex", "gpt-5.3-codex-spark"}
 	for index, id := range want {
 		if codex.Models[index].ID != id {
 			t.Fatalf("model %d=%q want %q", index, codex.Models[index].ID, id)
 		}
 	}
 	if codex.Effort == nil || codex.Effort.Label != "Reasoning" || len(codex.Effort.Options) != 6 ||
-		codex.Models[0].DefaultEffort != "medium" || codex.Models[1].DefaultEffort != "xhigh" {
+		codex.Models[0].DefaultEffort != "low" || codex.Models[1].DefaultEffort != "medium" {
 		t.Fatalf("codex effort catalog=%#v", codex)
 	}
 	if len(codex.Options) != 1 || codex.Options[0].ID != "fast_mode" || codex.Options[0].Type != "boolean" || codex.Options[0].Default != "false" || !codex.Options[0].Mutable {
 		t.Fatalf("codex options=%#v", codex.Options)
 	}
-	if got, want := codex.Options[0].Models, want[:6]; !reflect.DeepEqual(got, want) {
+	if got, want := codex.Options[0].Models, want[:7]; !reflect.DeepEqual(got, want) {
 		t.Fatalf("codex Fast mode models=%#v want %#v", got, want)
 	}
 	if options, err := ResolveOptions(codex, map[string]string{"fast_mode": "true"}); err != nil || options["fast_mode"] != "true" {
@@ -183,7 +183,7 @@ func TestConfiguredEffortValidationIsProviderAndModelAware(t *testing.T) {
 	if effort, err := ResolveEffort(codex, sol, "xhigh"); err != nil || effort != "xhigh" {
 		t.Fatalf("codex xhigh effort=%q err=%v", effort, err)
 	}
-	for _, modelID := range []string{"gpt-6-astra", "gpt-5.6-sol", "gpt-5.6-terra"} {
+	for _, modelID := range []string{"gpt-6.1-sol", "gpt-6-astra", "gpt-5.6-sol", "gpt-5.6-terra"} {
 		adapter, model, resolveErr := ResolveSelection("codex", modelID, false)
 		if resolveErr != nil {
 			t.Fatal(resolveErr)

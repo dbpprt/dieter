@@ -10,10 +10,17 @@ import { createLocalSandboxProvider } from './local-sandbox.mjs';
 
 test('Claude disables native background tasks at the SDK boundary on fresh and resumed turns', { timeout: 30_000 }, async t => {
   const root = await realpath(await mkdtemp(join(tmpdir(), 'dieter-claude-background-')));
+  const previousHome = process.env.HOME;
+  process.env.HOME = root;
   let session, sandbox;
   t.after(async () => {
     try { await session?.stop(); }
-    finally { await sandbox?.stopAll(); await rm(root, { recursive: true, force: true }); }
+    finally {
+      if (previousHome === undefined) delete process.env.HOME;
+      else process.env.HOME = previousHome;
+      await sandbox?.stopAll();
+      await rm(root, { recursive: true, force: true });
+    }
   });
   const projectPath = join(root, 'project');
   await mkdir(projectPath);
@@ -24,7 +31,7 @@ test('Claude disables native background tasks at the SDK boundary on fresh and r
     env: { CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: '0', DIETER_FIXTURE_OPTION: 'preserved' },
   });
   const recipe = await harness.getBootstrap();
-  const bootstrap = join(root, recipe.bootstrapDir);
+  const bootstrap = join(root, '.ai-sdk-harness', recipe.bootstrapDir);
   await mkdir(bootstrap, { recursive: true });
   await symlink(join(dirname(fileURLToPath(import.meta.url)), 'node_modules'), join(bootstrap, 'node_modules'), 'dir');
   const bridge = recipe.files.find(file => file.path.endsWith('/bridge.mjs'));

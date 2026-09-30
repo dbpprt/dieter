@@ -160,15 +160,14 @@ test('patches Codex stream errors into non-terminal notices with a terminal guar
     async getBootstrap() { return { files: [{ path: '.x/bridge.mjs', content: original }] }; },
   }, createSubagentCapabilityCollector({ provider: 'codex', messageId: 'm', emit: () => {} }));
   const patched = (await harness.getBootstrap()).files[0].content;
-  assert.doesNotMatch(patched, /message: "codex stream error"/);
-  assert.match(patched, /if \(event\.type === "error"\) \{\s+send\(\{ type: "raw", rawValue: event \}\);\s+emitWarning/);
-  assert.match(patched, /if \(!dieterTurnSettled && !turn\.abortSignal\.aborted\)/);
-  // turn.failed remains the terminal provider failure.
+  assert.match(patched, /if \(params\.willRetry === true\) emitStreamEvent\(\{ type: "error", message, willRetry: true \}\)/);
+  assert.match(patched, /if \(event\.willRetry === true\) \{[\s\S]*send\(\{ type: "raw", rawValue:/);
+  assert.match(patched, /message: "codex stream error"/);
   assert.match(patched, /if \(event\.type === "turn\.failed"\) \{\s+emitError/);
   // Patching is idempotent and fails closed when upstream moves the handler.
   const again = observeHarnessCapabilities({ harnessId: 'codex', async getBootstrap() { return { files: [{ path: '.x/bridge.mjs', content: patched }] }; } }, undefined);
   assert.equal((await again.getBootstrap()).files[0].content, patched);
-  const moved = observeHarnessCapabilities({ harnessId: 'codex', async getBootstrap() { return { files: [{ path: '.x/bridge.mjs', content: original.replace('message: "codex stream error"', 'message: "renamed"') }] }; } }, undefined);
+  const moved = observeHarnessCapabilities({ harnessId: 'codex', async getBootstrap() { return { files: [{ path: '.x/bridge.mjs', content: original.replace('if (params.willRetry === true) emitWarning({ message });', '') }] }; } }, undefined);
   await assert.rejects(moved.getBootstrap(), /Codex stream error handler/);
 });
 

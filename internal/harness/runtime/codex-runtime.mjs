@@ -2,15 +2,14 @@ import { createCodex } from '@ai-sdk/harness-codex';
 import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-// The adapter's bridge pins its own older SDK independently of Dieter's npm
-// lockfile. Point its local bootstrap at our locked SDK package, whose native
-// Codex dependency is already installed beside the worker. Keep the adapter's
-// transport, session resume, tools, and bridge implementation unchanged.
-const sdkRoot = dirname(dirname(fileURLToPath(import.meta.resolve('@openai/codex-sdk'))));
+// The adapter's bridge pins its own older CLI independently of Dieter's npm
+// lockfile. Point its local bootstrap at our locked CLI package and keep the
+// adapter's transport, session resume, tools, and bridge unchanged.
+const codexRoot = dirname(fileURLToPath(import.meta.resolve('@openai/codex/package.json')));
 const websocketRoot = dirname(fileURLToPath(import.meta.resolve('ws/package.json')));
 
 export function createLocalCodex(settings = {}) {
-  // Ultra is a CLI orchestration mode, not a Responses API effort. Codex 0.155
+  // Ultra is a CLI orchestration mode, not a Responses API effort. Codex 0.159
   // advertises it, but this adapter's protocol enum stops at max. Its supported
   // arbitrary config channel reaches the same CLI setting without narrowing it.
   const harness = createCodex(settings.reasoningEffort === 'ultra' ? {
@@ -26,10 +25,10 @@ export function createLocalCodex(settings = {}) {
       const manifest = recipe.files.find(file => file.path === manifestPath);
       if (!manifest) throw new Error('Codex bridge bootstrap is missing its package manifest');
       const pkg = JSON.parse(manifest.content);
-      if (!pkg.dependencies?.['@openai/codex-sdk']) {
-        throw new Error('Codex bridge no longer declares its SDK; review the runtime integration');
+      if (!pkg.dependencies?.['@openai/codex']) {
+        throw new Error('Codex bridge no longer declares its CLI; review the runtime integration');
       }
-      pkg.dependencies['@openai/codex-sdk'] = `file:${sdkRoot}`;
+      pkg.dependencies['@openai/codex'] = `file:${codexRoot}`;
       pkg.dependencies.ws = `file:${websocketRoot}`;
       return {
         ...recipe,

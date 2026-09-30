@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process';
 import { mkdir } from 'node:fs/promises';
+import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { prepareSandboxForHarness } from '@ai-sdk/harness/agent';
 import { createACP } from '@ai-sdk/harness-acp';
@@ -106,7 +107,7 @@ process.once('SIGTERM', () => void shutdown(143));
 try {
   await prepareSandboxForHarness({ session: sandboxSession, harnesses: [harness] });
   const executable = join(
-    runtimeRoot, '.harness-bootstrap', 'omp', 'implementation', 'node_modules', '.bin', 'omp',
+    homedir(), '.ai-sdk-harness', '.harness-bootstrap', 'omp', 'implementation', 'node_modules', '.bin', 'omp',
   );
   const models = await runOMP(executable, ['models', '--json', '--no-extensions']);
   const roles = await runOMP(executable, ['config', 'get', 'modelRoles'], { optional: true });

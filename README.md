@@ -34,6 +34,8 @@ Managed OMP discovery and turns use the same pinned build. Dieter selects the
 advertised model when launching OMP and keeps its catalog focused on GPT-6 Luna,
 Sol, Astra, and the Tailscale GLM route. Dieter installs OMP's pinned Bun runtime
 lazily, so hosts do not need a separate global OMP or Bun installation.
+Codex models follow the installed CLI's live catalog; the bundled fallback
+includes GPT-6.1 Sol when discovery is unavailable.
 
 Your laptop is the remote control. An agent on another host keeps running when
 you close the app, disconnect, or put your laptop to sleep. Keep that execution

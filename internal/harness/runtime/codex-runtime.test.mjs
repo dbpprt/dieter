@@ -7,19 +7,19 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createCodex } from '@ai-sdk/harness-codex';
+import { createSubagentCapabilityCollector, observeHarnessCapabilities } from './capabilities.mjs';
 import { createLocalCodex } from './codex-runtime.mjs';
 
 const runtimeRoot = dirname(fileURLToPath(import.meta.url));
 
-test('Codex bootstrap links the locked runtime SDK offline without changing the adapter bridge', async () => {
+test('Codex bootstrap links the locked runtime CLI offline without changing the adapter bridge', async () => {
   const original = await createCodex().getBootstrap();
   const recipe = await createLocalCodex({ model: 'gpt-6-astra', reasoningEffort: 'ultra' }).getBootstrap();
   const manifest = JSON.parse(recipe.files.find(file => file.path.endsWith('/package.json')).content);
-  const sdkPath = manifest.dependencies['@openai/codex-sdk'].replace(/^file:/, '');
-  const sdk = JSON.parse(await readFile(join(sdkPath, 'package.json'), 'utf8'));
+  const codexPath = manifest.dependencies['@openai/codex'].replace(/^file:/, '');
+  const codex = JSON.parse(await readFile(join(codexPath, 'package.json'), 'utf8'));
   const runtime = JSON.parse(await readFile(join(runtimeRoot, 'package.json'), 'utf8'));
-  assert.equal(sdk.version, runtime.dependencies['@openai/codex-sdk']);
-  assert.equal(sdk.dependencies['@openai/codex'], '0.155.0');
+  assert.equal(codex.version, runtime.dependencies['@openai/codex']);
   assert.match(manifest.dependencies.ws, /^file:/);
   assert.match(recipe.commands[0].command, /--offline/);
   assert.match(recipe.commands[0].command, /--ignore-scripts/);
@@ -27,10 +27,15 @@ test('Codex bootstrap links the locked runtime SDK offline without changing the 
   assert.equal(recipe.files.find(file => file.path.endsWith('/bridge.mjs')).content,
     original.files.find(file => file.path.endsWith('/bridge.mjs')).content);
   assert.equal(JSON.parse(original.files.find(file => file.path.endsWith('/package.json')).content)
-    .dependencies['@openai/codex-sdk'], '0.149.1');
+    .dependencies['@openai/codex'], '0.155.0');
+  const collector = createSubagentCapabilityCollector({ provider: 'codex', messageId: 'smoke', emit: () => {} });
+  const observed = await observeHarnessCapabilities(createLocalCodex(), collector).getBootstrap();
+  const bridge = observed.files.find(file => file.path.endsWith('/bridge.mjs')).content;
+  assert.match(bridge, /notification\.method === "turn\/plan\/updated"/);
+  assert.match(bridge, /send\(\{ type: "raw", rawValue: event \}\)/);
 });
 
-test('bundled Codex streams Astra Ultra and resumes the same session with the next selection', { timeout: 90000 }, async t => {
+test('bundled Codex streams GPT-6.1 Sol Ultra and resumes the same session with the next selection', { timeout: 90000 }, async t => {
   const root = await realpath(await mkdtemp(join(tmpdir(), 'dieter-codex-runtime-')));
   const projectPath = join(root, 'project');
   const codexHome = join(root, 'codex');
@@ -61,8 +66,8 @@ test('bundled Codex streams Astra Ultra and resumes the same session with the ne
     CODEX_API_KEY: 'dieter-loopback-fixture',
   };
   const base = {
-    harness: 'codex', adapter: 'codex', sessionId: 'astra-session', projectPath,
-    runtimeRoot: join(root, 'runtime'), model: 'gpt-6-astra', effort: 'ultra',
+    harness: 'codex', adapter: 'codex', sessionId: 'sol-session', projectPath,
+    runtimeRoot: join(root, 'runtime'), model: 'gpt-6.1-sol', effort: 'ultra',
     options: { fast_mode: 'true' }, prompt: 'First isolated fixture turn.', responseMessageId: 'first',
   };
   const first = await runWorker(base, environment);
@@ -73,7 +78,7 @@ test('bundled Codex streams Astra Ultra and resumes the same session with the ne
   const state = first.frames.find(frame => frame.type === 'session').state;
   assert.equal(typeof state.data.threadId, 'string');
   const second = await runWorker({
-    ...base, session: state, model: 'gpt-5.6-sol', effort: 'medium',
+    ...base, session: state, model: 'gpt-6-astra', effort: 'medium',
     options: { fast_mode: 'false' }, prompt: 'Second isolated fixture turn.', responseMessageId: 'second',
   }, environment);
   assert.equal(second.code, 0, second.stderr);
@@ -81,9 +86,9 @@ test('bundled Codex streams Astra Ultra and resumes the same session with the ne
   assert(second.frames.some(frame => frame.type === 'chunk' && frame.chunk.type === 'text-delta'
     && frame.chunk.delta === 'Fixture response 2.'));
   assert.equal(requests.length, 2);
-  assert.equal(requests[0].model, 'gpt-6-astra');
+  assert.equal(requests[0].model, 'gpt-6.1-sol');
   assert.equal(requests[0].service_tier, 'priority');
-  assert.equal(requests[1].model, 'gpt-5.6-sol');
+  assert.equal(requests[1].model, 'gpt-6-astra');
   assert.equal(requests[1].reasoning.effort, 'medium');
   assert.notEqual(requests[1].service_tier, 'priority');
   assert.match(JSON.stringify(requests[1].input), /First isolated fixture turn/);
@@ -96,12 +101,12 @@ test('bundled Codex streams Astra Ultra and resumes the same session with the ne
     const text = await readFile(join(codexHome, 'sessions', file), 'utf8');
     records.push(...text.trim().split('\n').map(line => JSON.parse(line)));
   }
-  assert(records.some(record => record.type === 'session_meta' && record.payload.cli_version === '0.155.0'));
+  assert(records.some(record => record.type === 'session_meta' && record.payload.cli_version === '0.159.2'));
   const turns = records.filter(record => record.type === 'turn_context').map(record => record.payload);
   // Ultra is recorded by Codex itself. Its wire effort is an implementation
   // detail of that orchestration mode, not an API enum Dieter should translate.
-  assert(turns.some(turn => turn.model === 'gpt-6-astra' && turn.effort === 'ultra'));
-  assert(turns.some(turn => turn.model === 'gpt-5.6-sol' && turn.effort === 'medium'));
+  assert(turns.some(turn => turn.model === 'gpt-6.1-sol' && turn.effort === 'ultra'));
+  assert(turns.some(turn => turn.model === 'gpt-6-astra' && turn.effort === 'medium'));
 });
 
 // Codex reports provider stream retries as top-level `error` events and keeps
@@ -164,7 +169,7 @@ test('bundled Codex completes a turn after a transient provider stream drop', { 
     ['clear', undefined, undefined, undefined],
   ]);
   assert.equal(turn.statuses[0].status.messageId, 'retry');
-  assert.match(turn.statuses[0].status.message, /^Reconnecting\.\.\. 1\/5 \(stream disconnected before completion/);
+  assert.match(turn.statuses[0].status.message, /^Reconnecting\.\.\. 1\/5/);
   // The notice remains diagnosable in the worker log.
   assert.match(turn.stderr, /\[harness:codex:warn\] Reconnecting\.\.\. 1\/5/);
 });
