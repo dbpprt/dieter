@@ -63,35 +63,90 @@ func homebrewUpdateCapability(ctx context.Context, root string) OperationCapabil
 		result.UnavailableReason = "Homebrew executable is unavailable"
 		return result
 	}
-	prefixCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-	rawPrefix, err := exec.CommandContext(prefixCtx, brew, "--prefix", "dbpprt/tap/dieter").Output()
-	if err != nil {
-		result.UnavailableReason = "the dbpprt/tap/dieter Homebrew formula is not installed"
-		return result
-	}
-	prefix, err := filepath.EvalSymlinks(strings.TrimSpace(string(rawPrefix)))
-	if err != nil {
-		return result
-	}
 	executable, err := os.Executable()
 	if err != nil {
 		return result
 	}
-	executable, err = filepath.EvalSymlinks(executable)
+	return homebrewInstallationCapability(ctx, brew, executable)
+}
+
+func homebrewInstallationCapability(ctx context.Context, brew, executable string) OperationCapability {
+	result := OperationCapability{Operation: OperationUpdate}
+	// A qualified formula lookup loads Homebrew's Ruby runtime on every probe.
+	// Query only the global prefix (Homebrew's fast shell path), then verify the
+	// installed keg and its tap from the receipt, without evaluating a formula.
+	prefixCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	command := exec.CommandContext(prefixCtx, brew, "--prefix")
+	command.Env = homebrewUpdateEnvironment(true)
+	command.WaitDelay = 100 * time.Millisecond
+	rawPrefix, err := command.Output()
 	if err != nil {
+		result.retryable = true
+		switch {
+		case errors.Is(prefixCtx.Err(), context.DeadlineExceeded):
+			result.UnavailableReason = "Homebrew installation check timed out; try again"
+		case errors.Is(prefixCtx.Err(), context.Canceled):
+			result.UnavailableReason = "Homebrew installation check was canceled; try again"
+		default:
+			result.UnavailableReason = "Homebrew installation could not be checked; try again"
+		}
 		return result
 	}
-	relative, err := filepath.Rel(prefix, executable)
-	if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
-		// A fixed runtime is deliberately outside the versioned formula prefix.
-		// Derive the global prefix from brew itself, then require the exact real
-		// executable path; a similarly named executable elsewhere is insufficient.
-		rawHome, prefixErr := exec.CommandContext(prefixCtx, brew, "--prefix").Output()
-		if prefixErr != nil || executable != filepath.Join(serviceruntime.HomebrewRoot(strings.TrimSpace(string(rawHome))), "bin", "dieter") {
-			result.UnavailableReason = "the running daemon is not the Homebrew-installed Dieter binary"
-			return result
+	prefix := strings.TrimSpace(string(rawPrefix))
+	if !filepath.IsAbs(prefix) || strings.ContainsAny(prefix, "\r\n\x00") {
+		result.UnavailableReason = "Homebrew returned an invalid installation path"
+		result.retryable = true
+		return result
+	}
+	prefix, err = filepath.EvalSymlinks(prefix)
+	if err != nil {
+		result.UnavailableReason = "Homebrew installation path is unavailable"
+		result.retryable = true
+		return result
+	}
+	keg, err := filepath.EvalSymlinks(filepath.Join(prefix, "opt", "dieter"))
+	if err != nil {
+		result.UnavailableReason = "the dbpprt/tap/dieter Homebrew formula is not installed"
+		if !errors.Is(err, os.ErrNotExist) {
+			result.UnavailableReason = "the installed Dieter formula could not be checked; try again"
+			result.retryable = true
 		}
+		return result
+	}
+	var receipt struct {
+		Source struct {
+			Tap string `json:"tap"`
+		} `json:"source"`
+	}
+	rawReceipt, err := os.ReadFile(filepath.Join(keg, "INSTALL_RECEIPT.json"))
+	if err != nil || json.Unmarshal(rawReceipt, &receipt) != nil {
+		result.UnavailableReason = "the installed Dieter Homebrew receipt could not be verified"
+		result.retryable = true
+		return result
+	}
+	if receipt.Source.Tap != "dbpprt/tap" {
+		result.UnavailableReason = "the installed Dieter formula is not from dbpprt/tap"
+		return result
+	}
+	installedExecutable, err := filepath.EvalSymlinks(filepath.Join(keg, "bin", "dieter"))
+	if err != nil {
+		result.UnavailableReason = "the installed Dieter Homebrew binary is unavailable"
+		return result
+	}
+	installedInfo, err := os.Stat(installedExecutable)
+	if err != nil || !installedInfo.Mode().IsRegular() || installedInfo.Mode().Perm()&0o111 == 0 {
+		result.UnavailableReason = "the installed Dieter Homebrew binary is unavailable"
+		return result
+	}
+	executable, err = filepath.EvalSymlinks(executable)
+	if err != nil {
+		result.UnavailableReason = "the running Dieter executable could not be resolved"
+		return result
+	}
+	if executable != installedExecutable && executable != filepath.Join(serviceruntime.HomebrewRoot(prefix), "bin", "dieter") {
+		result.UnavailableReason = "the running daemon is not the Homebrew-installed Dieter binary"
+		return result
 	}
 	result.Supported, result.Authorized, result.UnavailableReason = true, true, ""
 	return result
